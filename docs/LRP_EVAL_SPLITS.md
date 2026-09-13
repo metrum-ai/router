@@ -80,6 +80,7 @@ count. Report unique turns separately from replay rows.
 
 Teacher-forced histories come from another model. Identical candidate prompts do
 not remove that reference bias. Continuation agreement is not end-to-end task
-success. N=1000 is a practical first-run budget, not statistical sufficiency.
+success. The example seed corpus uses at most 100 source traces and N=100
+sampled turns as a practical first-run budget, not statistical sufficiency.
 Operators must validate coverage per target and split before promoting a bundle
 built from the seed.

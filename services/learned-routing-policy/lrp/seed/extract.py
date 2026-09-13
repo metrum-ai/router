@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
-from ..collect import DataError, identity
-from . import SOURCE_DATASET, SOURCE_REVISION
+from ..collect import DataError, identity, protected_path
+from . import EXAMPLE_MAX_TRACES, SOURCE_DATASET, SOURCE_REVISION
 
 
 def _has_tool_calls(message: dict[str, Any]) -> bool:
@@ -112,3 +114,54 @@ def estimate_prompt_tokens(messages: list[dict[str, Any]]) -> int:
     """
     encoded = json.dumps(messages, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return max(1, len(encoded.encode("utf-8")) // 4)
+
+
+def iter_trajectory_rows(
+    parquet_path: Path,
+    *,
+    max_traces: int = EXAMPLE_MAX_TRACES,
+    batch_size: int = 8,
+) -> Iterator[dict[str, Any]]:
+    """Stream at most ``max_traces`` trajectory rows without loading the full file.
+
+    The iteration-1 example corpus caps at ``EXAMPLE_MAX_TRACES`` (100). Raising
+    ``max_traces`` is an explicit operator choice and still must not materialize
+    the entire upstream parquet in memory on a developer workstation.
+    """
+    if max_traces < 1:
+        raise DataError("invalid_max_traces")
+    if batch_size < 1:
+        raise DataError("invalid_batch_size")
+    path = protected_path(parquet_path)
+    if not path.is_file():
+        raise DataError("missing_trajectories_parquet")
+    import pyarrow.parquet as pq
+
+    emitted = 0
+    parquet = pq.ParquetFile(path)
+    for batch in parquet.iter_batches(batch_size=batch_size):
+        for row in batch.to_pylist():
+            if not isinstance(row, dict):
+                raise DataError("invalid_trajectory_row")
+            yield row
+            emitted += 1
+            if emitted >= max_traces:
+                return
+
+
+def extract_turns_from_parquet(
+    parquet_path: Path,
+    *,
+    max_traces: int = EXAMPLE_MAX_TRACES,
+    dataset: str = SOURCE_DATASET,
+    revision: str = SOURCE_REVISION,
+) -> list[dict[str, Any]]:
+    """Extract teacher-forced turns from at most ``max_traces`` source trajectories."""
+    turns: list[dict[str, Any]] = []
+    for row in iter_trajectory_rows(parquet_path, max_traces=max_traces):
+        turns.extend(
+            extract_teacher_forced_turns(row, dataset=dataset, revision=revision)
+        )
+    if not turns:
+        raise DataError("empty_turn_pool")
+    return turns
