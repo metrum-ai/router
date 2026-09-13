@@ -329,6 +329,8 @@ providers:
         model: grok-4.5
         tier: coding
         input_price_per_million_usd: 2.0
+        # Optional: omit when unknown; set 0 when cache reads are known free.
+        cached_input_price_per_million_usd: 0.5
         output_price_per_million_usd: 6.0
         input_modalities:
         - text
