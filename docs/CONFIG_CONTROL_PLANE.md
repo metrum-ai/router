@@ -86,16 +86,26 @@ columns or packed values. Until a later #7 phase adds typed target override
 records and an activation workflow, keep those overrides in the reviewed YAML
 bootstrap path.
 
+Migration phase 5 adds nullable
+`router_config_provider_models.cached_input_price_per_million_usd` so the
+catalog projection can retain optional cached-input pricing. Omit the value
+when unknown; store `0` when cache reads are known free. `LoadActiveConfigFromDB`
+maps the scalar into `ProviderModel.CachedInputPricePerMillionUSD`. Historical
+catalog rows keep SQL NULL rather than inventing cache pricing. Phase 5 is a
+transactional **maintenance** migration in the same reviewed batch as phases
+2 through 4.
+
 For migration tests, use `ConfigControlPlaneMigrationRunner` with a dedicated
 database. Do not point it at a production usage database until a reviewed
 deployment migration and backup/restore procedure are available. The initial
-table creation is an online migration, but the provider-header hardening and
-capability projection phases are transactional **maintenance** migrations:
-PostgreSQL must lock the existing header table while adding the allowlist
-constraint and building the unique expression index, while SQLite rebuilds
-that table. Phase 4 is bundled into the same reviewed maintenance batch so
-operators do not leave a current schema with catalog rows that lack required
-capability identities. `ApplyPending` stops before those phases. A non-serving
-deployment job must first apply the online prefix, take the approved backup,
-then explicitly invoke `ApplyMaintenancePending` in a scheduled maintenance
-window and finish with `Verify`; it must never be run by router startup.
+table creation is an online migration, but the provider-header hardening,
+capability projection, and cached-input catalog price phases are transactional
+**maintenance** migrations: PostgreSQL must lock the existing header table
+while adding the allowlist constraint and building the unique expression index,
+while SQLite rebuilds that table. Phases 4 and 5 are bundled into the same
+reviewed maintenance batch so operators do not leave a current schema with
+catalog rows that lack required capability identities or silently drop cached
+pricing. `ApplyPending` stops before those phases. A non-serving deployment
+job must first apply the online prefix, take the approved backup, then
+explicitly invoke `ApplyMaintenancePending` in a scheduled maintenance window
+and finish with `Verify`; it must never be run by router startup.

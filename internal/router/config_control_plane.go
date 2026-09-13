@@ -30,6 +30,8 @@ const configControlPlanePhase3MigrationID = 2026072003
 
 const configControlPlanePhase4MigrationID = 2026072004
 
+const configControlPlanePhase5MigrationID = 2026072005
+
 const configControlPlaneProviderHeaderNameConstraint = "router_config_provider_headers_non_secret_name_ck"
 
 const configControlPlaneProviderHeaderNameCheck = "header_name = TRIM(header_name) AND LOWER(header_name) IN ('http-referer', 'user-agent', 'x-title')"
@@ -38,7 +40,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 4, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 5, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -115,6 +117,25 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 		TimeoutClass:     "maintenance",
 		Apply:            applyConfigControlPlanePhase4,
 		Verify:           verifyConfigControlPlanePhase4,
+	},
+	{
+		ID:               configControlPlanePhase5MigrationID,
+		Scope:            configControlPlaneScope,
+		Name:             "add nullable cached-input catalog price",
+		Release:          "2026.9",
+		Checksum:         "f3281972e06a6fc8f215286c88b61b6f0ad82863aa0fa599082d1268eaa50161",
+		SchemaVersion:    5,
+		Transactional:    true,
+		MaintenanceMode:  "maintenance",
+		RollbackClass:    "restore-required",
+		HandlerKey:       "router-config.phase5.apply.v1@applyConfigControlPlanePhase5",
+		PostconditionKey: "router-config.phase5.schema.v1@verifyConfigControlPlanePhase5",
+		Dependencies:     []int{configControlPlanePhase4MigrationID},
+		ExecutionMode:    "transactional",
+		LockClass:        "maintenance",
+		TimeoutClass:     "maintenance",
+		Apply:            applyConfigControlPlanePhase5,
+		Verify:           verifyConfigControlPlanePhase5,
 	},
 }
 
@@ -227,6 +248,7 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string) (*Config, error) {
 				ContextTokens:                      model.ContextTokens,
 				InputPricePerMillionUSD:            model.InputPricePerMillionUSD,
 				OutputPricePerMillionUSD:           model.OutputPricePerMillionUSD,
+				CachedInputPricePerMillionUSD:      model.CachedInputPricePerMillionUSD,
 				ImageInputPricePerMillionTokensUSD: capabilities.ImageInputPricePerMillionTokensUSD,
 				ImageInputPricePerImageUSD:         capabilities.ImageInputPricePerImageUSD,
 				PricingSource:                      model.PricingSource,
@@ -772,6 +794,30 @@ func verifyConfigControlPlanePhase4(tx *gorm.DB) error {
 	return nil
 }
 
+func applyConfigControlPlanePhase5(tx *gorm.DB) error {
+	if !tx.Migrator().HasColumn(&providerModelRow{}, "CachedInputPricePerMillionUSD") {
+		if err := tx.Migrator().AddColumn(&providerModelRow{}, "CachedInputPricePerMillionUSD"); err != nil {
+			return fmt.Errorf("add cached-input catalog price column: %w", err)
+		}
+	}
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec(`COMMENT ON COLUMN router_config_provider_models.cached_input_price_per_million_usd IS 'Optional cached-input price per million tokens. NULL means unknown.'`).Error; err != nil {
+			return fmt.Errorf("comment cached-input catalog price column: %w", err)
+		}
+	}
+	return verifyConfigControlPlanePhase5(tx)
+}
+
+func verifyConfigControlPlanePhase5(tx *gorm.DB) error {
+	if err := verifyConfigControlPlanePhase4(tx); err != nil {
+		return err
+	}
+	if !tx.Migrator().HasColumn(&providerModelRow{}, "CachedInputPricePerMillionUSD") {
+		return fmt.Errorf("required control-plane column router_config_provider_models.cached_input_price_per_million_usd is missing")
+	}
+	return nil
+}
+
 func verifyConfigControlPlaneProviderHeaderCIIndexSQLite(tx *gorm.DB) error {
 	var unique int
 	if err := tx.Raw(`SELECT "unique" FROM pragma_index_list('router_config_provider_headers') WHERE name = ?`, configControlPlaneProviderHeaderNameCIIndex).Row().Scan(&unique); err != nil {
@@ -1259,16 +1305,17 @@ type providerHeaderRow struct {
 func (providerHeaderRow) TableName() string { return "router_config_provider_headers" }
 
 type providerModelRow struct {
-	ModelRef                 string  `gorm:"column:model_ref"`
-	Model                    string  `gorm:"column:model"`
-	Dialect                  string  `gorm:"column:dialect"`
-	DisplayName              string  `gorm:"column:display_name"`
-	ContextTokens            int     `gorm:"column:context_tokens"`
-	InputPricePerMillionUSD  float64 `gorm:"column:input_price_per_million_usd"`
-	OutputPricePerMillionUSD float64 `gorm:"column:output_price_per_million_usd"`
-	PricingSource            string  `gorm:"column:pricing_source"`
-	PricingUpdatedAt         string  `gorm:"column:pricing_updated_at"`
-	PricingNotes             string  `gorm:"column:pricing_notes"`
+	ModelRef                      string   `gorm:"column:model_ref"`
+	Model                         string   `gorm:"column:model"`
+	Dialect                       string   `gorm:"column:dialect"`
+	DisplayName                   string   `gorm:"column:display_name"`
+	ContextTokens                 int      `gorm:"column:context_tokens"`
+	InputPricePerMillionUSD       float64  `gorm:"column:input_price_per_million_usd"`
+	OutputPricePerMillionUSD      float64  `gorm:"column:output_price_per_million_usd"`
+	CachedInputPricePerMillionUSD *float64 `gorm:"column:cached_input_price_per_million_usd"`
+	PricingSource                 string   `gorm:"column:pricing_source"`
+	PricingUpdatedAt              string   `gorm:"column:pricing_updated_at"`
+	PricingNotes                  string   `gorm:"column:pricing_notes"`
 }
 
 func (providerModelRow) TableName() string { return "router_config_provider_models" }

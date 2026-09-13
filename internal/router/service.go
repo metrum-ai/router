@@ -1103,6 +1103,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	rc.rec.InputPricePerMillionUSD = dec.Target.InputPricePerMillionUSD
 	rc.rec.OutputPricePerMillionUSD = dec.Target.OutputPricePerMillionUSD
+	rc.rec.CachedInputPricePerMillionUSD = dec.Target.CachedInputPricePerMillionUSD
 	rc.rec.ImageInputPricePerMillionTokensUSD = dec.Target.ImageInputPricePerMillionTokensUSD
 	rc.rec.ImageInputPricePerImageUSD = dec.Target.ImageInputPricePerImageUSD
 	rc.rec.PricingSource = dec.Target.PricingSource
@@ -1134,6 +1135,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			s.recordCacheReasonTelemetry(rc, "hit", "cache-hit", dec.Target)
 			rc.rec.Status = http.StatusOK
 			rc.rec.Usage = cached.Usage
+			// Router response-cache hits are not upstream prompt-cache evidence for this request.
+			rc.rec.Usage.CachedInputTokens = nil
 			rc.trace("cache_hit", "", dec.Target, 0, http.StatusOK, "", false, 0)
 			s.writeIR(w, dialect, cached, req.Stream, rc)
 			s.finish(rc, http.StatusOK, nil)
@@ -1462,6 +1465,7 @@ func (s *Service) applyServingTargetRecord(rc *requestContext, served Target) {
 	}
 	rc.rec.InputPricePerMillionUSD = served.InputPricePerMillionUSD
 	rc.rec.OutputPricePerMillionUSD = served.OutputPricePerMillionUSD
+	rc.rec.CachedInputPricePerMillionUSD = served.CachedInputPricePerMillionUSD
 	rc.rec.ImageInputPricePerMillionTokensUSD = served.ImageInputPricePerMillionTokensUSD
 	rc.rec.ImageInputPricePerImageUSD = served.ImageInputPricePerImageUSD
 	rc.rec.PricingSource = served.PricingSource
@@ -3436,13 +3440,26 @@ func populateCosts(rec *logRecord) {
 		rec.Warnings = appendWarning(rec.Warnings, "missing-image-token-pricing-metadata")
 	}
 	imageUnitCost := float64(rec.InputImageCount) * rec.ImageInputPricePerImageUSD
-	rec.InputCostUSD = roundUSD(float64(textInputTokens) * rec.InputPricePerMillionUSD / 1_000_000)
+	rec.InputCostUSD = roundUSD(textInputCostUSD(textInputTokens, rec.InputPricePerMillionUSD, rec.Usage.CachedInputTokens, rec.CachedInputPricePerMillionUSD))
 	rec.ImageCostUSD = roundUSD(imageTokenCost + imageUnitCost)
 	rec.OutputCostUSD = roundUSD(float64(rec.Usage.OutputTokens) * rec.OutputPricePerMillionUSD / 1_000_000)
 	rec.TotalCostUSD = roundUSD(rec.InputCostUSD + rec.ImageCostUSD + rec.OutputCostUSD)
 	if rec.InputHasImage && rec.ImageInputPricePerImageUSD == 0 && rec.ImageInputPricePerMillionTokensUSD == 0 && rec.Usage.InputImageTokens == 0 && rec.UpstreamReportedTotalCostUSD == 0 {
 		rec.Warnings = appendWarning(rec.Warnings, "missing-image-pricing-metadata")
 	}
+}
+
+// textInputCostUSD applies cached-input pricing only when both the cached count and
+// cached price are known and the count is a valid partition of applicable input.
+func textInputCostUSD(textInputTokens int, inputPrice float64, cachedTokens *int, cachedPrice *float64) float64 {
+	if cachedTokens != nil && cachedPrice != nil {
+		cached := *cachedTokens
+		if cached >= 0 && cached <= textInputTokens {
+			uncached := textInputTokens - cached
+			return float64(uncached)*inputPrice/1_000_000 + float64(cached)*(*cachedPrice)/1_000_000
+		}
+	}
+	return float64(textInputTokens) * inputPrice / 1_000_000
 }
 
 func appendWarning(warnings []string, warning string) []string {

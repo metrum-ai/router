@@ -307,6 +307,8 @@ type ProviderModel struct {
 	ContextTokens                      int                   `yaml:"context_tokens" json:"contextTokens,omitempty"`
 	InputPricePerMillionUSD            float64               `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
 	OutputPricePerMillionUSD           float64               `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	// CachedInputPricePerMillionUSD is nil when unknown; a non-nil zero means known free cache reads.
+	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
 	ImageInputPricePerImageUSD         float64               `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
 	PricingSource                      string                `yaml:"pricing_source" json:"pricingSource,omitempty"`
@@ -679,6 +681,8 @@ type Target struct {
 	Cost                               int                   `yaml:"cost" json:"cost"`
 	InputPricePerMillionUSD            float64               `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
 	OutputPricePerMillionUSD           float64               `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	// CachedInputPricePerMillionUSD is nil when unknown/inherit; a non-nil zero means known free cache reads.
+	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
 	ImageInputPricePerImageUSD         float64               `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
 	PricingSource                      string                `yaml:"pricing_source" json:"pricingSource,omitempty"`
@@ -1196,6 +1200,9 @@ func (c *Config) Validate() error {
 			if model.OutputPricePerMillionUSD < 0 {
 				return fmt.Errorf("provider %s model %s has negative output_price_per_million_usd", name, ref)
 			}
+			if model.CachedInputPricePerMillionUSD != nil && *model.CachedInputPricePerMillionUSD < 0 {
+				return fmt.Errorf("provider %s model %s has negative cached_input_price_per_million_usd", name, ref)
+			}
 			if model.ImageInputPricePerMillionTokensUSD < 0 {
 				return fmt.Errorf("provider %s model %s has negative image_input_price_per_million_tokens_usd", name, ref)
 			}
@@ -1371,6 +1378,9 @@ func (c *Config) Validate() error {
 			}
 			if resolved.OutputPricePerMillionUSD < 0 {
 				return fmt.Errorf("model group %s target %s has negative output_price_per_million_usd", name, resolved.Model)
+			}
+			if resolved.CachedInputPricePerMillionUSD != nil && *resolved.CachedInputPricePerMillionUSD < 0 {
+				return fmt.Errorf("model group %s target %s has negative cached_input_price_per_million_usd", name, resolved.Model)
 			}
 			if resolved.ImageInputPricePerMillionTokensUSD < 0 {
 				return fmt.Errorf("model group %s target %s has negative image_input_price_per_million_tokens_usd", name, resolved.Model)
@@ -2562,6 +2572,9 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	}
 	if target.OutputPricePerMillionUSD == 0 {
 		target.OutputPricePerMillionUSD = catalog.OutputPricePerMillionUSD
+	}
+	if target.CachedInputPricePerMillionUSD == nil {
+		target.CachedInputPricePerMillionUSD = catalog.CachedInputPricePerMillionUSD
 	}
 	if target.ImageInputPricePerMillionTokensUSD == 0 {
 		target.ImageInputPricePerMillionTokensUSD = catalog.ImageInputPricePerMillionTokensUSD

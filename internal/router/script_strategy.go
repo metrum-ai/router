@@ -70,6 +70,7 @@ type scriptTarget struct {
 	Cost                               int                     `json:"cost,omitempty"`
 	InputPricePerMillionUSD            float64                 `json:"inputPricePerMillionUsd,omitempty"`
 	OutputPricePerMillionUSD           float64                 `json:"outputPricePerMillionUsd,omitempty"`
+	CachedInputPricePerMillionUSD      *float64                `json:"cachedInputPricePerMillionUsd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64                 `json:"imageInputPricePerMillionTokensUsd,omitempty"`
 	ImageInputPricePerImageUSD         float64                 `json:"imageInputPricePerImageUsd,omitempty"`
 	PricingSource                      string                  `json:"pricingSource,omitempty"`
@@ -436,6 +437,7 @@ func buildScriptTargets(targets []Target, providers map[string]ProviderConfig) [
 			Cost:                               target.Cost,
 			InputPricePerMillionUSD:            target.InputPricePerMillionUSD,
 			OutputPricePerMillionUSD:           target.OutputPricePerMillionUSD,
+			CachedInputPricePerMillionUSD:      target.CachedInputPricePerMillionUSD,
 			ImageInputPricePerMillionTokensUSD: target.ImageInputPricePerMillionTokensUSD,
 			ImageInputPricePerImageUSD:         target.ImageInputPricePerImageUSD,
 			PricingSource:                      target.PricingSource,

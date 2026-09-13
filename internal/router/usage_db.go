@@ -293,6 +293,7 @@ type usageRow struct {
 	OutputTokens                       int
 	TotalTokens                        int
 	ReasoningTokens                    *int
+	CachedInputTokens                  *int
 	ReasoningAttemptCount              int
 	ReasoningSuccessfulAttemptCount    int
 	ReasoningReportedAttemptCount      int
@@ -312,6 +313,7 @@ type usageRow struct {
 	TargetValidationAgeBucket          string
 	InputPricePerMillionUSD            float64
 	OutputPricePerMillionUSD           float64
+	CachedInputPricePerMillionUSD      *float64
 	ImageInputPricePerMillionTokensUSD float64
 	ImageInputPricePerImageUSD         float64
 	InputCostUSD                       float64
@@ -447,6 +449,7 @@ type usageRecord struct {
 	OutputTokens                       int                                `gorm:"column:output_tokens;not null"`
 	TotalTokens                        int                                `gorm:"column:total_tokens;not null"`
 	ReasoningTokens                    *int                               `gorm:"column:reasoning_tokens"`
+	CachedInputTokens                  *int                               `gorm:"column:cached_input_tokens"`
 	ReasoningAttemptCount              int                                `gorm:"column:reasoning_attempt_count;not null;default:0"`
 	ReasoningSuccessfulAttemptCount    int                                `gorm:"column:reasoning_successful_attempt_count;not null;default:0"`
 	ReasoningReportedAttemptCount      int                                `gorm:"column:reasoning_reported_attempt_count;not null;default:0"`
@@ -466,6 +469,7 @@ type usageRecord struct {
 	TargetValidationAgeBucket          string                             `gorm:"column:target_validation_age_bucket;type:text;not null;default:'';index:idx_request_usage_validation_age"`
 	InputPricePerMillionUSD            float64                            `gorm:"column:input_price_per_million_usd;not null;default:0"`
 	OutputPricePerMillionUSD           float64                            `gorm:"column:output_price_per_million_usd;not null;default:0"`
+	CachedInputPricePerMillionUSD      *float64                           `gorm:"column:cached_input_price_per_million_usd"`
 	ImageInputPricePerMillionTokensUSD float64                            `gorm:"column:image_input_price_per_million_tokens_usd;not null;default:0"`
 	ImageInputPricePerImageUSD         float64                            `gorm:"column:image_input_price_per_image_usd;not null;default:0"`
 	InputCostUSD                       float64                            `gorm:"column:input_cost_usd;not null;default:0"`
@@ -1590,6 +1594,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyUsageCachedInputPricingMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1755,6 +1763,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 	for _, laterColumns := range []map[string]map[string]struct{}{
 		usageReasoningTelemetryColumns,
 		usageTargetRegionDiagnosticsColumns,
+		usageCachedInputPricingColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2530,6 +2539,13 @@ var usageTargetRegionDiagnosticsColumns = map[string]map[string]struct{}{
 	"request_usage": {"target_region": {}},
 }
 
+var usageCachedInputPricingColumns = map[string]map[string]struct{}{
+	"request_usage": {
+		"cached_input_tokens":               {},
+		"cached_input_price_per_million_usd": {},
+	},
+}
+
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
 	merged := map[string]map[string]struct{}{}
 	for _, group := range groups {
@@ -2550,6 +2566,7 @@ func verifyUsageLegacyBaseline(db *gorm.DB) error {
 		usageReasoningTelemetryColumns,
 		usageContentCaptureEncryptionColumns,
 		usageTargetRegionDiagnosticsColumns,
+		usageCachedInputPricingColumns,
 	))
 }
 
@@ -2577,6 +2594,7 @@ func verifyUsageReasoningTelemetryMigration(db *gorm.DB) error {
 	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns(
 		usageContentCaptureEncryptionColumns,
 		usageTargetRegionDiagnosticsColumns,
+		usageCachedInputPricingColumns,
 	))
 }
 
@@ -2602,7 +2620,10 @@ func applyUsageContentCaptureEncryptionMigration(db *gorm.DB) error {
 }
 
 func verifyUsageContentCaptureEncryptionMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchemaExcept(db, usageTargetRegionDiagnosticsColumns)
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns(
+		usageTargetRegionDiagnosticsColumns,
+		usageCachedInputPricingColumns,
+	))
 }
 
 func applyUsageTargetRegionDiagnosticsMigration(db *gorm.DB) error {
@@ -2615,6 +2636,27 @@ func applyUsageTargetRegionDiagnosticsMigration(db *gorm.DB) error {
 }
 
 func verifyUsageTargetRegionDiagnosticsMigration(db *gorm.DB) error {
+	return ensureUsageRelationalSchemaExcept(db, usageCachedInputPricingColumns)
+}
+
+func applyUsageCachedInputPricingMigration(db *gorm.DB) error {
+	for _, column := range []struct {
+		model any
+		field string
+	}{
+		{&usageRecord{}, "CachedInputTokens"},
+		{&usageRecord{}, "CachedInputPricePerMillionUSD"},
+	} {
+		if !db.Migrator().HasColumn(column.model, column.field) {
+			if err := db.Migrator().AddColumn(column.model, column.field); err != nil {
+				return fmt.Errorf("add cached-input pricing column %s: %w", column.field, err)
+			}
+		}
+	}
+	return verifyUsageCachedInputPricingMigration(db)
+}
+
+func verifyUsageCachedInputPricingMigration(db *gorm.DB) error {
 	return ensureUsageRelationalSchema(db)
 }
 
@@ -3158,6 +3200,7 @@ func rowFromRecord(rec logRecord) usageRow {
 		OutputTokens:                       rec.Usage.OutputTokens,
 		TotalTokens:                        rec.Usage.TotalTokens,
 		ReasoningTokens:                    reasoningTokens,
+		CachedInputTokens:                  rec.Usage.CachedInputTokens,
 		ReasoningAttemptCount:              reasoningAttempts,
 		ReasoningSuccessfulAttemptCount:    reasoningSuccesses,
 		ReasoningReportedAttemptCount:      reasoningReported,
@@ -3177,6 +3220,7 @@ func rowFromRecord(rec logRecord) usageRow {
 		TargetValidationAgeBucket:          rec.TargetValidationAgeBucket,
 		InputPricePerMillionUSD:            rec.InputPricePerMillionUSD,
 		OutputPricePerMillionUSD:           rec.OutputPricePerMillionUSD,
+		CachedInputPricePerMillionUSD:      rec.CachedInputPricePerMillionUSD,
 		ImageInputPricePerMillionTokensUSD: rec.ImageInputPricePerMillionTokensUSD,
 		ImageInputPricePerImageUSD:         rec.ImageInputPricePerImageUSD,
 		InputCostUSD:                       rec.InputCostUSD,
@@ -3281,6 +3325,7 @@ func recordFromRow(row usageRow) *usageRecord {
 		OutputTokens:                       row.OutputTokens,
 		TotalTokens:                        row.TotalTokens,
 		ReasoningTokens:                    row.ReasoningTokens,
+		CachedInputTokens:                  row.CachedInputTokens,
 		ReasoningAttemptCount:              row.ReasoningAttemptCount,
 		ReasoningSuccessfulAttemptCount:    row.ReasoningSuccessfulAttemptCount,
 		ReasoningReportedAttemptCount:      row.ReasoningReportedAttemptCount,
@@ -3300,6 +3345,7 @@ func recordFromRow(row usageRow) *usageRecord {
 		TargetValidationAgeBucket:          row.TargetValidationAgeBucket,
 		InputPricePerMillionUSD:            row.InputPricePerMillionUSD,
 		OutputPricePerMillionUSD:           row.OutputPricePerMillionUSD,
+		CachedInputPricePerMillionUSD:      row.CachedInputPricePerMillionUSD,
 		ImageInputPricePerMillionTokensUSD: row.ImageInputPricePerMillionTokensUSD,
 		ImageInputPricePerImageUSD:         row.ImageInputPricePerImageUSD,
 		InputCostUSD:                       row.InputCostUSD,
@@ -3385,6 +3431,7 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		OutputTokens:                       record.OutputTokens,
 		TotalTokens:                        record.TotalTokens,
 		ReasoningTokens:                    record.ReasoningTokens,
+		CachedInputTokens:                  record.CachedInputTokens,
 		ReasoningAttemptCount:              record.ReasoningAttemptCount,
 		ReasoningSuccessfulAttemptCount:    record.ReasoningSuccessfulAttemptCount,
 		ReasoningReportedAttemptCount:      record.ReasoningReportedAttemptCount,
@@ -3404,6 +3451,7 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		TargetValidationAgeBucket:          record.TargetValidationAgeBucket,
 		InputPricePerMillionUSD:            record.InputPricePerMillionUSD,
 		OutputPricePerMillionUSD:           record.OutputPricePerMillionUSD,
+		CachedInputPricePerMillionUSD:      record.CachedInputPricePerMillionUSD,
 		ImageInputPricePerMillionTokensUSD: record.ImageInputPricePerMillionTokensUSD,
 		ImageInputPricePerImageUSD:         record.ImageInputPricePerImageUSD,
 		InputCostUSD:                       record.InputCostUSD,

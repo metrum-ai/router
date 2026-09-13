@@ -81,6 +81,14 @@ transactional, online, bounded, has no data job, and is `restore-required` for
 package rollback. Existing rows remain empty; new requests record only the
 deployment-defined region of the target that actually served the request.
 
+The cached-input pricing increment adds usage migration `2026091301`
+(`usage`, schema version 5). It adds nullable
+`request_usage.cached_input_tokens` and
+`request_usage.cached_input_price_per_million_usd`. The migration is
+transactional, online, bounded, has no data job, and is `restore-required` for
+package rollback. Historical rows keep null cache evidence rather than inventing
+prompt-cache savings.
+
 ```sh
 router-migrate --driver=sqlite --db=/app/state/usage.sqlite --action=verify-serving --json
 router-migrate --driver=sqlite --db=/app/state/usage.sqlite --action=status
