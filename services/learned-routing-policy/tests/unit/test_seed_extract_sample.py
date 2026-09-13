@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+from seed_fixtures import multi_session_pool, sample_trajectory_row
+
 from lrp.features import session_split
 from lrp.seed.extract import extract_teacher_forced_turns
 from lrp.seed.sample import stratified_sample
-from seed_fixtures import multi_session_pool, sample_trajectory_row
 
 
 def test_teacher_forced_extraction_keeps_reference_separate():
