@@ -1,0 +1,52 @@
+{
+  "$id": "https://metrum.ai/schemas/lrp-routing-benchmark/v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "cells": {
+      "type": "array"
+    },
+    "configuration_d_issue": {
+      "type": "integer"
+    },
+    "issue": {
+      "type": "integer"
+    },
+    "live_runs_executed": {
+      "type": "boolean"
+    },
+    "manifest": {
+      "type": "object"
+    },
+    "promotable": {
+      "type": "boolean"
+    },
+    "public_reporting_rules": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "router_added_latency_source": {
+      "type": "object"
+    },
+    "schema": {
+      "const": "metrum.lrp.routing-benchmark/v1"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "status",
+    "promotable",
+    "live_runs_executed",
+    "issue",
+    "manifest",
+    "cells",
+    "router_added_latency_source"
+  ],
+  "title": "LRP routing benchmark evidence",
+  "type": "object"
+}

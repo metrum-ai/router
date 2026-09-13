@@ -1,0 +1,44 @@
+{
+  "bundle_fingerprint": "UNVERIFIED",
+  "configuration_d": {
+    "issue": 162,
+    "status": "deferred"
+  },
+  "external_policy_timeout_ms": 500,
+  "harbor_concurrency": [
+    1,
+    4,
+    16
+  ],
+  "harbor_task_revision": "pin-record-at-run-time",
+  "harbor_task_set": "aider/polyglot_python_two-bucket",
+  "instance_types": {},
+  "live_runs_executed": false,
+  "max_decision_ms": null,
+  "max_decision_ms_definition": "Report sidecar deadline_ms as max_decision_ms when both are set; also record external_policy.timeout_ms.",
+  "notes": "Harness-only artifact. No live or paid benchmark executed in issue #159 PR.",
+  "router_added_latency_source": {
+    "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+    "duration_field": "duration_ms",
+    "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+    "metric": "router_added_latency_ms",
+    "receive_event": "router_receive",
+    "receive_lines": "1318-1352",
+    "source_file": "internal/router/service.go",
+    "wrote_request_event": "router_upstream_wrote_request",
+    "wrote_request_lines": "2209-2230"
+  },
+  "router_commit": "UNVERIFIED",
+  "runs_per_cell": 3,
+  "schema": "metrum.lrp.routing-benchmark/v1",
+  "seed_concurrency": [
+    1,
+    8,
+    32,
+    128
+  ],
+  "sidecar_commit": "UNVERIFIED",
+  "sidecar_deadline_ms": 200,
+  "vllm_version": null,
+  "warmup": "Documented warm-up; steady-state windows only."
+}

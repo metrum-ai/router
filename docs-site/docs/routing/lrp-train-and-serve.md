@@ -153,3 +153,7 @@ the 15 ms / 40 ms stage budgets.
 Provider-backed collection, ~2,000 labeled requests, 24-hour staging shadow,
 and 7-day staging enforce remain **independent** before broad promotion. See the
 [case study](../evaluation/learned-routing-case-study).
+
+The issue #159 routing-benchmark harness publishes schema and empty evidence
+under the operator evidence tree. It does not claim live A/B/C overhead or USD
+results. Configuration D (GPU LRP) is tracked in issue #162.
