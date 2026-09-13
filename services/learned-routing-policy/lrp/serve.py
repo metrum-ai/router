@@ -33,6 +33,7 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
 from pydantic import ValidationError
 
+from lrp.decision_path import DecisionEvidence, compose_decision
 from lrp.policy import (
     Decision,
     Prediction,
@@ -43,13 +44,13 @@ from lrp.policy import (
     safe_label,
 )
 from lrp.schemas import FeedbackPayload, Payload, ServiceConfig, TargetKey
-from lrp.thompson import (
-    cold_start_exploration_only,
-    decide_with_exploration,
-    inject_cold_start_predictions,
-    parse_cold_start_targets,
+from lrp.thompson import inject_cold_start_predictions, parse_cold_start_targets
+from lrp.uncertainty import (
+    BundleEnsemble,
+    UncertaintyAvailability,
+    UncertaintyEstimate,
+    load_bundle_ensemble,
 )
-from lrp.uncertainty import BundleEnsemble, apply_abstention, load_bundle_ensemble
 
 LOG = logging.getLogger("lrp")
 MAX_BODY = 2 * 1024 * 1024
@@ -231,11 +232,16 @@ class Runtime:
         bundle: Bundle | None,
         auth: str,
         bundle_path: Path | None = None,
+        *,
+        require_signed: bool = False,
+        trusted_keys: Path | None = None,
     ) -> None:
         if not auth or auth.strip() != auth or "\n" in auth or "\r" in auth:
             raise ValueError("LRP_POLICY_AUTH_HEADER must contain a nonempty header value")
         self.auth = auth.encode()
         self.config, self.bundle, self.bundle_path = config, bundle, bundle_path
+        self.require_signed = require_signed
+        self.trusted_keys = trusted_keys
         self.ensemble: BundleEnsemble = BundleEnsemble({})
         self.pins = Pins(config.max_pins)
         self.latency_ledger = LatencyLedger()
@@ -267,17 +273,29 @@ class Runtime:
         )
         self.info = Gauge("lrp_bundle_info", "Loaded bundle", ["version"], registry=self.registry)
         self._set_version()
-        self._reload_ensemble()
+        self._load_ensemble_into(self)
 
-    def _reload_ensemble(self) -> None:
-        if self.bundle is None or self.bundle_path is None:
-            self.ensemble = BundleEnsemble({})
-            return
+    def requires_uncertainty_evidence(self) -> bool:
+        return any(
+            group.uncertainty_abstention or group.exploration_strategy == "thompson"
+            for group in self.config.groups.values()
+        )
+
+    def _load_ensemble(self, bundle: Bundle, bundle_path: Path | None) -> BundleEnsemble:
+        if bundle_path is None:
+            return BundleEnsemble({})
         try:
-            self.ensemble = load_bundle_ensemble(self.bundle_path, self.bundle.manifest)
-        except Exception:  # noqa: BLE001 - ensemble is optional Wave-2 enrichment
-            LOG.warning("ensemble load skipped")
-            self.ensemble = BundleEnsemble({})
+            return load_bundle_ensemble(bundle_path, bundle.manifest)
+        except Exception:  # noqa: BLE001 - surface as empty; callers decide fail-closed
+            LOG.warning("ensemble load failed")
+            return BundleEnsemble({})
+
+    @staticmethod
+    def _load_ensemble_into(runtime: Runtime) -> None:
+        if runtime.bundle is None:
+            runtime.ensemble = BundleEnsemble({})
+            return
+        runtime.ensemble = runtime._load_ensemble(runtime.bundle, runtime.bundle_path)
 
     def _set_version(self) -> None:
         self.info.clear()
@@ -290,42 +308,99 @@ class Runtime:
         if self.bundle_path is None:
             raise ValueError("bundle path unavailable")
         with self.reload_lock:
-            candidate = load_bundle(self.bundle_path, threads=1)
+            previous_bundle = self.bundle
+            previous_ensemble = self.ensemble
+            candidate = load_bundle(
+                self.bundle_path,
+                threads=1,
+                require_signed=self.require_signed,
+                trusted_keys=self.trusted_keys,
+            )
+            ensemble = self._load_ensemble(candidate, self.bundle_path)
+            if self.requires_uncertainty_evidence() and ensemble.empty:
+                # Keep the last valid complete snapshot; do not publish a partial reload.
+                self.bundle = previous_bundle
+                self.ensemble = previous_ensemble
+                raise ValueError("ensemble_required")
             self.bundle = candidate
+            self.ensemble = ensemble
             self._set_version()
-            self._reload_ensemble()
 
     async def infer(
-        self, bundle: Bundle, payload: Payload, remaining: float, explain: bool = False
+        self,
+        bundle: Bundle,
+        payload: Payload,
+        remaining: float,
+        *,
+        explain: bool = False,
+        need_uncertainty: bool = False,
     ) -> tuple[
-        Mapping[TargetKey, Prediction], str | None, Mapping[TargetKey, list[dict[str, Any]]]
+        Mapping[TargetKey, Prediction],
+        str | None,
+        Mapping[TargetKey, list[dict[str, Any]]],
+        dict[TargetKey, UncertaintyEstimate],
+        UncertaintyAvailability,
     ]:
+        """Build features once; run predict, ensemble, and explain under one deadline."""
+        unavailable = (
+            UncertaintyAvailability.UNAVAILABLE
+            if need_uncertainty
+            else UncertaintyAvailability.DISABLED
+        )
         if remaining <= 0 or not self.admission.acquire(blocking=False):
-            return bundle.bt_predictions(), "latency", {}
+            return bundle.bt_predictions(), "latency", {}, {}, unavailable
+
+        ensemble = self.ensemble
 
         def run() -> tuple[
-            Mapping[TargetKey, Prediction], Mapping[TargetKey, list[dict[str, Any]]]
+            Mapping[TargetKey, Prediction],
+            Mapping[TargetKey, list[dict[str, Any]]],
+            dict[TargetKey, UncertaintyEstimate],
+            UncertaintyAvailability,
         ]:
             try:
                 vector = bundle.build(payload.model_dump(by_alias=True))
                 keys = [target.key for target in payload.targets]
-                return bundle.predict(vector, keys), bundle.explain(vector, keys) if explain else {}
+                predictions = bundle.predict(vector, keys)
+                contributions = bundle.explain(vector, keys) if explain else {}
+                estimates: dict[TargetKey, UncertaintyEstimate] = {}
+                availability = UncertaintyAvailability.DISABLED
+                if need_uncertainty:
+                    if ensemble.empty:
+                        availability = UncertaintyAvailability.UNAVAILABLE
+                    else:
+                        try:
+                            estimates = ensemble.estimates_for(vector, keys)
+                            if not estimates:
+                                availability = UncertaintyAvailability.UNAVAILABLE
+                            elif any(
+                                estimate.n_members < 2 for estimate in estimates.values()
+                            ):
+                                availability = UncertaintyAvailability.INSUFFICIENT
+                            else:
+                                availability = UncertaintyAvailability.AVAILABLE
+                        except Exception:  # noqa: BLE001 - never expose model internals
+                            estimates = {}
+                            availability = UncertaintyAvailability.UNAVAILABLE
+                return predictions, contributions, estimates, availability
             finally:
                 self.admission.release()
 
-        # A timed-out computation cannot create an unbounded queue: its admission
-        # slot stays occupied until it finishes. Subsequent requests use BT immediately.
+        # Timed-out work keeps its admission slot until native compute finishes.
+        # Do not start a second build/ensemble after timeout or admission rejection.
         future = asyncio.wrap_future(self.pool.submit(run))
         try:
-            predictions, contributions = await asyncio.wait_for(asyncio.shield(future), remaining)
-            return predictions, None, contributions
+            predictions, contributions, estimates, availability = await asyncio.wait_for(
+                asyncio.shield(future), remaining
+            )
+            return predictions, None, contributions, estimates, availability
         except TimeoutError:
             future.add_done_callback(
                 lambda done: done.exception() if not done.cancelled() else None
             )
-            return bundle.bt_predictions(), "latency", {}
+            return bundle.bt_predictions(), "latency", {}, {}, unavailable
         except Exception:  # noqa: BLE001 - inference failure degrades without exposing content
-            return bundle.bt_predictions(), "embedding", {}
+            return bundle.bt_predictions(), "embedding", {}, {}, unavailable
 
 
 def create_apps(
@@ -335,8 +410,17 @@ def create_apps(
     auth: str,
     enable_admin: bool = False,
     bundle_path: Path | None = None,
+    require_signed: bool = False,
+    trusted_keys: Path | None = None,
 ) -> tuple[FastAPI, FastAPI, Runtime]:
-    runtime = Runtime(config, bundle, auth, bundle_path)
+    runtime = Runtime(
+        config,
+        bundle,
+        auth,
+        bundle_path,
+        require_signed=require_signed,
+        trusted_keys=trusted_keys,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -388,11 +472,17 @@ def create_apps(
                     0, tuple(range(1, len(payload.targets))), "lrp:image-passthrough"
                 )
             else:
-                predictions, degradation, contributions = await runtime.infer(
-                    current,
-                    payload,
-                    config.deadline_ms / 1000 - (time.monotonic() - started),
-                    explain,
+                need_uncertainty = (
+                    cfg.uncertainty_abstention or cfg.exploration_strategy == "thompson"
+                )
+                predictions, degradation, contributions, estimates, availability = (
+                    await runtime.infer(
+                        current,
+                        payload,
+                        config.deadline_ms / 1000 - (time.monotonic() - started),
+                        explain=explain,
+                        need_uncertainty=need_uncertainty,
+                    )
                 )
                 entries = current.manifest.get("targets", [])
                 trained = {
@@ -410,16 +500,6 @@ def create_apps(
                         if not cold or not cfg.cold_start_exploration:
                             runtime.degraded.labels("undertrained").inc()
                             return JSONResponse({"error": "no_trained_target"}, status_code=503)
-                estimates: dict[TargetKey, Any] = {}
-                if cfg.uncertainty_abstention or cfg.exploration_strategy == "thompson":
-                    try:
-                        feature_vector = current.build(payload.model_dump(by_alias=True))
-                        estimates = runtime.ensemble.estimates_for(
-                            feature_vector,
-                            [target.key for target in payload.targets],
-                        )
-                    except Exception:  # noqa: BLE001 - uncertainty is best-effort
-                        estimates = {}
                 cold_starts = parse_cold_start_targets(current.manifest)
                 if cfg.cold_start_exploration and cold_starts:
                     predictions, cold_estimates = inject_cold_start_predictions(
@@ -430,6 +510,11 @@ def create_apps(
                         trained_keys=trained if entries else set(),
                     )
                     estimates = {**estimates, **cold_estimates}
+                    if cold_estimates and availability in (
+                        UncertaintyAvailability.UNAVAILABLE,
+                        UncertaintyAvailability.DISABLED,
+                    ):
+                        availability = UncertaintyAvailability.AVAILABLE
                 for target in payload.targets:
                     if target.key not in predictions:
                         identity = hashlib.sha256(json.dumps(target.key).encode()).hexdigest()[:16]
@@ -449,49 +534,32 @@ def create_apps(
                 rng = random.SystemRandom()
                 cold_keys = {c.key for c in cold_starts}
                 input_tokens = float(payload.context.get("estimatedTokens", 0))
-                if (
+                cold_start_only = bool(
                     cfg.cold_start_exploration
                     and cold_keys
                     and any(k in predictions for k in cold_keys)
                     and not any(k in trained for k in predictions)
-                ):
-                    decision = cold_start_exploration_only(
-                        payload.targets,
-                        predictions,
-                        estimates,
-                        cold_keys,
-                        cfg,
-                        rng,
-                        input_tokens=input_tokens,
-                        pin=pin,
-                        exploration_allowed=exploration_allowed,
-                        project=payload.caller.project,
-                        latency_evidence=latency_map or None,
-                        cache=cache,
-                    )
-                else:
-                    decision = decide_with_exploration(
-                        payload.targets,
-                        predictions,
-                        cfg,
-                        rng,
-                        estimates=estimates,
-                        input_tokens=input_tokens,
-                        pin=pin,
-                        exploration_allowed=exploration_allowed,
-                        strategy=cfg.exploration_strategy,
-                        project=payload.caller.project,
-                        latency_evidence=latency_map or None,
-                        cache=cache,
-                    )
-                # Wave-2 abstention hook (#24).
-                decision = apply_abstention(
-                    decision,
+                )
+                if availability == UncertaintyAvailability.UNAVAILABLE and need_uncertainty:
+                    runtime.degraded.labels("uncertainty_unavailable").inc()
+                decision = compose_decision(
                     payload.targets,
-                    estimates,
-                    anchor=cfg.abstention_anchor,
-                    threshold=cfg.uncertainty_threshold,
-                    enabled=cfg.uncertainty_abstention,
+                    predictions,
+                    cfg,
+                    rng,
+                    DecisionEvidence(
+                        project=payload.caller.project,
+                        input_tokens=input_tokens,
+                        pin=pin,
+                        exploration_allowed=exploration_allowed,
+                        latency_evidence=latency_map or None,
+                        cache=cache,
+                        estimates=estimates,
+                        uncertainty_availability=availability,
+                        strategy=cfg.exploration_strategy,
+                        cold_keys=frozenset(cold_keys),
+                        cold_start_only=cold_start_only,
+                    ),
                 )
                 if degradation:
                     runtime.degraded.labels(degradation).inc()
@@ -603,10 +671,18 @@ def create_apps(
 
     @admin.get("/readyz")
     async def ready() -> Response:
-        return JSONResponse(
-            {"ready": runtime.bundle is not None},
-            status_code=200 if runtime.bundle is not None else 503,
-        )
+        ready_ok = runtime.bundle is not None
+        payload = {
+            "ready": ready_ok,
+            "uncertainty": (
+                "unavailable"
+                if runtime.requires_uncertainty_evidence() and runtime.ensemble.empty
+                else "ok"
+                if runtime.requires_uncertainty_evidence()
+                else "disabled"
+            ),
+        }
+        return JSONResponse(payload, status_code=200 if ready_ok else 503)
 
     @admin.get("/metrics")
     async def metrics() -> Response:
@@ -657,17 +733,26 @@ def serve(
     admin_port: int = 18094,
     enable_admin: bool = False,
     deadline_ms: int | None = None,
+    require_signed: bool = False,
+    trusted_keys: Path | None = None,
 ) -> None:
     from lrp.bundle import load_bundle
 
     settings = load_settings(config, deadline_ms)
-    loaded = load_bundle(bundle, threads=1)
+    loaded = load_bundle(
+        bundle,
+        threads=1,
+        require_signed=require_signed,
+        trusted_keys=trusted_keys,
+    )
     app, admin, runtime = create_apps(
         settings,
         loaded,
         auth=os.environ.get("LRP_POLICY_AUTH_HEADER", ""),
         enable_admin=enable_admin,
         bundle_path=bundle,
+        require_signed=require_signed,
+        trusted_keys=trusted_keys,
     )
     if enable_admin and hasattr(signal, "SIGHUP"):
 

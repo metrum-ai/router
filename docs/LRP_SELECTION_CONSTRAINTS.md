@@ -38,7 +38,11 @@ or tests; author deployment-owned names in operator-protected config.
 
 Authenticated `/explain` returns `floor` (effective), `group_floor`, and
 `project_floor_override`. Use `floor_sweep_values` / offline eval floor sweeps
-to compare default and project overrides before promotion.
+to compare default and project overrides before promotion. Offline `lrp eval`
+carries caller project when present in the feature frame (`caller_project`) so
+per-project floors participate in the same composed decision path as serving.
+If floors are configured but project evidence is absent, evaluation marks
+applicability unsupported and promotion cannot pass for that configuration.
 
 ## Upstream latency constraint
 

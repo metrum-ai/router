@@ -14,10 +14,17 @@ from typing import Any
 import numpy as np
 
 from lrp.bundle import ModelBundle, canonical_json, load_bundle, target_key
+from lrp.decision_path import (
+    DecisionEvidence,
+    compose_decision,
+    evaluation_applicability,
+    static_latency_map,
+)
 from lrp.features import FEATURE_NAMES, as_dict, preflight_file, write_private
-from lrp.policy import Prediction, decide, estimated_cost
+from lrp.policy import Prediction, decide, estimated_cost, resolve_cache_estimate
 from lrp.schemas import GroupConfig, Target, TargetKey
 from lrp.train import feature_frame, index_rows, trusted_judgment
+from lrp.uncertainty import UncertaintyAvailability, load_bundle_ensemble
 
 
 def _finite(value: Any) -> float | None:
@@ -250,6 +257,7 @@ def evaluate(
         preflight_file(destination.with_suffix(".md"))
         preflight_file(destination.with_suffix(".svg"))
     model = load_bundle(bundle) if isinstance(bundle, (str, Path)) else bundle
+    bundle_root: Path | None = Path(bundle) if isinstance(bundle, (str, Path)) else None
     frame = feature_frame(features, int(model.manifest["seed"]))
     if set(frame.embedding_fingerprint) != {model.manifest["embedding_fingerprint"]}:
         raise ValueError("holdout embedding differs from bundle")
@@ -362,6 +370,23 @@ def evaluate(
                 "predictions": predictions,
                 "input_tokens": float(row.estimatedTokens),
                 "missing_fanout": bool(active_keys - set(keys)),
+                "request_id": request_id,
+                "session_key": str(row.session_key) if "session_key" in row.index else "",
+                "project": str(row["caller_project"])
+                if "caller_project" in row.index and row["caller_project"] is not None
+                else "",
+                "cache_context": {
+                    key: row[key]
+                    for key in (
+                        "promptCacheState",
+                        "prompt_cache_state",
+                        "cachedInputTokens",
+                        "cached_input_tokens",
+                        "uncachedInputTokens",
+                        "uncached_input_tokens",
+                    )
+                    if key in row.index
+                },
             }
         )
 
@@ -427,6 +452,7 @@ def evaluate(
     def replay(
         rows: list[dict[str, Any]], cfg: GroupConfig, floor: float
     ) -> dict[str, Any]:
+        # Intentional: offline promotion disables stochastic exploration.
         floor_cfg = cfg.model_copy(update={"quality_floor": floor, "explore_rate": 0.0})
         samples: dict[str, list[dict[str, Any]]] = {
             name: []
@@ -441,6 +467,30 @@ def evaluate(
         }
         random_source = random.Random(seed)
         no_oracle, no_targets, incomplete = 0, 0, 0
+        pin_state: dict[str, TargetKey] = {}
+        static_latency = static_latency_map(cfg)
+        ensemble_estimates_available = False
+        ensemble = None
+        if bundle_root is not None:
+            try:
+                ensemble = load_bundle_ensemble(bundle_root, model.manifest)
+                ensemble_estimates_available = not ensemble.empty
+            except Exception:  # noqa: BLE001 - missing ensemble is recorded as unsupported
+                ensemble = None
+                ensemble_estimates_available = False
+        # In-memory bundles (unit tests) may still declare ensemble files in the
+        # manifest; treat declared ensemble members as available for applicability.
+        if (
+            not ensemble_estimates_available
+            and int(model.manifest.get("ensemble_size") or 0) >= 2
+            and any(
+                isinstance(entry, dict)
+                and isinstance(entry.get("ensemble_quality_files"), list)
+                and len(entry["ensemble_quality_files"]) >= 2
+                for entry in model.manifest.get("targets", [])
+            )
+        ):
+            ensemble_estimates_available = True
         for row in rows:
             targets, outcomes, predictions = (
                 row["targets"],
@@ -485,17 +535,50 @@ def evaluate(
                 for key, prediction in model.bt_predictions().items()
                 if key in trained_predictions
             }
+            project = str(row.get("project") or "")
+            session = str(row.get("session_key") or "")
+            pin = pin_state.get(session) if cfg.pin_ttl_s > 0 and session else None
+            cache = resolve_cache_estimate(row.get("cache_context") or {}, pinned=pin is not None)
+            latency_map = dict(static_latency)
+            if cfg.latency_p95_ms_max is not None:
+                for key, outcome in outcomes.items():
+                    metric = (
+                        outcome.get("ttfb_ms")
+                        if cfg.latency_metric == "ttfb"
+                        else outcome.get("duration_ms")
+                    )
+                    if metric is not None:
+                        latency_map[key] = float(metric)
+            estimates: dict[TargetKey, Any] = {}
+            availability = UncertaintyAvailability.DISABLED
+            if cfg.uncertainty_abstention or cfg.exploration_strategy == "thompson":
+                availability = (
+                    UncertaintyAvailability.AVAILABLE
+                    if ensemble_estimates_available
+                    else UncertaintyAvailability.UNAVAILABLE
+                )
             if any(t.key in trained_predictions for t in targets):
-                selections["lrp"] = targets[
-                    policy(
-                        targets,
-                        trained_predictions,
-                        floor_cfg,
-                        random_source,
-                        input_tokens=row["input_tokens"],
+                decision = compose_decision(
+                    targets,
+                    trained_predictions,
+                    floor_cfg,
+                    random_source,
+                    DecisionEvidence(
+                        project=project,
+                        input_tokens=float(row["input_tokens"]),
+                        pin=pin,
                         exploration_allowed=False,
-                    ).primary
-                ].key
+                        latency_evidence=latency_map or None,
+                        cache=cache,
+                        estimates=estimates,
+                        uncertainty_availability=availability,
+                        strategy=cfg.exploration_strategy,
+                    ),
+                )
+                selections["lrp"] = targets[decision.primary].key
+                if cfg.pin_ttl_s > 0 and session and selections["lrp"] is not None:
+                    pin_state[session] = selections["lrp"]
+                # Keep bt_only on the shared decide path without exploration.
                 selections["bt_only"] = targets[
                     policy(
                         targets,
@@ -504,6 +587,9 @@ def evaluate(
                         random_source,
                         input_tokens=row["input_tokens"],
                         exploration_allowed=False,
+                        project=project,
+                        latency_evidence=latency_map or None,
+                        cache=cache,
                     ).primary
                 ].key
             if targets:
@@ -515,6 +601,7 @@ def evaluate(
                             predictions.get(t.key, Prediction(0, row["input_tokens"])),
                             row["input_tokens"],
                             floor_cfg,
+                            cache=cache,
                         ),
                         t.key,
                     )
@@ -533,6 +620,25 @@ def evaluate(
                 samples[name].append(
                     {**outcomes.get(key, missing), "oracle_cost": oracle_cost}
                 )
+        has_project = any(bool(r.get("project")) for r in rows)
+        has_latency = bool(static_latency) or any(
+            any(
+                o.get("duration_ms") is not None or o.get("ttfb_ms") is not None
+                for o in r["outcomes"].values()
+            )
+            for r in rows
+        )
+        has_cache = any(bool(r.get("cache_context")) for r in rows)
+        has_pin_ordering = any(bool(r.get("session_key")) for r in rows)
+        applicability = evaluation_applicability(
+            cfg,
+            has_project=has_project,
+            has_latency_evidence=has_latency,
+            has_cache_evidence=has_cache,
+            has_pin_ordering=has_pin_ordering,
+            has_uncertainty=ensemble_estimates_available,
+            exploration_mode="disabled",
+        )
         return {
             "baselines": {
                 name: _metrics(values, floor) for name, values in samples.items()
@@ -540,6 +646,7 @@ def evaluate(
             "no_successful_oracle": no_oracle,
             "no_eligible_targets": no_targets,
             "incomplete_requests": incomplete,
+            "applicability": applicability.as_dict(),
         }
 
     groups = {}
@@ -587,6 +694,9 @@ def evaluate(
             "complete_holdout": result["incomplete_requests"] == 0
             and anchor_metrics["quality_observed"] == len(rows),
             "real_data_and_embedding": not synthetic,
+            "evaluation_applicability": bool(
+                result.get("applicability", {}).get("supported", True)
+            ),
         }
         result.update(
             quality_floor=cfg.quality_floor,

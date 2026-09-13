@@ -33,9 +33,12 @@ def test_cli_deadline_override_is_forwarded(monkeypatch):
     seen = {}
     monkeypatch.setattr("lrp.serve.serve", lambda **kwargs: seen.update(kwargs))
     args = parser().parse_args(["serve", "--bundle", "/data/bundle", "--config", "/data/config",
-                                "--deadline-ms", "500"])
+                                "--deadline-ms", "500", "--trust", "/data/trust.json",
+                                "--require-signed"])
     assert execute(args) == 0
     assert seen["deadline_ms"] == 500
+    assert seen["require_signed"] is True
+    assert str(seen["trusted_keys"]).endswith("trust.json")
 
 
 def test_deadline_yaml_override_and_safe_config_input(tmp_path):

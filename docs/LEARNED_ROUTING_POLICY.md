@@ -119,8 +119,14 @@ Inspect all six baselines, per-target coverage/calibration, outcome methods and
 the quality-floor sweep. Compare total stored cost and user-visible performance,
 not just the fraction of requests routed cheaply. A large expensive workload
 can dominate spend even when half of all requests use the cheapest target.
-Failed promotion gates remain failed; synthetic CI success means the pipeline
-and checks ran successfully, not that the learned policy is ready to promote.
+Offline `eval` shares the composed decision path with serving (project floors,
+latency evidence, cache evidence, pins, and abstention). It disables stochastic
+exploration intentionally and records that limit. When a configured behavior
+cannot be evaluated from the supplied data, the report marks
+`evaluation_applicability` unsupported and promotion cannot pass for that
+configuration. Failed promotion gates remain failed; synthetic CI success means
+the pipeline and checks ran successfully, not that the learned policy is ready
+to promote.
 
 ### 5. Load the bundle and explain actual decisions
 
@@ -367,9 +373,12 @@ that a controlled 300 ms inference uses fallback at the default 200 ms and
 completes learned inference with an explicit 900 ms allowance.
 
 The deadline covers service request handling, including body receipt and the
-remaining inference allowance. Larger deadlines do not speed up inference or
-increase the bounded inference worker count. Busy workers can still cause
-immediate BT fallback; timed-out work retains its slot until it finishes.
+remaining inference allowance for primary prediction, ensemble uncertainty, and
+requested explanation work. Feature build runs once per request. Timed-out or
+admission-rejected requests do not start a second embedding or ensemble compute.
+Larger deadlines do not speed up inference or increase the bounded inference
+worker count. Busy workers can still cause immediate BT fallback; timed-out work
+retains its slot until it finishes.
 After changing the deadline, test caller latency, the proportion of ordinary
 learned labels versus `lrp:latency-fallback`, and router policy errors under the
 intended concurrency. Keep body-size, worker and access protections enabled.
@@ -394,8 +403,9 @@ router `/metrics` separately restricted to `metrics_admin` callers.
 
 Optional Ed25519 detached signatures for `manifest.json` are documented in
 [LRP signed bundles](LRP_SIGNED_BUNDLES.md). Use operator-owned keys, a trust
-store for rotation, and `lrp validate --require-signed` when production loaders
-must reject unsigned candidates.
+store for rotation, and pass `--trust` / `--require-signed` to `lrp serve` (and
+`lrp validate`) so startup and every reload entry point enforce the same trust
+policy. A present signature is never skipped silently.
 
 ## Validation, promotion and rollback
 

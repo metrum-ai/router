@@ -252,8 +252,14 @@ collide; pins are disabled initially. Image-bearing requests use first eligible
 order in v1; learned image-quality selection requires separate future validation.
 
 Missing request content uses first eligible order with a degraded diagnostic.
-Deadline or embedding failure uses strength-based fallback. If no bundle target
-is known, the service uses first eligible order and records that condition.
+Deadline or embedding failure uses strength-based fallback. Feature build,
+primary prediction, ensemble uncertainty, and requested explanation share one
+admission slot and remaining deadline. Timed-out requests do not start a second
+embedding or ensemble compute. When uncertainty abstention is enabled and
+ensemble evidence is missing, the service fails closed to the configured anchor
+(or first eligible fallback) with `lrp:uncertain-unavailable` rather than
+treating uncertainty as zero. If no bundle target is known, the service uses
+first eligible order and records that condition.
 Policy failures produce `502 routing-policy-error` when the operator selected
 fail-closed behavior. See [Error Responses](../reference/errors.md).
 
@@ -273,8 +279,14 @@ promotion. Baseline mode bypasses LRP and preserves configured eligible order;
 restoring a prior weighted strategy is a separate configuration rollback.
 
 Operators may optionally require Ed25519-signed model bundles before load or
-reload. Signing is deployment-owned and transparent to callers; see
+reload. Pass the same trust store and `--require-signed` flag to `lrp serve` so
+startup and admin/SIGHUP reload enforce that policy. Signing is deployment-owned
+and transparent to callers; see
 [Operator-signed LRP bundles](lrp-signed-bundles.md).
+Held-out evaluation shares the composed decision path with serving. When
+configured project floors, latency gates, pins, or abstention cannot be
+validated from the supplied evidence, promotion reports mark that configuration
+unsupported rather than silently passing.
 
 Optional selection constraints (project floors, upstream latency gates,
 evidence-based cache estimates, and bounded labels) are described for callers in

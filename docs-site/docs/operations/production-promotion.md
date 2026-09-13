@@ -18,7 +18,10 @@ promotion command. Login, SSO, MFA bootstrap, and profile selection are
 prerequisites, not steps in these docs.
 
 Before a promotion, confirm that the intended model groups meet their quality,
-cost, latency, tool, modality, and API-compatibility criteria. Start with a
+cost, latency, tool, modality, and API-compatibility criteria. For Learned
+Routing Policy bundles, also confirm held-out evaluation applicability for any
+configured project floors, latency gates, pins, or uncertainty abstention, and
+that signed-bundle trust settings used at serve match validation. Start with a
 small approved caller or traffic scope, observe readiness, safe error and
 fallback rates, latency, usage persistence, quota behavior, and caller
 acceptance, then expand only when the recorded gates pass.
