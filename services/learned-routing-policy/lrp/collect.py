@@ -367,6 +367,16 @@ def _validate_request(row: dict[str, Any]) -> None:
             )
     verifier = row.get("verifier", {"kind": "none"})
     _fields(verifier, {"kind", "spec", "version"})
+    extras = row.get("provider_request_fields", {})
+    if extras:
+        if not isinstance(extras, dict):
+            raise DataError("invalid_provider_request_fields")
+        for provider, fields in extras.items():
+            if not isinstance(provider, str) or not provider or not isinstance(fields, dict):
+                raise DataError("invalid_provider_request_fields")
+            for key in fields:
+                if not isinstance(key, str) or not key:
+                    raise DataError("invalid_provider_request_fields")
     # Structural request-row checks; semantic allowlists live in lrp.judge.contracts.
     from .judge.contracts import ALLOWED_PLUGIN_IDS, structural_spec_keys
 

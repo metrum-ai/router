@@ -377,6 +377,15 @@ async def run_fanout(
                         for name in ("tools", "response_format"):
                             if row.get(name):
                                 body[name] = row[name]
+                        # Provider-scoped extras (for example OpenAI cache controls)
+                        # must not leak to other providers in a mixed portfolio.
+                        extras = row.get("provider_request_fields")
+                        if isinstance(extras, dict):
+                            scoped = extras.get(target.provider)
+                            if isinstance(scoped, dict):
+                                for key, value in scoped.items():
+                                    if isinstance(key, str) and key not in body:
+                                        body[key] = value
                         start = time.monotonic()
                         for attempt_index in range(retries + 1):
                             for terminal_field in (

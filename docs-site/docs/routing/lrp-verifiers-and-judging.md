@@ -12,6 +12,11 @@ Allowlisted verifier kinds include `exact`, `regex`, `json_schema`, `pytest`,
 `sql_result`, `plugin`, and `none`. Unknown kinds produce missing evidence,
 not host execution.
 
+Seed tooling adds allowlisted tool-call plugins for presence, name, args schema,
+and normalized arg match. Those labels stay in separate nullable columns. They
+are not silently written into training quality. A tool mismatch is agreement
+evidence with a reference turn, not proof of task failure.
+
 LLM judging and human audit are separate outcome classes. Verifier success,
 pairwise preference, and rubric scores have different meanings. Third-party
 judging requires operator approval for that content transfer.

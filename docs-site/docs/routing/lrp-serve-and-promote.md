@@ -48,7 +48,9 @@ Feedback posts status, usage, cost, latency, TTFB, and selected target. It does
 not retrain quality. Quality labels arrive from offline verifiers or judges.
 
 Synthetic demonstrations prove wiring. They do not authorize live target
-promotion. Operator promotion gates and rollback:
+promotion. A public seed reference bundle is also an example for specific
+targets and data. First-run success is not automatic production readiness.
+Operator promotion gates and rollback:
 [LEARNED_ROUTING_POLICY.md](https://github.com/metrum-ai/router/blob/main/docs/LEARNED_ROUTING_POLICY.md#validation-promotion-and-rollback).
 Signed load: [Operator-signed LRP bundles](lrp-signed-bundles.md).
 External-policy contract: [External Routing Policy](../configuration/external-routing-policy.md).
