@@ -41,3 +41,20 @@ the same trust policy as `lrp validate`. [Selection constraints](../../docs/LRP_
 per-project floors, upstream latency gates, evidence-based cache cost estimates,
 and bounded explain labels. Offline eval shares the composed decision path with
 serving and records applicability when configured evidence is missing.
+
+## Public seed corpus tooling (#157)
+
+Iteration-1 construction helpers live in [`lrp/seed/`](lrp/seed/) with an
+operator-facing note under [`seed/README.md`](seed/README.md). They audit the
+pinned Nebius OpenHands trajectories source, extract teacher-forced turns,
+sample session-disjoint strata, describe mixed hosted targets, wrap router
+fanout for resumable replay, label verifier-class columns, and write parquet
+plus a SHA-256 manifest.
+
+Teacher-forced replay measures continuation agreement on fixed histories. It
+does not prove eventual task success. Tool mismatches are agreement signals,
+not automatic task failures. Coding traces do not justify quality claims for
+unsampled workloads. Cold and warm cache passes are repeated observations of
+the same turn. N=1000 is a practical budget, not proof of sufficiency. A
+reference bundle is a first-run example, not automatic production readiness.
+Paid replay stays opt-in and is not part of `make lrp-test`.

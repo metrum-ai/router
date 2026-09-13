@@ -269,3 +269,11 @@ intended shapes and concurrency, and 24-hour staging shadow remain independent
 requirements. Preserve failed gates and long-input limitations in any rollout
 decision. This example shows a working learned-routing pipeline and inspectable
 decisions; it does not supply the missing production evidence.
+
+## Public seed corpus boundary
+
+A public seed corpus and reference bundle are first-run examples for specific
+coding traces and listed targets. Teacher-forced continuation agreement is not
+task success. Tool mismatches are not automatic task failures. Changing targets,
+prices, or workloads requires renewed evaluation before production promotion.
+

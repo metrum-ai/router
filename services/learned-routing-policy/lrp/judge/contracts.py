@@ -13,7 +13,15 @@ from ..collect import DataError
 # plugins_runtime.py and rebuilding the verifier rootfs evidence, not by mounting
 # host code or accepting dataset-supplied callables.
 ALLOWED_PLUGIN_IDS: frozenset[str] = frozenset(
-    {"contains_v1", "json_equals_v1", "numeric_equals_v1"}
+    {
+        "contains_v1",
+        "json_equals_v1",
+        "numeric_equals_v1",
+        "tool_call_presence_v1",
+        "tool_name_match_v1",
+        "tool_args_schema_v1",
+        "tool_normalized_arg_match_v1",
+    }
 )
 
 # (kind, version) -> required spec keys, optional spec keys

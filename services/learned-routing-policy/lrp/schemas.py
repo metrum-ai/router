@@ -225,6 +225,9 @@ class RequestRow(Model):
     max_tokens: int | None = Field(default=None, ge=0)
     context: dict[str, Any] = Field(default_factory=dict)
     verifier: dict[str, Any] = Field(default_factory=lambda: {"kind": "none"})
+    # Provider-scoped upstream extras (for example OpenAI prompt_cache_options).
+    # Fanout applies only the map entry matching the selected target provider.
+    provider_request_fields: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class OfflineTarget(Model):

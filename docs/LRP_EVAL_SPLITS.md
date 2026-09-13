@@ -66,3 +66,20 @@ Inspect `serving_provider_missing_evidence` and
 `aggregator_serving_provider_variance_observed` warnings when reviewing
 promotion. Synthetic fixtures may omit serving providers; that is wiring-only
 and is not provider-backed variance evidence.
+
+## Seed corpus splits (#157)
+
+Public seed construction reuses `session_split` so each source session stays in
+one train/validation/test partition. Stratification also balances turn-index
+buckets (1-5, 6-20, 21+), `cl100k_base` prompt-token buckets, and reference turn
+kind (tool-call or text).
+
+Cache pass rows are repeated observations of the same turn and target. They must
+not be treated as independent training examples or as an increased unique-turn
+count. Report unique turns separately from replay rows.
+
+Teacher-forced histories come from another model. Identical candidate prompts do
+not remove that reference bias. Continuation agreement is not end-to-end task
+success. N=1000 is a practical first-run budget, not statistical sufficiency.
+Operators must validate coverage per target and split before promoting a bundle
+built from the seed.

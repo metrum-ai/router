@@ -64,6 +64,17 @@ payload with the worker. Current IDs:
 | `contains_v1` | `needle` (string) | Substring presence |
 | `json_equals_v1` | `expected` (JSON value) | Parsed content deep-equals `expected` |
 | `numeric_equals_v1` | `expected` number; optional `abs_tol` | Float compare with absolute tolerance |
+| `tool_call_presence_v1` | `reference` message object | Candidate and reference agree on tool-call presence |
+| `tool_name_match_v1` | `reference` message object | Ordered tool names match the reference |
+| `tool_args_schema_v1` | `schemas` map of tool name to object/array schema | Candidate args parse and satisfy required keys |
+| `tool_normalized_arg_match_v1` | `reference`; optional `path_keys`, `shell_keys` | Conservative path/shell normalization, then arg equality |
+
+Seed corpus tooling (#157) stores these four checks as separate nullable parquet
+columns (`verifier_tool_presence`, `verifier_tool_name`, `verifier_args_schema`,
+`verifier_normalized_args`). They are not silently blended into training
+`quality`. A tool mismatch is reference agreement evidence, not proof that the
+task failed. Candidate content for these plugins is JSON
+`{"content":...,"tool_calls":...}`.
 
 To add a product acceptance check, extend the allowlist and runtime in a reviewed
 change, rebuild verifier rootfs evidence, and re-run the mandatory sandbox gate.

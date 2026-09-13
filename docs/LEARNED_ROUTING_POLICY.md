@@ -480,3 +480,33 @@ then remove temporary calibration groups/callers through normal operator control
 Wave-2 uncertainty abstention, Thompson sampling, drift monitoring, and
 cold-start seeding are documented in [LRP_UNCERTAINTY.md](LRP_UNCERTAINTY.md).
 Those features default off and do not authorize live routing activation.
+
+## Public seed corpus construction (#157)
+
+Iteration-1 tooling under
+[`services/learned-routing-policy/lrp/seed/`](../services/learned-routing-policy/lrp/seed/)
+builds comparable turn labels from pinned public OpenHands trajectories.
+
+### Worked limits (required reading)
+
+1. **Teacher-forced continuation.** Replay prompts are fixed histories ending at
+   the last tool or user observation. A plausible next assistant turn does not
+   establish eventual task success. Later teacher-forced history is unchanged by
+   candidate outputs.
+2. **Valid alternative tool call.** Deterministic name and argument match measure
+   agreement with the reference. A different but valid tool sequence can still
+   advance the task. Keep verifier columns separate from judge and human labels.
+   Do not treat a tool mismatch alone as a failed task.
+3. **Cold versus warm observation.** Cache passes repeat the same turn and
+   target. They do not create independent sessions for splitting. Count unique
+   turns separately from replay rows. Pass 1 disables cache.
+4. **Workload or target change.** Coding-trace evidence applies to the sampled
+   coding workloads and listed targets. Changing models, prices, or moving to
+   chat or image workloads requires fresh validation and may require retraining.
+   First-run success with a reference bundle is not production readiness.
+
+Spend estimates abort above 40 USD without an explicit approval flag. Unit tests
+and default dry runs do not execute paid replay. See also
+[LRP_EVAL_SPLITS.md](LRP_EVAL_SPLITS.md), [LRP_VERIFIERS.md](LRP_VERIFIERS.md),
+and [LEARNED_ROUTING_POLICY_EVIDENCE.md](LEARNED_ROUTING_POLICY_EVIDENCE.md).
+

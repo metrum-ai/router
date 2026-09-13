@@ -218,3 +218,17 @@ intended shapes and concurrency, and 24-hour staging shadow remain independent
 requirements. Preserve failed gates and long-input limitations in any rollout
 decision. This example shows a working learned-routing pipeline and inspectable
 decisions; it does not supply the missing production evidence.
+
+## Public seed corpus evidence boundary (#157)
+
+Iteration-1 seed tooling constructs teacher-forced turn replays from pinned
+public coding trajectories. Until paid replay, verifier labeling on real
+candidates, and a published SHA-256 manifest exist, treat seed helpers as
+construction wiring only.
+
+Do not cite seed row counts as statistical confidence. Do not equate verifier
+tool agreement with task success. Do not promote a first-run reference bundle as
+production readiness without operator workload validation. Cache-pass duplicates
+are not independent samples. Savings percentages are out of scope for seed
+evidence tables.
+
