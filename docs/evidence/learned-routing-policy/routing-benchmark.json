@@ -1,27 +1,1937 @@
 {
-  "cells": [],
+  "cells": [
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 13.4386548073177,
+            "median": 12.348913687686265,
+            "min": 9.448232664559079,
+            "n": 3.0,
+            "spread": 3.9904221427586215
+          },
+          "router_added_latency_p50_ms": {
+            "max": 1.0,
+            "median": 1.0,
+            "min": 1.0,
+            "n": 3.0,
+            "spread": 0.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 1.0,
+            "median": 1.0,
+            "min": 1.0,
+            "n": 3.0,
+            "spread": 0.0
+          },
+          "router_added_latency_p99_ms": {
+            "max": 1.5300000000000011,
+            "median": 1.0,
+            "min": 1.0,
+            "n": 3.0,
+            "spread": 0.5300000000000011
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 1,
+      "config_id": "A",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 74.63377249999326,
+          "p95_ms": 83.1165625999887,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 12.348913687686265,
+        "router_added_latency": {
+          "p50_ms": 1.0,
+          "p95_ms": 1.0,
+          "p99_ms": 1.0
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 39.29296875,
+        "sidecar_latency": {
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        "sidecar_rss_mb": null,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.348913687686265,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 1.0,
+          "router_added_latency_p95_ms": 1.0,
+          "router_added_latency_p99_ms": 1.0,
+          "run_index": 1,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 9.448232664559079,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 1.0,
+          "router_added_latency_p95_ms": 1.0,
+          "router_added_latency_p99_ms": 1.5300000000000011,
+          "run_index": 2,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 13.4386548073177,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 1.0,
+          "router_added_latency_p95_ms": 1.0,
+          "router_added_latency_p99_ms": 1.0,
+          "run_index": 3,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 13.050853766461506,
+            "median": 12.222679397964344,
+            "min": 11.893088207455875,
+            "n": 3.0,
+            "spread": 1.1577655590056306
+          },
+          "router_added_latency_p50_ms": {
+            "max": 1.0,
+            "median": 1.0,
+            "min": 1.0,
+            "n": 3.0,
+            "spread": 0.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 3.6499999999999986,
+            "median": 3.299999999999997,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 0.6499999999999986
+          },
+          "router_added_latency_p99_ms": {
+            "max": 4.530000000000001,
+            "median": 4.530000000000001,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 1.5300000000000011
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 8,
+      "config_id": "A",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 117.99335849997306,
+          "p95_ms": 2271.6437072999697,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 12.222679397964344,
+        "router_added_latency": {
+          "p50_ms": 1.0,
+          "p95_ms": 3.299999999999997,
+          "p99_ms": 4.530000000000001
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 43.4609375,
+        "sidecar_latency": {
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        "sidecar_rss_mb": null,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 13.050853766461506,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 1.0,
+          "router_added_latency_p95_ms": 3.6499999999999986,
+          "router_added_latency_p99_ms": 4.530000000000001,
+          "run_index": 1,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.893088207455875,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 1.0,
+          "router_added_latency_p95_ms": 3.299999999999997,
+          "router_added_latency_p99_ms": 4.530000000000001,
+          "run_index": 2,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.222679397964344,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 1.0,
+          "router_added_latency_p95_ms": 3.0,
+          "router_added_latency_p99_ms": 3.0,
+          "run_index": 3,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 12.432823611766187,
+            "median": 11.94585800874528,
+            "min": 11.251916758745606,
+            "n": 3.0,
+            "spread": 1.1809068530205806
+          },
+          "router_added_latency_p50_ms": {
+            "max": 3.5,
+            "median": 3.0,
+            "min": 2.0,
+            "n": 3.0,
+            "spread": 1.5
+          },
+          "router_added_latency_p95_ms": {
+            "max": 1016.0,
+            "median": 1003.65,
+            "min": 25.65,
+            "n": 3.0,
+            "spread": 990.35
+          },
+          "router_added_latency_p99_ms": {
+            "max": 1065.53,
+            "median": 1023.65,
+            "min": 559.0600000000012,
+            "n": 3.0,
+            "spread": 506.4699999999988
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 32,
+      "config_id": "A",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 1804.6918404999985,
+          "p95_ms": 3553.563659549988,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.94585800874528,
+        "router_added_latency": {
+          "p50_ms": 3.0,
+          "p95_ms": 1003.65,
+          "p99_ms": 1023.65
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 52.05859375,
+        "sidecar_latency": {
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        "sidecar_rss_mb": null,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.94585800874528,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 3.0,
+          "router_added_latency_p95_ms": 1016.0,
+          "router_added_latency_p99_ms": 1023.65,
+          "run_index": 1,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.432823611766187,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 3.5,
+          "router_added_latency_p95_ms": 25.65,
+          "router_added_latency_p99_ms": 559.0600000000012,
+          "run_index": 2,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.251916758745606,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 2.0,
+          "router_added_latency_p95_ms": 1003.65,
+          "router_added_latency_p99_ms": 1065.53,
+          "run_index": 3,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 12.227676776829357,
+            "median": 11.51511935074787,
+            "min": 11.020302497119001,
+            "n": 3.0,
+            "spread": 1.207374279710356
+          },
+          "router_added_latency_p50_ms": {
+            "max": 12.0,
+            "median": 7.0,
+            "min": 6.5,
+            "n": 3.0,
+            "spread": 5.5
+          },
+          "router_added_latency_p95_ms": {
+            "max": 1066.65,
+            "median": 1044.0,
+            "min": 1017.6500000000001,
+            "n": 3.0,
+            "spread": 49.0
+          },
+          "router_added_latency_p99_ms": {
+            "max": 1068.06,
+            "median": 1052.53,
+            "min": 1042.79,
+            "n": 3.0,
+            "spread": 25.269999999999982
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 128,
+      "config_id": "A",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 2192.202370500013,
+          "p95_ms": 3836.2726542999917,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.51511935074787,
+        "router_added_latency": {
+          "p50_ms": 7.0,
+          "p95_ms": 1044.0,
+          "p99_ms": 1052.53
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 52.19921875,
+        "sidecar_latency": {
+          "p50_ms": null,
+          "p95_ms": null,
+          "p99_ms": null
+        },
+        "sidecar_rss_mb": null,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.51511935074787,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 6.5,
+          "router_added_latency_p95_ms": 1066.65,
+          "router_added_latency_p99_ms": 1068.06,
+          "run_index": 1,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.227676776829357,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 7.0,
+          "router_added_latency_p95_ms": 1044.0,
+          "router_added_latency_p99_ms": 1052.53,
+          "run_index": 2,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.020302497119001,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 12.0,
+          "router_added_latency_p95_ms": 1017.6500000000001,
+          "router_added_latency_p99_ms": 1042.79,
+          "run_index": 3,
+          "sidecar_p50_ms": null,
+          "sidecar_p95_ms": null,
+          "sidecar_p99_ms": null,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 12.229678981640454,
+            "median": 11.803730894292771,
+            "min": 11.736837360389341,
+            "n": 3.0,
+            "spread": 0.4928416212511131
+          },
+          "router_added_latency_p50_ms": {
+            "max": 5.0,
+            "median": 4.0,
+            "min": 4.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 5.0,
+            "median": 5.0,
+            "min": 4.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "router_added_latency_p99_ms": {
+            "max": 5.530000000000001,
+            "median": 5.0,
+            "min": 5.0,
+            "n": 3.0,
+            "spread": 0.5300000000000011
+          },
+          "sidecar_p50_ms": {
+            "max": 3.0,
+            "median": 3.0,
+            "min": 2.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "sidecar_p95_ms": {
+            "max": 4.0,
+            "median": 3.0,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "sidecar_p99_ms": {
+            "max": 4.0,
+            "median": 3.0,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 1,
+      "config_id": "B",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 81.90511650002463,
+          "p95_ms": 89.18271849999257,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.803730894292771,
+        "router_added_latency": {
+          "p50_ms": 4.0,
+          "p95_ms": 5.0,
+          "p99_ms": 5.0
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 39.578125,
+        "sidecar_latency": {
+          "p50_ms": 3.0,
+          "p95_ms": 3.0,
+          "p99_ms": 3.0
+        },
+        "sidecar_rss_mb": 281.1875,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "B",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.5451827933934936,
+          "router_added_latency_delta": 3.0,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.803730894292771,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 4.0,
+          "router_added_latency_p95_ms": 4.0,
+          "router_added_latency_p99_ms": 5.0,
+          "run_index": 1,
+          "sidecar_p50_ms": 2.0,
+          "sidecar_p95_ms": 3.0,
+          "sidecar_p99_ms": 3.0,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.736837360389341,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 5.0,
+          "router_added_latency_p99_ms": 5.530000000000001,
+          "run_index": 2,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 4.0,
+          "sidecar_p99_ms": 4.0,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.229678981640454,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 4.0,
+          "router_added_latency_p95_ms": 5.0,
+          "router_added_latency_p99_ms": 5.0,
+          "run_index": 3,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 3.0,
+          "sidecar_p99_ms": 3.0,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 12.349664736408807,
+            "median": 11.758856591891064,
+            "min": 10.173657812888342,
+            "n": 3.0,
+            "spread": 2.1760069235204647
+          },
+          "router_added_latency_p50_ms": {
+            "max": 5.0,
+            "median": 4.0,
+            "min": 4.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 15.0,
+            "median": 12.949999999999996,
+            "min": 11.0,
+            "n": 3.0,
+            "spread": 4.0
+          },
+          "router_added_latency_p99_ms": {
+            "max": 15.0,
+            "median": 15.0,
+            "min": 15.0,
+            "n": 3.0,
+            "spread": 0.0
+          },
+          "sidecar_p50_ms": {
+            "max": 3.0,
+            "median": 3.0,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 0.0
+          },
+          "sidecar_p95_ms": {
+            "max": 11.649999999999999,
+            "median": 10.299999999999997,
+            "min": 9.0,
+            "n": 3.0,
+            "spread": 2.6499999999999986
+          },
+          "sidecar_p99_ms": {
+            "max": 12.530000000000001,
+            "median": 12.530000000000001,
+            "min": 12.0,
+            "n": 3.0,
+            "spread": 0.5300000000000011
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 8,
+      "config_id": "B",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 231.64603949999218,
+          "p95_ms": 1843.6704421000027,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.758856591891064,
+        "router_added_latency": {
+          "p50_ms": 4.0,
+          "p95_ms": 12.949999999999996,
+          "p99_ms": 15.0
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 44.328125,
+        "sidecar_latency": {
+          "p50_ms": 3.0,
+          "p95_ms": 10.299999999999997,
+          "p99_ms": 12.530000000000001
+        },
+        "sidecar_rss_mb": 281.203125,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "B",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.46382280607327964,
+          "router_added_latency_delta": 3.0,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.758856591891064,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 11.0,
+          "router_added_latency_p99_ms": 15.0,
+          "run_index": 1,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 9.0,
+          "sidecar_p99_ms": 12.530000000000001,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.349664736408807,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 4.0,
+          "router_added_latency_p95_ms": 12.949999999999996,
+          "router_added_latency_p99_ms": 15.0,
+          "run_index": 2,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 10.299999999999997,
+          "sidecar_p99_ms": 12.0,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 10.173657812888342,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 4.0,
+          "router_added_latency_p95_ms": 15.0,
+          "router_added_latency_p99_ms": 15.0,
+          "run_index": 3,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 11.649999999999999,
+          "sidecar_p99_ms": 12.530000000000001,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 11.67729806360701,
+            "median": 11.504923866770262,
+            "min": 10.216111077385115,
+            "n": 3.0,
+            "spread": 1.461186986221895
+          },
+          "router_added_latency_p50_ms": {
+            "max": 26.5,
+            "median": 18.0,
+            "min": 17.0,
+            "n": 3.0,
+            "spread": 9.5
+          },
+          "router_added_latency_p95_ms": {
+            "max": 52.3,
+            "median": 45.0,
+            "min": 41.65,
+            "n": 3.0,
+            "spread": 10.649999999999999
+          },
+          "router_added_latency_p99_ms": {
+            "max": 1082.1799999999998,
+            "median": 46.53,
+            "min": 45.650000000000006,
+            "n": 3.0,
+            "spread": 1036.5299999999997
+          },
+          "sidecar_p50_ms": {
+            "max": 13.5,
+            "median": 13.0,
+            "min": 12.5,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "sidecar_p95_ms": {
+            "max": 40.19999999999999,
+            "median": 37.65,
+            "min": 35.949999999999996,
+            "n": 3.0,
+            "spread": 4.249999999999993
+          },
+          "sidecar_p99_ms": {
+            "max": 46.53,
+            "median": 42.120000000000005,
+            "min": 39.06,
+            "n": 3.0,
+            "spread": 7.469999999999999
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 32,
+      "config_id": "B",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 2143.4564480000236,
+          "p95_ms": 3821.742558400012,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.504923866770262,
+        "router_added_latency": {
+          "p50_ms": 18.0,
+          "p95_ms": 45.0,
+          "p99_ms": 46.53
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 52.4609375,
+        "sidecar_latency": {
+          "p50_ms": 13.0,
+          "p95_ms": 37.65,
+          "p99_ms": 42.120000000000005
+        },
+        "sidecar_rss_mb": 281.19921875,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "B",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.440934141975017,
+          "router_added_latency_delta": 15.0,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.67729806360701,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 17.0,
+          "router_added_latency_p95_ms": 52.3,
+          "router_added_latency_p99_ms": 1082.1799999999998,
+          "run_index": 1,
+          "sidecar_p50_ms": 12.5,
+          "sidecar_p95_ms": 40.19999999999999,
+          "sidecar_p99_ms": 46.53,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.504923866770262,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 26.5,
+          "router_added_latency_p95_ms": 45.0,
+          "router_added_latency_p99_ms": 46.53,
+          "run_index": 2,
+          "sidecar_p50_ms": 13.0,
+          "sidecar_p95_ms": 35.949999999999996,
+          "sidecar_p99_ms": 39.06,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 10.216111077385115,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 18.0,
+          "router_added_latency_p95_ms": 41.65,
+          "router_added_latency_p99_ms": 45.650000000000006,
+          "run_index": 3,
+          "sidecar_p50_ms": 13.5,
+          "sidecar_p95_ms": 37.65,
+          "sidecar_p99_ms": 42.120000000000005,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 11.600742772455147,
+            "median": 11.222953372408794,
+            "min": 10.073546590093414,
+            "n": 3.0,
+            "spread": 1.5271961823617328
+          },
+          "router_added_latency_p50_ms": {
+            "max": 45.5,
+            "median": 43.5,
+            "min": 40.5,
+            "n": 3.0,
+            "spread": 5.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 63.89999999999999,
+            "median": 63.09999999999998,
+            "min": 60.65,
+            "n": 3.0,
+            "spread": 3.249999999999993
+          },
+          "router_added_latency_p99_ms": {
+            "max": 1044.71,
+            "median": 70.53,
+            "min": 66.0,
+            "n": 3.0,
+            "spread": 978.71
+          },
+          "sidecar_p50_ms": {
+            "max": 36.0,
+            "median": 35.0,
+            "min": 32.0,
+            "n": 3.0,
+            "spread": 4.0
+          },
+          "sidecar_p95_ms": {
+            "max": 56.0,
+            "median": 54.65,
+            "min": 48.65,
+            "n": 3.0,
+            "spread": 7.350000000000001
+          },
+          "sidecar_p99_ms": {
+            "max": 65.65,
+            "median": 62.53,
+            "min": 50.59,
+            "n": 3.0,
+            "spread": 15.060000000000002
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 128,
+      "config_id": "B",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 2449.2988409999725,
+          "p95_ms": 4076.058227749988,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.222953372408794,
+        "router_added_latency": {
+          "p50_ms": 43.5,
+          "p95_ms": 63.09999999999998,
+          "p99_ms": 70.53
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 51.9609375,
+        "sidecar_latency": {
+          "p50_ms": 35.0,
+          "p95_ms": 54.65,
+          "p99_ms": 62.53
+        },
+        "sidecar_rss_mb": 281.18359375,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "B",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.2921659783390762,
+          "router_added_latency_delta": 36.5,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.222953372408794,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 45.5,
+          "router_added_latency_p95_ms": 63.09999999999998,
+          "router_added_latency_p99_ms": 1044.71,
+          "run_index": 1,
+          "sidecar_p50_ms": 32.0,
+          "sidecar_p95_ms": 48.65,
+          "sidecar_p99_ms": 50.59,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.600742772455147,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 43.5,
+          "router_added_latency_p95_ms": 63.89999999999999,
+          "router_added_latency_p99_ms": 70.53,
+          "run_index": 2,
+          "sidecar_p50_ms": 35.0,
+          "sidecar_p95_ms": 54.65,
+          "sidecar_p99_ms": 65.65,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 10.073546590093414,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 40.5,
+          "router_added_latency_p95_ms": 60.65,
+          "router_added_latency_p99_ms": 66.0,
+          "run_index": 3,
+          "sidecar_p50_ms": 36.0,
+          "sidecar_p95_ms": 56.0,
+          "sidecar_p99_ms": 62.53,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 12.069562725621042,
+            "median": 11.506864518316059,
+            "min": 11.503822616001852,
+            "n": 3.0,
+            "spread": 0.5657401096191901
+          },
+          "router_added_latency_p50_ms": {
+            "max": 6.0,
+            "median": 5.0,
+            "min": 5.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 6.649999999999999,
+            "median": 6.0,
+            "min": 5.0,
+            "n": 3.0,
+            "spread": 1.6499999999999986
+          },
+          "router_added_latency_p99_ms": {
+            "max": 7.0,
+            "median": 6.530000000000001,
+            "min": 5.0,
+            "n": 3.0,
+            "spread": 2.0
+          },
+          "sidecar_p50_ms": {
+            "max": 4.0,
+            "median": 4.0,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "sidecar_p95_ms": {
+            "max": 5.0,
+            "median": 4.0,
+            "min": 4.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "sidecar_p99_ms": {
+            "max": 5.0,
+            "median": 4.530000000000001,
+            "min": 4.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 1,
+      "config_id": "C",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 83.92895299999736,
+          "p95_ms": 88.4250121499349,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.506864518316059,
+        "router_added_latency": {
+          "p50_ms": 5.0,
+          "p95_ms": 6.0,
+          "p99_ms": 6.530000000000001
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 40.07421875,
+        "sidecar_latency": {
+          "p50_ms": 4.0,
+          "p95_ms": 4.0,
+          "p99_ms": 4.530000000000001
+        },
+        "sidecar_rss_mb": 281.20703125,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "C",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.8420491693702061,
+          "router_added_latency_delta": 4.0,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.069562725621042,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 5.0,
+          "router_added_latency_p99_ms": 5.0,
+          "run_index": 1,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 4.0,
+          "sidecar_p99_ms": 4.0,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.506864518316059,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 6.0,
+          "router_added_latency_p99_ms": 6.530000000000001,
+          "run_index": 2,
+          "sidecar_p50_ms": 4.0,
+          "sidecar_p95_ms": 4.0,
+          "sidecar_p99_ms": 4.530000000000001,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.503822616001852,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 6.0,
+          "router_added_latency_p95_ms": 6.649999999999999,
+          "router_added_latency_p99_ms": 7.0,
+          "run_index": 3,
+          "sidecar_p50_ms": 4.0,
+          "sidecar_p95_ms": 5.0,
+          "sidecar_p99_ms": 5.0,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 12.383466050602447,
+            "median": 11.638294275617563,
+            "min": 11.556328336005338,
+            "n": 3.0,
+            "spread": 0.827137714597109
+          },
+          "router_added_latency_p50_ms": {
+            "max": 5.0,
+            "median": 5.0,
+            "min": 5.0,
+            "n": 3.0,
+            "spread": 0.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 14.949999999999996,
+            "median": 14.299999999999997,
+            "min": 14.0,
+            "n": 3.0,
+            "spread": 0.9499999999999957
+          },
+          "router_added_latency_p99_ms": {
+            "max": 19.0,
+            "median": 16.590000000000003,
+            "min": 16.53,
+            "n": 3.0,
+            "spread": 2.469999999999999
+          },
+          "sidecar_p50_ms": {
+            "max": 4.0,
+            "median": 4.0,
+            "min": 3.0,
+            "n": 3.0,
+            "spread": 1.0
+          },
+          "sidecar_p95_ms": {
+            "max": 12.599999999999994,
+            "median": 11.649999999999999,
+            "min": 11.649999999999999,
+            "n": 3.0,
+            "spread": 0.9499999999999957
+          },
+          "sidecar_p99_ms": {
+            "max": 16.0,
+            "median": 14.060000000000002,
+            "min": 13.0,
+            "n": 3.0,
+            "spread": 3.0
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 8,
+      "config_id": "C",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 301.7674750000765,
+          "p95_ms": 1805.1265432500368,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.638294275617563,
+        "router_added_latency": {
+          "p50_ms": 5.0,
+          "p95_ms": 14.299999999999997,
+          "p99_ms": 16.590000000000003
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 44.27734375,
+        "sidecar_latency": {
+          "p50_ms": 4.0,
+          "p95_ms": 11.649999999999999,
+          "p99_ms": 14.060000000000002
+        },
+        "sidecar_rss_mb": 281.1953125,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "C",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.5843851223467809,
+          "router_added_latency_delta": 4.0,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 12.383466050602447,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 14.299999999999997,
+          "router_added_latency_p99_ms": 16.53,
+          "run_index": 1,
+          "sidecar_p50_ms": 4.0,
+          "sidecar_p95_ms": 11.649999999999999,
+          "sidecar_p99_ms": 14.060000000000002,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.638294275617563,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 14.949999999999996,
+          "router_added_latency_p99_ms": 19.0,
+          "run_index": 2,
+          "sidecar_p50_ms": 4.0,
+          "sidecar_p95_ms": 12.599999999999994,
+          "sidecar_p99_ms": 16.0,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.556328336005338,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 5.0,
+          "router_added_latency_p95_ms": 14.0,
+          "router_added_latency_p99_ms": 16.590000000000003,
+          "run_index": 3,
+          "sidecar_p50_ms": 3.0,
+          "sidecar_p95_ms": 11.649999999999999,
+          "sidecar_p99_ms": 13.0,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 11.176946071136097,
+            "median": 9.616462410460706,
+            "min": 8.168584606917886,
+            "n": 3.0,
+            "spread": 3.0083614642182113
+          },
+          "router_added_latency_p50_ms": {
+            "max": 31.0,
+            "median": 29.5,
+            "min": 24.0,
+            "n": 3.0,
+            "spread": 7.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 47.0,
+            "median": 43.8,
+            "min": 40.65,
+            "n": 3.0,
+            "spread": 6.350000000000001
+          },
+          "router_added_latency_p99_ms": {
+            "max": 626.4000000000024,
+            "median": 49.59,
+            "min": 44.0,
+            "n": 3.0,
+            "spread": 582.4000000000024
+          },
+          "sidecar_p50_ms": {
+            "max": 18.0,
+            "median": 17.0,
+            "min": 16.5,
+            "n": 3.0,
+            "spread": 1.5
+          },
+          "sidecar_p95_ms": {
+            "max": 42.65,
+            "median": 38.65,
+            "min": 34.8,
+            "n": 3.0,
+            "spread": 7.850000000000001
+          },
+          "sidecar_p99_ms": {
+            "max": 48.120000000000005,
+            "median": 41.53,
+            "min": 35.56,
+            "n": 3.0,
+            "spread": 12.560000000000002
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 32,
+      "config_id": "C",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 2805.652823999992,
+          "p95_ms": 4747.2970027000765,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 9.616462410460706,
+        "router_added_latency": {
+          "p50_ms": 29.5,
+          "p95_ms": 43.8,
+          "p99_ms": 49.59
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 51.25390625,
+        "sidecar_latency": {
+          "p50_ms": 17.0,
+          "p95_ms": 38.65,
+          "p99_ms": 41.53
+        },
+        "sidecar_rss_mb": 281.37890625,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "C",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -2.3293955982845738,
+          "router_added_latency_delta": 26.5,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 9.616462410460706,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 24.0,
+          "router_added_latency_p95_ms": 40.65,
+          "router_added_latency_p99_ms": 44.0,
+          "run_index": 1,
+          "sidecar_p50_ms": 18.0,
+          "sidecar_p95_ms": 38.65,
+          "sidecar_p99_ms": 41.53,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 8.168584606917886,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 31.0,
+          "router_added_latency_p95_ms": 43.8,
+          "router_added_latency_p99_ms": 626.4000000000024,
+          "run_index": 2,
+          "sidecar_p50_ms": 17.0,
+          "sidecar_p95_ms": 34.8,
+          "sidecar_p99_ms": 35.56,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.176946071136097,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 29.5,
+          "router_added_latency_p95_ms": 47.0,
+          "router_added_latency_p99_ms": 49.59,
+          "run_index": 3,
+          "sidecar_p50_ms": 16.5,
+          "sidecar_p95_ms": 42.65,
+          "sidecar_p99_ms": 48.120000000000005,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    },
+    {
+      "aggregate": {
+        "metrics": {
+          "lrp_decisions_per_sec": {
+            "max": 11.473427862922986,
+            "median": 11.309878481646974,
+            "min": 10.620911123051929,
+            "n": 3.0,
+            "spread": 0.8525167398710565
+          },
+          "router_added_latency_p50_ms": {
+            "max": 48.0,
+            "median": 37.5,
+            "min": 32.0,
+            "n": 3.0,
+            "spread": 16.0
+          },
+          "router_added_latency_p95_ms": {
+            "max": 695.1499999999985,
+            "median": 69.0,
+            "min": 52.65,
+            "n": 3.0,
+            "spread": 642.4999999999985
+          },
+          "router_added_latency_p99_ms": {
+            "max": 1074.8000000000002,
+            "median": 77.0,
+            "min": 56.650000000000006,
+            "n": 3.0,
+            "spread": 1018.1500000000002
+          },
+          "sidecar_p50_ms": {
+            "max": 41.5,
+            "median": 31.0,
+            "min": 19.0,
+            "n": 3.0,
+            "spread": 22.5
+          },
+          "sidecar_p95_ms": {
+            "max": 62.65,
+            "median": 46.0,
+            "min": 30.299999999999997,
+            "n": 3.0,
+            "spread": 32.35
+          },
+          "sidecar_p99_ms": {
+            "max": 66.0,
+            "median": 49.53,
+            "min": 33.650000000000006,
+            "n": 3.0,
+            "spread": 32.349999999999994
+          },
+          "timeout_rate": {
+            "max": 0.0,
+            "median": 0.0,
+            "min": 0.0,
+            "n": 3.0,
+            "spread": 0.0
+          }
+        },
+        "runs": 3
+      },
+      "concurrency": 128,
+      "config_id": "C",
+      "driver": "seed_replay",
+      "overhead": {
+        "e2e_total": {
+          "p50_ms": 2309.735095999997,
+          "p95_ms": 4024.3473935500388,
+          "upstream_dependent": true
+        },
+        "error_rate_by_class": {
+          "http_non_200": 0.0
+        },
+        "family": "overhead",
+        "lrp_decisions_per_sec": 11.309878481646974,
+        "router_added_latency": {
+          "p50_ms": 37.5,
+          "p95_ms": 69.0,
+          "p99_ms": 77.0
+        },
+        "router_added_latency_source": {
+          "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
+          "duration_field": "duration_ms",
+          "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
+          "metric": "router_added_latency_ms",
+          "receive_event": "router_receive",
+          "receive_lines": "1318-1352",
+          "source_file": "internal/router/service.go",
+          "wrote_request_event": "router_upstream_wrote_request",
+          "wrote_request_lines": "2209-2230"
+        },
+        "router_rss_mb": 54.078125,
+        "sidecar_latency": {
+          "p50_ms": 31.0,
+          "p95_ms": 46.0,
+          "p99_ms": 49.53
+        },
+        "sidecar_rss_mb": 280.828125,
+        "synthetic_upstream": true,
+        "timeout_rate": 0.0
+      },
+      "overhead_delta_vs_A": {
+        "baseline_config_id": "A",
+        "candidate_config_id": "C",
+        "deltas": {
+          "lrp_decisions_per_sec_delta": -0.205240869100896,
+          "router_added_latency_delta": 30.5,
+          "sidecar_latency_delta": null,
+          "timeout_rate_delta": 0.0
+        },
+        "family": "overhead_delta",
+        "notes": "Overhead deltas of B/C versus static A. Not a cost savings claim."
+      },
+      "per_run": [
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.473427862922986,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 32.0,
+          "router_added_latency_p95_ms": 695.1499999999985,
+          "router_added_latency_p99_ms": 1074.8000000000002,
+          "run_index": 1,
+          "sidecar_p50_ms": 19.0,
+          "sidecar_p95_ms": 30.299999999999997,
+          "sidecar_p99_ms": 33.650000000000006,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 10.620911123051929,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 37.5,
+          "router_added_latency_p95_ms": 52.65,
+          "router_added_latency_p99_ms": 56.650000000000006,
+          "run_index": 2,
+          "sidecar_p50_ms": 31.0,
+          "sidecar_p95_ms": 46.0,
+          "sidecar_p99_ms": 49.53,
+          "timeout_rate": 0.0
+        },
+        {
+          "error_rate": 0.0,
+          "lrp_decisions_per_sec": 11.309878481646974,
+          "ok": 48,
+          "requests": 48,
+          "router_added_latency_p50_ms": 48.0,
+          "router_added_latency_p95_ms": 69.0,
+          "router_added_latency_p99_ms": 77.0,
+          "run_index": 3,
+          "sidecar_p50_ms": 41.5,
+          "sidecar_p95_ms": 62.65,
+          "sidecar_p99_ms": 66.0,
+          "timeout_rate": 0.0
+        }
+      ],
+      "runs": 3,
+      "steady_requests_per_run": 48,
+      "synthetic_upstream": true,
+      "warmup_requests": 8
+    }
+  ],
   "configuration_d_issue": 162,
+  "copyright": "Copyright 2026 Metrum AI",
+  "cost_tokens": {
+    "abort_threshold_usd": 100.0,
+    "absolute_usd_vs_gpt56": null,
+    "estimate_usd_full_portfolio": 12.218124976000002,
+    "estimate_usd_openrouter_pass": 0.8094884760000001,
+    "family": "cost_tokens",
+    "forbidden": [
+      "savings_percent",
+      "percent_saved",
+      "pct_savings"
+    ],
+    "gpt56_total_usd": null,
+    "new_paid_spend_usd_this_issue": 0.0,
+    "notes": [
+      "No paid upstream calls in #159 throughput cells (synthetic_upstream).",
+      "Cost scalars reused from #157 OpenRouter-only pass; GPT-5.6 baseline USD unavailable this pass."
+    ],
+    "reused": true,
+    "source": "issue_157_seed_example_corpus",
+    "total_usd": 0.20399228399999994
+  },
+  "effectiveness": {
+    "actual_spend_usd": 0.20399228399999994,
+    "family": "effectiveness",
+    "notes": [
+      "Effectiveness/cost cells reuse #157 paid OpenRouter seed outcomes; no new paid API spend for #159.",
+      "OpenAI GPT-5.6-only baseline remains incomplete per #157 blockers; absolute USD vs GPT-5.6 not claimed here."
+    ],
+    "openai_blockers": [
+      "Requested gpt-5.6 absent; fell back to gpt-5.5.",
+      "Requested gpt-5.4-mini absent; fell back to gpt-5-mini.",
+      "OpenAI large-prompt fanout hit sustained http_429 rate limits; excluded from this evidence pass.",
+      "Router via must send max_completion_tokens for GPT-5 chat (fanout previously forced max_tokens)."
+    ],
+    "openrouter_error_class_counts": {
+      "http_429": 105
+    },
+    "openrouter_ok_rate": 0.475,
+    "openrouter_response_rows": 200,
+    "openrouter_status_counts": {
+      "ok": 95,
+      "upstream_error": 105
+    },
+    "per_target": {
+      "qwen/qwen3.5-9b": {
+        "ok": 52,
+        "rows": 100,
+        "spend_usd": 0.07466959999999997
+      },
+      "qwen/qwen3.8-27b": {
+        "ok": 43,
+        "rows": 100,
+        "spend_usd": 0.129322684
+      }
+    },
+    "primary_baseline": "gpt-5.6-only",
+    "reused": true,
+    "source": "issue_157_seed_example_corpus"
+  },
+  "harbor": {
+    "driver": "harbor",
+    "planned_concurrency": [
+      1,
+      4,
+      16
+    ],
+    "planned_task_set": "aider/polyglot_python_two-bucket",
+    "reason": "Harbor CLI/task set not installed on the ephemeral Shadeform host for this pass.",
+    "status": "skipped"
+  },
   "issue": 159,
-  "live_runs_executed": false,
+  "license": "Apache-2.0",
+  "live_runs_executed": true,
   "manifest": {
-    "bundle_fingerprint": "UNVERIFIED",
+    "bundle_fingerprint": "138848dfa1a32f4002a945dc8fca10b661488a835f9f933cf63b54259aaedc13",
     "configuration_d": {
       "issue": 162,
       "status": "deferred"
     },
+    "embedding_kind": "synthetic",
     "external_policy_timeout_ms": 500,
     "harbor_concurrency": [
       1,
       4,
       16
     ],
-    "harbor_task_revision": "pin-record-at-run-time",
+    "harbor_status": "skipped",
+    "harbor_task_revision": "skipped_not_installed",
     "harbor_task_set": "aider/polyglot_python_two-bucket",
-    "instance_types": {},
-    "live_runs_executed": false,
-    "max_decision_ms": null,
+    "instance_types": {
+      "cloud": "massedcompute",
+      "gpu_type": "L40S",
+      "memory_in_gb_reported_by_sku": 256,
+      "memory_in_gib_observed": 141,
+      "num_gpus": 2,
+      "region": "kansascity-usa-1",
+      "shadeform_sku": "L40Sx2"
+    },
+    "live_runs_executed": true,
+    "max_decision_ms": 200,
     "max_decision_ms_definition": "Report sidecar deadline_ms as max_decision_ms when both are set; also record external_policy.timeout_ms.",
-    "notes": "Harness-only artifact. No live or paid benchmark executed in issue #159 PR.",
+    "notes": "Live A/B/C seed_replay overhead on Shadeform L40Sx2 with synthetic_upstream sink. LRP sidecar used synthetic embedder bundle for CPU external-policy path overhead; ONNX/GPU embedder and config D remain #162. Harbor driver skipped. Effectiveness/cost reuse #157 seed evidence (no new paid spend).",
+    "paid_api_spend_usd": 0.0,
+    "paid_estimate_reused_from_157_usd": 12.218124976000002,
+    "real_onnx_performance_evidence": false,
     "router_added_latency_source": {
       "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
       "duration_field": "duration_ms",
@@ -33,7 +1943,7 @@
       "wrote_request_event": "router_upstream_wrote_request",
       "wrote_request_lines": "2209-2230"
     },
-    "router_commit": "UNVERIFIED",
+    "router_commit": "5b810a15912bb1e4c54394f0cbab46aa9632d666",
     "runs_per_cell": 3,
     "schema": "metrum.lrp.routing-benchmark/v1",
     "seed_concurrency": [
@@ -42,10 +1952,10 @@
       32,
       128
     ],
-    "sidecar_commit": "UNVERIFIED",
+    "sidecar_commit": "5b810a15912bb1e4c54394f0cbab46aa9632d666",
     "sidecar_deadline_ms": 200,
     "vllm_version": null,
-    "warmup": "Documented warm-up; steady-state windows only."
+    "warmup": "8 warmup requests discarded; 48 steady-state requests per run; 3 runs per cell; median and spread."
   },
   "promotable": false,
   "public_reporting_rules": [
@@ -67,5 +1977,6 @@
     "wrote_request_lines": "2209-2230"
   },
   "schema": "metrum.lrp.routing-benchmark/v1",
-  "status": "harness_ready_no_live_runs"
+  "shadeform_teardown_confirmed": true,
+  "status": "live_abc_overhead_complete"
 }

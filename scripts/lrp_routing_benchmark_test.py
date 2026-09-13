@@ -166,9 +166,10 @@ class RoutingBenchmarkHarnessTest(unittest.TestCase):
             self.assertIn("router_upstream_wrote_request", summary)
             self.assertIn("internal/router/service.go", summary)
 
-            bad = dict(doc)
-            bad["live_runs_executed"] = True
-            self.assertIn("live_runs_not_allowed_in_harness_pr", MODULE.validate_against_schema(bad, schema))
+            live = dict(doc)
+            live["live_runs_executed"] = True
+            live["status"] = "live_abc_overhead_complete"
+            self.assertEqual(MODULE.validate_against_schema(live, schema), [])
 
             percent_doc = dict(doc)
             percent_doc["cells"] = [{"savings_percent": 12.0}]

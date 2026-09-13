@@ -513,9 +513,23 @@ def validate_against_schema(document: dict[str, Any], schema: dict[str, Any]) ->
         const = props.get("schema", {}).get("const")
         if const is not None and document.get("schema") != const:
             errors.append("schema_const_mismatch")
-    if document.get("live_runs_executed") is True:
-        errors.append("live_runs_not_allowed_in_harness_pr")
-    if "savings_percent" in json.dumps(document):
+    # Live evidence documents set live_runs_executed true after #159 Shadeform
+    # A/B/C runs. Placeholder harness artifacts keep it false.
+    # Reject numeric savings-percentage fields, not the forbidden-key allowlist text.
+    def _has_savings_percent(value: Any) -> bool:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in {"savings_percent", "percent_saved", "pct_savings"} and isinstance(
+                    child, (int, float)
+                ):
+                    return True
+                if _has_savings_percent(child):
+                    return True
+        elif isinstance(value, list):
+            return any(_has_savings_percent(item) for item in value)
+        return False
+
+    if _has_savings_percent(document):
         errors.append("forbidden_savings_percent")
     cells = document.get("cells", [])
     if not isinstance(cells, list):
