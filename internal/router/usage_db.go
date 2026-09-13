@@ -2541,7 +2541,7 @@ var usageTargetRegionDiagnosticsColumns = map[string]map[string]struct{}{
 
 var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 	"request_usage": {
-		"cached_input_tokens":               {},
+		"cached_input_tokens":                {},
 		"cached_input_price_per_million_usd": {},
 	},
 }

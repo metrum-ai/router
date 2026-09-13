@@ -12,7 +12,7 @@ import (
 
 func TestUsageFromMapCachedInputTokensOpenAIChat(t *testing.T) {
 	reported := usageFromMap(map[string]any{
-		"prompt_tokens": 100.0,
+		"prompt_tokens":     100.0,
 		"completion_tokens": 10.0,
 		"prompt_tokens_details": map[string]any{
 			"cached_tokens": 40.0,
@@ -23,7 +23,7 @@ func TestUsageFromMapCachedInputTokensOpenAIChat(t *testing.T) {
 	}
 
 	zero := usageFromMap(map[string]any{
-		"prompt_tokens": 12.0,
+		"prompt_tokens":     12.0,
 		"completion_tokens": 3.0,
 		"prompt_tokens_details": map[string]any{
 			"cached_tokens": 0.0,
@@ -149,8 +149,8 @@ func TestPopulateCostsUsesCachedInputPriceWhenEvidencePresent(t *testing.T) {
 	}
 
 	missingPrice := &logRecord{
-		Usage:                   Usage{InputTokens: 100, OutputTokens: 10, CachedInputTokens: &cachedTokens},
-		InputPricePerMillionUSD: 2,
+		Usage:                    Usage{InputTokens: 100, OutputTokens: 10, CachedInputTokens: &cachedTokens},
+		InputPricePerMillionUSD:  2,
 		OutputPricePerMillionUSD: 8,
 	}
 	populateCosts(missingPrice)
