@@ -20,7 +20,7 @@ Implementation lives in the importable package
 5. Mixed portfolio target descriptors (OpenRouter Qwen + OpenAI GPT) with
    source-dated prices. No secrets in descriptors.
 6. Replay driver wrapping `run_fanout` via the router (one group per
-   target). Dry-run by default. Spend estimate aborts above 40 USD without
+   target). Dry-run by default. Spend estimate aborts above 100 USD without
    an approval flag.
 7. Verifier-class label columns and allowlisted sandbox plugins. Columns
    stay separate from training `quality` unless an operator applies the
