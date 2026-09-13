@@ -9,22 +9,28 @@ summary:
 
 ## Rules
 
-1. **Skip CPU-only training.** Do not run evidence or promotion training on
+1. **No developer-workstation ML.** Do not run ML training, large-corpus
+   featurize, or Hugging Face model loads on the developer workstation
+   (OOM risk).
+2. **Remote GPU host only.** Evidence and promotion jobs (featurize, train,
+   eval, HF model loads, hardware-backed benchmarks) run only on an ephemeral
+   remote GPU host with ample RAM and GPU. Shadeform is one example; BYO GPU
+   hosts are fine.
+3. **Skip CPU-only training.** Do not run evidence or promotion training on
    CPU-only hosts. Assume GPU hosts are required for acceptable wall time and
    for hardware claims that match production LRP sidecars.
-2. **Train on GPU.** Use at least one CUDA-capable NVIDIA GPU (or an equivalent
+4. **Train on GPU.** Use at least one CUDA-capable NVIDIA GPU (or an equivalent
    operator-approved accelerator) for featurize/train/eval jobs that write
    bundles or public evidence under `docs/evidence/learned-routing-policy/`.
-3. **Cloud GPU is optional.** Shadeform is one provisioning path used in Metrum
+5. **Cloud GPU is optional.** Shadeform is one provisioning path used in Metrum
    development. Operators and customers may use any owned or rented GPU system
    that meets the job needs. Product docs must not require Shadeform.
-4. **Ephemeral cloud instances.** When a cloud GPU instance is created for an
-   LRP training or config-D benchmark job (Shadeform or similar):
-   - Create the instance only when the job is ready to run.
-   - Tear the instance down when the job finishes, fails, or is cancelled.
-   - Do not leave idle training hosts billed overnight.
-5. **CI synthetic exception.** `make lrp-test` and the synthetic demo may train
-   LightGBM on CPU with **synthetic** embeddings and labels. Those runs are not
+6. **Ephemeral cloud instances.** Create a cloud GPU instance only when the job
+   is ready to run. Always tear it down when the job finishes, fails, or is
+   cancelled. Do not leave idle training hosts billed overnight. Applies to
+   Shadeform and similar providers.
+7. **CI synthetic exception.** `make lrp-test` and the synthetic demo may train
+   LightGBM on CPU with **tiny synthetic fixtures only**. Those runs are not
    hardware evidence and must not be cited as GPU or Shadeform results.
 
 ## Shadeform (optional example)

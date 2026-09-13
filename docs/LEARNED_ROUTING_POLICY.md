@@ -184,11 +184,12 @@ to call LRP directly; observer/explain overhead is excluded from that measuremen
 ## GPU training hosts
 
 Evidence and promotion training must run on GPU hosts. Skip CPU-only training
-for those jobs. Shadeform is an optional provisioning example for development;
-operators may use any owned GPU system. When a cloud GPU instance is created
-for training or configuration D benchmarks, create it only when needed and
-always tear it down when the job ends or fails. CI synthetic demos may still
-train on CPU with synthetic fixtures and are not hardware evidence.
+for those jobs. No local workstation ML for evidence jobs. Shadeform is an
+optional provisioning example for development; operators may use any owned GPU
+system. When a cloud GPU instance is created for training or configuration D
+benchmarks, create it only when needed and always tear it down when the job
+ends or fails. CI synthetic demos may still train on CPU with tiny synthetic
+fixtures and are not hardware evidence.
 
 Details: [LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md). Configuration D remains
 tracked in issue #162.
