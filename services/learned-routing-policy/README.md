@@ -64,6 +64,7 @@ Teacher-forced replay measures continuation agreement on fixed histories. It
 does not prove eventual task success. Tool mismatches are agreement signals,
 not automatic task failures. Coding traces do not justify quality claims for
 unsampled workloads. Cold and warm cache passes are repeated observations of
-the same turn. N=1000 is a practical budget, not proof of sufficiency. A
+the same turn. The example corpus uses at most 100 source traces and N=100
+sampled turns; that is a practical budget, not proof of sufficiency. A
 reference bundle is a first-run example, not automatic production readiness.
 Paid replay stays opt-in and is not part of `make lrp-test`.

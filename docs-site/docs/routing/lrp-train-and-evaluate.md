@@ -59,9 +59,10 @@ Seed construction tooling can replay pinned public coding trajectories through
 the router. Teacher-forced continuation agreement is not end-to-end task
 success. Tool mismatches are reference-agreement signals, not automatic task
 failures. Coding traces do not cover unsampled chat or image workloads. Cache
-passes repeat observations and do not increase unique-turn counts. N=1000 is a
-budget, not sufficiency. A reference bundle is an example for specific targets
-and data. Changing targets or workloads requires renewed evaluation.
+passes repeat observations and do not increase unique-turn counts. The example
+corpus uses at most 100 source traces and N=100 sampled turns; that is a budget,
+not sufficiency. A reference bundle is an example for specific targets and data.
+Changing targets or workloads requires renewed evaluation.
 
 ## Synthetic demo
 
