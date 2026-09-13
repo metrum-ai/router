@@ -3,11 +3,10 @@
 
 from __future__ import annotations
 
-from seed_fixtures import multi_session_pool, sample_trajectory_row
-
 from lrp.features import session_split
 from lrp.seed.extract import extract_teacher_forced_turns
 from lrp.seed.sample import stratified_sample
+from seed_fixtures import multi_session_pool, sample_trajectory_row
 
 
 def test_teacher_forced_extraction_keeps_reference_separate():
@@ -58,7 +57,6 @@ def test_iter_trajectory_rows_respects_max_traces():
 
     import pyarrow as pa
     import pyarrow.parquet as pq
-
     from lrp.seed.extract import iter_trajectory_rows
 
     # Keep parquet outside the repo and outside /tmp (a stray /tmp/.git on some
