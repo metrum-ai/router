@@ -12,7 +12,9 @@ summary:
 1. **No local laptop/desktop ML.** Do not run evidence, promotion, featurize,
    train, eval, Hugging Face model loads, or large-corpus jobs on a developer
    laptop or desktop workstation (OOM risk). Local workstation training for
-   those jobs is forbidden.
+   those jobs is forbidden. Example evidence uses at most 100 traces on
+   Shadeform or BYO remote GPU; do not load the full upstream parquet on a
+   laptop.
 2. **Remote GPU host only.** Those jobs run only on an ephemeral remote GPU
    host with ample RAM and GPU. Shadeform (or equivalent) is the usual path;
    BYO remote GPU is fine. Create the host when needed; always tear it down.
