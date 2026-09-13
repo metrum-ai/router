@@ -37,12 +37,12 @@ def test_iteration1_targets_have_dated_prices_without_secrets():
     models = {row["model"] for row in targets}
     assert "qwen/qwen3.5-9b" in models
     assert "qwen/qwen3.8-27b" in models
-    assert "gpt-5.6" in models
+    assert "gpt-5.6-sol" in models
     assert "gpt-5.4-mini" in models
     blob = json.dumps(targets)
     assert "sk-" not in blob
     assert "OPENAI_API_KEY" not in blob
-    openai = next(row for row in targets if row["model"] == "gpt-5.6")
+    openai = next(row for row in targets if row["model"] == "gpt-5.6-sol")
     assert openai["pass1_controls"]["prompt_cache_options"]["mode"] == "explicit"
     assert openai["pricing"]["as_of"] == "2026-09-13"
 
@@ -95,7 +95,7 @@ async def test_openai_target_without_catalog_price_is_ineligible(tmp_path):
     request = build_replay_request(turn, max_tokens=32)
     source = write(tmp_path / "requests", [request])
     target = fanout_target_dicts(
-        [row for row in iteration1_targets() if row["model"] == "gpt-5.6"]
+        [row for row in iteration1_targets() if row["model"] == "gpt-5.6-sol"]
     )[0]
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await run_fanout(
