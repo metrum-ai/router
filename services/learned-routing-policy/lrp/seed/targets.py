@@ -73,15 +73,19 @@ def iteration1_targets() -> list[dict[str, Any]]:
             "request_fields_scope": "all",
         },
         {
-            "target_id": "openai-gpt-5.6",
+            "target_id": "openai-gpt-5.6-sol",
             "provider": "openai",
-            "model": "gpt-5.6",
-            "model_ref": "gpt-5.6",
+            "model": "gpt-5.6-sol",
+            "model_ref": "gpt-5.6-sol",
             "router_group": "lrp-seed-gpt-5-6",
             "honors_max_tokens": True,
             "output_token_field": "max_completion_tokens",
             "router_targets": [
-                {"provider": "openai", "model": "gpt-5.6", "model_ref": "gpt-5.6"}
+                {
+                    "provider": "openai",
+                    "model": "gpt-5.6-sol",
+                    "model_ref": "gpt-5.6-sol",
+                }
             ],
             "context_tokens": 1_050_000,
             "common_eligible_context_tokens": 272_000,
@@ -101,7 +105,7 @@ def iteration1_targets() -> list[dict[str, Any]]:
                 "processing": "standard",
                 "notes": (
                     "explicit mode with no breakpoints disables cache reads/writes "
-                    "and write premium for pass 1"
+                    "and write premium for pass 1; model id is gpt-5.6-sol"
                 ),
             },
             "request_fields_scope": "openai",

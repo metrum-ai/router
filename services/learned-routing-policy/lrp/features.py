@@ -293,9 +293,18 @@ class ONNXEmbedder:
         options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         options.add_session_config_entry("session.intra_op.allow_spinning", "0")
         options.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        self.session = ort.InferenceSession(
-            model_bytes, sess_options=options, providers=["CPUExecutionProvider"]
+        available = ort.get_available_providers()
+        # Prefer CUDA when present. Evidence and promotion runs require a real
+        # GPU host; CPUExecutionProvider remains for unit tests and CI only.
+        providers = (
+            ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            if "CUDAExecutionProvider" in available
+            else ["CPUExecutionProvider"]
         )
+        self.session = ort.InferenceSession(
+            model_bytes, sess_options=options, providers=providers
+        )
+        self.ort_providers = list(self.session.get_providers())
 
     def encode(self, text: str) -> Vector:
         encoded = self.tokenizer.encode(self.prefix + text[-TEXT_LIMIT:])
