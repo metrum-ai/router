@@ -3,6 +3,10 @@
 Status: harness ready. No live or paid runs executed in this PR.
 
 Configurations A/B/C are supported. Configuration D is deferred to issue #162.
+Config D and any evidence training must use a remote GPU host with ample RAM
+and GPU (skip CPU-only; no laptop/desktop workstation ML). Shadeform is
+optional; create cloud GPU instances only when needed and tear them down when
+done. See [LRP_GPU_TRAINING.md](../../LRP_GPU_TRAINING.md).
 
 ## Router-added latency
 

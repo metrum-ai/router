@@ -206,6 +206,14 @@ curl -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18080/v1/models
 # A caller request for an unallowed model group must return a 4xx.
 ```
 
+## LRP training note
+
+Shadeform is optional for LRP evidence or configuration D training. Operators may
+use any GPU host. When this Shadeform path is used for LRP train/eval, follow
+[LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md): skip CPU-only training, create the
+instance only when the job is ready, and always terminate it when the job ends
+or fails.
+
 ## Validation, evidence, and teardown
 
 Run before PR creation:

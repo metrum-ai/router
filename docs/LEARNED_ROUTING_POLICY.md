@@ -181,6 +181,20 @@ only scalar predictions, costs, model feature identifiers/contributions and
 actual selected-target readback. The 500-request latency measurement continues
 to call LRP directly; observer/explain overhead is excluded from that measurement.
 
+## GPU training hosts
+
+Evidence and promotion training (featurize/train/eval with models or large
+corpora) must run on an ephemeral remote GPU host with ample RAM and GPU.
+Skip CPU-only and skip local laptop/desktop workstation ML for those jobs.
+Shadeform (or equivalent) is an optional provisioning example; BYO remote GPU
+is fine. Create cloud GPU instances only when needed and always tear them down
+when the job ends or fails. `make lrp-test` CI may still train LightGBM on CPU
+with tiny synthetic fixtures only; that path is non-evidence and must not grow
+into local ML training.
+
+Details: [LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md). Configuration D remains
+tracked in issue #162.
+
 ## Routing performance benchmark harness (issue #159)
 
 Offline harness only. It does not execute live or paid benchmarks.
@@ -194,8 +208,9 @@ python3 scripts/lrp_routing_benchmark.py config-patch --config B
 Artifacts and schema live under
 [`docs/evidence/learned-routing-policy/`](evidence/learned-routing-policy/).
 Configurations A (static), B (external shadow), and C (external enforce) are
-supported. Configuration D (GPU LRP / Shadeform topology) is deferred to
-issue #162. Throughput mode marks deterministic local-sink rows
+supported. Configuration D (GPU LRP) is deferred to issue #162 and must follow
+[LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md) (GPU host required; optional
+Shadeform create/teardown). Throughput mode marks deterministic local-sink rows
 `synthetic_upstream`. Router-added latency is
 `request_trace_events.router_upstream_wrote_request.duration_ms`:
 receive clock and `router_receive` at

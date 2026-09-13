@@ -15,6 +15,12 @@ make lrp-synthetic-demo
 The synthetic demo trains real LightGBM models using explicitly synthetic
 embeddings, responses and labels. It evaluates promotion gates but cannot supply
 provider quality or real-ONNX latency evidence. It writes outside the repository.
+Synthetic CI training on CPU is allowed only for those fixtures; do not expand
+local ML. Evidence and promotion training must run on an ephemeral remote GPU
+host with ample RAM and GPU; skip CPU-only and skip laptop/desktop workstation
+ML for those jobs. Shadeform is an optional cloud example (create when needed,
+always tear down). BYO remote GPU is fine. See
+[LRP_GPU_TRAINING.md](../../docs/LRP_GPU_TRAINING.md).
 
 See [the operator runbook](../../docs/LEARNED_ROUTING_POLICY.md) for all pipeline
 commands, protected storage, approved third-party judging, local ONNX artifacts,
