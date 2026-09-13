@@ -167,6 +167,12 @@ def parser() -> argparse.ArgumentParser:
     serving.add_argument("--admin-port", type=int, default=18094)
     serving.add_argument("--enable-admin", action="store_true")
     serving.add_argument("--deadline-ms", type=int, help="Override YAML deadline_ms (1..4500; default 200)")
+    serving.add_argument("--trust", type=Path, help="Operator Ed25519 trust JSON for signed bundles")
+    serving.add_argument(
+        "--require-signed",
+        action="store_true",
+        help="Reject unsigned bundles on serve and reload",
+    )
     validate = sub.add_parser("validate")
     validate.add_argument("--bundle", type=Path, required=True)
     validate.add_argument("--trust", type=Path, help="Operator Ed25519 trust JSON")
@@ -455,6 +461,8 @@ def execute(args: argparse.Namespace) -> int:
             admin_port=args.admin_port,
             enable_admin=args.enable_admin,
             deadline_ms=args.deadline_ms,
+            require_signed=args.require_signed,
+            trusted_keys=args.trust,
         )
     return 0
 

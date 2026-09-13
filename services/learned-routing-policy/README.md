@@ -35,7 +35,9 @@ loopback port. Explain and reload require `--enable-admin` and authentication.
 Dataset content, responses, judgments, embeddings and bundles are operator-owned
 protected artifacts. Commit only small explicitly synthetic fixtures.
 Optional [operator-signed bundles](../../docs/LRP_SIGNED_BUNDLES.md) add Ed25519
-manifest signatures and require-signed loading with operator-owned keys.
-[Selection constraints](../../docs/LRP_SELECTION_CONSTRAINTS.md) cover
+manifest signatures and require-signed loading with operator-owned keys. Pass
+`--trust` and `--require-signed` to `lrp serve` so startup and reload enforce
+the same trust policy as `lrp validate`. [Selection constraints](../../docs/LRP_SELECTION_CONSTRAINTS.md) cover
 per-project floors, upstream latency gates, evidence-based cache cost estimates,
-and bounded explanation labels.
+and bounded explain labels. Offline eval shares the composed decision path with
+serving and records applicability when configured evidence is missing.

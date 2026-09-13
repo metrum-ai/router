@@ -25,6 +25,7 @@ from lrp.policy import CacheEstimate, Decision, Prediction, decide
 from lrp.schemas import GroupConfig, Target, TargetKey
 from lrp.uncertainty import (
     DEFAULT_UNCERTAINTY_THRESHOLD,
+    UncertaintyAvailability,
     UncertaintyEstimate,
     ensemble_stats,
 )
@@ -120,8 +121,14 @@ def decide_with_exploration(
     project: str = "",
     latency_evidence: Mapping[TargetKey, float] | None = None,
     cache: CacheEstimate | None = None,
+    uncertainty_availability: UncertaintyAvailability | None = None,
 ) -> Decision:
-    """Epsilon-greedy or Thompson sampling over calibrated uncertainty."""
+    """Epsilon-greedy or Thompson sampling over calibrated uncertainty.
+
+    Thompson uses a single exploration gate per request. A rejected Thompson
+    draw (or missing estimates) reaches deterministic exploitation without a
+    second epsilon draw. Ordinary epsilon-greedy is unchanged when selected.
+    """
     base = _decide_kwargs(
         input_tokens=input_tokens,
         pin=pin,
@@ -130,25 +137,33 @@ def decide_with_exploration(
         latency_evidence=latency_evidence,
         cache=cache,
     )
-    if (
-        exploration_allowed
-        and strategy == "thompson"
-        and estimates
-        and cfg.explore_rate > 0
-        and rng.random() < cfg.explore_rate
-    ):
-        sampled = thompson_predictions(predictions, estimates, rng)
-        # Force explore_rate=0 so decide does not apply a second epsilon draw.
-        frozen = cfg.model_copy(update={"explore_rate": 0.0})
-        decision = decide(
-            targets,
-            sampled,
-            frozen,
-            rng,
-            **{**base, "exploration_allowed": False},
+    if strategy != "thompson":
+        return decide(targets, predictions, cfg, rng, **base)
+
+    # Thompson path: one gate only. Never fall through to epsilon-greedy.
+    frozen = cfg.model_copy(update={"explore_rate": 0.0})
+    exploit = {**base, "exploration_allowed": False}
+    if not exploration_allowed or cfg.explore_rate <= 0:
+        return decide(targets, predictions, frozen, rng, **exploit)
+    estimates = estimates or {}
+    availability = uncertainty_availability
+    if availability is None:
+        availability = (
+            UncertaintyAvailability.AVAILABLE
+            if estimates
+            else UncertaintyAvailability.UNAVAILABLE
         )
-        return Decision(decision.primary, decision.fallbacks, "lrp:explore-thompson")
-    return decide(targets, predictions, cfg, rng, **base)
+    if availability in (
+        UncertaintyAvailability.UNAVAILABLE,
+        UncertaintyAvailability.INSUFFICIENT,
+    ) or not estimates:
+        # Align with abstention fail-closed: missing estimates do not open epsilon.
+        return decide(targets, predictions, frozen, rng, **exploit)
+    if rng.random() >= cfg.explore_rate:
+        return decide(targets, predictions, frozen, rng, **exploit)
+    sampled = thompson_predictions(predictions, estimates, rng)
+    decision = decide(targets, sampled, frozen, rng, **exploit)
+    return Decision(decision.primary, decision.fallbacks, "lrp:explore-thompson")
 
 
 def compare_exploration_strategies(

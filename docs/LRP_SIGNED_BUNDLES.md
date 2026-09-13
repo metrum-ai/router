@@ -93,6 +93,11 @@ uv run --project services/learned-routing-policy --locked \
 # Hash-check plus optional require-signed gate.
 uv run --project services/learned-routing-policy --locked \
   lrp validate --bundle "$LRP_BUNDLE_DIR" --trust "$LRP_TRUST_JSON" --require-signed
+
+# Serve with the same trust policy on startup and every reload/SIGHUP.
+uv run --project services/learned-routing-policy --locked \
+  lrp serve --bundle "$LRP_BUNDLE_DIR" --config "$LRP_DATA_DIR/lrp.yaml" \
+  --trust "$LRP_TRUST_JSON" --require-signed --enable-admin
 ```
 
 Python API:
@@ -105,9 +110,11 @@ load_bundle(bundle_dir, require_signed=True, trusted_keys=trust_path)
 ```
 
 If `manifest.sig` is present, loaders must receive a trust store; the signature
-is never skipped silently. Failed signed reloads keep the previously loaded
-bundle (`AtomicBundle.reload`), matching the existing digest-failure rollback
-behavior.
+is never skipped silently. `lrp serve --trust` / `--require-signed` propagates
+the same settings into startup load and every admin/SIGHUP reload. Failed signed
+reloads keep the previously loaded bundle and matching ensemble
+(`Runtime.reload` / `AtomicBundle.reload`), matching the existing digest-failure
+rollback behavior.
 
 ## Rollback
 

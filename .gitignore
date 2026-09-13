@@ -80,3 +80,7 @@ tests/harbor/.pytest_cache/
 internal/router/docsdist/*
 !internal/router/docsdist/.keep
 router-key-inventory-and-delivery-20260729.csv
+
+# Shadeform / ops credentials (never commit)
+ops.json
+**/ops.json

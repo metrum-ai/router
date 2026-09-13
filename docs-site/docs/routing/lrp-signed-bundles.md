@@ -20,7 +20,10 @@ deployment control, not a caller API.
    public key). Multiple keys support rotation.
 4. Run `lrp sign-bundle --bundle <dir> --key <private> --key-id <id>` to write
    `manifest.sig` beside `manifest.json`.
-5. Load with `require_signed` and the trust file when promoting or reloading.
+5. Serve and reload with the same trust policy:
+   `lrp serve --bundle <dir> --config <yaml> --trust <trust.json> --require-signed`.
+   Startup and every admin/SIGHUP reload enforce require-signed and verification.
+   A present signature is never skipped silently.
 
 The signature binds the exact `manifest.json` bytes and the existing manifest
 version digest. Per-file SHA-256 inventory checks still run. Unsigned bundles

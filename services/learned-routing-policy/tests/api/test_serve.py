@@ -151,7 +151,9 @@ def test_reload_midtraffic_and_native_shadow(monkeypatch):
 
         import lrp.bundle
         runtime.bundle_path = Path("/synthetic-bundle")
-        monkeypatch.setattr(lrp.bundle, "load_bundle", lambda path, threads: replacement)
+        monkeypatch.setattr(
+            lrp.bundle, "load_bundle", lambda path, threads=1, **kwargs: replacement
+        )
         assert admin.post("/admin/reload", headers=AUTH).status_code == 200
         assert runtime.bundle is replacement
         assert all(f.result() == 200 for f in futures)

@@ -60,34 +60,68 @@ class DriftReport:
         }
 
 
+def _psi_from_counts(exp_counts: np.ndarray, act_counts: np.ndarray) -> float:
+    """PSI from paired bin counts; never drops mass by renormalizing away zeros."""
+    exp_total = float(exp_counts.sum())
+    act_total = float(act_counts.sum())
+    if exp_total <= 0 or act_total <= 0:
+        return 0.0
+    exp_pct = exp_counts.astype(float) / exp_total
+    act_pct = act_counts.astype(float) / act_total
+    exp_pct = np.clip(exp_pct, EPS, None)
+    act_pct = np.clip(act_pct, EPS, None)
+    # Renormalize after clipping only; underflow/overflow bins already hold
+    # out-of-range mass so dropped observations are not silently lost.
+    exp_pct = exp_pct / exp_pct.sum()
+    act_pct = act_pct / act_pct.sum()
+    psi = float(np.sum((act_pct - exp_pct) * np.log(act_pct / exp_pct)))
+    return psi if math.isfinite(psi) else float("nan")
+
+
+def _constant_feature_psi(expected: np.ndarray, actual: np.ndarray) -> float:
+    """Two-bin PSI for a constant reference: match vs changed."""
+    ref = float(expected[0])
+    if not math.isfinite(ref):
+        return float("nan")
+    exp_match = int(np.isclose(expected, ref).sum())
+    exp_other = int(expected.size - exp_match)
+    act_match = int(np.isclose(actual, ref).sum())
+    act_other = int(actual.size - act_match)
+    return _psi_from_counts(
+        np.asarray([exp_match, exp_other], dtype=float),
+        np.asarray([act_match, act_other], dtype=float),
+    )
+
+
 def population_stability_index(
     expected: np.ndarray,
     actual: np.ndarray,
     *,
     bins: int = PSI_BINS,
 ) -> float:
-    """PSI between two 1-d samples using shared quantile edges from expected."""
+    """PSI between two 1-d samples using shared quantile edges from expected.
+
+    Finite observations outside the reference support land in explicit
+    underflow/overflow bins so mass is not discarded. A changed constant
+    reference produces drift evidence rather than unconditional zero.
+    """
     exp = np.asarray(expected, dtype=float).ravel()
     act = np.asarray(actual, dtype=float).ravel()
     if exp.size < 2 or act.size < 2 or bins < 2:
         return 0.0
-    if not (np.isfinite(exp).all() and np.isfinite(act).all()):
+    exp = exp[np.isfinite(exp)]
+    act = act[np.isfinite(act)]
+    if exp.size < 2 or act.size < 2:
         return float("nan")
     edges = np.unique(np.quantile(exp, np.linspace(0, 1, bins + 1)))
     if edges.size < 3:
-        # Degenerate constant feature — no distributional shift measurable.
-        return 0.0
-    exp_counts, _ = np.histogram(exp, bins=edges)
-    act_counts, _ = np.histogram(act, bins=edges)
-    exp_pct = exp_counts.astype(float) / max(exp_counts.sum(), 1)
-    act_pct = act_counts.astype(float) / max(act_counts.sum(), 1)
-    exp_pct = np.clip(exp_pct, EPS, None)
-    act_pct = np.clip(act_pct, EPS, None)
-    # Renormalize after clipping.
-    exp_pct = exp_pct / exp_pct.sum()
-    act_pct = act_pct / act_pct.sum()
-    psi = float(np.sum((act_pct - exp_pct) * np.log(act_pct / exp_pct)))
-    return psi if math.isfinite(psi) else float("nan")
+        return _constant_feature_psi(exp, act)
+    # Interior edges only; ±inf capture underflow/overflow support.
+    interior = edges[1:-1]
+    full_edges = np.concatenate(([-np.inf], interior, [np.inf]))
+    exp_counts, _ = np.histogram(exp, bins=full_edges)
+    act_counts, _ = np.histogram(act, bins=full_edges)
+    return _psi_from_counts(exp_counts, act_counts)
 
 
 def scalar_psi_by_feature(

@@ -114,6 +114,13 @@ does not print content-bearing rows. An independent `lrp train` rerun on the
 same recorded inputs also completed successfully and produced the same bundle
 version, `f10b14c5897a571372136168`.
 
+Offline evaluation now also records `evaluation_applicability` when group
+config enables project floors, latency constraints, pins, Thompson, or
+abstention without the evidence needed to validate those behaviors. Unsupported
+applicability prevents a blanket promotion pass for that configuration.
+Exploration remains disabled during promotion replay by design; that does not
+prove stochastic production exploration rates.
+
 Each target has a quality classifier and a log-output-token regressor. Validation
 calibrates the quality score; serving uses the calibrated score. The near-zero
 validation Brier values reflect this intentionally easy controlled dataset,
@@ -233,7 +240,10 @@ Default `serve` loads one inference thread. At 512 tokens, one-thread median
 embedding/full-feature latency was 244.405/247.355 ms, already above the 200 ms
 service deadline. Expect frequent BT deadline fallback for this tested shape;
 timed-out inference occupies its bounded slot until completion, and subsequent
-requests can also fall back while workers are busy.
+requests can also fall back while workers are busy. Ensemble uncertainty and
+explanation work share that same admission and remaining-deadline budget; they
+do not run after timeout. Paid hardware acceptance for LRP latency is tracked
+in issue #162 and is outside this software-correctness case study.
 
 The service default remains 200 ms, with configurable `deadline_ms` from 1 to
 4,500 ms for explicitly latency-tolerant workloads or controlled tests. A larger

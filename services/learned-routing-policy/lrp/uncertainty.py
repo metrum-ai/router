@@ -1,11 +1,15 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
-"""Bootstrap ensemble uncertainty and abstention (#24).
+"""Bootstrap ensemble uncertainty and abstention (#24, #158).
 
 Five LightGBM quality models are fit on bootstrap resamples. At serve time the
 calibrated standard deviation across members is compared to a reviewed
 threshold; when the would-be primary is too uncertain, the policy abstains to
 the configured anchor (or first eligible fallback) with label ``lrp:uncertain``.
+
+When abstention is enabled but ensemble evidence is unavailable or insufficient,
+selection fails closed to the same conservative anchor path with
+``lrp:uncertain-unavailable``. Missing evidence is never treated as confidence.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +29,15 @@ from lrp.schemas import Target, TargetKey
 # Reviewed defaults from issue #15 deferred Wave-2 design.
 ENSEMBLE_SIZE = 5
 DEFAULT_UNCERTAINTY_THRESHOLD = 0.15
+
+
+class UncertaintyAvailability(Enum):
+    """Operator-visible uncertainty evidence states (#158 item 6)."""
+
+    DISABLED = "disabled"
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    INSUFFICIENT = "insufficient"
 
 
 @dataclass(frozen=True)
@@ -41,6 +55,10 @@ class UncertaintyEstimate:
             and self.n_members >= 2
         )
 
+    def usable_for_threshold(self) -> bool:
+        """True when member count can support a threshold comparison."""
+        return self.n_members >= 2 and math.isfinite(self.std) and math.isfinite(self.mean)
+
 
 def ensemble_stats(scores: Sequence[float]) -> UncertaintyEstimate:
     """Return mean/std of finite calibrated ensemble member scores."""
@@ -54,6 +72,21 @@ def ensemble_stats(scores: Sequence[float]) -> UncertaintyEstimate:
         std=std if math.isfinite(std) else 1.0,
         n_members=len(arr),
     )
+
+
+def classify_estimate(
+    estimate: UncertaintyEstimate | None,
+    *,
+    enabled: bool,
+) -> UncertaintyAvailability:
+    """Map a per-target estimate into an availability state."""
+    if not enabled:
+        return UncertaintyAvailability.DISABLED
+    if estimate is None:
+        return UncertaintyAvailability.UNAVAILABLE
+    if estimate.n_members < 2 or not math.isfinite(estimate.std):
+        return UncertaintyAvailability.INSUFFICIENT
+    return UncertaintyAvailability.AVAILABLE
 
 
 def calibrate_raw(raw: float, xs: Sequence[float], ys: Sequence[float]) -> float:
@@ -88,9 +121,25 @@ def should_abstain(
     *,
     threshold: float = DEFAULT_UNCERTAINTY_THRESHOLD,
     enabled: bool = True,
+    availability: UncertaintyAvailability | None = None,
 ) -> bool:
-    if not enabled or estimate is None:
+    """Return whether to abstain.
+
+    When abstention is enabled and evidence is missing or insufficient, abstain
+    (fail closed). A ``None`` estimate with enabled=True is not confidence.
+    """
+    if not enabled:
         return False
+    state = availability
+    if state is None:
+        state = classify_estimate(estimate, enabled=True)
+    if state in (
+        UncertaintyAvailability.UNAVAILABLE,
+        UncertaintyAvailability.INSUFFICIENT,
+    ):
+        return True
+    if estimate is None:
+        return True
     return estimate.above_threshold(threshold)
 
 
@@ -106,25 +155,14 @@ def find_anchor_index(
     return None
 
 
-def apply_abstention(
+def _route_to_anchor(
     decision: Decision,
     targets: Sequence[Target],
-    estimates: Mapping[TargetKey, UncertaintyEstimate],
-    *,
-    anchor: TargetKey | None = None,
-    threshold: float = DEFAULT_UNCERTAINTY_THRESHOLD,
-    enabled: bool = True,
+    anchor: TargetKey | None,
+    label: str,
 ) -> Decision:
-    """If primary uncertainty exceeds threshold, route to anchor (or first fallback)."""
-    if not enabled or not targets:
-        return decision
-    primary = targets[decision.primary]
-    estimate = estimates.get(primary.key)
-    if not should_abstain(estimate, threshold=threshold, enabled=True):
-        return decision
     anchor_index = find_anchor_index(targets, anchor)
     if anchor_index is None:
-        # Prefer first fallback that is not the uncertain primary.
         for candidate in decision.fallbacks:
             if candidate != decision.primary:
                 anchor_index = candidate
@@ -133,12 +171,54 @@ def apply_abstention(
         return Decision(
             decision.primary,
             decision.fallbacks,
-            safe_label("lrp:uncertain"),
+            safe_label(label),
         )
     fallbacks = tuple(
         i for i in (decision.primary, *decision.fallbacks) if i != anchor_index
     )
-    return Decision(anchor_index, fallbacks, safe_label("lrp:uncertain"))
+    return Decision(anchor_index, fallbacks, safe_label(label))
+
+
+def apply_abstention(
+    decision: Decision,
+    targets: Sequence[Target],
+    estimates: Mapping[TargetKey, UncertaintyEstimate],
+    *,
+    anchor: TargetKey | None = None,
+    threshold: float = DEFAULT_UNCERTAINTY_THRESHOLD,
+    enabled: bool = True,
+    availability: UncertaintyAvailability | None = None,
+) -> Decision:
+    """If primary uncertainty exceeds threshold, route to anchor (or first fallback).
+
+    Missing or insufficient ensemble evidence with abstention enabled fails closed
+    to the conservative anchor path. Never invents targets outside ``targets``.
+    """
+    if not enabled or not targets:
+        return decision
+    state = availability or UncertaintyAvailability.AVAILABLE
+    if state in (
+        UncertaintyAvailability.UNAVAILABLE,
+        UncertaintyAvailability.INSUFFICIENT,
+    ):
+        return _route_to_anchor(
+            decision, targets, anchor, "lrp:uncertain-unavailable"
+        )
+    primary = targets[decision.primary]
+    estimate = estimates.get(primary.key)
+    local = classify_estimate(estimate, enabled=True)
+    if local in (
+        UncertaintyAvailability.UNAVAILABLE,
+        UncertaintyAvailability.INSUFFICIENT,
+    ):
+        return _route_to_anchor(
+            decision, targets, anchor, "lrp:uncertain-unavailable"
+        )
+    if not should_abstain(
+        estimate, threshold=threshold, enabled=True, availability=local
+    ):
+        return decision
+    return _route_to_anchor(decision, targets, anchor, "lrp:uncertain")
 
 
 def merge_mean_predictions(
@@ -193,6 +273,10 @@ class BundleEnsemble:
     """Optional on-disk bootstrap members; absent when a bundle predates Wave 2."""
 
     by_target: dict[TargetKey, TargetEnsemble]
+
+    @property
+    def empty(self) -> bool:
+        return not self.by_target
 
     def estimate(
         self,
