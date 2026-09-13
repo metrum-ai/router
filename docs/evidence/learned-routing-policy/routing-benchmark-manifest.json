@@ -1,22 +1,35 @@
 {
-  "bundle_fingerprint": "UNVERIFIED",
+  "bundle_fingerprint": "138848dfa1a32f4002a945dc8fca10b661488a835f9f933cf63b54259aaedc13",
   "configuration_d": {
     "issue": 162,
     "status": "deferred"
   },
+  "embedding_kind": "synthetic",
   "external_policy_timeout_ms": 500,
   "harbor_concurrency": [
     1,
     4,
     16
   ],
-  "harbor_task_revision": "pin-record-at-run-time",
+  "harbor_status": "skipped",
+  "harbor_task_revision": "skipped_not_installed",
   "harbor_task_set": "aider/polyglot_python_two-bucket",
-  "instance_types": {},
-  "live_runs_executed": false,
-  "max_decision_ms": null,
+  "instance_types": {
+    "cloud": "massedcompute",
+    "gpu_type": "L40S",
+    "memory_in_gb_reported_by_sku": 256,
+    "memory_in_gib_observed": 141,
+    "num_gpus": 2,
+    "region": "kansascity-usa-1",
+    "shadeform_sku": "L40Sx2"
+  },
+  "live_runs_executed": true,
+  "max_decision_ms": 200,
   "max_decision_ms_definition": "Report sidecar deadline_ms as max_decision_ms when both are set; also record external_policy.timeout_ms.",
-  "notes": "Harness-only artifact. No live or paid benchmark executed in issue #159 PR.",
+  "notes": "Live A/B/C seed_replay overhead on Shadeform L40Sx2 with synthetic_upstream sink. LRP sidecar used synthetic embedder bundle for CPU external-policy path overhead; ONNX/GPU embedder and config D remain #162. Harbor driver skipped. Effectiveness/cost reuse #157 seed evidence (no new paid spend).",
+  "paid_api_spend_usd": 0.0,
+  "paid_estimate_reused_from_157_usd": 12.218124976000002,
+  "real_onnx_performance_evidence": false,
   "router_added_latency_source": {
     "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
     "duration_field": "duration_ms",
@@ -28,7 +41,7 @@
     "wrote_request_event": "router_upstream_wrote_request",
     "wrote_request_lines": "2209-2230"
   },
-  "router_commit": "UNVERIFIED",
+  "router_commit": "5b810a15912bb1e4c54394f0cbab46aa9632d666",
   "runs_per_cell": 3,
   "schema": "metrum.lrp.routing-benchmark/v1",
   "seed_concurrency": [
@@ -37,8 +50,8 @@
     32,
     128
   ],
-  "sidecar_commit": "UNVERIFIED",
+  "sidecar_commit": "5b810a15912bb1e4c54394f0cbab46aa9632d666",
   "sidecar_deadline_ms": 200,
   "vllm_version": null,
-  "warmup": "Documented warm-up; steady-state windows only."
+  "warmup": "8 warmup requests discarded; 48 steady-state requests per run; 3 runs per cell; median and spread."
 }

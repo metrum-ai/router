@@ -197,7 +197,11 @@ tracked in issue #162.
 
 ## Routing performance benchmark harness (issue #159)
 
-Offline harness only. It does not execute live or paid benchmarks.
+Harness plus published A/B/C Shadeform overhead evidence. Throughput cells use a
+deterministic local upstream sink (`synthetic_upstream`); effectiveness/cost
+reuse #157 seed scalars (no new paid spend in the #159 pass). Harbor was
+skipped when not installed on the ephemeral host. Configuration D (GPU LRP /
+ONNX embedder claims) remains issue #162.
 
 ```bash
 make lrp-routing-benchmark-harness-test
@@ -205,13 +209,12 @@ python3 scripts/lrp_routing_benchmark.py plan
 python3 scripts/lrp_routing_benchmark.py config-patch --config B
 ```
 
-Artifacts and schema live under
-[`docs/evidence/learned-routing-policy/`](evidence/learned-routing-policy/).
-Configurations A (static), B (external shadow), and C (external enforce) are
-supported. Configuration D (GPU LRP) is deferred to issue #162 and must follow
+Artifacts live under
+[`docs/evidence/learned-routing-policy/`](evidence/learned-routing-policy/)
+(`routing-benchmark.json` / `.md`). Configurations A (static), B (external
+shadow), and C (external enforce) are supported. Configuration D must follow
 [LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md) (GPU host required; optional
-Shadeform create/teardown). Throughput mode marks deterministic local-sink rows
-`synthetic_upstream`. Router-added latency is
+Shadeform create/teardown). Router-added latency is
 `request_trace_events.router_upstream_wrote_request.duration_ms`:
 receive clock and `router_receive` at
 `internal/router/service.go:1318-1352`; `httptrace.WroteRequest` and
