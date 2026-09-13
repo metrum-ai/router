@@ -156,4 +156,7 @@ and 7-day staging enforce remain **independent** before broad promotion. See the
 
 The issue #159 routing-benchmark harness publishes schema and empty evidence
 under the operator evidence tree. It does not claim live A/B/C overhead or USD
-results. Configuration D (GPU LRP) is tracked in issue #162.
+results. Configuration D (GPU LRP) is tracked in issue #162. Evidence and
+promotion training must use a GPU host (skip CPU-only). Shadeform is optional;
+tear cloud GPU instances down when the job ends. See
+[Train and evaluate](./lrp-train-and-evaluate.md#gpu-training-hosts).

@@ -35,6 +35,22 @@ uv run --project services/learned-routing-policy --locked lrp validate --bundle 
 Each target needs at least 200 training rows to participate in learned
 selection. That is a sample-count floor, not proof of workload coverage.
 
+## GPU training hosts
+
+Train evidence and promotion bundles on a GPU host. Skip CPU-only training for
+those jobs. Any operator-owned or rented GPU system is fine. Shadeform is one
+optional cloud path some operators use for development; it is not required.
+
+When you create a cloud GPU instance for training (Shadeform or similar), create
+it only when the job is ready, then terminate it when the job finishes or fails.
+Do not leave idle training hosts running.
+
+Local CI and the synthetic demo may train on CPU with synthetic fixtures. Those
+runs are not hardware evidence.
+
+Operator detail:
+[LRP GPU training](https://github.com/metrum-ai/router/blob/main/docs/LRP_GPU_TRAINING.md).
+
 ## Public seed corpus limits
 
 Seed construction tooling can replay pinned public coding trajectories through

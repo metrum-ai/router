@@ -181,6 +181,18 @@ only scalar predictions, costs, model feature identifiers/contributions and
 actual selected-target readback. The 500-request latency measurement continues
 to call LRP directly; observer/explain overhead is excluded from that measurement.
 
+## GPU training hosts
+
+Evidence and promotion training must run on GPU hosts. Skip CPU-only training
+for those jobs. Shadeform is an optional provisioning example for development;
+operators may use any owned GPU system. When a cloud GPU instance is created
+for training or configuration D benchmarks, create it only when needed and
+always tear it down when the job ends or fails. CI synthetic demos may still
+train on CPU with synthetic fixtures and are not hardware evidence.
+
+Details: [LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md). Configuration D remains
+tracked in issue #162.
+
 ## Routing performance benchmark harness (issue #159)
 
 Offline harness only. It does not execute live or paid benchmarks.
@@ -194,8 +206,9 @@ python3 scripts/lrp_routing_benchmark.py config-patch --config B
 Artifacts and schema live under
 [`docs/evidence/learned-routing-policy/`](evidence/learned-routing-policy/).
 Configurations A (static), B (external shadow), and C (external enforce) are
-supported. Configuration D (GPU LRP / Shadeform topology) is deferred to
-issue #162. Throughput mode marks deterministic local-sink rows
+supported. Configuration D (GPU LRP) is deferred to issue #162 and must follow
+[LRP_GPU_TRAINING.md](./LRP_GPU_TRAINING.md) (GPU host required; optional
+Shadeform create/teardown). Throughput mode marks deterministic local-sink rows
 `synthetic_upstream`. Router-added latency is
 `request_trace_events.router_upstream_wrote_request.duration_ms`:
 receive clock and `router_receive` at
