@@ -37,17 +37,18 @@ selection. That is a sample-count floor, not proof of workload coverage.
 
 ## GPU training hosts
 
-Train evidence and promotion bundles on a GPU host. Skip CPU-only training for
-those jobs. No local workstation ML for evidence jobs. Any operator-owned or
-rented GPU system is fine. Shadeform is one optional cloud path some operators
-use for development; it is not required.
+Train evidence and promotion bundles on a remote GPU host with ample RAM and
+GPU. Skip CPU-only training and skip local laptop/desktop workstation ML for
+those jobs. Shadeform (or equivalent) is one optional cloud path; BYO remote
+GPU is fine. Product docs do not require Shadeform.
 
 When you create a cloud GPU instance for training (Shadeform or similar), create
-it only when the job is ready, then terminate it when the job finishes or fails.
-Do not leave idle training hosts running.
+it only when the job is ready, then always terminate it when the job finishes
+or fails. Do not leave idle training hosts running.
 
-Local CI and the synthetic demo may train on CPU with synthetic fixtures. Those
-runs are not hardware evidence.
+Local CI (`make lrp-test`) and the synthetic demo may train LightGBM on CPU
+with tiny synthetic fixtures only. Those runs are not hardware evidence; do
+not expand local ML beyond that path.
 
 Operator detail:
 [LRP GPU training](https://github.com/metrum-ai/router/blob/main/docs/LRP_GPU_TRAINING.md).
