@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"path"
@@ -97,8 +98,12 @@ func (e routingEligibilityError) Error() string {
 }
 
 type requestContext struct {
-	id                   string
-	start                time.Time
+	id    string
+	start time.Time
+	// receiveAt is the router receive clock used for router-added latency
+	// (receive to outbound WroteRequest). Prefer this over start when deriving
+	// issue #159 router-added latency from request_trace_events.
+	receiveAt            time.Time
 	ctx                  context.Context
 	caller               *callerRuntime
 	dialect              string
@@ -1314,13 +1319,18 @@ func committedStreamUsage(err error, req *IRRequest, dialect string, reservation
 }
 
 func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	// Receive clock for router-added latency (issue #159). Captured before auth
+	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
+	// receive through httptrace.WroteRequest.
+	receiveAt := time.Now()
 	id := requestID()
 	w.Header().Set("X-Request-Id", id)
 	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
 	rc := &requestContext{
 		id:                   id,
-		start:                time.Now(),
+		start:                receiveAt,
+		receiveAt:            receiveAt,
 		ctx:                  r.Context(),
 		caller:               caller,
 		dialect:              dialect,
@@ -1342,6 +1352,7 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Warnings:             []string{},
 		},
 	}
+	rc.trace("router_receive", "router request receive", Target{}, 0, 0, "", false, 0)
 	if err != nil {
 		rc.rec.TokenID = tokenID
 		status := http.StatusUnauthorized
@@ -2199,7 +2210,28 @@ sendUpstream:
 			}
 		}
 	}
+	// Router-added latency (#159): monotonic ms from receiveAt to httptrace
+	// WroteRequest. Persisted as request_trace_events event
+	// router_upstream_wrote_request with duration_ms. Join with router_receive.
+	var wroteRequestMS int64
+	var wroteRequestSeen bool
+	if rc != nil && !rc.receiveAt.IsZero() {
+		receiveAt := rc.receiveAt
+		httpReq = httpReq.WithContext(httptrace.WithClientTrace(httpReq.Context(), &httptrace.ClientTrace{
+			WroteRequest: func(info httptrace.WroteRequestInfo) {
+				wroteRequestMS = time.Since(receiveAt).Milliseconds()
+				wroteRequestSeen = true
+			},
+		}))
+	}
 	httpResp, err := s.httpClient.Do(httpReq)
+	if wroteRequestSeen {
+		errorClass := ""
+		if err != nil {
+			errorClass = "upstream_do_error"
+		}
+		rc.trace("router_upstream_wrote_request", "router_added_latency receive_to_wrote_request", target, attemptIndex, 0, errorClass, false, wroteRequestMS)
+	}
 	if err != nil {
 		if cancel != nil {
 			cancel()

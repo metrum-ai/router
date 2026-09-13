@@ -22,6 +22,7 @@ deployment or broad promotion is established by these results.
 | [public-inference.json](evidence/learned-routing-policy/public-inference.json) | E01–E10/native-shadow results plus two actual request decisions, predictions, estimated costs, feature contributions and successful upstream readback |
 | [public-bge-benchmark.json](evidence/learned-routing-policy/public-bge-benchmark.json) | Official model/tokenizer provenance and hashes, quantization, hardware/load qualifications and all four measured stage-latency scenarios |
 | [public-tests.json](evidence/learned-routing-policy/public-tests.json) | Locally verified aggregate result: 79 tests, zero failures/errors/skips, actual verifier isolation required |
+| [routing-benchmark.json](evidence/learned-routing-policy/routing-benchmark.json) | Issue #159 harness schema placeholder. No live A/B/C runs yet. Configuration D deferred to #162. |
 
 Successful learned-routing validation workflows also attach the generated
 `public-training.log`, containing only projected scalar training events. Its

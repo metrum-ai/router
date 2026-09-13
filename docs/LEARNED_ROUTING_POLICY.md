@@ -181,6 +181,27 @@ only scalar predictions, costs, model feature identifiers/contributions and
 actual selected-target readback. The 500-request latency measurement continues
 to call LRP directly; observer/explain overhead is excluded from that measurement.
 
+## Routing performance benchmark harness (issue #159)
+
+Offline harness only. It does not execute live or paid benchmarks.
+
+```bash
+make lrp-routing-benchmark-harness-test
+python3 scripts/lrp_routing_benchmark.py plan
+python3 scripts/lrp_routing_benchmark.py config-patch --config B
+```
+
+Artifacts and schema live under
+[`docs/evidence/learned-routing-policy/`](evidence/learned-routing-policy/).
+Configurations A (static), B (external shadow), and C (external enforce) are
+supported. Configuration D (GPU LRP / Shadeform topology) is deferred to
+issue #162. Throughput mode marks deterministic local-sink rows
+`synthetic_upstream`. Router-added latency is
+`request_trace_events.router_upstream_wrote_request.duration_ms`:
+receive clock and `router_receive` at
+`internal/router/service.go:1318-1352`; `httptrace.WroteRequest` and
+`router_upstream_wrote_request` at `internal/router/service.go:2209-2230`.
+
 Review `public-training.json`, `public-training.log` and `public-inference.json`
 as the explicit shareable artifact set. The first two contain projected scalar
 training/evaluation evidence; the third contains test outcomes and the two actual

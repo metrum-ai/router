@@ -659,7 +659,7 @@ e2e-live-full: build
 e2e-compose-live:
 	bash scripts/compose_live_e2e.sh
 
-.PHONY: lrp-test lrp-synthetic-demo lrp-e2e
+.PHONY: lrp-test lrp-synthetic-demo lrp-e2e lrp-routing-benchmark-harness-test
 LRP_PROJECT := services/learned-routing-policy
 LRP_DEMO_DIR ?= /var/tmp/metrum-lrp-synthetic-demo
 
@@ -667,6 +667,13 @@ lrp-test:
 	uv run --project $(LRP_PROJECT) --locked ruff check --config $(LRP_PROJECT)/pyproject.toml $(LRP_PROJECT)/lrp $(LRP_PROJECT)/tests
 	uv run --project $(LRP_PROJECT) --locked mypy --config-file $(LRP_PROJECT)/pyproject.toml --strict $(LRP_PROJECT)/lrp
 	env TMPDIR=/var/tmp uv run --project $(LRP_PROJECT) --locked pytest $(LRP_PROJECT)/tests -q $(if $(LRP_JUNIT_REPORT),--junitxml=$(LRP_JUNIT_REPORT),)
+
+# Offline #159 harness/schema tests only. Does not run live or paid benchmarks.
+lrp-routing-benchmark-harness-test:
+	python3 scripts/lrp_routing_benchmark_test.py -q
+	python3 scripts/lrp_routing_benchmark.py validate \
+		--document docs/evidence/learned-routing-policy/routing-benchmark.json \
+		--schema docs/evidence/learned-routing-policy/routing-benchmark.schema.json
 
 lrp-synthetic-demo:
 	uv run --project $(LRP_PROJECT) --locked python scripts/run_lrp_synthetic_demo.py --out-dir $(LRP_DEMO_DIR)
