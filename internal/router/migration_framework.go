@@ -31,8 +31,9 @@ const usageReasoningTelemetryMigrationID = 2026072301
 const usageHistoricalValidationMigrationID = 2026080501
 const usageContentCaptureEncryptionMigrationID = 2026081901
 const usageTargetRegionDiagnosticsMigrationID = 2026090901
+const usageCachedInputPricingMigrationID = 2026091301
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 4, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 5, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -144,6 +145,25 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	TimeoutClass:     "bounded",
 	Apply:            applyUsageTargetRegionDiagnosticsMigration,
 	Verify:           verifyUsageTargetRegionDiagnosticsMigration,
+}, {
+	ID:               usageCachedInputPricingMigrationID,
+	Scope:            usageMigrationScope,
+	Name:             "add nullable cached-input price and token usage fields",
+	Release:          "2026.9",
+	Checksum:         "b04c1a1139537bd27a6016e312e10b8a2c47e39b742fd9f5286ee5a1c21a9ee4",
+	SchemaVersion:    5,
+	DataVersion:      0,
+	Transactional:    true,
+	MaintenanceMode:  "online",
+	RollbackClass:    "restore-required",
+	HandlerKey:       "usage.cached-input-pricing.apply.v1@applyUsageCachedInputPricingMigration",
+	PostconditionKey: "usage.cached-input-pricing.schema.v1@verifyUsageCachedInputPricingMigration",
+	Dependencies:     []int{usageTargetRegionDiagnosticsMigrationID},
+	ExecutionMode:    "transactional",
+	LockClass:        "online",
+	TimeoutClass:     "bounded",
+	Apply:            applyUsageCachedInputPricingMigration,
+	Verify:           verifyUsageCachedInputPricingMigration,
 }}
 
 func init() {

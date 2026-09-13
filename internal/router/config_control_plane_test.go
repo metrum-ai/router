@@ -49,7 +49,7 @@ func TestConfigControlPlanePhase1MigratesRelationalSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !status.Compatible || status.State != "current" || status.SchemaVersion != 4 {
+	if !status.Compatible || status.State != "current" || status.SchemaVersion != 5 {
 		t.Fatalf("unexpected migration status: %+v", status)
 	}
 	for _, table := range ConfigControlPlaneTableNames() {

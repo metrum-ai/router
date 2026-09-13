@@ -68,7 +68,9 @@ type Usage struct {
 	OutputTokens int `json:"output_tokens"`
 	TotalTokens  int `json:"total_tokens"`
 	// ReasoningTokens is nil when the upstream omitted the metric; reported zero remains distinct.
-	ReasoningTokens               *int    `json:"reasoning_tokens,omitempty"`
+	ReasoningTokens *int `json:"reasoning_tokens,omitempty"`
+	// CachedInputTokens is nil when the upstream omitted cache-read evidence; reported zero remains distinct.
+	CachedInputTokens             *int    `json:"cached_input_tokens,omitempty"`
 	InputImageTokens              int     `json:"input_image_tokens,omitempty"`
 	UpstreamReportedInputCostUSD  float64 `json:"upstream_reported_input_cost_usd,omitempty"`
 	UpstreamReportedOutputCostUSD float64 `json:"upstream_reported_output_cost_usd,omitempty"`

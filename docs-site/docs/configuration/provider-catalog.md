@@ -39,7 +39,8 @@ Provider-level fields identify the upstream API skin:
 
 - `base_url`, `dialect`, `auth_scheme`, `api_key_env`, and `headers` control how the router calls upstream.
 - `models.<ref>.model` is the exact upstream model ID.
-- `input_price_per_million_usd`, `output_price_per_million_usd`, optional image pricing fields, `pricing_source`, `pricing_updated_at`, and `pricing_notes` are stored in `config.example.yaml` and copied into request usage rows at request time.
+- `input_price_per_million_usd`, `output_price_per_million_usd`, optional `cached_input_price_per_million_usd`, optional image pricing fields, `pricing_source`, `pricing_updated_at`, and `pricing_notes` are stored in `config.example.yaml` and copied into request usage rows at request time.
+- `cached_input_price_per_million_usd` is optional. Omit it when unknown. Set `0` when cache reads are known free. The DB-backed catalog projection stores the same nullable scalar so managed configs do not silently drop it.
 - `input_modalities` and `output_modalities` describe validated I/O such as `text`, `image`, or `video`.
 - `tool_support.openai_chat`, `tool_support.openai_responses`, and `tool_support.anthropic_messages` are per-skin validation evidence, not marketing claims.
 - `reasoning` and `honors_max_tokens` further constrain eligible targets for reasoning requests or explicit caller output caps.

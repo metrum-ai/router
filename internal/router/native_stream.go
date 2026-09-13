@@ -242,6 +242,9 @@ func mergeStreamUsage(dst *Usage, src Usage) {
 	if src.ReasoningTokens != nil {
 		dst.ReasoningTokens = src.ReasoningTokens
 	}
+	if src.CachedInputTokens != nil {
+		dst.CachedInputTokens = src.CachedInputTokens
+	}
 	if src.InputImageTokens != 0 {
 		dst.InputImageTokens = src.InputImageTokens
 	}

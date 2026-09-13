@@ -610,7 +610,11 @@ func geminiUsageFromMap(value any) Usage {
 	if total == 0 {
 		total = input + output
 	}
-	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total}
+	var cached *int
+	if n, present := numberAsInt(usage["cachedContentTokenCount"]); present {
+		cached = validatedCachedInputTokens(&n, input)
+	}
+	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total, CachedInputTokens: cached}
 }
 
 func decodeResponsesPassthrough(raw []byte, model string) (*IRResponse, error) {
@@ -754,8 +758,15 @@ func encodeResponsesResponse(resp *IRResponse) map[string]any {
 
 func chatUsageMap(usage Usage) map[string]any {
 	out := map[string]any{"prompt_tokens": usage.InputTokens, "completion_tokens": usage.OutputTokens, "total_tokens": usage.TotalTokens}
+	details := map[string]any{}
 	if usage.ReasoningTokens != nil {
 		out["completion_tokens_details"] = map[string]any{"reasoning_tokens": *usage.ReasoningTokens}
+	}
+	if usage.CachedInputTokens != nil {
+		details["cached_tokens"] = *usage.CachedInputTokens
+	}
+	if len(details) > 0 {
+		out["prompt_tokens_details"] = details
 	}
 	return out
 }
@@ -764,6 +775,9 @@ func responsesUsageMap(usage Usage) map[string]any {
 	out := map[string]any{"input_tokens": usage.InputTokens, "output_tokens": usage.OutputTokens, "total_tokens": usage.TotalTokens}
 	if usage.ReasoningTokens != nil {
 		out["output_tokens_details"] = map[string]any{"reasoning_tokens": *usage.ReasoningTokens}
+	}
+	if usage.CachedInputTokens != nil {
+		out["input_tokens_details"] = map[string]any{"cached_tokens": *usage.CachedInputTokens}
 	}
 	return out
 }
@@ -1230,9 +1244,6 @@ func usageFromMap(v any) Usage {
 		out, _ = numberAsInt(m["completion_tokens"])
 	}
 	total, _ := numberAsInt(m["total_tokens"])
-	if total == 0 {
-		total = in + out
-	}
 	imageTokens := imageTokensFromUsage(m)
 	var reasoningTokens *int
 	// OpenAI-compatible usage schema. Provider-specific aliases require direct evidence.
@@ -1244,6 +1255,19 @@ func usageFromMap(v any) Usage {
 			}
 		}
 	}
+	cachedTokens := cachedInputTokensFromUsage(m)
+	// Anthropic reports cache read/write as top-level fields outside input_tokens.
+	if n, present := numberAsInt(m["cache_read_input_tokens"]); present {
+		cachedTokens = &n
+		in += n
+	}
+	if n, present := numberAsInt(m["cache_creation_input_tokens"]); present {
+		in += n
+	}
+	if total == 0 {
+		total = in + out
+	}
+	cachedTokens = validatedCachedInputTokens(cachedTokens, in)
 	upstreamTotalCost, _ := numberAsFloat(m["cost"])
 	costDetails, _ := m["cost_details"].(map[string]any)
 	upstreamInputCost, _ := numberAsFloat(costDetails["upstream_inference_prompt_cost"])
@@ -1256,11 +1280,35 @@ func usageFromMap(v any) Usage {
 		OutputTokens:                  out,
 		TotalTokens:                   total,
 		ReasoningTokens:               reasoningTokens,
+		CachedInputTokens:             cachedTokens,
 		InputImageTokens:              imageTokens,
 		UpstreamReportedInputCostUSD:  upstreamInputCost,
 		UpstreamReportedOutputCostUSD: upstreamOutputCost,
 		UpstreamReportedTotalCostUSD:  upstreamTotalCost,
 	}
+}
+
+func cachedInputTokensFromUsage(m map[string]any) *int {
+	for _, key := range []string{"input_tokens_details", "prompt_tokens_details"} {
+		details, ok := m[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		if n, present := numberAsInt(details["cached_tokens"]); present {
+			return &n
+		}
+	}
+	return nil
+}
+
+func validatedCachedInputTokens(cached *int, inputTokens int) *int {
+	if cached == nil {
+		return nil
+	}
+	if *cached < 0 || *cached > inputTokens {
+		return nil
+	}
+	return cached
 }
 
 func imageTokensFromUsage(m map[string]any) int {

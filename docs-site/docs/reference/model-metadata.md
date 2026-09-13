@@ -346,13 +346,14 @@ Set pricing metadata for every active target when a provider price or customer c
 
 - `input_price_per_million_usd`
 - `output_price_per_million_usd`
+- `cached_input_price_per_million_usd` (optional; omit when unknown, `0` when known free)
 - `image_input_price_per_million_tokens_usd`
 - `image_input_price_per_image_usd`
 - `pricing_source`
 - `pricing_updated_at`
 - `pricing_notes`
 
-The router stores the prices and calculated costs used at request time. Historical reports therefore keep the cost assumptions that were true when the request ran, even if provider pricing changes later.
+The router stores the prices and calculated costs used at request time. Historical reports therefore keep the cost assumptions that were true when the request ran, even if provider pricing changes later. Cached-input price is applied only when upstream also reports a valid cached-token count for that request.
 
 For self-hosted models, use the enterprise cost-allocation rate. Use `0.00` only when reports should show token volume without allocated GPU cost.
 

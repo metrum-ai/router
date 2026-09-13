@@ -90,6 +90,7 @@ type logRecord struct {
 	TargetValidationAgeBucket          string                           `json:"target_validation_age_bucket,omitempty"`
 	InputPricePerMillionUSD            float64                          `json:"input_price_per_million_usd,omitempty"`
 	OutputPricePerMillionUSD           float64                          `json:"output_price_per_million_usd,omitempty"`
+	CachedInputPricePerMillionUSD      *float64                         `json:"cached_input_price_per_million_usd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64                          `json:"image_input_price_per_million_tokens_usd,omitempty"`
 	ImageInputPricePerImageUSD         float64                          `json:"image_input_price_per_image_usd,omitempty"`
 	InputCostUSD                       float64                          `json:"input_cost_usd,omitempty"`

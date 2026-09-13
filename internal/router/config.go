@@ -301,12 +301,14 @@ type ProviderConfig struct {
 }
 
 type ProviderModel struct {
-	Model                              string                `yaml:"model" json:"model"`
-	Dialect                            string                `yaml:"dialect" json:"dialect,omitempty"`
-	DisplayName                        string                `yaml:"display_name" json:"displayName,omitempty"`
-	ContextTokens                      int                   `yaml:"context_tokens" json:"contextTokens,omitempty"`
-	InputPricePerMillionUSD            float64               `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
-	OutputPricePerMillionUSD           float64               `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	Model                    string  `yaml:"model" json:"model"`
+	Dialect                  string  `yaml:"dialect" json:"dialect,omitempty"`
+	DisplayName              string  `yaml:"display_name" json:"displayName,omitempty"`
+	ContextTokens            int     `yaml:"context_tokens" json:"contextTokens,omitempty"`
+	InputPricePerMillionUSD  float64 `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
+	OutputPricePerMillionUSD float64 `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	// CachedInputPricePerMillionUSD is nil when unknown; a non-nil zero means known free cache reads.
+	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
 	ImageInputPricePerImageUSD         float64               `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
 	PricingSource                      string                `yaml:"pricing_source" json:"pricingSource,omitempty"`
@@ -661,24 +663,26 @@ type IntelligentDecisionModel struct {
 }
 
 type Target struct {
-	Provider                           string                `yaml:"provider" json:"provider"`
-	Model                              string                `yaml:"model" json:"model"`
-	ModelRef                           string                `yaml:"model_ref" json:"modelRef,omitempty"`
-	Dialect                            string                `yaml:"dialect" json:"dialect"`
-	Region                             string                `yaml:"region" json:"region,omitempty"`
-	DisplayName                        string                `yaml:"display_name" json:"displayName,omitempty"`
-	ContextTokens                      int                   `yaml:"context_tokens" json:"contextTokens,omitempty"`
-	ToolOnly                           bool                  `yaml:"tool_only" json:"toolOnly,omitempty"`
-	TimeoutMS                          int                   `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
-	DefaultThinking                    map[string]any        `yaml:"default_thinking" json:"defaultThinking,omitempty"`
-	DefaultOpenAIChatThinking          map[string]any        `yaml:"default_openai_chat_thinking" json:"defaultOpenaiChatThinking,omitempty"`
-	Tags                               []string              `yaml:"tags" json:"tags,omitempty"`
-	Weight                             int                   `yaml:"weight" json:"weight"`
-	RPM                                int                   `yaml:"rpm" json:"rpm"`
-	Tier                               string                `yaml:"tier" json:"tier"`
-	Cost                               int                   `yaml:"cost" json:"cost"`
-	InputPricePerMillionUSD            float64               `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
-	OutputPricePerMillionUSD           float64               `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	Provider                  string         `yaml:"provider" json:"provider"`
+	Model                     string         `yaml:"model" json:"model"`
+	ModelRef                  string         `yaml:"model_ref" json:"modelRef,omitempty"`
+	Dialect                   string         `yaml:"dialect" json:"dialect"`
+	Region                    string         `yaml:"region" json:"region,omitempty"`
+	DisplayName               string         `yaml:"display_name" json:"displayName,omitempty"`
+	ContextTokens             int            `yaml:"context_tokens" json:"contextTokens,omitempty"`
+	ToolOnly                  bool           `yaml:"tool_only" json:"toolOnly,omitempty"`
+	TimeoutMS                 int            `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
+	DefaultThinking           map[string]any `yaml:"default_thinking" json:"defaultThinking,omitempty"`
+	DefaultOpenAIChatThinking map[string]any `yaml:"default_openai_chat_thinking" json:"defaultOpenaiChatThinking,omitempty"`
+	Tags                      []string       `yaml:"tags" json:"tags,omitempty"`
+	Weight                    int            `yaml:"weight" json:"weight"`
+	RPM                       int            `yaml:"rpm" json:"rpm"`
+	Tier                      string         `yaml:"tier" json:"tier"`
+	Cost                      int            `yaml:"cost" json:"cost"`
+	InputPricePerMillionUSD   float64        `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
+	OutputPricePerMillionUSD  float64        `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	// CachedInputPricePerMillionUSD is nil when unknown/inherit; a non-nil zero means known free cache reads.
+	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
 	ImageInputPricePerImageUSD         float64               `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
 	PricingSource                      string                `yaml:"pricing_source" json:"pricingSource,omitempty"`
@@ -1196,6 +1200,9 @@ func (c *Config) Validate() error {
 			if model.OutputPricePerMillionUSD < 0 {
 				return fmt.Errorf("provider %s model %s has negative output_price_per_million_usd", name, ref)
 			}
+			if model.CachedInputPricePerMillionUSD != nil && *model.CachedInputPricePerMillionUSD < 0 {
+				return fmt.Errorf("provider %s model %s has negative cached_input_price_per_million_usd", name, ref)
+			}
 			if model.ImageInputPricePerMillionTokensUSD < 0 {
 				return fmt.Errorf("provider %s model %s has negative image_input_price_per_million_tokens_usd", name, ref)
 			}
@@ -1371,6 +1378,9 @@ func (c *Config) Validate() error {
 			}
 			if resolved.OutputPricePerMillionUSD < 0 {
 				return fmt.Errorf("model group %s target %s has negative output_price_per_million_usd", name, resolved.Model)
+			}
+			if resolved.CachedInputPricePerMillionUSD != nil && *resolved.CachedInputPricePerMillionUSD < 0 {
+				return fmt.Errorf("model group %s target %s has negative cached_input_price_per_million_usd", name, resolved.Model)
 			}
 			if resolved.ImageInputPricePerMillionTokensUSD < 0 {
 				return fmt.Errorf("model group %s target %s has negative image_input_price_per_million_tokens_usd", name, resolved.Model)
@@ -2562,6 +2572,9 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	}
 	if target.OutputPricePerMillionUSD == 0 {
 		target.OutputPricePerMillionUSD = catalog.OutputPricePerMillionUSD
+	}
+	if target.CachedInputPricePerMillionUSD == nil {
+		target.CachedInputPricePerMillionUSD = catalog.CachedInputPricePerMillionUSD
 	}
 	if target.ImageInputPricePerMillionTokensUSD == 0 {
 		target.ImageInputPricePerMillionTokensUSD = catalog.ImageInputPricePerMillionTokensUSD

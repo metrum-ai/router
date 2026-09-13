@@ -96,6 +96,7 @@ This section is generated from the router usage and content-capture schema used 
 | `output_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `total_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_tokens` | integer | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
+| `cached_input_tokens` | integer | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_attempt_count` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_successful_attempt_count` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_reported_attempt_count` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `0` or positive integer |
@@ -115,6 +116,7 @@ This section is generated from the router usage and content-capture schema used 
 | `target_validation_age_bucket` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `none`, `small`, `large`, or deployment bucket |
 | `input_price_per_million_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `output_price_per_million_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
+| `cached_input_price_per_million_usd` | decimal | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `image_input_price_per_million_tokens_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `image_input_price_per_image_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `input_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |

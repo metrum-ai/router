@@ -47,6 +47,8 @@ Reasoning production proof uses the same relational rows. Join `request_usage`, 
 
 When an OpenAI-compatible upstream reports `completion_tokens_details.reasoning_tokens` (or Responses `output_tokens_details.reasoning_tokens`), the nullable count is stored on that `request_attempts` row. `request_usage.reasoning_tokens` sums only reported attempt values; its attempt, successful-attempt, and reported-attempt scalar counters make complete, partial, and unavailable coverage queryable. A reported `0` remains distinct from an omitted value. Reasoning tokens are already included in output tokens and are never added again to total-token, cost, or throughput calculations.
 
+When an upstream reports cached-input evidence, `request_usage.cached_input_tokens` stores the nullable count. OpenAI Chat uses `prompt_tokens_details.cached_tokens`, OpenAI Responses uses `input_tokens_details.cached_tokens`, Anthropic uses `cache_read_input_tokens` (with Anthropic input totals normalized to include cache read/write fields), and Gemini uses `cachedContentTokenCount` when it is a valid subset of prompt tokens. A reported `0` remains distinct from an omitted value. Invalid counts (negative or greater than applicable input) are rejected and stored as null. Router response-cache hits clear inherited upstream cache-read evidence so a local cache hit is not treated as prompt-cache savings for the current request. Request rows also snapshot nullable `cached_input_price_per_million_usd` from the served target. Cost accounting uses that price only when both the cached count and cached price are non-null and `0 <= cached <= applicable input`: `(input - cached) * input_price / 1e6 + cached * cached_price / 1e6`. Otherwise ordinary input pricing is retained.
+
 Usage rollups are generated from stored `request_usage` rows and also follow the scalar relational rule:
 
 - `usage_rollup_runs`: one row per generated hourly, daily, or monthly rollup window, with draft/finalized status, UTC source window, source table name, source request count, source min/max request timestamp, deterministic source checksum, aggregate row counts, decision-bucket row count, router version/commit, safe error text, and generation/finalization timestamps.
@@ -118,7 +120,8 @@ Each request row stores:
 - `downstream_duration_ms`: router-to-caller response write duration.
 - upstream/downstream output-token/sec and total-token/sec.
 - cache snapshot: enabled state, item count, occupied bytes, max bytes, and occupancy percentage.
-- request-time pricing: input/output dollars per million tokens, pricing source/update date, and calculated input/output/total USD cost.
+- request-time pricing: input/output dollars per million tokens, optional cached-input dollars per million tokens, pricing source/update date, and calculated input/output/total USD cost.
+- optional cached-input evidence: nullable `cached_input_tokens` from upstream usage when reported.
 - PII-filter metadata: `pii_filter_applied`, `pii_filter_mode`, `pii_filter_replacements`, and `pii_filter_rule_count`; never raw matched values or placeholder mappings.
 - diagnostic traceability: child rows keyed by request ID for upstream attempts, trace events, and terminal errors.
 - traffic-shaping metadata: `traffic_shape_applied`, `traffic_shape_decision`, `traffic_shape_scope`, `traffic_shape_bucket`, retry-after, queue-wait, estimated input tokens, reserved output tokens, total reserved tokens, and child rows in `request_traffic_shape_events` for each evaluated bucket.
