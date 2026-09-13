@@ -114,9 +114,10 @@ async def test_openai_target_without_catalog_price_is_ineligible(tmp_path):
 async def test_spend_estimate_aborts_without_approval_and_dry_run_skips_paid(tmp_path):
     turns = extract_teacher_forced_turns(sample_trajectory_row())
     for turn in turns:
-        turn["prompt_tokens_cl100k"] = 3_000_000
+        turn["prompt_tokens_cl100k"] = 10_000_000
     estimate = estimate_replay_spend_usd(turns)
-    assert estimate["estimate_usd"] > 40
+    assert estimate["estimate_usd"] > estimate["abort_threshold_usd"]
+    assert estimate["abort_threshold_usd"] == 100.0
     with pytest.raises(DataError, match="spend_estimate_requires_approval"):
         guard_spend_estimate(estimate, approve_over_threshold=False)
     guard_spend_estimate(estimate, approve_over_threshold=True)
