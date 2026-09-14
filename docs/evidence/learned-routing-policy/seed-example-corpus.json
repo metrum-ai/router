@@ -39,14 +39,16 @@
   "notes": [
     "N=100 example budget; not statistical sufficiency.",
     "Estimate 12.218 USD printed first; under abort 100.",
-    "gpt-5.4-mini absent on this key; host used gpt-5-mini fallback in router config.",
-    "OpenAI gpt-5.6-sol and gpt-5-mini ended with 0 ok (http_502/http_429).",
-    "OpenRouter Qwen partial success. Actual spend about 0.269 USD.",
+    "gpt-5.4-mini now present on this key; used gpt-5.4-mini (no gpt-5-mini fallback).",
+    "Dated model_ref gpt-5.4-mini-2026-03-17 absent on /v1/models; used gpt-5.4-mini.",
+    "OpenAI gpt-5.6-sol and gpt-5.4-mini ended with 0 ok (http_502/http_429 then spend_evidence_unavailable).",
+    "OpenRouter Qwen partial success (45/100 each). Known spend about 0.329 USD; spend_complete=false.",
     "No prompts, secrets, or response content stored here.",
     "No savings percentages."
   ],
   "openai_probe": {
-    "gpt54_mini_fallback": "gpt-5-mini",
+    "fallback_applied": false,
+    "gpt54_mini_fallback": null,
     "gpt5_related": [
       "gpt-5",
       "gpt-5-chat-latest",
@@ -57,6 +59,7 @@
       "gpt-5-nano-2025-08-07",
       "gpt-5.3-codex",
       "gpt-5.4",
+      "gpt-5.4-mini",
       "gpt-5.4-nano",
       "gpt-5.4-pro",
       "gpt-5.5",
@@ -65,17 +68,39 @@
       "gpt-5.6-sol",
       "gpt-5.6-terra"
     ],
-    "has_gpt-5.4-mini": false,
-    "has_gpt-5.6-sol": true
+    "has_gpt-5.4-mini": true,
+    "has_gpt-5.4-mini-2026-03-17": false,
+    "has_gpt-5.6-sol": true,
+    "used_mini": "gpt-5.4-mini",
+    "used_model_ref": "gpt-5.4-mini"
+  },
+  "openai_retake_note": {
+    "actual_spend_usd_known": 0.32943005799999997,
+    "blockers": [
+      "OpenAI gpt-5.4-mini ok=0 (http_502/http_429 then spend_evidence_unavailable ineligible).",
+      "OpenAI gpt-5.6-sol ok=0 (same pattern).",
+      "Dated model_ref gpt-5.4-mini-2026-03-17 absent on /v1/models; used gpt-5.4-mini.",
+      "spend_complete=false due to spend_evidence_unavailable on later rows."
+    ],
+    "fallback_applied": false,
+    "gpt_5_4_mini_used": true,
+    "openai_ok": {
+      "gpt-5.4-mini": 0,
+      "gpt-5.6-sol": 0
+    },
+    "spend_complete": false
   },
   "paid_replay_summary": {
     "abort_threshold_usd": 100.0,
-    "actual_spend_usd": 0.2686863619999999,
-    "completed_at": "2026-09-14T14:25:38.066458Z",
+    "actual_spend_note": "actual_spend_usd is null because some rows lacked spend evidence (ineligible spend_evidence_unavailable). actual_spend_usd_known sums rows with computable cost (upstream_error treated as 0 when no cost).",
+    "actual_spend_usd": null,
+    "actual_spend_usd_known": 0.32943005799999997,
+    "completed_at": "2026-09-14T15:44:49.771350Z",
     "concurrency": 1,
     "error_counts": {
-      "http_429": 195,
-      "http_502": 97
+      "http_429": 10,
+      "http_502": 85,
+      "spend_evidence_unavailable": 215
     },
     "estimate_usd": 12.218124976000002,
     "execute": true,
@@ -84,13 +109,16 @@
       "qwen/qwen3.5-9b",
       "qwen/qwen3.8-27b",
       "gpt-5.6-sol",
-      "gpt-5-mini"
+      "gpt-5.4-mini"
     ],
+    "openai_fallback_applied": false,
+    "openai_used_gpt_5_4_mini": true,
     "per_target": {
-      "gpt-5-mini": {
+      "gpt-5.4-mini": {
         "errors": {
-          "http_429": 51,
-          "http_502": 49
+          "http_429": 4,
+          "http_502": 42,
+          "spend_evidence_unavailable": 54
         },
         "ok": 0,
         "rows": 100,
@@ -98,8 +126,9 @@
       },
       "gpt-5.6-sol": {
         "errors": {
-          "http_429": 52,
-          "http_502": 48
+          "http_429": 4,
+          "http_502": 42,
+          "spend_evidence_unavailable": 54
         },
         "ok": 0,
         "rows": 100,
@@ -107,28 +136,32 @@
       },
       "qwen/qwen3.5-9b": {
         "errors": {
-          "http_429": 44
+          "http_429": 1,
+          "http_502": 1,
+          "spend_evidence_unavailable": 53
         },
-        "ok": 56,
+        "ok": 45,
         "rows": 100,
-        "spend_usd": 0.09794824999999999
+        "spend_usd": 0.10521377000000001
       },
       "qwen/qwen3.8-27b": {
         "errors": {
-          "http_429": 48
+          "http_429": 1,
+          "spend_evidence_unavailable": 54
         },
-        "ok": 52,
+        "ok": 45,
         "rows": 100,
-        "spend_usd": 0.17073811199999997
+        "spend_usd": 0.224216288
       }
     },
     "portfolio_scope": "full_iteration1_gpt-5.6-sol",
     "response_rows": 400,
     "schema_version": "lrp.seed.paid_replay_summary.v1",
-    "spend_complete": true,
+    "spend_complete": false,
     "status_counts": {
-      "ok": 108,
-      "upstream_error": 292
+      "ineligible": 215,
+      "ok": 90,
+      "upstream_error": 95
     }
   },
   "prompt_tokens": {
@@ -149,5 +182,5 @@
     "train": 76,
     "valid": 19
   },
-  "status": "retake_n100_portfolio_complete_partial_openai"
+  "status": "retake_n100_openai_gpt54_mini_enabled_openai_ok_zero"
 }

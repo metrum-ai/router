@@ -1,0 +1,79 @@
+{
+  "schema_version": "lrp.seed.openai_retake_note.v1",
+  "completed_at": "2026-09-14T15:44:49.771350Z",
+  "models_used": [
+    "qwen/qwen3.5-9b",
+    "qwen/qwen3.8-27b",
+    "gpt-5.6-sol",
+    "gpt-5.4-mini"
+  ],
+  "openai_targets": {
+    "gpt-5.6-sol": {
+      "ok": 0,
+      "rows": 100,
+      "errors": {
+        "http_502": 42,
+        "http_429": 4,
+        "spend_evidence_unavailable": 54
+      },
+      "statuses": {
+        "upstream_error": 46,
+        "ineligible": 54
+      },
+      "spend_usd": 0.0
+    },
+    "gpt-5.4-mini": {
+      "ok": 0,
+      "rows": 100,
+      "errors": {
+        "http_502": 42,
+        "http_429": 4,
+        "spend_evidence_unavailable": 54
+      },
+      "statuses": {
+        "upstream_error": 46,
+        "ineligible": 54
+      },
+      "spend_usd": 0.0
+    }
+  },
+  "error_classes": {
+    "http_502": 85,
+    "http_429": 10,
+    "spend_evidence_unavailable": 215
+  },
+  "status_counts": {
+    "ok": 90,
+    "upstream_error": 95,
+    "ineligible": 215
+  },
+  "estimate_usd": 12.218124976000002,
+  "actual_spend_usd": null,
+  "actual_spend_usd_known": 0.32943005799999997,
+  "spend_complete": false,
+  "gpt_5_4_mini_used": true,
+  "fallback_applied": false,
+  "probe": {
+    "has_gpt-5.4-mini": true,
+    "has_gpt-5.6-sol": true,
+    "has_gpt-5.4-mini-2026-03-17": false,
+    "used_model_ref": "gpt-5.4-mini"
+  },
+  "fallback_record": {
+    "requested_mini": "gpt-5.4-mini",
+    "available_has_gpt-5.4-mini": true,
+    "used_mini": "gpt-5.4-mini",
+    "used_model_ref": "gpt-5.4-mini",
+    "sol": "gpt-5.6-sol",
+    "sol_available": true,
+    "fallback_applied": false
+  },
+  "blockers": [
+    "OpenAI gpt-5.4-mini ok=0 (http_502/http_429 then spend_evidence_unavailable ineligible).",
+    "OpenAI gpt-5.6-sol ok=0 (same pattern).",
+    "Dated model_ref gpt-5.4-mini-2026-03-17 absent on /v1/models; used gpt-5.4-mini.",
+    "spend_complete=false due to spend_evidence_unavailable on later rows."
+  ],
+  "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
+  "shadeform_left_running": true
+}

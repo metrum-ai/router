@@ -3046,34 +3046,43 @@
     "gpt56_total_usd": null,
     "notes": [
       "Estimate printed first (12.218) and was under 100 abort.",
-      "Actual complete spend about 0.269 USD. No savings percentages."
+      "Known computable spend about 0.329 USD; spend_complete=false. No savings percentages."
     ],
     "reused": false,
-    "source": "issue_157_retake_paid_portfolio",
-    "total_usd": 0.2686863619999999
+    "source": "issue_157_openai_gpt54_mini_retake",
+    "spend_complete": false,
+    "total_usd": null,
+    "total_usd_known": 0.32943005799999997
   },
   "effectiveness": {
-    "actual_spend_usd": 0.2686863619999999,
+    "actual_spend_usd": null,
+    "actual_spend_usd_known": 0.32943005799999997,
     "error_counts": {
-      "http_429": 195,
-      "http_502": 97
+      "http_429": 10,
+      "http_502": 85,
+      "spend_evidence_unavailable": 215
     },
     "family": "effectiveness",
     "notes": [
-      "Paid portfolio included gpt-5.6-sol, gpt-5-mini fallback for unavailable gpt-5.4-mini, and OpenRouter Qwen.",
-      "OpenAI targets ended with 0 ok rows (http_502/http_429). Qwen partial success.",
-      "GPT-5.6-sol-only absolute USD baseline unavailable this pass because OpenAI ok count is 0."
+      "Paid portfolio included gpt-5.6-sol, gpt-5.4-mini (enabled; no gpt-5-mini fallback), and OpenRouter Qwen.",
+      "OpenAI targets ended with 0 ok rows (http_502/http_429 then spend_evidence_unavailable). Qwen partial success.",
+      "GPT-5.6-sol-only absolute USD baseline unavailable this pass because OpenAI ok count is 0.",
+      "spend_complete=false; known computable spend about 0.329 USD."
     ],
     "openai_probe": {
-      "gpt54_mini_fallback": "gpt-5-mini",
-      "has_gpt-5.4-mini": false,
-      "has_gpt-5.6-sol": true
+      "fallback_applied": false,
+      "gpt54_mini_fallback": null,
+      "has_gpt-5.4-mini": true,
+      "has_gpt-5.4-mini-2026-03-17": false,
+      "has_gpt-5.6-sol": true,
+      "used_mini": "gpt-5.4-mini"
     },
     "per_target": {
-      "gpt-5-mini": {
+      "gpt-5.4-mini": {
         "errors": {
-          "http_429": 51,
-          "http_502": 49
+          "http_429": 4,
+          "http_502": 42,
+          "spend_evidence_unavailable": 54
         },
         "ok": 0,
         "rows": 100,
@@ -3081,8 +3090,9 @@
       },
       "gpt-5.6-sol": {
         "errors": {
-          "http_429": 52,
-          "http_502": 48
+          "http_429": 4,
+          "http_502": 42,
+          "spend_evidence_unavailable": 54
         },
         "ok": 0,
         "rows": 100,
@@ -3090,28 +3100,33 @@
       },
       "qwen/qwen3.5-9b": {
         "errors": {
-          "http_429": 44
+          "http_429": 1,
+          "http_502": 1,
+          "spend_evidence_unavailable": 53
         },
-        "ok": 56,
+        "ok": 45,
         "rows": 100,
-        "spend_usd": 0.09794824999999999
+        "spend_usd": 0.10521377000000001
       },
       "qwen/qwen3.8-27b": {
         "errors": {
-          "http_429": 48
+          "http_429": 1,
+          "spend_evidence_unavailable": 54
         },
-        "ok": 52,
+        "ok": 45,
         "rows": 100,
-        "spend_usd": 0.17073811199999997
+        "spend_usd": 0.224216288
       }
     },
     "primary_baseline": "gpt-5.6-sol-only",
     "response_rows": 400,
     "reused": false,
-    "source": "issue_157_retake_paid_portfolio",
+    "source": "issue_157_openai_gpt54_mini_retake",
+    "spend_complete": false,
     "status_counts": {
-      "ok": 108,
-      "upstream_error": 292
+      "ineligible": 215,
+      "ok": 90,
+      "upstream_error": 95
     }
   },
   "harbor": {

@@ -1,0 +1,74 @@
+{
+  "schema_version": "lrp.seed.paid_replay_summary.v1",
+  "completed_at": "2026-09-14T15:44:49.771350Z",
+  "portfolio_scope": "full_iteration1_gpt-5.6-sol",
+  "estimate_usd": 12.218124976000002,
+  "abort_threshold_usd": 100.0,
+  "max_total_cost_usd": 100.0,
+  "concurrency": 1,
+  "execute": true,
+  "response_rows": 400,
+  "status_counts": {
+    "ok": 90,
+    "upstream_error": 95,
+    "ineligible": 215
+  },
+  "error_counts": {
+    "http_502": 85,
+    "http_429": 10,
+    "spend_evidence_unavailable": 215
+  },
+  "actual_spend_usd": null,
+  "spend_complete": false,
+  "per_target": {
+    "qwen/qwen3.5-9b": {
+      "rows": 100,
+      "ok": 45,
+      "spend_usd": 0.10521377000000001,
+      "errors": {
+        "http_429": 1,
+        "http_502": 1,
+        "spend_evidence_unavailable": 53
+      }
+    },
+    "qwen/qwen3.8-27b": {
+      "rows": 100,
+      "ok": 45,
+      "spend_usd": 0.224216288,
+      "errors": {
+        "http_429": 1,
+        "spend_evidence_unavailable": 54
+      }
+    },
+    "gpt-5.6-sol": {
+      "rows": 100,
+      "ok": 0,
+      "spend_usd": 0.0,
+      "errors": {
+        "http_502": 42,
+        "http_429": 4,
+        "spend_evidence_unavailable": 54
+      }
+    },
+    "gpt-5.4-mini": {
+      "rows": 100,
+      "ok": 0,
+      "spend_usd": 0.0,
+      "errors": {
+        "http_502": 42,
+        "http_429": 4,
+        "spend_evidence_unavailable": 54
+      }
+    }
+  },
+  "models": [
+    "qwen/qwen3.5-9b",
+    "qwen/qwen3.8-27b",
+    "gpt-5.6-sol",
+    "gpt-5.4-mini"
+  ],
+  "actual_spend_usd_known": 0.32943005799999997,
+  "actual_spend_note": "actual_spend_usd is null because some rows lacked spend evidence (ineligible spend_evidence_unavailable). actual_spend_usd_known sums rows with computable cost (upstream_error treated as 0 when no cost).",
+  "openai_used_gpt_5_4_mini": true,
+  "openai_fallback_applied": false
+}

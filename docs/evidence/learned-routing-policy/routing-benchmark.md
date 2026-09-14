@@ -78,16 +78,16 @@ abort 100). Actual paid spend about 0.269 USD.
 ## Effectiveness and cost (paid #157 retake)
 
 - Estimate USD (printed first): 12.218 (abort 100)
-- Actual spend USD: 0.268686
+- Actual spend USD: incomplete (`spend_complete=false`); known computable spend about 0.329
 - Response rows: 400
-- Status counts: ok 108, upstream_error 292
-- Error counts: http_429 195, http_502 97
+- Status counts: ok 90, upstream_error 95, ineligible 215
+- Error counts: http_502 85, http_429 10, spend_evidence_unavailable 215
 - Per target ok/spend:
-  - `qwen/qwen3.5-9b`: ok 56 / 100, spend USD 0.097948
-  - `qwen/qwen3.8-27b`: ok 52 / 100, spend USD 0.170738
+  - `qwen/qwen3.5-9b`: ok 45 / 100, known spend USD 0.105214
+  - `qwen/qwen3.8-27b`: ok 45 / 100, known spend USD 0.224216
   - `gpt-5.6-sol`: ok 0 / 100, spend USD 0.000000
-  - `gpt-5-mini`: ok 0 / 100, spend USD 0.000000
-- OpenAI probe: gpt-5.6-sol present=True; gpt-5.4-mini present=False; mini fallback=`gpt-5-mini`
+  - `gpt-5.4-mini`: ok 0 / 100, spend USD 0.000000
+- OpenAI probe: gpt-5.6-sol present=True; gpt-5.4-mini present=True; used=`gpt-5.4-mini` (no fallback); dated ref absent
 - GPT-5.6-sol-only absolute USD baseline: unavailable this pass (OpenAI ok count 0)
 
 ## Drivers
