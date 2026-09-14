@@ -36,6 +36,61 @@ summary:
    not hardware evidence and must not be cited as GPU or Shadeform results.
    Do not expand local ML beyond this non-evidence CI path.
 
+## Embedding backends and devices (#156 A/C)
+
+ONNX Runtime (`onnxruntime`) is the **default** embedding backend, not the only
+path. Operators may select `sentence-transformers` with a local directory or an
+already-cached Hugging Face snapshot. Serving never downloads models or runs
+remote model code.
+
+| Stage | onnxruntime | sentence-transformers |
+| --- | --- | --- |
+| Embedding | CPU EP, CUDA EP (`cuda:N`), ROCm EP when present | torch `cpu` or `cuda:N` (HIP uses cuda strings; never pass literal `rocm`) |
+| Quality / token fit | LightGBM on host CPU (unchanged; GPU LightGBM is out of scope here) | same |
+| Serve | Same resolver as train via `compute.device` | same |
+
+Shared settings:
+
+```yaml
+embedding:
+  backend: onnxruntime  # or sentence-transformers
+  model: /operator-owned/embed/model.onnx
+  max_seq_len: 512
+  batch_size: 1
+compute:
+  device: cpu  # auto | cpu | cuda:N | rocm
+  strict_device: false
+```
+
+CLI mirrors these with `--embedding-backend`, `--embedding-model`,
+`--tokenizer` (ONNX), `--device`, and `--strict-device`.
+
+### Optional dependencies
+
+- Default lockfile keeps CPU `onnxruntime`. Do not replace it in the shared
+  project lock for CI.
+- CUDA ONNX Runtime is **operator-installed**: uninstall CPU `onnxruntime` on
+  the GPU host and install a matching `onnxruntime-gpu` wheel from upstream.
+  LRP selects `CUDAExecutionProvider` only when that provider is available and
+  `compute.device` requests CUDA or `auto`.
+- sentence-transformers + torch: install the optional extra without changing
+  the default lock resolution for other environments:
+
+```bash
+uv sync --project services/learned-routing-policy --extra embed-st
+```
+
+ROCm ONNX packaging remains operator-verified. Upstream removed
+`ROCMExecutionProvider` starting in some ORT 1.23+ builds. Confirm the installed
+runtime exposes the provider before claiming ROCm support.
+
+### Device mismatch policy
+
+Manifests record `train_device_class` and `intended_serve_device_class`. Loading
+on a different device class warns by default. `strict_device: true` refuses.
+Semantic fingerprint mismatches (backend, model hash, tokenizer/normalization,
+max_seq_len, precision, configured device_class) always refuse.
+
 ## Shadeform (optional example)
 
 Shadeform steps mirror the create-then-always-teardown pattern in
@@ -66,3 +121,4 @@ hosts when the job ends.
 - Operator runbook: [LEARNED_ROUTING_POLICY.md](./LEARNED_ROUTING_POLICY.md)
 - Routing benchmark harness: [routing-benchmark.md](./evidence/learned-routing-policy/routing-benchmark.md)
 - Issue #162 (GPU LRP / Shadeform topology for configuration D)
+- Issue #156 sections A/C (pluggable embedders and device selection)

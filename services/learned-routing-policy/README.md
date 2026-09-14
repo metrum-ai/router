@@ -23,7 +23,8 @@ always tear down). BYO remote GPU is fine. See
 [LRP_GPU_TRAINING.md](../../docs/LRP_GPU_TRAINING.md).
 
 See [the operator runbook](../../docs/LEARNED_ROUTING_POLICY.md) for all pipeline
-commands, protected storage, approved third-party judging, local ONNX artifacts,
+commands, protected storage, approved third-party judging, local ONNX artifacts
+(default embedding path; sentence-transformers is an optional alternate),
 manual acceptance gates, shared-loopback deployment and rollback. The
 [routing benchmark harness](../../docs/evidence/learned-routing-policy/routing-benchmark.md)
 (issue #159) covers A/B/C overhead, effectiveness, and absolute USD schema

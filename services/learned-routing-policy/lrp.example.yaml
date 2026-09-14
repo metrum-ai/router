@@ -34,3 +34,17 @@ inference_workers: 2
 # Router external_policy.timeout_ms must exceed this with transport headroom
 # (for example, deadline_ms: 500 with router timeout_ms: 750; router max 5000).
 deadline_ms: 200
+# Embedding backend defaults for operators. Bundle artifacts remain authoritative
+# at serve. onnxruntime is the default path, not the only path.
+# CLI: --embedding-backend onnxruntime|sentence-transformers
+embedding:
+  backend: onnxruntime  # onnxruntime | sentence-transformers
+  model: /operator-owned/embed/model.onnx
+  max_seq_len: 512
+  batch_size: 1
+# Shared train/serve device. cpu is the compatibility default.
+# auto prefers CUDA, then ROCm, then CPU. CUDA ORT requires operator-installed
+# onnxruntime-gpu. sentence-transformers needs the embed-st optional group.
+compute:
+  device: cpu  # auto | cpu | cuda:N | rocm
+  strict_device: false

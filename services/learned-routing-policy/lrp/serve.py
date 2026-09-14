@@ -315,6 +315,8 @@ class Runtime:
                 threads=1,
                 require_signed=self.require_signed,
                 trusted_keys=self.trusted_keys,
+                device=self.config.compute.device,
+                strict_device=self.config.compute.strict_device,
             )
             ensemble = self._load_ensemble(candidate, self.bundle_path)
             if self.requires_uncertainty_evidence() and ensemble.empty:
@@ -744,6 +746,8 @@ def serve(
         threads=1,
         require_signed=require_signed,
         trusted_keys=trusted_keys,
+        device=settings.compute.device,
+        strict_device=settings.compute.strict_device,
     )
     app, admin, runtime = create_apps(
         settings,

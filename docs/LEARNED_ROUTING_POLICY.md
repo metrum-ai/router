@@ -312,11 +312,26 @@ protected human review with [LRP_HUMAN_JUDGE.md](LRP_HUMAN_JUDGE.md).
 
 Use a local trusted int8 ONNX export of
 [BAAI bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) with its matching
-tokenizer. The manifest binds artifact hashes, feature order, embedding settings
-and target model identities. No runtime download or silent synthetic fallback is
-allowed. Train and serve share normalization of system plus recent turns and
-truncate from the end to 512 tokens. Session-hash splitting keeps sessions out
-of multiple partitions. Predictions below 200 training rows are excluded.
+tokenizer as the **default** embedding path (`--embedding-backend onnxruntime`).
+Operators may instead use a local or already-cached
+[sentence-transformers](https://www.sbert.net/) model via
+`--embedding-backend sentence-transformers` after installing the `embed-st`
+optional dependency group. ONNX is the default, not the only path. The
+manifest binds artifact hashes, feature order, embedding settings, configured
+device class, and target model identities. No runtime download or silent
+synthetic fallback is allowed. Train and serve share normalization of system
+plus recent turns and truncate from the end to `max_seq_len` (default 512).
+Session-hash splitting keeps sessions out of multiple partitions. Predictions
+below 200 training rows are excluded.
+
+Shared compute device selection (`compute.device` / `--device`) accepts
+`auto`, `cpu`, `cuda:N`, or `rocm`. Training records `train_device_class` and
+`intended_serve_device_class` in the manifest. A device-class-only mismatch
+warns by default and refuses when `strict_device` is true. Semantic embedding
+fingerprint mismatches (backend, model hash, tokenizer/normalization,
+max_seq_len, precision) always refuse load. See
+[LRP_GPU_TRAINING.md](LRP_GPU_TRAINING.md) for GPU host policy and optional
+CUDA ONNX Runtime / sentence-transformers install notes.
 
 ## Candidate targets, pricing and caps
 
