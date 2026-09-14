@@ -198,10 +198,9 @@ tracked in issue #162.
 ## Routing performance benchmark harness (issue #159)
 
 Harness plus published A/B/C Shadeform overhead evidence. Throughput cells use a
-deterministic local upstream sink (`synthetic_upstream`); effectiveness/cost
-reuse #157 seed scalars (no new paid spend in the #159 pass). Harbor was
-skipped when not installed on the ephemeral host. Configuration D (GPU LRP /
-ONNX embedder claims) remains issue #162.
+deterministic local upstream sink (`synthetic_upstream`). The #157/#159 retake
+records paid portfolio scalars plus real CUDA ONNX int8 BGE for B/C and Harbor
+load cells. Configuration D comparison matrix remains issue #162.
 
 ```bash
 make lrp-routing-benchmark-harness-test

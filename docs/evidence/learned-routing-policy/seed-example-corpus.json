@@ -1,173 +1,153 @@
 {
-  "schema_version": "lrp.seed.public_evidence.v1",
-  "issue": 157,
-  "copyright": "Copyright 2026 Metrum AI",
-  "license": "Apache-2.0",
-  "sample_summary": {
-    "schema_version": "lrp.seed.sample_summary.v1",
-    "dataset": "nebius/SWE-rebench-openhands-trajectories",
-    "revision": "35455389ab51bf5e2306bfd436ef72d0f98bf882",
-    "max_traces": 100,
-    "sample_n": 100,
-    "sample_seed": 42,
-    "extracted_turns": 6605,
-    "sampled_turns": 100,
-    "selected_n": 100,
-    "split_counts": {
-      "train": 76,
-      "valid": 19,
-      "test": 5
+  "estimate_per_target": [
+    {
+      "estimate_usd": 0.22145340000000008,
+      "model": "qwen/qwen3.5-9b",
+      "target_id": "openrouter-qwen3.5-9b"
     },
-    "selected_stratum_counts": {
-      "('1-5', '4-16K', 'tool-call')": 12,
-      "('6-20', '16-32K', 'tool-call')": 12,
-      "('6-20', '32K+', 'tool-call')": 13,
-      "('21+', '4-16K', 'tool-call')": 13,
-      "('6-20', '4-16K', 'tool-call')": 12,
-      "('21+', '32K+', 'tool-call')": 13,
-      "('21+', '16-32K', 'tool-call')": 13,
-      "('1-5', '0-4K', 'tool-call')": 12
+    {
+      "estimate_usd": 0.588035076,
+      "model": "qwen/qwen3.8-27b",
+      "target_id": "openrouter-qwen3.8-27b"
     },
-    "mean_prompt_tokens": 21377.34,
-    "prompt_token_min": 3954,
-    "prompt_token_max": 83535,
-    "turn_kinds": {
-      "tool-call": 100
+    {
+      "estimate_usd": 9.574936000000001,
+      "model": "gpt-5.6-sol",
+      "target_id": "openai-gpt-5.6-sol"
+    },
+    {
+      "estimate_usd": 1.8337005000000002,
+      "model": "gpt-5.4-mini",
+      "target_id": "openai-gpt-5.4-mini"
     }
-  },
-  "spend_estimate_full_portfolio": {
-    "schema_version": "lrp.seed.spend_estimate.v1",
-    "assumed_output_tokens": 512,
-    "turn_count": 100,
-    "target_count": 4,
-    "estimate_usd": 12.218124976000002,
-    "abort_threshold_usd": 100.0,
-    "per_target": [
-      {
-        "target_id": "openrouter-qwen3.5-9b",
-        "model": "qwen/qwen3.5-9b",
-        "estimate_usd": 0.22145340000000008
-      },
-      {
-        "target_id": "openrouter-qwen3.8-27b",
-        "model": "qwen/qwen3.8-27b",
-        "estimate_usd": 0.588035076
-      },
-      {
-        "target_id": "openai-gpt-5.6",
-        "model": "gpt-5.6",
-        "estimate_usd": 9.574936000000001
-      },
-      {
-        "target_id": "openai-gpt-5.4-mini",
-        "model": "gpt-5.4-mini",
-        "estimate_usd": 1.8337005000000002
-      }
-    ]
-  },
-  "spend_estimate_openrouter_pass": {
-    "schema_version": "lrp.seed.spend_estimate.v1",
-    "assumed_output_tokens": 512,
-    "turn_count": 100,
-    "target_count": 2,
-    "estimate_usd": 0.8094884760000001,
-    "abort_threshold_usd": 100.0,
-    "per_target": [
-      {
-        "target_id": "openrouter-qwen3.5-9b",
-        "model": "qwen/qwen3.5-9b",
-        "estimate_usd": 0.22145340000000008
-      },
-      {
-        "target_id": "openrouter-qwen3.8-27b",
-        "model": "qwen/qwen3.8-27b",
-        "estimate_usd": 0.588035076
-      }
-    ],
-    "scope": "openrouter_only_evidence_pass"
-  },
-  "paid_replay_summary": {
-    "schema_version": "lrp.seed.paid_replay_summary.v1",
-    "completed_at": "2026-09-13T20:41:38.757692Z",
-    "portfolio_scope": "openrouter_only",
-    "estimate_usd_full_portfolio": 12.218124976000002,
-    "estimate_usd": 0.8094884760000001,
-    "abort_threshold_usd": 100.0,
-    "max_total_cost_usd": 100.0,
-    "concurrency": 1,
-    "execute": true,
-    "response_rows": 200,
-    "status_counts": {
-      "ok": 95,
-      "upstream_error": 105
-    },
-    "error_class_counts": {
-      "http_429": 105
-    },
-    "actual_spend_usd": 0.20399228399999994,
-    "actual_spend_complete": true,
-    "per_target": {
-      "qwen/qwen3.5-9b": {
-        "rows": 100,
-        "ok": 52,
-        "spend_usd": 0.07466959999999997
-      },
-      "qwen/qwen3.8-27b": {
-        "rows": 100,
-        "ok": 43,
-        "spend_usd": 0.129322684
-      }
-    },
-    "fanout_stats": {
-      "schema_version": "lrp.seed.replay.v1",
-      "via": "router",
-      "execute": true,
-      "targets": [
-        "openrouter-qwen3.5-9b",
-        "openrouter-qwen3.8-27b"
-      ],
-      "written": 200,
-      "skipped": 0,
-      "router_request_ids_recorded": true,
-      "idempotent": true,
-      "status": "completed"
-    },
-    "openai_fallbacks": {
-      "gpt-5.6": "gpt-5.5",
-      "gpt-5.4-mini": "gpt-5-mini",
-      "reason": "requested ids absent from OpenAI /v1/models for this key"
-    },
-    "openai_blockers": [
-      "Requested gpt-5.6 absent; fell back to gpt-5.5.",
-      "Requested gpt-5.4-mini absent; fell back to gpt-5-mini.",
-      "OpenAI large-prompt fanout hit sustained http_429 rate limits; excluded from this evidence pass.",
-      "Router via must send max_completion_tokens for GPT-5 chat (fanout previously forced max_tokens)."
-    ],
-    "notes": [
-      "Paid evidence pass limited to OpenRouter Qwen targets for N=100 seed sample.",
-      "No prompts or response content retained in this summary."
-    ]
-  },
-  "openai_models_probe": {
-    "gpt-5.6": false,
-    "gpt-5.5": true,
-    "gpt-5.4-mini": false,
-    "gpt-5.4-mini-2026-03-17": false
-  },
-  "openai_fallbacks": {
-    "gpt-5.6": "gpt-5.5",
-    "gpt-5.4-mini": "gpt-5-mini",
-    "reason": "requested ids absent from OpenAI /v1/models for this key"
-  },
+  ],
+  "estimate_usd_full_portfolio": 12.218124976000002,
+  "example_max_traces": 100,
+  "extracted_turns": 6605,
   "host": {
-    "shade_instance_type": "L40Sx2",
     "cloud": "massedcompute",
-    "region": "kansascity-usa-1",
+    "gpu_type": "L40S",
+    "instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
+    "left_running": true,
     "memory_in_gb_reported_by_sku": 256,
     "memory_in_gib_observed": 141,
     "num_gpus": 2,
-    "gpu_type": "L40S"
+    "region": "kansascity-usa-1",
+    "shade_instance_type": "L40Sx2"
   },
-  "parquet_sha256": "14048dd1fcd22ce094b6e85f8a38f223a9ef1327031aaaad052804870212efa1",
-  "shadeform_teardown_confirmed": true
+  "issue": 157,
+  "notes": [
+    "N=100 example budget; not statistical sufficiency.",
+    "Estimate 12.218 USD printed first; under abort 100.",
+    "gpt-5.4-mini absent on this key; host used gpt-5-mini fallback in router config.",
+    "OpenAI gpt-5.6-sol and gpt-5-mini ended with 0 ok (http_502/http_429).",
+    "OpenRouter Qwen partial success. Actual spend about 0.269 USD.",
+    "No prompts, secrets, or response content stored here.",
+    "No savings percentages."
+  ],
+  "openai_probe": {
+    "gpt54_mini_fallback": "gpt-5-mini",
+    "gpt5_related": [
+      "gpt-5",
+      "gpt-5-chat-latest",
+      "gpt-5-codex",
+      "gpt-5-mini",
+      "gpt-5-mini-2025-08-07",
+      "gpt-5-nano",
+      "gpt-5-nano-2025-08-07",
+      "gpt-5.3-codex",
+      "gpt-5.4",
+      "gpt-5.4-nano",
+      "gpt-5.4-pro",
+      "gpt-5.5",
+      "gpt-5.5-pro",
+      "gpt-5.6-luna",
+      "gpt-5.6-sol",
+      "gpt-5.6-terra"
+    ],
+    "has_gpt-5.4-mini": false,
+    "has_gpt-5.6-sol": true
+  },
+  "paid_replay_summary": {
+    "abort_threshold_usd": 100.0,
+    "actual_spend_usd": 0.2686863619999999,
+    "completed_at": "2026-09-14T14:25:38.066458Z",
+    "concurrency": 1,
+    "error_counts": {
+      "http_429": 195,
+      "http_502": 97
+    },
+    "estimate_usd": 12.218124976000002,
+    "execute": true,
+    "max_total_cost_usd": 100.0,
+    "models": [
+      "qwen/qwen3.5-9b",
+      "qwen/qwen3.8-27b",
+      "gpt-5.6-sol",
+      "gpt-5-mini"
+    ],
+    "per_target": {
+      "gpt-5-mini": {
+        "errors": {
+          "http_429": 51,
+          "http_502": 49
+        },
+        "ok": 0,
+        "rows": 100,
+        "spend_usd": 0.0
+      },
+      "gpt-5.6-sol": {
+        "errors": {
+          "http_429": 52,
+          "http_502": 48
+        },
+        "ok": 0,
+        "rows": 100,
+        "spend_usd": 0.0
+      },
+      "qwen/qwen3.5-9b": {
+        "errors": {
+          "http_429": 44
+        },
+        "ok": 56,
+        "rows": 100,
+        "spend_usd": 0.09794824999999999
+      },
+      "qwen/qwen3.8-27b": {
+        "errors": {
+          "http_429": 48
+        },
+        "ok": 52,
+        "rows": 100,
+        "spend_usd": 0.17073811199999997
+      }
+    },
+    "portfolio_scope": "full_iteration1_gpt-5.6-sol",
+    "response_rows": 400,
+    "schema_version": "lrp.seed.paid_replay_summary.v1",
+    "spend_complete": true,
+    "status_counts": {
+      "ok": 108,
+      "upstream_error": 292
+    }
+  },
+  "prompt_tokens": {
+    "max": 83535,
+    "mean": 21377.34,
+    "min": 3954
+  },
+  "router_commit": "0706c576e050bf04721deac033913750d560d2fa",
+  "sample_n": 100,
+  "sample_seed": 42,
+  "sampled_turns": 100,
+  "schema_version": "lrp.seed.public_evidence.v1",
+  "source_dataset": "nebius/SWE-rebench-openhands-trajectories",
+  "source_revision": "35455389ab51bf5e2306bfd436ef72d0f98bf882",
+  "spend_abort_usd": 100.0,
+  "split_counts": {
+    "test": 5,
+    "train": 76,
+    "valid": 19
+  },
+  "status": "retake_n100_portfolio_complete_partial_openai"
 }

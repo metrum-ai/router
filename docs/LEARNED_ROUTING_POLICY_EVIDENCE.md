@@ -22,7 +22,8 @@ deployment or broad promotion is established by these results.
 | [public-inference.json](evidence/learned-routing-policy/public-inference.json) | E01–E10/native-shadow results plus two actual request decisions, predictions, estimated costs, feature contributions and successful upstream readback |
 | [public-bge-benchmark.json](evidence/learned-routing-policy/public-bge-benchmark.json) | Official model/tokenizer provenance and hashes, quantization, hardware/load qualifications and all four measured stage-latency scenarios |
 | [public-tests.json](evidence/learned-routing-policy/public-tests.json) | Locally verified aggregate result: 79 tests, zero failures/errors/skips, actual verifier isolation required |
-| [routing-benchmark.json](evidence/learned-routing-policy/routing-benchmark.json) | Issue #159 live A/B/C Shadeform overhead (synthetic_upstream). Harbor skipped. Config D deferred to #162. |
+| [routing-benchmark.json](evidence/learned-routing-policy/routing-benchmark.json) | Issue #159 retake: real CUDA ONNX B/C + Harbor cells on Shadeform. Config D deferred to #162. |
+| [seed-example-corpus.json](evidence/learned-routing-policy/seed-example-corpus.json) | Issue #157 retake: N=100 Shadeform paid portfolio scalars (estimate first; OpenAI partial). |
 
 Successful learned-routing validation workflows also attach the generated
 `public-training.log`, containing only projected scalar training events. Its

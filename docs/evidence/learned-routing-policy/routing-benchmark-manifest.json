@@ -1,18 +1,18 @@
 {
-  "bundle_fingerprint": "138848dfa1a32f4002a945dc8fca10b661488a835f9f933cf63b54259aaedc13",
+  "bundle_fingerprint": "043b62fac5a1c4f3539997d25852dcd67e74c7cb72fbaabd5a15c091bd6ae7ef",
   "configuration_d": {
     "issue": 162,
     "status": "deferred"
   },
-  "embedding_kind": "synthetic",
+  "embedding_kind": "onnx",
   "external_policy_timeout_ms": 500,
   "harbor_concurrency": [
     1,
     4,
     16
   ],
-  "harbor_status": "skipped",
-  "harbor_task_revision": "skipped_not_installed",
+  "harbor_status": "executed",
+  "harbor_task_revision": "42aefbe4f3dd34776278b37f78f7188aaacda1435a3362937a28f380a03daa7c",
   "harbor_task_set": "aider/polyglot_python_two-bucket",
   "instance_types": {
     "cloud": "massedcompute",
@@ -26,10 +26,15 @@
   "live_runs_executed": true,
   "max_decision_ms": 200,
   "max_decision_ms_definition": "Report sidecar deadline_ms as max_decision_ms when both are set; also record external_policy.timeout_ms.",
-  "notes": "Live A/B/C seed_replay overhead on Shadeform L40Sx2 with synthetic_upstream sink. LRP sidecar used synthetic embedder bundle for CPU external-policy path overhead; ONNX/GPU embedder and config D remain #162. Harbor driver skipped. Effectiveness/cost reuse #157 seed evidence (no new paid spend).",
-  "paid_api_spend_usd": 0.0,
-  "paid_estimate_reused_from_157_usd": 12.218124976000002,
-  "real_onnx_performance_evidence": false,
+  "notes": "Retake A/B/C seed_replay + Harbor load cells on Shadeform L40Sx2 with real CUDA ONNX int8 BGE embedder (no synthetic embedder). Throughput uses synthetic_upstream sink. Paid #157 portfolio estimate 12.218 under 100 abort; actual spend about 0.269. Harbor task aider/polyglot_python_two-bucket.",
+  "ort_session_providers": [
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider"
+  ],
+  "ort_version": "1.22.0",
+  "paid_api_spend_usd": 0.2686863619999999,
+  "paid_estimate_usd": 12.218124976000002,
+  "real_onnx_performance_evidence": true,
   "router_added_latency_source": {
     "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
     "duration_field": "duration_ms",
@@ -41,7 +46,7 @@
     "wrote_request_event": "router_upstream_wrote_request",
     "wrote_request_lines": "2209-2230"
   },
-  "router_commit": "5b810a15912bb1e4c54394f0cbab46aa9632d666",
+  "router_commit": "0706c576e050bf04721deac033913750d560d2fa",
   "runs_per_cell": 3,
   "schema": "metrum.lrp.routing-benchmark/v1",
   "seed_concurrency": [
@@ -50,8 +55,10 @@
     32,
     128
   ],
-  "sidecar_commit": "5b810a15912bb1e4c54394f0cbab46aa9632d666",
+  "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
+  "shadeform_left_running": true,
+  "sidecar_commit": "0706c576e050bf04721deac033913750d560d2fa",
   "sidecar_deadline_ms": 200,
   "vllm_version": null,
-  "warmup": "8 warmup requests discarded; 48 steady-state requests per run; 3 runs per cell; median and spread."
+  "warmup": "8 warmup requests discarded; 48 steady-state requests per seed_replay run; 3 runs per cell; median and spread."
 }
