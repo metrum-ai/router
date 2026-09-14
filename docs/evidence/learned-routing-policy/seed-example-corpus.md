@@ -5,8 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Seed example corpus evidence (issue #157)
 
-Status: example N=100 Shadeform evidence pass completed for OpenRouter Qwen
-targets. OpenAI portfolio targets were not completed in this pass (see blockers).
+Status: retake N=100 Shadeform evidence pass for full iteration-1 portfolio
+(gpt-5.6-sol, gpt-5-mini fallback for unavailable gpt-5.4-mini, OpenRouter Qwen).
+OpenAI targets completed with 0 ok rows under rate/upstream errors (see blockers).
 
 This is an example budget (max 100 source traces, N=100 sampled turns), not
 statistical sufficiency. No prompts, secrets, or response content are stored
@@ -15,20 +16,20 @@ here.
 ## Host
 
 - Shadeform SKU: `L40Sx2` (massedcompute, kansascity-usa-1)
-- SKU memory: 256 GB advertised; host observed about 141 GiB available
+- Instance id (left running): `9963d127-f312-4a37-b72d-91b42607cf8e`
+- SKU memory: 256 GB advertised; host observed about 141 GiB
 - GPUs: 2x NVIDIA L40S
-- Work root on instance: `/var/tmp/lrp-seed-157` (mode 700)
-- Instance torn down after the run
+- Work root on instance: `/var/tmp/lrp-retake` (mode 700)
+- Router commit: `0706c576e050bf04721deac033913750d560d2fa`
 
 ## Source and sample
 
 - Dataset: `nebius/SWE-rebench-openhands-trajectories`
 - Revision: `35455389ab51bf5e2306bfd436ef72d0f98bf882`
-- Parquet sha256: `14048dd1fcd22ce094b6e85f8a38f223a9ef1327031aaaad052804870212efa1`
-- Streamed extract with `EXAMPLE_MAX_TRACES=100` (no full parquet `to_pandas()`)
+- Streamed extract with `EXAMPLE_MAX_TRACES=100`
 - Stratified sample: `SAMPLE_N=100`, seed `42`
-- Extracted turns from 100 traces: 6605
-- Sampled turns: 100 (all `tool-call`)
+- Extracted turns: 6605
+- Sampled turns: 100
 - Split counts: train 76, valid 19, test 5
 - Prompt tokens (approx cl100k metadata): mean 21377.34, min 3954, max 83535
 
@@ -43,32 +44,31 @@ Per target estimate USD:
 
 - `qwen/qwen3.5-9b`: 0.221
 - `qwen/qwen3.8-27b`: 0.588
-- `gpt-5.6`: 9.575
-- `gpt-5.4-mini`: 1.834
+- `gpt-5.6-sol`: 9.575
+- `gpt-5.4-mini` (estimate id; host fallback `gpt-5-mini`): 1.834
 
 ## Paid replay executed
 
-- Scope: OpenRouter Qwen targets only (`qwen/qwen3.5-9b`, `qwen/qwen3.8-27b`)
-- OpenRouter-only estimate USD: 0.809
+- Scope: full portfolio via router (OpenRouter Qwen + OpenAI gpt-5.6-sol + gpt-5-mini fallback)
 - `execute=True`, concurrency 1, `max_total_cost_usd=100`
-- Response rows: 200
-- Status counts: ok 95, upstream_error 105
-- Upstream errors: all `http_429`
-- Actual spend USD (complete): 0.204
+- Response rows: 400
+- Status counts: ok 108, upstream_error 292
+- Upstream errors: http_429 195, http_502 97
+- Actual spend USD (complete): 0.268686
 
 Per target:
 
-- `qwen/qwen3.5-9b`: ok 52 / 100, spend USD 0.075
-- `qwen/qwen3.8-27b`: ok 43 / 100, spend USD 0.129
+- `qwen/qwen3.5-9b`: ok 56 / 100, spend USD 0.097948
+- `qwen/qwen3.8-27b`: ok 52 / 100, spend USD 0.170738
+- `gpt-5.6-sol`: ok 0 / 100, spend USD 0.000000
+- `gpt-5-mini` (fallback): ok 0 / 100, spend USD 0.000000
 
-## OpenAI blockers (this key / this pass)
+## OpenAI notes (this key / this pass)
 
-- `gpt-5.6` absent from OpenAI `/v1/models`; fallback candidate `gpt-5.5`
-- `gpt-5.4-mini` / `gpt-5.4-mini-2026-03-17` absent; fallback candidate `gpt-5-mini`
-- Fanout via router previously forced `max_tokens`; GPT-5 chat needs
-  `max_completion_tokens` (instance patch used for smoke)
-- Large-prompt OpenAI fanout hit sustained `http_429`; excluded from the paid
-  evidence pass above
+- `gpt-5.6-sol` present on OpenAI `/v1/models`
+- `gpt-5.4-mini` / `gpt-5.4-mini-2026-03-17` absent; host fallback `gpt-5-mini`
+- Fanout honored `max_completion_tokens` via instance evidence patch
+- OpenAI rows ended as upstream_error (http_502 / http_429); no durable OpenAI ok outcomes in the final table
 
 ## Operator notes
 
@@ -76,3 +76,4 @@ Per target:
   runs. Repo abort thresholds are not a billing hard stop.
 - Teacher-forced continuation agreement is not end-to-end task success.
 - Example corpus evidence does not transfer to unsampled workloads.
+- Shadeform instance left running for resume.
