@@ -3034,9 +3034,6 @@
   "configuration_d_issue": 162,
   "copyright": "Copyright 2026 Metrum AI",
   "cost_tokens": {
-    "abort_threshold_usd": 100.0,
-    "absolute_usd_vs_gpt56": null,
-    "estimate_usd_full_portfolio": 12.218124976000002,
     "family": "cost_tokens",
     "forbidden": [
       "savings_percent",
@@ -3044,74 +3041,79 @@
       "pct_savings"
     ],
     "gpt56_total_usd": null,
+    "baseline_target_id": "baseten-glm-5-2",
+    "baseline_total_usd": 1.5793244999999998,
     "notes": [
-      "Estimate printed first (12.218) and was under 100 abort.",
-      "Actual complete spend about 0.269 USD. No savings percentages."
+      "Estimate printed first (7.105) and was under 100 abort.",
+      "Actual complete spend about 3.262 USD. No savings percentages.",
+      "OpenAI not in portfolio."
     ],
     "reused": false,
-    "source": "issue_157_retake_paid_portfolio",
-    "total_usd": 0.2686863619999999
+    "source": "issue_157_portfolio_pivot_paid",
+    "total_usd": 3.261575536000002
   },
   "effectiveness": {
-    "actual_spend_usd": 0.2686863619999999,
+    "actual_spend_usd": 3.261575536000002,
     "error_counts": {
-      "http_429": 195,
-      "http_502": 97
+      "http_429": 151
     },
     "family": "effectiveness",
     "notes": [
-      "Paid portfolio included gpt-5.6-sol, gpt-5-mini fallback for unavailable gpt-5.4-mini, and OpenRouter Qwen.",
-      "OpenAI targets ended with 0 ok rows (http_502/http_429). Qwen partial success.",
-      "GPT-5.6-sol-only absolute USD baseline unavailable this pass because OpenAI ok count is 0."
+      "Paid portfolio: OpenRouter Qwen + MiniMax-M3, Fireworks kimi-k2p7-code, Baseten GLM-5.2.",
+      "No OpenAI endpoints. Keys from env.json only.",
+      "Primary absolute USD baseline: baseten-glm-5-2.",
+      "ok 349 / 500; http_429 151."
     ],
-    "openai_probe": {
-      "gpt54_mini_fallback": "gpt-5-mini",
-      "has_gpt-5.4-mini": false,
-      "has_gpt-5.6-sol": true
-    },
+    "openai_used": false,
     "per_target": {
-      "gpt-5-mini": {
-        "errors": {
-          "http_429": 51,
-          "http_502": 49
-        },
-        "ok": 0,
-        "rows": 100,
-        "spend_usd": 0.0
-      },
-      "gpt-5.6-sol": {
-        "errors": {
-          "http_429": 52,
-          "http_502": 48
-        },
-        "ok": 0,
-        "rows": 100,
-        "spend_usd": 0.0
-      },
       "qwen/qwen3.5-9b": {
         "errors": {
-          "http_429": 44
+          "http_429": 25
         },
-        "ok": 56,
+        "ok": 75,
         "rows": 100,
-        "spend_usd": 0.09794824999999999
+        "spend_usd": 0.14935842
       },
       "qwen/qwen3.8-27b": {
         "errors": {
-          "http_429": 48
+          "http_429": 27
         },
-        "ok": 52,
+        "ok": 73,
         "rows": 100,
-        "spend_usd": 0.17073811199999997
+        "spend_usd": 0.282625226
+      },
+      "minimax/minimax-m3": {
+        "errors": {
+          "http_429": 33
+        },
+        "ok": 67,
+        "rows": 100,
+        "spend_usd": 0.24113784
+      },
+      "accounts/fireworks/models/kimi-k2p7-code": {
+        "errors": {
+          "http_429": 33
+        },
+        "ok": 67,
+        "rows": 100,
+        "spend_usd": 1.0091295499999995
+      },
+      "zai-org/GLM-5.2": {
+        "errors": {
+          "http_429": 33
+        },
+        "ok": 67,
+        "rows": 100,
+        "spend_usd": 1.5793244999999998
       }
     },
-    "primary_baseline": "gpt-5.6-sol-only",
-    "response_rows": 400,
+    "primary_baseline": "baseten-glm-5-2",
+    "response_rows": 500,
     "reused": false,
-    "source": "issue_157_retake_paid_portfolio",
+    "source": "issue_157_portfolio_pivot_paid",
     "status_counts": {
-      "ok": 108,
-      "upstream_error": 292
+      "ok": 349,
+      "upstream_error": 151
     }
   },
   "harbor": {

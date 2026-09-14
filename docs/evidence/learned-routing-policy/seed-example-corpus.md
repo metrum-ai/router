@@ -5,9 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Seed example corpus evidence (issue #157)
 
-Status: retake N=100 Shadeform evidence pass for full iteration-1 portfolio
-(gpt-5.6-sol, gpt-5-mini fallback for unavailable gpt-5.4-mini, OpenRouter Qwen).
-OpenAI targets completed with 0 ok rows under rate/upstream errors (see blockers).
+Status: N=100 Shadeform paid portfolio after pivot off OpenAI.
+Targets: OpenRouter Qwen 3.5-9b and 3.8-27b, OpenRouter MiniMax-M3,
+Fireworks kimi-k2p7-code, Baseten GLM-5.2. No OpenAI endpoints.
 
 This is an example budget (max 100 source traces, N=100 sampled turns), not
 statistical sufficiency. No prompts, secrets, or response content are stored
@@ -20,7 +20,6 @@ here.
 - SKU memory: 256 GB advertised; host observed about 141 GiB
 - GPUs: 2x NVIDIA L40S
 - Work root on instance: `/var/tmp/lrp-retake` (mode 700)
-- Router commit: `0706c576e050bf04721deac033913750d560d2fa`
 
 ## Source and sample
 
@@ -36,43 +35,41 @@ here.
 ## Spend estimate (full iteration-1 portfolio)
 
 - Assumed output tokens: 512
-- Estimate USD: 12.218
+- Estimate USD: 7.105
 - Abort threshold USD: 100
 - Paid run authorized because estimate was at or under 100
 
 Per target estimate USD:
 
-- `qwen/qwen3.5-9b`: 0.221
-- `qwen/qwen3.8-27b`: 0.588
-- `gpt-5.6-sol`: 9.575
-- `gpt-5.4-mini` (estimate id; host fallback `gpt-5-mini`): 1.834
+- `qwen/qwen3.5-9b`: 0.219
+- `qwen/qwen3.8-27b`: 0.582
+- `minimax/minimax-m3`: 0.695
+- `accounts/fireworks/models/kimi-k2p7-code`: 2.211
+- `zai-org/GLM-5.2`: 3.398
 
 ## Paid replay executed
 
-- Scope: full portfolio via router (OpenRouter Qwen + OpenAI gpt-5.6-sol + gpt-5-mini fallback)
+- Scope: OpenRouter Qwen + OpenRouter MiniMax-M3 + Fireworks kimi + Baseten GLM
 - `execute=True`, concurrency 1, `max_total_cost_usd=100`
-- Response rows: 400
-- Status counts: ok 108, upstream_error 292
-- Upstream errors: http_429 195, http_502 97
-- Actual spend USD (complete): 0.268686
+- Response rows: 500
+- Status counts: ok 349, upstream_error 151
+- Upstream errors: http_429 151
+- Actual spend USD (complete): 3.261576
+- Primary absolute USD baseline: `baseten-glm-5-2`
+- OpenAI used: false
 
 Per target:
 
-- `qwen/qwen3.5-9b`: ok 56 / 100, spend USD 0.097948
-- `qwen/qwen3.8-27b`: ok 52 / 100, spend USD 0.170738
-- `gpt-5.6-sol`: ok 0 / 100, spend USD 0.000000
-- `gpt-5-mini` (fallback): ok 0 / 100, spend USD 0.000000
-
-## OpenAI notes (this key / this pass)
-
-- `gpt-5.6-sol` present on OpenAI `/v1/models`
-- `gpt-5.4-mini` / `gpt-5.4-mini-2026-03-17` absent; host fallback `gpt-5-mini`
-- Fanout honored `max_completion_tokens` via instance evidence patch
-- OpenAI rows ended as upstream_error (http_502 / http_429); no durable OpenAI ok outcomes in the final table
+- `qwen/qwen3.5-9b`: ok 75 / 100, spend USD 0.149358
+- `qwen/qwen3.8-27b`: ok 73 / 100, spend USD 0.282625
+- `minimax/minimax-m3`: ok 67 / 100, spend USD 0.241138
+- `accounts/fireworks/models/kimi-k2p7-code`: ok 67 / 100, spend USD 1.009130
+- `zai-org/GLM-5.2`: ok 67 / 100, spend USD 1.579324
 
 ## Operator notes
 
-- Set OpenRouter and OpenAI dashboard spend limits yourself before further paid
+- Provider keys loaded from `env.json` (`OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`,
+  `BASETEN_API_KEY`). Set dashboard spend limits yourself before further paid
   runs. Repo abort thresholds are not a billing hard stop.
 - Teacher-forced continuation agreement is not end-to-end task success.
 - Example corpus evidence does not transfer to unsampled workloads.

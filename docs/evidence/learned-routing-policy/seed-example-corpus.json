@@ -1,29 +1,24 @@
 {
-  "estimate_per_target": [
-    {
-      "estimate_usd": 0.22145340000000008,
-      "model": "qwen/qwen3.5-9b",
-      "target_id": "openrouter-qwen3.5-9b"
-    },
-    {
-      "estimate_usd": 0.588035076,
-      "model": "qwen/qwen3.8-27b",
-      "target_id": "openrouter-qwen3.8-27b"
-    },
-    {
-      "estimate_usd": 9.574936000000001,
-      "model": "gpt-5.6-sol",
-      "target_id": "openai-gpt-5.6-sol"
-    },
-    {
-      "estimate_usd": 1.8337005000000002,
-      "model": "gpt-5.4-mini",
-      "target_id": "openai-gpt-5.4-mini"
-    }
-  ],
-  "estimate_usd_full_portfolio": 12.218124976000002,
+  "issue": 157,
   "example_max_traces": 100,
   "extracted_turns": 6605,
+  "sampled_turns": 100,
+  "split_counts": {
+    "train": 76,
+    "valid": 19,
+    "test": 5
+  },
+  "prompt_tokens": {
+    "mean": 21377.34,
+    "min": 3954,
+    "max": 83535
+  },
+  "source": {
+    "dataset": "nebius/SWE-rebench-openhands-trajectories",
+    "revision": "35455389ab51bf5e2306bfd436ef72d0f98bf882",
+    "sample_n": 100,
+    "sample_seed": 42
+  },
   "host": {
     "cloud": "massedcompute",
     "gpu_type": "L40S",
@@ -35,119 +30,353 @@
     "region": "kansascity-usa-1",
     "shade_instance_type": "L40Sx2"
   },
-  "issue": 157,
-  "notes": [
-    "N=100 example budget; not statistical sufficiency.",
-    "Estimate 12.218 USD printed first; under abort 100.",
-    "gpt-5.4-mini absent on this key; host used gpt-5-mini fallback in router config.",
-    "OpenAI gpt-5.6-sol and gpt-5-mini ended with 0 ok (http_502/http_429).",
-    "OpenRouter Qwen partial success. Actual spend about 0.269 USD.",
-    "No prompts, secrets, or response content stored here.",
-    "No savings percentages."
-  ],
-  "openai_probe": {
-    "gpt54_mini_fallback": "gpt-5-mini",
-    "gpt5_related": [
-      "gpt-5",
-      "gpt-5-chat-latest",
-      "gpt-5-codex",
-      "gpt-5-mini",
-      "gpt-5-mini-2025-08-07",
-      "gpt-5-nano",
-      "gpt-5-nano-2025-08-07",
-      "gpt-5.3-codex",
-      "gpt-5.4",
-      "gpt-5.4-nano",
-      "gpt-5.4-pro",
-      "gpt-5.5",
-      "gpt-5.5-pro",
-      "gpt-5.6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-terra"
-    ],
-    "has_gpt-5.4-mini": false,
-    "has_gpt-5.6-sol": true
-  },
-  "paid_replay_summary": {
-    "abort_threshold_usd": 100.0,
-    "actual_spend_usd": 0.2686863619999999,
-    "completed_at": "2026-09-14T14:25:38.066458Z",
-    "concurrency": 1,
-    "error_counts": {
-      "http_429": 195,
-      "http_502": 97
+  "estimate_usd_full_portfolio": 7.105088968000001,
+  "estimate_per_target": [
+    {
+      "target_id": "openrouter-qwen3.5-9b",
+      "model": "qwen/qwen3.5-9b",
+      "estimate_usd": 0.21884869999999995
     },
-    "estimate_usd": 12.218124976000002,
-    "execute": true,
+    {
+      "target_id": "openrouter-qwen3.8-27b",
+      "model": "qwen/qwen3.8-27b",
+      "estimate_usd": 0.5824610180000002
+    },
+    {
+      "target_id": "openrouter-minimax-m3",
+      "model": "minimax/minimax-m3",
+      "estimate_usd": 0.6949461000000001
+    },
+    {
+      "target_id": "fireworks-kimi-k2p7-code",
+      "model": "accounts/fireworks/models/kimi-k2p7-code",
+      "estimate_usd": 2.2109026500000004
+    },
+    {
+      "target_id": "baseten-glm-5-2",
+      "model": "zai-org/GLM-5.2",
+      "estimate_usd": 3.3979305000000006
+    }
+  ],
+  "abort_threshold_usd": 100.0,
+  "paid_replay_summary": {
+    "schema_version": "lrp.seed.paid_replay_summary.v1",
+    "completed_at": "2026-09-14T17:42:17.779428Z",
+    "portfolio_scope": "full_iteration1_kimi_minimax_glm",
+    "estimate_usd": 7.105088968000001,
+    "abort_threshold_usd": 100.0,
     "max_total_cost_usd": 100.0,
+    "concurrency": 1,
+    "execute": true,
+    "response_rows": 500,
+    "status_counts": {
+      "ok": 349,
+      "upstream_error": 151
+    },
+    "error_counts": {
+      "http_429": 151
+    },
+    "actual_spend_usd": 3.261575536000002,
+    "actual_spend_usd_known": 3.261575536000002,
+    "spend_complete": true,
+    "per_target": {
+      "qwen/qwen3.5-9b": {
+        "model": "qwen/qwen3.5-9b",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 75,
+        "spend_usd": 0.14935842,
+        "errors": {
+          "http_429": 25
+        },
+        "statuses": {
+          "ok": 75,
+          "upstream_error": 25
+        }
+      },
+      "qwen/qwen3.8-27b": {
+        "model": "qwen/qwen3.8-27b",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 73,
+        "spend_usd": 0.282625226,
+        "errors": {
+          "http_429": 27
+        },
+        "statuses": {
+          "ok": 73,
+          "upstream_error": 27
+        }
+      },
+      "minimax/minimax-m3": {
+        "model": "minimax/minimax-m3",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 0.24113784,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      },
+      "accounts/fireworks/models/kimi-k2p7-code": {
+        "model": "accounts/fireworks/models/kimi-k2p7-code",
+        "provider": "fireworks",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 1.0091295499999995,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      },
+      "zai-org/GLM-5.2": {
+        "model": "zai-org/GLM-5.2",
+        "provider": "baseten",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 1.5793244999999998,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      }
+    },
     "models": [
       "qwen/qwen3.5-9b",
       "qwen/qwen3.8-27b",
-      "gpt-5.6-sol",
-      "gpt-5-mini"
+      "minimax/minimax-m3",
+      "accounts/fireworks/models/kimi-k2p7-code",
+      "zai-org/GLM-5.2"
     ],
+    "providers": [
+      "baseten",
+      "fireworks",
+      "openrouter"
+    ],
+    "baseline": "baseten-glm-5-2"
+  },
+  "portfolio_note": {
+    "schema_version": "lrp.seed.portfolio_note.v1",
+    "completed_at": "2026-09-14T17:42:17.779690Z",
+    "openai_used": false,
+    "note": "Portfolio pivot off OpenAI; no OPENAI_API_KEY in this run.",
+    "models": [
+      "qwen/qwen3.5-9b",
+      "qwen/qwen3.8-27b",
+      "minimax/minimax-m3",
+      "accounts/fireworks/models/kimi-k2p7-code",
+      "zai-org/GLM-5.2"
+    ],
+    "providers": [
+      "baseten",
+      "fireworks",
+      "openrouter"
+    ],
+    "baseline": "baseten-glm-5-2",
+    "estimate_usd": 7.105088968000001,
+    "actual_spend_usd": 3.261575536000002,
+    "actual_spend_usd_known": 3.261575536000002,
     "per_target": {
-      "gpt-5-mini": {
-        "errors": {
-          "http_429": 51,
-          "http_502": 49
-        },
-        "ok": 0,
-        "rows": 100,
-        "spend_usd": 0.0
-      },
-      "gpt-5.6-sol": {
-        "errors": {
-          "http_429": 52,
-          "http_502": 48
-        },
-        "ok": 0,
-        "rows": 100,
-        "spend_usd": 0.0
-      },
       "qwen/qwen3.5-9b": {
-        "errors": {
-          "http_429": 44
-        },
-        "ok": 56,
+        "model": "qwen/qwen3.5-9b",
+        "provider": "openrouter",
         "rows": 100,
-        "spend_usd": 0.09794824999999999
+        "ok": 75,
+        "spend_usd": 0.14935842,
+        "errors": {
+          "http_429": 25
+        },
+        "statuses": {
+          "ok": 75,
+          "upstream_error": 25
+        }
       },
       "qwen/qwen3.8-27b": {
-        "errors": {
-          "http_429": 48
-        },
-        "ok": 52,
+        "model": "qwen/qwen3.8-27b",
+        "provider": "openrouter",
         "rows": 100,
-        "spend_usd": 0.17073811199999997
+        "ok": 73,
+        "spend_usd": 0.282625226,
+        "errors": {
+          "http_429": 27
+        },
+        "statuses": {
+          "ok": 73,
+          "upstream_error": 27
+        }
+      },
+      "minimax/minimax-m3": {
+        "model": "minimax/minimax-m3",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 0.24113784,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      },
+      "accounts/fireworks/models/kimi-k2p7-code": {
+        "model": "accounts/fireworks/models/kimi-k2p7-code",
+        "provider": "fireworks",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 1.0091295499999995,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      },
+      "zai-org/GLM-5.2": {
+        "model": "zai-org/GLM-5.2",
+        "provider": "baseten",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 1.5793244999999998,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
       }
     },
-    "portfolio_scope": "full_iteration1_gpt-5.6-sol",
-    "response_rows": 400,
-    "schema_version": "lrp.seed.paid_replay_summary.v1",
-    "spend_complete": true,
+    "error_counts": {
+      "http_429": 151
+    },
     "status_counts": {
-      "ok": 108,
-      "upstream_error": 292
-    }
+      "ok": 349,
+      "upstream_error": 151
+    },
+    "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
+    "shadeform_left_running": true
   },
-  "prompt_tokens": {
-    "max": 83535,
-    "mean": 21377.34,
-    "min": 3954
+  "portfolio_pivot_summary": {
+    "completed_at": "2026-09-14T17:42:17.779965Z",
+    "estimate_usd": 7.105088968000001,
+    "actual_spend_usd": 3.261575536000002,
+    "spend_complete": true,
+    "models": [
+      "qwen/qwen3.5-9b",
+      "qwen/qwen3.8-27b",
+      "minimax/minimax-m3",
+      "accounts/fireworks/models/kimi-k2p7-code",
+      "zai-org/GLM-5.2"
+    ],
+    "providers": [
+      "baseten",
+      "fireworks",
+      "openrouter"
+    ],
+    "baseline": "baseten-glm-5-2",
+    "per_target": {
+      "qwen/qwen3.5-9b": {
+        "model": "qwen/qwen3.5-9b",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 75,
+        "spend_usd": 0.14935842,
+        "errors": {
+          "http_429": 25
+        },
+        "statuses": {
+          "ok": 75,
+          "upstream_error": 25
+        }
+      },
+      "qwen/qwen3.8-27b": {
+        "model": "qwen/qwen3.8-27b",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 73,
+        "spend_usd": 0.282625226,
+        "errors": {
+          "http_429": 27
+        },
+        "statuses": {
+          "ok": 73,
+          "upstream_error": 27
+        }
+      },
+      "minimax/minimax-m3": {
+        "model": "minimax/minimax-m3",
+        "provider": "openrouter",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 0.24113784,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      },
+      "accounts/fireworks/models/kimi-k2p7-code": {
+        "model": "accounts/fireworks/models/kimi-k2p7-code",
+        "provider": "fireworks",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 1.0091295499999995,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      },
+      "zai-org/GLM-5.2": {
+        "model": "zai-org/GLM-5.2",
+        "provider": "baseten",
+        "rows": 100,
+        "ok": 67,
+        "spend_usd": 1.5793244999999998,
+        "errors": {
+          "http_429": 33
+        },
+        "statuses": {
+          "ok": 67,
+          "upstream_error": 33
+        }
+      }
+    },
+    "error_counts": {
+      "http_429": 151
+    },
+    "status_counts": {
+      "ok": 349,
+      "upstream_error": 151
+    },
+    "openai_used": false,
+    "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
+    "shadeform_left_running": true
   },
-  "router_commit": "0706c576e050bf04721deac033913750d560d2fa",
-  "sample_n": 100,
-  "sample_seed": 42,
-  "sampled_turns": 100,
-  "schema_version": "lrp.seed.public_evidence.v1",
-  "source_dataset": "nebius/SWE-rebench-openhands-trajectories",
-  "source_revision": "35455389ab51bf5e2306bfd436ef72d0f98bf882",
-  "spend_abort_usd": 100.0,
-  "split_counts": {
-    "test": 5,
-    "train": 76,
-    "valid": 19
-  },
-  "status": "retake_n100_portfolio_complete_partial_openai"
+  "notes": [
+    "N=100 example budget; not statistical sufficiency.",
+    "Portfolio pivoted off OpenAI to OpenRouter Qwen+MiniMax, Fireworks kimi, Baseten GLM.",
+    "Estimate 7.105 USD printed first; under abort 100.",
+    "Actual spend about 3.262 USD; ok 349 / 500; upstream http_429 151.",
+    "Primary absolute USD baseline: baseten-glm-5-2.",
+    "No prompts, secrets, or response content stored here.",
+    "No savings percentages.",
+    "Shadeform instance left running."
+  ]
 }

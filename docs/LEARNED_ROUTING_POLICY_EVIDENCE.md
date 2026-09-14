@@ -23,7 +23,7 @@ deployment or broad promotion is established by these results.
 | [public-bge-benchmark.json](evidence/learned-routing-policy/public-bge-benchmark.json) | Official model/tokenizer provenance and hashes, quantization, hardware/load qualifications and all four measured stage-latency scenarios |
 | [public-tests.json](evidence/learned-routing-policy/public-tests.json) | Locally verified aggregate result: 79 tests, zero failures/errors/skips, actual verifier isolation required |
 | [routing-benchmark.json](evidence/learned-routing-policy/routing-benchmark.json) | Issue #159 retake: real CUDA ONNX B/C + Harbor cells on Shadeform. Config D deferred to #162. |
-| [seed-example-corpus.json](evidence/learned-routing-policy/seed-example-corpus.json) | Issue #157 retake: N=100 Shadeform paid portfolio scalars (estimate first; OpenAI partial). |
+| [seed-example-corpus.json](evidence/learned-routing-policy/seed-example-corpus.json) | Issue #157 portfolio pivot: N=100 Shadeform paid portfolio (OpenRouter Qwen+MiniMax, Fireworks kimi, Baseten GLM; no OpenAI). |
 
 Successful learned-routing validation workflows also attach the generated
 `public-training.log`, containing only projected scalar training events. Its
