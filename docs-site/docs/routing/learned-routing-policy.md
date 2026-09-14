@@ -203,6 +203,9 @@ behavior.
 
 ## Recorded case study and performance limits
 
+For a shareable multi-provider coding walkthrough (train steps, absolute USD,
+sidecar latency), see [Train LRP on a coding mix](../evaluation/lrp-coding-mix-example).
+
 The detailed [learned-routing case study](../evaluation/learned-routing-case-study.md)
 follows the complete synthetic workload, training, evaluation and real-process
 inference scenario. It includes training log excerpts, safe downloadable evidence,

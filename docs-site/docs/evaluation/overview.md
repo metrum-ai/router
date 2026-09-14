@@ -40,4 +40,5 @@ For a commercial or production evaluation, collect:
 - [Deployment Readiness](./deployment-readiness)
 - [Operational Readiness](./operational-acceptance)
 - [Harbor Agentic Coding Case Study](./harbor-case-study)
+- [Train LRP on a coding mix](./lrp-coding-mix-example)
 - [Competitive Landscape](./competitive-landscape)

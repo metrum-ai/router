@@ -74,6 +74,9 @@ make lrp-synthetic-demo
 Synthetic results do not authorize live promotion. Provider-backed outcomes and
 real embedding latency are separate evidence.
 
+Worked multi-provider coding example (absolute USD + sidecar latency + share
+kit): [Train LRP on a coding mix](../evaluation/lrp-coding-mix-example).
+
 Flags, splits, and promotion gates:
 [operator runbook](https://github.com/metrum-ai/router/blob/main/docs/LEARNED_ROUTING_POLICY.md).
 Evaluation splits: [LRP_EVAL_SPLITS.md](https://github.com/metrum-ai/router/blob/main/docs/LRP_EVAL_SPLITS.md).
