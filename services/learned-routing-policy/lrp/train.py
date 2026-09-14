@@ -24,7 +24,9 @@ from lrp.bundle import (
 from lrp.collect import MAX_FILE_BYTES, MAX_ROWS, DataError
 from lrp.features import (
     FEATURE_NAMES,
+    SentenceTransformersEmbedder,
     capped_threads,
+    create_embedder,
     embedding_fingerprint,
     private_bytes,
     private_directory,
@@ -228,7 +230,6 @@ def train(
     import lightgbm as lgb
 
     from lrp.device import parse_device_request, resolve_compute_device
-    from lrp.features import create_embedder
     from lrp.thompson import COLD_START_ANCHOR_PROMPTS, cold_start_entry
     from lrp.uncertainty import ENSEMBLE_SIZE
 
@@ -371,15 +372,17 @@ def train(
                 device=device,
                 strict_device=strict_device,
             )
+            if not isinstance(embedder, SentenceTransformersEmbedder):
+                raise DataError("sentence_transformers_embedder_required")
             embedder.encode("Synthetic validation.")
             private_directory(temporary / "embed" / "st", create=True)
             source = Path(embedder.model_path)
             for item in sorted(source.rglob("*")):
                 if not item.is_file() or item.is_symlink():
                     continue
-                relative = Path("embed/st") / item.relative_to(source)
-                private_directory(temporary / relative.parent, create=True)
-                write_private(temporary / relative, item.read_bytes())
+                asset_rel = Path("embed/st") / item.relative_to(source)
+                private_directory(temporary / asset_rel.parent, create=True)
+                write_private(temporary / asset_rel, item.read_bytes())
             manifest["embedding"].update(
                 backend="sentence-transformers",
                 model_path="embed/st",

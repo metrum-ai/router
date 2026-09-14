@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from cryptography.exceptions import InvalidSignature
@@ -457,10 +457,10 @@ def load_bundle(
     elif kind == "sentence-transformers":
         embedding["backend"] = "sentence-transformers"
         model_rel = str(embedding["model_path"])
-        path = PurePosixPath(model_rel)
-        if path.is_absolute() or ".." in path.parts or "\\" in model_rel or not path.parts:
+        rel = PurePosixPath(model_rel)
+        if rel.is_absolute() or ".." in rel.parts or "\\" in model_rel or not rel.parts:
             raise ValueError("unsafe bundle path")
-        model_dir = root.joinpath(*path.parts)
+        model_dir = root.joinpath(*rel.parts)
         prefix = model_rel.rstrip("/") + "/"
         if not any(name.startswith(prefix) for name in hashes):
             raise ValueError("unhashed bundle dependency")
@@ -486,7 +486,9 @@ def load_bundle(
         raise ValueError("unknown embedding kind")
     if builder.embedder.fingerprint != manifest.get("embedding_fingerprint"):
         raise ValueError("embedding feature fingerprint mismatch")
-    serve_backend = "onnxruntime" if kind in {"synthetic", "onnx"} else "sentence-transformers"
+    serve_backend: Literal["onnxruntime", "sentence-transformers"] = (
+        "onnxruntime" if kind in {"synthetic", "onnx"} else "sentence-transformers"
+    )
     serve_resolved = resolve_compute_device(
         device, strict_device=strict_device, backend=serve_backend
     )
