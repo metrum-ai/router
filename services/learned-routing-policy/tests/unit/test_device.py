@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 
 import pytest
-
 from lrp.device import (
     DeviceDiscovery,
     check_device_class_compatibility,

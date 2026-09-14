@@ -11,9 +11,6 @@ from pathlib import Path
 # ruff: noqa: F811 -- pytest fixtures are imported from the owned training test module.
 import numpy as np
 import pytest
-from test_features import tiny_onnx
-from test_train import dataset, trained  # noqa: F401
-
 from lrp.collect import DataError
 from lrp.features import (
     ONNXEmbedder,
@@ -22,6 +19,8 @@ from lrp.features import (
     create_embedder,
     embedding_fingerprint,
 )
+from test_features import tiny_onnx
+from test_train import dataset, trained  # noqa: F401
 
 
 def test_create_embedder_synthetic_and_onnx(tmp_path):
