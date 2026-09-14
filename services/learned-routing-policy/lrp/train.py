@@ -221,9 +221,14 @@ def train(
     anchor: TargetKey | None = None,
     ensemble_size: int = 5,
     cold_start_prompts: int = 200,
+    device: str = "cpu",
+    strict_device: bool = False,
+    intended_serve_device: str | None = None,
 ) -> Path:
     import lightgbm as lgb
 
+    from lrp.device import parse_device_request, resolve_compute_device
+    from lrp.features import create_embedder
     from lrp.thompson import COLD_START_ANCHOR_PROMPTS, cold_start_entry
     from lrp.uncertainty import ENSEMBLE_SIZE
 
@@ -245,11 +250,56 @@ def train(
     if any(key[0] not in feature_ids for key in judgment_index | response_index):
         raise ValueError("outcome has no feature row")
     kind = embedding.get("kind")
-    if kind not in {"synthetic", "onnx"} or set(frame.embedding_kind) != {kind}:
+    backend = embedding.get("backend")
+    requested, _ = parse_device_request(device)
+    config_device_class = embedding.get("device_class") or (
+        "auto" if requested == "auto" else requested
+    )
+    if kind == "synthetic":
+        backend_name = "onnxruntime"
+        resolved = resolve_compute_device(
+            device, strict_device=strict_device, backend="onnxruntime"
+        )
+    elif kind == "onnx" or backend in {None, "onnxruntime"}:
+        kind = "onnx"
+        backend_name = "onnxruntime"
+        if set(frame.embedding_kind) != {"onnx"}:
+            raise ValueError("embedding provenance mismatch")
+        resolved = resolve_compute_device(
+            device, strict_device=strict_device, backend="onnxruntime"
+        )
+    elif kind == "sentence-transformers" or backend == "sentence-transformers":
+        kind = "sentence-transformers"
+        backend_name = "sentence-transformers"
+        if set(frame.embedding_kind) != {"sentence-transformers"}:
+            raise ValueError("embedding provenance mismatch")
+        resolved = resolve_compute_device(
+            device, strict_device=strict_device, backend="sentence-transformers"
+        )
+    else:
         raise ValueError("embedding provenance mismatch")
-    fingerprint = embedding_fingerprint(embedding)
+    if kind == "synthetic" and set(frame.embedding_kind) != {"synthetic"}:
+        raise ValueError("embedding provenance mismatch")
+    train_spec = dict(embedding)
+    train_spec["kind"] = kind
+    if kind != "synthetic":
+        train_spec["backend"] = backend_name
+        train_spec.setdefault("max_seq_len", 512)
+        train_spec.setdefault(
+            "precision", "int8" if kind == "onnx" else "fp32"
+        )
+        train_spec["device_class"] = config_device_class
+    fingerprint = embedding_fingerprint(train_spec)
     if set(frame.embedding_fingerprint) != {fingerprint}:
         raise ValueError("embedding artifact differs from featurization")
+    serve_request = (
+        intended_serve_device if intended_serve_device is not None else device
+    )
+    serve_class, _ = parse_device_request(serve_request)
+    if serve_class == "auto":
+        intended_serve_class = resolved.device_class
+    else:
+        intended_serve_class = serve_class
     synthetic = (
         kind == "synthetic"
         or bool(frame.synthetic.any())
@@ -272,6 +322,8 @@ def train(
         "synthetic": synthetic,
         "embedding": {"kind": kind},
         "embedding_fingerprint": fingerprint,
+        "train_device_class": resolved.device_class,
+        "intended_serve_device_class": intended_serve_class,
         "targets": [],
         "skipped": [],
         "files": {},
@@ -288,15 +340,12 @@ def train(
     temporary = Path(tempfile.mkdtemp(prefix=".training-", dir=root))
     try:
         if kind == "onnx":
-            from lrp.features import ONNXEmbedder
-
             # Validate operator assets before copying into a published snapshot.
-            ONNXEmbedder(
-                embedding["model_path"],
-                embedding["tokenizer_path"],
-                threads,
-                embedding.get("pooling", "cls"),
-                embedding.get("prefix", ""),
+            create_embedder(
+                train_spec,
+                threads=threads,
+                device=device,
+                strict_device=strict_device,
             ).encode("Synthetic validation.")
             private_directory(temporary / "embed", create=True)
             for asset_key, name in [
@@ -307,8 +356,42 @@ def train(
                 write_private(temporary / relative, private_bytes(embedding[asset_key]))
                 manifest["embedding"][asset_key] = relative
             manifest["embedding"].update(
+                backend="onnxruntime",
                 pooling=embedding.get("pooling", "cls"),
                 prefix=embedding.get("prefix", ""),
+                max_seq_len=int(embedding.get("max_seq_len", 512)),
+                precision="int8",
+                device_class=config_device_class,
+                batch_size=int(embedding.get("batch_size", 1)),
+            )
+        elif kind == "sentence-transformers":
+            embedder = create_embedder(
+                train_spec,
+                threads=threads,
+                device=device,
+                strict_device=strict_device,
+            )
+            embedder.encode("Synthetic validation.")
+            private_directory(temporary / "embed" / "st", create=True)
+            source = Path(embedder.model_path)
+            for item in sorted(source.rglob("*")):
+                if not item.is_file() or item.is_symlink():
+                    continue
+                relative = Path("embed/st") / item.relative_to(source)
+                private_directory(temporary / relative.parent, create=True)
+                write_private(temporary / relative, item.read_bytes())
+            manifest["embedding"].update(
+                backend="sentence-transformers",
+                model_path="embed/st",
+                pooling=embedding.get("pooling", "cls"),
+                prefix=embedding.get("prefix", ""),
+                max_seq_len=int(embedding.get("max_seq_len", 512)),
+                precision="fp32",
+                device_class=config_device_class,
+                normalize_embeddings=bool(
+                    embedding.get("normalize_embeddings", True)
+                ),
+                batch_size=int(embedding.get("batch_size", 1)),
             )
         params = {
             "objective": "binary",

@@ -82,6 +82,10 @@ and threshold sensitivity without exporting request content. See the operator
 [evaluation splits note](https://github.com/metrum-ai/router/blob/main/docs/LRP_EVAL_SPLITS.md).
 Small or undertrained models are excluded. Model bundles bind their embedding
 artifacts and feature definitions for consistent training and serving.
+The default embedding backend is local ONNX Runtime; operators may also use a
+local or already-cached sentence-transformers model. Serving does not download
+embedding weights. Shared `compute.device` selects CPU, CUDA, or ROCm for
+embedding execution.
 
 Protected datasets and judgments stay in operator-controlled storage. Ordinary
 router request logs contain metadata and cannot reconstruct prompts. Third-party

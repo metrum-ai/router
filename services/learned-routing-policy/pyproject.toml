@@ -17,6 +17,14 @@ dependencies = [
   "langdetect>=1.0.9,<2", "cryptography>=48.0.1,<51",
 ]
 
+[project.optional-dependencies]
+# Optional sentence-transformers path. Does not change the default CPU lockfile.
+# Install with: uv sync --project services/learned-routing-policy --extra embed-st
+embed-st = [
+  "sentence-transformers>=3.0,<6",
+  "torch>=2.2,<3",
+]
+
 [project.scripts]
 lrp = "lrp.cli:main"
 

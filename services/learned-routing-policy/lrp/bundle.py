@@ -27,10 +27,9 @@ from lrp.collect import strict_json
 from lrp.features import (
     FEATURE_NAMES,
     FeatureBuilder,
-    ONNXEmbedder,
-    SyntheticEmbedder,
     Vector,
     capped_threads,
+    create_embedder,
     private_bytes,
     private_directory,
     private_file,
@@ -390,8 +389,12 @@ def load_bundle(
     *,
     require_signed: bool = False,
     trusted_keys: str | Path | Mapping[str, bytes] | None = None,
+    device: str = "cpu",
+    strict_device: bool = False,
 ) -> ModelBundle:
     import lightgbm as lgb
+
+    from lrp.device import check_device_class_compatibility, resolve_compute_device
 
     capped_threads(threads)
     root = private_directory(path)
@@ -430,25 +433,68 @@ def load_bundle(
             raise ValueError("unhashed bundle dependency")
         return _file(root, name)
 
-    embedding = manifest["embedding"]
-    if embedding["kind"] == "synthetic":
+    embedding = dict(manifest["embedding"])
+    kind = embedding.get("kind")
+    if kind == "synthetic":
         if not manifest.get("synthetic"):
             raise ValueError("synthetic embedding requires synthetic provenance")
-        builder = FeatureBuilder(SyntheticEmbedder())
-    elif embedding["kind"] == "onnx":
+        builder = FeatureBuilder(create_embedder({"kind": "synthetic"}))
+    elif kind == "onnx":
+        embedding["backend"] = "onnxruntime"
+        embedding["model_path"] = str(verified(embedding["model_path"]))
+        embedding["tokenizer_path"] = str(verified(embedding["tokenizer_path"]))
+        embedding.setdefault("max_seq_len", 512)
+        embedding.setdefault("precision", "int8")
+        embedding.setdefault("device_class", "cpu")
         builder = FeatureBuilder(
-            ONNXEmbedder(
-                verified(embedding["model_path"]),
-                verified(embedding["tokenizer_path"]),
-                threads,
-                embedding.get("pooling", "cls"),
-                embedding.get("prefix", ""),
+            create_embedder(
+                embedding,
+                threads=threads,
+                device=device,
+                strict_device=strict_device,
+            )
+        )
+    elif kind == "sentence-transformers":
+        embedding["backend"] = "sentence-transformers"
+        model_rel = str(embedding["model_path"])
+        path = PurePosixPath(model_rel)
+        if path.is_absolute() or ".." in path.parts or "\\" in model_rel or not path.parts:
+            raise ValueError("unsafe bundle path")
+        model_dir = root.joinpath(*path.parts)
+        prefix = model_rel.rstrip("/") + "/"
+        if not any(name.startswith(prefix) for name in hashes):
+            raise ValueError("unhashed bundle dependency")
+        if (
+            model_dir.is_symlink()
+            or not model_dir.is_dir()
+            or not model_dir.resolve().is_relative_to(root.resolve())
+        ):
+            raise ValueError("missing or unsafe bundle file")
+        embedding["model_path"] = str(model_dir)
+        embedding.setdefault("max_seq_len", 512)
+        embedding.setdefault("precision", "fp32")
+        embedding.setdefault("device_class", "cpu")
+        builder = FeatureBuilder(
+            create_embedder(
+                embedding,
+                threads=threads,
+                device=device,
+                strict_device=strict_device,
             )
         )
     else:
         raise ValueError("unknown embedding kind")
     if builder.embedder.fingerprint != manifest.get("embedding_fingerprint"):
         raise ValueError("embedding feature fingerprint mismatch")
+    serve_backend = "onnxruntime" if kind in {"synthetic", "onnx"} else "sentence-transformers"
+    serve_resolved = resolve_compute_device(
+        device, strict_device=strict_device, backend=serve_backend
+    )
+    check_device_class_compatibility(
+        train_device_class=manifest.get("train_device_class"),
+        serve_device_class=serve_resolved.device_class,
+        strict_device=strict_device,
+    )
     models: dict[TargetKey, TargetModel] = {}
     baseline = {}
     seen = set()
@@ -535,6 +581,8 @@ class AtomicBundle:
         *,
         require_signed: bool = False,
         trusted_keys: str | Path | Mapping[str, bytes] | None = None,
+        device: str = "cpu",
+        strict_device: bool = False,
     ) -> ModelBundle:
         with self._reload_lock:
             candidate = load_bundle(
@@ -542,6 +590,8 @@ class AtomicBundle:
                 threads,
                 require_signed=require_signed,
                 trusted_keys=trusted_keys,
+                device=device,
+                strict_device=strict_device,
             )
             with self._lock:
                 self._bundle = candidate
@@ -554,7 +604,14 @@ def validate(
     *,
     require_signed: bool = False,
     trusted_keys: str | Path | Mapping[str, bytes] | None = None,
+    device: str = "cpu",
+    strict_device: bool = False,
 ) -> ModelBundle:
     return load_bundle(
-        path, threads, require_signed=require_signed, trusted_keys=trusted_keys
+        path,
+        threads,
+        require_signed=require_signed,
+        trusted_keys=trusted_keys,
+        device=device,
+        strict_device=strict_device,
     )

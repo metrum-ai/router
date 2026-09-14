@@ -125,21 +125,77 @@ def write_private(path: str | Path, data: bytes) -> None:
         handle.write(data)
 
 
+def _file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with private_file(Path(path)) as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _content_sha256(path: Path) -> str:
+    """Content digest for model identity. Does not require private mode bits."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _directory_sha256(path: str | Path) -> str:
+    root = Path(path)
+    if not root.is_dir() or root.is_symlink():
+        raise ValueError("model directory required")
+    digest = hashlib.sha256()
+    for item in sorted(p for p in root.rglob("*") if p.is_file() and not p.is_symlink()):
+        relative = item.relative_to(root).as_posix()
+        digest.update(relative.encode())
+        digest.update(b"\0")
+        digest.update(_content_sha256(item).encode())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def embedding_fingerprint(spec: dict[str, Any]) -> str:
+    """Semantic embedder identity. Device provenance is recorded separately.
+
+    Fingerprint covers backend, model/tokenizer hashes, normalization, max
+    sequence length, precision, and configured device_class. Runtime serve
+    device may differ; section C governs device-only mismatches.
+    """
+    kind = spec["kind"]
     identity: dict[str, Any] = {
         "feature_version": FEATURE_VERSION,
-        "kind": spec["kind"],
+        "kind": kind,
     }
-    if spec["kind"] == "onnx":
-        for key in ("model_path", "tokenizer_path"):
-            digest = hashlib.sha256()
-            with private_file(Path(spec[key])) as stream:
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            identity[key] = digest.hexdigest()
-        identity.update(
-            pooling=spec.get("pooling", "cls"), prefix=spec.get("prefix", "")
+    if kind == "synthetic":
+        return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    backend = spec.get("backend")
+    if backend is None:
+        backend = (
+            "onnxruntime"
+            if kind == "onnx"
+            else "sentence-transformers"
+            if kind == "sentence-transformers"
+            else kind
         )
+    identity["backend"] = backend
+    identity["max_seq_len"] = int(spec.get("max_seq_len", 512))
+    identity["precision"] = str(spec.get("precision", "int8" if kind == "onnx" else "fp32"))
+    identity["device_class"] = str(spec.get("device_class", "cpu"))
+    identity["pooling"] = spec.get("pooling", "cls")
+    identity["prefix"] = spec.get("prefix", "")
+    if kind == "onnx":
+        for key in ("model_path", "tokenizer_path"):
+            identity[key] = _file_sha256(spec[key])
+    elif kind == "sentence-transformers":
+        model = Path(spec["model_path"])
+        identity["model_path"] = (
+            _directory_sha256(model) if model.is_dir() else _content_sha256(model)
+        )
+        identity["normalize_embeddings"] = bool(spec.get("normalize_embeddings", True))
+    else:
+        raise ValueError("unknown embedding kind")
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
@@ -241,15 +297,23 @@ class SyntheticEmbedder:
         return result / norm if norm else result
 
 
+def _require_max_seq_len(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 8192:
+        raise ValueError("max_seq_len must be an int in [1, 8192]")
+    return value
+
+
 class ONNXEmbedder:
     """Local int8 transformer inference, left truncation, explicit pooling.
 
     BGE uses CLS pooling and L2 normalization. Mean pooling supports operator
     exports such as E5; the model-specific text prefix is manifest-bound.
     No downloads, remote model code, or automatic synthetic fallback occur.
+    Device selection uses resolve_compute_device; CUDA is not opportunistic.
     """
 
     kind = "onnx"
+    backend = "onnxruntime"
 
     def __init__(
         self,
@@ -258,21 +322,51 @@ class ONNXEmbedder:
         threads: int = 1,
         pooling: str = "cls",
         prefix: str = "",
+        *,
+        max_seq_len: int = 512,
+        device: str = "cpu",
+        strict_device: bool = False,
+        device_class: str | None = None,
+        discovery: Any = None,
     ) -> None:
         import onnx
         import onnxruntime as ort
         from tokenizers import Tokenizer
 
+        from lrp.device import (
+            ort_provider_device_class,
+            parse_device_request,
+            resolve_compute_device,
+        )
+
         if pooling not in {"cls", "mean"}:
             raise ValueError("invalid embedding pooling")
         self.pooling, self.prefix = pooling, prefix
+        self.max_seq_len = _require_max_seq_len(max_seq_len)
+        requested, _ = parse_device_request(device)
+        resolved = resolve_compute_device(
+            device,
+            strict_device=strict_device,
+            backend="onnxruntime",
+            discovery=discovery,
+        )
+        fingerprint_class = (
+            device_class
+            if device_class is not None
+            else ("auto" if requested == "auto" else requested)
+        )
+        self.device = resolved
         self.fingerprint = embedding_fingerprint(
             {
                 "kind": "onnx",
+                "backend": "onnxruntime",
                 "model_path": model_path,
                 "tokenizer_path": tokenizer_path,
                 "pooling": pooling,
                 "prefix": prefix,
+                "max_seq_len": self.max_seq_len,
+                "precision": "int8",
+                "device_class": fingerprint_class,
             }
         )
         model_bytes = private_bytes(model_path)
@@ -285,7 +379,7 @@ class ONNXEmbedder:
             raise ValueError("embedding must contain int8 or uint8 weights")
         os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
         self.tokenizer = Tokenizer.from_str(tokenizer_bytes.decode("utf-8"))
-        self.tokenizer.enable_truncation(max_length=512, direction="left")
+        self.tokenizer.enable_truncation(max_length=self.max_seq_len, direction="left")
         self.tokenizer.no_padding()
         options = ort.SessionOptions()
         options.intra_op_num_threads = capped_threads(threads)
@@ -293,18 +387,22 @@ class ONNXEmbedder:
         options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         options.add_session_config_entry("session.intra_op.allow_spinning", "0")
         options.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        available = ort.get_available_providers()
-        # Prefer CUDA when present. Evidence and promotion runs require a real
-        # GPU host; CPUExecutionProvider remains for unit tests and CI only.
-        providers = (
-            ["CUDAExecutionProvider", "CPUExecutionProvider"]
-            if "CUDAExecutionProvider" in available
-            else ["CPUExecutionProvider"]
-        )
+        providers = list(resolved.ort_providers)
         self.session = ort.InferenceSession(
             model_bytes, sess_options=options, providers=providers
         )
         self.ort_providers = list(self.session.get_providers())
+        actual_class = ort_provider_device_class(self.ort_providers)
+        if resolved.device_class != "cpu" and actual_class == "cpu":
+            message = "accelerator execution fell back to cpu"
+            if strict_device:
+                raise ValueError(message)
+            import logging
+
+            logging.getLogger("lrp.device").warning("%s (strict_device=false)", message)
+            from dataclasses import replace
+
+            self.device = replace(resolved, fallback_to_cpu=True)
 
     def encode(self, text: str) -> Vector:
         encoded = self.tokenizer.encode(self.prefix + text[-TEXT_LIMIT:])
@@ -341,6 +439,220 @@ class ONNXEmbedder:
         if norm <= 0:
             raise ValueError("zero embedding vector")
         return np.asarray(vector / norm, dtype=np.float32)
+
+
+def _sentence_transformers_available() -> bool:
+    try:
+        import sentence_transformers  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def resolve_local_st_model(model: str | Path) -> Path:
+    """Resolve a local directory or already-cached HF id. Never download."""
+    candidate = Path(model)
+    if candidate.is_dir():
+        return protected_path(candidate)
+    text = str(model).strip()
+    if not text:
+        raise ValueError("sentence-transformers model path or cache id required")
+    if candidate.exists() and candidate.is_file():
+        raise ValueError("sentence-transformers model must be a local directory")
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError as exc:
+        raise DataError(
+            "sentence-transformers backend requires a local model directory "
+            "or an already-cached Hugging Face snapshot"
+        ) from exc
+    # Probe common weight filenames without network access.
+    for filename in (
+        "model.safetensors",
+        "pytorch_model.bin",
+        "model.onnx",
+        "config.json",
+    ):
+        cached = try_to_load_from_cache(text, filename)
+        if isinstance(cached, str):
+            return protected_path(Path(cached).parent)
+    raise DataError(
+        "sentence-transformers model is not available locally; "
+        "refuse network download at serve/train"
+    )
+
+
+class SentenceTransformersEmbedder:
+    """Optional local sentence-transformers backend. No remote code or download."""
+
+    kind = "sentence-transformers"
+    backend = "sentence-transformers"
+
+    def __init__(
+        self,
+        model_path: str | Path,
+        *,
+        max_seq_len: int = 512,
+        device: str = "cpu",
+        strict_device: bool = False,
+        device_class: str | None = None,
+        normalize_embeddings: bool = True,
+        prefix: str = "",
+        pooling: str = "cls",
+        discovery: Any = None,
+        batch_size: int = 1,
+    ) -> None:
+        if not _sentence_transformers_available():
+            raise DataError(
+                "sentence-transformers package is not installed; "
+                "install the embed-st optional dependency group"
+            )
+        from dataclasses import replace
+
+        from sentence_transformers import SentenceTransformer
+
+        from lrp.device import parse_device_request, resolve_compute_device
+
+        self.max_seq_len = _require_max_seq_len(max_seq_len)
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be a positive int")
+        self.batch_size = batch_size
+        self.prefix = prefix
+        self.pooling = pooling
+        self.normalize_embeddings = bool(normalize_embeddings)
+        resolved_path = resolve_local_st_model(model_path)
+        requested, _ = parse_device_request(device)
+        resolved = resolve_compute_device(
+            device,
+            strict_device=strict_device,
+            backend="sentence-transformers",
+            discovery=discovery,
+        )
+        fingerprint_class = (
+            device_class
+            if device_class is not None
+            else ("auto" if requested == "auto" else requested)
+        )
+        self.device = resolved
+        self.fingerprint = embedding_fingerprint(
+            {
+                "kind": "sentence-transformers",
+                "backend": "sentence-transformers",
+                "model_path": resolved_path,
+                "pooling": pooling,
+                "prefix": prefix,
+                "max_seq_len": self.max_seq_len,
+                "precision": "fp32",
+                "device_class": fingerprint_class,
+                "normalize_embeddings": self.normalize_embeddings,
+            }
+        )
+        self.model_path = resolved_path
+        try:
+            self.model = SentenceTransformer(
+                str(resolved_path),
+                device=resolved.torch_device,
+                trust_remote_code=False,
+                local_files_only=True,
+            )
+        except TypeError:
+            # Older sentence-transformers may lack local_files_only.
+            self.model = SentenceTransformer(
+                str(resolved_path),
+                device=resolved.torch_device,
+                trust_remote_code=False,
+            )
+        self.model.max_seq_length = self.max_seq_len
+        actual = str(getattr(self.model, "device", resolved.torch_device))
+        if resolved.device_class != "cpu" and (
+            actual == "cpu" or actual.startswith("cpu:")
+        ):
+            message = "accelerator execution fell back to cpu"
+            if strict_device:
+                raise ValueError(message)
+            import logging
+
+            logging.getLogger("lrp.device").warning("%s (strict_device=false)", message)
+            self.device = replace(resolved, fallback_to_cpu=True)
+
+    def encode(self, text: str) -> Vector:
+        payload = self.prefix + text[-TEXT_LIMIT:]
+        output = self.model.encode(
+            [payload],
+            batch_size=self.batch_size,
+            convert_to_numpy=True,
+            normalize_embeddings=self.normalize_embeddings,
+            show_progress_bar=False,
+        )
+        vector = np.asarray(output[0], dtype=np.float32)
+        if vector.shape != (DIMENSIONS,) or not np.isfinite(vector).all():
+            raise ValueError("invalid embedding vector")
+        if not self.normalize_embeddings:
+            norm = float(np.linalg.norm(vector))
+            if norm <= 0:
+                raise ValueError("zero embedding vector")
+            vector = vector / norm
+        return np.asarray(vector, dtype=np.float32)
+
+
+def create_embedder(
+    spec: dict[str, Any],
+    *,
+    threads: int = 1,
+    device: str = "cpu",
+    strict_device: bool = False,
+    discovery: Any = None,
+) -> Embedder:
+    """Build an Embedder from a train/serve embedding specification."""
+    kind = spec.get("kind")
+    backend = spec.get("backend")
+    if kind == "synthetic" or backend == "synthetic":
+        return SyntheticEmbedder()
+    if backend == "sentence-transformers" or kind == "sentence-transformers":
+        if not _sentence_transformers_available():
+            raise DataError(
+                "sentence-transformers package is not installed; "
+                "install the embed-st optional dependency group"
+            )
+        return SentenceTransformersEmbedder(
+            spec["model_path"],
+            max_seq_len=int(spec.get("max_seq_len", 512)),
+            device=device,
+            strict_device=strict_device,
+            device_class=spec.get("device_class"),
+            normalize_embeddings=bool(spec.get("normalize_embeddings", True)),
+            prefix=str(spec.get("prefix", "")),
+            pooling=str(spec.get("pooling", "cls")),
+            discovery=discovery,
+            batch_size=int(spec.get("batch_size", 1)),
+        )
+    if backend in {None, "onnxruntime"} and kind in {None, "onnx"}:
+        model = spec.get("model_path") or spec.get("model")
+        tokenizer = spec.get("tokenizer_path") or spec.get("tokenizer")
+        if model is None or tokenizer is None:
+            raise ValueError("onnxruntime backend requires local model and tokenizer paths")
+        model_path = Path(model)
+        tokenizer_path = Path(tokenizer)
+        if not model_path.is_file() or not tokenizer_path.is_file():
+            raise ValueError("onnxruntime backend requires local model.onnx and tokenizer files")
+        return ONNXEmbedder(
+            model_path,
+            tokenizer_path,
+            threads=threads,
+            pooling=str(spec.get("pooling", "cls")),
+            prefix=str(spec.get("prefix", "")),
+            max_seq_len=int(spec.get("max_seq_len", 512)),
+            device=device,
+            strict_device=strict_device,
+            device_class=spec.get("device_class"),
+            discovery=discovery,
+        )
+    if backend == "sentence-transformers":
+        raise DataError(
+            "sentence-transformers package is not installed; "
+            "install the embed-st optional dependency group"
+        )
+    raise ValueError("unknown embedding backend")
 
 
 def _text(value: Any) -> str:

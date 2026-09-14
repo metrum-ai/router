@@ -199,12 +199,36 @@ class GroupConfig(Model):
         return cleaned
 
 
+class EmbeddingServiceConfig(Model):
+    """Serve-time embedding defaults. Bundle artifacts remain authoritative."""
+
+    backend: Literal["onnxruntime", "sentence-transformers"] = "onnxruntime"
+    model: str = Field(default="", max_length=2048)
+    max_seq_len: int = Field(default=512, ge=1, le=8192)
+    batch_size: int = Field(default=1, ge=1, le=64)
+
+
+class ComputeConfig(Model):
+    device: str = Field(default="cpu", max_length=32)
+    strict_device: bool = False
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        from lrp.device import parse_device_request
+
+        parse_device_request(value)
+        return str(value).strip().lower()
+
+
 class ServiceConfig(Model):
     groups: dict[str, GroupConfig]
     max_pins: int = Field(default=10000, ge=1, le=100000)
     inference_workers: int = Field(default=2, ge=1, le=4)
     # Leave transport headroom below the router's 5000 ms policy timeout ceiling.
     deadline_ms: int = Field(default=200, ge=1, le=4500)
+    embedding: EmbeddingServiceConfig = Field(default_factory=EmbeddingServiceConfig)
+    compute: ComputeConfig = Field(default_factory=ComputeConfig)
 
 
 class RequestRow(Model):

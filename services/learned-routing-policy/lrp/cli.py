@@ -106,6 +106,14 @@ def parser() -> argparse.ArgumentParser:
     features.add_argument("--out", type=Path, required=True)
     features.add_argument("--embedding-model", type=Path)
     features.add_argument("--tokenizer", type=Path)
+    features.add_argument(
+        "--embedding-backend",
+        choices=("onnxruntime", "sentence-transformers"),
+        default="onnxruntime",
+    )
+    features.add_argument("--max-seq-len", type=int, default=512)
+    features.add_argument("--device", default="cpu")
+    features.add_argument("--strict-device", action="store_true")
     features.add_argument("--synthetic", action="store_true", help="Wiring only; never promotable")
     features.add_argument("--seed", type=int, default=42)
     features.add_argument(
@@ -125,6 +133,14 @@ def parser() -> argparse.ArgumentParser:
         train.add_argument(f"--{name}", type=Path, required=True)
     train.add_argument("--embedding-model", type=Path)
     train.add_argument("--tokenizer", type=Path)
+    train.add_argument(
+        "--embedding-backend",
+        choices=("onnxruntime", "sentence-transformers"),
+        default="onnxruntime",
+    )
+    train.add_argument("--max-seq-len", type=int, default=512)
+    train.add_argument("--device", default="cpu")
+    train.add_argument("--strict-device", action="store_true")
     train.add_argument("--synthetic", action="store_true")
     train.add_argument("--seed", type=int, default=42)
     train.add_argument("--anchor", required=True, help="Actual upstream model ID")
@@ -195,15 +211,43 @@ def parser() -> argparse.ArgumentParser:
 
 
 def embedding_spec(args: argparse.Namespace) -> dict[str, Any]:
+    from lrp.device import parse_device_request
+
     if args.synthetic:
         return {"kind": "synthetic"}
+    backend = getattr(args, "embedding_backend", "onnxruntime")
+    device = getattr(args, "device", "cpu")
+    requested, _ = parse_device_request(device)
+    device_class = "auto" if requested == "auto" else requested
+    max_seq_len = int(getattr(args, "max_seq_len", 512))
+    if backend == "sentence-transformers":
+        if args.embedding_model is None:
+            raise ValueError("explicit embedding model required")
+        return {
+            "kind": "sentence-transformers",
+            "backend": "sentence-transformers",
+            "model_path": str(args.embedding_model),
+            "pooling": "cls",
+            "prefix": "",
+            "max_seq_len": max_seq_len,
+            "precision": "fp32",
+            "device_class": device_class,
+            "normalize_embeddings": True,
+            "batch_size": 1,
+        }
     if args.embedding_model is None or args.tokenizer is None:
         raise ValueError("explicit embedding model and tokenizer required")
     return {
         "kind": "onnx",
+        "backend": "onnxruntime",
         "model_path": str(args.embedding_model),
         "tokenizer_path": str(args.tokenizer),
         "pooling": "cls",
+        "prefix": "",
+        "max_seq_len": max_seq_len,
+        "precision": "int8",
+        "device_class": device_class,
+        "batch_size": 1,
     }
 
 
@@ -320,13 +364,14 @@ def execute(args: argparse.Namespace) -> int:
             if not report["gate_passed"]:
                 return 1
     elif args.command == "featurize":
-        from lrp.features import FeatureBuilder, ONNXEmbedder, SyntheticEmbedder, featurize
+        from lrp.features import FeatureBuilder, create_embedder, featurize
 
         spec = embedding_spec(args)
-        embedder = (
-            SyntheticEmbedder()
-            if spec["kind"] == "synthetic"
-            else ONNXEmbedder(Path(spec["model_path"]), Path(spec["tokenizer_path"]), threads=1)
+        embedder = create_embedder(
+            spec,
+            threads=1,
+            device=getattr(args, "device", "cpu"),
+            strict_device=bool(getattr(args, "strict_device", False)),
         )
         near_dup = None if args.near_dup_cosine is None else float(args.near_dup_cosine)
         frame = featurize(
@@ -351,6 +396,8 @@ def execute(args: argparse.Namespace) -> int:
             min_train_rows=200,
             anchor=(args.anchor_provider, args.anchor),
             ensemble_size=int(args.ensemble_size),
+            device=getattr(args, "device", "cpu"),
+            strict_device=bool(getattr(args, "strict_device", False)),
         )
         print(json.dumps({"bundle_version": produced.name}))
     elif args.command == "drift-check":
