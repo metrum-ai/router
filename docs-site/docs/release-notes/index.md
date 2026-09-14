@@ -14,6 +14,58 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v2.1.0 - 2026-09-14
+
+### Highlights
+
+- Usage evidence can persist optional cached-input token counts and
+  `cached_input_price_per_million_usd`, and can partition input cost when both
+  cache evidence and a known cached-input price are present (#160).
+- Learned Routing Policy gains offline seed-corpus tooling (#157), a
+  multi-provider coding portfolio (OpenRouter Qwen + MiniMax, Fireworks kimi,
+  Baseten GLM), a routing-benchmark harness (#159), and pluggable embedder
+  backends with explicit CUDA/CPU device selection (#156 A/C).
+- LRP serving/eval/signed-bundle gaps from #158 are closed. Public seed and
+  benchmark evidence scalars are checked in under
+  `docs/evidence/learned-routing-policy/`.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Config | Optional `cached_input_price_per_million_usd` on catalog/target pricing |
+| Database | Usage migration `2026091301` (schema version 5); `restore-required` rollback |
+| LRP | Opt-in only; new seed/benchmark/embedder tooling does not auto-enable enforce |
+| Packages | Canonical `metrum-ai-router*` binaries unchanged from v2.0.0 naming |
+
+### Upgrade
+
+1. Download `metrum-ai-router-v2.1.0-linux-<arch>.tar.gz` (and Docker package if
+   used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Apply usage migration `2026091301` per
+   [DATA_MIGRATIONS.md](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md)
+   with an approved pre-migration backup (restore-required).
+3. If using LRP, sync the locked uv project, refresh target pricing descriptors,
+   and keep router `external_policy.mode` in `shadow` until workload gates pass.
+4. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide) for Compose /
+   Kubernetes procedures.
+
+### Validation
+
+- `python3 scripts/validate_package_contents_test.py`
+- `python3 scripts/release_artifact_inventory_test.py`
+- `make test` and `make lrp-test` when exercising LRP packages from source
+- After deploy: `/readyz`, `/version` reports v2.1.0; confirm nullable cached
+  input columns on new usage rows when providers report cache reads
+
+### Rollback
+
+Roll back to GitHub Release **v2.0.0** (`metrum-ai-router-*` artifacts). Because
+`2026091301` is `restore-required`, restore the approved pre-migration usage DB
+snapshot before deploying the earlier package. Disable new LRP knobs or revert
+to the prior LRP bundle if enforce was enabled.
+
 ## v2.0.0 - 2026-09-12
 
 ### Highlights

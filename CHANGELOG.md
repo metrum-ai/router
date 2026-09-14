@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-14
+
+### Features
+
+- Persist optional cached-input token counts and
+  `cached_input_price_per_million_usd` in usage evidence (#160 / #166), with
+  usage migration `2026091301` (schema version 5; `restore-required` for
+  package rollback).
+- Add offline LRP seed-corpus tooling for iteration 1 (#157 / #163), including
+  download, extract, stratified sample, targets, replay spend guards, and
+  verifier label helpers.
+- Pivot the iteration-1 seed portfolio off OpenAI to OpenRouter Qwen + MiniMax,
+  Fireworks kimi-k2p7-code, and Baseten GLM-5.2 (#179).
+- Add offline LRP routing-benchmark harness (#159 / #165) and land CPU A/B/C plus
+  GPU enforce evidence scalars (#174, #176, #181).
+- Add pluggable LRP embedder backends (`onnxruntime`, `sentence-transformers`)
+  and explicit device selection with `--strict-device` (#156 A/C / #180).
+
+### Fixes
+
+- Close LRP serving, eval parity, drift, and signed-bundle gaps (#158 / #164).
+- Fix EKS NetworkPolicy tests after the `metrum-ai-router` rename.
+
+### Documentation
+
+- Document GPU-required LRP evidence training policy (#170).
+- Cap the example seed corpus at 100 traces and raise the seed spend abort to
+  100 USD (#171, #172).
+- Publish public seed-example and routing-benchmark evidence scalars (#173,
+  #176, #181).
+- Restructure buyer-facing README / solution brief around Learned Routing Policy
+  (#128, #155).
+
+### Notes
+
+- LRP remains opt-in (`strategy: external`). Installing this release does not
+  start a policy service or authorize live enforcement.
+- Report absolute USD and token categories for LRP evidence; do not invent
+  savings percentages.
+
 ## [2.0.0] - 2026-09-12
 
 ### Breaking Changes
@@ -49,5 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/metrum-ai/router/compare/v1.4.4...v2.0.0
