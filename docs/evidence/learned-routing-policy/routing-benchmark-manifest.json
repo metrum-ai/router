@@ -1,64 +1,49 @@
 {
-  "bundle_fingerprint": "043b62fac5a1c4f3539997d25852dcd67e74c7cb72fbaabd5a15c091bd6ae7ef",
-  "configuration_d": {
-    "issue": 162,
-    "status": "deferred"
-  },
-  "embedding_kind": "onnx",
-  "external_policy_timeout_ms": 500,
-  "harbor_concurrency": [
-    1,
-    4,
-    16
-  ],
-  "harbor_status": "executed",
-  "harbor_task_revision": "42aefbe4f3dd34776278b37f78f7188aaacda1435a3362937a28f380a03daa7c",
-  "harbor_task_set": "aider/polyglot_python_two-bucket",
-  "instance_types": {
-    "cloud": "massedcompute",
-    "gpu_type": "L40S",
-    "memory_in_gb_reported_by_sku": 256,
-    "memory_in_gib_observed": 141,
-    "num_gpus": 2,
-    "region": "kansascity-usa-1",
-    "shadeform_sku": "L40Sx2"
-  },
-  "live_runs_executed": true,
-  "max_decision_ms": 200,
-  "max_decision_ms_definition": "Report sidecar deadline_ms as max_decision_ms when both are set; also record external_policy.timeout_ms.",
-  "notes": "Retake A/B/C seed_replay + Harbor load cells on Shadeform L40Sx2 with real CUDA ONNX int8 BGE embedder (no synthetic embedder). Throughput uses synthetic_upstream sink. Paid #157 portfolio estimate 12.218 under 100 abort; actual spend about 0.269. Harbor task aider/polyglot_python_two-bucket.",
-  "ort_session_providers": [
-    "CUDAExecutionProvider",
-    "CPUExecutionProvider"
-  ],
-  "ort_version": "1.22.0",
-  "paid_api_spend_usd": 0.2686863619999999,
-  "paid_estimate_usd": 12.218124976000002,
-  "real_onnx_performance_evidence": true,
-  "router_added_latency_source": {
-    "definition": "Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.",
-    "duration_field": "duration_ms",
-    "join": "request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.",
-    "metric": "router_added_latency_ms",
-    "receive_event": "router_receive",
-    "receive_lines": "1318-1352",
-    "source_file": "internal/router/service.go",
-    "wrote_request_event": "router_upstream_wrote_request",
-    "wrote_request_lines": "2209-2230"
-  },
-  "router_commit": "0706c576e050bf04721deac033913750d560d2fa",
-  "runs_per_cell": 3,
   "schema": "metrum.lrp.routing-benchmark/v1",
+  "router_commit": "505b85d191292f732aa20a590be52b156f1996ab",
+  "sidecar_commit": "505b85d191292f732aa20a590be52b156f1996ab",
+  "embedding_kind": "onnx",
+  "real_onnx_performance_evidence": true,
   "seed_concurrency": [
     1,
     8,
     32,
     128
   ],
-  "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
-  "shadeform_left_running": true,
-  "sidecar_commit": "0706c576e050bf04721deac033913750d560d2fa",
+  "runs_per_cell": 3,
+  "warmup": "8 warmup requests discarded; 48 steady-state requests per seed_replay run; 3 runs per cell; median and spread.",
+  "external_policy_timeout_ms": 500,
   "sidecar_deadline_ms": 200,
-  "vllm_version": null,
-  "warmup": "8 warmup requests discarded; 48 steady-state requests per seed_replay run; 3 runs per cell; median and spread."
+  "max_decision_ms": 200,
+  "harbor_concurrency": [
+    1,
+    4,
+    16
+  ],
+  "harbor_status": "executed_on_gpu_only",
+  "harbor_task_set": "aider/polyglot_python_two-bucket",
+  "harbor_task_revision": "42aefbe4f3dd34776278b37f78f7188aaacda1435a3362937a28f380a03daa7c",
+  "cpu_host": "ephemeral Shadeform cpu_small (14 vCPU / 40 GB) desmoines-usa-1",
+  "gpu_host": "keep-alive Shadeform L40Sx2 kansascity-usa-1",
+  "paid_estimate_usd": 7.105088968000001,
+  "paid_api_spend_usd": 3.261575536000002,
+  "notes": "CPU A/B/C seed_replay on ephemeral cpu_small with device=cpu; GPU A/B/C seed+Harbor on L40Sx2 with device=cuda:0 strict_device. Paid portfolio reused (no new spend).",
+  "configuration_d": {
+    "issue": 162,
+    "status": "gpu_seed_and_harbor_compared_to_cpu_c_and_static_a"
+  },
+  "bundle_fingerprint_cpu": "18860595b99b5a75a46488c075375579e76713441a8389a43b79425aae759b27",
+  "bundle_fingerprint_gpu": "3393a3f5fe237d6304129a616f5c28f3bd342fb3db4c8201d24377796fb0edae",
+  "ort_session_providers_cpu": [
+    "CPUExecutionProvider"
+  ],
+  "ort_session_providers_gpu": [
+    "CUDAExecutionProvider",
+    "CPUExecutionProvider"
+  ],
+  "ort_version": "1.22.0",
+  "shadeform_instance_id_gpu": "9963d127-f312-4a37-b72d-91b42607cf8e",
+  "shadeform_instance_id_cpu": "1829ebd2-9746-4553-8f41-73c16923ea64",
+  "shadeform_left_running": true,
+  "cpu_torn_down": true
 }

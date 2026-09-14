@@ -3,27 +3,35 @@ Copyright 2026 Metrum AI
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Routing benchmark (issue #159)
+# Routing benchmark (issue #159 / #162 GPU)
 
-Status: retake complete. Live A/B/C seed_replay and Harbor load cells on Shadeform
-with real CUDA ONNX int8 BGE (no synthetic embedder).
-Configuration D deferred to issue #162.
+Status: CPU ephemeral A/B/C seed_replay + GPU cuda:0 A/B/C seed_replay and Harbor
+complete on Shadeform. Explicit `--device` / `compute.device` after #156/#180.
+Throughput cells use synthetic_upstream. Paid effectiveness/cost reused from
+NON-OpenAI portfolio (#179); no new paid spend.
 
-Throughput cells used a deterministic local upstream sink and are marked
-`synthetic_upstream`. Paid #157 portfolio ran with estimate first (12.218 USD,
-abort 100). Actual paid spend about 0.269 USD.
+## Hosts
 
-## Host
+### CPU (ephemeral; torn down after run)
+
+- Shadeform SKU: `cpu_small` (massedcompute, desmoines-usa-1)
+- Instance id: `1829ebd2-9746-4553-8f41-73c16923ea64`
+- vCPUs / memory: 14 / 40 GB
+- Device: `cpu` (`strict_device=true`); ORT providers: `CPUExecutionProvider`
+- ORT version: 1.22.0; embedding: ONNX int8 BGE
+- Router commit: `505b85d191292f732aa20a590be52b156f1996ab`
+- Bundle fingerprint: `18860595b99b5a75a46488c075375579e76713441a8389a43b79425aae759b27`
+- Harbor: skipped on CPU SKU
+
+### GPU (keep-alive)
 
 - Shadeform SKU: `L40Sx2` (massedcompute, kansascity-usa-1)
 - Instance id (left running): `9963d127-f312-4a37-b72d-91b42607cf8e`
-- SKU memory: 256 GB advertised; observed about 141 GiB
-- GPUs: 2x NVIDIA L40S
-- Router commit: `0706c576e050bf04721deac033913750d560d2fa`
-- Bundle fingerprint: `043b62fac5a1c4f3539997d25852dcd67e74c7cb72fbaabd5a15c091bd6ae7ef`
-- Embedding kind for B/C sidecar: `onnx` (CUDAExecutionProvider active; ORT 1.22.0)
-- Session providers: `['CUDAExecutionProvider', 'CPUExecutionProvider']`
-- Sidecar `deadline_ms` / `max_decision_ms`: 200; router `external_policy.timeout_ms`: 500
+- GPUs: 2x NVIDIA L40S; observed memory ~141 GiB
+- Device: `cuda:0` (`strict_device=true`); providers: `CUDAExecutionProvider`, `CPUExecutionProvider`
+- ORT version: 1.22.0 (onnxruntime-gpu); training_seconds ~4.42
+- Router commit: `505b85d191292f732aa20a590be52b156f1996ab`
+- Bundle fingerprint: `3393a3f5fe237d6304129a616f5c28f3bd342fb3db4c8201d24377796fb0edae`
 - Harbor task: `aider/polyglot_python_two-bucket` revision `42aefbe4f3dd34776278b37f78f7188aaacda1435a3362937a28f380a03daa7c`
 
 ## Router-added latency
@@ -31,51 +39,65 @@ abort 100). Actual paid spend about 0.269 USD.
 - Definition: Monotonic milliseconds from router receive to outbound httptrace.WroteRequest.
 - Receive event: `router_receive` at `internal/router/service.go:1318-1352`
 - WroteRequest event: `router_upstream_wrote_request` at `internal/router/service.go:2209-2230`
-- Join: request_trace_events rows where event=router_upstream_wrote_request; duration_ms is receive_to_wrote_request.
 
-## Overhead medians (seed_replay, synthetic_upstream, real ONNX CUDA)
-
-| Config | Conc | decisions/s | router-added p50 ms | sidecar p50 ms | timeout rate |
-|---|---:|---:|---:|---:|---:|
-| A | 1 | 10.78 | 1.0 | n/a | 0.000 |
-| A | 8 | 10.56 | 1.0 | n/a | 0.000 |
-| A | 32 | 9.77 | 3.0 | n/a | 0.000 |
-| A | 128 | 8.99 | 13.0 | n/a | 0.000 |
-| B | 1 | 10.24 | 9.0 | 8.0 | 0.000 |
-| B | 8 | 9.92 | 10.0 | 8.0 | 0.000 |
-| B | 32 | 8.97 | 12.0 | 8.5 | 0.000 |
-| B | 128 | 9.34 | 13.0 | 3.5 | 0.000 |
-| C | 1 | 10.09 | 9.0 | 8.0 | 0.000 |
-| C | 8 | 8.71 | 10.0 | 8.0 | 0.000 |
-| C | 32 | 11.38 | 11.0 | 6.5 | 0.000 |
-| C | 128 | 11.73 | 22.0 | 3.0 | 0.000 |
-
-### B/C deltas versus A (p50 router-added ms; not a cost claim)
-
-- Config B @ concurrency 1: router_added_latency_delta=8.0, lrp_decisions_per_sec_delta=-0.5399160869758717
-- Config B @ concurrency 8: router_added_latency_delta=9.0, lrp_decisions_per_sec_delta=-0.6453538854722183
-- Config B @ concurrency 32: router_added_latency_delta=9.0, lrp_decisions_per_sec_delta=-0.7949129068587624
-- Config B @ concurrency 128: router_added_latency_delta=0.0, lrp_decisions_per_sec_delta=0.348507788605092
-- Config C @ concurrency 1: router_added_latency_delta=8.0, lrp_decisions_per_sec_delta=-0.6913440353541489
-- Config C @ concurrency 8: router_added_latency_delta=9.0, lrp_decisions_per_sec_delta=-1.8500036761915482
-- Config C @ concurrency 32: router_added_latency_delta=8.0, lrp_decisions_per_sec_delta=1.6186452493668888
-- Config C @ concurrency 128: router_added_latency_delta=9.0, lrp_decisions_per_sec_delta=2.7403262219917934
-
-## Harbor load-shape medians (synthetic_upstream sink)
+## CPU overhead medians (seed_replay, synthetic_upstream, device=cpu)
 
 | Config | Conc | decisions/s | router-added p50 ms | sidecar p50 ms | timeout rate |
 |---|---:|---:|---:|---:|---:|
-| A | 1 | 10.14 | 1.0 | n/a | 0.000 |
-| A | 4 | 8.30 | 1.0 | n/a | 0.000 |
-| A | 16 | 11.59 | 1.0 | n/a | 0.000 |
-| B | 1 | 6.12 | 76.0 | 74.0 | 0.000 |
-| B | 4 | 8.12 | 73.0 | 71.0 | 0.000 |
-| B | 16 | 9.75 | 73.0 | 72.0 | 0.000 |
-| C | 1 | 6.77 | 72.5 | 71.0 | 0.000 |
-| C | 4 | 11.01 | 74.5 | 73.0 | 0.000 |
-| C | 16 | 10.88 | 73.0 | 71.5 | 0.000 |
+| A | 1 | 11.01 | 1.0 | n/a | 0.000 |
+| A | 8 | 10.99 | 1.0 | n/a | 0.000 |
+| A | 32 | 9.90 | 2.0 | n/a | 0.000 |
+| A | 128 | 9.93 | 4.0 | n/a | 0.000 |
+| B | 1 | 9.70 | 12.0 | 11.0 | 0.000 |
+| B | 8 | 9.84 | 12.0 | 11.0 | 0.000 |
+| B | 32 | 9.37 | 12.0 | 8.0 | 0.000 |
+| B | 128 | 9.65 | 7.0 | 3.0 | 0.000 |
+| C | 1 | 9.94 | 12.0 | 11.0 | 0.000 |
+| C | 8 | 9.33 | 12.0 | 11.0 | 0.000 |
+| C | 32 | 9.21 | 12.0 | 7.0 | 0.000 |
+| C | 128 | 9.94 | 7.0 | 3.0 | 0.000 |
 
-## Effectiveness and cost (paid #157 portfolio pivot)
+## GPU overhead medians (seed_replay, synthetic_upstream, device=cuda:0)
+
+| Config | Conc | decisions/s | router-added p50 ms | sidecar p50 ms | timeout rate |
+|---|---:|---:|---:|---:|---:|
+| A | 1 | 10.92 | 1.0 | n/a | 0.000 |
+| A | 8 | 11.71 | 1.0 | n/a | 0.000 |
+| A | 32 | 11.84 | 3.0 | n/a | 0.000 |
+| A | 128 | 10.04 | 6.0 | n/a | 0.000 |
+| B | 1 | 9.98 | 10.0 | 9.0 | 0.000 |
+| B | 8 | 12.03 | 12.0 | 10.0 | 0.000 |
+| B | 32 | 11.94 | 9.5 | 5.5 | 0.000 |
+| B | 128 | 9.64 | 9.0 | 3.0 | 0.000 |
+| C | 1 | 10.17 | 10.0 | 9.0 | 0.000 |
+| C | 8 | 10.82 | 10.0 | 8.0 | 0.000 |
+| C | 32 | 11.15 | 10.0 | 5.5 | 0.000 |
+| C | 128 | 10.84 | 7.0 | 2.5 | 0.000 |
+
+## GPU vs CPU config C (seed_replay)
+
+| Conc | CPU C dec/s | GPU C dec/s | CPU C sidecar p50 | GPU C sidecar p50 | CPU C router p50 | GPU C router p50 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 9.94 | 10.17 | 11.0 | 9.0 | 12.0 | 10.0 |
+| 8 | 9.33 | 10.82 | 11.0 | 8.0 | 12.0 | 10.0 |
+| 32 | 9.21 | 11.15 | 7.0 | 5.5 | 12.0 | 10.0 |
+| 128 | 9.94 | 10.84 | 3.0 | 2.5 | 7.0 | 7.0 |
+
+## GPU Harbor load-shape medians (synthetic_upstream)
+
+| Config | Conc | decisions/s | router-added p50 ms | sidecar p50 ms | timeout rate |
+|---|---:|---:|---:|---:|---:|
+| A | 1 | 12.41 | 1.0 | n/a | 0.000 |
+| A | 4 | 11.21 | 1.5 | n/a | 0.000 |
+| A | 16 | 12.11 | 1.0 | n/a | 0.000 |
+| B | 1 | 6.27 | 73.0 | 71.0 | 0.000 |
+| B | 4 | 10.69 | 77.5 | 76.0 | 0.000 |
+| B | 16 | 10.91 | 77.0 | 75.0 | 0.000 |
+| C | 1 | 5.99 | 74.0 | 72.0 | 0.000 |
+| C | 4 | 12.16 | 76.0 | 74.5 | 0.000 |
+| C | 16 | 10.43 | 76.5 | 75.0 | 0.000 |
+
+## Effectiveness and cost (reused paid #157/#179 portfolio)
 
 - Estimate USD (printed first): 7.105 (abort 100)
 - Actual spend USD: 3.261576
@@ -90,17 +112,17 @@ abort 100). Actual paid spend about 0.269 USD.
   - `minimax/minimax-m3`: ok 67 / 100, spend USD 0.241138
   - `accounts/fireworks/models/kimi-k2p7-code`: ok 67 / 100, spend USD 1.009130
   - `zai-org/GLM-5.2`: ok 67 / 100, spend USD 1.579324
+- Quality/mix framing: same reused candidate table for static A / cheap / LRP C / glm baseline; no new paid outcomes.
 
 ## Drivers
 
 - Seed replay concurrency: 1, 8, 32, 128 (3 runs each; median and spread in JSON)
-- Harbor concurrency: 1, 4, 16 (3 runs each); task `aider/polyglot_python_two-bucket`
+- Harbor concurrency (GPU only): 1, 4, 16 (3 runs each)
 
 No savings percentages.
 
 ## Shadeform
 
-- Instance left running per operator instruction (not torn down).
-- Resume SSH: `ssh -i ~/.ssh/id_ed25519 shadeform@64.247.196.20`
+- Ephemeral CPU instance deleted after evidence collection.
+- GPU instance left running: `ssh -i ~/.ssh/id_ed25519 shadeform@64.247.196.20`
 - Work root: `/var/tmp/lrp-retake`
-
