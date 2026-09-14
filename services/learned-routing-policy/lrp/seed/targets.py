@@ -4,15 +4,17 @@
 """Mixed hosted portfolio target descriptors for iteration-1 seed replay.
 
 Prices are source-dated constants from issue #157. Secrets are never stored here.
-Refresh OpenRouter catalog and OpenAI primary-doc prices before a paid run.
+Refresh OpenRouter catalog and Fireworks/Baseten list prices before a paid run.
+No OpenAI endpoints in this portfolio.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-OPENROUTER_PRICE_AS_OF = "2026-09-13"
-OPENAI_PRICE_AS_OF = "2026-09-13"
+OPENROUTER_PRICE_AS_OF = "2026-09-14"
+FIREWORKS_PRICE_AS_OF = "2026-06-28"
+BASETEN_PRICE_AS_OF = "2026-06-18"
 
 
 def iteration1_targets() -> list[dict[str, Any]]:
@@ -73,78 +75,82 @@ def iteration1_targets() -> list[dict[str, Any]]:
             "request_fields_scope": "all",
         },
         {
-            "target_id": "openai-gpt-5.6-sol",
-            "provider": "openai",
-            "model": "gpt-5.6-sol",
-            "model_ref": "gpt-5.6-sol",
-            "router_group": "lrp-seed-gpt-5-6",
+            "target_id": "openrouter-minimax-m3",
+            "provider": "openrouter",
+            "model": "minimax/minimax-m3",
+            "model_ref": "minimax/minimax-m3",
+            "router_group": "lrp-seed-minimax-m3",
             "honors_max_tokens": True,
-            "output_token_field": "max_completion_tokens",
+            "output_token_field": "max_tokens",
             "router_targets": [
                 {
-                    "provider": "openai",
-                    "model": "gpt-5.6-sol",
-                    "model_ref": "gpt-5.6-sol",
+                    "provider": "openrouter",
+                    "model": "minimax/minimax-m3",
+                    "model_ref": "minimax/minimax-m3",
                 }
             ],
-            "context_tokens": 1_050_000,
-            "common_eligible_context_tokens": 272_000,
+            "context_tokens": 1_048_576,
             "pricing": {
-                "input_per_m_usd": 4.0,
-                "output_per_m_usd": 20.0,
-                "cached_input_per_m_usd": 0.40,
-                "cache_write_per_m_usd": 5.0,
-                "source": "openai_primary_docs",
-                "as_of": OPENAI_PRICE_AS_OF,
-                "promotional_through": "2026-11-21",
-                "fallback_if_unavailable": "gpt-5.5",
+                "input_per_m_usd": 0.30,
+                "output_per_m_usd": 1.20,
+                "cached_input_per_m_usd": None,
+                "source": "openrouter_models_endpoint",
+                "as_of": OPENROUTER_PRICE_AS_OF,
             },
-            "pass1_controls": {
-                "cache": "disabled",
-                "prompt_cache_options": {"mode": "explicit"},
-                "processing": "standard",
-                "notes": (
-                    "explicit mode with no breakpoints disables cache reads/writes "
-                    "and write premium for pass 1; model id is gpt-5.6-sol"
-                ),
-            },
-            "request_fields_scope": "openai",
-            "provider_request_fields": {
-                "openai": {"prompt_cache_options": {"mode": "explicit"}}
-            },
+            "pass1_controls": {"cache": "disabled"},
+            "request_fields_scope": "all",
         },
         {
-            "target_id": "openai-gpt-5.4-mini",
-            "provider": "openai",
-            "model": "gpt-5.4-mini",
-            "model_ref": "gpt-5.4-mini-2026-03-17",
-            "router_group": "lrp-seed-gpt-5-4-mini",
+            "target_id": "fireworks-kimi-k2p7-code",
+            "provider": "fireworks",
+            "model": "accounts/fireworks/models/kimi-k2p7-code",
+            "model_ref": "kimi-k2p7-code",
+            "router_group": "lrp-seed-fireworks-kimi",
             "honors_max_tokens": True,
-            "output_token_field": "max_completion_tokens",
+            "output_token_field": "max_tokens",
             "router_targets": [
                 {
-                    "provider": "openai",
-                    "model": "gpt-5.4-mini",
-                    "model_ref": "gpt-5.4-mini-2026-03-17",
+                    "provider": "fireworks",
+                    "model": "accounts/fireworks/models/kimi-k2p7-code",
+                    "model_ref": "kimi-k2p7-code",
                 }
             ],
-            "context_tokens": 400_000,
+            "context_tokens": 262144,
             "pricing": {
-                "input_per_m_usd": 0.75,
+                "input_per_m_usd": 0.95,
+                "output_per_m_usd": 4.00,
+                "cached_input_per_m_usd": 0.19,
+                "source": "fireworks_serverless_pricing",
+                "as_of": FIREWORKS_PRICE_AS_OF,
+            },
+            "pass1_controls": {"cache": "disabled"},
+            "request_fields_scope": "all",
+        },
+        {
+            "target_id": "baseten-glm-5-2",
+            "provider": "baseten",
+            "model": "zai-org/GLM-5.2",
+            "model_ref": "glm-5-2",
+            "router_group": "lrp-seed-baseten-glm",
+            "honors_max_tokens": True,
+            "output_token_field": "max_tokens",
+            "router_targets": [
+                {
+                    "provider": "baseten",
+                    "model": "zai-org/GLM-5.2",
+                    "model_ref": "glm-5-2",
+                }
+            ],
+            "context_tokens": 202752,
+            "pricing": {
+                "input_per_m_usd": 1.50,
                 "output_per_m_usd": 4.50,
-                "cached_input_per_m_usd": 0.075,
-                "source": "openai_primary_docs",
-                "as_of": OPENAI_PRICE_AS_OF,
+                "cached_input_per_m_usd": 0.30,
+                "source": "baseten_model_api_pricing",
+                "as_of": BASETEN_PRICE_AS_OF,
             },
-            "pass1_controls": {
-                "cache": "disabled",
-                "prompt_cache_options": {"mode": "explicit"},
-                "processing": "standard",
-            },
-            "request_fields_scope": "openai",
-            "provider_request_fields": {
-                "openai": {"prompt_cache_options": {"mode": "explicit"}}
-            },
+            "pass1_controls": {"cache": "disabled"},
+            "request_fields_scope": "all",
         },
     ]
 

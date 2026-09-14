@@ -16,10 +16,6 @@ from . import SOURCE_DATASET, SPEND_ABORT_USD
 from .targets import fanout_target_dicts, iteration1_targets
 
 
-def openai_provider_request_fields() -> dict[str, dict[str, Any]]:
-    return {"openai": {"prompt_cache_options": {"mode": "explicit"}}}
-
-
 def build_replay_request(turn: dict[str, Any], *, max_tokens: int = 512) -> dict[str, Any]:
     request: dict[str, Any] = {
         "schema_version": "lrp.request.v1",
@@ -32,7 +28,6 @@ def build_replay_request(turn: dict[str, Any], *, max_tokens: int = 512) -> dict
         "session_key": turn["session_key"],
         "messages": turn["messages"],
         "max_tokens": max_tokens,
-        "provider_request_fields": openai_provider_request_fields(),
     }
     tools = turn.get("tools")
     if tools:

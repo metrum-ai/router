@@ -75,20 +75,21 @@ abort 100). Actual paid spend about 0.269 USD.
 | C | 4 | 11.01 | 74.5 | 73.0 | 0.000 |
 | C | 16 | 10.88 | 73.0 | 71.5 | 0.000 |
 
-## Effectiveness and cost (paid #157 retake)
+## Effectiveness and cost (paid #157 portfolio pivot)
 
-- Estimate USD (printed first): 12.218 (abort 100)
-- Actual spend USD: 0.268686
-- Response rows: 400
-- Status counts: ok 108, upstream_error 292
-- Error counts: http_429 195, http_502 97
+- Estimate USD (printed first): 7.105 (abort 100)
+- Actual spend USD: 3.261576
+- Response rows: 500
+- Status counts: ok 349, upstream_error 151
+- Error counts: http_429 151
+- OpenAI used: false
+- Primary absolute USD baseline: `baseten-glm-5-2`
 - Per target ok/spend:
-  - `qwen/qwen3.5-9b`: ok 56 / 100, spend USD 0.097948
-  - `qwen/qwen3.8-27b`: ok 52 / 100, spend USD 0.170738
-  - `gpt-5.6-sol`: ok 0 / 100, spend USD 0.000000
-  - `gpt-5-mini`: ok 0 / 100, spend USD 0.000000
-- OpenAI probe: gpt-5.6-sol present=True; gpt-5.4-mini present=False; mini fallback=`gpt-5-mini`
-- GPT-5.6-sol-only absolute USD baseline: unavailable this pass (OpenAI ok count 0)
+  - `qwen/qwen3.5-9b`: ok 75 / 100, spend USD 0.149358
+  - `qwen/qwen3.8-27b`: ok 73 / 100, spend USD 0.282625
+  - `minimax/minimax-m3`: ok 67 / 100, spend USD 0.241138
+  - `accounts/fireworks/models/kimi-k2p7-code`: ok 67 / 100, spend USD 1.009130
+  - `zai-org/GLM-5.2`: ok 67 / 100, spend USD 1.579324
 
 ## Drivers
 

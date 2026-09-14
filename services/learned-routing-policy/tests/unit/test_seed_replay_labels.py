@@ -33,22 +33,29 @@ from test_fanout import completion, pricing
 
 def test_iteration1_targets_have_dated_prices_without_secrets():
     targets = iteration1_targets()
-    assert len(targets) == 4
+    assert len(targets) == 5
     models = {row["model"] for row in targets}
     assert "qwen/qwen3.5-9b" in models
     assert "qwen/qwen3.8-27b" in models
-    assert "gpt-5.6-sol" in models
-    assert "gpt-5.4-mini" in models
+    assert "minimax/minimax-m3" in models
+    assert "accounts/fireworks/models/kimi-k2p7-code" in models
+    assert "zai-org/GLM-5.2" in models
+    providers = {row["provider"] for row in targets}
+    assert providers == {"openrouter", "fireworks", "baseten"}
+    assert "openai" not in providers
     blob = json.dumps(targets)
     assert "sk-" not in blob
     assert "OPENAI_API_KEY" not in blob
-    openai = next(row for row in targets if row["model"] == "gpt-5.6-sol")
-    assert openai["pass1_controls"]["prompt_cache_options"]["mode"] == "explicit"
-    assert openai["pricing"]["as_of"] == "2026-09-13"
+    assert "FIREWORKS_API_KEY" not in blob
+    assert "BASETEN_API_KEY" not in blob
+    glm = next(row for row in targets if row["model"] == "zai-org/GLM-5.2")
+    assert glm["pass1_controls"]["cache"] == "disabled"
+    assert glm["pricing"]["as_of"] == "2026-06-18"
+    assert "prompt_cache_options" not in glm["pass1_controls"]
 
 
 @pytest.mark.asyncio
-async def test_openai_only_fields_not_sent_to_qwen(tmp_path):
+async def test_prompt_cache_options_not_sent_to_qwen(tmp_path):
     bodies: list[dict] = []
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -82,7 +89,7 @@ async def test_openai_only_fields_not_sent_to_qwen(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_openai_target_without_catalog_price_is_ineligible(tmp_path):
+async def test_fireworks_target_without_catalog_price_is_ineligible(tmp_path):
     bodies: list[dict] = []
 
     def handler(req: httpx.Request) -> httpx.Response:
@@ -95,7 +102,11 @@ async def test_openai_target_without_catalog_price_is_ineligible(tmp_path):
     request = build_replay_request(turn, max_tokens=32)
     source = write(tmp_path / "requests", [request])
     target = fanout_target_dicts(
-        [row for row in iteration1_targets() if row["model"] == "gpt-5.6-sol"]
+        [
+            row
+            for row in iteration1_targets()
+            if row["model"] == "accounts/fireworks/models/kimi-k2p7-code"
+        ]
     )[0]
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         await run_fanout(
@@ -114,7 +125,7 @@ async def test_openai_target_without_catalog_price_is_ineligible(tmp_path):
 async def test_spend_estimate_aborts_without_approval_and_dry_run_skips_paid(tmp_path):
     turns = extract_teacher_forced_turns(sample_trajectory_row())
     for turn in turns:
-        turn["prompt_tokens_cl100k"] = 10_000_000
+        turn["prompt_tokens_cl100k"] = 20_000_000
     estimate = estimate_replay_spend_usd(turns)
     assert estimate["estimate_usd"] > estimate["abort_threshold_usd"]
     assert estimate["abort_threshold_usd"] == 100.0
