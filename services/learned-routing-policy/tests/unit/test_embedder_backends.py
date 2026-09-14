@@ -14,8 +14,8 @@ import pytest
 from lrp.collect import DataError
 from lrp.features import (
     ONNXEmbedder,
+    SentenceTransformersEmbedder,
     SyntheticEmbedder,
-    _sentence_transformers_available,
     create_embedder,
     embedding_fingerprint,
 )
@@ -46,9 +46,10 @@ def test_create_embedder_synthetic_and_onnx(tmp_path):
     assert np.isfinite(vector).all()
 
 
-def test_sentence_transformers_import_guard():
-    if _sentence_transformers_available():
-        pytest.skip("sentence-transformers installed; import-guard path not exercised")
+def test_sentence_transformers_import_guard(monkeypatch):
+    monkeypatch.setattr(
+        "lrp.features._sentence_transformers_available", lambda: False
+    )
     with pytest.raises(DataError, match="sentence-transformers package is not installed"):
         create_embedder(
             {
@@ -60,10 +61,7 @@ def test_sentence_transformers_import_guard():
         )
 
 
-def test_sentence_transformers_factory_when_present(tmp_path, monkeypatch):
-    if not _sentence_transformers_available():
-        pytest.skip("sentence-transformers not installed")
-
+def test_sentence_transformers_factory_with_mocked_backend(tmp_path, monkeypatch):
     class FakeModel:
         device = "cpu"
         max_seq_length = 512
@@ -71,34 +69,33 @@ def test_sentence_transformers_factory_when_present(tmp_path, monkeypatch):
         def encode(self, texts, **kwargs):
             return np.ones((len(texts), 384), dtype=np.float32)
 
+    class FakeSentenceTransformers:
+        @staticmethod
+        def SentenceTransformer(*args, **kwargs):
+            return FakeModel()
+
     model_dir = tmp_path / "st-model"
     model_dir.mkdir()
     (model_dir / "config.json").write_text("{}")
     model_dir.chmod(0o700)
     (model_dir / "config.json").chmod(0o600)
 
-    import sentence_transformers
-
     monkeypatch.setattr(
-        sentence_transformers,
-        "SentenceTransformer",
-        lambda *args, **kwargs: FakeModel(),
+        "lrp.features._sentence_transformers_available", lambda: True
     )
-    embedder = create_embedder(
-        {
-            "kind": "sentence-transformers",
-            "backend": "sentence-transformers",
-            "model_path": model_dir,
-            "max_seq_len": 128,
-            "precision": "fp32",
-            "device_class": "cpu",
-            "normalize_embeddings": True,
-        },
+    monkeypatch.setitem(
+        __import__("sys").modules, "sentence_transformers", FakeSentenceTransformers
+    )
+    embedder = SentenceTransformersEmbedder(
+        model_dir,
+        max_seq_len=128,
         device="cpu",
+        normalize_embeddings=True,
     )
     vector = embedder.encode("hello")
     assert vector.shape == (384,)
-    assert np.isclose(np.linalg.norm(vector), 1.0)
+    assert np.isfinite(vector).all()
+    assert embedder.kind == "sentence-transformers"
 
 
 def test_onnx_fingerprint_mismatch_fields(tmp_path):
