@@ -11,8 +11,6 @@
   "status": "cpu_ephemeral_and_gpu_cuda_device_retake_complete",
   "live_runs_executed": true,
   "promotable": false,
-  "shadeform_left_running": true,
-  "shadeform_teardown_confirmed": false,
   "public_reporting_rules": [
     "No savings percentages",
     "No secrets or prompts",
@@ -33,7 +31,6 @@
   },
   "hosts": {
     "cpu_ephemeral": {
-      "instance_id": "1829ebd2-9746-4553-8f41-73c16923ea64",
       "shade_instance_type": "cpu_small",
       "cloud": "massedcompute",
       "region": "desmoines-usa-1",
@@ -50,8 +47,7 @@
       "torn_down_after_run": true,
       "notes": "True ephemeral Shadeform CPU SKU (not device=cpu on GPU host)."
     },
-    "gpu_keepalive": {
-      "instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
+    "gpu_evidence": {
       "shade_instance_type": "L40Sx2",
       "cloud": "massedcompute",
       "region": "kansascity-usa-1",
@@ -65,8 +61,7 @@
       ],
       "ort_version": "1.22.0",
       "bundle_fingerprint": "3393a3f5fe237d6304129a616f5c28f3bd342fb3db4c8201d24377796fb0edae",
-      "left_running": true,
-      "notes": "Keep-alive GPU host; onnxruntime-gpu + CUDAExecutionProvider."
+      "notes": "GPU evidence host; onnxruntime-gpu + CUDAExecutionProvider. Lifecycle status is operator_private."
     }
   },
   "manifest": {
@@ -3848,7 +3843,7 @@
   "effectiveness": {
     "family": "effectiveness",
     "reused": true,
-    "source": "docs/evidence + /var/tmp/lrp-retake/evidence/paid_replay_summary.json",
+    "source": "docs/evidence + operator_private paid_replay_summary",
     "primary_baseline": "baseten-glm-5-2",
     "openai_used": false,
     "actual_spend_usd": 3.261575536000002,
@@ -3945,5 +3940,6 @@
     "baseline_total_usd": 1.5793244999999998,
     "total_usd": 3.261575536000002,
     "notes": "Absolute USD only; no savings percentages."
-  }
+  },
+  "host_lifecycle_status": "operator_private"
 }
