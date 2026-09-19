@@ -101,11 +101,13 @@ TAR_ENV := COPYFILE_DISABLE=1
 
 BUILD_LDFLAGS = -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
 
-.PHONY: help test test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-mock e2e-live-c e2e-live-full e2e-compose-live eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture clean
+.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-mock e2e-live-c e2e-live-full e2e-compose-live eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture clean
 
 help:
 	@echo "Metrum AI Router make targets. Fleet ops: docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md"
-	@echo "  test                   run default test suite"
+	@echo "  test                   run full credential-free suite"
+	@echo "  test-fast              pull-request checks without uv suites"
+	@echo "  test-full              same contract as test, for the merge queue"
 	@echo "  proof-routing          same-group different-upstream dynamic_score proof"
 	@echo "  harbor-adapter-test    offline Harbor agent-adapter contracts (AGENT-01..06)"
 	@echo "  test-tenant-deploy-all Fleet offline contract tests"
@@ -172,12 +174,20 @@ capability-smoke: capability-smoke-unit
 
 # This mock-first contract is offline and credential-free. SKIP_TESTS=true is
 # the only bypass; it is explicit, noisy, and cannot enable provider traffic.
-capability-smoke-unit:
+capability-smoke-contracts:
 	@if [ "$${SKIP_TESTS:-false}" = "true" ]; then \
-		echo "WARNING: SKIP_TESTS=true skips capability-smoke-unit (synthetic manifests, evidence verifier, redaction checks)"; \
+		echo "WARNING: SKIP_TESTS=true skips capability-smoke-contracts (synthetic manifests, evidence verifier, redaction checks)"; \
 	elif [ "$${SKIP_TESTS:-false}" = "false" ]; then \
 		$(PYTHON) scripts/provider_capability_smoke.py unit; \
 		$(PYTHON) scripts/provider_capability_smoke_test.py; \
+	else \
+		echo "SKIP_TESTS must be true or false" >&2; exit 2; \
+	fi
+
+capability-smoke-unit: capability-smoke-contracts
+	@if [ "$${SKIP_TESTS:-false}" = "true" ]; then \
+		echo "WARNING: SKIP_TESTS=true skips capability-smoke-unit Go tests"; \
+	elif [ "$${SKIP_TESTS:-false}" = "false" ]; then \
 		GOOS=$(HOST_GOOS) GOARCH=$(HOST_GOARCH) go test ./internal/router -run 'TestVerifyCapability'; \
 	else \
 		echo "SKIP_TESTS must be true or false" >&2; exit 2; \
@@ -231,15 +241,25 @@ test-k8s-amd-instinct-local-serving:
 test-k8s-nvidia-llmd-compat:
 	bash scripts/test_k8s_nvidia_llmd_compat.sh
 
-test: secret-check capability-smoke-unit
+# Pull-request gate. Credential-free and free of disposable uv/Go environments.
+# go test ./... covers focused Go packages, including capability and architecture.
+test-fast: secret-contract capability-smoke-contracts
 	go test ./...
 	python3 scripts/outcome_calibrated_policy_test.py
 	python3 scripts/api_compat_bootstrap_test.py
 	"$${MAKE:-make}" harbor-adapter-test
+	python3 scripts/ci_topology_test.py
+	python3 scripts/harbor_promotion_test.py
+
+# Full credential-free suite. Heavy targets stay behind shell Make invocations so
+# `make -n` does not execute them. test-full is the merge-queue name for `test`.
+test: test-fast secret-check
 	"$${MAKE:-make}" api-compat-mock \
 		$(call api_compat_make_data,API_COMPAT_BOOTSTRAP_GO_PROXY) \
 		$(call api_compat_make_data,API_COMPAT_BOOTSTRAP_GO_SUMDB)
 	"$${MAKE:-make}" harbor-local
+
+test-full: test
 
 # Offline proof that one dynamic_score group can select different upstreams for
 # trivial vs complex fixtures, using the real request-evidence handler.
@@ -380,12 +400,14 @@ dco-check-test:
 sse-capture:
 	python3 scripts/sse_capture.py
 
-secret-check:
+secret-contract:
 	python3 scripts/check_env_example_secrets.py
 	python3 scripts/check_env_example_secrets_test.py
 	python3 scripts/canonical_product_test.py
 	python3 scripts/check_stale_product_names_test.py
 	python3 scripts/check_stale_product_names.py --enforce-docs-origin --enforce-contract
+
+secret-check: secret-contract
 	python3 scripts/local_dev_bootstrap_test.py
 	python3 scripts/prepare_fleet_production_bundle_test.py
 	python3 scripts/launch_operational_readiness_test.py

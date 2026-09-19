@@ -5,8 +5,13 @@ name: Source headers
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
+
+concurrency:
+  group: source-headers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -5,10 +5,6 @@ name: Inspect coding evaluation
 on:
   pull_request:
     paths: ["cmd/metrum-ai-router-usage-report/**", "internal/router/**", "config.example.yaml", "Makefile", "scripts/inspect_coding_eval.py", "scripts/inspect_coding_eval_test.py", "config/evaluation-policy.example.json", ".gitignore", "examples/inspect-coding-evaluation.env.example", "docs/INSPECT_CODING_EVALUATIONS.md", "docs-site/docs/evaluation/evaluate-smart-router.md", ".github/workflows/inspect-coding-evaluation.yml"]
-  push:
-    branches: [main]
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch:
     inputs:
       tier:
@@ -23,12 +19,25 @@ on:
         required: false
         default: "8"
 
+concurrency:
+  group: inspect-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions: { contents: read }
 
 jobs:
-  smoke:
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.tier == 'smoke')
+  contract:
+    if: github.event_name == 'pull_request'
     runs-on: [self-hosted, Linux, X64, router]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: python3 scripts/inspect_coding_eval_test.py
+
+  smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'smoke'
+    runs-on: [self-hosted, Linux, X64, router]
+    environment: evaluation
     timeout-minutes: 15
     env:
       EVAL_BASE_URL: ${{ secrets.EVAL_ROUTER_BASE_URL }}
@@ -38,12 +47,9 @@ jobs:
       EVAL_USAGE_CALLER_ID: ${{ vars.EVAL_USAGE_CALLER_ID }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - run: python3 scripts/inspect_coding_eval_test.py
       - name: Install Inspect AI
-        if: ${{ env.EVAL_BASE_URL != '' && env.EVAL_API_KEY != '' && env.EVAL_MODEL != '' }}
         run: python3 -m pip install 'inspect-ai==0.3.242' 'inspect-evals==0.15.0'
       - name: Authenticated bounded router smoke
-        if: ${{ env.EVAL_BASE_URL != '' && env.EVAL_API_KEY != '' && env.EVAL_MODEL != '' }}
         env:
           EVAL_MODEL_KIND: router-group
           EVAL_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-smoke
@@ -54,7 +60,7 @@ jobs:
         with: { name: inspect-smoke-sanitized, path: tmp/inspect-evals/**/evaluation-summary.*, if-no-files-found: ignore, retention-days: 7 }
 
   full-or-promotion:
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.tier != 'smoke')
+    if: github.event_name == 'workflow_dispatch' && inputs.tier != 'smoke'
     runs-on: [self-hosted, Linux, X64, router]
     environment: evaluation
     permissions: { contents: read }

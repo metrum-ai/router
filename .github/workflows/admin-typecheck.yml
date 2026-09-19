@@ -1,0 +1,34 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Admin typecheck
+
+on:
+  pull_request:
+    paths:
+      - "internal/router/admindist/web/**"
+      - ".github/workflows/admin-typecheck.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: admin-typecheck-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  admin-typecheck:
+    runs-on: [self-hosted, Linux, X64, router]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/router/admindist/web/package-lock.json
+      - name: admin typecheck
+        run: |
+          npm ci --prefix internal/router/admindist/web --no-audit --no-fund
+          npx --prefix internal/router/admindist/web tsc --noEmit -p internal/router/admindist/web

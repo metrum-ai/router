@@ -5,9 +5,14 @@ name: Go
 
 on:
   pull_request:
-  push:
-    branches: [main]
+  merge_group:
   workflow_dispatch:
+
+# merge_group reports this required check without repeating test-fast.
+# The combined SHA runs test-fast inside the deterministic gate.
+concurrency:
+  group: go-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -15,21 +20,24 @@ permissions:
 jobs:
   test-and-vet:
     runs-on: [self-hosted, Linux, X64, router]
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
+      - name: Covered by merge-group test-full
+        if: github.event_name == 'merge_group'
+        run: echo "make test-fast runs inside the merge-group test-full job"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: github.event_name != 'merge_group'
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.event_name != 'merge_group'
         with:
           go-version-file: go.mod
           cache: true
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: github.event_name != 'merge_group'
         with:
           python-version: "3.12"
-      - name: Install Python test deps
-        # secret-check (via make test) runs prepare_fleet_production_bundle*.py
-        run: python3 -m pip install --user 'PyYAML==6.0.3'
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
       - name: gofmt
+        if: github.event_name != 'merge_group'
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
@@ -38,8 +46,8 @@ jobs:
             exit 1
           fi
       - name: go vet
+        if: github.event_name != 'merge_group'
         run: go vet ./...
-      - name: make test
-        run: make test
-      - name: architecture boundaries
-        run: go test ./internal/architecture -count=1
+      - name: make test-fast
+        if: github.event_name != 'merge_group'
+        run: make test-fast
