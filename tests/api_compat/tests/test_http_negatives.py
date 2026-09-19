@@ -240,6 +240,7 @@ def no_default_router(router, tmp_path_factory):
     port = unused_port()
     config = f'''server:
   listen: "127.0.0.1:{port}"
+  identifiers: {{mode: passthrough}}
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
   logging: {{path: "{work / 'router.jsonl'}"}}
