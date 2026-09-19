@@ -1,0 +1,70 @@
+# Ephemeral self-hosted runner pool for metrum-ai/router (label: router).
+# Deploy on pikachu as ~/github-runners-router-compose.
+#
+# privileged=true is required so nested bubblewrap user namespaces work for LRP
+# synthetic verifiers. AppArmor host profiles are not used.
+#
+# Compatible with docker-compose v1.29 (no top-level `name:`).
+
+x-runner: &runner
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  privileged: true
+  env_file:
+    - .env
+  environment:
+    RUNNER_SCOPE: ${RUNNER_SCOPE:-repo}
+    REPO_URL: ${REPO_URL:-https://github.com/metrum-ai/router}
+    ORG_NAME: ${ORG_NAME:-metrum-ai}
+    LABELS: ${LABELS:-self-hosted,Linux,X64,router}
+    EPHEMERAL: ${EPHEMERAL:-true}
+    DISABLE_AUTO_UPDATE: "true"
+    RUNNER_WORKDIR: /tmp/runner-work
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - runner-tools:/opt/hostedtoolcache
+
+services:
+  runner-1:
+    <<: *runner
+    container_name: gha-router-1
+    environment:
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX:-pikachu-router}-1
+      RUNNER_SCOPE: ${RUNNER_SCOPE:-repo}
+      REPO_URL: ${REPO_URL:-https://github.com/metrum-ai/router}
+      ORG_NAME: ${ORG_NAME:-metrum-ai}
+      LABELS: ${LABELS:-self-hosted,Linux,X64,router}
+      EPHEMERAL: ${EPHEMERAL:-true}
+      DISABLE_AUTO_UPDATE: "true"
+      RUNNER_WORKDIR: /tmp/runner-work
+
+  runner-2:
+    <<: *runner
+    container_name: gha-router-2
+    environment:
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX:-pikachu-router}-2
+      RUNNER_SCOPE: ${RUNNER_SCOPE:-repo}
+      REPO_URL: ${REPO_URL:-https://github.com/metrum-ai/router}
+      ORG_NAME: ${ORG_NAME:-metrum-ai}
+      LABELS: ${LABELS:-self-hosted,Linux,X64,router}
+      EPHEMERAL: ${EPHEMERAL:-true}
+      DISABLE_AUTO_UPDATE: "true"
+      RUNNER_WORKDIR: /tmp/runner-work
+
+  runner-3:
+    <<: *runner
+    container_name: gha-router-3
+    environment:
+      RUNNER_NAME: ${RUNNER_NAME_PREFIX:-pikachu-router}-3
+      RUNNER_SCOPE: ${RUNNER_SCOPE:-repo}
+      REPO_URL: ${REPO_URL:-https://github.com/metrum-ai/router}
+      ORG_NAME: ${ORG_NAME:-metrum-ai}
+      LABELS: ${LABELS:-self-hosted,Linux,X64,router}
+      EPHEMERAL: ${EPHEMERAL:-true}
+      DISABLE_AUTO_UPDATE: "true"
+      RUNNER_WORKDIR: /tmp/runner-work
+
+volumes:
+  runner-tools:
