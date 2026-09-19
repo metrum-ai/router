@@ -85,7 +85,7 @@ def test_stateless_responses_to_chat_and_chat_to_responses_bridges(api, router):
     )
     assert status == 502 and body((status, None, raw))["error"]["type"] == "no-eligible-target"
     assert len(router["upstream"].calls) == before
-    status, _, raw = api(
+    status, headers, raw = api(
         "/v1/chat/completions",
         {
             "model": "chat-to-responses",
@@ -93,5 +93,9 @@ def test_stateless_responses_to_chat_and_chat_to_responses_bridges(api, router):
             "stream": True,
         },
     )
-    assert status == 502 and body((status, None, raw))["error"]["type"] == "no-eligible-target"
-    assert len(router["upstream"].calls) == before
+    assert status == 200
+    assert "text/event-stream" in headers["Content-Type"]
+    assert b"chat.completion.chunk" in raw
+    assert b"synthetic responses" in raw
+    assert router["upstream"].calls[-1]["path"] == "/v1/responses"
+    assert router["upstream"].calls[-1]["body"].get("stream") is True
