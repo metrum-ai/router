@@ -6,7 +6,8 @@ package stream
 // StreamTranslator converts upstream SSE events into caller-dialect events
 // incrementally. Implementations are state machines: they may hold bounded
 // per-item state (open tool-call ids, content-block indexes, emitted sequence
-// numbers) but never the full response body.
+// numbers), including output snapshots required by caller done events and
+// bounded by the runner's upstream byte limit; never the raw response body.
 type StreamTranslator interface {
 	// Begin emits any preamble the caller dialect requires before the first
 	// upstream event is seen. Bridges may need message_start or response.created;

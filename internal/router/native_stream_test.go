@@ -194,7 +194,7 @@ func TestSTResponsesNativeStreamFlushesIncrementally(t *testing.T) {
 	}
 }
 
-func TestST3ResponsesToChatBridgeRemainsUnary(t *testing.T) {
+func TestST3ResponsesToChatBridgeSynthesizedRemainsUnary(t *testing.T) {
 	var upstreamBody map[string]any
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
@@ -211,6 +211,7 @@ func TestST3ResponsesToChatBridgeRemainsUnary(t *testing.T) {
 
 	target := Target{Provider: "native", Model: "chat-bridge", ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, Streaming: true}}
 	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{target})
+	svc.cfg.Server.Streaming.Translator = "synthesized"
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
