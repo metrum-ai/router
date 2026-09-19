@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/big"
 	"mime"
@@ -34,6 +35,7 @@ import (
 )
 
 type Service struct {
+	identifiers        IdentifierTransform
 	cfg                *Config
 	mux                *http.ServeMux
 	httpClient         *http.Client
@@ -154,6 +156,13 @@ func New(cfg *Config) (*Service, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	identifiers, err := newIdentifierTransform(cfg.Server.Identifiers)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Server.Identifiers.passthrough() {
+		log.Print("WARNING: identifier passthrough enabled; upstream identifiers are exposed")
+	}
 	contentCaptureKeys := contentCaptureKeyResolver(envContentCaptureKeyResolver{})
 	if cfg.contentCaptureEnabled() {
 		if _, err := contentCaptureKeys.ResolveContentCaptureKey(configuredContentCaptureLocalKeyID(cfg)); err != nil {
@@ -182,6 +191,7 @@ func New(cfg *Config) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
+		identifiers:        identifiers,
 		cfg:                cfg,
 		mux:                http.NewServeMux(),
 		httpClient:         newUpstreamHTTPClient(cfg.Server.Upstream),
@@ -308,7 +318,7 @@ func (s *Service) routes() {
 		writeJSON(w, http.StatusOK, healthPayload(true, ""))
 	})
 	s.mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.cfg.Validate(); err != nil {
+		if err := s.cfg.Validate(); err != nil || !s.identifiersAvailable() {
 			// Never echo Validate() text: it can include caller IDs, paths, and other config detail.
 			writeJSON(w, http.StatusServiceUnavailable, healthPayload(false, "not-ready"))
 			return
@@ -789,6 +799,12 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 }
 
 func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
+	if !s.identifiersAvailable() {
+		w.Header().Set("X-Request-Id", requestID())
+		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		return
+	}
+
 	rc, ok := s.begin(w, r, "anthropic")
 	if !ok {
 		return
@@ -808,6 +824,13 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<20))
 	if err != nil {
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
+		return
+	}
+
+	body, err = decodeIdentifierFields(body, s.identifiers)
+	if err != nil {
+		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, "invalid-tool-call-id")
 		return
 	}
 	req, err := decodeRequest("anthropic", body, r.Header)
@@ -865,6 +888,11 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect string) {
+	if !s.identifiersAvailable() {
+		w.Header().Set("X-Request-Id", requestID())
+		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		return
+	}
 	endpointDialect := dialect
 	rc, ok := s.begin(w, r, dialect)
 	if !ok {
@@ -889,6 +917,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<20))
 	if err != nil {
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
+		return
+	}
+	body, err = decodeIdentifierFields(body, s.identifiers)
+	if err != nil {
+		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, "invalid-tool-call-id")
 		return
 	}
 	responsesBodyOnChatEndpoint := false
@@ -2307,7 +2341,7 @@ sendUpstream:
 		if maxResponseBytes <= 0 {
 			maxResponseBytes = 32 << 20
 		}
-		streamResult, streamErr := proxyNativeSSE(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc)
+		streamResult, streamErr := proxyNativeSSE(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		_ = httpResp.Body.Close()
 		if cancel != nil {
 			cancel()
@@ -4142,4 +4176,8 @@ func classifyStub(req *IRRequest) (string, string) {
 func contentTypeIsSSE(h http.Header) bool {
 	mt, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
 	return mt == "text/event-stream"
+}
+
+func (s *Service) identifiersAvailable() bool {
+	return s.cfg.Server.Identifiers.passthrough() || s.identifiers != nil
 }

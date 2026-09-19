@@ -36,6 +36,7 @@ type Config struct {
 }
 
 type ServerConfig struct {
+	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
 	OpenAICompatibility OpenAICompatibilityConfig `yaml:"openai_compatibility" json:"openai_compatibility"`
@@ -951,6 +952,9 @@ func validEnvName(k string) bool {
 }
 
 func (c *Config) setDefaults() {
+	if c.Server.Identifiers.Mode == "" {
+		c.Server.Identifiers.Mode = "rewrite"
+	}
 	if c.Server.Listen == "" {
 		c.Server.Listen = ":8080"
 	}
@@ -1108,6 +1112,9 @@ func (c *Config) setDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if _, err := newIdentifierTransform(c.Server.Identifiers); err != nil {
+		return err
+	}
 	if len(c.Provider) == 0 {
 		return fmt.Errorf("at least one provider is required")
 	}
@@ -2339,6 +2346,9 @@ func contentCaptureHeaderAllowed(header string) bool {
 }
 
 func validatePIIFilter(group string, cfg PIIFilterConfig) error {
+	if cfg.Enabled && (normalizePIIFilterMode(cfg) == "redact_and_restore" || (cfg.RestoreResponse != nil && *cfg.RestoreResponse)) {
+		return fmt.Errorf("F-011: pii-filter-redact-and-restore-unsupported: model group %s", group)
+	}
 	if !cfg.Enabled {
 		if cfg.Mode != "" || cfg.FailOnMatch || cfg.RestoreResponse != nil || cfg.MaxReplacementsPerRequest != 0 || len(cfg.Rules) > 0 {
 			return fmt.Errorf("model group %s configures pii_filter but pii_filter.enabled is false", group)

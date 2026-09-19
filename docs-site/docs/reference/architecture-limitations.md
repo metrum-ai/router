@@ -102,3 +102,33 @@ See [Router Configuration](../configuration/router-config), [Security And
 Governance](../security-governance/overview), and the [Upgrade
 Guide](../release-notes/upgrade-guide).
 
+
+## Identifier transformation
+
+`server.identifiers.mode` defaults to `rewrite`. Configure a 64-byte random
+AES-256-SIV key in `transform.current.key` using hex or standard base64 (for
+example `${ROUTER_ID_TRANSFORM_KEY}`). `key_id` is exactly one base62 character
+(`0-9`, `A-Z`, `a-z`). Caller IDs have the form `mr_` + epoch + unpadded base64url
+ciphertext. Encryption is deterministic: equal IDs under the same key remain
+equal. Keep the key stable across replicas and restarts.
+
+Rotation supports only `current` and optional `previous`, with different epochs.
+The previous key needs an RFC3339 `valid_until` in the future, no more than 30 days
+away at validation. Encoding always uses current; decoding accepts previous only
+until its deadline. Remove the previous configuration when its grace period ends.
+The router validates keys and performs an encode/decode self-test at startup.
+The relational configuration loader accepts deployment-owned identifier settings
+separately; identifier secrets are not stored in its database projection.
+
+Native Anthropic, Responses, and Chat SSE streams rewrite only protocol ID string
+fields, preserving content deltas and SSE framing. Responses function-call
+`call_id` is transformed along with item IDs so tool results can round-trip.
+Ingress decodes prefixed `tool_call_id`, `tool_use_id`, `call_id`, and
+`previous_response_id`. Unprefixed IDs remain accepted. This change does not add
+ID rewriting to unary responses or translated streams, or enable upstream
+stateful Responses routing across providers.
+
+Explicit `passthrough` skips transformation and emits a startup warning.
+`pii_filter` restoration (`redact_and_restore` or `restore_response: true`) is
+rejected with `F-011: pii-filter-redact-and-restore-unsupported`; use `redact_only`
+or `fail_on_match`. Native streams cannot safely restore arbitrary content deltas.

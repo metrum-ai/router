@@ -95,7 +95,7 @@ func TestLoadActiveConfigFromDBReadsValidatedCoreProjection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cfg, err := LoadActiveConfigFromDB(db, "staging")
+	cfg, err := LoadActiveConfigFromDB(db, "staging", IdentifierConfig{Mode: "passthrough"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestLoadActiveConfigFromDBLoadsNormalizedProviderModelCapabilities(t *testi
 		}
 	}
 
-	cfg, err := LoadActiveConfigFromDB(r.db, "staging")
+	cfg, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestLoadActiveConfigFromDBFailsClosedWithoutProviderModelCapabilityRecord(t
 			t.Fatal(err)
 		}
 	}
-	if _, err := LoadActiveConfigFromDB(r.db, "staging"); err == nil || !strings.Contains(err.Error(), "has no capability record") {
+	if _, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"}); err == nil || !strings.Contains(err.Error(), "has no capability record") {
 		t.Fatalf("missing provider-model capability record must fail closed, got %v", err)
 	}
 }
@@ -344,7 +344,7 @@ func TestLoadActiveConfigFromDBFailsClosedWithoutValidatedActiveSet(t *testing.T
 	}
 	defer func() { _ = closeDB() }()
 	applyConfigControlPlaneMigrationsForTest(t, r)
-	if _, err := LoadActiveConfigFromDB(r.db, "staging"); err == nil || !strings.Contains(err.Error(), "no validated active") {
+	if _, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"}); err == nil || !strings.Contains(err.Error(), "no validated active") {
 		t.Fatalf("expected closed failure, got %v", err)
 	}
 }
@@ -365,7 +365,7 @@ func TestLoadActiveConfigFromDBFailsClosedWithMultipleValidatedActiveSets(t *tes
 			t.Fatal(err)
 		}
 	}
-	if _, err := LoadActiveConfigFromDB(r.db, "staging"); err == nil || !strings.Contains(err.Error(), "multiple validated active") {
+	if _, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"}); err == nil || !strings.Contains(err.Error(), "multiple validated active") {
 		t.Fatalf("expected ambiguous active-set failure, got %v", err)
 	}
 }
@@ -597,7 +597,7 @@ func TestLoadActiveConfigFromDBRejectsCaseVariantHeadersBeforePhase3(t *testing.
 	if status.SchemaVersion != 2 || status.State != "pending" {
 		t.Fatalf("phase-2 migration status = %+v, want pending schema 2", status)
 	}
-	if _, err := LoadActiveConfigFromDB(r.db, "staging"); err == nil || !strings.Contains(err.Error(), "case-insensitive duplicate header") {
+	if _, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"}); err == nil || !strings.Contains(err.Error(), "case-insensitive duplicate header") {
 		t.Fatalf("expected case-variant header read failure before phase 3, got %v", err)
 	}
 }
@@ -730,7 +730,7 @@ func TestLoadActiveConfigFromDBAcceptsInlineTargetWithoutModelRef(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	cfg, err := LoadActiveConfigFromDB(r.db, "staging")
+	cfg, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"})
 	if err != nil {
 		t.Fatal(err)
 	}

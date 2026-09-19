@@ -1,4 +1,14 @@
 server:
+  identifiers:
+    mode: rewrite
+    transform:
+      current:
+        key_id: "0" # One base62 character; change on rotation.
+        key: ${ROUTER_ID_TRANSFORM_KEY} # 64 random bytes, hex or base64.
+      # previous:
+      #   key_id: "z"
+      #   key: ${ROUTER_ID_TRANSFORM_KEY_PREVIOUS}
+      #   valid_until: "2026-09-20T00:00:00Z" # Future, at most 30 days.
   listen: :8080
   default_model_group: default
   # Optional OpenAI endpoint compatibility gates. Disabled by default so

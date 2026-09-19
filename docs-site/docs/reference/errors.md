@@ -325,3 +325,16 @@ The evidence bundle also reports diagnostic completeness so operators can tell w
 For provider quota or billing incidents, look for `request_attempts.error_class = 'upstream_quota_exhausted'` and terminal `request_errors.error_type = 'upstream-quota-exhausted'`. A successful request can still have an `upstream_quota_exhausted` attempt row when fallback succeeded.
 
 If governed content capture is enabled by an operator, captured content lives in separate content-capture tables and remains outside usage reports and diagnostics. Delete and retention-purge maintenance endpoints require `content:capture` `delete`/`purge` authorization; delete-by-request is scoped to the captured row's caller project/environment domain.
+
+## Identifier transformation errors
+
+| Error | Status | Meaning |
+| --- | --- | --- |
+| `identifier-transform-unavailable` | 503 | Rewrite mode has no initialized transform; routing fails closed. |
+| `invalid-tool-call-id` | 400 | A prefixed ingress identifier is malformed, expired/unknown, or fails authentication. |
+| `not-ready` | 503 on `/readyz` | Configuration or identifier transform is unavailable; validation details are never exposed. `/healthz` remains 200. |
+
+Decode telemetry contains only `id-decode-unknown-epoch`,
+`id-decode-auth-failed`, or `id-decode-malformed`, never the rejected identifier
+or key material. Configuration rejection `F-011:
+pii-filter-redact-and-restore-unsupported` disables unsupported PII restoration.

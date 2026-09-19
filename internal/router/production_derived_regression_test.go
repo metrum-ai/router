@@ -1078,7 +1078,7 @@ func productionDerivedHighRegressionConfig(t *testing.T, dir, upstreamURL string
 		})
 	}
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: fixture.ModelGroup,
 			UsageDB:           freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite")),
@@ -1112,7 +1112,7 @@ func productionDerivedRegressionConfig(t *testing.T, dir, upstreamURL string) *C
 	t.Helper()
 	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "large-openai-chat-tools-smoke",
 			UsageDB:           freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite")),
@@ -1163,7 +1163,7 @@ func productionDerivedOpenCodeStreamOptionsConfig(t *testing.T, dir, upstreamURL
 	t.Helper()
 	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "big-coder-opencode-stream-options-smoke",
 			UsageDB:           freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite")),

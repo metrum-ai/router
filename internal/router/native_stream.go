@@ -50,8 +50,12 @@ type nativeStreamResult struct {
 	Bytes     int64
 }
 
-func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext) (nativeStreamResult, error) {
+func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
 	result := nativeStreamResult{Response: &IRResponse{Model: model, Streamed: true}}
+	rewriter := nativeIDRewriter{}
+	if len(transforms) > 0 {
+		rewriter.transform = transforms[0]
+	}
 	var downstreamStart time.Time
 	defer func() {
 		if rc != nil && !downstreamStart.IsZero() {
@@ -98,6 +102,7 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 					rc.rec.TTFBMS = &ttfb
 				}
 			}
+			rawFrame = rewriter.rewrite(rawFrame, dialect)
 			if _, writeErr := w.Write(rawFrame); writeErr != nil {
 				return result, upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: writeErr}
 			}

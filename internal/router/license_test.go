@@ -222,6 +222,7 @@ func TestLoadConfigAllowsExplicitDisabledLicense(t *testing.T) {
 	configPath := filepath.Join(dir, "config.yaml")
 	raw := fmt.Sprintf(`
 server:
+  identifiers: {mode: passthrough}
   listen: ":0"
   default_model_group: default
   license:
@@ -1114,7 +1115,7 @@ func testLicensePayload(now time.Time, features []string) LicensePayload {
 func licenseTestConfig(dir string) *Config {
 	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "default",
 			License:           LicenseConfig{Enabled: true, StatePath: filepath.Join(dir, "license-state.json"), RecheckInterval: time.Hour},
