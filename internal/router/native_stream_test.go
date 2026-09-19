@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -420,49 +419,12 @@ func TestOpenAIChatTerminalFinishReasonWithoutDonePersistsAccounting(t *testing.
 }
 
 func TestNativeStreamPIIRestoreModePreservesPlaceholders(t *testing.T) {
-	var upstreamBody map[string]any
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, "data: {\"id\":\"chat_pii\",\"choices\":[{\"delta\":{\"content\":\"Use [EMAIL_1].\"},\"finish_reason\":null}]}\n\n")
-		fmt.Fprint(w, "data: {\"id\":\"chat_pii\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":3,\"total_tokens\":7}}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
-	}))
-	defer upstream.Close()
-
-	dir := t.TempDir()
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["default"] = ModelGroup{
-		Strategy:  "static",
-		PIIFilter: testPIIFilterConfig("redact_and_restore"),
-		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
-	}
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","stream":true,"messages":[{"role":"user","content":"Email jane.doe@example.com."}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-
-	rawUpstream, _ := json.Marshal(upstreamBody)
-	if strings.Contains(string(rawUpstream), "jane.doe@example.com") || !strings.Contains(string(rawUpstream), "[EMAIL_1]") {
-		t.Fatalf("upstream PII redaction failed: %s", rawUpstream)
-	}
-	if strings.Contains(rr.Body.String(), "jane.doe@example.com") || !strings.Contains(rr.Body.String(), "[EMAIL_1]") {
-		t.Fatalf("native stream must preserve placeholders: %s", rr.Body.String())
-	}
-	logRaw, err := os.ReadFile(cfg.Server.Logging.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(logRaw), "pii-response-restoration-skipped-native-stream") || strings.Contains(string(logRaw), "jane.doe@example.com") {
-		t.Fatalf("native stream PII diagnostics mismatch: %s", logRaw)
+	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter = testPIIFilterConfig("redact_and_restore")
+	cfg.Models["default"] = group
+	if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "F-011") {
+		t.Fatalf("expected F-011, got %v", err)
 	}
 }
 

@@ -45,6 +45,7 @@ def usage_router(router, tmp_path_factory):
     upstream_url = f"http://127.0.0.1:{upstream_port}"
     config = f'''server:
   listen: "127.0.0.1:{port}"
+  identifiers: {{mode: passthrough}}
   default_model_group: chat
   cache: {{enabled: false}}
   usage_db:

@@ -140,6 +140,7 @@ def vision_router(router, tmp_path_factory):
     port = unused_port()
     config = f'''server:
   listen: "127.0.0.1:{port}"
+  identifiers: {{mode: passthrough}}
   default_model_group: vision-chat
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}

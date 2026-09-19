@@ -72,7 +72,7 @@ func TestUsageDBDefaultsToSQLiteBesideStatePath(t *testing.T) {
 		t.Fatalf("usage DB migration policy = %q", cfg.Server.UsageDB.MigrationPolicy)
 	}
 
-	postgres := &Config{Server: ServerConfig{UsageDB: UsageDBConfig{
+	postgres := &Config{Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"}, UsageDB: UsageDBConfig{
 		Driver: "postgres",
 		DSN:    "postgres://test-only",
 	}}}
@@ -1281,8 +1281,8 @@ models:
     strategy: weighted
     pii_filter:
       enabled: true
-      mode: redact_and_restore
-      restore_response: true
+      mode: redact_only
+      restore_response: false
       max_replacements_per_request: 200
       apply_to:
         system: true
@@ -1311,11 +1311,12 @@ callers:
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		t.Fatal(err)
 	}
+	cfg.Server.Identifiers.Mode = "passthrough"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("documented pii_filter YAML shape did not validate: %v", err)
 	}
 	filter := cfg.Models["sensitive-workloads"].PIIFilter
-	if !filter.Enabled || filter.Mode != "redact_and_restore" || len(filter.Rules) != 3 {
+	if !filter.Enabled || filter.Mode != "redact_only" || len(filter.Rules) != 3 {
 		t.Fatalf("unexpected pii_filter decode: %#v", filter)
 	}
 	if filter.ApplyTo.System == nil || !*filter.ApplyTo.System || filter.ApplyTo.ImageURLs {
@@ -1350,6 +1351,7 @@ func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1719,6 +1721,7 @@ func TestExampleConfigOpenAINanoResponsesReasoningMetadata(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1782,6 +1785,7 @@ func TestExampleConfigPreservesAnthropicTextEligibilityInBroadGroups(t *testing.
 	if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1829,6 +1833,7 @@ func TestExampleConfigLargeOpenAIChatToolsSmokeHasShapeGate(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -2594,7 +2599,7 @@ func TestIntelligentRoutingConfigRequiresStrategy(t *testing.T) {
 func minimalConfig(t *testing.T) *Config {
 	t.Helper()
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Cache: CacheConfig{Enabled: true},
 			// Test fixtures explicitly opt into the bounded single-node path; the
 			// shipped configuration default remains deployment-job validation.

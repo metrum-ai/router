@@ -187,6 +187,7 @@ def capability_fallback_router(router, tmp_path):
     work.mkdir()
     config = f'''server:
   listen: "127.0.0.1:{port}"
+  identifiers: {{mode: passthrough}}
   default_model_group: tools-fallback
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
