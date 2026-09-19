@@ -45,9 +45,9 @@ Keep the four root legal files together during publication and redistribution.
 distributed notices; `THIRD_PARTY_NOTICES.md` records dependency and asset
 terms and surfaces; and `MODEL_LICENSES.md` records model and dataset term
 boundaries. Review unresolved entries for the exact artifact rather than
-assuming the first-party license grants third-party rights. A deployment's
-`license.json` remains protected runtime policy and must not be added to the
-package legal set.
+assuming the first-party license grants third-party rights. Leftover
+`license.json` files are inert in 3.0.0+ and must not be added to the package
+legal set.
 
 Package docs are an explicit Tier 2 bootstrap allowlist maintained in `scripts/package_docs_allowlist.txt`. Internal production runbooks, source-maintenance notes, and troubleshooting notes with private hostnames, SSH paths, live compose paths, router token files, or provider-key material must stay out of release packages. Full external admin guidance belongs in the embedded Docusaurus docs served under `/docs/`.
 
@@ -85,7 +85,7 @@ unbounded pure JavaScript can hold its slot and request goroutine indefinitely.
 other script execution. Review scripts for bounded loops and roll back a stuck
 policy by restoring the previous artifact and restarting affected instances.
 
-License and quota state files are tamper-evident runtime state. Keep the state directory private, copy state files through normal backup/restore procedures, and do not edit JSON counters or disabled flags by hand; integrity failures are treated as serving errors until a trusted backup or approved replacement/top-up workflow restores state. Legacy unsigned quota-state import requires an explicit one-time start with `METRUM_AI_ROUTER_ALLOW_UNSIGNED_STATE_MIGRATION=1` (legacy alias `SMART_LLMROUTER_ALLOW_UNSIGNED_STATE_MIGRATION=1` still accepted), then a restart without that flag after signed state is written.
+Quota state files are tamper-evident runtime state. Keep the state directory private, copy state files through normal backup/restore procedures, and do not edit JSON counters or disabled flags by hand; integrity failures are treated as serving errors until a trusted backup restores state. Legacy unsigned quota-state import requires an explicit one-time start with `METRUM_AI_ROUTER_ALLOW_UNSIGNED_STATE_MIGRATION=1` (legacy alias `SMART_LLMROUTER_ALLOW_UNSIGNED_STATE_MIGRATION=1` still accepted), then a restart without that flag after signed state is written.
 
 For PII-aware script routing, mark private backing targets with deployment-owned metadata such as `tier: private` or `display_name: Private sensitive target`, and test that likely PII requests select only those targets for both primary routing and retry fallbacks. The example in `examples/typescript-pii-policy/` returns safe class labels only, does not log or return matched text, and fails closed when no sensitive/private target is eligible. Script routing does not redact outbound content; use model-group `pii_filter` for router-managed redaction, restoration, or fail-on-match controls.
 
@@ -119,22 +119,10 @@ back by removing the config field and preserving the additive column; a
 package downgrade follows the migration contract and may require restoring
 the approved pre-migration database.
 
-Normal release builds require `server.license` enforcement. Mount the
-operator-generated signed JSON runtime-policy file, its configured verification
-public key, and durable license state path before startup; runtime YAML cannot
-disable enforcement. `/readyz` reflects license readiness. Replace or renew the
-file before expiry, then restart or wait for `recheck_interval`.
-
-Self-managed operators should use `docs/LICENSE_OPERATIONS.md` for key
-generation, issuance, renewal, replacement, trust rotation, and acceptance
-checks. They generate and retain their own Ed25519 keypair; no external issuer
-is required. An optional Metrum-managed deployment service may perform these
-operations under a separate commercial agreement. The source-tree runbook is
-not part of the public hosted docs and must not contain real licenses, signing
-keys, customer identifiers, router tokens, provider keys, or full production
-config.
-
-Enterprise self-hosted packages support offline signed-license operation. Private managed deployments use the same runtime licensing model but are operated for a single customer or customer-specific HA environment. Approved commercial/control-plane flows must deliver a signed license or online lease through the approved system; do not add card-processing, billing-ledger, or public API-credit-wallet behavior to the router runtime.
+Runtime licensing was removed in 3.0.0. Leftover `license.json` files are
+inert (never read). Legacy `server.license` config is accepted with one startup
+warning in 3.0.0 and rejected in 4.0.0. Do not mount or issue a license as a
+deployment prerequisite.
 
 Docker Compose packages are built separately:
 
@@ -178,8 +166,7 @@ Set `RESTIC_REPOSITORY` or `RESTIC_REPO_HOST` plus `RESTIC_REPO_PATH` (with
 `BACKUP_USER`/`BACKUP_PASS`) in ignored `ops.env.json`; there are no compiled-in
 host or path defaults. `make package-all` produces the fleet-admin binary
 packages (includes `metrum-fleetctl` and related Fleet CLIs).
-`make package-docker-all` produces the shared customer Docker packages; customer
-license payloads are issued separately and are never packaged. After both
+`make package-docker-all` produces the shared customer Docker packages. After both
 families exist under `dist/`:
 
 ```bash
@@ -209,7 +196,7 @@ make package-dist-backup
 
 Use `docs/DOCKER_DEPLOYMENT.md` when deploying the packaged Docker image tarball plus Caddy compose stack to AWS EC2 or a similar host. Use `docs/DEPLOYMENT_PATTERNS.md` when choosing between evaluation-hosted, self-hosted central, per-environment, per-team, hierarchical/federated, and private managed topologies.
 
-Kubernetes examples are maintained under `deploy/kubernetes/`. They are Kustomize-friendly raw manifests with placeholder-only Secret examples, an external Postgres DSN, `/readyz` and `/healthz` probes, ingress, network policy, a state PVC, and a PDB. The base kustomization does not apply `secret.example.yaml`; operators must create real Secrets through the deployment secret-management process first. Before using the manifests in production, operators must push the per-architecture package image to a deployment-owned registry, replace every placeholder, review the network policy against the cluster CNI, and smoke `/readyz`, `/docs/`, `/v1/models`, one caller request, and admin reports if enabled. Keep the example at one router replica unless the selected state/license/quota design has been validated for horizontal scaling.
+Kubernetes examples are maintained under `deploy/kubernetes/`. They are Kustomize-friendly raw manifests with placeholder-only Secret examples, an external Postgres DSN, `/readyz` and `/healthz` probes, ingress, network policy, a state PVC, and a PDB. The base kustomization does not apply `secret.example.yaml`; operators must create real Secrets through the deployment secret-management process first. Before using the manifests in production, operators must push the per-architecture package image to a deployment-owned registry, replace every placeholder, review the network policy against the cluster CNI, and smoke `/readyz`, `/docs/`, `/v1/models`, one caller request, and admin reports if enabled. Keep the example at one router replica unless the selected state/quota design has been validated for horizontal scaling.
 
 For NVIDIA local-serving (in-cluster vLLM + router, KV cache off by default), use
 `deploy/kubernetes/overlays/nvidia-local-serving/` and

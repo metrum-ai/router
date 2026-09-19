@@ -192,7 +192,7 @@ kubectl create namespace smart-llmrouter
 
 kubectl -n smart-llmrouter create secret generic smart-llmrouter-secrets \
   --from-file=config.yaml=./config.yaml \
-  --from-file=env.json=./env.json \
+  --from-file=env.json=./env.json
 ```
 
 The router config is mounted at `/app/config/config.yaml`. Provider keys are mounted at `/app/config/env.json`. Durable router state is written under `/app/state`. Store the entire production runtime bundle in that Secret. Caller token hashes, browser-admin credentials, provider keys, and DSNs belong there, not in a ConfigMap.
