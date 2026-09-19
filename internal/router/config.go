@@ -64,7 +64,6 @@ type OpenAICompatibilityConfig struct {
 	TolerateResponsesBodyOnChatEndpoint bool `yaml:"tolerate_responses_body_on_chat_endpoint" json:"tolerateResponsesBodyOnChatEndpoint"`
 }
 
-
 type AdminAuthConfig struct {
 	Basic         AdminBasicAuthConfig     `yaml:"basic" json:"basic"`
 	OIDC          AdminOIDCConfig          `yaml:"oidc" json:"oidc"`
@@ -1715,7 +1714,6 @@ func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
 	}
 	return nil
 }
-
 
 func validateAdminBasicAuth(basic AdminBasicAuthConfig) error {
 	if !basic.Enabled {

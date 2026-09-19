@@ -189,12 +189,12 @@ type adminMigrationStatusRow struct {
 }
 
 type adminReportVersionResponse struct {
-	Version            string `json:"version"`
-	Commit             string `json:"commit"`
-	BuildDate          string `json:"build_date"`
-	GoVersion          string `json:"go_version"`
-	GOOS               string `json:"goos"`
-	GOARCH             string `json:"goarch"`
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"build_date"`
+	GoVersion string `json:"go_version"`
+	GOOS      string `json:"goos"`
+	GOARCH    string `json:"goarch"`
 }
 
 type adminReportPagination struct {
@@ -1121,15 +1121,14 @@ func adminMigrationRowMatches(row adminMigrationStatusRow, q url.Values) bool {
 func (s *Service) handleAdminReportVersion(w http.ResponseWriter, r *http.Request) {
 	info := buildinfo.Current()
 	writeJSON(w, http.StatusOK, adminReportVersionResponse{
-		Version:            info.Version,
-		Commit:             info.Commit,
-		BuildDate:          info.BuildDate,
-		GoVersion:          info.GoVersion,
+		Version:   info.Version,
+		Commit:    info.Commit,
+		BuildDate: info.BuildDate,
+		GoVersion: info.GoVersion,
 		GOOS:      info.GOOS,
 		GOARCH:    info.GOARCH,
 	})
 }
-
 
 func adminReportUsesSavingsBaseline(relPath string) bool {
 	if relPath == "/api/savings" {

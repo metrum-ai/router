@@ -660,7 +660,6 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
 }
 
-
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 	basic, ok := s.authenticateAdminBasic(w, r)
 	if !ok {
@@ -1438,7 +1437,6 @@ func populateReasoningUsageCoverage(rec *logRecord) {
 	rec.ReasoningTokens, rec.ReasoningAttemptCount, rec.ReasoningSuccessfulAttemptCount, rec.ReasoningReportedAttemptCount = reasoningUsageCoverage(rec.AttemptsDetail)
 	rec.ReasoningCoverageMeasured = true
 }
-
 
 func (s *Service) diagnosticsEnabled() bool {
 	if s == nil || s.cfg == nil {
