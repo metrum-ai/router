@@ -42,6 +42,15 @@ Replay checks gap-free sequence numbers, stable encoded tool item IDs, content
 part ordering, terminal usage, and byte/JSON/random chunk boundaries. To refresh
 only these goldens, run `UPDATE_GOLDEN=1 go test ./internal/stream -run TestChatUpstreamToResponsesCallerReplay`.
 
+P3 covers `chat_to_responses` (Chat caller, Responses upstream). Its synthetic
+`responses-to-chat` fixtures contain Responses SSE, with full framed Chat SSE
+goldens in `openai-responses-to-openai-chat/*.sse` (including `[DONE]`). They cover
+UTF-8 text, empty output, refusal, interleaved tools with sparse upstream indexes,
+mixed text/tools, length/content-filter termination, and detailed usage. Lifecycle
+snapshots do not duplicate deltas; upstream sequence numbers are ignored.
+Replay uses byte, fixed-size, and seeded random reads. Refresh only P3 goldens
+with `UPDATE_GOLDEN=1 go test ./internal/stream -run TestResponsesUpstreamToChatCallerReplay`.
+
 ## Secret and content rules
 
 At capture time, strip:

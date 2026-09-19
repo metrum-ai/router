@@ -159,3 +159,13 @@ func proxyChatUpstreamToResponsesCallerSSE(ctx context.Context, w http.ResponseW
 	}
 	return runResponsesStream(ctx, w, body, model, maxBytes, rc, t)
 }
+
+func proxyResponsesUpstreamToChatCallerSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
+	t := &stream.ResponsesUpstreamToChatCaller{Model: model}
+	if len(transforms) > 0 {
+		t.IDs = transforms[0]
+	}
+	result, err := runResponsesStream(ctx, w, body, model, maxBytes, rc, t)
+	result.Response.ID = t.ResponseID
+	return result, err
+}

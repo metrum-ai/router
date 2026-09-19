@@ -563,7 +563,7 @@ func TestProductionDerivedAgentCompatibilityFixtureCoversRequiredScenarios(t *te
 		"responses-to-chat-function-tool",
 		"cursor-mixed-responses-body-chat-endpoint",
 		"previous-response-id-stateless-bridge-negative",
-		"chat-to-responses-streaming-negative",
+		"chat-to-responses-streaming",
 		"reasoning-no-compatible-target-negative",
 		"reasoning-models-metadata-advertisement",
 		"anthropic-thinking-budget-output-cap-negative",
@@ -636,8 +636,8 @@ func TestProductionDerivedAgentCompatibilityNegativeBridgeReasonsMatchRouter(t *
 		t.Fatal(err)
 	}
 	chatTarget := Target{Bridges: BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}}}
-	if got := chatToResponsesBridgeFilterReason(chatTarget, req, "openai-chat", "openai-responses"); got != byName["chat-to-responses-streaming-negative"] {
-		t.Fatalf("streaming bridge filter=%q, want fixture reason %q", got, byName["chat-to-responses-streaming-negative"])
+	if got := chatToResponsesBridgeFilterReason(chatTarget, req, "openai-chat", "openai-responses"); got != byName["chat-to-responses-streaming"] {
+		t.Fatalf("streaming bridge filter=%q, want fixture reason %q", got, byName["chat-to-responses-streaming"])
 	}
 }
 
