@@ -52,10 +52,10 @@ type IdentifierKeyConfig struct {
 	ValidUntil time.Time `yaml:"valid_until"`
 }
 type identifierTransform struct {
-	current, previous         cipher.AEAD
-	currentID, previousID     string
+	current, previous           cipher.AEAD
+	currentID, previousID       string
 	currentEpoch, previousEpoch string
-	validUntil                time.Time
+	validUntil                  time.Time
 }
 
 func (c IdentifierConfig) passthrough() bool { return c.Mode == "passthrough" }

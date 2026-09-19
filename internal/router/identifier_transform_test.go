@@ -84,9 +84,9 @@ func TestID002Rotation(t *testing.T) {
 }
 func TestID003Validation(t *testing.T) {
 	for name, edit := range map[string]func(*IdentifierConfig){
-		"missing": func(c *IdentifierConfig) { c.Transform.Current.Key = "" },
-		"length":  func(c *IdentifierConfig) { c.Transform.Current.Key = strings.Repeat("ab", 32) },
-		"empty_key_id": func(c *IdentifierConfig) { c.Transform.Current.KeyID = "" },
+		"missing":           func(c *IdentifierConfig) { c.Transform.Current.Key = "" },
+		"length":            func(c *IdentifierConfig) { c.Transform.Current.Key = strings.Repeat("ab", 32) },
+		"empty_key_id":      func(c *IdentifierConfig) { c.Transform.Current.KeyID = "" },
 		"whitespace_key_id": func(c *IdentifierConfig) { c.Transform.Current.KeyID = "bad id" },
 		"collision": func(c *IdentifierConfig) {
 			p := c.Transform.Current
@@ -136,7 +136,7 @@ func TestID004DecodeBuckets(t *testing.T) {
 	b, _ := base64.RawURLEncoding.DecodeString(valid[4:])
 	b[len(b)-1] ^= 1
 	for input, want := range map[string]string{
-		"mr_": "id-decode-malformed",
+		"mr_":               "id-decode-malformed",
 		"mr_" + epoch + "!": "id-decode-malformed",
 		"mr_Zabcd":          "id-decode-unknown-epoch",
 		"mr_" + epoch + base64.RawURLEncoding.EncodeToString(b): "id-decode-auth-failed",
