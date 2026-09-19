@@ -107,12 +107,14 @@ Guide](../release-notes/upgrade-guide).
 
 `server.identifiers.mode` defaults to `rewrite`. Configure a 64-byte random
 AES-256-SIV key in `transform.current.key` using hex or standard base64 (for
-example `${ROUTER_ID_TRANSFORM_KEY}`). `key_id` is exactly one base62 character
-(`0-9`, `A-Z`, `a-z`). Caller IDs have the form `mr_` + epoch + unpadded base64url
-ciphertext. Encryption is deterministic: equal IDs under the same key remain
-equal. Keep the key stable across replicas and restarts.
+example `${ROUTER_ID_TRANSFORM_KEY}`). `key_id` is a printable, loggable label
+(for example `idk-2026-09`); the single base62 wire epoch character is derived
+from it. Caller IDs have the form `mr_` + epoch + unpadded base64url ciphertext.
+Encryption is deterministic: equal IDs under the same key remain equal. Keep the
+key stable across replicas and restarts.
 
-Rotation supports only `current` and optional `previous`, with different epochs.
+Rotation supports only `current` and optional `previous`, with different
+`key_id` values whose derived epochs must not collide.
 The previous key needs an RFC3339 `valid_until` in the future, no more than 30 days
 away at validation. Encoding always uses current; decoding accepts previous only
 until its deadline. Remove the previous configuration when its grace period ends.

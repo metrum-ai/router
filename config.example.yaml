@@ -3,10 +3,10 @@ server:
     mode: rewrite
     transform:
       current:
-        key_id: "0" # One base62 character; change on rotation.
+        key_id: idk-2026-09 # Loggable label; wire epoch is derived from this.
         key: ${ROUTER_ID_TRANSFORM_KEY} # 64 random bytes, hex or base64.
       # previous:
-      #   key_id: "z"
+      #   key_id: idk-2026-06
       #   key: ${ROUTER_ID_TRANSFORM_KEY_PREVIOUS}
       #   valid_until: "2026-09-20T00:00:00Z" # Future, at most 30 days.
   listen: :8080

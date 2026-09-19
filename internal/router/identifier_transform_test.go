@@ -18,7 +18,15 @@ import (
 )
 
 func identifierTestConfig() IdentifierConfig {
-	return IdentifierConfig{Transform: IdentifierTransformConfig{Current: IdentifierKeyConfig{KeyID: "A", Key: strings.Repeat("ab", 64)}}}
+	return IdentifierConfig{Transform: IdentifierTransformConfig{Current: IdentifierKeyConfig{KeyID: "idk-test-A", Key: strings.Repeat("ab", 64)}}}
+}
+func identifierTestEpoch(t testing.TB, keyID string) string {
+	t.Helper()
+	epoch, err := epochFromKeyID(keyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return epoch
 }
 func testIdentifierTransform(t testing.TB) IdentifierTransform {
 	t.Helper()
@@ -30,9 +38,10 @@ func testIdentifierTransform(t testing.TB) IdentifierTransform {
 }
 func TestID001RoundTrip(t *testing.T) {
 	tr := testIdentifierTransform(t)
+	epoch := identifierTestEpoch(t, "idk-test-A")
 	for _, id := range []string{"", "call_abc", "msg_123", "mr_upstream", "日本語/\"\n", strings.Repeat("x", 4096)} {
 		encoded := tr.Encode(id)
-		if !strings.HasPrefix(encoded, "mr_A") || encoded != tr.Encode(id) {
+		if !strings.HasPrefix(encoded, "mr_"+epoch) || encoded != tr.Encode(id) {
 			t.Fatal("wire format or determinism")
 		}
 		got, e := tr.Decode(encoded)
@@ -53,7 +62,7 @@ func TestID002Rotation(t *testing.T) {
 	previous := c.Transform.Current
 	previous.ValidUntil = time.Now().Add(time.Hour)
 	c.Transform.Previous = &previous
-	c.Transform.Current = IdentifierKeyConfig{KeyID: "B", Key: strings.Repeat("cd", 64)}
+	c.Transform.Current = IdentifierKeyConfig{KeyID: "idk-test-B", Key: strings.Repeat("cd", 64)}
 	tr, e := newIdentifierTransform(c)
 	if e != nil {
 		t.Fatal(e)
@@ -61,11 +70,11 @@ func TestID002Rotation(t *testing.T) {
 	if got, e := tr.Decode(old.Encode("call")); e != nil || got != "call" {
 		t.Fatal(got, e)
 	}
-	if !strings.HasPrefix(tr.Encode("call"), "mr_B") {
+	if !strings.HasPrefix(tr.Encode("call"), "mr_"+identifierTestEpoch(t, "idk-test-B")) {
 		t.Fatal("not current")
 	}
 	a, b := tr.KeyIDs()
-	if a != "B" || b != "A" {
+	if a != "idk-test-B" || b != "idk-test-A" {
 		t.Fatal(a, b)
 	}
 	tr.(*identifierTransform).validUntil = time.Now().Add(-time.Second)
@@ -77,22 +86,27 @@ func TestID003Validation(t *testing.T) {
 	for name, edit := range map[string]func(*IdentifierConfig){
 		"missing": func(c *IdentifierConfig) { c.Transform.Current.Key = "" },
 		"length":  func(c *IdentifierConfig) { c.Transform.Current.Key = strings.Repeat("ab", 32) },
-		"epoch":   func(c *IdentifierConfig) { c.Transform.Current.KeyID = "AA" },
+		"empty_key_id": func(c *IdentifierConfig) { c.Transform.Current.KeyID = "" },
+		"whitespace_key_id": func(c *IdentifierConfig) { c.Transform.Current.KeyID = "bad id" },
 		"collision": func(c *IdentifierConfig) {
 			p := c.Transform.Current
 			p.ValidUntil = time.Now().Add(time.Hour)
 			c.Transform.Previous = &p
 		},
-		"missing_expiry": func(c *IdentifierConfig) { p := c.Transform.Current; p.KeyID = "B"; c.Transform.Previous = &p },
+		"missing_expiry": func(c *IdentifierConfig) {
+			p := c.Transform.Current
+			p.KeyID = "idk-test-B"
+			c.Transform.Previous = &p
+		},
 		"expired": func(c *IdentifierConfig) {
 			p := c.Transform.Current
-			p.KeyID = "B"
+			p.KeyID = "idk-test-B"
 			p.ValidUntil = time.Now().Add(-time.Hour)
 			c.Transform.Previous = &p
 		},
 		"over_30d": func(c *IdentifierConfig) {
 			p := c.Transform.Current
-			p.KeyID = "B"
+			p.KeyID = "idk-test-B"
 			p.ValidUntil = time.Now().Add(31 * 24 * time.Hour)
 			c.Transform.Previous = &p
 		},
@@ -117,10 +131,16 @@ func TestID003Validation(t *testing.T) {
 }
 func TestID004DecodeBuckets(t *testing.T) {
 	tr := testIdentifierTransform(t)
+	epoch := identifierTestEpoch(t, "idk-test-A")
 	valid := tr.Encode("private-id")
 	b, _ := base64.RawURLEncoding.DecodeString(valid[4:])
 	b[len(b)-1] ^= 1
-	for input, want := range map[string]string{"mr_": "id-decode-malformed", "mr_A!": "id-decode-malformed", "mr_Zabcd": "id-decode-unknown-epoch", "mr_A" + base64.RawURLEncoding.EncodeToString(b): "id-decode-auth-failed"} {
+	for input, want := range map[string]string{
+		"mr_": "id-decode-malformed",
+		"mr_" + epoch + "!": "id-decode-malformed",
+		"mr_Zabcd":          "id-decode-unknown-epoch",
+		"mr_" + epoch + base64.RawURLEncoding.EncodeToString(b): "id-decode-auth-failed",
+	} {
 		if _, e := tr.Decode(input); e == nil || e.Error() != want {
 			t.Fatalf("want %s, got %v", want, e)
 		}

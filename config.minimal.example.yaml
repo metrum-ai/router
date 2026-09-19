@@ -7,6 +7,10 @@
 server:
   listen: :8080
   default_model_group: local
+  identifiers:
+    # Local/dev escape hatch. Production should use mode: rewrite with
+    # ROUTER_ID_TRANSFORM_KEY (see config.example.yaml).
+    mode: passthrough
   cache:
     enabled: false
     max_bytes: 134217728
