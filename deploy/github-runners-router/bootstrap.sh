@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
 # Migrate / refresh pikachu compose pool. AppArmor is not required.
 set -euo pipefail
 
