@@ -2165,7 +2165,8 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
-	bridgeStream := (bridge || chatResponsesBridge) && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
+	anthropicBridge := anthropicStreamBridge(callerDialect, outDialect)
+	bridgeStream := (bridge || chatResponsesBridge || anthropicBridge) && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
 	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
 	if req.Stream {
 		rc.rec.StreamMode = "synthesized"
@@ -2174,6 +2175,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			if chatResponsesBridge {
 				rc.rec.StreamMode = "responses_upstream_to_chat_caller"
 			}
+		}
+		if anthropicBridge && bridgeStream {
+			rc.rec.StreamMode = strings.ReplaceAll(outDialect, "-", "_") + "_upstream_to_" + strings.ReplaceAll(callerDialect, "-", "_") + "_caller"
 		}
 		if nativeStream {
 			rc.rec.StreamMode = "native_same_dialect"
@@ -2205,12 +2209,23 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ErrorMessage = err.Error()
 		return nil, attempt, upstreamError{Class: "encode_error", Message: err.Error(), Err: err}
 	}
-	if nativeStream {
+	if nativeStream || (anthropicBridge && bridgeStream) {
 		upReqBody, err = enableNativeUpstreamStream(upReqBody, req, outDialect)
 		if err != nil {
 			attempt.ErrorClass = "encode_error"
 			attempt.ErrorMessage = err.Error()
 			return nil, attempt, upstreamError{Class: "encode_error", Message: err.Error(), Err: err}
+		}
+	}
+	if anthropicBridge && bridgeStream && normalizeDialect(outDialect) == "openai-chat" {
+		var body map[string]any
+		if err = json.Unmarshal(upReqBody, &body); err != nil {
+			return nil, attempt, err
+		}
+		body["stream_options"] = map[string]any{"include_usage": true}
+		upReqBody, err = json.Marshal(body)
+		if err != nil {
+			return nil, attempt, err
 		}
 	}
 	endpoint, err := upstreamEndpoint(provider.BaseURL, outDialect, target)
@@ -2369,6 +2384,9 @@ sendUpstream:
 			if bridgeStream {
 				proxy = proxyResponsesUpstreamToChatCallerSSE
 			}
+		}
+		if anthropicBridge {
+			proxy = anthropicBridgeProxy(callerDialect)
 		}
 		streamResult, streamErr := proxy(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		_ = httpResp.Body.Close()
