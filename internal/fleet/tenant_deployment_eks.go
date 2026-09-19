@@ -392,6 +392,7 @@ func (a *EKSTenantDeploymentAdapters) EnsureSecretBinding(ctx context.Context, p
 func (a *EKSTenantDeploymentAdapters) DeleteSecretBinding(ctx context.Context, p TenantDeploymentPlan, _ string) error {
 	return a.deleteSecret(ctx, p, "router-runtime")
 }
+
 // EnsureLicenseBinding is a no-op after runtime licensing removal (3.0.0).
 // Deploy plans may still carry licenseRequestRef for schema compatibility,
 // but EKS must not resolve or mount license material.

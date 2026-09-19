@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	routerPackage    = "github.com/metrum-ai/router/internal/router"
-	fleetPackage     = "github.com/metrum-ai/router/internal/fleet"
-	commercePackage  = "github.com/metrum-ai/router/internal/commerce"
+	routerPackage   = "github.com/metrum-ai/router/internal/router"
+	fleetPackage    = "github.com/metrum-ai/router/internal/fleet"
+	commercePackage = "github.com/metrum-ai/router/internal/commerce"
 )
 
 func TestRequestPathDoesNotDependOnFleetOrInfrastructureSDKs(t *testing.T) {
