@@ -55,6 +55,9 @@ print(json.dumps({'sandbox_preflight_exit': result.returncode, 'diagnostics': cl
 assert result.returncode == 0 and json.loads(result.stdout) == {'passed': True}, 'sandbox_preflight_failed'
 PY
 
+# The rootfs build above uses umask 077. Tests create a 0o755 directory and
+# expect it to stay public; leaving 077 on turns that into 0o700.
+umask 022
 export LRP_TEST_ROOTFS=/var/tmp/lrp-ci/rootfs
 export LRP_REQUIRE_SANDBOX_TESTS=1
 make lrp-test lrp-synthetic-demo lrp-e2e LRP_JUNIT_REPORT=/var/tmp/lrp-ci/tests.xml
