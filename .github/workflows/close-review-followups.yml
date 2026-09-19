@@ -11,7 +11,7 @@ permissions:
 jobs:
   close-linked-children:
     if: contains(github.event.issue.labels.*.name, 'review-followup-rollup')
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 5
     steps:
       - name: Check out closure automation
