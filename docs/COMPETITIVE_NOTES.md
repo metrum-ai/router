@@ -48,7 +48,7 @@ vLLM Semantic Router is a programmable Mixture-of-Models routing layer. Treat it
 
 Semantic Router does not enforce caller quotas, choose a model group, own provider credentials, or choose a serving replica. Metrum AI Router owns those deployment controls on the default Client → Metrum → upstream path. Optional Semantic Router placement is advisory and off the mandatory inbound hop.
 
-NVIDIA NeMo Switchyard is an open-source agent model-routing library (and optional gateway/plugin/proxy paths). As of 2026-09-19 its README publishes Pre-1.0 maturity: library components are Alpha or Beta, and the standalone proxy is Demo-only and not for production. Date any public maturity claim to the day it was re-checked; do not freeze a stale pre-release label.
+NVIDIA NeMo Switchyard is an open-source agent model-routing library (and optional gateway/plugin/proxy paths). As of 2026-09-19 its README publishes pre-alpha maturity: experimental software, not for production use, with APIs expected to change before v1.0. Date any public maturity claim to the day it was re-checked; do not freeze a stale pre-release label.
 
 ## Claim Safety
 
@@ -61,7 +61,7 @@ Safe public claims:
 - Metrum AI Router records request-time cost values in usage rows.
 - Metrum AI Router can route to private OpenAI-compatible upstreams such as vLLM and SGLang when configured and validated.
 - vLLM Semantic Router complements Metrum AI Router as an optional Mixture-of-Models classification/advisory layer; it is not a substitute for caller-key governance, model groups, credential ownership, or replica selection.
-- Switchyard is an open-source agent model-routing library whose published Pre-1.0 maturity (as of 2026-09-19) includes Alpha/Beta library components and a Demo standalone proxy marked not for production.
+- Switchyard is an open-source agent model-routing library whose published maturity as of 2026-09-19 is pre-alpha (experimental; not for production), per its README.
 
 Avoid or qualify:
 

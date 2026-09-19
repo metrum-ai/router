@@ -708,7 +708,7 @@ layer framing (Kubernetes floor versions below retain the 2026-08-28 packaging
 baseline unless revalidated elsewhere):
 
 - [vLLM Semantic Router documentation](https://vllm-sr.ai/docs/intro/) and [GitHub repository](https://github.com/vllm-project/semantic-router): optional Mixture-of-Models routing layer; complement, not a mandatory Client hop.
-- [NVIDIA NeMo Switchyard documentation](https://nvidia-nemo.github.io/Switchyard/) and [GitHub repository](https://github.com/NVIDIA-NeMo/Switchyard): open-source agent model-routing library; Pre-1.0 as of 2026-09-19.
+- [NVIDIA NeMo Switchyard documentation](https://nvidia-nemo.github.io/Switchyard/) and [GitHub repository](https://github.com/NVIDIA-NeMo/Switchyard): open-source agent model-routing library; pre-alpha (experimental, not for production) as of 2026-09-19.
 - Public product comparison: [Competitive Landscape](../../docs-site/docs/evaluation/competitive-landscape.md).
 - [Gateway API Inference Extension InferencePool](https://gateway-api-inference-extension.sigs.k8s.io/api-types/inferencepool/): `inference.networking.k8s.io/v1`.
 - [Gateway API HTTPRoute](https://gateway-api.sigs.k8s.io/reference/api-types/httproute/): `gateway.networking.k8s.io/v1`.

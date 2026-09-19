@@ -1045,7 +1045,7 @@ layer framing (Kubernetes floor versions below retain the 2026-08-31 packaging
 baseline unless revalidated elsewhere):
 
 - [vLLM Semantic Router documentation](https://vllm-sr.ai/docs/intro/) and [GitHub repository](https://github.com/vllm-project/semantic-router): optional Mixture-of-Models routing layer; complement, not a mandatory Client hop.
-- [NVIDIA NeMo Switchyard documentation](https://nvidia-nemo.github.io/Switchyard/) and [GitHub repository](https://github.com/NVIDIA-NeMo/Switchyard): open-source agent model-routing library; Pre-1.0 as of 2026-09-19.
+- [NVIDIA NeMo Switchyard documentation](https://nvidia-nemo.github.io/Switchyard/) and [GitHub repository](https://github.com/NVIDIA-NeMo/Switchyard): open-source agent model-routing library; pre-alpha (experimental, not for production) as of 2026-09-19.
 - Public product comparison: [Competitive Landscape](../../docs-site/docs/evaluation/competitive-landscape.md).
 - Website matrix follow-up: [issue #211](https://github.com/metrum-ai/router/issues/211).
 - Compose Caddy edge: `deploy/Caddyfile.compose` and `deploy/docker-compose.yml`.
