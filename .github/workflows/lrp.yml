@@ -48,14 +48,10 @@ jobs:
           sudo cp /etc/apt/sources.list.d/ubuntu.sources /var/tmp/lrp-ci-apt-sources/ubuntu.sources
           apt_sources=(-o Dir::Etc::sourcelist=- -o Dir::Etc::sourceparts=/var/tmp/lrp-ci-apt-sources)
           sudo apt-get "${apt_sources[@]}" update
-          sudo apt-get "${apt_sources[@]}" install -y bubblewrap apparmor apparmor-profiles
-          # Ubuntu's purpose-built profile permits bwrap setup while denying
-          # capabilities to children. Keep the host userns restrictions enabled.
-          # https://discourse.ubuntu.com/t/understanding-apparmor-user-namespace-restriction/58007
-          sudo install -o root -g root -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/lrp-ci-bwrap
-          sudo apparmor_parser -r /etc/apparmor.d/lrp-ci-bwrap
-          sudo grep -Fx 'bwrap (enforce)' /sys/kernel/security/apparmor/profiles
-          sudo grep -Fx 'unpriv_bwrap (enforce)' /sys/kernel/security/apparmor/profiles
+          # Bubblewrap namespaces are the isolation boundary. AppArmor profiles are
+          # not required — Docker-based self-hosted pools cannot load host policy
+          # (`apparmor_parser` fails with "interface file missing").
+          sudo apt-get "${apt_sources[@]}" install -y bubblewrap
           umask 077
           mkdir -p /var/tmp/lrp-ci
           cp services/learned-routing-policy/verifier-requirements.lock /var/tmp/lrp-ci/requirements.lock
