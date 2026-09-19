@@ -14,6 +14,64 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v2.2.0 - 2026-09-19
+
+### Highlights
+
+- Caller-facing identifiers can be rewritten with AES-SIV so upstream IDs are
+  not exposed on the wire, including field-level rewrite on native SSE (#205).
+- Incremental SSE translation for same-dialect Responses and for Chat ↔
+  Responses bridges (#206–#208).
+- Incremental Anthropic ↔ OpenAI Chat/Responses text and tool streaming (#209);
+  reasoning remains on native Anthropic routes.
+- LRP synthetic CI no longer requires host AppArmor profile loads, so privileged
+  Docker self-hosted runners can complete sandbox verification (#210).
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Config | Optional `server.identifiers` (`rewrite` / `passthrough`) and transform key material; default streaming translator remains `incremental` |
+| Streaming | Bridge paths emit incremental SSE when eligible; `server.streaming.translator: synthesized` keeps unary upstream behavior |
+| Database | No new usage migration in this release |
+| Packages | Canonical `metrum-ai-router*` binaries unchanged from v2.1.0 naming |
+| CI / runners | Self-hosted Docker runner pools that run LRP synthetic need privileged containers for bubblewrap; AppArmor host profiles are not required |
+
+### Caller Impact
+
+- Streaming Chat ↔ Responses and Anthropic ↔ OpenAI text/tool bridges return
+  incremental SSE instead of failing closed when the bridge is enabled and
+  `server.streaming.translator` is `incremental`.
+- When identifier rewrite is enabled, caller-visible IDs are transformed;
+  `passthrough` preserves prior exposure behavior for lab/mock configs.
+- Reasoning workloads should continue to use native Anthropic routes; these
+  bridges do not synthesize thinking blocks.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v2.2.0-linux-<arch>.tar.gz` (and Docker package if
+   used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Review `server.identifiers` and `server.streaming.translator` before enabling
+   rewrite or changing translator mode in production.
+3. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide) for Compose /
+   Kubernetes procedures.
+
+### Validation
+
+- `make api-compat-mock-offline`
+- `make sse-capture` (or package SSE harness checks from source)
+- `make test` and `make lrp-test` when exercising LRP packages from source
+- After deploy: `/readyz`, `/version` reports v2.2.0; smoke streaming bridges
+  and confirm identifier rewrite or passthrough matches the reviewed config
+
+### Rollback
+
+Roll back to GitHub Release **v2.1.0** (`metrum-ai-router-*` artifacts). No
+usage-database restore is required for this release. Revert identifier and
+streaming config knobs with the prior package if rewrite or incremental bridges
+were enabled.
+
 ## v2.1.0 - 2026-09-14
 
 ### Highlights

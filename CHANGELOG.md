@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-19
+
+### Features
+
+- Add AES-SIV identifier transform with field-level native SSE ID rewriting so
+  upstream identifiers are not exposed on the wire (#205).
+- Add `internal/stream` translators and SSE fixture harness; ship incremental
+  native Responses streaming (P1, #206).
+- Translate Responses caller ↔ Chat upstream SSE incrementally (P2, #207).
+- Translate Chat caller ↔ Responses upstream SSE incrementally (P3, #208).
+- Translate Anthropic ↔ OpenAI Chat/Responses text and tool SSE incrementally
+  (P4, #209); reasoning stays on native Anthropic routes.
+
+### Fixes
+
+- Pass through identifiers in api-compat mock offline configs and LRP e2e
+  harness config after identifier rewrite became required.
+- Drop AppArmor profile loading from LRP synthetic CI so privileged Docker
+  self-hosted runners can verify bubblewrap isolation (#210).
+
+### Documentation
+
+- Update API compatibility and architecture-limitation docs for incremental
+  bridge streaming and the `server.streaming.translator` settings.
+
+### Notes
+
+- Default `server.streaming.translator` remains `incremental` on implemented
+  paths; `synthesized` retains unary upstream plus synthesized caller SSE.
+- No usage-database migration in this release (package-only rollback).
+
 ## [2.1.0] - 2026-09-14
 
 ### Features
@@ -89,6 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/metrum-ai/router/compare/v1.4.4...v2.0.0
