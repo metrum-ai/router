@@ -72,10 +72,14 @@ those controls and the exact upstream model/API combinations they enable.
 - Native incremental upstream streaming applies to same-dialect OpenAI Chat,
   OpenAI Responses, and Anthropic Messages. Responses uses an event translator
   that rewrites protocol IDs and drops and counts unknown events without
-  retaining response content. Cross-dialect bridges remain unary upstream with
-  router-encoded caller streaming. `server.streaming.translator: synthesized`
-  explicitly selects unary upstream and `writeIRStream` for streaming requests;
-  the default is `incremental` on implemented same-dialect paths.
+  retaining response content. Eligible Chat ↔ Responses and Anthropic ↔ Chat/Responses
+  bridges translate text and tool SSE incrementally. Existing request-shape and
+  tool admission gates still apply; Anthropic reasoning stays on native Anthropic
+  routes. `server.streaming.translator: synthesized` explicitly selects unary
+  upstream and `writeIRStream` for streaming requests. Other upstream dialects
+  without an incremental translator retain unary upstream plus synthesized SSE
+  where streaming is eligible; Gemini generateContent rejects streaming. The
+  default is `incremental` on the implemented paths.
 - After the first flushed caller SSE frame, the HTTP response is committed. A later
   failure cannot change the caller's `200`, append a reliable error envelope,
   or fall back to another target; clients must detect a missing terminal event.

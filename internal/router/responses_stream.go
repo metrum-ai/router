@@ -101,7 +101,12 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			rc.rec.DownstreamMS = &ms
 		}
 	}()
-	events, err := t.Begin(stream.TokenEstimate{})
+	estimate := stream.TokenEstimate{}
+	if rc != nil && rc.rec.TokenEstimate != nil {
+		u := rc.rec.TokenEstimate
+		estimate = stream.TokenEstimate{InputTokens: u.EstimatedTotalInputTokens, TotalReserved: u.TotalReservedTokens, OutputCapTokens: u.RequestedOutputCapTokens, ToolSchemaTokens: u.EstimatedToolSchemaTokens, ImageTokens: u.EstimatedImageTokens}
+	}
+	events, err := t.Begin(estimate)
 	if err != nil {
 		return result, err
 	}
