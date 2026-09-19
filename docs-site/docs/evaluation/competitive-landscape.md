@@ -9,7 +9,9 @@ Metrum AI Router is a governed enterprise LLM smart router for LLM, VLM, and AI 
 
 The customer outcome is simple: teams can keep a stable router endpoint while platform owners change the validated provider/model mix behind each model group, prove the result with workload evidence, and attribute cost and reliability after each request.
 
-This comparison focuses on product shape and operational fit, not pricing. Vendor pricing and packaging change frequently, so use each vendor's current pricing page during procurement. Competitor references on this page were checked on June 19, 2026.
+This comparison focuses on product shape and operational fit, not pricing. Vendor pricing and packaging change frequently, so use each vendor's current pricing page during procurement. Competitor references on this page were checked on September 19, 2026.
+
+The public www.metrum.ai `/router` capability matrix is maintained outside this repository. Track that website follow-up in [issue #211](https://github.com/metrum-ai/router/issues/211).
 
 ## When To Choose Metrum AI Router
 
@@ -81,6 +83,8 @@ Metrum AI Router is best evaluated as the governed routing and accounting layer 
 | Kong AI Gateway | API gateway platform with AI plugins | Existing Kong/API management environments | Metrum AI Router is purpose-built for GenAI routing, model-group governance, VLM/tool eligibility, quotas, cost reporting, private inference endpoints, and agent-client compatibility without requiring a broader API gateway rollout. |
 | TrueFoundry AI Gateway | Enterprise AI platform gateway | Platform-level governance and MLOps integration | Metrum AI Router is stronger for teams that want direct gateway-layer control over model groups, upstream weights, TypeScript policy, per-key access, cost accounting, and private inference endpoints. |
 | Martian | Model routing/intelligence product | Dynamic model selection and optimization | Metrum AI Router exposes explicit deployment-owned policy, validation, usage records, quotas, and upstream routing controls that operators can inspect and change. |
+| vLLM Semantic Router | Programmable Mixture-of-Models routing layer for heterogeneous LLM infrastructure | Request-signal classification and model-path composition across mixed compute and locations | Complementary fit: Semantic Router can advise or compose a model path, while Metrum AI Router remains the governed hop for caller authentication, quotas, model-group selection, provider credentials, usage accounting, and upstream calls. It does not replace those controls, and it is optional/off-path in the Kubernetes layer boundary ([deployment spec](https://github.com/metrum-ai/router/blob/main/docs/specs/kubernetes-deployment.md), [31 Aug successor](https://github.com/metrum-ai/router/blob/main/docs/specs/kubernetes-deployment-31aug2026.md)). |
+| NVIDIA NeMo Switchyard | Open-source agent model-routing library (embeddable algorithms, gateway/plugin paths, optional standalone proxy) | Per-call model selection for agent and gateway workloads without rewriting client APIs | Fit when teams want library- or plugin-level model picking inside an existing harness. Metrum AI Router fit remains stronger when the deployment must own model groups, caller quotas, multi-provider credentials, private upstreams, and request-time usage/cost records in one self-hosted control point. As of 2026-09-19, Switchyard publishes Pre-1.0 maturity (Alpha/Beta library components; Demo standalone proxy not for production). |
 
 ## Proof Points To Verify
 
@@ -99,7 +103,7 @@ Use concrete workloads instead of feature checklists alone:
 
 ## External Vendor Links
 
-External product and pricing references checked on June 19, 2026:
+External product and pricing references checked on September 19, 2026:
 
 - [LiteLLM Enterprise](https://docs.litellm.ai/docs/enterprise)
 - [Bifrost overview](https://docs.getbifrost.ai/overview)
@@ -114,3 +118,7 @@ External product and pricing references checked on June 19, 2026:
 - [TrueFoundry AI Gateway](https://www.truefoundry.com/ai-gateway)
 - [TrueFoundry pricing](https://www.truefoundry.com/pricing)
 - [Martian](https://withmartian.com/)
+- [vLLM Semantic Router documentation](https://vllm-sr.ai/docs/intro/)
+- [vLLM Semantic Router GitHub repository](https://github.com/vllm-project/semantic-router)
+- [NVIDIA NeMo Switchyard documentation](https://nvidia-nemo.github.io/Switchyard/)
+- [NVIDIA NeMo Switchyard GitHub repository](https://github.com/NVIDIA-NeMo/Switchyard)
