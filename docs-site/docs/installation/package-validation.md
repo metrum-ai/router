@@ -86,7 +86,7 @@ Packages should not contain:
 - deployment-private operating notes;
 - private hostnames, IP addresses, SSH users, SSH key paths, or live production paths;
 - raw provider keys, raw router tokens, token hashes, GitHub tokens, or signing keys;
-- real `license.json`, license state files, local usage databases, logs, JSONL state, or router state files;
+- leftover `license.json` or other local state (unused in 3.0.0+), usage databases, logs, JSONL state, or router state files;
 - compiler/toolchain directories, local working directories, or local temporary output;
 - full production configs or ignored local config snapshots.
 

@@ -38,10 +38,9 @@ third-party components, assets, models, and datasets. Confirm the files match
 the exact artifact being reviewed; an inventory entry is not by itself a grant
 of rights or evidence that an unresolved term has been cleared.
 
-Do not confuse these files with a deployment's `license.json`. The latter is a
-runtime-policy input and should be supplied through the deployment's protected
-configuration path, not added to a release package or treated as software
-license text.
+Do not confuse these files with a leftover runtime `license.json`. That file is
+inert in 3.0.0+ (never read) and must not be added to a release package or
+treated as software license text.
 
 For a Docker package, load the saved image and version-check all operational binaries, including the non-serving migration runner:
 
@@ -59,7 +58,7 @@ Packages must not contain:
 - private production runbooks;
 - private hostnames, IP addresses, SSH usernames, or key paths;
 - raw router tokens, token hashes, provider keys, GitHub tokens, or signing material;
-- real `license.json`, license state, local usage databases, logs, or JSONL state;
+- leftover `license.json` or other local state (unused in 3.0.0+), usage databases, logs, or JSONL state;
 - source checkout directories such as `docs-site/`, `internal/`, `cmd/`, or `.git`;
 - Go source files (`.go`), `go.mod`, or `go.sum`;
 - full production config files.
@@ -67,8 +66,8 @@ Packages must not contain:
 Packaged CLIs (`metrum-ai-router`, `metrum-ai-routerctl`,
 `metrum-ai-router-fleetctl`, and `metrum-ai-router-fleet-sign`) are prebuilt ELF
 binaries only. Operator and customer hosts must not require a Go toolchain or
-product source tree to run them. Real `license.json` files must not appear in
-customer runtime Docker images.
+product source tree to run them. Leftover `license.json` files must not appear
+in customer runtime Docker images.
 
 ## Runtime Health Checks
 

@@ -87,7 +87,7 @@ After the router is reachable, open:
 https://router.example.com/docs/
 ```
 
-The embedded docs include the complete install, configuration, license, provider key, caller token, reporting, troubleshooting, upgrade, rollback, and security guidance.
+The embedded docs include the complete install, configuration, provider key, caller token, reporting, troubleshooting, upgrade, rollback, and security guidance.
 
 ## Required Deployment Inputs
 
@@ -95,13 +95,13 @@ Prepare these deployment-owned files before first startup:
 
 - `config.yaml` copied from `config/config.example.yaml` and reviewed for the deployment.
 - `env.json` copied from `config/env.example.json` or equivalent environment variables from a secret manager.
-  builds. It is not a copyright or commercial-use license condition and does
-  not narrow the rights granted by Apache-2.0 or replace the package-root legal
-  files.
-- A durable state directory for license state, router state, logs, and usage data.
-- At least one caller token generated with `router-token-gen`.
+- A durable state directory for router state, logs, and usage data.
+- At least one caller token generated with `metrum-ai-router-token-gen`.
 
-Do not store provider keys, raw router tokens, license payloads, token hashes, full production configs, or private host details in tickets, public docs, screenshots, or package notes.
+Leftover `license.json` files are unused in 3.0.0+ and are not a deployment
+prerequisite. Do not store provider keys, raw router tokens, token hashes, full
+production configs, or private host details in tickets, public docs,
+screenshots, or package notes.
 
 For non-sensitive package questions, use the repository's public question issue
 form. Report vulnerabilities through the private path in `SECURITY.md`.
