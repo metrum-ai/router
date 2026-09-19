@@ -2165,12 +2165,15 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
-	bridgeStream := bridge && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
+	bridgeStream := (bridge || chatResponsesBridge) && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
 	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
 	if req.Stream {
 		rc.rec.StreamMode = "synthesized"
 		if bridgeStream {
 			rc.rec.StreamMode = "chat_upstream_to_responses_caller"
+			if chatResponsesBridge {
+				rc.rec.StreamMode = "responses_upstream_to_chat_caller"
+			}
 		}
 		if nativeStream {
 			rc.rec.StreamMode = "native_same_dialect"
@@ -2190,7 +2193,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if chatResponsesSession.PreviousResponseID != "" {
 			rc.trace("bridge_session_previous_response_applied", "chat-to-responses previous_response_id applied", target, attemptIndex, 0, "", false, 0)
 		}
-		upReqBody, err = encodeChatToResponsesBridge(target.Model, req, target, chatResponsesSession.PreviousResponseID)
+		bridgeReq := *req
+		bridgeReq.Stream = bridgeStream
+		upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, chatResponsesSession.PreviousResponseID)
 	} else {
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, req, target)
 	}
@@ -2323,7 +2328,9 @@ sendUpstream:
 			} else {
 				rc.trace("bridge_session_previous_response_stale_purged", "chat-to-responses previous_response_id purged after stale upstream state", target, attemptIndex, httpResp.StatusCode, "bridge_session_stale_state", false, durationMillis(time.Since(start)))
 			}
-			upReqBody, err = encodeChatToResponsesBridge(target.Model, req, target, "")
+			bridgeReq := *req
+			bridgeReq.Stream = bridgeStream
+			upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, "")
 			attempt.RequestBytes = int64(len(upReqBody))
 			if err != nil {
 				attempt.ErrorClass = "encode_error"
@@ -2359,6 +2366,9 @@ sendUpstream:
 		}
 		if normalizeDialect(outDialect) == "openai-responses" {
 			proxy = proxyResponsesSSE
+			if bridgeStream {
+				proxy = proxyResponsesUpstreamToChatCallerSSE
+			}
 		}
 		streamResult, streamErr := proxy(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		_ = httpResp.Body.Close()
@@ -2381,6 +2391,9 @@ sendUpstream:
 			attempt.TimedOut = upErr.TimedOut
 			attempt.ClientCanceled = upErr.Canceled
 			return nil, attempt, upErr
+		}
+		if chatResponsesBridge {
+			s.setChatToResponsesBridgeSession(ctx, rc, chatResponsesSession, target, streamResult.Response.ID, attemptIndex)
 		}
 		return streamResult.Response, attempt, nil
 	}

@@ -11517,7 +11517,7 @@ func TestChatInboundResponsesBridgeToolsEndToEnd(t *testing.T) {
 	}
 }
 
-func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) {
+func TestChatInboundResponsesBridgeRejectsUnsupportedStreamingShapeBeforeUpstream(t *testing.T) {
 	upstreamCalled := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalled = true
@@ -11542,7 +11542,7 @@ func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) 
 	}
 	defer svc.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"bridge","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"bridge","stream":true,"n":2,"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
@@ -11552,7 +11552,7 @@ func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) 
 	if upstreamCalled {
 		t.Fatal("upstream called for unsupported bridge streaming")
 	}
-	assertDecisionFilterReason(t, svc, "chat-to-responses-streaming-unsupported")
+	assertDecisionFilterReason(t, svc, "chat-to-responses-unsupported-field")
 }
 
 func TestOpenAIChatPassthroughStripsRetentionFields(t *testing.T) {
