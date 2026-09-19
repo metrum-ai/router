@@ -392,18 +392,25 @@ func (a *EKSTenantDeploymentAdapters) EnsureSecretBinding(ctx context.Context, p
 func (a *EKSTenantDeploymentAdapters) DeleteSecretBinding(ctx context.Context, p TenantDeploymentPlan, _ string) error {
 	return a.deleteSecret(ctx, p, "router-runtime")
 }
+
+// EnsureLicenseBinding is a no-op after runtime licensing removal (3.0.0).
+// Deploy plans may still carry licenseRequestRef for schema compatibility,
+// but EKS must not resolve or mount license material.
 func (a *EKSTenantDeploymentAdapters) EnsureLicenseBinding(ctx context.Context, p TenantDeploymentPlan) (string, error) {
-	return a.ensureReferenceSecret(ctx, p, "router-license", "license.json", pLicenseRef(p))
+	_ = ctx
+	_ = p
+	return "", nil
 }
 func (a *EKSTenantDeploymentAdapters) DeleteLicenseBinding(ctx context.Context, p TenantDeploymentPlan, _ string) error {
-	return a.deleteSecret(ctx, p, "router-license")
+	_ = ctx
+	_ = p
+	return nil
 }
 
 // References are retained only as private plan fields and resolved by the
 // typed adapter in memory. This prevents protected references from entering
 // status or resource rows.
 func pRuntimeBundleRef(p TenantDeploymentPlan) string { return p.runtimeBundleRef }
-func pLicenseRef(p TenantDeploymentPlan) string       { return p.licenseRequestRef }
 
 func (a *EKSTenantDeploymentAdapters) ensureRuntimeBundleSecret(ctx context.Context, p TenantDeploymentPlan, ref string) (string, error) {
 	value, err := a.resolveProtectedReference(ctx, ref)
@@ -752,7 +759,6 @@ func (a *EKSTenantDeploymentAdapters) applyRouterPodTemplate(deployment *appsv1.
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "state", MountPath: "/var/lib/smart-llmrouter"},
 			{Name: "runtime", MountPath: "/app/config", ReadOnly: true},
-			{Name: "license", MountPath: "/etc/smart-llmrouter-license", ReadOnly: true},
 		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/readyz", Port: intstr.FromInt(8080)}},
@@ -827,7 +833,6 @@ func (a *EKSTenantDeploymentAdapters) applyRouterPodTemplate(deployment *appsv1.
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{Name: "state", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "router-state"}}},
 		{Name: "runtime", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "router-runtime"}}},
-		{Name: "license", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "router-license"}}},
 	}
 	return nil
 }
@@ -971,7 +976,7 @@ func (a *EKSTenantDeploymentAdapters) TransitionOwnership(ctx context.Context, p
 	if err := a.transitionNetworkPolicy(ctx, p, source); err != nil {
 		return "", err
 	}
-	for _, secretName := range []string{"router-runtime", "router-license"} {
+	for _, secretName := range []string{"router-runtime"} {
 		if err := a.transitionSecret(ctx, p, secretName, source); err != nil {
 			return "", err
 		}

@@ -72,10 +72,6 @@ server:
   listen: ":8080"
   logging:
     path: /app/logs/requests.jsonl
-  license:
-    enabled: true
-    path: /app/config/license.json
-    state_path: /app/state/license-state.json
   usage_db:
     enabled: true
     driver: sqlite
@@ -98,14 +94,12 @@ Place provider credentials in `config/env.json`. Keep this file in deployment se
 }
 ```
 
-Place the issued `license.json` in `config/license.json`, matching `server.license.path`. Keep `server.license.state_path` on durable storage.
-
 Then set ownership and permissions for the container runtime user. The packaged image runs as UID/GID `65532`; the config directory must be readable and traversable, and state/log directories must be writable by that ID.
 
 ```bash
 sudo chown -R 65532:65532 config state logs
 chmod 0700 config config/scripts state logs
-chmod 0400 config/env.json config/license.json
+chmod 0400 config/env.json
 ```
 
 ## Run The Migration Gate, Then Start And Validate
@@ -161,7 +155,7 @@ curl -fsS "$ROUTER_BASE_URL/v1/chat/completions" \
 - Keep Postgres private to the deployment network unless a reviewed localhost-only administration override is used.
 - Scrape `/metrics` only with a caller authorized for metrics administration.
 - Keep `compose/config/`, `compose/state/`, database volumes, logs, and backups under the deployment's secret-handling policy.
-- Back up `config.yaml`, `license.json`, license state, and the usage database before upgrades.
+- Back up `config.yaml` and the usage database before upgrades.
 
 ## Upgrade And Rollback
 

@@ -43,12 +43,10 @@ PUBLIC_DOC_PATHS = [
     ROOT / "docs" / "SMOKE_TEST_MATRIX.md",
     ROOT / "docs" / "CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md",
     ROOT / "docs" / "TROUBLESHOOTING_RUNBOOK.md",
-    ROOT / "docs" / "LICENSE_OPERATIONS.md",
     ROOT / "docs" / "evidence",
     ROOT / "ops.env.example.json",
     ROOT / "config.example.yaml",
     ROOT / "deploy" / "Caddyfile.compose",
-    ROOT / "examples" / "customer-lifecycle" / "onboard-acme.sandbox.example.json",
 ]
 
 # Exempt from the privacy rules only. Branding rules still apply to these

@@ -48,7 +48,7 @@ is an `aws-ssm:///` or `aws-secretsmanager:///` reference without query data.
 The resolver reads the protected JSON bundle only in memory; it must contain
 exactly `config.yaml` as a YAML mapping and `env.json` as a JSON string map.
 The owned `router-runtime` Secret contains only those keys and is mounted
-read-only at `/app/config`; `metrum-ai-router-license` remains separate. No bundle
+read-only at `/app/config`. Runtime licensing was removed in 3.0.0. No bundle
 value or reference belongs in a plan, registry, status, error, ticket, or
 evidence record.
 
@@ -517,7 +517,6 @@ Customer retirement or incident cleanup requires a separately confirmed plan cov
 - Issue #555 — customer EKS lifecycle and provisioning orchestration
 - Issue #507 — forward-only migration framework
 - Issue #592 — tenant-admin protected RDS recovery requests
-- [License Operations Runbook](LICENSE_OPERATIONS.md)
 - [Deployment Runbook](DEPLOYMENT.md)
 - [Customer Docker Compose](DOCKER_DEPLOYMENT.md)
 - [Fleet lifecycle contract](MULTI_ENVIRONMENT_DEPLOYMENT_CLI.md)

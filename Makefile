@@ -13,8 +13,8 @@ PYTHON ?= python3
 # cmd/, internal/, or go.mod. Fleet-only CLIs stay out of customer Docker images.
 # Packages ship canonical metrum-ai-router* binaries only; rename stubs are
 # source-only under cmd/ and are never packaged.
-PACKAGE_BINARIES := metrum-ai-router metrum-ai-router-token-gen metrum-ai-router-usage-report metrum-ai-router-migrate metrum-ai-routerctl metrum-ai-router-fleetctl metrum-ai-router-fleet-sign metrum-ai-router-license metrum-ai-router-customer-lifecycle
-FLEET_ONLY_BINARIES := metrum-ai-router-fleetctl metrum-ai-router-fleet-sign metrum-ai-router-license metrum-ai-router-customer-lifecycle
+PACKAGE_BINARIES := metrum-ai-router metrum-ai-router-token-gen metrum-ai-router-usage-report metrum-ai-router-migrate metrum-ai-routerctl metrum-ai-router-fleetctl metrum-ai-router-fleet-sign
+FLEET_ONLY_BINARIES := metrum-ai-router-fleetctl metrum-ai-router-fleet-sign
 DOCKER_RUNTIME_BINARIES := metrum-ai-router metrum-ai-router-token-gen metrum-ai-router-usage-report metrum-ai-router-migrate metrum-ai-routerctl
 
 # Inspect coding evaluations are deliberately opt-in: they call a live endpoint
@@ -220,13 +220,11 @@ test-tenant-deploy-all: test-tenant-deploy-contract test-tenant-deploy-adapters 
 # Live Shadeform steps are documented in docs/SHADEFORM_NVIDIA_LOCAL_SERVING_E2E.md.
 test-k8s-nvidia-local-serving:
 	bash scripts/test_k8s_nvidia_local_serving.sh
-	python3 scripts/helm_install_with_license_test.py
 
 # Offline gate for the manual k3s AMD Instinct vLLM/ROCm serving overlay.
 # Live on-prem steps are documented in docs/K3S_AMD_INSTINCT_LOCAL_SERVING_E2E.md.
 test-k8s-amd-instinct-local-serving:
 	bash scripts/test_k8s_amd_instinct_local_serving.sh
-	python3 scripts/helm_install_with_license_test.py
 
 # Offline gate for nvidia-llmd-compat blueprint (llm-d frontend + vLLM backend).
 # Live steps: docs/SHADEFORM_NVIDIA_LLMD_COMPAT_E2E.md
@@ -408,7 +406,6 @@ secret-check:
 	python3 scripts/render_tenant_ingress_network_policy_test.py
 	python3 scripts/render_tenant_linkerd_policy_test.py
 	python3 scripts/apply_tenant_network_policies_test.py
-	python3 scripts/check_license_skus.py
 	python3 scripts/check_docs_public_face_test.py
 	$(MAKE) validate-build-metadata
 
@@ -515,7 +512,6 @@ package-one-no-docs: capability-smoke-unit
 	done; \
 	cp config.example.yaml "$${pkg_dir}/config/config.example.yaml"; \
 	cp env.example.json "$${pkg_dir}/config/env.example.json"; \
-	cp docs/enterprise-license-skus.json "$${pkg_dir}/config/enterprise-license-skus.json"; \
 	cp scripts/router.ts "$${pkg_dir}/config/scripts/router.ts"; \
 	cp deploy/Caddyfile "$${pkg_dir}/caddy/Caddyfile"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \

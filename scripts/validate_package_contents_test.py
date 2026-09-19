@@ -153,11 +153,8 @@ def binary_package_files(root: str = "metrum-ai-router-v1.0.0-linux-amd64") -> d
         f"{root}/bin/metrum-ai-routerctl": elf(62),
         f"{root}/bin/metrum-ai-router-fleetctl": elf(62),
         f"{root}/bin/metrum-ai-router-fleet-sign": elf(62),
-        f"{root}/bin/metrum-ai-router-license": elf(62),
-        f"{root}/bin/metrum-ai-router-customer-lifecycle": elf(62),
         f"{root}/config/config.example.yaml": "server: {}\n",
         f"{root}/config/env.example.json": "{}\n",
-        f"{root}/config/enterprise-license-skus.json": '{"skus":[]}\n',
         f"{root}/config/scripts/router.ts": "export function route() {}\n",
         f"{root}/caddy/Caddyfile": ":80\n",
     }
@@ -251,14 +248,14 @@ def main() -> int:
         write_tar(missing_cli, missing_cli_files)
         expect_errors(missing_cli, allowlist, ["required package file is missing: bin/metrum-ai-router-fleetctl"])
 
-        missing_lifecycle = root / "missing-lifecycle.tar.gz"
-        missing_lifecycle_files = binary_package_files()
-        del missing_lifecycle_files["metrum-ai-router-v1.0.0-linux-amd64/bin/metrum-ai-router-customer-lifecycle"]
-        write_tar(missing_lifecycle, missing_lifecycle_files)
+        missing_fleet_sign = root / "missing-fleet-sign.tar.gz"
+        missing_fleet_sign_files = binary_package_files()
+        del missing_fleet_sign_files["metrum-ai-router-v1.0.0-linux-amd64/bin/metrum-ai-router-fleet-sign"]
+        write_tar(missing_fleet_sign, missing_fleet_sign_files)
         expect_errors(
-            missing_lifecycle,
+            missing_fleet_sign,
             allowlist,
-            ["required package file is missing: bin/metrum-ai-router-customer-lifecycle"],
+            ["required package file is missing: bin/metrum-ai-router-fleet-sign"],
         )
 
         good_docker = root / "metrum-ai-router-v1.0.0-docker-linux-amd64.tar.gz"
