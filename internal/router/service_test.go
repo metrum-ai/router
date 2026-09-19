@@ -41,6 +41,12 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	// Parallel go test on the self-hosted runner often exceeds the 500ms
+	// production lookup budget. Keep the production default unchanged.
+	defaultImageURLDNSTimeout = 5 * time.Second
+}
+
 func TestAnthropicIngressUnaryHappyPath(t *testing.T) {
 	for _, path := range []string{"/v1/messages", "/anthropic/v1/messages"} {
 		t.Run(path, func(t *testing.T) {
