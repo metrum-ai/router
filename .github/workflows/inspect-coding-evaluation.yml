@@ -28,7 +28,7 @@ permissions: { contents: read }
 jobs:
   smoke:
     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.tier == 'smoke')
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 15
     env:
       EVAL_BASE_URL: ${{ secrets.EVAL_ROUTER_BASE_URL }}
@@ -55,7 +55,7 @@ jobs:
 
   full-or-promotion:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.tier != 'smoke')
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     environment: evaluation
     permissions: { contents: read }
     timeout-minutes: 90

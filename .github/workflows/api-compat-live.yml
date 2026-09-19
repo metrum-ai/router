@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   live-unit:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -41,7 +41,7 @@ jobs:
         run: python3 scripts/api_compat_live_test.py
 
   live-secrets-status:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 5
     env:
       API_COMPAT_LIVE_BASE_URL: ${{ secrets.API_COMPAT_LIVE_BASE_URL }}

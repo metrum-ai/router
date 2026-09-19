@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   synthetic:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 25
     env:
       OMP_NUM_THREADS: '1'
