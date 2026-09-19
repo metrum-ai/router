@@ -143,9 +143,9 @@ with an approved non-production matrix.
 **Limitation (historical):** Older offline Responses smoke paths synthesized
 caller SSE after a unary upstream call. That synthetic path was **not** native
 streaming proof. Same-dialect native Responses streaming is now implemented and
-covered by the RESP-02..06 contracts landed with #103. Cross-dialect bridges
-remain unary upstream with router-encoded caller SSE unless a bridge explicitly
-validates streaming.
+covered by the RESP-02..06 contracts landed with #103. The `responses_to_chat` bridge (Responses caller, Chat upstream) translates Chat
+SSE incrementally when `responses_to_chat.streaming: true` is enabled.
+`server.streaming.translator: synthesized` retains the unary upstream fallback.
 
 `make api-compat-live` is deliberately fail-closed and is not part of test,
 build, package, or release targets. It keeps the operator gates for a
@@ -173,7 +173,7 @@ default PR `make test` gate.
 | Cache eligibility | Eligible only for deterministic non-tool, non-image requests | Eligible only for deterministic non-tool, non-image requests | Eligible only for deterministic non-tool, non-image requests |
 | Usage and cost rows | Recorded | Recorded | Recorded |
 
-For same-dialect OpenAI Chat, OpenAI Responses, and Anthropic Messages targets, caller `stream: true` requests set upstream streaming and proxy native SSE events incrementally, including compatible tool and usage events. Once any event is committed downstream, the router does not replay the request to a fallback target; caller cancellation cancels the upstream request. Cross-dialect bridges remain unary upstream calls with dialect-correct synthesized caller SSE unless a bridge explicitly validates streaming.
+For same-dialect OpenAI Chat, OpenAI Responses, and Anthropic Messages targets, caller `stream: true` requests set upstream streaming and proxy native SSE events incrementally, including compatible tool and usage events. Once any event is committed downstream, the router does not replay the request to a fallback target; caller cancellation cancels the upstream request. For a Responses caller using a Chat upstream, `responses_to_chat.streaming: true` enables incremental Chat SSE → Responses SSE (`chat_upstream_to_responses_caller`). The router forces upstream `stream_options.include_usage: true`, emits ordered Responses lifecycle and tool-argument events, and includes usage in the terminal response. `server.streaming.translator: synthesized` retains synthesized SSE from a unary upstream call. This bridge does not map Chat completion IDs into `previous_response_id` sessions. Chat callers using Responses upstreams remain streaming-unsupported.
 
 If a request includes tools, structured-output fields, images, or an explicit max-token cap, the router filters the model group's target list before policy selection. Targets that do not satisfy the request shape are skipped. If no compatible target remains, the router returns `502 no-eligible-target` before sending an upstream request.
 

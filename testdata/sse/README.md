@@ -35,7 +35,12 @@ testdata/sse/golden/<upstream>-to-<caller>/<shape>.jsonl
 The current `synthetic` corpus and goldens are generated together from
 protocol-shaped synthetic events, not captured from a live provider. They prove
 chunk-invariant replay and ID transformation, not live provider compatibility.
-No bridge fixtures or P2 implementation are included.
+P2 covers `responses_to_chat` (Responses caller, Chat upstream). Its synthetic
+`openai-chat` fixtures and `openai-chat-to-openai-responses` goldens cover UTF-8
+text, interleaved parallel tools, mixed text/tools, and length-limited output.
+Replay checks gap-free sequence numbers, stable encoded tool item IDs, content
+part ordering, terminal usage, and byte/JSON/random chunk boundaries. To refresh
+only these goldens, run `UPDATE_GOLDEN=1 go test ./internal/stream -run TestChatUpstreamToResponsesCallerReplay`.
 
 ## Secret and content rules
 

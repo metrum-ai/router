@@ -7,8 +7,9 @@
 //
 // A StreamTranslator is a per-direction state machine. It may hold bounded
 // per-item state (open tool-call ids, content-block indexes, emitted sequence
-// numbers) but never the full response body, and it must not look ahead beyond
-// the single upstream Event passed to Next.
+// numbers), including output snapshots required by caller done events. The
+// runner bounds these snapshots with its upstream byte limit. Translators never
+// retain the raw response body or look ahead beyond the event passed to Next.
 //
 // Lifecycle:
 //
