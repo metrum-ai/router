@@ -54,7 +54,6 @@ type Service struct {
 	migrationStatusFn  func() (MigrationStatus, error)
 	metrics            *metricsStore
 	trafficShape       *trafficShapeManager
-	license            *licenseManager
 	bridgeSessions     *bridgeSessionBackends
 	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
@@ -221,22 +220,6 @@ func New(cfg *Config) (*Service, error) {
 		bridgeSessions.Close()
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
 	}
-	licenseKeys, err := licenseVerificationKeys(cfg.Server.License)
-	if err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
-	}
-	s.license, err = newLicenseManager(cfg.Server.License, cfg, licenseKeys)
-	if err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
-	}
 	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage)
 	if err != nil {
 		_ = quota.Close()
@@ -285,7 +268,6 @@ func New(cfg *Config) (*Service, error) {
 		}
 	}
 	s.routes()
-	s.license.start()
 	return s, nil
 }
 
@@ -307,7 +289,6 @@ func (s *Service) Close() {
 	_ = s.logger.Close()
 	_ = s.usage.Close()
 	s.bridgeSessions.Close()
-	s.license.close()
 	for _, policy := range s.externalPolicies {
 		policy.Close()
 	}
@@ -323,19 +304,11 @@ func (s *Service) routes() {
 			writeJSON(w, http.StatusServiceUnavailable, healthPayload(false, "not-ready"))
 			return
 		}
-		if lerr := s.license.enforce(LicenseFeatureRouting); lerr != nil {
-			writeJSON(w, http.StatusServiceUnavailable, healthPayload(false, lerr.Code))
-			return
-		}
 		writeJSON(w, http.StatusOK, healthPayload(true, ""))
 	})
 	s.mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		info := buildinfo.Current()
-		raw, _ := json.Marshal(info)
-		var out map[string]any
-		_ = json.Unmarshal(raw, &out)
-		out["license_compile_mode"] = licenseCompileMode
-		writeJSON(w, http.StatusOK, out)
+		writeJSON(w, http.StatusOK, info)
 	})
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
@@ -346,7 +319,6 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /admin/auth/logout", s.handleAdminOIDCLogout)
 	s.mux.HandleFunc("GET /admin/auth/me", s.handleAdminAuthMe)
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
-	s.mux.HandleFunc("GET /admin/license/status", s.handleAdminLicenseStatus)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
@@ -670,10 +642,6 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
 	}
-	if lerr := s.license.enforce(LicenseFeatureUsageReporting); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
 	defer s.finish(rc, http.StatusOK, nil)
 	migration := MigrationStatus{Scope: usageMigrationScope, State: "unavailable", StatusUnavailable: true}
 	if s.usage != nil {
@@ -689,22 +657,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, s.metrics.Prometheus(s.license, s.trafficShape, migration))
-}
-
-func (s *Service) handleAdminLicenseStatus(w http.ResponseWriter, r *http.Request) {
-	subject, ok := s.authenticateAdminSubject(w, r)
-	if !ok {
-		s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "admin-auth-failed", authzObjectAdminReports, authzActionRead)
-		return
-	}
-	if !s.authorizeAdmin(subject, authzObjectAdminReports, authzActionRead) {
-		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "reports-forbidden", authzObjectAdminReports, authzActionRead)
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "reports-forbidden", "message": "reports-forbidden"}})
-		return
-	}
-	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", authzObjectAdminReports, authzActionRead)
-	writeJSON(w, http.StatusOK, safeLicenseStatusResponseWithUsage(s.license))
+	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -862,17 +815,6 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.quota.ReleaseReservation(rc.caller, ad.Reservation)
 	defer s.quota.Release(rc.caller)
-	if lerr := s.license.AdmitRequest("anthropic"); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseRequest()
-	licRes, lerr := s.license.ReserveTokens(estimateTokens(req))
-	if lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseReservation(licRes)
 	rc.rec.RequestedModel = req.Model
 	rc.rec.QuotaState = ad.QuotaState
 	rc.rec.KeyState = ad.KeyState
@@ -882,7 +824,6 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusServiceUnavailable, "quota-state-error")
 		return
 	}
-	s.license.RecordTokens(licRes, rc.rec.Usage)
 	defer s.finish(rc, http.StatusOK, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"input_tokens": tokens})
 }
@@ -899,8 +840,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	// Bound concurrent body buffering before ReadAll. Full request-count Admit
-	// and license request admission stay after validation / traffic-shape queue
-	// waits so invalid bodies and queued shaping do not burn license volume or
+	// and request admission stay after validation / traffic-shape queue
+	// waits so invalid bodies and queued shaping do not burn quota volume or
 	// hold caller concurrency slots.
 	conc := s.quota.AcquireConcurrency(rc.caller)
 	if !conc.OK {
@@ -955,10 +896,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			rc.rec.InboundDialect = dialect
 			responsesBodyOnChatEndpoint = true
 			rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled", Target{}, 0, 0, "", false, 0)
-			if lerr := s.license.enforce(licenseFeatureForRoute(dialect)); lerr != nil {
-				s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-				return
-			}
 		}
 	}
 	req, err := decodeRequest(dialect, body, r.Header)
@@ -1010,12 +947,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.ContractBucket = "pending"
 		rc.rec.ContractWorkload = contractWorkloadLabel(group.Contract)
 	}
-	for _, feature := range licenseFeaturesForGroup(group) {
-		if lerr := s.license.enforce(feature); lerr != nil {
-			s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-			return
-		}
-	}
 	shapeCfg, shapeScope, shapeEnabled := resolveTrafficShapeConfig(s.cfg.Server.TrafficShape, rc.caller.cfg)
 	inputTokens := estimateTokens(req)
 	outputReservationTokens := trafficShapeOutputReservation(req, dialect)
@@ -1048,11 +979,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	defer s.quota.Release(rc.caller)
-	if lerr := s.license.AdmitRequest(dialect); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseRequest()
 	rc.rec.QuotaState = ad.QuotaState
 	rc.rec.KeyState = ad.KeyState
 	if ad.WarningText != "" {
@@ -1197,12 +1123,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	defer s.quota.ReleaseReservation(rc.caller, resAd.Reservation)
-	licRes, lerr := s.license.ReserveTokens(reservationTokens)
-	if lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseReservation(licRes)
 	rc.rec.QuotaState = resAd.QuotaState
 	rc.rec.KeyState = resAd.KeyState
 	if resAd.WarningText != "" {
@@ -1244,7 +1164,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 					rc.rec.QuotaState = "error"
 					rc.rec.KeyState = "error"
 				} else {
-					s.license.RecordTokens(licRes, usage)
 					rc.rec.Usage = usage
 				}
 			}
@@ -1304,7 +1223,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			putCaller, putProject := cacheCallerScope(rc)
 			s.cache.Put(cacheKey(req, served, putCaller, putProject), cacheResp)
 		}
-		s.license.RecordTokens(licRes, resp.Usage)
 		rc.rec.QuotaState = quotaState
 		rc.rec.KeyState = keyState
 		rc.rec.Usage = resp.Usage
@@ -1406,10 +1324,6 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	rc.rec.CallerEnvironment = callerEnvironment(caller.cfg)
 	rc.rec.TokenID = tokenID
 	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
-	if lerr := s.license.enforce(licenseFeatureForRoute(dialect)); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return nil, false
-	}
 	return rc, true
 }
 
@@ -1429,7 +1343,6 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.recordCacheStats(rc)
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
-	s.populateLicenseMetadata(&rc.rec)
 	if rc.rec.Status == 0 {
 		rc.rec.Status = status
 	}
@@ -1523,23 +1436,6 @@ func populateReasoningUsageCoverage(rec *logRecord) {
 	}
 	rec.ReasoningTokens, rec.ReasoningAttemptCount, rec.ReasoningSuccessfulAttemptCount, rec.ReasoningReportedAttemptCount = reasoningUsageCoverage(rec.AttemptsDetail)
 	rec.ReasoningCoverageMeasured = true
-}
-
-func (s *Service) populateLicenseMetadata(rec *logRecord) {
-	if s == nil || rec == nil || s.license == nil {
-		return
-	}
-	st := s.license.statusSnapshot()
-	rec.LicenseStatus = st.Code
-	rec.LicenseReason = st.ValidationReason
-	rec.LicenseID = st.LicenseID
-	rec.LicenseCustomerID = st.CustomerID
-	rec.LicenseSKU = st.SKU
-	rec.LicenseKeyID = st.KeyID
-	rec.LicenseGraceActive = st.GraceActive
-	if !st.ExpiresAt.IsZero() {
-		rec.LicenseExpiry = st.ExpiresAt.UTC().Format(time.RFC3339)
-	}
 }
 
 func (s *Service) diagnosticsEnabled() bool {
@@ -1860,7 +1756,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		return dec, nil
 	case "intelligent":
 		// The first intelligent-routing increment deliberately serves the
-		// deterministic eligible-target baseline. It validates and licenses the
+		// deterministic eligible-target baseline. It validates and authorizes the
 		// decision-model contract without issuing a second upstream request until
 		// the bounded selector and overhead accounting are available.
 		label := "intelligent:baseline-only"

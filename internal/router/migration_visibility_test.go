@@ -175,7 +175,7 @@ func adminMigrationRowForTest(t *testing.T, rows []adminMigrationStatusRow, migr
 }
 
 func TestMigrationMetricsAreAggregateAndSafe(t *testing.T) {
-	metrics := newMetricsStore().Prometheus(nil, newTrafficShapeManager(), MigrationStatus{
+	metrics := newMetricsStore().Prometheus(newTrafficShapeManager(), MigrationStatus{
 		Scope: "usage", SchemaVersion: 2, DataVersion: 1, Compatible: true,
 		Pending: []MigrationDefinition{{ID: 999}},
 		Jobs:    []MigrationDataJobStatus{{State: "running"}, {State: "running"}},
@@ -202,7 +202,7 @@ func TestMigrationMetricsAreAggregateAndSafe(t *testing.T) {
 }
 
 func TestMigrationMetricsExposeAllSafeDataJobStates(t *testing.T) {
-	metrics := newMetricsStore().Prometheus(nil, newTrafficShapeManager(), MigrationStatus{
+	metrics := newMetricsStore().Prometheus(newTrafficShapeManager(), MigrationStatus{
 		Scope: "usage",
 		Jobs: []MigrationDataJobStatus{
 			{State: migrationDataJobPending}, // includes a missing durable job.
@@ -266,12 +266,21 @@ func TestMetricsRetainsAuthorizedGlobalFamiliesWhenMigrationStatusUnavailable(t 
 	for _, want := range []string{
 		`metrum_ai_router_migration_status_available{scope="usage"} 0`,
 		"metrum_ai_router_requests_total",
-		"metrum_ai_router_license_valid",
 		"metrum_ai_router_traffic_shape_queue_depth",
 		"metrum_ai_router_build_info",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics missing %q:\n%s", want, body)
+		}
+	}
+	for _, removed := range []string{
+		"metrum_ai_router_license_valid",
+		"metrum_ai_router_license_seconds_until_expiry",
+		"metrum_ai_router_license_grace_active",
+		"metrum_ai_router_license_validation_failures_total",
+	} {
+		if strings.Contains(body, removed) {
+			t.Fatalf("removed license metric %q still present:\n%s", removed, body)
 		}
 	}
 	for _, forbidden := range []string{"postgres://", "private-host", "migration ledger read failed"} {

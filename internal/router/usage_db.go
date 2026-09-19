@@ -341,14 +341,6 @@ type usageRow struct {
 	TrafficShapeEstimatedInputTokens   int
 	TrafficShapeReservedOutputTokens   int
 	TrafficShapeTotalReservedTokens    int
-	LicenseStatus                      string
-	LicenseReason                      string
-	LicenseID                          string
-	LicenseCustomerID                  string
-	LicenseSKU                         string
-	LicenseKeyID                       string
-	LicenseExpiry                      string
-	LicenseGraceActive                 bool
 	RouterVersion                      string
 	RouterBuildDate                    string
 	RoutingConfigFingerprint           string
@@ -497,14 +489,6 @@ type usageRecord struct {
 	TrafficShapeEstimatedInputTokens   int                                `gorm:"column:traffic_shape_estimated_input_tokens;not null;default:0"`
 	TrafficShapeReservedOutputTokens   int                                `gorm:"column:traffic_shape_reserved_output_tokens;not null;default:0"`
 	TrafficShapeTotalReservedTokens    int                                `gorm:"column:traffic_shape_total_reserved_tokens;not null;default:0"`
-	LicenseStatus                      string                             `gorm:"column:license_status;type:text;not null;default:'';index:idx_request_usage_license_status"`
-	LicenseReason                      string                             `gorm:"column:license_reason;type:text;not null;default:'';index:idx_request_usage_license_reason"`
-	LicenseID                          string                             `gorm:"column:license_id;type:text;not null;default:''"`
-	LicenseCustomerID                  string                             `gorm:"column:license_customer_id;type:text;not null;default:''"`
-	LicenseSKU                         string                             `gorm:"column:license_sku;type:text;not null;default:''"`
-	LicenseKeyID                       string                             `gorm:"column:license_key_id;type:text;not null;default:''"`
-	LicenseExpiry                      string                             `gorm:"column:license_expiry;type:text;not null;default:''"`
-	LicenseGraceActive                 bool                               `gorm:"column:license_grace_active;not null;default:false"`
 	RouterVersion                      string                             `gorm:"column:router_version;type:text;not null;default:'';index:idx_request_usage_router_version"`
 	RouterBuildDate                    string                             `gorm:"column:router_build_date;type:text;not null;default:''"`
 	RoutingConfigFingerprint           string                             `gorm:"column:routing_config_fingerprint;type:text;not null;default:'';index:idx_request_usage_routing_fp"`
@@ -3248,14 +3232,6 @@ func rowFromRecord(rec logRecord) usageRow {
 		TrafficShapeEstimatedInputTokens:   rec.TrafficShapeEstimatedInputTokens,
 		TrafficShapeReservedOutputTokens:   rec.TrafficShapeReservedOutputTokens,
 		TrafficShapeTotalReservedTokens:    rec.TrafficShapeTotalReservedTokens,
-		LicenseStatus:                      rec.LicenseStatus,
-		LicenseReason:                      rec.LicenseReason,
-		LicenseID:                          rec.LicenseID,
-		LicenseCustomerID:                  rec.LicenseCustomerID,
-		LicenseSKU:                         rec.LicenseSKU,
-		LicenseKeyID:                       rec.LicenseKeyID,
-		LicenseExpiry:                      rec.LicenseExpiry,
-		LicenseGraceActive:                 rec.LicenseGraceActive,
 		RouterVersion:                      rec.RouterVersion,
 		RouterBuildDate:                    rec.RouterBuildDate,
 		RoutingConfigFingerprint:           rec.RoutingConfigFingerprint,
@@ -3373,14 +3349,6 @@ func recordFromRow(row usageRow) *usageRecord {
 		TrafficShapeEstimatedInputTokens:   row.TrafficShapeEstimatedInputTokens,
 		TrafficShapeReservedOutputTokens:   row.TrafficShapeReservedOutputTokens,
 		TrafficShapeTotalReservedTokens:    row.TrafficShapeTotalReservedTokens,
-		LicenseStatus:                      row.LicenseStatus,
-		LicenseReason:                      row.LicenseReason,
-		LicenseID:                          row.LicenseID,
-		LicenseCustomerID:                  row.LicenseCustomerID,
-		LicenseSKU:                         row.LicenseSKU,
-		LicenseKeyID:                       row.LicenseKeyID,
-		LicenseExpiry:                      row.LicenseExpiry,
-		LicenseGraceActive:                 row.LicenseGraceActive,
 		RouterVersion:                      row.RouterVersion,
 		RouterBuildDate:                    row.RouterBuildDate,
 		RoutingConfigFingerprint:           row.RoutingConfigFingerprint,
@@ -3479,14 +3447,6 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		TrafficShapeEstimatedInputTokens:   record.TrafficShapeEstimatedInputTokens,
 		TrafficShapeReservedOutputTokens:   record.TrafficShapeReservedOutputTokens,
 		TrafficShapeTotalReservedTokens:    record.TrafficShapeTotalReservedTokens,
-		LicenseStatus:                      record.LicenseStatus,
-		LicenseReason:                      record.LicenseReason,
-		LicenseID:                          record.LicenseID,
-		LicenseCustomerID:                  record.LicenseCustomerID,
-		LicenseSKU:                         record.LicenseSKU,
-		LicenseKeyID:                       record.LicenseKeyID,
-		LicenseExpiry:                      record.LicenseExpiry,
-		LicenseGraceActive:                 record.LicenseGraceActive,
 		RouterVersion:                      record.RouterVersion,
 		RouterBuildDate:                    record.RouterBuildDate,
 		RoutingConfigFingerprint:           record.RoutingConfigFingerprint,
@@ -4796,14 +4756,14 @@ func usageRollupSourceSummary(rows []usageRow) usageRollupSource {
 			row.OutputCostUSD, row.TotalCostUSD, row.UpstreamReportedInputCostUSD, row.UpstreamReportedOutputCostUSD,
 			row.UpstreamReportedTotalCostUSD, row.TargetProvider, row.TargetModel, row.TargetDialect,
 			row.ContractBucket, row.TargetValidationStatus)
-		fmt.Fprintf(&b, "derived|fallback=%t|latency_ms=%d|ttfb_ms=%s|upstream_ms=%s|downstream_ms=%s|upstream_output_tps=%s|upstream_total_tps=%s|downstream_output_tps=%s|downstream_total_tps=%s|cache_enabled=%t|cache_items=%d|cache_bytes=%d|cache_max_bytes=%d|cache_occupancy_pct=%.12f|max_token_bucket=%s|input_token_bucket=%s|admission_reason=%s|pii_applied=%t|pii_mode=%s|pii_replacements=%d|pii_rules=%d|contract_present=%t|contract_failure=%s|contract_workload=%s|validation_workload=%s|validation_age=%s|quota_state=%s|key_state=%s|license_status=%s|license_reason=%s|license_id=%s|license_customer=%s|license_sku=%s|license_key=%s|license_expiry=%s|license_grace=%t|error=%s|pricing_source=%s|pricing_updated_at=%s\n",
+		fmt.Fprintf(&b, "derived|fallback=%t|latency_ms=%d|ttfb_ms=%s|upstream_ms=%s|downstream_ms=%s|upstream_output_tps=%s|upstream_total_tps=%s|downstream_output_tps=%s|downstream_total_tps=%s|cache_enabled=%t|cache_items=%d|cache_bytes=%d|cache_max_bytes=%d|cache_occupancy_pct=%.12f|max_token_bucket=%s|input_token_bucket=%s|admission_reason=%s|pii_applied=%t|pii_mode=%s|pii_replacements=%d|pii_rules=%d|contract_present=%t|contract_failure=%s|contract_workload=%s|validation_workload=%s|validation_age=%s|quota_state=%s|key_state=%s|error=%s|pricing_source=%s|pricing_updated_at=%s\n",
 			row.FallbackUsed, row.LatencyMS, checksumInt64Ptr(row.TTFBMS), checksumInt64Ptr(row.UpstreamMS), checksumInt64Ptr(row.DownstreamMS),
 			checksumFloat64Ptr(row.UpstreamOutputTPS), checksumFloat64Ptr(row.UpstreamTotalTPS), checksumFloat64Ptr(row.DownstreamOutputTPS), checksumFloat64Ptr(row.DownstreamTotalTPS),
 			row.CacheEnabled, row.CacheItems, row.CacheBytes, row.CacheMaxBytes, row.CacheOccupancyPct,
 			row.MaxTokenBucket, row.InputTokenBucket, row.AdmissionReason,
 			row.PIIFilterApplied, row.PIIFilterMode, row.PIIFilterReplacements, row.PIIFilterRuleCount,
 			row.ContractPresent, row.ContractFailureReason, row.ContractWorkload, row.TargetValidationWorkload, row.TargetValidationAgeBucket,
-			row.QuotaState, row.KeyState, row.LicenseStatus, row.LicenseReason, row.LicenseID, row.LicenseCustomerID, row.LicenseSKU, row.LicenseKeyID, row.LicenseExpiry, row.LicenseGraceActive,
+			row.QuotaState, row.KeyState,
 			row.Error, row.PricingSource, row.PricingUpdatedAt)
 		writeSortedStrings(&b, "signals", row.EnabledSignals)
 		writeSortedStrings(&b, "scores", row.ScoreBuckets)

@@ -426,7 +426,7 @@ Text-only and image-capable work do not need separate user workflows. A deployme
 
 Router-only endpoints are not part of OpenAI or Anthropic compatibility:
 
-- `/healthz` always returns `200` with runtime build metadata when the process is serving HTTP. `/readyz` returns `200` when the in-memory config still validates and routing license enforcement allows serving; a failed readiness check returns `503` with a fixed `error: "not-ready"` (or a safe license code) and never echoes `Validate()` text, caller IDs, paths, or other config detail.
+- `/healthz` always returns `200` with runtime build metadata when the process is serving HTTP. `/readyz` returns `200` when the in-memory config still validates; a failed readiness check returns `503` with a fixed `error: "not-ready"` and never echoes `Validate()` text, caller IDs, paths, or other config detail.
 - `/version` returns the running router version, build timestamp, Go runtime version, OS, and architecture for administrators.
 - `/v1/usage` returns usage/quota information for the authenticated caller.
 - `/admin/reports/api/quota-status` returns live remaining and configured limits for authorized reports administrators; it never accepts ordinary caller tokens.

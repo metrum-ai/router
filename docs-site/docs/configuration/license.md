@@ -16,26 +16,9 @@ Operators generate and retain their own Ed25519 signing key, issue
 file. Normal release builds fail closed when the file is invalid outside any
 configured grace period.
 
-This example is a partial subset of `config.example.yaml`; the shipped sample config is the source of truth.
-
-```yaml title="config.example.yaml"
-server:
-  license:
-    enabled: false
-    path: /app/config/license.json
-    state_path: /app/state/license-state.json
-    instance_fingerprint: ""
-    instance_fingerprint_file: ""
-    instance_fingerprint_env: ""
-    recheck_interval: 1h
-    grace_period_on_validation_error: 24h
-    revocation:
-      mode: off
-      path: /app/config/revocations.json
-      require_current_bundle: false
-      fail_closed_on_bundle_error: true
-    fail_open_for_dev: false
-```
+Runtime licensing was removed in 3.0.0. `config.example.yaml` no longer contains
+`server.license`. A leftover `server.license` block in a deployed config is
+accepted and ignored, with one startup warning, through 3.0.0.
 
 Operator-generated verification keys use `server.license.public_keys` as in
 [Self-Managed Licensing](../licensing/) and `config.minimal.example.yaml`. The
