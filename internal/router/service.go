@@ -197,7 +197,7 @@ func New(cfg *Config) (*Service, error) {
 		httpClient:         newUpstreamHTTPClient(cfg.Server.Upstream),
 		externalPolicies:   map[string]*externalPolicyStrategy{},
 		imageURLLookup:     defaultEgressLookupIP,
-		imageURLDNSTimeout: 500 * time.Millisecond,
+		imageURLDNSTimeout: 2 * time.Second,
 		callersBySum:       map[string]*callerRuntime{},
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
@@ -2524,7 +2524,7 @@ func (s *Service) validateImageURLsForUpstream(ctx context.Context, req *IRReque
 	}
 	timeout := s.imageURLDNSTimeout
 	if timeout <= 0 {
-		timeout = 500 * time.Millisecond
+		timeout = 2 * time.Second
 	}
 	resolveCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
