@@ -23,12 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed license fields from `/version`, readiness/admin metadata, and the
   diagnostics schema (`license_compile_mode` and related `license_*` columns
   are no longer populated).
+- Removed packaged binaries `metrum-ai-router-license` and
+  `metrum-ai-router-customer-lifecycle`, plus source-only rename stubs
+  `router-license`, `metrum-genai-smartrouter-license`, and
+  `metrum-genai-customer-lifecycle`.
+- Removed `metrum-ai-routerctl license` and `metrum-ai-router-fleetctl licenses`
+  inventory commands. Fleet plan/deploy/status and fleet-sign deployment-intent
+  signing remain.
 - No usage-database migration in this release (package-only rollback).
 
 ### Notes
 
-- Packaging removal of license CLIs and Fleet license inventory lands in a
-  follow-up 3.0.0 packaging PR; this change makes the router ungated.
+- Existing `license.json` files and legacy `server.license` config remain inert
+  (ignored with one startup warning through 3.0.0).
 
 ## [2.2.0] - 2026-09-19
 

@@ -70,8 +70,7 @@ python3 scripts/local_dev_bootstrap.py --out-dir tmp/local-dev
 go run ./cmd/metrum-ai-router --config tmp/local-dev/config.yaml
 ```
 
-The bootstrap issues a local runtime `license.json` (SKU `oss-self-managed`)
-and a caller token file `tmp/local-dev/router.token`. It does not print secrets.
+The bootstrap prepares a local config, env template, and one caller token.
 Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 [Local Quickstart](docs-site/docs/getting-started/local-quickstart.md).
 
@@ -379,13 +378,12 @@ no routing-decision row.
 ### Sovereignty by default
 
 Hosted gateways keep prompts and keys on someone else's control plane. This
-core is Apache-2.0. No license key required by default. Optional signed-license
-verification is local. Prompts and responses are not retained by default
-(zero-day retention unless you enable capture). The documented policy is not to
-train on traffic. Linux binary, Compose, and Kubernetes are the documented
-runtimes. Operators can run on-premises or air-gapped infrastructure.
+core is Apache-2.0. No license key required. Prompts and responses are not
+retained by default (zero-day retention unless you enable capture). The
+documented policy is not to train on traffic. Linux binary, Compose, and
+Kubernetes are the documented runtimes. Operators can run on-premises or
+air-gapped infrastructure.
 ([Editions](#editions),
-[deployment-paths](docs-site/docs/licensing/deployment-paths.md),
 [architecture-limitations](docs-site/docs/reference/architecture-limitations.md))
 
 ### Agent CLI support as a first-class path
@@ -549,7 +547,6 @@ Former README headings remain reachable below or from this index.
 - [Build And Package](#build-and-package)
 - [Documentation Map](#documentation-map)
 - [Run From Source](#run-from-source)
-- [Runtime Policy License Enforcement](#runtime-policy-license-enforcement)
 - [API Key Flow](#api-key-flow)
 - [Provider Model Catalogs](#provider-model-catalogs)
 - [Dynamic Score Routing](#dynamic-score-routing)
@@ -609,11 +606,8 @@ bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
 bin/metrum-ai-router-fleetctl
 bin/metrum-ai-router-fleet-sign
-bin/metrum-ai-router-license
-bin/metrum-ai-router-customer-lifecycle
 config/config.example.yaml
 config/env.example.json
-config/enterprise-license-skus.json
 config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
@@ -632,15 +626,13 @@ caddy/Caddyfile
 binary-package-only Fleet lifecycle contract. `metrum-ai-router-fleet-sign`
 issues protected intent/admission/delete documents and ships only in binary
 packages (never in customer Docker images).
-`metrum-ai-router-license` issues signed runtime-policy `license.json`
-files and ships only in binary packages (never in runtime Docker images).
 `plan`, `deploy`, and `delete` consume one mode-`0600`,
 profile-key-signed, reference-only deployment intent; it contains the protected
-profile, runtime bundle, and license references without their resolved values.
+profile and runtime bundle references without their resolved values.
 `customer create|status|smoke|grant-caller|get-config|list-callers|revoke-caller|update-quota|quota-status|update-config|delete` orchestrates
 disposable SQLite Fleet instances from the packaged binary alone (no Python/repo).
 `metrum-ai-routerctl` provides customer-local safe config, caller-token-file,
-license, model, and aggregate-usage operations and is included in Docker images;
+model, and aggregate-usage operations and is included in Docker images;
 Fleet binaries are not. The default deployment is SQLite state with one Router
 container and one replica; it neither provisions nor binds RDS. Dedicated RDS
 requires an explicit approved `database_profile` manifest branch and a
@@ -661,8 +653,8 @@ The `router` binary embeds the Docusaurus build output. At runtime, browser acce
 ## Documentation Map
 
 Public product docs live under `docs-site/docs/` and are organized as an
-operator journey: overview, getting started, installation, self-managed
-licensing, configuration, routing, providers and models, API compatibility,
+operator journey: overview, getting started, installation, configuration,
+routing, providers and models, API compatibility,
 agents/tools/vision, usage and reports, security and governance, operations,
 troubleshooting, evaluation, reference, and release/upgrade guidance.
 
@@ -724,55 +716,6 @@ go run ./cmd/metrum-ai-router --config config.yaml
 If a variable is already set in the shell, the shell value wins over `env.json`. This lets CI or one-off live tests override local secrets without editing files.
 
 In a packaged deployment, put provider keys in `config/env.json` beside `config/config.yaml`. The same loading rule applies: shell environment values win over `env.json`.
-
-## Runtime Policy License Enforcement
-
-All Metrum AI Router first-party content is licensed under the Apache License
-2.0. Copyright 2026 Metrum AI, Inc. The Apache license grants the rights to use,
-modify, and distribute those materials; no EULA acceptance or runtime-policy
-file is a condition of those rights.
-
-The signed `license.json` described below is an operator-selected runtime policy
-input. It can gate features or operational limits in a configured deployment,
-but it is not the software's copyright license and does not restrict the rights
-granted by Apache-2.0.
-
-Normal release builds enforce offline signed JSON runtime policy under
-`server.license`. Operators generate an Ed25519 keypair, issue `license.json`,
-and configure the paired public key. The router verifies the envelope at
-startup and on `recheck_interval`, so operators can renew or replace the file
-without rebuilding the binary. Runtime YAML cannot disable enforcement in
-release builds; deployments should mount the license file read-only and keep
-the license state file under the deployment state directory.
-
-```yaml
-server:
-  license:
-    enabled: true
-    path: /app/config/license.json
-    state_path: /app/state/license-state.json
-    instance_fingerprint: "issued-instance-fingerprint"
-    recheck_interval: 1h
-    grace_period_on_validation_error: 24h
-```
-
-`/readyz` fails when a required license blocks serving. Caller endpoints return documented `license-*` errors without exposing license payloads, signatures, or keys. Feature gates cover routing, usage reporting, admin reports, security reports, dynamic scoring, TypeScript routing, external policy routing, model-group contracts, retention rollups, and governed content-capture maintenance. Metrics-admin `/metrics` includes safe license gauges, and authorized admin report readers can query `/admin/license/status` for a safe summary only.
-
-Set `instance_fingerprint` only when the operator issues an instance-bound
-license for the deployment. It must match the licensed instance scope or
-startup/readiness will fail with `license-instance-limit-exceeded`.
-
-Use `go run ./cmd/metrum-ai-router-license safe-summary --license license.json` to inspect safe license metadata. `metrum-ai-router-license verify --license license.json --public-key <public-key-file>` is for release/test validation with a supplied public key. Operators use `issue`, `renew`, and `top-up` with a local signing key and the SKU catalog as needed for their deployment. Private signing keys are not required at runtime and must never be copied into router config, logs, images, or source control.
-
-When the operator maintains a signed revocation bundle, configure
-`server.license.revocation.mode: file` and mount it at
-`server.license.revocation.path`. Effective `revoked`, `suspended`, or
-`superseded` entries block serving without license grace; `router-license
-revocation validate` and `revocation safe-summary` provide safe verification.
-
-Self-managed issuance, renewal, trust rotation, and recovery are documented in
-[Self-Managed Licensing](docs-site/docs/licensing/index.md). Keep private keys
-outside source control and outside runtime containers.
 
 Provider credential variables referenced by the current `config.example.yaml`:
 
@@ -1696,10 +1639,9 @@ These require live provider keys in `env.json` or the shell plus locally install
 
 ## Editions
 
-- **Community**: this Apache-2.0 repository. No license key is required by
-  default. You may use, modify, and distribute the software under Apache-2.0
-  without payment; Enterprise offerings never condition those Apache rights on
-  payment.
+- **Community**: this Apache-2.0 repository. No license key is required. You
+  may use, modify, and distribute the software under Apache-2.0 without
+  payment; Enterprise offerings never condition those Apache rights on payment.
 - **Enterprise**: a separate distribution with production validation, named
   support, signed releases, and related commercial entitlements.
 
@@ -1725,10 +1667,10 @@ release. Third-party components, assets, and models remain governed by their
 own applicable terms; the Apache-2.0 license does not replace them. See
 [TRADEMARKS.md](TRADEMARKS.md) for mark usage.
 
-Optional signed `license.json` is a separate operator runtime-policy input for
-feature and operational enforcement when enabled. It is not the software
-copyright license and not a replacement for any of the files above. See
-[docs/LICENSE.md](docs/LICENSE.md) for the complete scope map and Apache terms.
+Runtime licensing was removed in 3.0.0. Existing `license.json` files are
+inert and are never read; `server.license` is accepted with a startup warning
+in 3.0.0 and rejected in 4.0.0. See [docs/LICENSE.md](docs/LICENSE.md) for the
+complete scope map and Apache terms.
 
 Current MVP capabilities:
 

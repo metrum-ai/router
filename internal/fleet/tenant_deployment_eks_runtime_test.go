@@ -234,17 +234,16 @@ func TestEKSRouterDeploymentMountsRuntimeBundleAtImageConfigPath(t *testing.T) {
 		t.Fatalf("router runtime mount = %#v, want read-only /app/config", container.VolumeMounts)
 	}
 	runtimeVolume := false
-	licenseVolume := false
 	for _, volume := range deployment.Spec.Template.Spec.Volumes {
 		if volume.Name == "runtime" && volume.Secret != nil && volume.Secret.SecretName == "router-runtime" {
 			runtimeVolume = true
 		}
-		if volume.Name == "license" && volume.Secret != nil && volume.Secret.SecretName == "router-license" {
-			licenseVolume = true
+		if volume.Name == "license" {
+			t.Fatalf("router deployment must not mount license volume after licensing removal: %#v", volume)
 		}
 	}
-	if !runtimeVolume || !licenseVolume {
-		t.Fatalf("router deployment secret volumes runtime=%t license=%t", runtimeVolume, licenseVolume)
+	if !runtimeVolume {
+		t.Fatalf("router deployment secret volumes runtime=%t", runtimeVolume)
 	}
 	if deployment.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
 		t.Fatalf("router deployment strategy=%q want Recreate", deployment.Spec.Strategy.Type)
@@ -280,47 +279,23 @@ func TestEKSRouterDeploymentRecreateStrategyOnUpdate(t *testing.T) {
 	}
 }
 
-func TestEKSReferenceSecretUpdatesExistingData(t *testing.T) {
-	const licenseRef = "aws-ssm:///safe/license-request"
-	const first = `{"license_id":"first"}`
-	const second = `{"license_id":"second"}`
-	plan := TenantDeploymentPlan{InstanceID: "instance-a", Namespace: "tenant-a", licenseRequestRef: licenseRef}
+func TestEKSLicenseBindingIsNoOpAfterLicensingRemoval(t *testing.T) {
+	plan := TenantDeploymentPlan{InstanceID: "instance-a", Namespace: "tenant-a", licenseRequestRef: "aws-ssm:///safe/license-request"}
 	adapter := &EKSTenantDeploymentAdapters{
 		kube: k8sfake.NewSimpleClientset(),
 		resolveReference: func(_ context.Context, ref string) ([]byte, error) {
-			if ref != licenseRef {
-				t.Fatalf("license resolver ref = %q", ref)
-			}
-			if strings.Contains(ref, "second") {
-				return []byte(second), nil
-			}
-			return []byte(first), nil
+			t.Fatalf("license resolver must not run after licensing removal; ref=%q", ref)
+			return nil, nil
 		},
 	}
 	if _, err := adapter.EnsureLicenseBinding(context.Background(), plan); err != nil {
 		t.Fatal(err)
 	}
-	secret, err := adapter.kube.CoreV1().Secrets(plan.Namespace).Get(context.Background(), "router-license", metav1.GetOptions{})
-	if err != nil {
+	if err := adapter.DeleteLicenseBinding(context.Background(), plan, ""); err != nil {
 		t.Fatal(err)
 	}
-	if string(secret.Data["license.json"]) != first {
-		t.Fatalf("initial license=%q", secret.Data["license.json"])
-	}
-	adapter.resolveReference = func(_ context.Context, ref string) ([]byte, error) {
-		if ref != licenseRef {
-			t.Fatalf("license resolver ref = %q", ref)
-		}
-		return []byte(second), nil
-	}
-	if _, err := adapter.EnsureLicenseBinding(context.Background(), plan); err != nil {
-		t.Fatal(err)
-	}
-	secret, err = adapter.kube.CoreV1().Secrets(plan.Namespace).Get(context.Background(), "router-license", metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(secret.Data["license.json"]) != second {
-		t.Fatalf("updated license=%q want %q", secret.Data["license.json"], second)
+	_, err := adapter.kube.CoreV1().Secrets(plan.Namespace).Get(context.Background(), "router-license", metav1.GetOptions{})
+	if err == nil {
+		t.Fatal("expected router-license secret to remain absent")
 	}
 }

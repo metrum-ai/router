@@ -64,15 +64,11 @@ Packages must not contain:
 - Go source files (`.go`), `go.mod`, or `go.sum`;
 - full production config files.
 
-Packaged CLIs (`router`, `metrum-ai-routerctl`,
-`metrum-ai-router-fleetctl`,
-`metrum-ai-router-fleet-sign`,
-`metrum-ai-router-license`, and related tools) are prebuilt ELF
+Packaged CLIs (`metrum-ai-router`, `metrum-ai-routerctl`,
+`metrum-ai-router-fleetctl`, and `metrum-ai-router-fleet-sign`) are prebuilt ELF
 binaries only. Operator and customer hosts must not require a Go toolchain or
-product source tree to run them. Self-managed operators use
-`metrum-ai-router-license` from a trusted administration host with
-their own retained Ed25519 keypair; the tool, private key, and real
-`license.json` must not appear in customer runtime Docker images.
+product source tree to run them. Real `license.json` files must not appear in
+customer runtime Docker images.
 
 ## Runtime Health Checks
 
@@ -89,7 +85,7 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
   "$ROUTER_BASE_URL/v1/models"
 ```
 
-`/readyz` confirms required runtime checks such as license enforcement and configured dependencies. `/docs/` confirms the embedded Docusaurus admin docs are reachable. `/v1/models` confirms the caller token is valid and shows the deployment-defined model groups available to that caller.
+`/readyz` confirms required runtime checks and configured dependencies. `/docs/` confirms the embedded Docusaurus admin docs are reachable. `/v1/models` confirms the caller token is valid and shows the deployment-defined model groups available to that caller.
 
 For non-sensitive package questions, use the repository's public question issue
 form. Report vulnerabilities through the private path in `SECURITY.md`.

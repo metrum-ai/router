@@ -151,7 +151,7 @@ callers: []
 }
 
 func TestCustomerCLIFailsClosedForFleetAuthority(t *testing.T) {
-	for _, command := range [][]string{{"deploy"}, {"config", "activate"}, {"license", "sign"}, {"keys", "rotate"}} {
+	for _, command := range [][]string{{"deploy"}, {"config", "activate"}, {"license", "status"}, {"keys", "rotate"}} {
 		args := append([]string{"run", "."}, command...)
 		output, err := exec.Command("go", args...).CombinedOutput()
 		if err == nil {

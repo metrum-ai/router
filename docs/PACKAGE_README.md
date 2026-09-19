@@ -13,12 +13,8 @@ Binary packages include:
 - `bin/metrum-ai-routerctl`
 - `bin/metrum-ai-router-fleetctl`
 - `bin/metrum-ai-router-fleet-sign`
-- `bin/metrum-ai-router-license` (operator-side runtime-policy key and
-  license tool; never included in the runtime image)
-- `bin/metrum-ai-router-customer-lifecycle` (Metrum operator lifecycle CLI only; never for customer self-service)
 - `config/config.example.yaml`
 - `config/env.example.json`
-- `config/enterprise-license-skus.json`
 - `config/scripts/router.ts`
 - `caddy/Caddyfile`
 - `LICENSE`
@@ -53,16 +49,9 @@ lifecycle binaries are excluded. Version-check the runtime with
 metrum-ai-router:<version>-linux-<arch> version`.
 
 The standard Docker and Docker Compose images do not include
-`metrum-ai-router-fleetctl`, `metrum-ai-router-fleet-sign`,
-or `metrum-ai-router-license`.
+`metrum-ai-router-fleetctl` or `metrum-ai-router-fleet-sign`.
 Docker-based Fleet operators run those tools from a binary package on a separate trusted administration host.
 Fleet CLIs are distributed as prebuilt binaries only; operator hosts must not require a Go toolchain or product source tree.
-Self-managed operators generate and retain their own Ed25519 keypair and use
-`metrum-ai-router-license` from the trusted administration host to
-issue the deployment's runtime-policy `license.json`. Metrum-managed issuance
-may be offered as an optional commercial deployment service, but it is not
-required by the open-source runtime. Keep private keys and real licenses out of
-the package, runtime image, source control, logs, and tickets.
 
 Docker and Compose packages use SQLite state with one Router container and one
 replica by default; they neither provision nor bind RDS. Dedicated RDS is an
@@ -106,7 +95,6 @@ Prepare these deployment-owned files before first startup:
 
 - `config.yaml` copied from `config/config.example.yaml` and reviewed for the deployment.
 - `env.json` copied from `config/env.example.json` or equivalent environment variables from a secret manager.
-- An operator-generated `license.json` for operator-selected runtime policy in release
   builds. It is not a copyright or commercial-use license condition and does
   not narrow the rights granted by Apache-2.0 or replace the package-root legal
   files.

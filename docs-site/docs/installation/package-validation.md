@@ -20,8 +20,6 @@ metrum-ai-router-<version>-linux-<arch>/
   bin/metrum-ai-routerctl
   bin/metrum-ai-router-fleetctl
   bin/metrum-ai-router-fleet-sign
-  bin/metrum-ai-router-license
-  bin/metrum-ai-router-customer-lifecycle
   config/config.example.yaml
   config/env.example.json
   config/scripts/router.ts

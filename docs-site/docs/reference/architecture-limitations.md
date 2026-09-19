@@ -94,7 +94,7 @@ those controls and the exact upstream model/API combinations they enable.
   itself enforce residency, retention, transfer, jurisdiction, or provider
   training behavior and is not included in TypeScript or external-policy
   inputs.
-- The licensed `intelligent` strategy is a baseline-only configuration
+- The `intelligent` strategy is a baseline-only configuration
   foundation in the current release. It does not invoke its decision model or
   alter serving-target selection.
 - SQLite is not a shared multi-writer database and must not back horizontally

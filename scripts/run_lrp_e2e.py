@@ -6,7 +6,7 @@
 Run using the service environment, or pass --lrp-python explicitly. A synthetic
 bundle must contain two trained targets: --cheap-model and --strong-model select
 their actual model IDs (otherwise the first two trained manifest entries apply).
-Only the supplied bundle is read. Test credentials, signed license, configuration,
+Only the supplied bundle is read. Test credentials, configuration,
 logs and SQLite database are temporary and deleted; exported evidence is scalar.
 Synthetic embedding latency is wiring evidence, never real-ONNX performance.
 """
@@ -461,7 +461,7 @@ def main() -> int:
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--lrp-python", type=Path, default=Path(sys.executable))
     parser.add_argument("--service-dir", type=Path, default=ROOT / "services/learned-routing-policy")
-    parser.add_argument("--router-binary", type=Path, help="Normal licensed binary; built locally if omitted")
+    parser.add_argument("--router-binary", type=Path, help="Router binary; built locally if omitted")
     parser.add_argument("--cheap-model", help="Actual trained model ID assigned the cheap test tier")
     parser.add_argument("--strong-model", help="Actual trained model ID assigned the strong test tier")
     parser.add_argument("--requests", type=int, default=500, help="E09 request count, at least 500")

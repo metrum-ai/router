@@ -6,14 +6,13 @@ package fleet
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestFleetInventoryTracksTenantsAndLicenses(t *testing.T) {
+func TestFleetInventoryTracksTenantsAndLicenseBindings(t *testing.T) {
 	store, _, engine, _ := openTenantDeploymentTestEngine(t)
 	profile, manifest, plan := tenantDeploymentFixture(t)
 	_ = profile
@@ -34,7 +33,7 @@ func TestFleetInventoryTracksTenantsAndLicenses(t *testing.T) {
 		t.Fatalf("tenants=%+v", tenants)
 	}
 	if plan.LicenseRefDigest == "" || plan.LicenseValidityHours < 1 {
-		t.Fatalf("plan missing safe license inventory fields: %+v", plan)
+		t.Fatalf("plan missing safe license binding fields: %+v", plan)
 	}
 	tenant, err := store.GetFleetTenant(context.Background(), plan.CustomerID)
 	if err != nil {
@@ -50,57 +49,11 @@ func TestFleetInventoryTracksTenantsAndLicenses(t *testing.T) {
 		}
 	}
 
-	summary := LicenseSafeSummary{
-		SchemaVersion: 1,
-		LicenseID:     "lic_inventory_test",
-		CustomerID:    plan.CustomerID,
-		CustomerName:  "Inventory Test",
-		Product:       "genai-smart-router",
-		SKU:           "enterprise-standard",
-		Features:      []string{"routing", "usage_reporting"},
-		Limits:        LicenseLimits{MaxCallers: 10, AllowedSkins: []string{"openai-chat"}},
-		IssuedAt:      "2026-08-13T00:00:00Z",
-		NotBefore:     "2026-08-13T00:00:00Z",
-		ExpiresAt:     "2027-08-13T00:00:00Z",
-		KeyID:         "test-license-key",
-		Issuer:        LicenseIssuer,
-	}
-	summaryPath := filepath.Join(t.TempDir(), "summary.json")
-	raw, err := json.MarshalIndent(summary, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(summaryPath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadFleetLicenseSafeSummaryFile(summaryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	view, err := store.RegisterFleetLicenseFromSafeSummary(context.Background(), loaded, "", "fleet-lifecycle-admin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.LicenseID != summary.LicenseID || len(view.Features) != 2 {
-		t.Fatalf("license view=%+v", view)
-	}
-	licenses, err := store.ListFleetLicenses(context.Background(), plan.CustomerID)
-	if err != nil || len(licenses) != 1 {
-		t.Fatalf("licenses=%v err=%v", licenses, err)
-	}
-	tenant, err = store.GetFleetTenant(context.Background(), plan.CustomerID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tenant.Licenses) != 1 {
-		t.Fatalf("tenant licenses=%+v", tenant.Licenses)
-	}
-
 	var binding FleetLicenseBindingRecord
 	if err := store.db.Where("instance_id = ?", plan.InstanceID).First(&binding).Error; err != nil {
 		t.Fatal(err)
 	}
-	if binding.LicenseID != summary.LicenseID || binding.BindingState != FleetLicenseBindingBound {
+	if binding.BindingState != FleetLicenseBindingBound {
 		t.Fatalf("binding=%+v", binding)
 	}
 	if binding.RequestRefDigest != plan.LicenseRefDigest {
@@ -130,6 +83,12 @@ func TestFleetInventoryTracksTenantsAndLicenses(t *testing.T) {
 	}
 	if tenant.LifecycleState != FleetTenantDeleted || tenant.LatestJobState != TenantDeploymentDeleted {
 		t.Fatalf("deleted tenant=%+v", tenant)
+	}
+	if err := store.db.Where("instance_id = ?", plan.InstanceID).First(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	if binding.BindingState != FleetLicenseBindingRetired {
+		t.Fatalf("retired binding=%+v", binding)
 	}
 }
 

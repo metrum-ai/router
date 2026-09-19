@@ -8,11 +8,10 @@ doc_type: tutorial
 Run Metrum AI Router on a laptop or workstation in about ten minutes. This
 path is for local development: one OpenAI Chat upstream, one `static` model
 group named `local`, SQLite with `auto-safe` migrations, and an operator-issued
-runtime `license.json`. Packaged production installs use
+Packaged production installs use
 [Installation](../installation/) and `config.example.yaml`.
 
-The software is Apache-2.0. The signed `license.json` is an operator runtime
-policy file, not a copyright license.
+The software is Apache-2.0.
 
 ```mermaid
 sequenceDiagram
@@ -20,7 +19,7 @@ sequenceDiagram
   participant Boot as local_dev_bootstrap
   participant Router as Router
   participant Up as OpenAI Chat
-  Op->>Boot: copy templates issue license generate caller
+  Op->>Boot: copy templates generate caller
   Op->>Router: go run --config tmp/local-dev/config.yaml
   Op->>Router: GET /readyz
   Op->>Router: GET /v1/models
@@ -46,9 +45,9 @@ python3 scripts/local_dev_bootstrap.py --out-dir tmp/local-dev
 ```
 
 The script copies `config.minimal.example.yaml` and
-`env.minimal.example.json`, issues a license for the checked-in
+`env.minimal.example.json`, uses the checked-in
 `docs/entitlement.local-dev.example.json` (`sku: oss-self-managed`) using
-`metrum-ai-router-license`, and merges one hashed caller with
+and merges one hashed caller with
 `metrum-ai-routerctl callers generate --write`. It does not print the
 private signing key or the raw caller token. The token is in
 `tmp/local-dev/router.token` (mode `0600`).

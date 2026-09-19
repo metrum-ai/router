@@ -48,7 +48,6 @@ PUBLIC_DOC_PATHS = [
     ROOT / "ops.env.example.json",
     ROOT / "config.example.yaml",
     ROOT / "deploy" / "Caddyfile.compose",
-    ROOT / "examples" / "customer-lifecycle" / "onboard-acme.sandbox.example.json",
 ]
 
 # Exempt from the privacy rules only. Branding rules still apply to these
