@@ -32,7 +32,7 @@ Use these pages as the canonical homes for each configuration area:
 
 | Topic | Canonical page |
 | --- | --- |
-| License enforcement | [License](./license) |
+| Runtime licensing | Removed in 3.0.0. See [Software Licenses](../legal/software-licenses) |
 | Provider skins, model catalog metadata, modalities, tools, pricing fields | [Provider Catalog](./provider-catalog) |
 | Shared provider/model/target capacity controls | [Provider Traffic Shaping](./provider-traffic-shaping) |
 | Model groups and weighted routing | [Model Groups](./model-groups) |
