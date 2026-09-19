@@ -454,9 +454,6 @@ func populatedWhen(table string, c columnDoc) string {
 		if strings.Contains(name, "traffic_shape") {
 			return "during caller traffic-shaping admission"
 		}
-		if strings.Contains(name, "license") {
-			return "during license gate evaluation"
-		}
 		return "once per request at terminal request accounting"
 	case table == "request_attempts":
 		return "after each upstream attempt completes or fails"

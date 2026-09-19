@@ -195,7 +195,6 @@ type adminReportVersionResponse struct {
 	GoVersion          string `json:"go_version"`
 	GOOS               string `json:"goos"`
 	GOARCH             string `json:"goarch"`
-	LicenseCompileMode string `json:"license_compile_mode"`
 }
 
 type adminReportPagination struct {
@@ -889,14 +888,6 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	prefix := cleanAdminReportsPrefix(s.cfg.Server.AdminReports.PathPrefix)
 	relPath := strings.TrimPrefix(r.URL.Path, prefix)
 	securityReport := strings.HasPrefix(relPath, "/api/security/") || strings.HasPrefix(relPath, "/security/")
-	feature := LicenseFeatureAdminReports
-	if securityReport {
-		feature = LicenseFeatureAdminSecurityReports
-	}
-	if lerr := s.license.enforce(feature); lerr != nil {
-		writeJSON(w, lerr.StatusCode, map[string]any{"error": map[string]any{"type": lerr.Code, "message": lerr.Code}})
-		return
-	}
 	subject, ok := s.authenticateAdminSubject(w, r)
 	if !ok {
 		s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "unauthorized", authzObjectAdminReports, authzActionRead)
@@ -919,9 +910,6 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	globalReports := s.authorizeGlobalAdmin(subject, object, action)
-	if !s.enforceAdminReportLicenseFeature(w, r, relPath) {
-		return
-	}
 	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
 	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, cleanAdminReportsPrefix(s.cfg.Server.AdminReports.PathPrefix)+"/static/"))
 	scalarSpec, scalarOK := adminScalarEndpointSpecs(strings.TrimPrefix(r.URL.Path, prefix))
@@ -1137,30 +1125,11 @@ func (s *Service) handleAdminReportVersion(w http.ResponseWriter, r *http.Reques
 		Commit:             info.Commit,
 		BuildDate:          info.BuildDate,
 		GoVersion:          info.GoVersion,
-		GOOS:               info.GOOS,
-		GOARCH:             info.GOARCH,
-		LicenseCompileMode: licenseCompileMode,
+		GOOS:      info.GOOS,
+		GOARCH:    info.GOARCH,
 	})
 }
 
-func (s *Service) enforceAdminReportLicenseFeature(w http.ResponseWriter, r *http.Request, relPath string) bool {
-	var feature string
-	switch {
-	case strings.HasSuffix(r.URL.Path, "/security/export.csv"):
-		feature = LicenseFeatureAuditLogExport
-	case strings.HasSuffix(r.URL.Path, "/export.md"):
-		feature = LicenseFeatureUsageCSVExport
-	case adminReportUsesSavingsBaseline(relPath):
-		feature = LicenseFeatureUsageBaselineExport
-	default:
-		return true
-	}
-	if lerr := s.license.enforce(feature); lerr != nil {
-		writeJSON(w, lerr.StatusCode, map[string]any{"error": map[string]any{"type": lerr.Code, "message": lerr.Code}})
-		return false
-	}
-	return true
-}
 
 func adminReportUsesSavingsBaseline(relPath string) bool {
 	if relPath == "/api/savings" {

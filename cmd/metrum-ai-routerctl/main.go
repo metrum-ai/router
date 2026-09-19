@@ -358,30 +358,16 @@ func licenseCommand(args []string) {
 		die("usage: metrum-ai-routerctl license status --config PATH")
 	}
 	fs := flag.NewFlagSet("license status", flag.ExitOnError)
-	path := fs.String("config", "", "router configuration path")
+	_ = fs.String("config", "", "router configuration path")
 	fs.Parse(args[1:])
-	cfg := loadConfig(*path)
-	if !cfg.Server.License.Enabled {
-		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-license-status/v1", "enabled": false, "valid": true, "code": "license-disabled"})
-		return
-	}
-	raw, err := os.ReadFile(cfg.Server.License.Path)
-	if err != nil {
-		die("read license: %v", err)
-	}
-	envelope, err := router.ParseLicenseEnvelope(raw)
-	if err != nil {
-		die("parse license: %v", err)
-	}
-	if err := router.VerifyLicenseEnvelope(envelope, router.DefaultLicensePublicKeys(), time.Now().UTC()); err != nil {
-		die("verify license: %v", err)
-	}
-	if err := router.ValidateLicensePayload(envelope.Payload, cfg, router.DefaultLicensePublicKeys(), time.Now().UTC()); err != nil {
-		die("validate license: %v", err)
-	}
-	features := append([]string(nil), envelope.Payload.Features...)
-	sort.Strings(features)
-	writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-license-status/v1", "enabled": true, "valid": true, "code": "license-valid", "expires_at": envelope.Payload.ExpiresAt, "features": features})
+	// Runtime licensing was removed in 3.0.0; report ungated status for compatibility.
+	writeJSON(map[string]any{
+		"schema":  "metrum.ai/smartrouter-license-status/v1",
+		"enabled": false,
+		"valid":   true,
+		"code":    "license-removed",
+		"note":    "runtime licensing was removed in 3.0.0; server.license config is ignored",
+	})
 }
 
 func usageCommand(args []string) {

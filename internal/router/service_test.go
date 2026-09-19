@@ -1015,7 +1015,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		t.Fatalf("version status=%d body=%s", versionRR.Code, versionRR.Body.String())
 	}
 	versionBody := mustJSONMap(t, versionRR.Body.String())
-	for _, key := range []string{"version", "commit", "build_date", "go_version", "goos", "goarch", "license_compile_mode"} {
+	for _, key := range []string{"version", "commit", "build_date", "go_version", "goos", "goarch"} {
 		if versionBody[key] == "" {
 			t.Fatalf("version response missing %s: %#v", key, versionBody)
 		}
@@ -15270,6 +15270,5 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	licenseRequired = false
 	os.Exit(m.Run())
 }

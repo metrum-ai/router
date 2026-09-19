@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-19
+
+### Breaking Changes
+
+- Runtime licensing enforcement is removed. Existing `license.json` files are
+  inert and are never read; no migration is required.
+- Config key `server.license` is accepted and ignored with one startup warning
+  in 3.0.0; it will be rejected in 4.0.0.
+- Removed reachable `license-*` error codes from the request path.
+- Removed Prometheus series: `metrum_ai_router_license_valid`,
+  `metrum_ai_router_license_seconds_until_expiry`,
+  `metrum_ai_router_license_grace_active`,
+  `metrum_ai_router_license_validation_failures_total`.
+- Removed license fields from `/version`, readiness/admin metadata, and the
+  diagnostics schema (`license_compile_mode` and related `license_*` columns
+  are no longer populated).
+- No usage-database migration in this release (package-only rollback).
+
+### Notes
+
+- Packaging removal of license CLIs and Fleet license inventory lands in a
+  follow-up 3.0.0 packaging PR; this change makes the router ungated.
+
 ## [2.2.0] - 2026-09-19
 
 ### Features
@@ -120,7 +143,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/metrum-ai/router/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/metrum-ai/router/compare/v1.4.4...v2.0.0

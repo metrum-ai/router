@@ -422,7 +422,7 @@ false`; switch to `weighted` for a full dynamic-score rollback.
 
 ## License Errors
 
-`license-*` errors occur before upstream routing. `license-expired`, `license-feature-forbidden`, and `license-limit-exceeded` indicate a verified license that does not currently permit the request; other license errors normally mean the file is missing, malformed, unverifiable, for the wrong product, not yet valid, or the local clock moved backwards. Check `/readyz`, safe `request_usage.license_status` and `license_reason` fields, metrics-admin license gauges, and authorized `/admin/license/status`. Do not copy license payloads, signatures, private keys, or full config into tickets; use request IDs and safe status fields.
+Runtime licensing was removed in 3.0.0. The router no longer emits `license-*` error codes, and `server.license` configuration is ignored with a startup warning (rejected in 4.0.0). Existing `license.json` files are inert and need no migration.
 
 For issuance, renewal, replacement, volume top-up, offline support, and SKU-specific acceptance checks, use `docs/LICENSE_OPERATIONS.md`. The support case should record only safe scalar license metadata such as license ID, customer alias, SKU, key ID, expiry, grace flag, request ID, status, and reason.
 
