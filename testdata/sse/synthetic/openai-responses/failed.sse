@@ -1,0 +1,6 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_test","status":"in_progress"}}
+
+event: response.failed
+data: {"type":"response.failed","response":{"id":"resp_test","status":"failed","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}
+

@@ -1,0 +1,12 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_test","status":"in_progress"}}
+
+event: response.refusal.delta
+data: {"type":"response.refusal.delta","item_id":"msg_test","delta":"Synthetic refusal"}
+
+event: response.refusal.done
+data: {"type":"response.refusal.done","item_id":"msg_test","refusal":"Synthetic refusal"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}
+

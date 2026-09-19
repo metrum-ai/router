@@ -55,6 +55,8 @@ type logRecord struct {
 	TargetModel                        string                           `json:"target_model"`
 	TargetDialect                      string                           `json:"target_dialect"`
 	TargetRegion                       string                           `json:"target_region,omitempty"`
+	StreamMode                         string                           `json:"stream_mode,omitempty"`
+	StreamUnknownEvents                int                              `json:"stream_unknown_events,omitempty"`
 	Stream                             bool                             `json:"stream"`
 	Cache                              string                           `json:"cache"`
 	Status                             int                              `json:"status"`

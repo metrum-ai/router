@@ -1,0 +1,2 @@
+{"response": {"id": "mr_TEST", "status": "in_progress"}, "type": "response.created"}
+{"response": {"id": "mr_TEST", "status": "failed", "usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5}}, "type": "response.failed"}

@@ -69,10 +69,14 @@ those controls and the exact upstream model/API combinations they enable.
 - The in-process response cache is per process and is cleared by restart.
 - Dynamic-score conversation affinity is caller-isolated but process-local; it
   is cleared by restart and is not automatically shared between replicas.
-- Native incremental upstream streaming applies to same-dialect OpenAI Chat
-  and Anthropic Messages. OpenAI Responses and cross-dialect bridges use unary
-  upstream calls with router-encoded caller streaming.
-- After the first native SSE event, the HTTP response is committed. A later
+- Native incremental upstream streaming applies to same-dialect OpenAI Chat,
+  OpenAI Responses, and Anthropic Messages. Responses uses an event translator
+  that rewrites protocol IDs and drops and counts unknown events without
+  retaining response content. Cross-dialect bridges remain unary upstream with
+  router-encoded caller streaming. `server.streaming.translator: synthesized`
+  explicitly selects unary upstream and `writeIRStream` for streaming requests;
+  the default is `incremental` on implemented same-dialect paths.
+- After the first flushed caller SSE frame, the HTTP response is committed. A later
   failure cannot change the caller's `200`, append a reliable error envelope,
   or fall back to another target; clients must detect a missing terminal event.
 - TypeScript policies run synchronously in the serving process. Per-group
@@ -123,7 +127,8 @@ The relational configuration loader accepts deployment-owned identifier settings
 separately; identifier secrets are not stored in its database projection.
 
 Native Anthropic, Responses, and Chat SSE streams rewrite only protocol ID string
-fields, preserving content deltas and SSE framing. Responses function-call
+fields, preserving content deltas. Responses frames are reserialized; comments,
+SSE retry/ID fields, and unknown event types are not forwarded. Responses function-call
 `call_id` is transformed along with item IDs so tool results can round-trip.
 Ingress decodes prefixed `tool_call_id`, `tool_use_id`, `call_id`, and
 `previous_response_id`. Unprefixed IDs remain accepted. This change does not add
