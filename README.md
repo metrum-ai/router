@@ -1658,8 +1658,8 @@ unary upstream response.
 
 ## Software License And Notices
 
-The repository-root [LICENSE](LICENSE) contains the Apache License 2.0 terms
-for Metrum AI Router first-party content. Keep it together with
+Copyright 2026 Metrum AI. The repository-root [LICENSE](LICENSE) contains the
+Apache License 2.0 terms for Metrum AI Router first-party content. Keep it together with
 [NOTICE](NOTICE), the dependency and asset inventory in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), and the model-term boundaries
 in [MODEL_LICENSES.md](MODEL_LICENSES.md) when copying or redistributing a
