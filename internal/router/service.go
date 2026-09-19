@@ -34,6 +34,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Production image-URL checks fail closed quickly. Tests raise this in
+// service_test.go because the self-hosted runner resolver is often slower
+// than 500ms under parallel load.
+var defaultImageURLDNSTimeout = 500 * time.Millisecond
+
 type Service struct {
 	identifiers        IdentifierTransform
 	cfg                *Config
@@ -196,7 +201,7 @@ func New(cfg *Config) (*Service, error) {
 		httpClient:         newUpstreamHTTPClient(cfg.Server.Upstream),
 		externalPolicies:   map[string]*externalPolicyStrategy{},
 		imageURLLookup:     defaultEgressLookupIP,
-		imageURLDNSTimeout: 500 * time.Millisecond,
+		imageURLDNSTimeout: defaultImageURLDNSTimeout,
 		callersBySum:       map[string]*callerRuntime{},
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
@@ -2420,7 +2425,7 @@ func (s *Service) validateImageURLsForUpstream(ctx context.Context, req *IRReque
 	}
 	timeout := s.imageURLDNSTimeout
 	if timeout <= 0 {
-		timeout = 500 * time.Millisecond
+		timeout = defaultImageURLDNSTimeout
 	}
 	resolveCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
