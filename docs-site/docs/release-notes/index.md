@@ -14,6 +14,68 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v3.0.0 - 2026-09-19
+
+### Highlights
+
+- Runtime licensing is removed. The router no longer reads `license.json`,
+  and request handling is not gated on a license.
+- `server.license` is accepted and ignored, with one startup warning, through
+  3.0.0. It will be rejected in 4.0.0.
+- Packaged license binaries and license inventory commands are gone.
+  `metrum-ai-router-fleetctl` plan/deploy/status and
+  `metrum-ai-router-fleet-sign` deployment-intent signing remain.
+- Learned Routing Policy records per-phase sidecar latency histograms
+  (receive, tokenize, embed, featurize, predict, select, respond) without
+  logging prompt text (#216).
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Config | `server.license` is ignored with one startup warning; remove it before 4.0.0 |
+| License files | Existing `license.json` files are inert and are never read |
+| Packages | `metrum-ai-router-license` and `metrum-ai-router-customer-lifecycle` are no longer packaged. `metrum-ai-routerctl license` and `metrum-ai-router-fleetctl licenses` are removed |
+| Fleet | Plan, deploy, status, and deployment-intent signing are unchanged |
+| Metrics | License Prometheus series and license fields on `/version`, readiness, and diagnostics are removed |
+| Database | No usage-database migration (package-only rollback) |
+| LRP | Opt-in sidecar exposes phase latency histograms. This release does not publish Harbor timings |
+
+### Caller Impact
+
+- Requests are no longer rejected with `license-*` error codes.
+- `/version` and readiness metadata no longer include license fields.
+- Identifier rewrite, streaming translators, and model routing behavior are
+  unchanged from v2.2.0.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v3.0.0-linux-<arch>.tar.gz` (and the Docker
+   package if used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Remove automation that calls `metrum-ai-router-license`,
+   `metrum-ai-router-customer-lifecycle`, `metrum-ai-routerctl license`, or
+   `metrum-ai-router-fleetctl licenses`.
+3. Drop license mounts and license alert rules that depend on the removed
+   Prometheus series. Keep `server.license` only if you still need the 3.0.0
+   ignore-and-warn behavior.
+4. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide).
+
+### Validation
+
+- `/readyz` and `/version` report v3.0.0 and do not include license fields
+- One authenticated `/v1/models` call succeeds without a license file
+- Startup logs show a single warning if `server.license` is still set, and
+  no warning after it is removed
+- If LRP is enabled, phase latency histograms are present and contain no
+  prompt text
+
+### Rollback
+
+Roll back to GitHub Release **v2.2.0**. No usage-database restore is required.
+Licensing returns only with the v2.2.0 package; keep the previous license file
+if you may need that rollback.
+
 ## v2.2.0 - 2026-09-19
 
 ### Highlights

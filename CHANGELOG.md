@@ -32,6 +32,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signing remain.
 - No usage-database migration in this release (package-only rollback).
 
+### Features
+
+- Record Learned Routing Policy sidecar phase latency (receive, tokenize,
+  embed, featurize, predict, select, respond) as bounded histograms so
+  operators can attribute sidecar time without logging prompt text (#216).
+
+### Documentation
+
+- Add vLLM Semantic Router and NVIDIA Switchyard to the competitive
+  comparison (#212).
+- Propose catalog ownership for private targets versus the signed bundle
+  (#213).
+- Remove deployment host identifiers from public LRP evidence and tighten
+  public-face checks (#214).
+- Publish the Harbor phase-latency measurement protocol. Measured Harbor
+  timings are not included in this release (#216).
+
 ### Notes
 
 - Existing `license.json` files and legacy `server.license` config remain inert
