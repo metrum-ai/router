@@ -44,6 +44,7 @@ PUBLIC_DOC_PATHS = [
     ROOT / "docs" / "CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md",
     ROOT / "docs" / "TROUBLESHOOTING_RUNBOOK.md",
     ROOT / "docs" / "LICENSE_OPERATIONS.md",
+    ROOT / "docs" / "evidence",
     ROOT / "ops.env.example.json",
     ROOT / "config.example.yaml",
     ROOT / "deploy" / "Caddyfile.compose",
@@ -83,6 +84,36 @@ PRIVATE_PATTERNS = [
     ),
     ("private real caller-id prefix", re.compile(r"rtr_metrum_chetan_metrum-insights_")),
     ("private SSH detail", re.compile(r"(?:\bubuntu@[A-Za-z0-9_.-]+|~/.ssh/[^\s'\"`]+\.pem|\bssh\s+-i\s+[^\n]+\.pem)")),
+    # Broader infrastructure leakage (evidence artifacts, operator notes).
+    # Placeholder docs that use <angle-brackets> are skipped in rel_privacy_errors.
+    ("ssh identity invocation", re.compile(r"\bssh\s+-i\s+\S+")),
+    (
+        "user@public-IPv4 SSH target",
+        re.compile(r"\b[A-Za-z0-9._-]+@(?:\d{1,3}\.){3}\d{1,3}\b"),
+    ),
+    (
+        "public IPv4 address",
+        re.compile(
+            r"\b(?!(?:127|10|0)\.|192\.168\.|172\.(?:1[6-9]|2\d|3[0-1])\.)"
+            r"(?:\d{1,3}\.){3}\d{1,3}\b"
+        ),
+    ),
+    (
+        "cloud instance id field",
+        re.compile(
+            r'"(?:shadeform_)?instance_id(?:_cpu|_gpu)?"\s*:\s*"[0-9a-fA-F-]{8,}"'
+            r"|\b(?:shadeform_)?instance_id(?:_cpu|_gpu)?\b[^\n]{0,40}"
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        ),
+    ),
+    (
+        "live bearer or API token literal",
+        re.compile(
+            r"(?i)(?:authorization:\s*bearer\s+(?!\$\{|<|REPLACE)[A-Za-z0-9._\-+=/]{20,}"
+            r"|\b(?:sk-ant-|sk-or-v1-|sk_live_|sk_test_|gh[pousr]_)[A-Za-z0-9._\-]{12,})"
+        ),
+    ),
+    ("object-storage bucket URL", re.compile(r"\b(?:s3|gs)://[A-Za-z0-9._/-]+")),
     (
         "live production compose/config path",
         re.compile(
@@ -94,6 +125,14 @@ PRIVATE_PATTERNS = [
         ),
     ),
 ]
+
+# Patterns that must not fire on documentation placeholders such as
+# `ssh -i <operator-ssh-key> <user>@<operator-host>`.
+_PLACEHOLDER_INFRA_LABELS = {
+    "ssh identity invocation",
+    "user@public-IPv4 SSH target",
+    "public IPv4 address",
+}
 
 STALE_CURRENT_ROUTE_PATTERNS = [
     (
@@ -478,8 +517,11 @@ def rel_privacy_errors(rel: Path, line_no: int, line: str) -> Iterable[str]:
     # https://llm-api.apps.metrum.ai/docs remains documentable while /v1 and
     # bare-host API examples stay forbidden.
     privacy_line = canonical_product.strip_allowed_docs_urls(line)
+    placeholder_line = "<" in privacy_line and ">" in privacy_line
     if rel not in HISTORICAL_FILES:
         for label, pattern in PRIVATE_PATTERNS:
+            if placeholder_line and label in _PLACEHOLDER_INFRA_LABELS:
+                continue
             if pattern.search(privacy_line):
                 yield f"{rel}:{line_no}: contains {label}"
 

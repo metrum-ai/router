@@ -409,6 +409,7 @@ secret-check:
 	python3 scripts/render_tenant_linkerd_policy_test.py
 	python3 scripts/apply_tenant_network_policies_test.py
 	python3 scripts/check_license_skus.py
+	python3 scripts/check_docs_public_face_test.py
 	$(MAKE) validate-build-metadata
 
 
