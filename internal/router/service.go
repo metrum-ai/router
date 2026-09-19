@@ -2165,9 +2165,13 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
+	bridgeStream := bridge && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
 	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
 	if req.Stream {
 		rc.rec.StreamMode = "synthesized"
+		if bridgeStream {
+			rc.rec.StreamMode = "chat_upstream_to_responses_caller"
+		}
 		if nativeStream {
 			rc.rec.StreamMode = "native_same_dialect"
 		}
@@ -2176,7 +2180,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	var upReqBody []byte
 	var err error
 	if bridge {
-		upReqBody, err = encodeResponsesToChatBridge(target.Model, req, target)
+		bridgeReq := *req
+		bridgeReq.Stream = bridgeStream
+		upReqBody, err = encodeResponsesToChatBridge(target.Model, &bridgeReq, target)
 	} else if passthrough {
 		upReqBody, err = encodeToolPassthrough(outDialect, target.Model, req, target)
 	} else if chatResponsesBridge {
@@ -2342,12 +2348,15 @@ sendUpstream:
 		upErr.ResponseLen = attempt.ResponseBytes
 		return nil, attempt, upErr
 	}
-	if nativeStream {
+	if nativeStream || bridgeStream {
 		maxResponseBytes := int64(s.cfg.Server.Upstream.MaxResponseBytes)
 		if maxResponseBytes <= 0 {
 			maxResponseBytes = 32 << 20
 		}
 		proxy := proxyNativeSSE
+		if bridgeStream {
+			proxy = proxyChatUpstreamToResponsesCallerSSE
+		}
 		if normalizeDialect(outDialect) == "openai-responses" {
 			proxy = proxyResponsesSSE
 		}

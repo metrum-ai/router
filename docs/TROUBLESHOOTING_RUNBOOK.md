@@ -538,3 +538,15 @@ deployment-owned values):
 ```
 
 Prefer DB traces for request-level details because logs should remain sanitized and compact.
+
+For P2 streaming, the request bridge is `responses_to_chat`: an `openai-responses`
+caller uses an `openai-chat` upstream. Enable `responses_to_chat.streaming: true`
+on the validated target. With the default incremental translator, upstream Chat
+requests set `stream: true` and `stream_options.include_usage: true`; diagnostics
+report `chat_upstream_to_responses_caller`. Responses lifecycle events and tool
+argument deltas arrive incrementally, with usage on the terminal response.
+The first flushed caller frame commits the attempt, and caller cancellation
+cancels upstream. `server.streaming.translator: synthesized` restores the unary
+upstream path. No Responses session store or Chat-completion-ID continuation
+mapping is involved. The opposite direction remains gated by
+`chat-to-responses-streaming-unsupported`.

@@ -128,6 +128,10 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			return result, err
 		}
 		events, err = t.Next(up)
+		if accounting, ok := t.(interface{ UsageSnapshot() stream.Usage }); ok {
+			u := accounting.UsageSnapshot()
+			mergeStreamUsage(&result.Response.Usage, Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens})
+		}
 		if err != nil && !errors.Is(err, stream.ErrTerminal) {
 			return result, upstreamError{Class: "stream_translator_error", Message: "invalid upstream stream event", Err: err}
 		}
@@ -146,4 +150,12 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			return result, nil
 		}
 	}
+}
+
+func proxyChatUpstreamToResponsesCallerSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
+	t := &stream.ChatUpstreamToResponsesCaller{ResponseID: "resp_" + requestID(), Model: model, CreatedAt: time.Now().Unix()}
+	if len(transforms) > 0 {
+		t.IDs = transforms[0]
+	}
+	return runResponsesStream(ctx, w, body, model, maxBytes, rc, t)
 }

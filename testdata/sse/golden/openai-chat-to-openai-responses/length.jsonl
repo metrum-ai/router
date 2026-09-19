@@ -1,0 +1,8 @@
+{"response":{"created_at":0,"id":"mr_TEST","model":"test","object":"response","output":[],"status":"in_progress"},"sequence_number":0,"type":"response.created"}
+{"item":{"content":[],"id":"mr_TEST_1","role":"assistant","status":"in_progress","type":"message"},"output_index":0,"sequence_number":1,"type":"response.output_item.added"}
+{"content_index":0,"item_id":"mr_TEST_1","output_index":0,"part":{"annotations":[],"text":"","type":"output_text"},"sequence_number":2,"type":"response.content_part.added"}
+{"content_index":0,"delta":"partial","item_id":"mr_TEST_1","output_index":0,"sequence_number":3,"type":"response.output_text.delta"}
+{"content_index":0,"item_id":"mr_TEST_1","output_index":0,"sequence_number":4,"text":"partial","type":"response.output_text.done"}
+{"content_index":0,"item_id":"mr_TEST_1","output_index":0,"part":{"annotations":[],"text":"partial","type":"output_text"},"sequence_number":5,"type":"response.content_part.done"}
+{"item":{"content":[{"annotations":[],"text":"partial","type":"output_text"}],"id":"mr_TEST_1","role":"assistant","status":"incomplete","type":"message"},"output_index":0,"sequence_number":6,"type":"response.output_item.done"}
+{"response":{"created_at":0,"id":"mr_TEST","incomplete_details":{"reason":"max_output_tokens"},"model":"test","object":"response","output":[{"content":[{"annotations":[],"text":"partial","type":"output_text"}],"id":"mr_TEST_1","role":"assistant","status":"incomplete","type":"message"}],"status":"incomplete","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":2},"output_tokens":3,"output_tokens_details":{"reasoning_tokens":1},"total_tokens":8}},"sequence_number":7,"type":"response.incomplete"}
