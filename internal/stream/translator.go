@@ -9,9 +9,9 @@ package stream
 // numbers) but never the full response body.
 type StreamTranslator interface {
 	// Begin emits any preamble the caller dialect requires before the first
-	// upstream event is seen. Anthropic needs message_start with input_tokens;
-	// Responses needs response.created. est carries the reservation-time input
-	// token estimate, used where the caller dialect demands usage up front.
+	// upstream event is seen. Bridges may need message_start or response.created;
+	// same-dialect translators wait for the upstream preamble. est carries the
+	// reservation-time input estimate where the dialect needs usage up front.
 	Begin(est TokenEstimate) ([]Event, error)
 
 	// Next is called once per upstream event, in order. It returns zero or more

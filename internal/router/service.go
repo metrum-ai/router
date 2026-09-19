@@ -2165,7 +2165,13 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
-	nativeStream := nativeStreamEligible(req, callerDialect, outDialect)
+	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
+	if req.Stream {
+		rc.rec.StreamMode = "synthesized"
+		if nativeStream {
+			rc.rec.StreamMode = "native_same_dialect"
+		}
+	}
 	chatResponsesSession := bridgeSessionLookup{}
 	var upReqBody []byte
 	var err error
@@ -2341,7 +2347,11 @@ sendUpstream:
 		if maxResponseBytes <= 0 {
 			maxResponseBytes = 32 << 20
 		}
-		streamResult, streamErr := proxyNativeSSE(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
+		proxy := proxyNativeSSE
+		if normalizeDialect(outDialect) == "openai-responses" {
+			proxy = proxyResponsesSSE
+		}
+		streamResult, streamErr := proxy(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		_ = httpResp.Body.Close()
 		if cancel != nil {
 			cancel()
@@ -3250,6 +3260,9 @@ func (s *Service) writeIRResponse(w http.ResponseWriter, dialect string, resp *I
 }
 
 func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRResponse, rc *requestContext) {
+	if rc != nil {
+		rc.rec.StreamMode = "synthesized"
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")

@@ -7,7 +7,7 @@ import "errors"
 
 // Event is one SSE frame exchanged by StreamTranslator (upstream or caller).
 //
-// Stub: fields will grow with the framer and identity/bridge translators.
+// Framing fields not used by the caller protocol (comments, retry, id) are omitted.
 type Event struct {
 	// Name is the SSE "event:" value when present (Anthropic / Responses).
 	Name string `json:"name,omitempty"`
@@ -18,19 +18,15 @@ type Event struct {
 }
 
 // TokenEstimate is the reservation-time input estimate passed to Begin.
-//
-// Stub: aligned with reservation reconcile; extended when wired to callOne.
 type TokenEstimate struct {
-	InputTokens       int `json:"input_tokens,omitempty"`
-	TotalReserved     int `json:"total_reserved,omitempty"`
-	OutputCapTokens   int `json:"output_cap_tokens,omitempty"`
-	ToolSchemaTokens  int `json:"tool_schema_tokens,omitempty"`
-	ImageTokens       int `json:"image_tokens,omitempty"`
+	InputTokens      int `json:"input_tokens,omitempty"`
+	TotalReserved    int `json:"total_reserved,omitempty"`
+	OutputCapTokens  int `json:"output_cap_tokens,omitempty"`
+	ToolSchemaTokens int `json:"tool_schema_tokens,omitempty"`
+	ImageTokens      int `json:"image_tokens,omitempty"`
 }
 
 // Usage is reconciled token usage passed to Finish.
-//
-// Stub: mirrors the request-path usage shape used for reservation reconcile.
 type Usage struct {
 	InputTokens       int  `json:"input_tokens"`
 	OutputTokens      int  `json:"output_tokens"`
@@ -41,11 +37,14 @@ type Usage struct {
 
 // StopReason classifies why Finish was invoked and/or the dialect terminal
 // stop value when known.
-//
-// Stub: concrete vocabulary (complete / cancel / error / dialect stop tokens)
-// lands with the first translator wiring.
 type StopReason string
 
 // ErrTerminal commits a translator to Finish-only after Next. Wrapping or
 // returning this error from Next stops further Next calls.
 var ErrTerminal = errors.New("stream: terminal")
+
+const (
+	StopComplete StopReason = "complete"
+	StopCancel   StopReason = "cancel"
+	StopError    StopReason = "error"
+)

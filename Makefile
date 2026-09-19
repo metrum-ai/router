@@ -111,7 +111,7 @@ help:
 	@echo "  test-tenant-deploy-all Fleet offline contract tests"
 	@echo "  package-docker         build customer Docker packages"
 	@echo "  docs-build             build embedded public docs"
-	@echo "  sse-capture            capture live SSE fixtures into testdata/sse (scaffold)"
+	@echo "  sse-capture            generate synthetic SSE fixtures and replay goldens"
 
 test-reasoning-telemetry-postgres:
 	bash scripts/test_reasoning_telemetry_postgres.sh
@@ -378,8 +378,7 @@ adaptive-signal-policy-demo:
 dco-check-test:
 	python3 scripts/check_dco_test.py
 
-# Scaffold: live capture into testdata/sse/<provider>/<dialect>/<shape>.sse.
-# Implementation lands with the stream fixture harness (PR B).
+# Generate deterministic, credential-free synthetic Responses fixtures.
 sse-capture:
 	python3 scripts/sse_capture.py
 

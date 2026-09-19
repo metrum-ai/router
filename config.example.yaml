@@ -1,4 +1,6 @@
 server:
+  streaming:
+    translator: incremental # Or synthesized for unary upstream + caller SSE.
   identifiers:
     mode: rewrite
     transform:

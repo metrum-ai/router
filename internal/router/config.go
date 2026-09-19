@@ -35,7 +35,12 @@ type Config struct {
 	baseDir            string
 }
 
+type StreamingConfig struct {
+	Translator string `yaml:"translator" json:"translator"`
+}
+
 type ServerConfig struct {
+	Streaming           StreamingConfig           `yaml:"streaming" json:"streaming"`
 	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
@@ -952,6 +957,9 @@ func validEnvName(k string) bool {
 }
 
 func (c *Config) setDefaults() {
+	if c.Server.Streaming.Translator == "" {
+		c.Server.Streaming.Translator = "incremental"
+	}
 	if c.Server.Identifiers.Mode == "" {
 		c.Server.Identifiers.Mode = "rewrite"
 	}
@@ -1112,6 +1120,11 @@ func (c *Config) setDefaults() {
 }
 
 func (c *Config) Validate() error {
+	switch c.Server.Streaming.Translator {
+	case "", "incremental", "synthesized":
+	default:
+		return fmt.Errorf("server.streaming.translator must be incremental or synthesized")
+	}
 	if _, err := newIdentifierTransform(c.Server.Identifiers); err != nil {
 		return err
 	}
