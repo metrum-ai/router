@@ -54,6 +54,8 @@ jobs:
           sudo apt-get "${apt_sources[@]}" install -y bubblewrap
           umask 077
           mkdir -p /var/tmp/lrp-ci
+          # Self-hosted compose runners may reuse /var/tmp across jobs.
+          rm -rf /var/tmp/lrp-ci/rootfs
           cp services/learned-routing-policy/verifier-requirements.lock /var/tmp/lrp-ci/requirements.lock
           bash services/learned-routing-policy/lrp/judge/build_rootfs.sh \
             --base-image python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea \
