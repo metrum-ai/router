@@ -22,13 +22,12 @@
   "host": {
     "cloud": "massedcompute",
     "gpu_type": "L40S",
-    "instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
-    "left_running": true,
     "memory_in_gb_reported_by_sku": 256,
     "memory_in_gib_observed": 141,
     "num_gpus": 2,
     "region": "kansascity-usa-1",
-    "shade_instance_type": "L40Sx2"
+    "shade_instance_type": "L40Sx2",
+    "lifecycle_status": "operator_private"
   },
   "estimate_usd_full_portfolio": 7.105088968000001,
   "estimate_per_target": [
@@ -264,9 +263,7 @@
     "status_counts": {
       "ok": 349,
       "upstream_error": 151
-    },
-    "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
-    "shadeform_left_running": true
+    }
   },
   "portfolio_pivot_summary": {
     "completed_at": "2026-09-14T17:42:17.779965Z",
@@ -365,9 +362,7 @@
       "ok": 349,
       "upstream_error": 151
     },
-    "openai_used": false,
-    "shadeform_instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e",
-    "shadeform_left_running": true
+    "openai_used": false
   },
   "notes": [
     "N=100 example budget; not statistical sufficiency.",

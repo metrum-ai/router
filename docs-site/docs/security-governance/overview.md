@@ -51,6 +51,6 @@ disabled.
 - [Admin Authentication](../configuration/admin-authentication)
 - [Admin Authorization](../configuration/admin-authorization)
 - [PII Filtering](../configuration/pii-filtering)
-- [License-Protected Deployments](../licensing/)
+- [Software License And Third-Party Notices](../legal/software-licenses)
 - [Security And Trust](../evaluation/security-and-trust)
 - [Deployment Security Assessment](../evaluation/deployment-security-assessment)

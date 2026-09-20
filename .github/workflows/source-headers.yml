@@ -5,15 +5,21 @@ name: Source headers
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
+
+concurrency:
+  group: source-headers-${{ github.workflow }}-${{ github.ref }}
+  # Keep pull-request cancellation; never cancel a merge-group gate mid-flight.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - run: python3 scripts/check_source_headers.py

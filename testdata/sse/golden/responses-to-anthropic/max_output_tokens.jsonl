@@ -1,0 +1,6 @@
+{"message":{"content":[],"id":"mr_TEST","model":"test","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":5,"output_tokens":0}},"type":"message_start"}
+{"content_block":{"text":"","type":"text"},"index":0,"type":"content_block_start"}
+{"delta":{"text":"Hello café 🌍","type":"text_delta"},"index":0,"type":"content_block_delta"}
+{"index":0,"type":"content_block_stop"}
+{"delta":{"stop_reason":"max_tokens","stop_sequence":null},"type":"message_delta","usage":{"cache_read_input_tokens":2,"input_tokens":5,"output_tokens":3}}
+{"type":"message_stop"}

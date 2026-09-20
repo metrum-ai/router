@@ -60,8 +60,8 @@ flowchart LR
 |---|---|
 | AMD GPU Operator | Advertises `amd.com/gpu` (device-plugin mode). Does **not** serve tokens. Host-owned ROCm/amdgpu stays in place when `deviceConfig.spec.driver.enable` is `false`. |
 | vLLM Deployments | One GPU each. OpenAI-compatible `/v1` on port 8000. `--served-model-name` equals the router group. |
-| Metrum AI Router | Auth (SHA-256 of caller token), allow-list, static routing to in-cluster Service DNS, license check, usage SQLite, `/readyz`. **No** `amd.com/gpu` request. |
-| Helm wrapper | Issues a self-managed Ed25519 license on the operator host, writes Secret `smart-llmrouter-secrets` (`config.yaml`, `env.json`, `license.json`, `license.pub`), installs the generated chart. |
+| Metrum AI Router | Auth (SHA-256 of caller token), allow-list, static routing to in-cluster Service DNS, usage SQLite, `/readyz`. **No** `amd.com/gpu` request. |
+| Helm install | Writes Secret `smart-llmrouter-secrets` (`config.yaml`, `env.json`) and installs the generated chart. Runtime licensing was removed in 3.0.0. |
 
 ### Request path
 
@@ -124,7 +124,6 @@ deploy/kubernetes/overlays/k3s-amd-instinct-local-serving/
   gpu-operator-values.yaml          # AMD operator v1.5.1, driver off, DRA off
   serving/vllm-{tiny,chat,coder}-{deployment,service}.yaml
 scripts/test_k8s_amd_instinct_local_serving.sh
-scripts/helm_install_with_license.sh
 docs/K3S_AMD_INSTINCT_LOCAL_SERVING_E2E.md   # this file
 ```
 
@@ -133,7 +132,7 @@ Offline gate: `make test-k8s-amd-instinct-local-serving`.
 There is **no** `amd-instinct-local-serving` blueprint profile. Do not add one
 without a dedicated core-CLI change.
 
-### Auth and license (workflow)
+### Auth (workflow)
 
 There are **two** different secrets:
 
@@ -146,10 +145,6 @@ One smoke caller is enough for validation (`amd-k3s-smoke` /
 `onprem-validation` / `dev`). That is **not** a per-human user directory. Extra
 people get extra `callers generate` runs, then the runtime Secret is refreshed
 and the router restarted.
-
-Self-managed license SKU `oss-self-managed` with `signing.key_id: self-managed`.
-The wrapper creates `~/.local/state/genai-smart-router/license.key` on first
-use unless `LICENSE_SIGNING_KEY_FILE` is set.
 
 ## Preconditions
 
@@ -225,8 +220,6 @@ Build CLIs to a **temp** directory (not the repo):
 mkdir -p /tmp/smart-router-amd/bin /tmp/smart-router-amd/protected
 go build -o /tmp/smart-router-amd/bin/metrum-ai-routerctl \
   ./cmd/metrum-ai-routerctl
-go build -o /tmp/smart-router-amd/bin/metrum-ai-router-license \
-  ./cmd/metrum-ai-router-license
 
 VERSION="$(git rev-parse --short HEAD)"
 IMAGE_TAG="${VERSION}-linux-amd64"
@@ -360,22 +353,19 @@ kubectl -n smart-llmrouter exec deploy/vllm-tiny -- python3 -c \
   'import urllib.request,json; print(json.load(urllib.request.urlopen("http://127.0.0.1:8000/v1/models"))["data"][0]["id"])'
 ```
 
-## 7. Install Metrum AI Router (Helm + license)
+## 7. Install Metrum AI Router (Helm)
 
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-export LICENSE_CLI=/tmp/smart-router-amd/bin/metrum-ai-router-license
-scripts/helm_install_with_license.sh \
-  --kubeconfig "$KUBECONFIG" \
-  --namespace smart-llmrouter \
-  --release smart-llmrouter \
-  --chart /tmp/smart-router-amd/blueprint/charts/smart-llmrouter \
-  --entitlement /tmp/smart-router-amd/protected/entitlement.yaml \
-  --valid-for 12h \
-  --config /tmp/smart-router-amd/protected/config.yaml \
-  --env-file /tmp/smart-router-amd/protected/env.json \
-  --image-repository metrum-ai-router \
-  --image-tag "${IMAGE_TAG}"
+kubectl --kubeconfig "$KUBECONFIG" create namespace smart-llmrouter --dry-run=client -o yaml | kubectl --kubeconfig "$KUBECONFIG" apply -f -
+kubectl --kubeconfig "$KUBECONFIG" -n smart-llmrouter create secret generic smart-llmrouter-secrets \
+  --from-file=config.yaml=/tmp/smart-router-amd/protected/config.yaml \
+  --from-file=env.json=/tmp/smart-router-amd/protected/env.json \
+  --dry-run=client -o yaml | kubectl --kubeconfig "$KUBECONFIG" apply -f -
+helm upgrade --install smart-llmrouter /tmp/smart-router-amd/blueprint/charts/smart-llmrouter \
+  --kubeconfig "$KUBECONFIG" --namespace smart-llmrouter --create-namespace \
+  --set "image.repository=metrum-ai-router" --set "image.tag=${IMAGE_TAG}" \
+  --set "config.existingSecretKey=config.yaml" --set "runtimeSecret.name=smart-llmrouter-secrets"
 
 kubectl -n smart-llmrouter rollout status deployment/smart-llmrouter --timeout=10m
 kubectl -n smart-llmrouter get deployment smart-llmrouter -o json |

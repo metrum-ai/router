@@ -23,7 +23,6 @@ _PACKAGE_BINARY_PATHS = {f"bin/{name}" for name in product.PACKAGE_BINARIES}
 BINARY_PACKAGE_FILES = _PACKAGE_BINARY_PATHS | {
     "config/config.example.yaml",
     "config/env.example.json",
-    "config/enterprise-license-skus.json",
     "config/scripts/router.ts",
     "caddy/Caddyfile",
     "LICENSE",

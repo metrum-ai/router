@@ -1,0 +1,24 @@
+event: response.created
+data: {"type": "response.created", "response": {"id": "resp_private", "created_at": 123}, "sequence_number": 0}
+
+event: response.output_item.added
+data: {"type": "response.output_item.added", "output_index": 2, "item": {"type": "function_call", "id": "fc_a", "call_id": "call_a", "name": "weather", "arguments": ""}, "sequence_number": 3}
+
+event: response.output_item.added
+data: {"type": "response.output_item.added", "output_index": 5, "item": {"type": "function_call", "id": "fc_b", "call_id": "call_b", "name": "time", "arguments": ""}, "sequence_number": 6}
+
+event: response.function_call_arguments.delta
+data: {"type": "response.function_call_arguments.delta", "output_index": 2, "item_id": "fc_a", "delta": "{\"city\":", "sequence_number": 9}
+
+event: response.function_call_arguments.delta
+data: {"type": "response.function_call_arguments.delta", "output_index": 5, "item_id": "fc_b", "delta": "{\"zone\":\"UTC\"}", "sequence_number": 12}
+
+event: response.function_call_arguments.delta
+data: {"type": "response.function_call_arguments.delta", "output_index": 2, "item_id": "fc_a", "delta": "\"Paris\"}", "sequence_number": 15}
+
+event: response.function_call_arguments.done
+data: {"type": "response.function_call_arguments.done", "output_index": 2, "arguments": "{\"city\":\"Paris\"}", "sequence_number": 18}
+
+event: response.completed
+data: {"type": "response.completed", "response": {"id": "resp_private", "usage": {"input_tokens": 5, "output_tokens": 3, "total_tokens": 8, "input_tokens_details": {"cached_tokens": 2}, "output_tokens_details": {"reasoning_tokens": 1}}}, "sequence_number": 21}
+

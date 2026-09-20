@@ -1,0 +1,12 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_test","status":"in_progress"}}
+
+event: vendor.future
+data: {"type":"vendor.future","secret":"synthetic"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"ok"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_test","status":"completed","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}
+

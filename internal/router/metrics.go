@@ -148,7 +148,7 @@ func sanitizeMetricLabel(value, fallback string) string {
 	return out
 }
 
-func (m *metricsStore) Prometheus(license *licenseManager, trafficShape *trafficShapeManager, migration MigrationStatus) string {
+func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration MigrationStatus) string {
 	if m == nil {
 		return ""
 	}
@@ -182,10 +182,6 @@ func (m *metricsStore) Prometheus(license *licenseManager, trafficShape *traffic
 	writeHelpType(&b, "metrum_ai_router_cache_max_bytes", "Configured cache maximum bytes.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_cache_occupancy_ratio", "Latest observed cache occupancy ratio.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_build_info", "Build information for the running router binary.", "gauge")
-	writeHelpType(&b, "metrum_ai_router_license_valid", "Current license validity.", "gauge")
-	writeHelpType(&b, "metrum_ai_router_license_seconds_until_expiry", "Seconds until current license expiry.", "gauge")
-	writeHelpType(&b, "metrum_ai_router_license_grace_active", "Whether license validation grace is active.", "gauge")
-	writeHelp(&b, "metrum_ai_router_license_validation_failures_total", "License validation failures by safe reason.")
 	writeHelpType(&b, "metrum_ai_router_traffic_shape_queue_depth", "Current traffic-shaping queue depth by caller and scope.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_migration_schema_version", "Current migration schema version by scope.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_migration_data_version", "Current migration data version by scope.", "gauge")
@@ -243,35 +239,6 @@ func (m *metricsStore) Prometheus(license *licenseManager, trafficShape *traffic
 		}
 	}
 	fmt.Fprintf(&b, "metrum_ai_router_build_info{%s} 1\n", buildInfoLabels())
-	if license != nil {
-		st, failures := license.metrics()
-		valid := int64(0)
-		if st.Valid {
-			valid = 1
-		}
-		grace := int64(0)
-		if st.GraceActive {
-			grace = 1
-		}
-		writeMetric(&b, "metrum_ai_router_license_valid", "", valid)
-		seconds := int64(0)
-		if !st.ExpiresAt.IsZero() {
-			seconds = int64(st.ExpiresAt.Sub(time.Now().UTC()).Seconds())
-			if seconds < 0 {
-				seconds = 0
-			}
-		}
-		writeMetric(&b, "metrum_ai_router_license_seconds_until_expiry", "", seconds)
-		writeMetric(&b, "metrum_ai_router_license_grace_active", "", grace)
-		reasons := make([]string, 0, len(failures))
-		for reason := range failures {
-			reasons = append(reasons, reason)
-		}
-		sort.Strings(reasons)
-		for _, reason := range reasons {
-			writeMetric(&b, "metrum_ai_router_license_validation_failures_total", `reason="`+escapeLabel(reason)+`"`, failures[reason])
-		}
-	}
 	for _, depth := range trafficShape.QueueDepths() {
 		labels := fmt.Sprintf(`scope="%s",caller_id="%s"`, escapeLabel(sanitizeMetricLabel(depth.Scope, "unknown")), escapeLabel(sanitizeMetricLabel(depth.CallerID, "unknown")))
 		writeMetric(&b, "metrum_ai_router_traffic_shape_queue_depth", labels, int64(depth.Depth))

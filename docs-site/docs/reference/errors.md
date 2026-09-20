@@ -74,26 +74,6 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 | `report-query-failed` | 500 | The report query failed. | Retry later or ask an administrator to inspect the request ID. | Inspect usage DB health and `admin_report_query_failed` router logs; PostgreSQL failures include safe `pg_code`, `pg_severity`, and bounded `pg_message` fields when available. |
 | `content-forbidden` | 403 | A content-capture maintenance endpoint was requested without `content:capture` authorization. | Do not call content-capture admin endpoints from application clients. | Grant authorization policy `content:capture` `delete`/`purge` policy or use a compatible `content_admin: true` operator caller. |
 | `admin-forbidden` | 403 | A browser-admin route was requested by an authenticated Basic subject without the required route permission. | Ask the administrator to grant the appropriate admin policy or route permission. | Verify the subject and authorization policy before enabling broader admin surfaces. |
-| `license-missing` | 503 | License enforcement is enabled but no readable license file is available. | Contact the router operator with the request ID. | Mount the issued license file at `server.license.path` and verify permissions. |
-| `license-invalid` | 503 | The license file is malformed, unverifiable, uses an unknown key, or otherwise cannot be trusted. | Contact the router operator with the request ID. | Replace the license with a valid operator-issued file; do not expose payloads or signatures in tickets. |
-| `license-expired` | 403 | The license signature is valid but the license is expired. | Contact the router operator. | Renew or restore a valid license file, then restart or wait for recheck. |
-| `license-not-yet-valid` | 503 | The license `not_before` time is in the future. | Contact the router operator. | Check the issued license dates and system clock. |
-| `license-product-mismatch` | 503 | The license is not issued for Metrum AI Router. | Contact the router operator. | Install the correct product license. |
-| `license-feature-forbidden` | 403 | The request uses a feature not enabled by the current license. | Use an enabled feature or ask the operator for access. | Review licensed feature gates for routing, reporting, dynamic score, TypeScript, external policy, contracts, rollups, or content capture. |
-| `license-limit-exceeded` | 403 | The deployment exceeds a licensed limit such as model groups or callers. | Contact the router operator. | Reduce configured usage or update the license. |
-| `license-volume-exceeded` | 429 | The license-wide lifetime request or token budget is exhausted. | Retry only after the operator installs a replacement or expanded license. | Review the license usage counters and install the contracted replacement or top-up license. |
-| `license-window-exceeded` | 429 | The license-wide rolling request or token window is at its ceiling. | Retry after the licensed window clears. | Inspect current traffic and the license window limits. |
-| `license-concurrency-exceeded` | 429 | The router-wide licensed in-flight request limit is reached. | Retry with backoff. | Inspect current in-flight traffic or update the license limit. |
-| `license-skin-forbidden` | 403 | The license allows the requested model group but not the requested API skin. | Use an API shape allowed for the deployment. | Review `allowed_skins` in the active license. |
-| `license-admin-limit-exceeded` | 403 | The configured admin subject count exceeds the licensed limit. | Contact the router operator. | Reduce configured admins or install a license with a larger admin limit. |
-| `license-retention-limit-exceeded` | 403 | Configured retention exceeds the licensed maximum retention days. | Contact the router operator. | Lower retention settings or install a license with the contracted retention limit. |
-| `license-instance-limit-exceeded` | 503 | The running instance is outside the licensed instance scope. | Contact the router operator. | Install the license issued for this deployment instance or correct instance binding. |
-| `license-revoked` | 403 | The active signed revocation bundle revokes the current license. | Contact the router operator. | Install a replacement operator-issued license or update the revocation bundle. |
-| `license-suspended` | 403 | The active signed revocation bundle suspends the current license. | Contact the router operator. | Resolve the deployment-policy hold or install an updated license and revocation bundle. |
-| `license-superseded` | 403 | The active signed revocation bundle marks the current license as superseded. | Contact the router operator. | Install the replacement license identified through the approved support channel. |
-| `license-revocation-required` | 503 | Revocation enforcement requires a current signed bundle, but no readable bundle is available. | Contact the router operator. | Mount the required signed revocation bundle at `server.license.revocation.path`. |
-| `license-revocation-check-failed` | 503 | The configured revocation bundle is malformed, expired, untrusted, invalidly signed, or rolled back to an older epoch. | Contact the router operator. | Replace the revocation bundle with a current operator-issued signed bundle. |
-| `license-clock-rollback` | 503 | The local wall clock moved backwards beyond tolerance. | Contact the router operator. | Correct system time and inspect the license state file. |
 
 ## Eligibility Requirements
 
@@ -176,7 +156,7 @@ as a cancellation rather than a fallback opportunity. A normally completed
 Chat stream may end with `[DONE]` or a terminal `finish_reason`; a requested
 `stream_options.include_usage` usage event is forwarded when the upstream
 provides it; the router does not synthesize a missing caller-visible usage
-event. A committed stream that later fails releases its quota/license
+event. A committed stream that later fails releases its quota
 reservation rather than charging partially observed streamed tokens. Native
 PII-filtered streams preserve placeholders because safe
 restoration cannot be performed independently across arbitrary SSE chunk
@@ -325,3 +305,16 @@ The evidence bundle also reports diagnostic completeness so operators can tell w
 For provider quota or billing incidents, look for `request_attempts.error_class = 'upstream_quota_exhausted'` and terminal `request_errors.error_type = 'upstream-quota-exhausted'`. A successful request can still have an `upstream_quota_exhausted` attempt row when fallback succeeded.
 
 If governed content capture is enabled by an operator, captured content lives in separate content-capture tables and remains outside usage reports and diagnostics. Delete and retention-purge maintenance endpoints require `content:capture` `delete`/`purge` authorization; delete-by-request is scoped to the captured row's caller project/environment domain.
+
+## Identifier transformation errors
+
+| Error | Status | Meaning |
+| --- | --- | --- |
+| `identifier-transform-unavailable` | 503 | Rewrite mode has no initialized transform; routing fails closed. |
+| `invalid-tool-call-id` | 400 | A prefixed ingress identifier is malformed, expired/unknown, or fails authentication. |
+| `not-ready` | 503 on `/readyz` | Configuration or identifier transform is unavailable; validation details are never exposed. `/healthz` remains 200. |
+
+Decode telemetry contains only `id-decode-unknown-epoch`,
+`id-decode-auth-failed`, or `id-decode-malformed`, never the rejected identifier
+or key material. Configuration rejection `F-011:
+pii-filter-redact-and-restore-unsupported` disables unsupported PII restoration.

@@ -38,7 +38,6 @@ flowchart LR
 - `config.yaml`, based on `config.minimal.example.yaml` for local trials or
   the shipped `config.example.yaml` for production-shaped catalogs;
 - protected `env.json` or equivalent secret injection for provider keys;
-- an operator-generated `license.json` and its configured public key;
 - at least one caller token and allowed deployment-defined model group;
 - persistent state and usage storage;
 - a TLS and network-access plan.
@@ -49,7 +48,7 @@ keys, full production configs, or customer data.
 ## Installation Flow
 
 1. Verify the package checksum, architecture, notices, and expected contents.
-2. Back up any existing config, state, license state, and usage database.
+2. Back up any existing config, state, and usage database.
 3. Install the immutable binary or image and protected runtime files.
 4. Run the release's non-serving database migration gate when required.
 5. Start one router writer when using SQLite.
@@ -62,6 +61,6 @@ keys, full production configs, or customer data.
 
 Before changing production, know whether the release permits package rollback
 against the current database or requires restoration of the pre-migration
-backup. Restore the previous artifact, reviewed config, runtime license inputs,
+backup. Restore the previous artifact, reviewed config,
 and database snapshot as one coherent release state, then repeat the same
 smokes. See the [Upgrade Guide](/docs/release-notes/upgrade-guide).

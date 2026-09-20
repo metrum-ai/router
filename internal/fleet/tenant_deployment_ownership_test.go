@@ -156,7 +156,6 @@ func TestEKSTransitionOwnershipRelabelsAndPreservesPVC(t *testing.T) {
 	kube := k8sfake.NewSimpleClientset(
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "llm-api", Labels: cloneStringMap(labels)}},
 		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "router-runtime", Namespace: "llm-api", Labels: cloneStringMap(labels)}},
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "router-license", Namespace: "llm-api", Labels: cloneStringMap(labels)}},
 		&corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: "router-state", Namespace: "llm-api", Labels: cloneStringMap(labels)},
 			Spec:       corev1.PersistentVolumeClaimSpec{AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}},

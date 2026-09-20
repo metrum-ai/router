@@ -170,7 +170,7 @@ func (s *Service) shapeHMAC(scope string, payload any) string {
 	}
 	keyMaterial := "request-shape-telemetry|" + scope
 	if s != nil && s.cfg != nil {
-		keyMaterial += "|" + routingConfigFingerprint(s.cfg) + "|" + s.cfg.StatePath + "|" + s.cfg.Server.License.InstanceFingerprint
+		keyMaterial += "|" + routingConfigFingerprint(s.cfg) + "|" + s.cfg.StatePath
 	}
 	sum := sha256.Sum256([]byte(keyMaterial))
 	mac := hmac.New(sha256.New, sum[:])

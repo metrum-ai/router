@@ -16,10 +16,8 @@ here.
 ## Host
 
 - Shadeform SKU: `L40Sx2` (massedcompute, kansascity-usa-1)
-- Instance id (left running): `9963d127-f312-4a37-b72d-91b42607cf8e`
 - SKU memory: 256 GB advertised; host observed about 141 GiB
 - GPUs: 2x NVIDIA L40S
-- Work root on instance: `/var/tmp/lrp-retake` (mode 700)
 
 ## Source and sample
 
@@ -73,4 +71,4 @@ Per target:
   runs. Repo abort thresholds are not a billing hard stop.
 - Teacher-forced continuation agreement is not end-to-end task success.
 - Example corpus evidence does not transfer to unsampled workloads.
-- Shadeform instance left running for resume.
+- Host lifecycle status for the evidence GPU SKU is `operator_private`.

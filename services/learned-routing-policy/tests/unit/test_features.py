@@ -139,6 +139,61 @@ def test_real_onnx_tokenizer_quantized_inference(tmp_path):
         ONNXEmbedder(model, tokenizer, threads=8)
 
 
+def test_onnx_left_truncation_marks_tokenizer_saturation(tmp_path):
+    from lrp.phase_metrics import (
+        PhaseSpans,
+        bind_phase_spans,
+        clear_phase_spans,
+    )
+
+    model, tokenizer = tiny_onnx(tmp_path)
+    embedder = ONNXEmbedder(model, tokenizer, max_seq_len=512)
+    spans = PhaseSpans()
+    bind_phase_spans(spans)
+    try:
+        embedder.encode("old " * 10000 + "latest")
+        assert spans.tokenizer_saturated is True
+        assert "tokenize" in spans.spans and "embed" in spans.spans
+        assert spans.spans["tokenize"] >= 0.0
+        assert spans.spans["embed"] >= 0.0
+    finally:
+        clear_phase_spans()
+
+    short = PhaseSpans()
+    bind_phase_spans(short)
+    try:
+        embedder.encode("latest")
+        assert short.tokenizer_saturated is False
+        assert len(embedder.tokenizer.encode("latest").ids) < 512
+    finally:
+        clear_phase_spans()
+
+
+def test_feature_builder_phase_accounting_synthetic():
+    from lrp.features import FeatureBuilder, SyntheticEmbedder
+    from lrp.phase_metrics import PhaseSpans, bind_phase_spans, clear_phase_spans
+
+    builder = FeatureBuilder(SyntheticEmbedder())
+    spans = PhaseSpans()
+    bind_phase_spans(spans)
+    try:
+        vector = builder.build(
+            {
+                "text": "word " * 600,
+                "context": {"estimatedTokens": 50},
+                "request": {"messages": [{"role": "user", "content": "word " * 600}]},
+            }
+        )
+        assert vector.shape[0] > 0
+        assert "featurize" in spans.spans
+        assert "tokenize" in spans.spans
+        assert "embed" in spans.spans
+        assert spans.token_estimate == 50.0
+        assert spans.tokenizer_saturated is True
+    finally:
+        clear_phase_spans()
+
+
 def test_protected_io_rejects_repo_symlink_hardlink_and_public_mode(tmp_path):
     import os
 

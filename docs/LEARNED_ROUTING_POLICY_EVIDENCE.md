@@ -22,7 +22,8 @@ deployment or broad promotion is established by these results.
 | [public-inference.json](evidence/learned-routing-policy/public-inference.json) | E01–E10/native-shadow results plus two actual request decisions, predictions, estimated costs, feature contributions and successful upstream readback |
 | [public-bge-benchmark.json](evidence/learned-routing-policy/public-bge-benchmark.json) | Official model/tokenizer provenance and hashes, quantization, hardware/load qualifications and all four measured stage-latency scenarios |
 | [public-tests.json](evidence/learned-routing-policy/public-tests.json) | Locally verified aggregate result: 79 tests, zero failures/errors/skips, actual verifier isolation required |
-| [routing-benchmark.json](evidence/learned-routing-policy/routing-benchmark.json) | Issues #159/#162: ephemeral Shadeform CPU A/B/C (device=cpu) + keep-alive GPU A/B/C Harbor (device=cuda:0); paid portfolio reused. |
+| [routing-benchmark.json](evidence/learned-routing-policy/routing-benchmark.json) | Issues #159/#162: ephemeral Shadeform CPU A/B/C (device=cpu) + GPU A/B/C Harbor (device=cuda:0); paid portfolio reused. |
+| [harbor-phase-latency-protocol.md](evidence/learned-routing-policy/harbor-phase-latency-protocol.md) | W2 / PR #216: instrumented Harbor phase-latency protocol; live publish blocked pending GPU host (`host_lifecycle_status: operator_private`). |
 | [seed-example-corpus.json](evidence/learned-routing-policy/seed-example-corpus.json) | Issue #157 portfolio pivot: N=100 Shadeform paid portfolio (OpenRouter Qwen+MiniMax, Fireworks kimi, Baseten GLM; no OpenAI). |
 
 Successful learned-routing validation workflows also attach the generated

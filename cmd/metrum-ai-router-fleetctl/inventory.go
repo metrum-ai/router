@@ -26,22 +26,6 @@ func fleetTenants(args []string) {
 	}
 }
 
-func fleetLicenses(args []string) {
-	if len(args) == 0 {
-		die("usage: metrum-ai-router-fleetctl licenses <list|get|register> [flags]")
-	}
-	switch args[0] {
-	case "list":
-		fleetLicensesList(args[1:])
-	case "get":
-		fleetLicensesGet(args[1:])
-	case "register":
-		fleetLicensesRegister(args[1:])
-	default:
-		die("unsupported licenses command %q", args[0])
-	}
-}
-
 func fleetTenantsList(args []string) {
 	fs := flag.NewFlagSet("tenants list", flag.ExitOnError)
 	registry := fs.String("registry", defaultRegistryPath(), "private local Fleet lifecycle SQLite path")
@@ -109,76 +93,4 @@ func fleetTenantsSync(args []string) {
 		"jobs_synced": count,
 		"tenants":     tenants,
 	})
-}
-
-func fleetLicensesList(args []string) {
-	fs := flag.NewFlagSet("licenses list", flag.ExitOnError)
-	customerID := fs.String("customer-id", "", "optional customer_id filter")
-	registry := fs.String("registry", defaultRegistryPath(), "private local Fleet lifecycle SQLite path")
-	output := fs.String("output", "json", "safe output format (json)")
-	fs.Parse(args)
-	requireJSONOutput(*output)
-	store, err := fleet.OpenTenantDeploymentStoreReadOnly(*registry)
-	if err != nil {
-		die("open deployment registry: %v", err)
-	}
-	defer store.Close()
-	licenses, err := store.ListFleetLicenses(context.Background(), *customerID)
-	if err != nil {
-		die("list fleet licenses: %v", err)
-	}
-	writeJSON(map[string]any{
-		"schema":   "metrum.ai/smartrouter-fleet-license-list/v1",
-		"licenses": licenses,
-	})
-}
-
-func fleetLicensesGet(args []string) {
-	fs := flag.NewFlagSet("licenses get", flag.ExitOnError)
-	licenseID := fs.String("license-id", "", "exact license_id")
-	registry := fs.String("registry", defaultRegistryPath(), "private local Fleet lifecycle SQLite path")
-	output := fs.String("output", "json", "safe output format (json)")
-	fs.Parse(args)
-	requireJSONOutput(*output)
-	if strings.TrimSpace(*licenseID) == "" {
-		die("license-id is required")
-	}
-	store, err := fleet.OpenTenantDeploymentStoreReadOnly(*registry)
-	if err != nil {
-		die("open deployment registry: %v", err)
-	}
-	defer store.Close()
-	license, err := store.GetFleetLicense(context.Background(), *licenseID)
-	if err != nil {
-		die("get fleet license: %v", err)
-	}
-	writeJSON(license)
-}
-
-func fleetLicensesRegister(args []string) {
-	fs := flag.NewFlagSet("licenses register", flag.ExitOnError)
-	summaryFile := fs.String("summary-file", "", "mode-0600 router-license safe-summary JSON")
-	payloadSHA := fs.String("payload-sha256", "", "optional 64-hex digest of the signed license payload")
-	actorRole := fs.String("actor-role", "fleet-lifecycle-admin", "safe actor role for the inventory event")
-	registry := fs.String("registry", defaultRegistryPath(), "private local Fleet lifecycle SQLite path")
-	output := fs.String("output", "json", "safe output format (json)")
-	fs.Parse(args)
-	requireJSONOutput(*output)
-	if strings.TrimSpace(*summaryFile) == "" {
-		die("summary-file is required")
-	}
-	summary, err := fleet.LoadFleetLicenseSafeSummaryFile(*summaryFile)
-	if err != nil {
-		die("load license summary: %v", err)
-	}
-	store, err := fleet.OpenTenantDeploymentStore(*registry)
-	if err != nil {
-		die("open deployment registry: %v", err)
-	}
-	defer store.Close()
-	view, err := store.RegisterFleetLicenseFromSafeSummary(context.Background(), summary, *payloadSHA, *actorRole)
-	if err != nil {
-		die("register fleet license: %v", err)
-	}
-	writeJSON(view)
 }

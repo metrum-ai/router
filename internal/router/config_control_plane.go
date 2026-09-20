@@ -173,7 +173,9 @@ func ConfigControlPlaneMigrationRunner(cfg UsageDBConfig) (*migrationRunner, fun
 // It is intentionally read-only and fails closed for unsupported relational
 // fields rather than silently dropping configuration. Caller token hashes are
 // retained for verification; raw caller tokens are never represented here.
-func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string) (*Config, error) {
+// Optional identifier settings carry deployment-owned secrets outside the DB.
+// Omitting them fails validation because rewrite mode requires a key.
+func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...IdentifierConfig) (*Config, error) {
 	if db == nil {
 		return nil, errors.New("config control-plane database is required")
 	}
@@ -199,12 +201,6 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string) (*Config, error) {
 	cfg := &Config{Server: ServerConfig{
 		Listen:            server.Listen,
 		DefaultModelGroup: server.DefaultModelGroup,
-		License: LicenseConfig{
-			Enabled:    server.LicenseEnabled,
-			Path:       server.LicensePath,
-			StatePath:  server.LicenseStatePath,
-			enabledSet: true,
-		},
 	}, StatePath: server.StatePath, Provider: map[string]ProviderConfig{}, Models: map[string]ModelGroup{}}
 	var providers []providerRow
 	if err := db.Where("config_set_id = ?", set.ID).Order("provider_name ASC").Find(&providers).Error; err != nil {
@@ -306,6 +302,13 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string) (*Config, error) {
 		cfg.Callers = append(cfg.Callers, caller)
 	}
 	cfg.setDefaults()
+	// Identifier secrets remain deployment-owned, outside the relational projection.
+	if len(identifiers) > 1 {
+		return nil, errors.New("only one identifier configuration is allowed")
+	}
+	if len(identifiers) == 1 {
+		cfg.Server.Identifiers = identifiers[0]
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate active config set %q: %w", set.ID, err)
 	}

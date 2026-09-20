@@ -115,7 +115,6 @@ At minimum, alert on:
 - fallback rate above the deployment baseline;
 - request latency above the deployment service target;
 - metrics scrape failures;
-- license status entering grace, denied, expired, missing, or invalid states;
 - usage database write failures.
 
 Tune thresholds by workload. Developer tools and agentic clients can produce large-context bursts that look different from chat or extraction workloads.
@@ -123,5 +122,5 @@ Tune thresholds by workload. Developer tools and agentic clients can produce lar
 ## Troubleshooting Entry Points
 
 - [Request Troubleshooting](../troubleshooting/requests) for one failed or slow request.
-- [Licensing Troubleshooting](../troubleshooting/licensing) for `license-*` errors or readiness failures.
 - [Operational Troubleshooting](../troubleshooting/) for install, routing, quota, metrics, and provider issues.
+- [Software Licenses](../legal/software-licenses) for the 3.0.0 licensing removal. Runtime `license-*` errors are no longer emitted.
