@@ -21,11 +21,14 @@ Harbor promotion needs repository secrets `HARBOR_ROUTER_TOKEN` and `HARBOR_ROUT
 
 Also require:
 
-- At least one approving review
-- Dismiss stale reviews on new commits
+- Verified commit signatures
+- CodeQL results (default setup) with no high-or-higher alerts / errors
+- Dismiss stale reviews on new commits when reviews are required
 - Restrict who can push / bypass (admins only, or none)
 - Do not allow force pushes or deletions
 - Merge queue enabled, and "only merge non-failing pull requests" left enabled so a group merges only after its combined checks pass
+
+Self-hosted runners for these checks must include the `router` label (`self-hosted,Linux,X64,router`). Use bare-metal (non-container) runners; do not register Docker-based Actions runners for this pool. The Go pull-request job installs `uv` via `astral-sh/setup-uv`. Host Docker is optional tooling for the LRP rootfs test case when available; it is not a runner requirement.
 
 Negative gate test (closure evidence for U02/A2):
 
