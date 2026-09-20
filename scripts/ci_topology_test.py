@@ -63,9 +63,17 @@ def assert_pull_request_cancellation() -> None:
         if not re.search(r"(?m)^  pull_request:\s*$", text):
             continue
         require(
-            "cancel-in-progress: true" in text,
+            re.search(
+                r"cancel-in-progress:\s*(true|\$\{\{\s*github\.event_name\s*!=\s*'merge_group'\s*\}\})",
+                text,
+            ),
             f"{path.name} runs on pull_request without cancel-in-progress",
         )
+        if re.search(r"(?m)^  merge_group:\s*$", text):
+            require(
+                "github.event_name != 'merge_group'" in text,
+                f"{path.name} cancels merge_group runs and can thrash the queue",
+            )
 
 
 def assert_make_tiers() -> None:

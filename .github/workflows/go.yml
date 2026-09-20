@@ -12,7 +12,8 @@ on:
 # The combined SHA runs test-fast inside the deterministic gate.
 concurrency:
   group: go-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep pull-request cancellation; never cancel a merge-group gate mid-flight.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read
