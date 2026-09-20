@@ -28,7 +28,7 @@ Also require:
 - Do not allow force pushes or deletions
 - Merge queue enabled, and "only merge non-failing pull requests" left enabled so a group merges only after its combined checks pass
 
-Self-hosted runners for these checks must include the `router` label (`self-hosted,Linux,X64,router`). The Go pull-request job installs `uv` via `astral-sh/setup-uv`; bare-metal hosts still need Docker for LRP sandbox jobs when those path filters match.
+Self-hosted runners for these checks must include the `router` label (`self-hosted,Linux,X64,router`). Use bare-metal (non-container) runners; do not register Docker-based Actions runners for this pool. The Go pull-request job installs `uv` via `astral-sh/setup-uv`. Host Docker is optional tooling for the LRP rootfs test case when available; it is not a runner requirement.
 
 Negative gate test (closure evidence for U02/A2):
 

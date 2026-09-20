@@ -167,6 +167,9 @@ def main() -> int:
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")
+    body = script.read_text(encoding="utf-8")
+    require("docker info" in body, "LRP CI script must probe host Docker as optional tooling")
+    require("skipped_optional" in body or "docker unavailable" in body, "LRP CI script must tolerate missing Docker")
     print("CI topology contract passed")
     return 0
 
