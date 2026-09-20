@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.8
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.41.4
+	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.12
 	github.com/aws/aws-sdk-go-v2/service/eks v1.75.0
@@ -42,7 +42,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.13 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.17 // indirect
-	github.com/aws/smithy-go v1.24.2 // indirect
+	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/casbin/govaluate v1.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
