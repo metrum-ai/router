@@ -198,7 +198,7 @@ func TestProviderHostedStructuredOutputsStayInactiveAcrossConsumers(t *testing.T
 	}
 
 	cfg := Config{
-		Server: ServerConfig{DecisionTelemetry: DecisionTelemetryConfig{Enabled: true}},
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"}, DecisionTelemetry: DecisionTelemetryConfig{Enabled: true}},
 		Provider: map[string]ProviderConfig{
 			"p": {
 				Dialect: "openai-chat",
@@ -259,7 +259,7 @@ func TestResponsesToChatStructuredOutputRemainsUnsupportedAcrossConsumers(t *tes
 	}
 
 	cfg := Config{
-		Server:   ServerConfig{DecisionTelemetry: DecisionTelemetryConfig{Enabled: true}},
+		Server:   ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"}, DecisionTelemetry: DecisionTelemetryConfig{Enabled: true}},
 		Provider: map[string]ProviderConfig{"p": {Dialect: "openai-chat"}},
 	}
 	rc := &requestContext{}

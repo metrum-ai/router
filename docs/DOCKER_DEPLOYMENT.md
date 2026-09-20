@@ -400,7 +400,7 @@ router. Keep the private signing key outside the compose tree. Renewal is an
 atomic file replacement plus restart or recheck; rollback restores the previous
 valid license/public-key pair.
 
-For Metrum-side issuance, replacement, volume top-up, offline support, commercial/control-plane boundaries, and acceptance checklists, use the internal source-tree runbook `docs/LICENSE_OPERATIONS.md`. GitHub issue #545 owns the product flow and #42 owns customer-facing commercial/package copy. Customer-facing hosted docs cover license installation, renewal, status, commercial access paths, and error behavior without internal signing-key details or private deployment procedures.
+Runtime licensing was removed in 3.0.0. Customer-facing hosted docs no longer cover license installation or renewal as a product requirement.
 
 If a customer receives a license through an approved commercial/control-plane delivery flow, the Docker installation steps do not change: place the issued `license.json` under the protected compose config directory, restart or wait for recheck, and validate `/readyz`, safe admin status, and one caller workflow. The router container must not receive payment-provider secrets, card data, signing-service private credentials, or full commercial back-office records.
 

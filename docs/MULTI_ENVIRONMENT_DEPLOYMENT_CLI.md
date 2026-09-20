@@ -75,7 +75,7 @@ memory. The payload has exactly `config.yaml` (a YAML mapping) and `env.json`
 (a JSON string map); malformed, additional, or empty fields fail without
 echoing protected data. The adapter writes an owned `router-runtime` Secret
 with those two exact keys and mounts it read-only at `/app/config`.
-`metrum-ai-router-license` continues to be a separate `license.json` Secret and mount.
+Runtime licensing was removed in 3.0.0; do not mount a separate license Secret.
 
 Profiles for deployments that require continuous browser-report availability
 set `require_admin_reports: true`. Fleet then rejects the runtime bundle before
@@ -156,7 +156,7 @@ Use one shared `--registry` SQLite file for the Fleet admin host so
 `fleet_tenants`, `fleet_tenant_instances`, and intended/bound/retired
 `fleet_license_bindings` with safe scalars only (including
 `license_ref_digest` and `license_validity_hours` on the plan). Register full
-license inventory from `metrum-ai-router-license safe-summary` output—never from signed
+Fleet license inventory was removed in 3.0.0; do not register licenses from
 envelopes or protected refs:
 
 ```bash
@@ -164,7 +164,7 @@ metrum-ai-router-fleetctl tenants list --registry /protected/tenant-deployments.
 metrum-ai-router-fleetctl tenants get --customer-id acme2 --registry /protected/tenant-deployments.sqlite
 metrum-ai-router-fleetctl tenants sync --registry /protected/tenant-deployments.sqlite
 
-metrum-ai-router-license safe-summary --license /protected/acme2-license.json > /protected/acme2-license-summary.json
+# license CLI removed in 3.0.0
 chmod 0600 /protected/acme2-license-summary.json
 metrum-ai-router-fleetctl licenses register \
   --summary-file /protected/acme2-license-summary.json \

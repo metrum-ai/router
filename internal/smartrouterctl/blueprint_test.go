@@ -120,9 +120,6 @@ func TestRenderBlueprintNvidiaLocalServing(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfgText := string(cfgRaw)
-	if !strings.Contains(cfgText, "license.pub") || !strings.Contains(cfgText, "self-managed") {
-		t.Fatalf("config must trust the self-managed license public key: %s", cfgText)
-	}
 	for _, needle := range []string{
 		"svc.cluster.local",
 		"local-tiny",

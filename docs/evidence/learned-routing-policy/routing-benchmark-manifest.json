@@ -42,8 +42,6 @@
     "CPUExecutionProvider"
   ],
   "ort_version": "1.22.0",
-  "shadeform_instance_id_gpu": "9963d127-f312-4a37-b72d-91b42607cf8e",
-  "shadeform_instance_id_cpu": "1829ebd2-9746-4553-8f41-73c16923ea64",
-  "shadeform_left_running": true,
-  "cpu_torn_down": true
+  "cpu_torn_down": true,
+  "host_lifecycle_status": "operator_private"
 }

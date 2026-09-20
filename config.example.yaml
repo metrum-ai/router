@@ -1,4 +1,16 @@
 server:
+  streaming:
+    translator: incremental # Or synthesized for unary upstream + caller SSE.
+  identifiers:
+    mode: rewrite
+    transform:
+      current:
+        key_id: idk-2026-09 # Loggable label; wire epoch is derived from this.
+        key: ${ROUTER_ID_TRANSFORM_KEY} # 64 random bytes, hex or base64.
+      # previous:
+      #   key_id: idk-2026-06
+      #   key: ${ROUTER_ID_TRANSFORM_KEY_PREVIOUS}
+      #   valid_until: "2026-09-20T00:00:00Z" # Future, at most 30 days.
   listen: :8080
   default_model_group: default
   # Optional OpenAI endpoint compatibility gates. Disabled by default so
@@ -26,26 +38,6 @@ server:
   # Optional offline signed JSON license enforcement. Disabled by default so a
   # normal go build / run needs no license file. Operators may set enabled: true
   # and point path at a signed license.json when they want runtime policy gates.
-  license:
-    enabled: false
-    path: /app/config/license.json
-    state_path: /app/state/license-state.json
-    # Set exactly one fingerprint source when the operator issues an instance-bound
-    # license for this deployment. The router hashes the effective fingerprint
-    # before matching modern licenses and never exposes the raw value in status.
-    instance_fingerprint: ""
-    instance_fingerprint_file: ""
-    instance_fingerprint_env: ""
-    recheck_interval: 1h
-    grace_period_on_validation_error: 24h
-    # Optional signed revocation-bundle enforcement. Keep mode off unless the
-    # operator maintains a signed revocations.json bundle for this deployment.
-    revocation:
-      mode: off
-      path: /app/config/revocations.json
-      require_current_bundle: false
-      fail_closed_on_bundle_error: true
-    fail_open_for_dev: false
   # Optional normalized routing-decision telemetry. Disabled by default.
   # When enabled, the router writes safe scalar child rows keyed by request_id
   # for request shape features, target candidates, target filter reason buckets,

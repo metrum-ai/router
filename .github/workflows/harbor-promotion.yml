@@ -1,0 +1,58 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Harbor promotion
+
+# Manual provider-backed Harbor lane. It is not part of pull-request CI or
+# release tags. Dispatch it before a major routing or model promotion.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "One Harbor task id. confirm must match it."
+        required: true
+        default: "aider/polyglot_python_two-bucket"
+      agents:
+        description: "Comma-separated agents, maximum 2"
+        required: true
+        default: "codex"
+      model_groups:
+        description: "Comma-separated model groups, maximum 2"
+        required: true
+        default: "small"
+      confirm:
+        description: "Type the task id again to authorize provider spend"
+        required: true
+
+concurrency:
+  group: harbor-promotion
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  harbor:
+    runs-on: [self-hosted, Linux, X64, router]
+    environment: evaluation
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Run bounded Harbor promotion
+        env:
+          HARBOR_PROMOTION_TASK: ${{ inputs.task }}
+          HARBOR_PROMOTION_AGENTS: ${{ inputs.agents }}
+          HARBOR_PROMOTION_GROUPS: ${{ inputs.model_groups }}
+          HARBOR_PROMOTION_CONFIRM: ${{ inputs.confirm }}
+          HARBOR_PROMOTION_OUT: tmp/harbor-promotion/summary.tsv
+          HARBOR_ROUTER_TOKEN: ${{ secrets.HARBOR_ROUTER_TOKEN }}
+          ROUTER_BASE_URL: ${{ secrets.HARBOR_ROUTER_BASE_URL }}
+        run: python3 scripts/harbor_promotion.py
+      - name: Upload sanitized summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: harbor-promotion-summary
+          path: tmp/harbor-promotion/summary.tsv
+          if-no-files-found: ignore
+          retention-days: 14

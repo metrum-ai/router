@@ -563,7 +563,7 @@ func TestProductionDerivedAgentCompatibilityFixtureCoversRequiredScenarios(t *te
 		"responses-to-chat-function-tool",
 		"cursor-mixed-responses-body-chat-endpoint",
 		"previous-response-id-stateless-bridge-negative",
-		"chat-to-responses-streaming-negative",
+		"chat-to-responses-streaming",
 		"reasoning-no-compatible-target-negative",
 		"reasoning-models-metadata-advertisement",
 		"anthropic-thinking-budget-output-cap-negative",
@@ -636,8 +636,8 @@ func TestProductionDerivedAgentCompatibilityNegativeBridgeReasonsMatchRouter(t *
 		t.Fatal(err)
 	}
 	chatTarget := Target{Bridges: BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}}}
-	if got := chatToResponsesBridgeFilterReason(chatTarget, req, "openai-chat", "openai-responses"); got != byName["chat-to-responses-streaming-negative"] {
-		t.Fatalf("streaming bridge filter=%q, want fixture reason %q", got, byName["chat-to-responses-streaming-negative"])
+	if got := chatToResponsesBridgeFilterReason(chatTarget, req, "openai-chat", "openai-responses"); got != byName["chat-to-responses-streaming"] {
+		t.Fatalf("streaming bridge filter=%q, want fixture reason %q", got, byName["chat-to-responses-streaming"])
 	}
 }
 
@@ -1078,7 +1078,7 @@ func productionDerivedHighRegressionConfig(t *testing.T, dir, upstreamURL string
 		})
 	}
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: fixture.ModelGroup,
 			UsageDB:           freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite")),
@@ -1112,7 +1112,7 @@ func productionDerivedRegressionConfig(t *testing.T, dir, upstreamURL string) *C
 	t.Helper()
 	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "large-openai-chat-tools-smoke",
 			UsageDB:           freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite")),
@@ -1163,7 +1163,7 @@ func productionDerivedOpenCodeStreamOptionsConfig(t *testing.T, dir, upstreamURL
 	t.Helper()
 	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "big-coder-opencode-stream-options-smoke",
 			UsageDB:           freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite")),

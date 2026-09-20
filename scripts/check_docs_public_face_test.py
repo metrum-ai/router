@@ -326,6 +326,43 @@ class CheckSeparationTest(unittest.TestCase):
         self.assertEqual(1, len(errors), errors)
         self.assertIn("stale active OpenRouter DeepSeek route claim", errors[0])
 
+    def test_rejects_ssh_identity_not_only_pem(self) -> None:
+        errors = list(
+            checker.privacy_line_errors(
+                README, 1, "ssh -i ~/.ssh/id_ed25519 shadeform@64.247.196.20"
+            )
+        )
+        labels = " ".join(errors)
+        self.assertTrue(errors, errors)
+        self.assertTrue(
+            "ssh identity invocation" in labels
+            or "user@public-IPv4 SSH target" in labels
+            or "public IPv4 address" in labels,
+            errors,
+        )
+
+    def test_allows_placeholder_ssh_lines(self) -> None:
+        line = "ssh -i <operator-ssh-key> <user>@<operator-host>"
+        self.assertEqual([], list(checker.privacy_line_errors(README, 1, line)))
+
+    def test_rejects_cloud_instance_id_fields(self) -> None:
+        errors = list(
+            checker.privacy_line_errors(
+                README,
+                1,
+                '"instance_id": "9963d127-f312-4a37-b72d-91b42607cf8e"',
+            )
+        )
+        self.assertTrue(any("cloud instance id field" in e for e in errors), errors)
+
+    def test_rejects_object_storage_bucket_urls(self) -> None:
+        errors = list(checker.privacy_line_errors(README, 1, "restic backup s3://metrum-backups/x"))
+        self.assertTrue(any("object-storage bucket URL" in e for e in errors), errors)
+
+    def test_evidence_tree_is_privacy_scanned(self) -> None:
+        evidence = checker.ROOT / "docs" / "evidence"
+        self.assertIn(evidence, checker.PUBLIC_DOC_PATHS)
+
     def test_branding_only_files_are_not_privacy_checked(self) -> None:
         errors = list(
             checker.file_errors(
@@ -365,9 +402,10 @@ class CheckSeparationTest(unittest.TestCase):
             checker.line_errors(README, 3, "Metrum Router runs on 100.30.225.66 today.")
         )
 
-        self.assertEqual(2, len(errors), errors)
-        self.assertIn("contains private production host/IP", errors[0])
-        self.assertIn("obsolete product title Metrum Router", errors[1])
+        joined = "\n".join(errors)
+        self.assertGreaterEqual(len(errors), 2, errors)
+        self.assertIn("contains private production host/IP", joined)
+        self.assertIn("obsolete product title Metrum Router", joined)
 
 
 class BrandingCoverageTest(unittest.TestCase):

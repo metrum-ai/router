@@ -31,7 +31,7 @@ curl -i -H "Authorization: Bearer $ROUTER_TOKEN" \
   "$ROUTER_BASE_URL/v1/models"
 ```
 
-If `/readyz` fails, check license status, config load errors, database connectivity, and required runtime files before testing individual requests.
+If `/readyz` fails, check config load errors, database connectivity, and required runtime files before testing individual requests.
 
 If `/v1/models` does not include the expected model group, inspect caller access policy and model-group configuration. `/v1/models` is the caller-facing source of truth for allowed groups.
 
@@ -40,7 +40,7 @@ If `/v1/models` does not include the expected model group, inspect caller access
 | Symptom | Likely area | Next page |
 |---|---|---|
 | One request failed, timed out, or was slow | Request attempts, trace events, upstream provider path, quota, context, or fallback | [Request Troubleshooting](/docs/troubleshooting/requests) |
-| `/readyz` fails with `license-*` status | License file, expiry, feature gate, volume, instance scope, or clock state | [Licensing Troubleshooting](/docs/troubleshooting/licensing) |
+| `/readyz` fails | Config load, database connectivity, or required runtime files. License status is not a 3.0.0 readiness gate | [Software Licenses](/docs/legal/software-licenses) |
 | Caller gets `401` or `403` | Missing caller token, disabled caller token, model-group access, metrics/report authorization, or admin policy | [Request Troubleshooting](/docs/troubleshooting/requests) |
 | Caller gets `429` | Router quota, traffic shaping, TPM/RPM, concurrency, license volume/window, or upstream provider limit | [Request Troubleshooting](/docs/troubleshooting/requests) |
 | `/metrics` returns forbidden | Caller is not authorized for metrics admin | [Observability](/docs/operations/observability) |

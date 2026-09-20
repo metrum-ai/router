@@ -57,6 +57,9 @@ func TestCustomerConfigAndModelReadCommands(t *testing.T) {
 			).Replace(string(body)))
 		} else {
 			target = "env.json"
+			// Example env keeps the transform key empty; fill a valid 64-byte
+			// hex value so rewrite-mode validation matches production loading.
+			body = []byte(strings.Replace(string(body), `"ROUTER_ID_TRANSFORM_KEY": ""`, `"ROUTER_ID_TRANSFORM_KEY": "`+strings.Repeat("ab", 64)+`"`, 1))
 		}
 		if err := os.WriteFile(filepath.Join(dir, target), body, 0o600); err != nil {
 			t.Fatal(err)
@@ -103,6 +106,7 @@ func TestCallerGenerateWriteMergesConfig(t *testing.T) {
 	body := `
 server:
   listen: ":8080"
+  identifiers: {mode: passthrough}
   usage_db: {enabled: true, driver: sqlite, path: /tmp/x.sqlite, migration_policy: auto-safe}
   license: {enabled: false}
 providers:
@@ -147,7 +151,7 @@ callers: []
 }
 
 func TestCustomerCLIFailsClosedForFleetAuthority(t *testing.T) {
-	for _, command := range [][]string{{"deploy"}, {"config", "activate"}, {"license", "sign"}, {"keys", "rotate"}} {
+	for _, command := range [][]string{{"deploy"}, {"config", "activate"}, {"keys", "rotate"}} {
 		args := append([]string{"run", "."}, command...)
 		output, err := exec.Command("go", args...).CombinedOutput()
 		if err == nil {

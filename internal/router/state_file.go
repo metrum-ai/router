@@ -9,7 +9,7 @@ import (
 )
 
 // writeVersionedStateFile is the shared durable-file contract for signed
-// quota and license state: owner-only temp write, atomic replacement, and one
+// quota state: owner-only temp write, atomic replacement, and one
 // owner-only last-known-good backup. Callers validate integrity on read; a
 // backup is never used to mask a present but invalid primary file.
 func writeVersionedStateFile(path string, raw []byte) error {

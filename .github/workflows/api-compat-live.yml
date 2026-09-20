@@ -3,9 +3,8 @@
 
 name: API compatibility live status
 
-# Optional reporter for issue #94 live differential readiness.
-# Missing live secrets yield disposition blocked with exit 0 so the default
-# PR gate (go.yml / make test) stays credential-free and green.
+# Pull requests run the credential-free contract only. Provider calls stay on
+# a manual dispatch in the protected evaluation environment and fail closed.
 
 on:
   pull_request:
@@ -16,51 +15,66 @@ on:
       - "tests/api_compat/testdata/live/**"
       - "docs-site/docs/reference/api-compatibility.md"
       - ".github/workflows/api-compat-live.yml"
-  push:
-    branches: [main]
-    paths:
-      - "Makefile"
-      - "scripts/api_compat_live.py"
-      - "scripts/api_compat_live_test.py"
-      - "tests/api_compat/testdata/live/**"
-      - ".github/workflows/api-compat-live.yml"
   workflow_dispatch:
-  schedule:
-    - cron: "41 4 * * *"
+    inputs:
+      matrix:
+        description: "Approved non-production matrix id"
+        required: true
+      environment:
+        description: "Non-production environment name"
+        required: true
+      caller:
+        description: "Least-privilege caller name"
+        required: true
+      confirm:
+        description: "Must equal matrix:environment"
+        required: true
+
+concurrency:
+  group: api-compat-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   live-unit:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - name: Credential-free live runner contracts
         run: python3 scripts/api_compat_live_test.py
 
-  live-secrets-status:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      API_COMPAT_LIVE_BASE_URL: ${{ secrets.API_COMPAT_LIVE_BASE_URL }}
-      API_COMPAT_LIVE_CREDENTIAL: ${{ secrets.API_COMPAT_LIVE_CREDENTIAL }}
-      API_COMPAT_LIVE_MATRIX: ${{ vars.API_COMPAT_LIVE_MATRIX }}
-      API_COMPAT_LIVE_ENVIRONMENT: ${{ vars.API_COMPAT_LIVE_ENVIRONMENT }}
-      API_COMPAT_LIVE_CALLER: ${{ vars.API_COMPAT_LIVE_CALLER }}
-      API_COMPAT_LIVE_CONFIRM: ${{ vars.API_COMPAT_LIVE_CONFIRM }}
+  live:
+    needs: live-unit
+    if: github.event_name == 'workflow_dispatch' && needs.live-unit.result == 'success'
+    runs-on: [self-hosted, Linux, X64, router]
+    environment: evaluation
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Report blocked when live secrets are missing
+      - name: Run bounded non-production matrix
+        env:
+          API_COMPAT_LIVE_CREDENTIAL: ${{ secrets.API_COMPAT_LIVE_CREDENTIAL }}
+          API_COMPAT_LIVE_BASE_URL: ${{ secrets.API_COMPAT_LIVE_BASE_URL }}
+          API_COMPAT_LIVE_MATRIX: ${{ inputs.matrix }}
+          API_COMPAT_LIVE_ENVIRONMENT: ${{ inputs.environment }}
+          API_COMPAT_LIVE_CALLER: ${{ inputs.caller }}
+          API_COMPAT_LIVE_CONFIRM: ${{ inputs.confirm }}
         run: |
-          mkdir -p tmp/api-compat-live
-          python3 scripts/api_compat_live.py --ci-report | tee tmp/api-compat-live/status.json
-      - name: Upload blocked/ready evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: api-compat-live-status
-          path: tmp/api-compat-live/status.json
-          if-no-files-found: ignore
-          retention-days: 7
+          set -euo pipefail
+          cred_file="$(python3 - <<'PY'
+          import os
+          import tempfile
+          raw = os.environ.get("API_COMPAT_LIVE_CREDENTIAL", "")
+          handle = tempfile.NamedTemporaryFile(prefix="api-compat-cred-", delete=False)
+          handle.write(raw.encode())
+          handle.close()
+          os.chmod(handle.name, 0o600)
+          print(handle.name)
+          PY
+          )"
+          export API_COMPAT_LIVE_CREDENTIAL_FILE="$cred_file"
+          unset API_COMPAT_LIVE_CREDENTIAL
+          make api-compat-live

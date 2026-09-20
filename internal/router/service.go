@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/big"
 	"mime"
@@ -33,7 +34,19 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Production image-URL checks fail closed quickly. Tests raise this in
+// service_test.go because the self-hosted runner resolver is often slower
+// than 500ms under parallel load.
+var defaultImageURLDNSTimeout = 500 * time.Millisecond
+
+// defaultImageURLLookup resolves image-URL hostnames for admission checks.
+// Tests may replace it without changing egress policy DNS.
+var defaultImageURLLookup egressLookupIPFunc = func(ctx context.Context, host string) ([]net.IP, error) {
+	return defaultEgressLookupIP(ctx, host)
+}
+
 type Service struct {
+	identifiers        IdentifierTransform
 	cfg                *Config
 	mux                *http.ServeMux
 	httpClient         *http.Client
@@ -52,7 +65,6 @@ type Service struct {
 	migrationStatusFn  func() (MigrationStatus, error)
 	metrics            *metricsStore
 	trafficShape       *trafficShapeManager
-	license            *licenseManager
 	bridgeSessions     *bridgeSessionBackends
 	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
@@ -154,6 +166,13 @@ func New(cfg *Config) (*Service, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	identifiers, err := newIdentifierTransform(cfg.Server.Identifiers)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Server.Identifiers.passthrough() {
+		log.Print("WARNING: identifier passthrough enabled; upstream identifiers are exposed")
+	}
 	contentCaptureKeys := contentCaptureKeyResolver(envContentCaptureKeyResolver{})
 	if cfg.contentCaptureEnabled() {
 		if _, err := contentCaptureKeys.ResolveContentCaptureKey(configuredContentCaptureLocalKeyID(cfg)); err != nil {
@@ -182,12 +201,13 @@ func New(cfg *Config) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
+		identifiers:        identifiers,
 		cfg:                cfg,
 		mux:                http.NewServeMux(),
 		httpClient:         newUpstreamHTTPClient(cfg.Server.Upstream),
 		externalPolicies:   map[string]*externalPolicyStrategy{},
-		imageURLLookup:     defaultEgressLookupIP,
-		imageURLDNSTimeout: 500 * time.Millisecond,
+		imageURLLookup:     defaultImageURLLookup,
+		imageURLDNSTimeout: defaultImageURLDNSTimeout,
 		callersBySum:       map[string]*callerRuntime{},
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
@@ -210,22 +230,6 @@ func New(cfg *Config) (*Service, error) {
 		_ = usage.Close()
 		bridgeSessions.Close()
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
-	}
-	licenseKeys, err := licenseVerificationKeys(cfg.Server.License)
-	if err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
-	}
-	s.license, err = newLicenseManager(cfg.Server.License, cfg, licenseKeys)
-	if err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
 	}
 	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage)
 	if err != nil {
@@ -275,7 +279,6 @@ func New(cfg *Config) (*Service, error) {
 		}
 	}
 	s.routes()
-	s.license.start()
 	return s, nil
 }
 
@@ -297,7 +300,6 @@ func (s *Service) Close() {
 	_ = s.logger.Close()
 	_ = s.usage.Close()
 	s.bridgeSessions.Close()
-	s.license.close()
 	for _, policy := range s.externalPolicies {
 		policy.Close()
 	}
@@ -308,24 +310,16 @@ func (s *Service) routes() {
 		writeJSON(w, http.StatusOK, healthPayload(true, ""))
 	})
 	s.mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.cfg.Validate(); err != nil {
+		if err := s.cfg.Validate(); err != nil || !s.identifiersAvailable() {
 			// Never echo Validate() text: it can include caller IDs, paths, and other config detail.
 			writeJSON(w, http.StatusServiceUnavailable, healthPayload(false, "not-ready"))
-			return
-		}
-		if lerr := s.license.enforce(LicenseFeatureRouting); lerr != nil {
-			writeJSON(w, http.StatusServiceUnavailable, healthPayload(false, lerr.Code))
 			return
 		}
 		writeJSON(w, http.StatusOK, healthPayload(true, ""))
 	})
 	s.mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		info := buildinfo.Current()
-		raw, _ := json.Marshal(info)
-		var out map[string]any
-		_ = json.Unmarshal(raw, &out)
-		out["license_compile_mode"] = licenseCompileMode
-		writeJSON(w, http.StatusOK, out)
+		writeJSON(w, http.StatusOK, info)
 	})
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
@@ -336,7 +330,6 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /admin/auth/logout", s.handleAdminOIDCLogout)
 	s.mux.HandleFunc("GET /admin/auth/me", s.handleAdminAuthMe)
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
-	s.mux.HandleFunc("GET /admin/license/status", s.handleAdminLicenseStatus)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
@@ -660,10 +653,6 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
 	}
-	if lerr := s.license.enforce(LicenseFeatureUsageReporting); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
 	defer s.finish(rc, http.StatusOK, nil)
 	migration := MigrationStatus{Scope: usageMigrationScope, State: "unavailable", StatusUnavailable: true}
 	if s.usage != nil {
@@ -679,22 +668,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, s.metrics.Prometheus(s.license, s.trafficShape, migration))
-}
-
-func (s *Service) handleAdminLicenseStatus(w http.ResponseWriter, r *http.Request) {
-	subject, ok := s.authenticateAdminSubject(w, r)
-	if !ok {
-		s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "admin-auth-failed", authzObjectAdminReports, authzActionRead)
-		return
-	}
-	if !s.authorizeAdmin(subject, authzObjectAdminReports, authzActionRead) {
-		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "reports-forbidden", authzObjectAdminReports, authzActionRead)
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "reports-forbidden", "message": "reports-forbidden"}})
-		return
-	}
-	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", authzObjectAdminReports, authzActionRead)
-	writeJSON(w, http.StatusOK, safeLicenseStatusResponseWithUsage(s.license))
+	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -789,6 +763,12 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 }
 
 func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
+	if !s.identifiersAvailable() {
+		w.Header().Set("X-Request-Id", requestID())
+		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		return
+	}
+
 	rc, ok := s.begin(w, r, "anthropic")
 	if !ok {
 		return
@@ -808,6 +788,13 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<20))
 	if err != nil {
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
+		return
+	}
+
+	body, err = decodeIdentifierFields(body, s.identifiers)
+	if err != nil {
+		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, "invalid-tool-call-id")
 		return
 	}
 	req, err := decodeRequest("anthropic", body, r.Header)
@@ -839,17 +826,6 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.quota.ReleaseReservation(rc.caller, ad.Reservation)
 	defer s.quota.Release(rc.caller)
-	if lerr := s.license.AdmitRequest("anthropic"); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseRequest()
-	licRes, lerr := s.license.ReserveTokens(estimateTokens(req))
-	if lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseReservation(licRes)
 	rc.rec.RequestedModel = req.Model
 	rc.rec.QuotaState = ad.QuotaState
 	rc.rec.KeyState = ad.KeyState
@@ -859,20 +835,24 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusServiceUnavailable, "quota-state-error")
 		return
 	}
-	s.license.RecordTokens(licRes, rc.rec.Usage)
 	defer s.finish(rc, http.StatusOK, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"input_tokens": tokens})
 }
 
 func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect string) {
+	if !s.identifiersAvailable() {
+		w.Header().Set("X-Request-Id", requestID())
+		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		return
+	}
 	endpointDialect := dialect
 	rc, ok := s.begin(w, r, dialect)
 	if !ok {
 		return
 	}
 	// Bound concurrent body buffering before ReadAll. Full request-count Admit
-	// and license request admission stay after validation / traffic-shape queue
-	// waits so invalid bodies and queued shaping do not burn license volume or
+	// and request admission stay after validation / traffic-shape queue
+	// waits so invalid bodies and queued shaping do not burn quota volume or
 	// hold caller concurrency slots.
 	conc := s.quota.AcquireConcurrency(rc.caller)
 	if !conc.OK {
@@ -889,6 +869,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<20))
 	if err != nil {
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
+		return
+	}
+	body, err = decodeIdentifierFields(body, s.identifiers)
+	if err != nil {
+		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, "invalid-tool-call-id")
 		return
 	}
 	responsesBodyOnChatEndpoint := false
@@ -921,10 +907,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			rc.rec.InboundDialect = dialect
 			responsesBodyOnChatEndpoint = true
 			rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled", Target{}, 0, 0, "", false, 0)
-			if lerr := s.license.enforce(licenseFeatureForRoute(dialect)); lerr != nil {
-				s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-				return
-			}
 		}
 	}
 	req, err := decodeRequest(dialect, body, r.Header)
@@ -976,12 +958,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.ContractBucket = "pending"
 		rc.rec.ContractWorkload = contractWorkloadLabel(group.Contract)
 	}
-	for _, feature := range licenseFeaturesForGroup(group) {
-		if lerr := s.license.enforce(feature); lerr != nil {
-			s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-			return
-		}
-	}
 	shapeCfg, shapeScope, shapeEnabled := resolveTrafficShapeConfig(s.cfg.Server.TrafficShape, rc.caller.cfg)
 	inputTokens := estimateTokens(req)
 	outputReservationTokens := trafficShapeOutputReservation(req, dialect)
@@ -1014,11 +990,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	defer s.quota.Release(rc.caller)
-	if lerr := s.license.AdmitRequest(dialect); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseRequest()
 	rc.rec.QuotaState = ad.QuotaState
 	rc.rec.KeyState = ad.KeyState
 	if ad.WarningText != "" {
@@ -1163,12 +1134,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	defer s.quota.ReleaseReservation(rc.caller, resAd.Reservation)
-	licRes, lerr := s.license.ReserveTokens(reservationTokens)
-	if lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return
-	}
-	defer s.license.ReleaseReservation(licRes)
 	rc.rec.QuotaState = resAd.QuotaState
 	rc.rec.KeyState = resAd.KeyState
 	if resAd.WarningText != "" {
@@ -1210,7 +1175,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 					rc.rec.QuotaState = "error"
 					rc.rec.KeyState = "error"
 				} else {
-					s.license.RecordTokens(licRes, usage)
 					rc.rec.Usage = usage
 				}
 			}
@@ -1270,7 +1234,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			putCaller, putProject := cacheCallerScope(rc)
 			s.cache.Put(cacheKey(req, served, putCaller, putProject), cacheResp)
 		}
-		s.license.RecordTokens(licRes, resp.Usage)
 		rc.rec.QuotaState = quotaState
 		rc.rec.KeyState = keyState
 		rc.rec.Usage = resp.Usage
@@ -1372,10 +1335,6 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	rc.rec.CallerEnvironment = callerEnvironment(caller.cfg)
 	rc.rec.TokenID = tokenID
 	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
-	if lerr := s.license.enforce(licenseFeatureForRoute(dialect)); lerr != nil {
-		s.writeError(w, rc, lerr.StatusCode, lerr.Code)
-		return nil, false
-	}
 	return rc, true
 }
 
@@ -1395,7 +1354,6 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.recordCacheStats(rc)
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
-	s.populateLicenseMetadata(&rc.rec)
 	if rc.rec.Status == 0 {
 		rc.rec.Status = status
 	}
@@ -1489,23 +1447,6 @@ func populateReasoningUsageCoverage(rec *logRecord) {
 	}
 	rec.ReasoningTokens, rec.ReasoningAttemptCount, rec.ReasoningSuccessfulAttemptCount, rec.ReasoningReportedAttemptCount = reasoningUsageCoverage(rec.AttemptsDetail)
 	rec.ReasoningCoverageMeasured = true
-}
-
-func (s *Service) populateLicenseMetadata(rec *logRecord) {
-	if s == nil || rec == nil || s.license == nil {
-		return
-	}
-	st := s.license.statusSnapshot()
-	rec.LicenseStatus = st.Code
-	rec.LicenseReason = st.ValidationReason
-	rec.LicenseID = st.LicenseID
-	rec.LicenseCustomerID = st.CustomerID
-	rec.LicenseSKU = st.SKU
-	rec.LicenseKeyID = st.KeyID
-	rec.LicenseGraceActive = st.GraceActive
-	if !st.ExpiresAt.IsZero() {
-		rec.LicenseExpiry = st.ExpiresAt.UTC().Format(time.RFC3339)
-	}
 }
 
 func (s *Service) diagnosticsEnabled() bool {
@@ -1826,7 +1767,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		return dec, nil
 	case "intelligent":
 		// The first intelligent-routing increment deliberately serves the
-		// deterministic eligible-target baseline. It validates and licenses the
+		// deterministic eligible-target baseline. It validates and authorizes the
 		// decision-model contract without issuing a second upstream request until
 		// the bounded selector and overhead accounting are available.
 		label := "intelligent:baseline-only"
@@ -2131,12 +2072,31 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
-	nativeStream := nativeStreamEligible(req, callerDialect, outDialect)
+	anthropicBridge := anthropicStreamBridge(callerDialect, outDialect)
+	bridgeStream := (bridge || chatResponsesBridge || anthropicBridge) && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
+	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
+	if req.Stream {
+		rc.rec.StreamMode = "synthesized"
+		if bridgeStream {
+			rc.rec.StreamMode = "chat_upstream_to_responses_caller"
+			if chatResponsesBridge {
+				rc.rec.StreamMode = "responses_upstream_to_chat_caller"
+			}
+		}
+		if anthropicBridge && bridgeStream {
+			rc.rec.StreamMode = strings.ReplaceAll(outDialect, "-", "_") + "_upstream_to_" + strings.ReplaceAll(callerDialect, "-", "_") + "_caller"
+		}
+		if nativeStream {
+			rc.rec.StreamMode = "native_same_dialect"
+		}
+	}
 	chatResponsesSession := bridgeSessionLookup{}
 	var upReqBody []byte
 	var err error
 	if bridge {
-		upReqBody, err = encodeResponsesToChatBridge(target.Model, req, target)
+		bridgeReq := *req
+		bridgeReq.Stream = bridgeStream
+		upReqBody, err = encodeResponsesToChatBridge(target.Model, &bridgeReq, target)
 	} else if passthrough {
 		upReqBody, err = encodeToolPassthrough(outDialect, target.Model, req, target)
 	} else if chatResponsesBridge {
@@ -2144,7 +2104,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if chatResponsesSession.PreviousResponseID != "" {
 			rc.trace("bridge_session_previous_response_applied", "chat-to-responses previous_response_id applied", target, attemptIndex, 0, "", false, 0)
 		}
-		upReqBody, err = encodeChatToResponsesBridge(target.Model, req, target, chatResponsesSession.PreviousResponseID)
+		bridgeReq := *req
+		bridgeReq.Stream = bridgeStream
+		upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, chatResponsesSession.PreviousResponseID)
 	} else {
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, req, target)
 	}
@@ -2154,12 +2116,23 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ErrorMessage = err.Error()
 		return nil, attempt, upstreamError{Class: "encode_error", Message: err.Error(), Err: err}
 	}
-	if nativeStream {
+	if nativeStream || (anthropicBridge && bridgeStream) {
 		upReqBody, err = enableNativeUpstreamStream(upReqBody, req, outDialect)
 		if err != nil {
 			attempt.ErrorClass = "encode_error"
 			attempt.ErrorMessage = err.Error()
 			return nil, attempt, upstreamError{Class: "encode_error", Message: err.Error(), Err: err}
+		}
+	}
+	if anthropicBridge && bridgeStream && normalizeDialect(outDialect) == "openai-chat" {
+		var body map[string]any
+		if err = json.Unmarshal(upReqBody, &body); err != nil {
+			return nil, attempt, err
+		}
+		body["stream_options"] = map[string]any{"include_usage": true}
+		upReqBody, err = json.Marshal(body)
+		if err != nil {
+			return nil, attempt, err
 		}
 	}
 	endpoint, err := upstreamEndpoint(provider.BaseURL, outDialect, target)
@@ -2277,7 +2250,9 @@ sendUpstream:
 			} else {
 				rc.trace("bridge_session_previous_response_stale_purged", "chat-to-responses previous_response_id purged after stale upstream state", target, attemptIndex, httpResp.StatusCode, "bridge_session_stale_state", false, durationMillis(time.Since(start)))
 			}
-			upReqBody, err = encodeChatToResponsesBridge(target.Model, req, target, "")
+			bridgeReq := *req
+			bridgeReq.Stream = bridgeStream
+			upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, "")
 			attempt.RequestBytes = int64(len(upReqBody))
 			if err != nil {
 				attempt.ErrorClass = "encode_error"
@@ -2302,12 +2277,25 @@ sendUpstream:
 		upErr.ResponseLen = attempt.ResponseBytes
 		return nil, attempt, upErr
 	}
-	if nativeStream {
+	if nativeStream || bridgeStream {
 		maxResponseBytes := int64(s.cfg.Server.Upstream.MaxResponseBytes)
 		if maxResponseBytes <= 0 {
 			maxResponseBytes = 32 << 20
 		}
-		streamResult, streamErr := proxyNativeSSE(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc)
+		proxy := proxyNativeSSE
+		if bridgeStream {
+			proxy = proxyChatUpstreamToResponsesCallerSSE
+		}
+		if normalizeDialect(outDialect) == "openai-responses" {
+			proxy = proxyResponsesSSE
+			if bridgeStream {
+				proxy = proxyResponsesUpstreamToChatCallerSSE
+			}
+		}
+		if anthropicBridge {
+			proxy = anthropicBridgeProxy(callerDialect)
+		}
+		streamResult, streamErr := proxy(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		_ = httpResp.Body.Close()
 		if cancel != nil {
 			cancel()
@@ -2328,6 +2316,9 @@ sendUpstream:
 			attempt.TimedOut = upErr.TimedOut
 			attempt.ClientCanceled = upErr.Canceled
 			return nil, attempt, upErr
+		}
+		if chatResponsesBridge {
+			s.setChatToResponsesBridgeSession(ctx, rc, chatResponsesSession, target, streamResult.Response.ID, attemptIndex)
 		}
 		return streamResult.Response, attempt, nil
 	}
@@ -2440,7 +2431,7 @@ func (s *Service) validateImageURLsForUpstream(ctx context.Context, req *IRReque
 	}
 	timeout := s.imageURLDNSTimeout
 	if timeout <= 0 {
-		timeout = 500 * time.Millisecond
+		timeout = defaultImageURLDNSTimeout
 	}
 	resolveCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -3216,6 +3207,9 @@ func (s *Service) writeIRResponse(w http.ResponseWriter, dialect string, resp *I
 }
 
 func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRResponse, rc *requestContext) {
+	if rc != nil {
+		rc.rec.StreamMode = "synthesized"
+	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -4142,4 +4136,8 @@ func classifyStub(req *IRRequest) (string, string) {
 func contentTypeIsSSE(h http.Header) bool {
 	mt, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
 	return mt == "text/event-stream"
+}
+
+func (s *Service) identifiersAvailable() bool {
+	return s.cfg.Server.Identifiers.passthrough() || s.identifiers != nil
 }

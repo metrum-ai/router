@@ -1,0 +1,21 @@
+event: response.created
+data: {"type": "response.created", "response": {"id": "resp_private", "created_at": 123}, "sequence_number": 0}
+
+event: response.output_item.added
+data: {"type": "response.output_item.added", "output_index": 0, "item": {"id": "msg", "type": "message", "role": "assistant"}, "sequence_number": 3}
+
+event: response.content_part.added
+data: {"type": "response.content_part.added", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": ""}, "sequence_number": 6}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "delta": "Hello café 🌍", "sequence_number": 9}
+
+event: response.output_text.done
+data: {"type": "response.output_text.done", "text": "Hello café 🌍", "sequence_number": 12}
+
+event: response.content_part.done
+data: {"type": "response.content_part.done", "part": {"type": "output_text", "text": "Hello café 🌍"}, "sequence_number": 15}
+
+event: response.incomplete
+data: {"type": "response.incomplete", "response": {"id": "resp_private", "incomplete_details": {"reason": "content_filter"}, "usage": {"input_tokens": 5, "output_tokens": 3, "total_tokens": 8, "input_tokens_details": {"cached_tokens": 2}, "output_tokens_details": {"reasoning_tokens": 1}}}, "sequence_number": 18}
+

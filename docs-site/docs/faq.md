@@ -37,8 +37,8 @@ Use [Package Validation And Security Checks](./installation/package-validation).
 ### How do I evaluate a deployment?
 
 Follow [Evaluate Metrum AI Router](./evaluation/evaluate-smart-router) with
-your own provider accounts and representative workloads, then use [Deployment
-Paths](./licensing/deployment-paths) for self-managed installation choices.
+your own provider accounts and representative workloads, then use
+[Installation](./installation/) for self-managed installation choices.
 
 ## Authentication And Access
 

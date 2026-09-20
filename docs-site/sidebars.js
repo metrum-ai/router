@@ -58,7 +58,6 @@ const sidebars = {
         "operations/admin-browser-reports",
         "troubleshooting/index",
         "troubleshooting/requests",
-        "troubleshooting/licensing",
       ],
     },
     {
@@ -75,7 +74,6 @@ const sidebars = {
         "reference/architecture-limitations",
         "reference/deprecated-selectors",
         "configuration/router-config",
-        "configuration/license",
         "configuration/provider-catalog",
         "configuration/provider-traffic-shaping",
         "configuration/model-groups",
@@ -119,16 +117,6 @@ const sidebars = {
         "evaluation/lrp-coding-mix-example",
         "evaluation/learned-routing-case-study",
         "solution-brief",
-      ],
-    },
-    {
-      type: "category",
-      label: "Self-Managed Licensing",
-      collapsed: false,
-      items: [
-        "licensing/deployment-paths",
-        "licensing/index",
-        "operations/license-protected-deployments",
       ],
     },
     {

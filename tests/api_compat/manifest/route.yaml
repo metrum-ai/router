@@ -56,11 +56,12 @@ cases:
     owner: api-compat
     component: bridges
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-09-19"
     transport: sse
-    disposition: policy_rejection
+    disposition: supported_translation
     assertions:
-      - streaming through bridges currently restricted to unary stays rejected
+      - chat-to-responses streaming yields Chat SSE via Responses upstream
+      - responses-to-chat streaming stays rejected unless bridge Streaming is enabled
       - previous_response_id state on responses-to-chat rejects without upstream
     evidence_paths:
       - tests/api_compat/tests/test_route_matrix.py

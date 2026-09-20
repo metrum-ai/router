@@ -16,7 +16,7 @@ This section is generated from the router usage and content-capture schema used 
 
 | Table | Schema type | Retention class | Foreign keys | Indexes |
 |---|---|---|---|---|
-| `request_usage` | `usageRecord` | `usage_detail` | none | `idx_request_usage_caller_ip`, `idx_request_usage_contract_bucket`, `idx_request_usage_contract_failure`, `idx_request_usage_contract_workload`, `idx_request_usage_contract`, `idx_request_usage_group_fp`, `idx_request_usage_group`, `idx_request_usage_input_image`, `idx_request_usage_license_reason`, `idx_request_usage_license_status`, `idx_request_usage_pii_filter`, `idx_request_usage_policy_fp`, `idx_request_usage_pricing_fp`, `idx_request_usage_provider_model`, `idx_request_usage_router_version`, `idx_request_usage_routing_fp`, `idx_request_usage_token`, `idx_request_usage_ts`, `idx_request_usage_validation_age`, `idx_request_usage_validation_status`, `idx_request_usage_validation_workload`, primary key |
+| `request_usage` | `usageRecord` | `usage_detail` | none | `idx_request_usage_caller_ip`, `idx_request_usage_contract_bucket`, `idx_request_usage_contract_failure`, `idx_request_usage_contract_workload`, `idx_request_usage_contract`, `idx_request_usage_group_fp`, `idx_request_usage_group`, `idx_request_usage_input_image`, `idx_request_usage_pii_filter`, `idx_request_usage_policy_fp`, `idx_request_usage_pricing_fp`, `idx_request_usage_provider_model`, `idx_request_usage_router_version`, `idx_request_usage_routing_fp`, `idx_request_usage_token`, `idx_request_usage_ts`, `idx_request_usage_validation_age`, `idx_request_usage_validation_status`, `idx_request_usage_validation_workload`, primary key |
 | `request_attempts` | `requestAttemptRecord` | `usage_diagnostics` | `request_id` joins `request_usage.request_id` when a usage row exists | `idx_request_attempt_cancel`, `idx_request_attempt_error`, `idx_request_attempt_provider_model`, `idx_request_attempt_request`, `idx_request_attempt_status`, `idx_request_attempt_timeout`, `idx_request_attempt_ts`, primary key |
 | `request_trace_events` | `requestTraceEventRecord` | `usage_diagnostics` | `request_id` joins `request_usage.request_id` when a usage row exists | `idx_request_trace_error`, `idx_request_trace_event`, `idx_request_trace_request`, `idx_request_trace_ts`, primary key |
 | `request_errors` | `requestErrorRecord` | `usage_diagnostics` | `request_id` joins `request_usage.request_id` when a usage row exists | `idx_request_error_class`, `idx_request_error_status`, `idx_request_error_ts`, `idx_request_error_type`, primary key |
@@ -58,7 +58,7 @@ This section is generated from the router usage and content-capture schema used 
 - Schema type: `usageRecord`
 - Retention class: `usage_detail`
 - Foreign keys: none
-- Indexes: `idx_request_usage_caller_ip`, `idx_request_usage_contract_bucket`, `idx_request_usage_contract_failure`, `idx_request_usage_contract_workload`, `idx_request_usage_contract`, `idx_request_usage_group_fp`, `idx_request_usage_group`, `idx_request_usage_input_image`, `idx_request_usage_license_reason`, `idx_request_usage_license_status`, `idx_request_usage_pii_filter`, `idx_request_usage_policy_fp`, `idx_request_usage_pricing_fp`, `idx_request_usage_provider_model`, `idx_request_usage_router_version`, `idx_request_usage_routing_fp`, `idx_request_usage_token`, `idx_request_usage_ts`, `idx_request_usage_validation_age`, `idx_request_usage_validation_status`, `idx_request_usage_validation_workload`, primary key
+- Indexes: `idx_request_usage_caller_ip`, `idx_request_usage_contract_bucket`, `idx_request_usage_contract_failure`, `idx_request_usage_contract_workload`, `idx_request_usage_contract`, `idx_request_usage_group_fp`, `idx_request_usage_group`, `idx_request_usage_input_image`, `idx_request_usage_pii_filter`, `idx_request_usage_policy_fp`, `idx_request_usage_pricing_fp`, `idx_request_usage_provider_model`, `idx_request_usage_router_version`, `idx_request_usage_routing_fp`, `idx_request_usage_token`, `idx_request_usage_ts`, `idx_request_usage_validation_age`, `idx_request_usage_validation_status`, `idx_request_usage_validation_workload`, primary key
 
 | Column | Scalar type | Nullable | Populated when | Safe to log/share | Example or range |
 |---|---|---|---|---|---|
@@ -144,14 +144,6 @@ This section is generated from the router usage and content-capture schema used 
 | `traffic_shape_estimated_input_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `traffic_shape_reserved_output_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `traffic_shape_total_reserved_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
-| `license_status` | string | no | during license gate evaluation | safe scalar diagnostics metadata | `200`, `403`, `502` |
-| `license_reason` | string | no | during license gate evaluation | safe scalar diagnostics metadata | deployment-defined scalar value |
-| `license_id` | string | no | during license gate evaluation | safe scalar diagnostics metadata | deployment-defined scalar value |
-| `license_customer_id` | string | no | during license gate evaluation | safe scalar diagnostics metadata | deployment-defined scalar value |
-| `license_sku` | string | no | during license gate evaluation | safe scalar diagnostics metadata | deployment-defined scalar value |
-| `license_key_id` | string | no | during license gate evaluation | safe scalar diagnostics metadata | deployment-defined scalar value |
-| `license_expiry` | string | no | during license gate evaluation | safe scalar diagnostics metadata | `2026-06-29T12:34:56Z` |
-| `license_grace_active` | boolean | no | during license gate evaluation | safe scalar diagnostics metadata | `true` or `false` |
 | `router_version` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `router_build_date` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `routing_config_fingerprint` | string | no | once per request at terminal request accounting | safe non-reversible HMAC/fingerprint value | opaque non-reversible fingerprint |

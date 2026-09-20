@@ -3,7 +3,7 @@
 
 // metrum-ai-routerctl is the customer-local Router operations CLI. It may write
 // local config.yaml and SQLite usage backups on file-owned installs. It has no
-// cloud, Fleet, Kubernetes API, remote activation, or license-signing authority.
+// cloud, Fleet, Kubernetes API, or remote activation authority.
 package main
 
 import (
@@ -28,7 +28,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|providers|models|status|license|usage|blueprint> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|providers|models|status|usage|blueprint> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -43,8 +43,6 @@ func main() {
 		modelsCommand(os.Args[2:])
 	case "status":
 		statusCommand(os.Args[2:])
-	case "license":
-		licenseCommand(os.Args[2:])
 	case "usage":
 		usageCommand(os.Args[2:])
 	case "blueprint":
@@ -351,37 +349,6 @@ func statusCommand(args []string) {
 	fs.Parse(args)
 	cfg := loadConfig(*path)
 	writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-customer-status/v1", "config": configSummary(cfg), "authority": "local-file-owned"})
-}
-
-func licenseCommand(args []string) {
-	if len(args) == 0 || args[0] != "status" {
-		die("usage: metrum-ai-routerctl license status --config PATH")
-	}
-	fs := flag.NewFlagSet("license status", flag.ExitOnError)
-	path := fs.String("config", "", "router configuration path")
-	fs.Parse(args[1:])
-	cfg := loadConfig(*path)
-	if !cfg.Server.License.Enabled {
-		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-license-status/v1", "enabled": false, "valid": true, "code": "license-disabled"})
-		return
-	}
-	raw, err := os.ReadFile(cfg.Server.License.Path)
-	if err != nil {
-		die("read license: %v", err)
-	}
-	envelope, err := router.ParseLicenseEnvelope(raw)
-	if err != nil {
-		die("parse license: %v", err)
-	}
-	if err := router.VerifyLicenseEnvelope(envelope, router.DefaultLicensePublicKeys(), time.Now().UTC()); err != nil {
-		die("verify license: %v", err)
-	}
-	if err := router.ValidateLicensePayload(envelope.Payload, cfg, router.DefaultLicensePublicKeys(), time.Now().UTC()); err != nil {
-		die("validate license: %v", err)
-	}
-	features := append([]string(nil), envelope.Payload.Features...)
-	sort.Strings(features)
-	writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-license-status/v1", "enabled": true, "valid": true, "code": "license-valid", "expires_at": envelope.Payload.ExpiresAt, "features": features})
 }
 
 func usageCommand(args []string) {

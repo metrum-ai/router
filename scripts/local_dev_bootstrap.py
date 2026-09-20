@@ -2,10 +2,12 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Prepare a local/dev router directory: license, env template, and one caller.
+"""Prepare a local/dev router directory: env template and one caller.
 
-This script composes existing CLIs. It does not add license-signing authority to
-metrum-ai-routerctl. Do not commit the output directory.
+This script composes existing CLIs. It does not add Fleet or signing authority
+to metrum-ai-routerctl. Do not commit the output directory.
+
+Runtime licensing was removed in 3.0.0. Generated config omits server.license.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,17 +24,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config.minimal.example.yaml"
 DEFAULT_ENV = ROOT / "env.minimal.example.json"
-DEFAULT_ENTITLEMENT = ROOT / "docs" / "entitlement.local-dev.example.json"
-DEFAULT_CATALOG = ROOT / "docs" / "enterprise-license-skus.json"
 
 SECRET_BASENAMES = frozenset(
     {
-        "license.key",
-        "license.json",
-        "license-state.json",
         "env.json",
         "router.token",
     }
+)
+
+_LICENSE_BLOCK = re.compile(
+    r"(?m)^[ \t]*#.*license\.json.*\n"  # optional preceding comment
+    r"^[ \t]*license:\n"
+    r"(?:^[ \t]+.*\n|^[ \t]*\n)*",
 )
 
 
@@ -50,12 +54,19 @@ def run(cmd: list[str], cwd: Path | None = None) -> str:
     return result.stdout
 
 
+def omit_server_license(config_text: str) -> str:
+    """Drop server.license (and its preceding comment) from generated YAML."""
+    if "\n  license:\n" not in config_text and not config_text.startswith("  license:\n"):
+        # Tolerate templates that already omit the block.
+        return config_text
+    stripped, count = _LICENSE_BLOCK.subn("", config_text, count=1)
+    if count != 1:
+        die("minimal config is missing an expected server.license block to omit")
+    return stripped
+
+
 def rewrite_local_paths(config_text: str, out_dir: Path) -> str:
     replacements = {
-        "path: license.json": f"path: {out_dir / 'license.json'}",
-        "state_path: license-state.json": f"state_path: {out_dir / 'license-state.json'}",
-        "path: license.pub": f"path: {out_dir / 'license.pub'}",
-        "path: revocations.json": f"path: {out_dir / 'revocations.json'}",
         "path: usage.sqlite": f"path: {out_dir / 'usage.sqlite'}",
         "path: requests.jsonl": f"path: {out_dir / 'requests.jsonl'}",
         "state_path: router-state.json": f"state_path: {out_dir / 'router-state.json'}",
@@ -72,7 +83,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, required=True, help="gitignored output directory")
     parser.add_argument("--force", action="store_true", help="replace an existing out-dir")
     parser.add_argument("--repo-root", type=Path, default=ROOT)
-    parser.add_argument("--license-cli", default="", help="path to metrum-ai-router-license")
     parser.add_argument("--smartrouterctl", default="", help="path to metrum-ai-routerctl")
     parser.add_argument("--owner-user", default="local-dev")
     parser.add_argument("--project", default="example-project")
@@ -89,14 +99,8 @@ def resolve_cli(explicit: str, names: tuple[str, ...], repo_root: Path) -> str:
             return found
     go_bin = shutil.which("go")
     if not go_bin:
-        die(f"missing {' or '.join(names)}; install Go or pass --license-cli / --smartrouterctl")
+        die(f"missing {' or '.join(names)}; install Go or pass --smartrouterctl")
     return go_bin
-
-
-def license_argv(cli: str, repo_root: Path) -> list[str]:
-    if cli.endswith("go") or Path(cli).name == "go":
-        return [cli, "run", str(repo_root / "cmd" / "metrum-ai-router-license")]
-    return [cli]
 
 
 def ctl_argv(cli: str, repo_root: Path) -> list[str]:
@@ -117,54 +121,23 @@ def main() -> None:
 
     config_src = repo_root / "config.minimal.example.yaml"
     env_src = repo_root / "env.minimal.example.json"
-    entitlement_src = repo_root / "docs" / "entitlement.local-dev.example.json"
-    catalog = repo_root / "docs" / "enterprise-license-skus.json"
-    for path in (config_src, env_src, entitlement_src, catalog):
+    for path in (config_src, env_src):
         if not path.is_file():
             die(f"missing template {path}")
 
     config_path = out_dir / "config.yaml"
     env_path = out_dir / "env.json"
-    entitlement_path = out_dir / "entitlement.json"
-    pub = out_dir / "license.pub"
-    priv = out_dir / "license.key"
-    license_path = out_dir / "license.json"
     token_path = out_dir / "router.token"
 
-    config_path.write_text(rewrite_local_paths(config_src.read_text(encoding="utf-8"), out_dir), encoding="utf-8")
+    generated = omit_server_license(config_src.read_text(encoding="utf-8"))
+    generated = rewrite_local_paths(generated, out_dir)
+    if re.search(r"(?m)^[ \t]*license:", generated):
+        die("generated config still contains a license key")
+    config_path.write_text(generated, encoding="utf-8")
     shutil.copyfile(env_src, env_path)
-    shutil.copyfile(entitlement_src, entitlement_path)
     os.chmod(env_path, 0o600)
-    os.chmod(entitlement_path, 0o600)
 
-    license_cli = resolve_cli(args.license_cli, ("metrum-ai-router-license", "router-license"), repo_root)
-    ctl = resolve_cli(args.smartrouterctl, ("metrum-ai-routerctl", "metrum-ai-routerctl", "smartrouterctl"), repo_root)
-
-    run(
-        license_argv(license_cli, repo_root)
-        + ["generate-keypair", "--public-key-out", str(pub), "--private-key-out", str(priv)]
-    )
-    os.chmod(priv, 0o600)
-    run(
-        license_argv(license_cli, repo_root)
-        + [
-            "issue",
-            "--catalog",
-            str(catalog),
-            "--entitlement",
-            str(entitlement_path),
-            "--key",
-            str(priv),
-            "--public-key",
-            str(pub),
-            "--allow-unknown-runtime-key",
-            "--valid-for",
-            "8760h",
-            "--out",
-            str(license_path),
-        ]
-    )
-    os.chmod(license_path, 0o600)
+    ctl = resolve_cli(args.smartrouterctl, ("metrum-ai-routerctl", "smartrouterctl"), repo_root)
 
     grant = run(
         ctl_argv(ctl, repo_root)
@@ -215,8 +188,6 @@ def main() -> None:
         "out_dir": str(out_dir),
         "config": str(config_path),
         "env": str(env_path),
-        "license": str(license_path),
-        "public_key": str(pub),
         "token_file": str(token_path),
         "caller_id": grant_json.get("caller_id"),
         "token_id": grant_json.get("token_id"),
@@ -224,7 +195,7 @@ def main() -> None:
         "next_steps": str(next_steps),
     }
     for key, value in printed.items():
-        if key in {"license", "public_key", "env", "config"}:
+        if key in {"env", "config"}:
             continue
         text = str(value)
         if any(name in text for name in SECRET_BASENAMES) and key not in {"token_file", "next_steps", "out_dir"}:

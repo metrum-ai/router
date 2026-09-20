@@ -92,7 +92,7 @@ kubectl run curl-llmd --rm -i --restart=Never -n smart-llmrouter --image=curlima
 ## 6. Metrum AI Router
 
 Build/import the router image, render Helm values from blueprint output, install
-with `scripts/helm_install_with_license.sh`, and wait for `/readyz`.
+with `helm upgrade --install` after creating the runtime Secret (`config.yaml` + `env.json`), and wait for `/readyz`.
 
 Router smokes (in-cluster or port-forward):
 

@@ -193,15 +193,6 @@ func buildLocalConfig(intent *StackIntent) (*router.Config, error) {
 				Path:            "/app/state/usage.sqlite",
 				MigrationPolicy: "auto-safe",
 			},
-			License: router.LicenseConfig{
-				Enabled:   true,
-				Path:      "/app/config/license.json",
-				StatePath: "/app/state/license-state.json",
-				PublicKeys: []router.LicensePublicKeyConfig{{
-					KeyID: "self-managed",
-					Path:  "/app/config/license.pub",
-				}},
-			},
 			Upstream: router.UpstreamConfig{
 				TimeoutMS:        120000,
 				MaxResponseBytes: 52428800,

@@ -12,6 +12,11 @@ import check_env_example_secrets as checker
 
 
 class SecretKeyErrorsTest(unittest.TestCase):
+    def test_identifier_keys(self) -> None:
+        for name in ("ROUTER_ID_TRANSFORM_KEY", "ROUTER_ID_TRANSFORM_KEY_PREVIOUS", "ROUTER_ID_TRANSFORM_KEY_EXTRA"):
+            self.assertTrue(list(checker.secret_key_errors(checker.ROOT / "env.example.json", {name: "ab" * 64})))
+            self.assertEqual([], list(checker.secret_key_errors(checker.ROOT / "env.example.json", {name: ""})))
+
     def test_allows_empty_sensitive_values(self) -> None:
         errors = list(
             checker.secret_key_errors(

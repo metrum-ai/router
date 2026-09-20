@@ -165,21 +165,14 @@ metrum-ai-routerctl callers generate \
 kubectl create namespace smart-llmrouter --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -k /tmp/shadeform-blueprint/overlays/nvidia-local-serving
 
-# Self-managed entitlement signing.key_id MUST be "self-managed" to match the
-# blueprint public_keys entry. Bind one concrete instance fingerprint in both
-# the entitlement allowed_instances list and server.license.instance_fingerprint
-# when the SKU sets instance_fingerprint_required / max_instances.
-scripts/helm_install_with_license.sh \
-  --kubeconfig "$KUBECONFIG" \
-  --namespace smart-llmrouter \
-  --release smart-llmrouter \
-  --chart /tmp/shadeform-blueprint/charts/smart-llmrouter \
-  --entitlement /secure/path/approved-entitlement.yaml \
-  --valid-for 12h \
-  --config /tmp/shadeform-blueprint/config.yaml \
-  --env-file /secure/path/local-env.json \
-  --image-repository metrum-ai-router \
-  --image-tag issue-943
+kubectl -n smart-llmrouter create secret generic smart-llmrouter-secrets \
+  --from-file=config.yaml=/tmp/shadeform-blueprint/config.yaml \
+  --from-file=env.json=/secure/path/local-env.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+helm upgrade --install smart-llmrouter /tmp/shadeform-blueprint/charts/smart-llmrouter \
+  --kubeconfig "$KUBECONFIG" --namespace smart-llmrouter --create-namespace \
+  --set "image.repository=metrum-ai-router" --set "image.tag=issue-943" \
+  --set "config.existingSecretKey=config.yaml" --set "runtimeSecret.name=smart-llmrouter-secrets"
 ```
 
 The router must have no `nvidia.com/gpu` request. Each vLLM Deployment must have

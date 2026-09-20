@@ -42,6 +42,7 @@ license-state.json
 *private-key*.pem
 *.log
 *.jsonl
+!testdata/sse/golden/**/*.jsonl
 # Synthetic human-review fixture for the outcome-calibrated policy reference.
 !examples/external-routing-policy/reviewed_outcomes.jsonl
 !examples/external-routing-policy/reviewed_coding_outcomes.jsonl

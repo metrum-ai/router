@@ -157,7 +157,8 @@ cases:
     disposition: supported_translation
     assertions:
       - responses-to-chat and chat-to-responses preserve text/tools
-      - stateful previous_response_id and streaming bridges reject without upstream
+      - stateful previous_response_id rejects without upstream
+      - chat-to-responses streaming succeeds with Chat SSE evidence
     evidence_paths:
       - tests/api_compat/tests/test_route_bridge_smoke.py
     test_id: test_stateless_responses_to_chat_and_chat_to_responses_bridges

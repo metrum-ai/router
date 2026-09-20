@@ -123,7 +123,6 @@ const config = {
               { label: "Glossary", to: "/concepts/glossary" },
               { label: "FAQ", to: "/faq" },
               { label: "Installation", to: "/installation/" },
-              { label: "Licensing", to: "/licensing/" },
               { label: "Routing", to: "/routing/overview" },
               { label: "Providers And Models", to: "/providers-models/overview" },
             ],
