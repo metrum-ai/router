@@ -31,7 +31,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - run: python3 scripts/inspect_coding_eval_test.py
 
   smoke:
@@ -46,7 +46,7 @@ jobs:
       EVAL_USAGE_CONFIG_YAML: ${{ secrets.EVAL_USAGE_CONFIG_YAML }}
       EVAL_USAGE_CALLER_ID: ${{ vars.EVAL_USAGE_CALLER_ID }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Inspect AI
         run: python3 -m pip install 'inspect-ai==0.3.242' 'inspect-evals==0.15.0'
       - name: Authenticated bounded router smoke
@@ -76,7 +76,7 @@ jobs:
       EVAL_USAGE_CONFIG_YAML: ${{ secrets.EVAL_USAGE_CONFIG_YAML }}
       EVAL_USAGE_CALLER_ID: ${{ vars.EVAL_USAGE_CALLER_ID }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Install Inspect AI
         run: python3 -m pip install 'inspect-ai==0.3.242' 'inspect-evals==0.15.0'
       - name: Run deployment-owned full suite
