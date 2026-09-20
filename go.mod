@@ -14,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.9
 	github.com/casbin/casbin/v2 v2.134.0
-	github.com/coreos/go-oidc/v3 v3.19.0
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d
 	github.com/evanw/esbuild v0.28.1
 	github.com/glebarez/sqlite v1.11.0
