@@ -96,10 +96,16 @@ def assert_fast_go_workflow() -> None:
     require("merge_group:" in text, "go.yml must report on merge groups")
     require("if: github.event_name != 'merge_group'" in parsed["test-and-vet"], "PR go job must skip merge groups")
     require(any("run: make test-fast" in item for item in steps(parsed["test-and-vet"])), "PR go job dropped test-fast")
+    require("astral-sh/setup-uv@" in parsed["test-and-vet"], "PR go job must install uv for harbor-adapter and api-compat bootstrap")
     merge = parsed["test-and-vet-merge-group"]
     require("if: github.event_name == 'merge_group'" in merge, "merge-group go job missing")
     require("name: test-and-vet" in merge, "merge-group go job must keep the required check name")
-    require("actions/setup-go" not in merge and "actions/setup-python" not in merge, "merge-group go job still downloads actions")
+    require(
+        "actions/setup-go" not in merge
+        and "actions/setup-python" not in merge
+        and "setup-uv" not in merge,
+        "merge-group go job still downloads actions",
+    )
     require("\n        run: make test\n" not in text, "go.yml must not run the full suite")
 
 
