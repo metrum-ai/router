@@ -28,6 +28,10 @@ on:
       - ".github/workflows/docs-qa.yml"
   workflow_dispatch:
 
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -41,14 +45,5 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: docs-site/package-lock.json
       - name: make docs-qa
         run: make docs-qa
-      - name: admin typecheck
-        run: |
-          npm ci --prefix internal/router/admindist/web --no-audit --no-fund
-          npx --prefix internal/router/admindist/web tsc --noEmit -p internal/router/admindist/web

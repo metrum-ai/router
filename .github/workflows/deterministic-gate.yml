@@ -1,0 +1,107 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Deterministic gate
+
+# GitHub requires this check name on the pull request before queueing and on
+# the merge group before merging. The pull-request run only records deferral.
+# The suite itself runs once, on the combined merge-group SHA or by dispatch.
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: deterministic-${{ github.workflow }}-${{ github.ref }}
+  # Keep pull-request cancellation; never cancel a merge-group gate mid-flight.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test-full:
+    runs-on: [self-hosted, Linux, X64, router]
+    timeout-minutes: 90
+    steps:
+      - name: Defer full gate until merge queue
+        if: github.event_name == 'pull_request'
+        run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: github.event_name != 'pull_request'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.event_name != 'pull_request'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        if: github.event_name != 'pull_request'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: github.event_name != 'pull_request'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            docs-site/package-lock.json
+            internal/router/admindist/web/package-lock.json
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        if: github.event_name != 'pull_request'
+      - name: Install Python test deps
+        if: github.event_name != 'pull_request'
+        run: python3 -m pip install --user 'PyYAML==6.0.3'
+      - name: gofmt
+        if: github.event_name != 'pull_request'
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+      - name: go vet
+        if: github.event_name != 'pull_request'
+        run: go vet ./...
+      - name: Run full offline suite
+        if: github.event_name != 'pull_request'
+        run: make test
+      - name: Docs QA
+        if: github.event_name != 'pull_request'
+        run: make docs-qa
+      - name: Admin typecheck
+        if: github.event_name != 'pull_request'
+        run: |
+          npm ci --prefix internal/router/admindist/web --no-audit --no-fund
+          npx --prefix internal/router/admindist/web tsc --noEmit -p internal/router/admindist/web
+      - name: Learned routing policy sandbox
+        if: github.event_name != 'pull_request'
+        run: bash scripts/ci_lrp_synthetic.sh
+        env:
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+      - name: Generate CycloneDX source SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: source-sbom.cdx.json
+          upload-artifact: true
+      - name: Scan source dependencies
+        if: github.event_name != 'pull_request'
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e
+        with:
+          path: .
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+          output-file: source-vulnerabilities.sarif
+      - name: Upload vulnerability report
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: source-vulnerabilities-sarif
+          path: source-vulnerabilities.sarif
+          if-no-files-found: error

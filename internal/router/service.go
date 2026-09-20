@@ -39,6 +39,12 @@ import (
 // than 500ms under parallel load.
 var defaultImageURLDNSTimeout = 500 * time.Millisecond
 
+// defaultImageURLLookup resolves image-URL hostnames for admission checks.
+// Tests may replace it without changing egress policy DNS.
+var defaultImageURLLookup egressLookupIPFunc = func(ctx context.Context, host string) ([]net.IP, error) {
+	return defaultEgressLookupIP(ctx, host)
+}
+
 type Service struct {
 	identifiers        IdentifierTransform
 	cfg                *Config
@@ -200,7 +206,7 @@ func New(cfg *Config) (*Service, error) {
 		mux:                http.NewServeMux(),
 		httpClient:         newUpstreamHTTPClient(cfg.Server.Upstream),
 		externalPolicies:   map[string]*externalPolicyStrategy{},
-		imageURLLookup:     defaultEgressLookupIP,
+		imageURLLookup:     defaultImageURLLookup,
 		imageURLDNSTimeout: defaultImageURLDNSTimeout,
 		callersBySum:       map[string]*callerRuntime{},
 		adminBasic:         map[string]adminBasicRuntime{},

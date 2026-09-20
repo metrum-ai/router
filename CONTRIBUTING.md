@@ -50,6 +50,7 @@ required):
 
 ```bash
 python3 scripts/local_dev_bootstrap.py --out-dir tmp/local-dev
+make test-fast
 make test
 make docs-qa
 make lrp-test
@@ -57,10 +58,12 @@ make lrp-test
 
 PR checklist:
 
-1. `make test` passes for the change surface you touched.
-2. Docs or claim wording stays aligned with implemented behavior.
-3. No secrets (`env.json`, `commerce.env.json`, `license.json`, tokens) are added.
-4. Commits include `Signed-off-by`.
+1. `make test-fast` passes for the change surface you touched.
+2. `make test` is the full credential-free suite. It runs once on the merge-queue combined SHA; run it locally when you change API compatibility, Harbor task verifiers, packaging, or docs claims.
+3. Provider-backed Harbor, Inspect, and live API compatibility stay manual. Dispatch those protected workflows only for a promotion or major combined routing change.
+4. Docs or claim wording stays aligned with implemented behavior.
+5. No secrets (`env.json`, `commerce.env.json`, `license.json`, tokens) are added.
+6. Commits include `Signed-off-by`.
 
 Learned Routing Policy tests (Python, uv): `make lrp-test`. Do not commit
 `tmp/local-dev`, `env.json`, `commerce.env.json`, `license.json`, or `license.key`.
