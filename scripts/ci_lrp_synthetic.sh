@@ -25,8 +25,12 @@ sudo apt-get "${apt_sources[@]}" update
 sudo apt-get "${apt_sources[@]}" install -y bubblewrap
 umask 077
 mkdir -p /var/tmp/lrp-ci
-# Bare-metal runners may reuse /var/tmp across jobs.
-rm -rf /var/tmp/lrp-ci/rootfs
+# Bare-metal runners may reuse /var/tmp across jobs. Prior rootfs trees are
+# mode 0555, so restore owner write before unlink.
+if [[ -e /var/tmp/lrp-ci/rootfs ]]; then
+  chmod -R u+w /var/tmp/lrp-ci/rootfs 2>/dev/null || true
+  rm -rf /var/tmp/lrp-ci/rootfs
+fi
 
 docker_ok=0
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
