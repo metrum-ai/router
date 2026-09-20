@@ -17,8 +17,9 @@ Implementation lives in the importable package
    and turn-kind strata with session-disjoint `session_split` partitions.
    The example corpus also caps source trajectories at 100 and streams
    parquet rows so the full upstream file is not loaded into RAM.
-5. Mixed portfolio target descriptors (OpenRouter Qwen + OpenAI GPT) with
-   source-dated prices. No secrets in descriptors.
+5. Mixed portfolio target descriptors (OpenRouter Qwen + MiniMax, Fireworks
+   kimi, Baseten GLM; no OpenAI) with source-dated prices. No secrets in
+   descriptors. Absolute USD baseline target is `baseten-glm-5-2`.
 6. Replay driver wrapping `run_fanout` via the router (one group per
    target). Dry-run by default. Spend estimate aborts above 100 USD without
    an approval flag.
