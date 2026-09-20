@@ -32,7 +32,7 @@ configs, private hostnames, or SSH details in tickets, PRs, or diagrams.
 
 | Component / claim | Status | Notes |
 |---|---|---|
-| On-prem k3s + Metrum AI Router Helm + license wrapper | Validated (PR #954) | Manual overlay; NVIDIA blueprint used only as config/chart factory |
+| On-prem k3s + Metrum AI Router Helm | Validated (PR #954) | Manual overlay; NVIDIA blueprint used only as config/chart factory. License-wrapper install path removed in 3.0.0 — no longer a validated claim. |
 | Instinct MI355X × 8, allocatable `amd.com/gpu=8` | Validated (PR #954) | Safe-scalar live note in the AMD E2E runbook |
 | AMD GPU Operator `v1.5.1`, device-plugin mode, host-owned driver | Validated (PR #954) | `driver.enable: false`; DRA disabled |
 | Metrics exporter / test runner / DCM / remediation | Proposed | Explicitly **disabled** in checked-in `gpu-operator-values.yaml` |
@@ -231,7 +231,7 @@ flowchart TB
 
   subgraph appNs [smart_llmrouter]
     R[smart_llmrouter_Deployment_no_GPU]
-    Sec[Runtime_Secret_config_env_license]
+    Sec[Runtime_Secret_config_env]
     VT[vllm_tiny]
     VC[vllm_chat]
     VD[vllm_coder]
@@ -418,7 +418,7 @@ names such as `default` / `fast` / `big-coder` as product constants.
 |---|---|---|
 | Router caller token | Clients | Downstream auth; SHA-256 stored in `callers[]` |
 | `LOCAL_VLLM_API_KEY` | Router → vLLM | Upstream placeholder; overlay vLLM may not require `--api-key` |
-| Runtime Secret | Router Pod | `config.yaml`, `env.json`, `license.json`, `license.pub` |
+| Runtime Secret | Router Pod | `config.yaml`, `env.json` (leftover `license.json` mounts are unused in 3.0.0) |
 
 ### NetworkPolicy (manifests validated; enforcement CNI-dependent)
 
@@ -493,7 +493,6 @@ From [internal/router/metrics.go](../internal/router/metrics.go):
 | `smart_llmrouter_*_output_tokens_per_second_*` | Upstream vs downstream throughput |
 | `smart_llmrouter_cache_entries` / `_bytes` / `_max_bytes` / `_occupancy_ratio` | Cache gauges |
 | `smart_llmrouter_build_info` | Release identity |
-| `smart_llmrouter_license_*` | License health |
 | `smart_llmrouter_traffic_shape_queue_depth` | Shaping saturation |
 | `smart_llmrouter_migration_*` | Migration ledger health |
 
@@ -589,7 +588,7 @@ receivers:
 2. Install AMD GPU Operator with checked-in values; confirm allocatable
    `amd.com/gpu` and node labels.
 3. Deploy serving (tiny-only or full matrix); direct `/v1/models` + Chat smokes.
-4. Install Metrum AI Router via `scripts/helm_install_with_license.sh`; assert **no**
+4. Install Metrum AI Router with the checked-in Helm chart / overlay; assert **no**
    GPU request on the router Pod.
 5. Router smokes: `/readyz`, `/v1/models`, Chat, stream, 401/403.
 6. Optional promotion: enable metrics exporter, OTel collectors, llm-d, agent

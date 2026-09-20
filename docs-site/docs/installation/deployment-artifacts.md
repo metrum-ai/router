@@ -19,7 +19,7 @@ Use `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts, including 
 
 ## Embedded Docs And Admin Assets
 
-The router binary embeds the product documentation site. After startup, browser requests to `/docs/` show the full external administrator docs, including installation, configuration, licensing, provider keys, caller tokens, reporting, troubleshooting, upgrade, rollback, and security guidance.
+The router binary embeds the product documentation site. After startup, browser requests to `/docs/` show the full external administrator docs, including installation, configuration, provider keys, caller tokens, reporting, troubleshooting, upgrade, rollback, and security guidance.
 
 Authenticated admin report assets, when enabled, are embedded separately and served under `/admin/reports/`. They are not part of public `/docs/` and require browser-admin authentication plus authorization.
 
@@ -30,7 +30,8 @@ Release tarballs include a small package-safe Markdown bootstrap set under `docs
 The artifact root also carries `LICENSE`, `NOTICE`,
 `THIRD_PARTY_NOTICES.md`, and `MODEL_LICENSES.md`. Preserve and review all four
 when copying or redistributing an artifact. See [Software License And Third-Party Notices](../legal/software-licenses)
-for the scope of each file and the separate role of runtime `license.json`.
+for the scope of each notice file. Leftover runtime `license.json` files are
+inert in 3.0.0+.
 
 Use the embedded `/docs/` site for the full product guide after the router starts. Keep deployment-specific credentials, host paths, and operational notes in the customer's approved private systems.
 

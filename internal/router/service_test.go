@@ -41,6 +41,20 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	// Parallel go test on the self-hosted runner often exceeds the 500ms
+	// production lookup budget. Keep the production default unchanged.
+	defaultImageURLDNSTimeout = 5 * time.Second
+	// Stub image-URL admission DNS only. Egress policy still uses the live
+	// resolver so localhost allowlists and redirect checks keep working.
+	defaultImageURLLookup = func(ctx context.Context, host string) ([]net.IP, error) {
+		if ip := net.ParseIP(host); ip != nil {
+			return []net.IP{ip}, nil
+		}
+		return []net.IP{net.IPv4(93, 184, 216, 34)}, nil
+	}
+}
+
 func TestAnthropicIngressUnaryHappyPath(t *testing.T) {
 	for _, path := range []string{"/v1/messages", "/anthropic/v1/messages"} {
 		t.Run(path, func(t *testing.T) {
@@ -1015,7 +1029,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		t.Fatalf("version status=%d body=%s", versionRR.Code, versionRR.Body.String())
 	}
 	versionBody := mustJSONMap(t, versionRR.Body.String())
-	for _, key := range []string{"version", "commit", "build_date", "go_version", "goos", "goarch", "license_compile_mode"} {
+	for _, key := range []string{"version", "commit", "build_date", "go_version", "goos", "goarch"} {
 		if versionBody[key] == "" {
 			t.Fatalf("version response missing %s: %#v", key, versionBody)
 		}
@@ -1806,7 +1820,7 @@ func newAdminReportFailureLogOnlyService(t *testing.T, driver string) (*Service,
 		}
 	})
 	return &Service{
-		cfg: &Config{Server: ServerConfig{
+		cfg: &Config{Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			UsageDB: UsageDBConfig{Driver: driver},
 		}},
 		logger: logger,
@@ -9281,63 +9295,13 @@ func TestExternalRoutingPolicyCanFallbackOnError(t *testing.T) {
 	}
 }
 
-func TestPIIFilterRedactsOpenAIChatAndRestoresResponse(t *testing.T) {
-	var upstreamBody map[string]any
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
-			t.Fatal(err)
-		}
-		raw, _ := json.Marshal(upstreamBody)
-		if strings.Contains(string(raw), "jane.doe@example.com") || strings.Contains(string(raw), "415-555-0199") {
-			t.Fatalf("upstream received raw PII: %s", raw)
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "pii_chat_1",
-			"choices": []map[string]any{{
-				"message": map[string]any{"role": "assistant", "content": "Use [EMAIL_1] and [PHONE_1]."},
-			}},
-			"usage": map[string]any{"prompt_tokens": 8, "completion_tokens": 5, "total_tokens": 13},
-		})
-	}))
-	defer upstream.Close()
-
-	dir := t.TempDir()
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["default"] = ModelGroup{
-		Strategy:  "static",
-		PIIFilter: testPIIFilterConfig("redact_and_restore"),
-		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
-	}
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"Email jane.doe@example.com or call 415-555-0199."}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "jane.doe@example.com") || !strings.Contains(rr.Body.String(), "415-555-0199") {
-		t.Fatalf("response did not restore placeholders: %s", rr.Body.String())
-	}
-	msgs := upstreamBody["messages"].([]any)
-	content := msgs[0].(map[string]any)["content"].(string)
-	if !strings.Contains(content, "[EMAIL_1]") || !strings.Contains(content, "[PHONE_1]") {
-		t.Fatalf("upstream content=%q, want placeholders", content)
-	}
-	logRaw, err := os.ReadFile(cfg.Server.Logging.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(logRaw), "jane.doe@example.com") || strings.Contains(string(logRaw), "415-555-0199") {
-		t.Fatalf("log leaked raw PII: %s", logRaw)
-	}
-	if !strings.Contains(string(logRaw), `"pii_filter_applied":true`) || !strings.Contains(string(logRaw), `"pii_filter_replacements":2`) {
-		t.Fatalf("log missing pii filter metadata: %s", logRaw)
+func TestPIIFilterRejectsResponseRestoration(t *testing.T) {
+	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter = testPIIFilterConfig("redact_and_restore")
+	cfg.Models["default"] = group
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "F-011") {
+		t.Fatalf("expected F-011, got %v", err)
 	}
 }
 
@@ -9390,7 +9354,7 @@ func TestPIIFilterReplacementLimitDoesNotLetRawMirrorStarveNormalizedRequest(t *
 }
 
 func TestPIIFilterReplacementLimitBlocksBeforeUpstream(t *testing.T) {
-	for _, mode := range []string{"redact_only", "redact_and_restore", "fail_on_match"} {
+	for _, mode := range []string{"redact_only", "fail_on_match"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int64
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -9446,7 +9410,7 @@ func TestPIIFilterCacheStoresRedactedResponseNotRestoredPII(t *testing.T) {
 	cfg.Server.Cache.DefaultTTL = time.Minute
 	cfg.Models["default"] = ModelGroup{
 		Strategy:  "static",
-		PIIFilter: testPIIFilterConfig("redact_and_restore"),
+		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 	}
 	svc, err := New(cfg)
@@ -9470,15 +9434,15 @@ func TestPIIFilterCacheStoresRedactedResponseNotRestoredPII(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("upstream calls=%d, want cache hit on second request", calls.Load())
 	}
-	if !strings.Contains(first, "alice@example.com") || strings.Contains(first, "bob@example.com") {
+	if !strings.Contains(first, "[EMAIL_1]") || strings.Contains(first, "bob@example.com") {
 		t.Fatalf("first response=%s", first)
 	}
-	if !strings.Contains(second, "bob@example.com") || strings.Contains(second, "alice@example.com") {
+	if !strings.Contains(second, "[EMAIL_1]") || strings.Contains(second, "alice@example.com") {
 		t.Fatalf("second response=%s", second)
 	}
 }
 
-func TestContentCaptureResponseStoresPreRestorePIIPlaceholders(t *testing.T) {
+func TestContentCaptureResponseStoresRedactedPIIPlaceholders(t *testing.T) {
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -9505,7 +9469,7 @@ func TestContentCaptureResponseStoresPreRestorePIIPlaceholders(t *testing.T) {
 	}
 	cfg.Models["default"] = ModelGroup{
 		Strategy:  "static",
-		PIIFilter: testPIIFilterConfig("redact_and_restore"),
+		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 	}
 	svc, err := New(cfg)
@@ -9521,8 +9485,8 @@ func TestContentCaptureResponseStoresPreRestorePIIPlaceholders(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "jane.doe@example.com") {
-		t.Fatalf("response did not restore PII for caller: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), "[EMAIL_1]") {
+		t.Fatalf("response did not preserve PII placeholders: %s", rr.Body.String())
 	}
 	var row contentCaptureRecord
 	if err := svc.usage.db.Where("request_id = ? AND scope = ?", rr.Header().Get("X-Request-Id"), contentCaptureScopeResponse).First(&row).Error; err != nil {
@@ -9546,8 +9510,8 @@ func TestContentCaptureResponseStoresPreRestorePIIPlaceholders(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("upstream calls=%d, want second response from cache", calls.Load())
 	}
-	if !strings.Contains(cacheRR.Body.String(), "jane.alt@example.com") {
-		t.Fatalf("cached response did not restore PII for caller: %s", cacheRR.Body.String())
+	if !strings.Contains(cacheRR.Body.String(), "[EMAIL_1]") {
+		t.Fatalf("cached response did not preserve PII placeholders: %s", cacheRR.Body.String())
 	}
 	var cachedRow contentCaptureRecord
 	if err := svc.usage.db.Where("request_id = ? AND scope = ?", cacheRR.Header().Get("X-Request-Id"), contentCaptureScopeResponse).First(&cachedRow).Error; err != nil {
@@ -9647,7 +9611,7 @@ func TestPIIFilterRedactsResponsesAndAnthropicMessages(t *testing.T) {
 			cfg.Provider["mock"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: tc.dialect, APIKey: "provider-key"}
 			cfg.Models["default"] = ModelGroup{
 				Strategy:  "static",
-				PIIFilter: testPIIFilterConfig("redact_and_restore"),
+				PIIFilter: testPIIFilterConfig("redact_only"),
 				Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 			}
 			svc, err := New(cfg)
@@ -9662,8 +9626,8 @@ func TestPIIFilterRedactsResponsesAndAnthropicMessages(t *testing.T) {
 			if rr.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
-			if !strings.Contains(rr.Body.String(), "jane.doe@example.com") {
-				t.Fatalf("response did not restore placeholder: %s", rr.Body.String())
+			if !strings.Contains(rr.Body.String(), "[EMAIL_1]") {
+				t.Fatalf("response did not preserve placeholder: %s", rr.Body.String())
 			}
 			raw, _ := json.Marshal(upstreamBody[tc.wantField])
 			if !strings.Contains(string(raw), "[EMAIL_1]") {
@@ -9697,7 +9661,7 @@ func TestPIIFilterRedactsOpenAIChatToolResultPassthrough(t *testing.T) {
 	cfg.Provider["mock"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["default"] = ModelGroup{
 		Strategy:  "static",
-		PIIFilter: testPIIFilterConfig("redact_and_restore"),
+		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets: []Target{{
 			Provider:    "mock",
 			Model:       "mock-model",
@@ -9726,8 +9690,8 @@ func TestPIIFilterRedactsOpenAIChatToolResultPassthrough(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "jane.doe@example.com") {
-		t.Fatalf("response did not restore placeholder: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), "[EMAIL_1]") {
+		t.Fatalf("response did not preserve placeholder: %s", rr.Body.String())
 	}
 	msgs := upstreamBody["messages"].([]any)
 	toolMsg := msgs[1].(map[string]any)
@@ -11567,7 +11531,7 @@ func TestChatInboundResponsesBridgeToolsEndToEnd(t *testing.T) {
 	}
 }
 
-func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) {
+func TestChatInboundResponsesBridgeRejectsUnsupportedStreamingShapeBeforeUpstream(t *testing.T) {
 	upstreamCalled := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalled = true
@@ -11592,7 +11556,7 @@ func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) 
 	}
 	defer svc.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"bridge","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"bridge","stream":true,"n":2,"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
@@ -11602,7 +11566,7 @@ func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) 
 	if upstreamCalled {
 		t.Fatal("upstream called for unsupported bridge streaming")
 	}
-	assertDecisionFilterReason(t, svc, "chat-to-responses-streaming-unsupported")
+	assertDecisionFilterReason(t, svc, "chat-to-responses-unsupported-field")
 }
 
 func TestOpenAIChatPassthroughStripsRetentionFields(t *testing.T) {
@@ -14961,7 +14925,7 @@ func testConfig(t *testing.T, upstreamURL, providerKey, dir string) *Config {
 	sum := sha256.Sum256([]byte(testToken))
 	usageDBDisabled := false
 	return &Config{
-		Server: ServerConfig{
+		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "default",
 			Cache:             CacheConfig{Enabled: true, MaxBytes: 1 << 20, DefaultTTL: 0},
@@ -15320,6 +15284,5 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	licenseRequired = false
 	os.Exit(m.Run())
 }

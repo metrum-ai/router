@@ -285,16 +285,32 @@ class SyntheticEmbedder:
 
     kind = "synthetic"
     fingerprint = embedding_fingerprint({"kind": "synthetic"})
+    max_seq_len = 512
 
     def encode(self, text: str) -> Vector:
-        result = np.zeros(DIMENSIONS, dtype=np.float32)
-        for token in re.findall(r"\w+|[^\w\s]", text[-TEXT_LIMIT:].lower())[-512:]:
-            digest = hashlib.sha256(token.encode()).digest()
-            result[int.from_bytes(digest[:4], "big") % DIMENSIONS] += (
-                1.0 if digest[4] & 1 else -1.0
+        from lrp.phase_metrics import (
+            current_phase_spans,
+            mark_tokenizer_saturation,
+            optional_phase,
+        )
+
+        spans = current_phase_spans()
+        with optional_phase(spans, "tokenize"):
+            tokens = re.findall(r"\w+|[^\w\s]", text[-TEXT_LIMIT:].lower())
+            # Left truncation to max_seq_len=512; ceiling hit when input fills it.
+            mark_tokenizer_saturation(
+                spans, ids_len=min(len(tokens), self.max_seq_len), max_seq_len=self.max_seq_len
             )
-        norm = float(np.linalg.norm(result))
-        return result / norm if norm else result
+            tokens = tokens[-self.max_seq_len :]
+        with optional_phase(spans, "embed"):
+            result = np.zeros(DIMENSIONS, dtype=np.float32)
+            for token in tokens:
+                digest = hashlib.sha256(token.encode()).digest()
+                result[int.from_bytes(digest[:4], "big") % DIMENSIONS] += (
+                    1.0 if digest[4] & 1 else -1.0
+                )
+            norm = float(np.linalg.norm(result))
+            return result / norm if norm else result
 
 
 def _require_max_seq_len(value: int) -> int:
@@ -405,40 +421,52 @@ class ONNXEmbedder:
             self.device = replace(resolved, fallback_to_cpu=True)
 
     def encode(self, text: str) -> Vector:
-        encoded = self.tokenizer.encode(self.prefix + text[-TEXT_LIMIT:])
+        from lrp.phase_metrics import (
+            current_phase_spans,
+            mark_tokenizer_saturation,
+            optional_phase,
+        )
+
+        spans = current_phase_spans()
+        with optional_phase(spans, "tokenize"):
+            encoded = self.tokenizer.encode(self.prefix + text[-TEXT_LIMIT:])
+            mark_tokenizer_saturation(
+                spans, ids_len=len(encoded.ids), max_seq_len=self.max_seq_len
+            )
         values = {
             "input_ids": encoded.ids,
             "attention_mask": encoded.attention_mask,
             "token_type_ids": encoded.type_ids,
         }
-        feed = {}
-        for item in self.session.get_inputs():
-            if item.name not in values or item.type not in {
-                "tensor(int64)",
-                "tensor(int32)",
-            }:
-                raise ValueError("unsupported embedding input contract")
-            dtype = np.int64 if item.type == "tensor(int64)" else np.int32
-            feed[item.name] = np.asarray([values[item.name]], dtype=dtype)
-        output = np.asarray(self.session.run(None, feed)[0], dtype=np.float32)
-        if output.ndim == 3:
-            if self.pooling == "cls":
-                vector = output[0, 0]
+        with optional_phase(spans, "embed"):
+            feed = {}
+            for item in self.session.get_inputs():
+                if item.name not in values or item.type not in {
+                    "tensor(int64)",
+                    "tensor(int32)",
+                }:
+                    raise ValueError("unsupported embedding input contract")
+                dtype = np.int64 if item.type == "tensor(int64)" else np.int32
+                feed[item.name] = np.asarray([values[item.name]], dtype=dtype)
+            output = np.asarray(self.session.run(None, feed)[0], dtype=np.float32)
+            if output.ndim == 3:
+                if self.pooling == "cls":
+                    vector = output[0, 0]
+                else:
+                    mask = np.asarray(encoded.attention_mask, dtype=np.float32)
+                    vector = (output[0] * mask[:, None]).sum(axis=0) / max(
+                        float(mask.sum()), 1
+                    )
+            elif output.ndim == 2 and output.shape[0] == 1:
+                vector = output[0]
             else:
-                mask = np.asarray(encoded.attention_mask, dtype=np.float32)
-                vector = (output[0] * mask[:, None]).sum(axis=0) / max(
-                    float(mask.sum()), 1
-                )
-        elif output.ndim == 2 and output.shape[0] == 1:
-            vector = output[0]
-        else:
-            raise ValueError("unsupported embedding output contract")
-        if vector.shape != (DIMENSIONS,) or not np.isfinite(vector).all():
-            raise ValueError("invalid embedding vector")
-        norm = float(np.linalg.norm(vector))
-        if norm <= 0:
-            raise ValueError("zero embedding vector")
-        return np.asarray(vector / norm, dtype=np.float32)
+                raise ValueError("unsupported embedding output contract")
+            if vector.shape != (DIMENSIONS,) or not np.isfinite(vector).all():
+                raise ValueError("invalid embedding vector")
+            norm = float(np.linalg.norm(vector))
+            if norm <= 0:
+                raise ValueError("zero embedding vector")
+            return np.asarray(vector / norm, dtype=np.float32)
 
 
 def _sentence_transformers_available() -> bool:
@@ -576,23 +604,28 @@ class SentenceTransformersEmbedder:
             self.device = replace(resolved, fallback_to_cpu=True)
 
     def encode(self, text: str) -> Vector:
-        payload = self.prefix + text[-TEXT_LIMIT:]
-        output = self.model.encode(
-            [payload],
-            batch_size=self.batch_size,
-            convert_to_numpy=True,
-            normalize_embeddings=self.normalize_embeddings,
-            show_progress_bar=False,
-        )
-        vector = np.asarray(output[0], dtype=np.float32)
-        if vector.shape != (DIMENSIONS,) or not np.isfinite(vector).all():
-            raise ValueError("invalid embedding vector")
-        if not self.normalize_embeddings:
-            norm = float(np.linalg.norm(vector))
-            if norm <= 0:
-                raise ValueError("zero embedding vector")
-            vector = vector / norm
-        return np.asarray(vector, dtype=np.float32)
+        from lrp.phase_metrics import current_phase_spans, optional_phase
+
+        spans = current_phase_spans()
+        # ST does not expose a separate tokenizer step; attribute wall time to embed.
+        with optional_phase(spans, "embed"):
+            payload = self.prefix + text[-TEXT_LIMIT:]
+            output = self.model.encode(
+                [payload],
+                batch_size=self.batch_size,
+                convert_to_numpy=True,
+                normalize_embeddings=self.normalize_embeddings,
+                show_progress_bar=False,
+            )
+            vector = np.asarray(output[0], dtype=np.float32)
+            if vector.shape != (DIMENSIONS,) or not np.isfinite(vector).all():
+                raise ValueError("invalid embedding vector")
+            if not self.normalize_embeddings:
+                norm = float(np.linalg.norm(vector))
+                if norm <= 0:
+                    raise ValueError("zero embedding vector")
+                vector = vector / norm
+            return np.asarray(vector, dtype=np.float32)
 
 
 def create_embedder(
@@ -726,51 +759,59 @@ class FeatureBuilder:
             return "unknown"
 
     def build(self, payload: Any, turn_index: int | None = None) -> Vector:
-        data = as_dict(payload)
-        request, text, system, messages = normalize(data)
-        context = as_dict(data.get("context") or {})
-        reasoning = as_dict(context.get("reasoning") or request.get("reasoning") or {})
-        byte_count = len(text.encode("utf-8"))
-        tools = request.get("tools") or []
-        defaults: dict[str, Any] = {
-            "estimatedTokens": max(1, (byte_count + 3) // 4),
-            "textChars": byte_count,
-            "systemChars": len(system.encode("utf-8")),
-            "messageCount": len(messages),
-            "toolCount": len(tools),
-            "hasTools": bool(tools),
-            "hasStructuredOutput": bool(request.get("response_format")),
-            "maxTokens": request.get("max_tokens", request.get("max_output_tokens", 0)),
-            "temperatureSet": request.get("temperature") is not None,
-            "stream": request.get("stream", False),
-            "stopCount": len(request.get("stop") or []),
-        }
-        scalar = {
-            name: _number(context.get(name, value)) for name, value in defaults.items()
-        }
-        scalar["reasoning_requested"] = float(bool(reasoning.get("requested", False)))
-        scalar["reasoning_effort"] = float(
-            {"minimal": 1, "low": 2, "medium": 3, "high": 4, "xhigh": 5}.get(
-                str(reasoning.get("effort", "")), 0
+        from lrp.phase_metrics import current_phase_spans, optional_phase
+
+        spans = current_phase_spans()
+        with optional_phase(spans, "featurize"):
+            data = as_dict(payload)
+            request, text, system, messages = normalize(data)
+            context = as_dict(data.get("context") or {})
+            reasoning = as_dict(context.get("reasoning") or request.get("reasoning") or {})
+            byte_count = len(text.encode("utf-8"))
+            tools = request.get("tools") or []
+            defaults: dict[str, Any] = {
+                "estimatedTokens": max(1, (byte_count + 3) // 4),
+                "textChars": byte_count,
+                "systemChars": len(system.encode("utf-8")),
+                "messageCount": len(messages),
+                "toolCount": len(tools),
+                "hasTools": bool(tools),
+                "hasStructuredOutput": bool(request.get("response_format")),
+                "maxTokens": request.get("max_tokens", request.get("max_output_tokens", 0)),
+                "temperatureSet": request.get("temperature") is not None,
+                "stream": request.get("stream", False),
+                "stopCount": len(request.get("stop") or []),
+            }
+            scalar = {
+                name: _number(context.get(name, value)) for name, value in defaults.items()
+            }
+            scalar["reasoning_requested"] = float(bool(reasoning.get("requested", False)))
+            scalar["reasoning_effort"] = float(
+                {"minimal": 1, "low": 2, "medium": 3, "high": 4, "xhigh": 5}.get(
+                    str(reasoning.get("effort", "")), 0
+                )
             )
-        )
-        # Derive from content in both paths, unless the serving session tracker
-        # deliberately supplies the same explicit turn index used offline.
-        scalar["turn_index"] = _number(
-            turn_index
-            if turn_index is not None
-            else max(0, sum(as_dict(m).get("role") == "user" for m in messages) - 1)
-        )
-        scalar["lang_id"] = float(LANGUAGES.index(self.language(text)))
-        scalar.update(
-            code_fence_count=text.count("```"),
-            url_count=len(re.findall(r"https?://", text)),
-            json_brace_ratio=(text.count("{") + text.count("}")) / max(len(text), 1),
-            question_mark_count=text.count("?"),
-        )
+            # Derive from content in both paths, unless the serving session tracker
+            # deliberately supplies the same explicit turn index used offline.
+            scalar["turn_index"] = _number(
+                turn_index
+                if turn_index is not None
+                else max(0, sum(as_dict(m).get("role") == "user" for m in messages) - 1)
+            )
+            scalar["lang_id"] = float(LANGUAGES.index(self.language(text)))
+            scalar.update(
+                code_fence_count=text.count("```"),
+                url_count=len(re.findall(r"https?://", text)),
+                json_brace_ratio=(text.count("{") + text.count("}")) / max(len(text), 1),
+                question_mark_count=text.count("?"),
+            )
+            if spans is not None:
+                spans.token_estimate = float(scalar["estimatedTokens"])
+        # tokenize + embed are timed inside embedder.encode when spans are bound.
+        embedding = self.embedder.encode(text)
         vector = np.concatenate(
             (
-                self.embedder.encode(text),
+                embedding,
                 np.asarray([scalar[n] for n in SCALAR_NAMES], dtype=np.float32),
             )
         )

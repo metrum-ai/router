@@ -1,0 +1,11 @@
+{"choices":[{"delta":{"role":"assistant"},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"content":"first"},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"content":" café 🌍"},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":"weather"},"id":"mr_TEST_1","index":0,"type":"function"}]},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"city\":"},"index":0}]},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"Paris\"}"},"index":0}]},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"","name":"clock"},"id":"mr_TEST_2","index":1,"type":"function"}]},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\"city\":"},"index":1}]},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"Paris\"}"},"index":1}]},"finish_reason":null,"index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+{"choices":[{"delta":{},"finish_reason":"tool_calls","index":0}],"created":0,"id":"mr_TEST","model":"test","object":"chat.completion.chunk","usage":{"completion_tokens":3,"prompt_tokens":5,"prompt_tokens_details":{"cached_tokens":2},"total_tokens":8}}
+[DONE]

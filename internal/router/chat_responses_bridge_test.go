@@ -181,13 +181,13 @@ func TestEncodeChatToResponsesBridgePreservesJSONSchemaFormatType(t *testing.T) 
 	}
 }
 
-func TestChatToResponsesBridgeRejectsUnsupportedShapes(t *testing.T) {
-	req, err := decodeRequest("openai-chat", []byte(`{"model":"bridge","stream":true,"messages":[{"role":"user","content":"hi"}]}`), nil)
+func TestChatToResponsesBridgeRejectsUnsupportedStreamingShapes(t *testing.T) {
+	req, err := decodeRequest("openai-chat", []byte(`{"model":"bridge","stream":true,"n":2,"messages":[{"role":"user","content":"hi"}]}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = encodeChatToResponsesBridge("responses", req, Target{Bridges: BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}}}, "")
-	if err == nil || !strings.Contains(err.Error(), "chat-to-responses-streaming-unsupported") {
+	if err == nil || !strings.Contains(err.Error(), "chat-to-responses-unsupported-field") {
 		t.Fatalf("err=%v", err)
 	}
 }

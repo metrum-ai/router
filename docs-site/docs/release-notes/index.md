@@ -14,6 +14,126 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v3.0.0 - 2026-09-19
+
+### Highlights
+
+- Runtime licensing is removed. The router no longer reads `license.json`,
+  and request handling is not gated on a license.
+- `server.license` is accepted and ignored, with one startup warning, through
+  3.0.0. It will be rejected in 4.0.0.
+- Packaged license binaries and license inventory commands are gone.
+  `metrum-ai-router-fleetctl` plan/deploy/status and
+  `metrum-ai-router-fleet-sign` deployment-intent signing remain.
+- Learned Routing Policy records per-phase sidecar latency histograms
+  (receive, tokenize, embed, featurize, predict, select, respond) without
+  logging prompt text (#216).
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Config | `server.license` is ignored with one startup warning; remove it before 4.0.0 |
+| License files | Existing `license.json` files are inert and are never read |
+| Packages | `metrum-ai-router-license` and `metrum-ai-router-customer-lifecycle` are no longer packaged. `metrum-ai-routerctl license` and `metrum-ai-router-fleetctl licenses` are removed |
+| Fleet | Plan, deploy, status, and deployment-intent signing are unchanged |
+| Metrics | License Prometheus series and license fields on `/version`, readiness, and diagnostics are removed |
+| Database | No usage-database migration (package-only rollback) |
+| LRP | Opt-in sidecar exposes phase latency histograms. This release does not publish Harbor timings |
+
+### Caller Impact
+
+- Requests are no longer rejected with `license-*` error codes.
+- `/version` and readiness metadata no longer include license fields.
+- Identifier rewrite, streaming translators, and model routing behavior are
+  unchanged from v2.2.0.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v3.0.0-linux-<arch>.tar.gz` (and the Docker
+   package if used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Remove automation that calls `metrum-ai-router-license`,
+   `metrum-ai-router-customer-lifecycle`, `metrum-ai-routerctl license`, or
+   `metrum-ai-router-fleetctl licenses`.
+3. Drop license mounts and license alert rules that depend on the removed
+   Prometheus series. Keep `server.license` only if you still need the 3.0.0
+   ignore-and-warn behavior.
+4. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide).
+
+### Validation
+
+- `/readyz` and `/version` report v3.0.0 and do not include license fields
+- One authenticated `/v1/models` call succeeds without a license file
+- Startup logs show a single warning if `server.license` is still set, and
+  no warning after it is removed
+- If LRP is enabled, phase latency histograms are present and contain no
+  prompt text
+
+### Rollback
+
+Roll back to GitHub Release **v2.2.0**. No usage-database restore is required.
+Licensing returns only with the v2.2.0 package; keep the previous license file
+if you may need that rollback.
+
+## v2.2.0 - 2026-09-19
+
+### Highlights
+
+- Caller-facing identifiers can be rewritten with AES-SIV so upstream IDs are
+  not exposed on the wire, including field-level rewrite on native SSE (#205).
+- Incremental SSE translation for same-dialect Responses and for Chat ↔
+  Responses bridges (#206–#208).
+- Incremental Anthropic ↔ OpenAI Chat/Responses text and tool streaming (#209);
+  reasoning remains on native Anthropic routes.
+- LRP synthetic CI no longer requires host AppArmor profile loads, so privileged
+  Docker self-hosted runners can complete sandbox verification (#210).
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Config | Optional `server.identifiers` (`rewrite` / `passthrough`) and transform key material; default streaming translator remains `incremental` |
+| Streaming | Bridge paths emit incremental SSE when eligible; `server.streaming.translator: synthesized` keeps unary upstream behavior |
+| Database | No new usage migration in this release |
+| Packages | Canonical `metrum-ai-router*` binaries unchanged from v2.1.0 naming |
+| CI / runners | Self-hosted Docker runner pools that run LRP synthetic need privileged containers for bubblewrap; AppArmor host profiles are not required |
+
+### Caller Impact
+
+- Streaming Chat ↔ Responses and Anthropic ↔ OpenAI text/tool bridges return
+  incremental SSE instead of failing closed when the bridge is enabled and
+  `server.streaming.translator` is `incremental`.
+- When identifier rewrite is enabled, caller-visible IDs are transformed;
+  `passthrough` preserves prior exposure behavior for lab/mock configs.
+- Reasoning workloads should continue to use native Anthropic routes; these
+  bridges do not synthesize thinking blocks.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v2.2.0-linux-<arch>.tar.gz` (and Docker package if
+   used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Review `server.identifiers` and `server.streaming.translator` before enabling
+   rewrite or changing translator mode in production.
+3. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide) for Compose /
+   Kubernetes procedures.
+
+### Validation
+
+- `make api-compat-mock-offline`
+- `make sse-capture` (or package SSE harness checks from source)
+- `make test` and `make lrp-test` when exercising LRP packages from source
+- After deploy: `/readyz`, `/version` reports v2.2.0; smoke streaming bridges
+  and confirm identifier rewrite or passthrough matches the reviewed config
+
+### Rollback
+
+Roll back to GitHub Release **v2.1.0** (`metrum-ai-router-*` artifacts). No
+usage-database restore is required for this release. Revert identifier and
+streaming config knobs with the prior package if rewrite or incremental bridges
+were enabled.
+
 ## v2.1.0 - 2026-09-14
 
 ### Highlights

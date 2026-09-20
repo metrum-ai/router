@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -40,23 +41,11 @@ def test_refuses_existing_out_dir() -> None:
             raise AssertionError(result.stderr)
 
 
-def test_stubbed_clis_write_safe_summary() -> None:
+def test_stubbed_ctl_writes_safe_summary() -> None:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
         out = root / "local-dev"
         log = root / "commands.log"
-        write_executable(
-            root / "license-cli",
-            """#!/usr/bin/env python3
-            import os, pathlib, sys
-            pathlib.Path(os.environ['COMMAND_LOG']).open('a').write('license ' + ' '.join(sys.argv[1:]) + '\\n')
-            if sys.argv[1] == 'generate-keypair':
-                pathlib.Path(sys.argv[sys.argv.index('--private-key-out') + 1]).write_text('PRIVATE_KEY_MATERIAL\\n')
-                pathlib.Path(sys.argv[sys.argv.index('--public-key-out') + 1]).write_text('PUBLIC\\n')
-            else:
-                pathlib.Path(sys.argv[sys.argv.index('--out') + 1]).write_text('{"signed":true}\\n')
-            """,
-        )
         write_executable(
             root / "smartrouterctl",
             """#!/usr/bin/env python3
@@ -82,8 +71,6 @@ def test_stubbed_clis_write_safe_summary() -> None:
                 str(out),
                 "--repo-root",
                 str(ROOT),
-                "--license-cli",
-                str(root / "license-cli"),
                 "--smartrouterctl",
                 str(root / "smartrouterctl"),
             ],
@@ -94,35 +81,27 @@ def test_stubbed_clis_write_safe_summary() -> None:
         if result.returncode != 0:
             raise AssertionError(result.stderr)
         summary = json.loads(result.stdout)
-        if "SECRET" in result.stdout or "PRIVATE_KEY" in result.stdout:
+        if "SECRET" in result.stdout:
             raise AssertionError("bootstrap printed secret material")
         if summary.get("token_id") != "rtr_metrum_local-dev_example-project_dev_kdemo":
             raise AssertionError(summary)
-        token_mode = stat.S_IMODE((out / "router.token").stat().st_mode)
-        if token_mode != 0o600 and token_mode != 0o644:
-            # stub write_text may be 0644; real ctl uses 0600. Accept stub.
-            pass
+        if "license" in summary:
+            raise AssertionError("bootstrap must not emit license paths")
+        cfg = (out / "config.yaml").read_text(encoding="utf-8")
+        if re.search(r"(?m)^[ \t]*license:", cfg):
+            raise AssertionError("generated config must omit server.license")
         commands = log.read_text(encoding="utf-8")
-        if "allow-unknown-runtime-key" not in commands:
+        if "callers generate" not in commands:
             raise AssertionError(commands)
-        if "PRIVATE_KEY_MATERIAL" in commands:
-            raise AssertionError("private key material leaked into command log")
+        if "license" in commands:
+            raise AssertionError("bootstrap must not invoke a license CLI")
 
 
-def test_go_clis_issue_license_and_caller() -> None:
+def test_go_ctl_issues_caller() -> None:
     with tempfile.TemporaryDirectory() as temp:
         bin_dir = Path(temp) / "bin"
         bin_dir.mkdir()
-        license_bin = bin_dir / "metrum-ai-router-license"
         ctl_bin = bin_dir / "metrum-ai-routerctl"
-        build = subprocess.run(
-            ["go", "build", "-o", str(license_bin), "./cmd/metrum-ai-router-license"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-        )
-        if build.returncode != 0:
-            raise AssertionError(build.stderr)
         build = subprocess.run(
             ["go", "build", "-o", str(ctl_bin), "./cmd/metrum-ai-routerctl"],
             cwd=ROOT,
@@ -140,8 +119,6 @@ def test_go_clis_issue_license_and_caller() -> None:
                 str(out),
                 "--repo-root",
                 str(ROOT),
-                "--license-cli",
-                str(license_bin),
                 "--smartrouterctl",
                 str(ctl_bin),
             ],
@@ -152,10 +129,11 @@ def test_go_clis_issue_license_and_caller() -> None:
             raise AssertionError(result.stderr + result.stdout)
         if "SECRET" in result.stdout:
             raise AssertionError(result.stdout)
-        license_path = out / "license.json"
-        if not license_path.is_file() or license_path.stat().st_size < 32:
-            raise AssertionError("license.json missing")
+        if (out / "license.json").exists():
+            raise AssertionError("bootstrap must not issue license.json")
         cfg = (out / "config.yaml").read_text(encoding="utf-8")
+        if re.search(r"(?m)^[ \t]*license:", cfg):
+            raise AssertionError("generated config must omit server.license")
         if "token_sha256:" not in cfg or "REPLACE_WITH" in cfg:
             raise AssertionError("caller hash was not merged")
         token = (out / "router.token").read_bytes()
@@ -175,8 +153,8 @@ def test_go_clis_issue_license_and_caller() -> None:
 
 def main() -> None:
     test_refuses_existing_out_dir()
-    test_stubbed_clis_write_safe_summary()
-    test_go_clis_issue_license_and_caller()
+    test_stubbed_ctl_writes_safe_summary()
+    test_go_ctl_issues_caller()
     print("local_dev_bootstrap tests passed")
 
 

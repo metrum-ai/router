@@ -109,7 +109,7 @@ def test_route_rejections_make_zero_upstream_calls(api, router):
 
 
 def test_route_streaming_and_stateful_bridges_remain_rejected(api, router):
-    """ROUTE-04: keep unary-only bridge restrictions; do not accept 200 without evidence."""
+    """ROUTE-04: stateful responses-to-chat and unset Streaming still reject; chat→responses stream works."""
     before = len(router["upstream"].calls)
     status, _, raw = api(
         "/v1/responses",
@@ -123,7 +123,8 @@ def test_route_streaming_and_stateful_bridges_remain_rejected(api, router):
     assert _body(raw)["error"]["type"] == "no-eligible-target"
     assert len(router["upstream"].calls) == before
 
-    status, _, raw = api(
+    # chat-to-responses incremental streaming is supported (P3).
+    status, headers, raw = api(
         "/v1/chat/completions",
         {
             "model": "chat-to-responses",
@@ -131,10 +132,14 @@ def test_route_streaming_and_stateful_bridges_remain_rejected(api, router):
             "stream": True,
         },
     )
-    assert status == 502
-    assert _body(raw)["error"]["type"] == "no-eligible-target"
-    assert len(router["upstream"].calls) == before
+    assert status == 200
+    assert "text/event-stream" in headers["Content-Type"]
+    assert b"chat.completion.chunk" in raw
+    assert router["upstream"].calls[-1]["path"] == "/v1/responses"
+    assert router["upstream"].calls[-1]["body"].get("stream") is True
 
+    # responses-to-chat streaming still requires bridge Streaming: true in config.
+    before = len(router["upstream"].calls)
     status, _, raw = api(
         "/v1/responses",
         {"model": "responses-to-chat", "input": PROMPT_CANARY, "stream": True},
@@ -187,6 +192,7 @@ def capability_fallback_router(router, tmp_path):
     work.mkdir()
     config = f'''server:
   listen: "127.0.0.1:{port}"
+  identifiers: {{mode: passthrough}}
   default_model_group: tools-fallback
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}

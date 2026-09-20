@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-19
+
+### Breaking Changes
+
+- Runtime licensing enforcement is removed. Existing `license.json` files are
+  inert and are never read; no migration is required.
+- Config key `server.license` is accepted and ignored with one startup warning
+  in 3.0.0; it will be rejected in 4.0.0.
+- Removed reachable `license-*` error codes from the request path.
+- Removed Prometheus series: `metrum_ai_router_license_valid`,
+  `metrum_ai_router_license_seconds_until_expiry`,
+  `metrum_ai_router_license_grace_active`,
+  `metrum_ai_router_license_validation_failures_total`.
+- Removed license fields from `/version`, readiness/admin metadata, and the
+  diagnostics schema (`license_compile_mode` and related `license_*` columns
+  are no longer populated).
+- Removed packaged binaries `metrum-ai-router-license` and
+  `metrum-ai-router-customer-lifecycle`, plus source-only rename stubs
+  `router-license`, `metrum-genai-smartrouter-license`, and
+  `metrum-genai-customer-lifecycle`.
+- Removed `metrum-ai-routerctl license` and `metrum-ai-router-fleetctl licenses`
+  inventory commands. Fleet plan/deploy/status and fleet-sign deployment-intent
+  signing remain.
+- No usage-database migration in this release (package-only rollback).
+
+### Features
+
+- Record Learned Routing Policy sidecar phase latency (receive, tokenize,
+  embed, featurize, predict, select, respond) as bounded histograms so
+  operators can attribute sidecar time without logging prompt text (#216).
+
+### Documentation
+
+- Add vLLM Semantic Router and NVIDIA Switchyard to the competitive
+  comparison (#212).
+- Propose catalog ownership for private targets versus the signed bundle
+  (#213).
+- Remove deployment host identifiers from public LRP evidence and tighten
+  public-face checks (#214).
+- Publish the Harbor phase-latency measurement protocol. Measured Harbor
+  timings are not included in this release (#216).
+
+### Notes
+
+- Existing `license.json` files and legacy `server.license` config remain inert
+  (ignored with one startup warning through 3.0.0).
+
+## [2.2.0] - 2026-09-19
+
+### Features
+
+- Add AES-SIV identifier transform with field-level native SSE ID rewriting so
+  upstream identifiers are not exposed on the wire (#205).
+- Add `internal/stream` translators and SSE fixture harness; ship incremental
+  native Responses streaming (P1, #206).
+- Translate Responses caller ↔ Chat upstream SSE incrementally (P2, #207).
+- Translate Chat caller ↔ Responses upstream SSE incrementally (P3, #208).
+- Translate Anthropic ↔ OpenAI Chat/Responses text and tool SSE incrementally
+  (P4, #209); reasoning stays on native Anthropic routes.
+
+### Fixes
+
+- Pass through identifiers in api-compat mock offline configs and LRP e2e
+  harness config after identifier rewrite became required.
+- Drop AppArmor profile loading from LRP synthetic CI so privileged Docker
+  self-hosted runners can verify bubblewrap isolation (#210).
+
+### Documentation
+
+- Update API compatibility and architecture-limitation docs for incremental
+  bridge streaming and the `server.streaming.translator` settings.
+
+### Notes
+
+- Default `server.streaming.translator` remains `incremental` on implemented
+  paths; `synthesized` retains unary upstream plus synthesized caller SSE.
+- No usage-database migration in this release (package-only rollback).
+
 ## [2.1.0] - 2026-09-14
 
 ### Features
@@ -89,6 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/metrum-ai/router/compare/v2.2.0...v3.0.0
+[2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/metrum-ai/router/compare/v1.4.4...v2.0.0

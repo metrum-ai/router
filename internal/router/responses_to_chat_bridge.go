@@ -91,7 +91,10 @@ func encodeResponsesToChatBridge(model string, req *IRRequest, target Target) ([
 	if reason := responsesToChatBridgeFilterReason(target, req, "openai-responses", "openai-chat"); reason != "" {
 		return nil, errors.New(reason)
 	}
-	body := map[string]any{"model": model, "stream": false}
+	body := map[string]any{"model": model, "stream": req.Stream}
+	if req.Stream {
+		body["stream_options"] = map[string]any{"include_usage": true}
+	}
 	msgs := make([]map[string]any, 0, len(req.Messages)+1)
 	if req.System != "" {
 		msgs = append(msgs, map[string]any{"role": "system", "content": req.System})

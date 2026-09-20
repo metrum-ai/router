@@ -1,0 +1,12 @@
+{"response":{"created_at":0,"id":"mr_TEST","model":"test","object":"response","output":[],"status":"in_progress"},"sequence_number":0,"type":"response.created"}
+{"item":{"arguments":"","call_id":"mr_TEST_2","id":"mr_TEST_1","name":"weather","status":"in_progress","type":"function_call"},"output_index":0,"sequence_number":1,"type":"response.output_item.added"}
+{"delta":"{\"city\":","item_id":"mr_TEST_1","output_index":0,"sequence_number":2,"type":"response.function_call_arguments.delta"}
+{"delta":"\"Paris\"}","item_id":"mr_TEST_1","output_index":0,"sequence_number":3,"type":"response.function_call_arguments.delta"}
+{"item":{"arguments":"","call_id":"mr_TEST_4","id":"mr_TEST_3","name":"clock","status":"in_progress","type":"function_call"},"output_index":1,"sequence_number":4,"type":"response.output_item.added"}
+{"delta":"{\"city\":","item_id":"mr_TEST_3","output_index":1,"sequence_number":5,"type":"response.function_call_arguments.delta"}
+{"delta":"\"Paris\"}","item_id":"mr_TEST_3","output_index":1,"sequence_number":6,"type":"response.function_call_arguments.delta"}
+{"arguments":"{\"city\":\"Paris\"}","item_id":"mr_TEST_1","output_index":0,"sequence_number":7,"type":"response.function_call_arguments.done"}
+{"item":{"arguments":"{\"city\":\"Paris\"}","call_id":"mr_TEST_2","id":"mr_TEST_1","name":"weather","status":"completed","type":"function_call"},"output_index":0,"sequence_number":8,"type":"response.output_item.done"}
+{"arguments":"{\"city\":\"Paris\"}","item_id":"mr_TEST_3","output_index":1,"sequence_number":9,"type":"response.function_call_arguments.done"}
+{"item":{"arguments":"{\"city\":\"Paris\"}","call_id":"mr_TEST_4","id":"mr_TEST_3","name":"clock","status":"completed","type":"function_call"},"output_index":1,"sequence_number":10,"type":"response.output_item.done"}
+{"response":{"created_at":0,"id":"mr_TEST","model":"test","object":"response","output":[{"arguments":"{\"city\":\"Paris\"}","call_id":"mr_TEST_2","id":"mr_TEST_1","name":"weather","status":"completed","type":"function_call"},{"arguments":"{\"city\":\"Paris\"}","call_id":"mr_TEST_4","id":"mr_TEST_3","name":"clock","status":"completed","type":"function_call"}],"status":"completed","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":2},"output_tokens":3,"total_tokens":8}},"sequence_number":11,"type":"response.completed"}

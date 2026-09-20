@@ -1,0 +1,11 @@
+{"message":{"content":[],"id":"mr_TEST","model":"test","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":5,"output_tokens":0}},"type":"message_start"}
+{"content_block":{"id":"mr_TEST_1","input":{},"name":"weather","type":"tool_use"},"index":0,"type":"content_block_start"}
+{"delta":{"partial_json":"{\"city\":","type":"input_json_delta"},"index":0,"type":"content_block_delta"}
+{"content_block":{"id":"mr_TEST_2","input":{},"name":"clock","type":"tool_use"},"index":1,"type":"content_block_start"}
+{"delta":{"partial_json":"{","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+{"delta":{"partial_json":"}","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+{"delta":{"partial_json":"\"Paris\"}","type":"input_json_delta"},"index":0,"type":"content_block_delta"}
+{"index":0,"type":"content_block_stop"}
+{"index":1,"type":"content_block_stop"}
+{"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"cache_read_input_tokens":2,"input_tokens":5,"output_tokens":3}}
+{"type":"message_stop"}

@@ -30,11 +30,6 @@ DOCS_SITE_URL = DOCS_SITE_ORIGIN + DOCS_SITE_BASE_URL.rstrip("/")
 # Future documentation origin (tracked by the docs.metrum.ai hosting issue).
 FUTURE_DOCS_SITE_ORIGIN = "https://docs.metrum.ai"
 
-# License product identity. New licenses use PRODUCT_SLUG; runtime must also
-# accept the legacy value during the v2.0.0 compatibility window.
-LICENSE_PRODUCT = PRODUCT_SLUG
-LICENSE_PRODUCT_LEGACY = "genai-smart-router"
-
 # Compose / packaging environment variable for the loaded image tag.
 VERSION_ENV = "METRUM_AI_ROUTER_VERSION"
 VERSION_ENV_LEGACY = "SMART_LLMROUTER_VERSION"
@@ -58,8 +53,6 @@ PACKAGE_RUNTIME_BINARIES = (
 PACKAGE_FLEET_BINARIES = (
     "metrum-ai-router-fleetctl",
     "metrum-ai-router-fleet-sign",
-    "metrum-ai-router-license",
-    "metrum-ai-router-customer-lifecycle",
 )
 PACKAGE_BINARIES = PACKAGE_RUNTIME_BINARIES + PACKAGE_FLEET_BINARIES
 

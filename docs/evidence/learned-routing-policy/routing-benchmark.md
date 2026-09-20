@@ -15,7 +15,6 @@ NON-OpenAI portfolio (#179); no new paid spend.
 ### CPU (ephemeral; torn down after run)
 
 - Shadeform SKU: `cpu_small` (massedcompute, desmoines-usa-1)
-- Instance id: `1829ebd2-9746-4553-8f41-73c16923ea64`
 - vCPUs / memory: 14 / 40 GB
 - Device: `cpu` (`strict_device=true`); ORT providers: `CPUExecutionProvider`
 - ORT version: 1.22.0; embedding: ONNX int8 BGE
@@ -23,10 +22,9 @@ NON-OpenAI portfolio (#179); no new paid spend.
 - Bundle fingerprint: `18860595b99b5a75a46488c075375579e76713441a8389a43b79425aae759b27`
 - Harbor: skipped on CPU SKU
 
-### GPU (keep-alive)
+### GPU (ephemeral evidence host)
 
 - Shadeform SKU: `L40Sx2` (massedcompute, kansascity-usa-1)
-- Instance id (left running): `9963d127-f312-4a37-b72d-91b42607cf8e`
 - GPUs: 2x NVIDIA L40S; observed memory ~141 GiB
 - Device: `cuda:0` (`strict_device=true`); providers: `CUDAExecutionProvider`, `CPUExecutionProvider`
 - ORT version: 1.22.0 (onnxruntime-gpu); training_seconds ~4.42
@@ -121,8 +119,7 @@ NON-OpenAI portfolio (#179); no new paid spend.
 
 No savings percentages.
 
-## Shadeform
+## Host lifecycle
 
-- Ephemeral CPU instance deleted after evidence collection.
-- GPU instance left running: `ssh -i ~/.ssh/id_ed25519 shadeform@64.247.196.20`
-- Work root: `/var/tmp/lrp-retake`
+- Ephemeral CPU instance was torn down after evidence collection.
+- GPU evidence host lifecycle status: `operator_private` (reachability and teardown recorded outside the public tree).

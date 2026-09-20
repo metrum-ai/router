@@ -1,12 +1,16 @@
 # Local/dev starter only. Not a production catalog.
-# Copy via scripts/local_dev_bootstrap.py; do not commit filled config.yaml,
-# env.json, license.json, or license.key.
+# Copy via scripts/local_dev_bootstrap.py; do not commit filled config.yaml
+# or env.json.
 #
 # Production operators should start from config.example.yaml and
 # server.usage_db.migration_policy: deployment-job.
 server:
   listen: :8080
   default_model_group: local
+  identifiers:
+    # Local/dev escape hatch. Production should use mode: rewrite with
+    # ROUTER_ID_TRANSFORM_KEY (see config.example.yaml).
+    mode: passthrough
   cache:
     enabled: false
     max_bytes: 134217728
@@ -20,25 +24,7 @@ server:
     driver: sqlite
     path: usage.sqlite
     migration_policy: auto-safe
-  # Optional; leave enabled false unless you mount a signed license.json.
-  license:
-    enabled: false
-    path: license.json
-    state_path: license-state.json
-    public_keys:
-      - key_id: self-managed
-        path: license.pub
-    instance_fingerprint: ""
-    instance_fingerprint_file: ""
-    instance_fingerprint_env: ""
-    recheck_interval: 1h
-    grace_period_on_validation_error: 24h
-    revocation:
-      mode: off
-      path: revocations.json
-      require_current_bundle: false
-      fail_closed_on_bundle_error: true
-    fail_open_for_dev: false
+  # server.license is ignored in 3.0.0 (removed in 4.0.0). Omit it for new installs.
   diagnostics:
     enabled: true
     retention_days: 7

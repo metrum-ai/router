@@ -28,17 +28,12 @@ For source-browser readers, the current repository copy is
 That link is not a substitute for the four legal files shipped with the exact
 release artifact.
 
-## Runtime `license.json` Is Operator Policy
+## Runtime `license.json` (Removed)
 
-A signed `license.json` is a deployment-specific runtime-policy input. The
-router uses it to enforce configured feature and operational limits. It is not
-the software copyright license, does not replace the artifact-root legal
-files, and does not determine the terms of third-party components or models.
-
-Keep `license.json` in the deployment's protected configuration path and out of
-source control and redistribution packages. For configuration, renewal, and
-rollback behavior, see [License](../configuration/license) and
-[License-Protected Deployments](../operations/license-protected-deployments).
+Runtime licensing was removed in 3.0.0. Any leftover `license.json` file is
+inert (never read). Legacy `server.license` config is accepted with one startup
+warning in 3.0.0 and rejected in 4.0.0. Neither is a copyright license, a
+deployment prerequisite, or a substitute for the artifact-root legal files.
 
 ## Operator Review
 
@@ -52,7 +47,6 @@ Before deploying or redistributing a release:
    redistributing any separately obtained model or dataset.
 4. Preserve the required license and notice material with redistributed
    copies, based on the applicable terms recorded for the exact contents.
-5. Manage `license.json` separately as protected runtime configuration.
 
 For questions about a delivered artifact or its notice set, use the
 repository's public issue forms for non-sensitive licensing questions, or

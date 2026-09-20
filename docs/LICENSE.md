@@ -6,9 +6,9 @@ All Metrum AI Router first-party content is licensed under the Apache License,
 Version 2.0, reproduced below. Third-party components and content remain subject
 to their respective licenses and notices.
 
-A deployment's signed `license.json` is an operator runtime-policy input. It is
-not a copyright license or a condition on commercial use, and it does not limit
-the rights granted by Apache-2.0.
+Any leftover `license.json` file is inert in 3.0.0+ (never read by the router).
+It is not a copyright license or a condition on commercial use, and it does not
+limit the rights granted by Apache-2.0.
 
 ## Which File Governs What
 
@@ -21,7 +21,7 @@ artifact together:
 | `NOTICE` | Notices distributed with the first-party work and any attribution that confirmed source terms require there. |
 | `THIRD_PARTY_NOTICES.md` | Dependency and asset inventory, provenance evidence, distribution surface, and applicable third-party license information. It is not a blanket grant of rights. |
 | `MODEL_LICENSES.md` | Boundaries and recorded terms for model or dataset references and download surfaces. The project license does not grant rights to separately obtained model weights or datasets. |
-| `license.json` | Deployment-specific runtime policy consumed by the router. It is operational configuration, not a copyright license or third-party notice. |
+| `license.json` | Historical/optional file that is inert in 3.0.0+. Not a copyright license or third-party notice. |
 
 Redistributors must review the entries and unresolved dispositions recorded in
 `THIRD_PARTY_NOTICES.md` and `MODEL_LICENSES.md` for the exact artifact they
