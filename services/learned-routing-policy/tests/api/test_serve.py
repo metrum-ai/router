@@ -20,7 +20,17 @@ class FakeBundle:
     delay = 0
 
     def build(self, payload):
-        time.sleep(self.delay)
+        from lrp.phase_metrics import current_phase_spans, optional_phase
+
+        spans = current_phase_spans()
+        with optional_phase(spans, "featurize"):
+            time.sleep(self.delay)
+        # Fake path still emits tokenize/embed so phase accounting is testable
+        # without ONNX weights; never records prompt text.
+        with optional_phase(spans, "tokenize"):
+            pass
+        with optional_phase(spans, "embed"):
+            pass
         assert "tokenId" not in payload["caller"]
         return np.zeros(3, dtype=np.float32)
 
@@ -94,6 +104,7 @@ def test_api_contract_auth_unknown_content_images_logs(caplog):
         == "lrp:image-passthrough"
     )
     assert "lrp_route_degraded_total" in admin.get("/metrics").text
+    assert "lrp_route_latency_seconds" in admin.get("/metrics").text
     assert client.get("/metrics").status_code == 404
     assert admin.get("/readyz").status_code == 200
     explanation = client.post("/explain", json=body(), headers=AUTH).json()
@@ -103,6 +114,51 @@ def test_api_contract_auth_unknown_content_images_logs(caplog):
     assert "SYNTHETIC PRIVATE CANARY" not in caplog.text
     assert "discard-me" not in caplog.text
     runtime.pool.shutdown()
+
+
+def test_phase_latency_histograms_and_token_bucket():
+    client, admin, runtime = clients(FakeBundle())
+    try:
+        payload = body()
+        payload["context"]["estimatedTokens"] = 640
+        assert client.post("/route", json=payload, headers=AUTH).status_code == 200
+        metrics = admin.get("/metrics").text
+        assert "lrp_route_latency_seconds" in metrics
+        assert "lrp_route_phase_latency_seconds" in metrics
+        assert "lrp_tokenizer_saturation_total" in metrics
+        for phase in (
+            "receive",
+            "tokenize",
+            "embed",
+            "featurize",
+            "predict",
+            "select",
+            "respond",
+        ):
+            assert f'phase="{phase}"' in metrics
+        assert 'token_bucket="512-2047"' in metrics
+        # Parent whole-route series remains; prompt text never appears in metrics.
+        assert "SYNTHETIC PRIVATE CANARY" not in metrics
+        assert "synthetic first" not in metrics
+    finally:
+        runtime.pool.shutdown()
+
+
+def test_deadline_fallback_unchanged_with_phase_timing():
+    bundle = FakeBundle()
+    bundle.delay = 0.2
+    client, admin, runtime = clients(bundle, deadline_ms=15, inference_workers=1)
+    try:
+        started = time.monotonic()
+        first = client.post("/route", json=body(), headers=AUTH)
+        second = client.post("/route", json=body(), headers=AUTH)
+        assert first.json()["classLabel"] == second.json()["classLabel"] == "lrp:latency-fallback"
+        assert time.monotonic() - started < 0.15
+        metrics = admin.get("/metrics").text
+        assert "lrp_route_phase_latency_seconds" in metrics
+        assert "lrp_route_degraded_total" in metrics
+    finally:
+        runtime.pool.shutdown()
 
 
 def test_invalid_body_ready_and_large_request():

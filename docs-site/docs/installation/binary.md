@@ -21,8 +21,6 @@ metrum-ai-router-<version>-linux-<arch>/
     metrum-ai-routerctl
     metrum-ai-router-fleetctl
     metrum-ai-router-fleet-sign
-    metrum-ai-router-license
-    metrum-ai-router-customer-lifecycle
   config/
     config.example.yaml
     env.example.json
@@ -39,7 +37,7 @@ Use `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts. Release va
 trusted administration host. Its `plan`, `deploy`, `delete`, and `customer`
 commands consume signed reference-only deployment intents (or orchestrate them
 for disposable SQLite customers); intents contain only references to the
-protected profile, runtime bundle, and license.
+protected profile and runtime bundle.
 Its default lifecycle uses SQLite state with one Router container and one
 replica; it neither provisions nor binds RDS.
 
@@ -82,10 +80,6 @@ Edit runtime paths in `config/config.yaml` for the binary host layout before ins
 server:
   logging:
     path: /var/log/metrum-ai-router/requests.jsonl
-  license:
-    enabled: true
-    path: /etc/metrum-ai-router/license.json
-    state_path: /var/lib/metrum-ai-router/license-state.json
   usage_db:
     enabled: true
     driver: sqlite
@@ -106,7 +100,6 @@ sudo install -m 0755 bin/metrum-ai-routerctl /usr/local/bin/metrum-ai-routerctl
 sudo install -m 0755 bin/metrum-ai-router-fleetctl /usr/local/bin/metrum-ai-router-fleetctl
 sudo install -m 0640 -o router -g router config/config.yaml /etc/metrum-ai-router/config.yaml
 sudo install -m 0640 -o router -g router config/env.json /etc/metrum-ai-router/env.json
-sudo install -m 0640 -o router -g router license.json /etc/metrum-ai-router/license.json
 ```
 
 `metrum-ai-routerctl` is the customer-local operations CLI. On file-owned
@@ -114,9 +107,9 @@ installs it validates or diffs local configuration, can write local `config.yaml
 for callers/providers/model groups (with a timestamped sibling backup), renders a
 Kubernetes architecture blueprint from a stack intent, backs up or restores a
 SQLite usage database with `--confirm-offline`, generates a caller token into a
-new mode-`0600` file, and reports safe local configuration, license, model, and
+new mode-`0600` file, and reports safe local configuration, model, and
 aggregate-usage status. It cannot activate configuration on a remote managed
-hostname, sign licenses, or access cloud/Fleet/Kubernetes APIs.
+hostname or access cloud/Fleet/Kubernetes APIs.
 
 `metrum-ai-router-fleetctl` is the binary-package-only #555 Fleet lifecycle authority.
 It owns reference-only `plan`, idempotent `deploy`, exact-job `status`,
@@ -140,8 +133,6 @@ The service process needs access to:
 
 - `config.yaml`;
 - the provider credential env file;
-- an operator-generated `license.json` and paired verification public key;
-- durable license state;
 - the usage database DSN;
 - optional routing script files and helper dependencies already packaged on disk.
 
@@ -175,7 +166,7 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
 
 Expected results:
 
-- `/readyz` returns success only when required runtime checks pass, including license enforcement.
+- `/readyz` returns success only when required runtime checks pass.
 - `/docs/` serves the embedded product documentation from the running binary.
 - `/version` returns safe release metadata.
 - `/v1/models` returns only model groups allowed for the caller token.
@@ -184,7 +175,7 @@ For request-level diagnostics after installation, use [Troubleshooting Requests]
 
 ## Upgrade And Rollback
 
-Before an upgrade, back up `config.yaml`, `env.json` or equivalent secret-manager state, `license.json`, license state, router state, usage database data, logs needed by the retention policy, and the previous package artifact.
+Before an upgrade, back up `config.yaml`, `env.json` or equivalent secret-manager state, router state, usage database data, logs needed by the retention policy, and the previous package artifact.
 
 Install the new package beside the old package, run `metrum-ai-router --version` or `bin/metrum-ai-router --version`, review config template changes, then restart the supervised service with the new binary. After restart, repeat `/readyz`, `/docs/`, `/v1/models`, and one caller smoke.
 

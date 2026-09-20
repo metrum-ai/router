@@ -106,9 +106,6 @@ func TestLoadActiveConfigFromDBReadsValidatedCoreProjection(t *testing.T) {
 	if provider.APIKey != "test-only-control-plane-provider-key" || provider.APIKeyEnv != "MOCK_API_KEY" {
 		t.Fatal("provider credential environment reference was not resolved into the runtime config")
 	}
-	if !cfg.Server.License.Enabled || cfg.Server.License.Path != "license.json" || cfg.Server.License.StatePath != "license-state.json" {
-		t.Fatalf("license projection mismatch: %+v", cfg.Server.License)
-	}
 	if target := cfg.Models["default"].Targets[0]; target.Provider != "mock" || target.ModelRef != "small" || target.Weight != 100 {
 		t.Fatalf("target projection mismatch: %+v", target)
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -35,14 +36,18 @@ type Config struct {
 	baseDir            string
 }
 
+type StreamingConfig struct {
+	Translator string `yaml:"translator" json:"translator"`
+}
+
 type ServerConfig struct {
+	Streaming           StreamingConfig           `yaml:"streaming" json:"streaming"`
 	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
 	OpenAICompatibility OpenAICompatibilityConfig `yaml:"openai_compatibility" json:"openai_compatibility"`
 	AdminAuth           AdminAuthConfig           `yaml:"admin_auth"`
 	AdminReports        AdminReportsConfig        `yaml:"admin_reports"`
-	License             LicenseConfig             `yaml:"license" json:"license"`
 	ClientIP            ClientIPConfig            `yaml:"client_ip" json:"client_ip"`
 	Cache               CacheConfig               `yaml:"cache"`
 	Logging             LoggingConfig             `yaml:"logging"`
@@ -57,53 +62,6 @@ type ServerConfig struct {
 
 type OpenAICompatibilityConfig struct {
 	TolerateResponsesBodyOnChatEndpoint bool `yaml:"tolerate_responses_body_on_chat_endpoint" json:"tolerateResponsesBodyOnChatEndpoint"`
-}
-
-type LicenseConfig struct {
-	Enabled                      bool                     `yaml:"enabled" json:"enabled"`
-	Path                         string                   `yaml:"path" json:"path"`
-	StatePath                    string                   `yaml:"state_path" json:"statePath"`
-	PublicKeys                   []LicensePublicKeyConfig `yaml:"public_keys" json:"publicKeys"`
-	Revocation                   LicenseRevocationConfig  `yaml:"revocation" json:"revocation"`
-	InstanceFingerprint          string                   `yaml:"instance_fingerprint" json:"instanceFingerprint"`
-	InstanceFingerprintFile      string                   `yaml:"instance_fingerprint_file" json:"instanceFingerprintFile"`
-	InstanceFingerprintEnv       string                   `yaml:"instance_fingerprint_env" json:"instanceFingerprintEnv"`
-	RecheckInterval              time.Duration            `yaml:"recheck_interval" json:"recheckInterval"`
-	GracePeriodOnValidationError time.Duration            `yaml:"grace_period_on_validation_error" json:"gracePeriodOnValidationError"`
-	FailOpenForDev               bool                     `yaml:"fail_open_for_dev" json:"failOpenForDev"`
-	enabledSet                   bool
-}
-
-// LicensePublicKeyConfig identifies an operator-owned Ed25519 verification key.
-// Its file contains only the base64 public key, never signing material.
-type LicensePublicKeyConfig struct {
-	KeyID string `yaml:"key_id" json:"keyId"`
-	Path  string `yaml:"path" json:"path"`
-}
-
-type LicenseRevocationConfig struct {
-	Mode                    string        `yaml:"mode" json:"mode"`
-	Path                    string        `yaml:"path" json:"path"`
-	RecheckInterval         time.Duration `yaml:"recheck_interval" json:"recheckInterval"`
-	RequireCurrentBundle    bool          `yaml:"require_current_bundle" json:"requireCurrentBundle"`
-	FailClosedOnBundleError bool          `yaml:"fail_closed_on_bundle_error" json:"failClosedOnBundleError"`
-}
-
-func (c *LicenseConfig) UnmarshalYAML(value *yaml.Node) error {
-	type rawLicenseConfig LicenseConfig
-	var raw rawLicenseConfig
-	if err := value.Decode(&raw); err != nil {
-		return err
-	}
-	*c = LicenseConfig(raw)
-	c.enabledSet = false
-	for i := 0; i+1 < len(value.Content); i += 2 {
-		if value.Content[i].Value == "enabled" {
-			c.enabledSet = true
-			break
-		}
-	}
-	return nil
 }
 
 type AdminAuthConfig struct {
@@ -906,13 +864,64 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	expanded := os.ExpandEnv(string(raw))
+	cleaned, hadDeprecatedLicense, err := discardDeprecatedServerLicenseYAML([]byte(expanded))
+	if err != nil {
+		return nil, err
+	}
+	if hadDeprecatedLicense {
+		log.Printf("warning: config key server.license is ignored in 3.0.0 and will be rejected in 4.0.0")
+	}
 	var cfg Config
-	if err := yaml.Unmarshal([]byte(expanded), &cfg); err != nil {
+	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
 	}
 	cfg.setDefaults()
 	cfg.baseDir = filepath.Dir(path)
 	return &cfg, cfg.Validate()
+}
+
+// discardDeprecatedServerLicenseYAML removes a legacy server.license mapping so
+// LoadConfig can accept deployed configs without enforcing licensing. It never
+// opens paths named inside that block.
+func discardDeprecatedServerLicenseYAML(raw []byte) ([]byte, bool, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, false, err
+	}
+	doc := &root
+	if root.Kind == yaml.DocumentNode {
+		if len(root.Content) == 0 {
+			return raw, false, nil
+		}
+		doc = root.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return raw, false, nil
+	}
+	had := false
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value != "server" || doc.Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		server := doc.Content[i+1]
+		kept := make([]*yaml.Node, 0, len(server.Content))
+		for j := 0; j+1 < len(server.Content); j += 2 {
+			if server.Content[j].Value == "license" {
+				had = true
+				continue
+			}
+			kept = append(kept, server.Content[j], server.Content[j+1])
+		}
+		server.Content = kept
+	}
+	if !had {
+		return raw, false, nil
+	}
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return nil, true, err
+	}
+	return out, true, nil
 }
 
 func loadEnvJSON(path string) error {
@@ -952,6 +961,9 @@ func validEnvName(k string) bool {
 }
 
 func (c *Config) setDefaults() {
+	if c.Server.Streaming.Translator == "" {
+		c.Server.Streaming.Translator = "incremental"
+	}
 	if c.Server.Identifiers.Mode == "" {
 		c.Server.Identifiers.Mode = "rewrite"
 	}
@@ -1003,9 +1015,6 @@ func (c *Config) setDefaults() {
 	}
 	if len(c.Server.AdminReports.Baselines) == 0 {
 		c.Server.AdminReports.Baselines = defaultAdminReportBaselines()
-	}
-	if c.Server.License.RecheckInterval == 0 {
-		c.Server.License.RecheckInterval = time.Hour
 	}
 	if len(c.Server.ClientIP.HeaderOrder) == 0 {
 		c.Server.ClientIP.HeaderOrder = []string{"X-Forwarded-For", "X-Real-IP"}
@@ -1112,6 +1121,11 @@ func (c *Config) setDefaults() {
 }
 
 func (c *Config) Validate() error {
+	switch c.Server.Streaming.Translator {
+	case "", "incremental", "synthesized":
+	default:
+		return fmt.Errorf("server.streaming.translator must be incremental or synthesized")
+	}
 	if _, err := newIdentifierTransform(c.Server.Identifiers); err != nil {
 		return err
 	}
@@ -1144,9 +1158,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.UsageDB.MigrationPolicy != "" && !validUsageDBMigrationPolicy(c.Server.UsageDB.MigrationPolicy) {
 		return fmt.Errorf("server usage_db migration_policy must be one of %q, %q, or %q", usageDBMigrationPolicyValidate, usageDBMigrationPolicyAutoSafe, usageDBMigrationPolicyDeploymentJob)
-	}
-	if err := validateLicenseConfig(c.Server.License); err != nil {
-		return err
 	}
 	if err := validateAdminAuth(c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
@@ -1700,28 +1711,6 @@ func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
 	}
 	if err := validateAdminSessions(cfg.Sessions, cfg.OIDC.Enabled); err != nil {
 		return err
-	}
-	return nil
-}
-
-func validateLicenseConfig(cfg LicenseConfig) error {
-	if !cfg.Enabled {
-		if cfg.FailOpenForDev {
-			return fmt.Errorf("server license fail_open_for_dev requires license enabled")
-		}
-		return nil
-	}
-	if strings.TrimSpace(cfg.Path) == "" && !cfg.FailOpenForDev {
-		return fmt.Errorf("server license path is required when license is enabled")
-	}
-	if cfg.RecheckInterval <= 0 || cfg.RecheckInterval > 24*time.Hour {
-		return fmt.Errorf("server license recheck_interval must be greater than 0 and at most 24h")
-	}
-	if cfg.GracePeriodOnValidationError < 0 || cfg.GracePeriodOnValidationError > 7*24*time.Hour {
-		return fmt.Errorf("server license grace_period_on_validation_error must be between 0 and 168h")
-	}
-	if cfg.FailOpenForDev && strings.TrimSpace(cfg.Path) != "" {
-		return fmt.Errorf("server license fail_open_for_dev cannot be combined with a license path")
 	}
 	return nil
 }

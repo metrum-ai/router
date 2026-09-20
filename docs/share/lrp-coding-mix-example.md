@@ -222,8 +222,9 @@ estimate; do not treat this paragraph as a live quote.
 - CI `make lrp-test` may train LightGBM on tiny **synthetic** fixtures on CPU.
   That is not hardware evidence.
 
-This example’s GPU host: Shadeform `L40Sx2`, 2× L40S, work root
-`/var/tmp/lrp-retake`. Ephemeral CPU A/B/C used `cpu_small` then torn down.
+This example’s GPU host class: Shadeform `L40Sx2`, 2× L40S. Use an
+operator-private work root under `$LRP_DATA_DIR` (not committed). Ephemeral CPU
+A/B/C used `cpu_small` then torn down.
 
 ### 6.2 Software setup
 

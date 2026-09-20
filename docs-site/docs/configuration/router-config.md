@@ -32,7 +32,7 @@ Use these pages as the canonical homes for each configuration area:
 
 | Topic | Canonical page |
 | --- | --- |
-| License enforcement | [License](./license) |
+| Runtime licensing | Removed in 3.0.0. See [Software Licenses](../legal/software-licenses) |
 | Provider skins, model catalog metadata, modalities, tools, pricing fields | [Provider Catalog](./provider-catalog) |
 | Shared provider/model/target capacity controls | [Provider Traffic Shaping](./provider-traffic-shaping) |
 | Model groups and weighted routing | [Model Groups](./model-groups) |
@@ -90,3 +90,20 @@ control plane evolves.
 `server.openai_compatibility.tolerate_responses_body_on_chat_endpoint` is disabled by default. Leave it disabled for deployments where clients use the normal API paths: Chat Completions bodies on `/v1/chat/completions` and Responses bodies on `/v1/responses`.
 
 Enable it only after validating a client adapter that posts a Responses-shaped body to `/v1/chat/completions`. The router detects the request shape from JSON fields, not from client names, and accepts only the documented subset in [API Compatibility](../reference/api-compatibility#mixed-openai-endpoint-compatibility). Roll back by setting the flag back to `false` and restarting or redeploying the router; ordinary Chat Completions requests are unaffected by the disabled mode.
+
+## Streaming translator
+
+`server.streaming.translator` accepts `incremental` (default) or `synthesized`.
+Incremental mode uses native same-dialect Chat, Responses, and Anthropic streams.
+Responses emits each recognized event immediately and transforms protocol IDs
+using `server.identifiers`; it retains terminal usage but no response text.
+Unknown Responses events are dropped and counted in `stream_unknown_events`.
+Cross-dialect streams continue to use unary upstream calls and `writeIRStream`.
+Synthesized mode forces this unary/encoded behavior for all streaming requests.
+
+Request logs expose scalar `stream_mode`: `native_same_dialect` or `synthesized`.
+`native_bridge` is reserved for future incremental bridges; none are added here.
+The first flushed caller frame commits the response. After a partial write or
+flush failure, fallback is also forbidden because bytes may have reached the
+caller. Cancellation closes the attempt's upstream request. Truncation never
+fabricates a successful `response.completed` event.

@@ -201,12 +201,6 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 	cfg := &Config{Server: ServerConfig{
 		Listen:            server.Listen,
 		DefaultModelGroup: server.DefaultModelGroup,
-		License: LicenseConfig{
-			Enabled:    server.LicenseEnabled,
-			Path:       server.LicensePath,
-			StatePath:  server.LicenseStatePath,
-			enabledSet: true,
-		},
 	}, StatePath: server.StatePath, Provider: map[string]ProviderConfig{}, Models: map[string]ModelGroup{}}
 	var providers []providerRow
 	if err := db.Where("config_set_id = ?", set.ID).Order("provider_name ASC").Find(&providers).Error; err != nil {

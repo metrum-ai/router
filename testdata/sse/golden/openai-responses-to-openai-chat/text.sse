@@ -1,0 +1,6 @@
+data: {"choices":[{"delta":{"content":"Hello café 🌍","role":"assistant"},"finish_reason":null,"index":0}],"created":123,"id":"mr_TEST","model":"test","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}],"created":123,"id":"mr_TEST","model":"test","object":"chat.completion.chunk","usage":{"completion_tokens":3,"completion_tokens_details":{"reasoning_tokens":1},"prompt_tokens":5,"prompt_tokens_details":{"cached_tokens":2},"total_tokens":8}}
+
+data: [DONE]
+

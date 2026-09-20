@@ -20,6 +20,26 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Licensing removal (v3.0.0)
+
+v3.0.0 does not enforce a license and does not read `license.json`.
+`server.license` is ignored with one startup warning in this release and will
+be rejected in 4.0.0.
+
+These packaged names from the v2.0.0 table below are **removed**, not renamed:
+
+- `metrum-ai-router-license`
+- `metrum-ai-router-customer-lifecycle`
+
+Also removed: `metrum-ai-routerctl license` and `metrum-ai-router-fleetctl licenses`.
+Fleet plan/deploy/status and `metrum-ai-router-fleet-sign` stay.
+
+Before cutover, delete systemd units, Compose services, Kubernetes Jobs, and
+CI steps that invoke those binaries. License file and license-state backups
+matter only if you may roll back to v2.2.0. This release has no
+usage-database migration. Drop dashboards and alerts for the removed license
+Prometheus series. License volume mounts are unused.
+
 ## Breaking rename (v2.0.0)
 
 v2.0.0 packages ship **canonical binaries only**. There are no packaged rename

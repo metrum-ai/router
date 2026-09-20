@@ -1,0 +1,4 @@
+{"response": {"id": "mr_TEST", "status": "in_progress"}, "type": "response.created"}
+{"delta": "synthetic café 🌍", "item_id": "mr_TEST_1", "type": "response.output_text.delta"}
+{"item_id": "mr_TEST_1", "text": "synthetic café 🌍", "type": "response.output_text.done"}
+{"response": {"id": "mr_TEST", "status": "completed", "usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5}}, "type": "response.completed"}

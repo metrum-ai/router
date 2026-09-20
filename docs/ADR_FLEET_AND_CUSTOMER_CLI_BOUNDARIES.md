@@ -93,7 +93,7 @@ safe generic errors.
 
 The adapter writes those two exact keys to the owned `router-runtime` Secret
 and mounts it read-only at `/app/config`, the Router image's startup path.
-`metrum-ai-router-license` remains a distinct one-key `license.json` Secret and mount.
+Runtime licensing was removed in 3.0.0; Fleet no longer mounts a distinct license Secret.
 Neither protected bundle values nor references enter plans, lifecycle records,
 statuses, or error output.
 

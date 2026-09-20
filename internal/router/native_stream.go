@@ -221,9 +221,8 @@ func accumulateNativeSSE(resp *IRResponse, dialect string, frame []byte) (done, 
 
 func sseFrameData(frame []byte) []byte {
 	var lines []string
-	scanner := bufio.NewScanner(bytes.NewReader(frame))
-	for scanner.Scan() {
-		line := scanner.Text()
+	for _, rawLine := range bytes.Split(frame, []byte{'\n'}) {
+		line := strings.TrimSuffix(string(rawLine), "\r")
 		if strings.HasPrefix(line, "data:") {
 			lines = append(lines, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
 		}

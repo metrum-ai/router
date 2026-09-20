@@ -5,8 +5,14 @@ name: Source headers
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
+
+concurrency:
+  group: source-headers-${{ github.workflow }}-${{ github.ref }}
+  # Keep pull-request cancellation; never cancel a merge-group gate mid-flight.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read

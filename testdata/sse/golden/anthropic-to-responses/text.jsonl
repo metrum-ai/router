@@ -1,0 +1,9 @@
+{"response":{"created_at":0,"id":"mr_TEST","model":"test","object":"response","output":[],"status":"in_progress"},"sequence_number":0,"type":"response.created"}
+{"item":{"content":[],"id":"mr_TEST_1","role":"assistant","status":"in_progress","type":"message"},"output_index":0,"sequence_number":1,"type":"response.output_item.added"}
+{"content_index":0,"item_id":"mr_TEST_1","output_index":0,"part":{"annotations":[],"text":"","type":"output_text"},"sequence_number":2,"type":"response.content_part.added"}
+{"content_index":0,"delta":"first","item_id":"mr_TEST_1","output_index":0,"sequence_number":3,"type":"response.output_text.delta"}
+{"content_index":0,"delta":" café 🌍","item_id":"mr_TEST_1","output_index":0,"sequence_number":4,"type":"response.output_text.delta"}
+{"content_index":0,"item_id":"mr_TEST_1","output_index":0,"sequence_number":5,"text":"first café 🌍","type":"response.output_text.done"}
+{"content_index":0,"item_id":"mr_TEST_1","output_index":0,"part":{"annotations":[],"text":"first café 🌍","type":"output_text"},"sequence_number":6,"type":"response.content_part.done"}
+{"item":{"content":[{"annotations":[],"text":"first café 🌍","type":"output_text"}],"id":"mr_TEST_1","role":"assistant","status":"completed","type":"message"},"output_index":0,"sequence_number":7,"type":"response.output_item.done"}
+{"response":{"created_at":0,"id":"mr_TEST","model":"test","object":"response","output":[{"content":[{"annotations":[],"text":"first café 🌍","type":"output_text"}],"id":"mr_TEST_1","role":"assistant","status":"completed","type":"message"}],"status":"completed","usage":{"input_tokens":5,"input_tokens_details":{"cached_tokens":2},"output_tokens":3,"total_tokens":8}},"sequence_number":8,"type":"response.completed"}

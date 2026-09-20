@@ -158,6 +158,9 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	if anthropicStreamBridge(callerDialect, outDialect) && (requestRequiresReasoning(req) || target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target)) {
+		return "anthropic-bridge-reasoning-unsupported"
+	}
 	if reason := responsesToChatBridgeFilterReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
 	}

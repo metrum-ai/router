@@ -55,6 +55,8 @@ type logRecord struct {
 	TargetModel                        string                           `json:"target_model"`
 	TargetDialect                      string                           `json:"target_dialect"`
 	TargetRegion                       string                           `json:"target_region,omitempty"`
+	StreamMode                         string                           `json:"stream_mode,omitempty"`
+	StreamUnknownEvents                int                              `json:"stream_unknown_events,omitempty"`
 	Stream                             bool                             `json:"stream"`
 	Cache                              string                           `json:"cache"`
 	Status                             int                              `json:"status"`
@@ -118,14 +120,6 @@ type logRecord struct {
 	TrafficShapeEstimatedInputTokens   int                              `json:"traffic_shape_estimated_input_tokens,omitempty"`
 	TrafficShapeReservedOutputTokens   int                              `json:"traffic_shape_reserved_output_tokens,omitempty"`
 	TrafficShapeTotalReservedTokens    int                              `json:"traffic_shape_total_reserved_tokens,omitempty"`
-	LicenseStatus                      string                           `json:"license_status,omitempty"`
-	LicenseReason                      string                           `json:"license_reason,omitempty"`
-	LicenseID                          string                           `json:"license_id,omitempty"`
-	LicenseCustomerID                  string                           `json:"license_customer_id,omitempty"`
-	LicenseSKU                         string                           `json:"license_sku,omitempty"`
-	LicenseKeyID                       string                           `json:"license_key_id,omitempty"`
-	LicenseExpiry                      string                           `json:"license_expiry,omitempty"`
-	LicenseGraceActive                 bool                             `json:"license_grace_active,omitempty"`
 	RouterVersion                      string                           `json:"router_version,omitempty"`
 	RouterBuildDate                    string                           `json:"router_build_date,omitempty"`
 	RoutingConfigFingerprint           string                           `json:"routing_config_fingerprint,omitempty"`

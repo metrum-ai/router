@@ -145,7 +145,7 @@
       "production_smoke_safe_payload_template": "synthetic-previous-response-id-negative-v1"
     },
     {
-      "name": "chat-to-responses-streaming-negative",
+      "name": "chat-to-responses-streaming",
       "source_incident_issue": "#358",
       "client_name": "Cursor/1.0",
       "surface": "openai_chat",
@@ -158,8 +158,8 @@
       "request_bytes_bucket": "1b-1kb",
       "tool_schema_bytes_bucket": "none",
       "estimated_input_tokens_bucket": "tiny",
-      "expected_rejection_reason": "chat-to-responses-streaming-unsupported",
-      "production_smoke_safe_payload_template": "synthetic-chat-streaming-bridge-negative-v1"
+      "expected_rejection_reason": "",
+      "production_smoke_safe_payload_template": "synthetic-chat-streaming-bridge-v1"
     },
     {
       "name": "reasoning-no-compatible-target-negative",

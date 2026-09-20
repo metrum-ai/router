@@ -6,7 +6,7 @@
 Run using the service environment, or pass --lrp-python explicitly. A synthetic
 bundle must contain two trained targets: --cheap-model and --strong-model select
 their actual model IDs (otherwise the first two trained manifest entries apply).
-Only the supplied bundle is read. Test credentials, signed license, configuration,
+Only the supplied bundle is read. Test credentials, configuration,
 logs and SQLite database are temporary and deleted; exported evidence is scalar.
 Synthetic embedding latency is wiring evidence, never real-ONNX performance.
 """
@@ -14,7 +14,6 @@ Synthetic embedding latency is wiring evidence, never real-ONNX performance.
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import hashlib
 import json
 import math
@@ -212,27 +211,6 @@ def mock_server(stack: ExitStack) -> MockServer:
     return server
 
 
-def make_license(binary: Path, temp: Path) -> dict[str, Any]:
-    public, private, payload, license_path = (temp / name for name in
-                                             ("test-license.pub", "test-license.key", "payload.json", "license.json"))
-    run([str(binary), "generate-keypair", "--public-key-out", str(public),
-         "--private-key-out", str(private)], "license_keypair")
-    now = dt.datetime.now(dt.UTC)
-    def stamp(value: dt.datetime) -> str:
-        return value.isoformat().replace("+00:00", "Z")
-    write_json(payload, {"schema_version": 1, "license_id": "lic_lrp_e2e_test",
-                        "customer_id": "cust_lrp_e2e_test", "product": "genai-smart-router",
-                        "sku": "enterprise-test", "features": ["routing", "usage_reporting",
-                        "external_policy", "external_policy_http", "private_upstreams"],
-                        "issued_at": stamp(now - dt.timedelta(hours=1)),
-                        "not_before": stamp(now - dt.timedelta(hours=1)),
-                        "expires_at": stamp(now + dt.timedelta(days=1)), "issuer": "self-managed"})
-    run([str(binary), "sign", "--payload", str(payload), "--key", str(private),
-         "--key-id", "test-lrp-e2e-key", "--out", str(license_path)], "license_sign")
-    return {"enabled": True, "path": str(license_path), "state_path": str(temp / "license-state.json"),
-            "public_keys": [{"key_id": "test-lrp-e2e-key", "path": str(public)}], "recheck_interval": "1h"}
-
-
 def rows(database: Path, query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     with sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True, timeout=5) as connection:
         connection.row_factory = sqlite3.Row
@@ -295,9 +273,6 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
         binary = args.router_binary.resolve() if args.router_binary else temp / "metrum-genai-smartrouter"
         if args.router_binary is None:
             run(["go", "build", "-buildvcs=false", "-o", str(binary), "./cmd/metrum-ai-router"], "router_build")
-        license_binary = temp / "metrum-ai-router-license"
-        run(["go", "build", "-buildvcs=false", "-o", str(license_binary), "./cmd/metrum-ai-router-license"], "license_build")
-        license_config = make_license(license_binary, temp)
         upstream = mock_server(stack)
         router_sock, policy_sock, admin_sock, down_sock = [reserved_port(stack) for _ in range(4)]
         router_port, policy_port, admin_port, down_port = [sock.getsockname()[1] for sock in
@@ -334,9 +309,10 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
                 "headers": {"X-LRP-Auth": auth}}}
         write_json(temp / "router.json", {"server": {
             "listen": f"127.0.0.1:{router_port}", "default_model_group": GROUPS[0],
-            "license": license_config, "logging": {"path": str(temp / "requests.jsonl")},
+            "logging": {"path": str(temp / "requests.jsonl")},
             "cache": {"enabled": False}, "decision_telemetry": {"enabled": True},
             "diagnostics": {"enabled": True}, "upstream": {"timeout_ms": 5000},
+            "identifiers": {"mode": "passthrough"},
             "usage_db": {"enabled": True, "driver": "sqlite", "path": str(db), "migration_policy": "auto-safe"}},
             "state_path": str(temp / "state.json"), "providers": providers, "models": models,
             "callers": [{"id": "lrp-e2e-test-caller", "user": "test-user", "project": "test-project",
@@ -485,7 +461,7 @@ def main() -> int:
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--lrp-python", type=Path, default=Path(sys.executable))
     parser.add_argument("--service-dir", type=Path, default=ROOT / "services/learned-routing-policy")
-    parser.add_argument("--router-binary", type=Path, help="Normal licensed binary; built locally if omitted")
+    parser.add_argument("--router-binary", type=Path, help="Router binary; built locally if omitted")
     parser.add_argument("--cheap-model", help="Actual trained model ID assigned the cheap test tier")
     parser.add_argument("--strong-model", help="Actual trained model ID assigned the strong test tier")
     parser.add_argument("--requests", type=int, default=500, help="E09 request count, at least 500")

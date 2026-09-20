@@ -5,6 +5,12 @@ name: DCO
 
 on:
   pull_request:
+  merge_group:
+
+concurrency:
+  group: dco-${{ github.workflow }}-${{ github.ref }}
+  # Keep pull-request cancellation; never cancel a merge-group gate mid-flight.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read
@@ -18,6 +24,6 @@ jobs:
           fetch-depth: 0
       - name: Verify Signed-off-by trailers
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.event.pull_request.head.sha }}
         run: python3 scripts/check_dco.py "${BASE_SHA}..${HEAD_SHA}"

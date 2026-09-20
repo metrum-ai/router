@@ -15,8 +15,11 @@ TRAILER = re.compile(r"(?im)^Signed-off-by:\s+[^<\n]+\s+<[^<>\s]+@[^<>\s]+>\s*$"
 
 
 def commit_messages(revision_range: str) -> list[tuple[str, str]]:
+    # Skip merge commits: the merge queue tip is an unsigned merge that would
+    # otherwise fail this check even when every pull-request commit is signed off.
     output = subprocess.check_output(
-        ["git", "log", "--format=%H%x00%B%x00", revision_range], text=True
+        ["git", "log", "--no-merges", "--format=%H%x00%B%x00", revision_range],
+        text=True,
     )
     fields = output.split("\0")
     return [(fields[index], fields[index + 1]) for index in range(0, len(fields) - 1, 2)]

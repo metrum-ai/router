@@ -23,7 +23,6 @@ not belong in public manifests or package documentation.
 - A Kubernetes cluster with an ingress controller and TLS automation or a separate TLS termination plan.
 - A private registry image tag such as `registry.example.com/metrum-ai-router:<version>-linux-amd64`.
 - A fresh `ReadWriteOnce` PVC for the default SQLite bootstrap, or an explicit PostgreSQL deployment design for multi-replica/external database use.
-- An operator-generated `license.json` and paired verification public key.
 - Provider credentials stored in a Kubernetes Secret or external secret manager.
 - A router config reviewed for the deployment's model groups, callers, admin auth, and reporting settings.
 
@@ -58,9 +57,8 @@ A Kubernetes deployment needs:
 | Area | Required design |
 |---|---|
 | Namespace | A deployment-owned namespace with least-privilege RBAC. |
-| Router runtime files | **One Kubernetes Secret** (for example `smart-llmrouter-secrets` or `router-runtime`) with keys `config.yaml`, `env.json`, and `license.json`, mounted read-only under `/app/config/`. Do not store production `config.yaml` in a ConfigMap. |
+| Router runtime files | **One Kubernetes Secret** (for example `smart-llmrouter-secrets` or `router-runtime`) with keys `config.yaml` and `env.json`, mounted read-only under `/app/config/`. Do not store production `config.yaml` in a ConfigMap. |
 | Provider keys | Included as `env.json` in that same Secret, or an equivalent secret-manager injection of the same file. |
-| License | The `license.json` key in that same Secret, mounted at the path configured in `server.license.path`. |
 | State and usage database | The generic base stores router state and `/app/state/usage.sqlite` on one `ReadWriteOnce` PVC. It remains one replica with `Recreate`; do not share SQLite between router writers. |
 | Workload | A single-router Deployment for the generic SQLite path. Multi-replica deployments explicitly use PostgreSQL. |
 | Network | Service, Ingress or Gateway, TLS, and NetworkPolicy for clients and upstream providers/private model services. The SQLite base has no database DSN or TCP/5432 egress. |
@@ -164,7 +162,7 @@ The suggested layout is:
 
 ```text
 namespace/
-  router-runtime Secret (config.yaml, env.json, license.json)
+  router-runtime Secret (config.yaml, env.json)
   router Deployment
   router Service
   router Ingress or Gateway
@@ -176,10 +174,6 @@ The router container should run the packaged image tag for the target release, n
 ```yaml
 server:
   listen: ":8080"
-  license:
-    enabled: true
-    path: /app/config/license.json
-    state_path: /app/state/license-state.json
   usage_db:
     enabled: true
     driver: sqlite
@@ -198,11 +192,10 @@ kubectl create namespace smart-llmrouter
 
 kubectl -n smart-llmrouter create secret generic smart-llmrouter-secrets \
   --from-file=config.yaml=./config.yaml \
-  --from-file=env.json=./env.json \
-  --from-file=license.json=./license.json
+  --from-file=env.json=./env.json
 ```
 
-The router config is mounted at `/app/config/config.yaml`. Provider keys are mounted at `/app/config/env.json`. The signed license is mounted read-only at `/app/config/license.json`. Durable license and router state are written under `/app/state`. Store the entire production runtime bundle in that Secret. Caller token hashes, browser-admin credentials, provider keys, and DSNs belong there, not in a ConfigMap.
+The router config is mounted at `/app/config/config.yaml`. Provider keys are mounted at `/app/config/env.json`. Durable router state is written under `/app/state`. Store the entire production runtime bundle in that Secret. Caller token hashes, browser-admin credentials, provider keys, and DSNs belong there, not in a ConfigMap.
 
 For automated delivery evidence, bind a runtime Secret by its Kubernetes UID
 and `resourceVersion`, never by its data or a captured content checksum. A
@@ -219,11 +212,11 @@ the attestation outside the workload Kustomize inventory. Delete it before a
 Secret mutation and recreate it only after bootstrap has read the new Secret
 metadata, so a partial rotation fails closed.
 
-For an explicit PostgreSQL deployment, use TLS with hostname verification, keep its DSN in a deployment-owned Secret, mount any required CA bundle, and add narrowly scoped database egress. The generic SQLite path has no DSN or database network dependency. Keep raw provider keys, router tokens, token hashes, license files, and DSNs out of tickets, screenshots, and public docs.
+For an explicit PostgreSQL deployment, use TLS with hostname verification, keep its DSN in a deployment-owned Secret, mount any required CA bundle, and add narrowly scoped database egress. The generic SQLite path has no DSN or database network dependency. Keep raw provider keys, router tokens, token hashes, and DSNs out of tickets, screenshots, and public docs.
 
 ## Usage Database And State
 
-The generic example uses its `ReadWriteOnce` PVC for router state, license state, and `/app/state/usage.sqlite`. Back it up atomically while the router is stopped, with `usage.sqlite` and any `-wal`/`-shm` sidecars together. The one-replica/Recreate contract is required for SQLite; multi-replica production reporting requires an explicitly configured PostgreSQL deployment.
+The generic example uses its `ReadWriteOnce` PVC for router state and `/app/state/usage.sqlite`. Back it up atomically while the router is stopped, with `usage.sqlite` and any `-wal`/`-shm` sidecars together. The one-replica/Recreate contract is required for SQLite; multi-replica production reporting requires an explicitly configured PostgreSQL deployment.
 
 ## Deploy
 
@@ -344,7 +337,7 @@ If a database migration or config change caused the failure, restore from the pr
 
 ## Troubleshooting
 
-- Pod not ready: check license path, Postgres DSN, provider env file mount, and `/readyz` logs.
+- Pod not ready: check Postgres DSN, provider env file mount, and `/readyz` logs.
 - `CrashLoopBackOff`: run `kubectl logs deploy/smart-llmrouter` and verify the mounted config parses.
 - `/v1/models` empty: confirm the caller token allow-list and model group config.
 - Provider errors: validate cluster egress, provider keys, and direct upstream smokes.
@@ -357,4 +350,3 @@ Related pages:
 - [Deployment Artifacts](./deployment-artifacts)
 - [Package Validation And Security Checks](./package-validation)
 - [Router Configuration](../configuration/router-config)
-- [License-Protected Deployments](../operations/license-protected-deployments)

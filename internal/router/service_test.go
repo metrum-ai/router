@@ -41,6 +41,20 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	// Parallel go test on the self-hosted runner often exceeds the 500ms
+	// production lookup budget. Keep the production default unchanged.
+	defaultImageURLDNSTimeout = 5 * time.Second
+	// Stub image-URL admission DNS only. Egress policy still uses the live
+	// resolver so localhost allowlists and redirect checks keep working.
+	defaultImageURLLookup = func(ctx context.Context, host string) ([]net.IP, error) {
+		if ip := net.ParseIP(host); ip != nil {
+			return []net.IP{ip}, nil
+		}
+		return []net.IP{net.IPv4(93, 184, 216, 34)}, nil
+	}
+}
+
 func TestAnthropicIngressUnaryHappyPath(t *testing.T) {
 	for _, path := range []string{"/v1/messages", "/anthropic/v1/messages"} {
 		t.Run(path, func(t *testing.T) {
@@ -1015,7 +1029,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		t.Fatalf("version status=%d body=%s", versionRR.Code, versionRR.Body.String())
 	}
 	versionBody := mustJSONMap(t, versionRR.Body.String())
-	for _, key := range []string{"version", "commit", "build_date", "go_version", "goos", "goarch", "license_compile_mode"} {
+	for _, key := range []string{"version", "commit", "build_date", "go_version", "goos", "goarch"} {
 		if versionBody[key] == "" {
 			t.Fatalf("version response missing %s: %#v", key, versionBody)
 		}
@@ -11517,7 +11531,7 @@ func TestChatInboundResponsesBridgeToolsEndToEnd(t *testing.T) {
 	}
 }
 
-func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) {
+func TestChatInboundResponsesBridgeRejectsUnsupportedStreamingShapeBeforeUpstream(t *testing.T) {
 	upstreamCalled := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalled = true
@@ -11542,7 +11556,7 @@ func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) 
 	}
 	defer svc.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"bridge","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"bridge","stream":true,"n":2,"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
@@ -11552,7 +11566,7 @@ func TestChatInboundResponsesBridgeRejectsStreamingBeforeUpstream(t *testing.T) 
 	if upstreamCalled {
 		t.Fatal("upstream called for unsupported bridge streaming")
 	}
-	assertDecisionFilterReason(t, svc, "chat-to-responses-streaming-unsupported")
+	assertDecisionFilterReason(t, svc, "chat-to-responses-unsupported-field")
 }
 
 func TestOpenAIChatPassthroughStripsRetentionFields(t *testing.T) {
@@ -15270,6 +15284,5 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	licenseRequired = false
 	os.Exit(m.Run())
 }

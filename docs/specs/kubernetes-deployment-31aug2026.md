@@ -10,6 +10,12 @@ docs and repository packaging take precedence over aspirational text in this
 file. The dependency wording below was corrected after Fleet moved out of the
 request-path package; the remaining proposal is retained for design history.
 
+Layer-boundary diagrams below use the public Client → Metrum AI Router →
+upstream path. vLLM Semantic Router is optional/off-path. See
+[Competitive Landscape](../../docs-site/docs/evaluation/competitive-landscape.md)
+and the related website tracking issue
+[#211](https://github.com/metrum-ai/router/issues/211).
+
 ## Scope and non-goals
 
 This specification defines Kubernetes packaging and a constrained optional operator.
@@ -198,20 +204,27 @@ requirement.
 
 ## Layer boundary
 
+The default request path matches public diagrams: Client → Metrum AI Router →
+upstream or inference pool. vLLM Semantic Router is optional and off-path; it is
+not a mandatory inbound hop. Complement-versus-compete framing lives in
+[Competitive Landscape](../../docs-site/docs/evaluation/competitive-landscape.md).
+
 ```mermaid
 flowchart LR
-    Client[Client] --> Semantic[vLLM Semantic Router]
-    Semantic --> Router[Metrum AI Router]
+    Client[Client] --> Router[Metrum AI Router]
     Router --> Pool[InferencePool endpoint picker]
     Pool --> Replica[Serving replica]
     GPU[GPU Operator] --> Replica
     Network[Network Operator or EFA] --> Replica
     Cache[LMCache or Mooncake] --> Replica
+    Semantic[vLLM Semantic Router\noptional / off-path]
+    Client -.-> Semantic
+    Semantic -.->|advisory classification| Router
 ```
 
 | Layer | Does | Does not do |
 |---|---|---|
-| vLLM Semantic Router | Classifies a request and advises a routing choice. | It does not enforce caller quotas, choose a model group, own provider credentials, or choose a serving replica. |
+| vLLM Semantic Router (optional / off-path) | Classifies a request and advises a routing choice when operators enable it. | It does not enforce caller quotas, choose a model group, own provider credentials, or choose a serving replica. It is not required on the inbound path. |
 | Metrum AI Router | Authenticates the caller, enforces caller limits, selects a model group and target, records usage, and calls the selected upstream. | It does not schedule GPUs, tune replica topology, select a replica inside an inference pool, or own node drivers. |
 | llm-d or Gateway API Inference Extension endpoint picker | Selects a replica inside an `InferencePool`. | It does not choose the caller's model group or enforce router caller contracts. |
 | GPU and Network Operators | Own node drivers, devices, RDMA, and network operands. | They do not make model-routing decisions or own router configuration. |
@@ -1027,8 +1040,14 @@ YAML field. Unknown fields MUST fail admission.
 
 ## Upstream version and API references
 
-The following sources were checked on 2026-08-31:
+The following sources were checked on 2026-09-19 for competitive and Semantic Router
+layer framing (Kubernetes floor versions below retain the 2026-08-31 packaging
+baseline unless revalidated elsewhere):
 
+- [vLLM Semantic Router documentation](https://vllm-sr.ai/docs/intro/) and [GitHub repository](https://github.com/vllm-project/semantic-router): optional Mixture-of-Models routing layer; complement, not a mandatory Client hop.
+- [NVIDIA NeMo Switchyard documentation](https://nvidia-nemo.github.io/Switchyard/) and [GitHub repository](https://github.com/NVIDIA-NeMo/Switchyard): open-source agent model-routing library; pre-alpha (experimental, not for production) as of 2026-09-19.
+- Public product comparison: [Competitive Landscape](../../docs-site/docs/evaluation/competitive-landscape.md).
+- Website matrix follow-up: [issue #211](https://github.com/metrum-ai/router/issues/211).
 - Compose Caddy edge: `deploy/Caddyfile.compose` and `deploy/docker-compose.yml`.
 - [Gateway API Inference Extension InferencePool](https://gateway-api-inference-extension.sigs.k8s.io/api-types/inferencepool/): `inference.networking.k8s.io/v1`.
 - [Gateway API HTTPRoute](https://gateway-api.sigs.k8s.io/reference/api-types/httproute/): `gateway.networking.k8s.io/v1`. Alternate edge only.

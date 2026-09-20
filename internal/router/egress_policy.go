@@ -201,7 +201,7 @@ func validateEgressDialPort(host, port, label string) error {
 	return nil
 }
 
-func defaultEgressLookupIP(ctx context.Context, host string) ([]net.IP, error) {
+func defaultEgressLookupIPImpl(ctx context.Context, host string) ([]net.IP, error) {
 	if ip := net.ParseIP(host); ip != nil {
 		return []net.IP{ip}, nil
 	}
@@ -217,6 +217,11 @@ func defaultEgressLookupIP(ctx context.Context, host string) ([]net.IP, error) {
 	}
 	return out, nil
 }
+
+// defaultEgressLookupIP is the shared hostname resolver for image-URL and
+// egress checks. Tests may replace it so parallel suites do not depend on the
+// runner's live DNS.
+var defaultEgressLookupIP egressLookupIPFunc = defaultEgressLookupIPImpl
 
 // egressIPAllowedForHost applies connect-time destination policy.
 // Trusted local hostnames may reach only loopback addresses. All other

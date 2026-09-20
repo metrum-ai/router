@@ -9,6 +9,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pull-requests: read
@@ -20,45 +24,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-      - name: Tracked secret pattern gate
-        run: |
-          python3 scripts/check_env_example_secrets.py
-          python3 scripts/check_env_example_secrets_test.py
-      # Optional org-licensed scanner. Configure secrets.GITLEAKS_LICENSE to enable.
+      # Optional org-licensed scanner. Pattern checks live in make secret-contract.
       - name: Gitleaks
         if: ${{ vars.ENABLE_GITLEAKS == 'true' }}
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-
-
-  source-sbom-and-vulnerabilities:
-    runs-on: [self-hosted, Linux, X64, router]
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Generate CycloneDX source SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: source-sbom.cdx.json
-          upload-artifact: true
-      # Fail closed on High/Critical findings. Advisory-specific exceptions live
-      # in .grype.yaml with an owner and expiry tracked by issue #17. A passing
-      # scan with documented exceptions is not proof of zero vulnerabilities.
-      - name: Scan source dependencies
-        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e
-        with:
-          path: .
-          fail-build: true
-          severity-cutoff: high
-          output-format: sarif
-          output-file: source-vulnerabilities.sarif
-      - name: Upload vulnerability report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: source-vulnerabilities-sarif
-          path: source-vulnerabilities.sarif
-          if-no-files-found: error

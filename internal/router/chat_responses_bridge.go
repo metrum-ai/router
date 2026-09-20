@@ -33,9 +33,6 @@ func chatToResponsesBridgeFilterReason(target Target, req *IRRequest, callerDial
 	if req == nil {
 		return ""
 	}
-	if req.Stream {
-		return "chat-to-responses-streaming-unsupported"
-	}
 	if requestHasImages(req) && !bridge.Images {
 		return "chat-to-responses-image-unsupported"
 	}
@@ -80,7 +77,7 @@ func encodeChatToResponsesBridge(model string, req *IRRequest, target Target, pr
 	body := map[string]any{
 		"model":  model,
 		"input":  chatMessagesToResponsesInput(req),
-		"stream": false,
+		"stream": req != nil && req.Stream,
 	}
 	if req != nil {
 		if instructions := chatInstructions(req); instructions != "" {

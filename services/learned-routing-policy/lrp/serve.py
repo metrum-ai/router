@@ -34,6 +34,16 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, gene
 from pydantic import ValidationError
 
 from lrp.decision_path import DecisionEvidence, compose_decision
+from lrp.phase_metrics import (
+    PHASE_LATENCY_BUCKETS,
+    PHASES,
+    PhaseSpans,
+    bind_phase_spans,
+    clear_phase_spans,
+    feature_token_bucket,
+    optional_phase,
+    token_estimate_from_payload,
+)
 from lrp.policy import (
     Decision,
     Prediction,
@@ -255,6 +265,18 @@ class Runtime:
         self.latency = Histogram(
             "lrp_route_latency_seconds", "Whole route handler latency", registry=self.registry
         )
+        self.phase_latency = Histogram(
+            "lrp_route_phase_latency_seconds",
+            "Per-phase route latency (scalar buckets only)",
+            ["phase", "token_bucket"],
+            buckets=PHASE_LATENCY_BUCKETS,
+            registry=self.registry,
+        )
+        self.tokenizer_saturation = Counter(
+            "lrp_tokenizer_saturation_total",
+            "Tokenizer left-truncation ceiling hits at max_seq_len",
+            registry=self.registry,
+        )
         self.total = Counter(
             "lrp_route_total", "Policy decisions", ["label"], registry=self.registry
         )
@@ -274,6 +296,23 @@ class Runtime:
         self.info = Gauge("lrp_bundle_info", "Loaded bundle", ["version"], registry=self.registry)
         self._set_version()
         self._load_ensemble_into(self)
+
+    def observe_phases(self, spans: PhaseSpans, token_bucket: str) -> None:
+        """Publish phase histograms and saturation; never records prompt text."""
+        bucket = feature_token_bucket(spans.token_estimate)
+        if bucket == "unknown":
+            bucket = (
+                token_bucket
+                if token_bucket
+                in {"0-31", "32-127", "128-511", "512-2047", "2048+", "unknown"}
+                else "unknown"
+            )
+        for phase in PHASES:
+            duration = spans.spans.get(phase)
+            if duration is not None:
+                self.phase_latency.labels(phase=phase, token_bucket=bucket).observe(duration)
+        if spans.tokenizer_saturated:
+            self.tokenizer_saturation.inc()
 
     def requires_uncertainty_evidence(self) -> bool:
         return any(
@@ -336,6 +375,7 @@ class Runtime:
         *,
         explain: bool = False,
         need_uncertainty: bool = False,
+        spans: PhaseSpans | None = None,
     ) -> tuple[
         Mapping[TargetKey, Prediction],
         str | None,
@@ -360,32 +400,36 @@ class Runtime:
             dict[TargetKey, UncertaintyEstimate],
             UncertaintyAvailability,
         ]:
+            bind_phase_spans(spans)
             try:
                 vector = bundle.build(payload.model_dump(by_alias=True))
                 keys = [target.key for target in payload.targets]
-                predictions = bundle.predict(vector, keys)
-                contributions = bundle.explain(vector, keys) if explain else {}
-                estimates: dict[TargetKey, UncertaintyEstimate] = {}
-                availability = UncertaintyAvailability.DISABLED
-                if need_uncertainty:
-                    if ensemble.empty:
-                        availability = UncertaintyAvailability.UNAVAILABLE
-                    else:
-                        try:
-                            estimates = ensemble.estimates_for(vector, keys)
-                            if not estimates:
-                                availability = UncertaintyAvailability.UNAVAILABLE
-                            elif any(
-                                estimate.n_members < 2 for estimate in estimates.values()
-                            ):
-                                availability = UncertaintyAvailability.INSUFFICIENT
-                            else:
-                                availability = UncertaintyAvailability.AVAILABLE
-                        except Exception:  # noqa: BLE001 - never expose model internals
-                            estimates = {}
+                with optional_phase(spans, "predict"):
+                    predictions = bundle.predict(vector, keys)
+                    contributions = bundle.explain(vector, keys) if explain else {}
+                    estimates: dict[TargetKey, UncertaintyEstimate] = {}
+                    availability = UncertaintyAvailability.DISABLED
+                    if need_uncertainty:
+                        if ensemble.empty:
                             availability = UncertaintyAvailability.UNAVAILABLE
-                return predictions, contributions, estimates, availability
+                        else:
+                            try:
+                                estimates = ensemble.estimates_for(vector, keys)
+                                if not estimates:
+                                    availability = UncertaintyAvailability.UNAVAILABLE
+                                elif any(
+                                    estimate.n_members < 2
+                                    for estimate in estimates.values()
+                                ):
+                                    availability = UncertaintyAvailability.INSUFFICIENT
+                                else:
+                                    availability = UncertaintyAvailability.AVAILABLE
+                            except Exception:  # noqa: BLE001 - never expose model internals
+                                estimates = {}
+                                availability = UncertaintyAvailability.UNAVAILABLE
+                    return predictions, contributions, estimates, availability
             finally:
+                clear_phase_spans()
                 self.admission.release()
 
         # Timed-out work keeps its admission slot until native compute finishes.
@@ -438,28 +482,32 @@ def create_apps(
 
     async def route(request: Request, explain: bool = False) -> Response:
         started = time.monotonic()
+        spans = PhaseSpans()
+        token_bucket = "unknown"
         try:
-            if not authenticated(request):
-                return Response(status_code=401)
-            current = runtime.bundle
-            if current is None:
-                return JSONResponse({"error": "not_ready"}, status_code=503)
-            raw = bytearray()
-            try:
-                async with asyncio.timeout(config.deadline_ms / 1000):
-                    async for chunk in request.stream():
-                        raw.extend(chunk)
-                        if len(raw) > MAX_BODY:
-                            return JSONResponse({"error": "body_too_large"}, status_code=413)
-            except TimeoutError:
-                return JSONResponse({"error": "body_timeout"}, status_code=408)
-            try:
-                payload = Payload.model_validate_json(raw)
-            except (ValidationError, ValueError):
-                return JSONResponse({"error": "invalid_request"}, status_code=400)
-            cfg = config.groups.get(payload.group)
-            if cfg is None:
-                return JSONResponse({"error": "unknown_group"}, status_code=400)
+            with spans.phase("receive"):
+                if not authenticated(request):
+                    return Response(status_code=401)
+                current = runtime.bundle
+                if current is None:
+                    return JSONResponse({"error": "not_ready"}, status_code=503)
+                raw = bytearray()
+                try:
+                    async with asyncio.timeout(config.deadline_ms / 1000):
+                        async for chunk in request.stream():
+                            raw.extend(chunk)
+                            if len(raw) > MAX_BODY:
+                                return JSONResponse({"error": "body_too_large"}, status_code=413)
+                except TimeoutError:
+                    return JSONResponse({"error": "body_timeout"}, status_code=408)
+                try:
+                    payload = Payload.model_validate_json(raw)
+                except (ValidationError, ValueError):
+                    return JSONResponse({"error": "invalid_request"}, status_code=400)
+                token_bucket = feature_token_bucket(token_estimate_from_payload(payload))
+                cfg = config.groups.get(payload.group)
+                if cfg is None:
+                    return JSONResponse({"error": "unknown_group"}, status_code=400)
             predictions: Mapping[TargetKey, Prediction] = {}
             contributions: Mapping[TargetKey, list[dict[str, Any]]] = {}
             key = session_key(payload) if cfg.pin_ttl_s else None
@@ -484,6 +532,7 @@ def create_apps(
                         config.deadline_ms / 1000 - (time.monotonic() - started),
                         explain=explain,
                         need_uncertainty=need_uncertainty,
+                        spans=spans,
                     )
                 )
                 entries = current.manifest.get("targets", [])
@@ -523,53 +572,54 @@ def create_apps(
                         if identity not in runtime.warned_targets and len(runtime.warned_targets) < 1024:
                             runtime.warned_targets.add(identity)
                             LOG.warning("unknown or excluded model identity: %s", identity)
-                pin_active = pin is not None
-                cache = resolve_cache_estimate(payload.context, pinned=pin_active)
-                latency_map = (
-                    merge_latency_evidence(
-                        payload.group, cfg, payload.targets, runtime.latency_ledger
+                with spans.phase("select"):
+                    pin_active = pin is not None
+                    cache = resolve_cache_estimate(payload.context, pinned=pin_active)
+                    latency_map = (
+                        merge_latency_evidence(
+                            payload.group, cfg, payload.targets, runtime.latency_ledger
+                        )
+                        if cfg.latency_p95_ms_max is not None
+                        else {}
                     )
-                    if cfg.latency_p95_ms_max is not None
-                    else {}
-                )
-                exploration_allowed = payload.caller.project in cfg.exploration_projects
-                rng = random.SystemRandom()
-                cold_keys = {c.key for c in cold_starts}
-                input_tokens = float(payload.context.get("estimatedTokens", 0))
-                cold_start_only = bool(
-                    cfg.cold_start_exploration
-                    and cold_keys
-                    and any(k in predictions for k in cold_keys)
-                    and not any(k in trained for k in predictions)
-                )
-                if availability == UncertaintyAvailability.UNAVAILABLE and need_uncertainty:
-                    runtime.degraded.labels("uncertainty_unavailable").inc()
-                decision = compose_decision(
-                    payload.targets,
-                    predictions,
-                    cfg,
-                    rng,
-                    DecisionEvidence(
-                        project=payload.caller.project,
-                        input_tokens=input_tokens,
-                        pin=pin,
-                        exploration_allowed=exploration_allowed,
-                        latency_evidence=latency_map or None,
-                        cache=cache,
-                        estimates=estimates,
-                        uncertainty_availability=availability,
-                        strategy=cfg.exploration_strategy,
-                        cold_keys=frozenset(cold_keys),
-                        cold_start_only=cold_start_only,
-                    ),
-                )
-                if degradation:
-                    runtime.degraded.labels(degradation).inc()
-                    decision = Decision(
-                        decision.primary, decision.fallbacks, f"lrp:{degradation}-fallback"
+                    exploration_allowed = payload.caller.project in cfg.exploration_projects
+                    rng = random.SystemRandom()
+                    cold_keys = {c.key for c in cold_starts}
+                    input_tokens = float(payload.context.get("estimatedTokens", 0))
+                    cold_start_only = bool(
+                        cfg.cold_start_exploration
+                        and cold_keys
+                        and any(k in predictions for k in cold_keys)
+                        and not any(k in trained for k in predictions)
                     )
-                if key and not explain:
-                    runtime.pins.put(key, payload.targets[decision.primary].key, cfg.pin_ttl_s)
+                    if availability == UncertaintyAvailability.UNAVAILABLE and need_uncertainty:
+                        runtime.degraded.labels("uncertainty_unavailable").inc()
+                    decision = compose_decision(
+                        payload.targets,
+                        predictions,
+                        cfg,
+                        rng,
+                        DecisionEvidence(
+                            project=payload.caller.project,
+                            input_tokens=input_tokens,
+                            pin=pin,
+                            exploration_allowed=exploration_allowed,
+                            latency_evidence=latency_map or None,
+                            cache=cache,
+                            estimates=estimates,
+                            uncertainty_availability=availability,
+                            strategy=cfg.exploration_strategy,
+                            cold_keys=frozenset(cold_keys),
+                            cold_start_only=cold_start_only,
+                        ),
+                    )
+                    if degradation:
+                        runtime.degraded.labels(degradation).inc()
+                        decision = Decision(
+                            decision.primary, decision.fallbacks, f"lrp:{degradation}-fallback"
+                        )
+                    if key and not explain:
+                        runtime.pins.put(key, payload.targets[decision.primary].key, cfg.pin_ttl_s)
             runtime.total.labels(metric_label(decision.label)).inc()
             for target in payload.targets:
                 prediction = predictions.get(target.key)
@@ -577,57 +627,59 @@ def create_apps(
                     # Stable manifest target identity only, never caller data.
                     metric_key = hashlib.sha256(json.dumps(target.key).encode()).hexdigest()[:16]
                     runtime.quality.labels(metric_key).observe(prediction.quality)
-            if not explain:
-                return JSONResponse(decision.response())
-            floor = effective_quality_floor(cfg, payload.caller.project)
-            cache_for_explain = resolve_cache_estimate(payload.context, pinned=pin is not None)
-            latency_for_explain = (
-                merge_latency_evidence(
-                    payload.group, cfg, payload.targets, runtime.latency_ledger
+            with spans.phase("respond"):
+                if not explain:
+                    return JSONResponse(decision.response())
+                floor = effective_quality_floor(cfg, payload.caller.project)
+                cache_for_explain = resolve_cache_estimate(payload.context, pinned=pin is not None)
+                latency_for_explain = (
+                    merge_latency_evidence(
+                        payload.group, cfg, payload.targets, runtime.latency_ledger
+                    )
+                    if cfg.latency_p95_ms_max is not None
+                    else {}
                 )
-                if cfg.latency_p95_ms_max is not None
-                else {}
-            )
-            explained = []
-            for index, target in enumerate(payload.targets):
-                pred = predictions.get(target.key)
-                explained.append(
+                explained = []
+                for index, target in enumerate(payload.targets):
+                    pred = predictions.get(target.key)
+                    explained.append(
+                        {
+                            "index": index,
+                            "provider": target.provider,
+                            "model": target.model,
+                            "quality": pred.quality if pred else None,
+                            "out_tokens": pred.out_tokens if pred else None,
+                            "est_cost": estimated_cost(
+                                target,
+                                pred,
+                                float(payload.context.get("estimatedTokens", 0)),
+                                cfg,
+                                cache=cache_for_explain,
+                            )
+                            if pred
+                            else None,
+                            "excluded_reason": None if pred else "unknown_or_undertrained",
+                            "feature_importances": contributions.get(target.key, []),
+                            "latency_p95_ms": latency_for_explain.get(target.key),
+                        }
+                    )
+                return JSONResponse(
                     {
-                        "index": index,
-                        "provider": target.provider,
-                        "model": target.model,
-                        "quality": pred.quality if pred else None,
-                        "out_tokens": pred.out_tokens if pred else None,
-                        "est_cost": estimated_cost(
-                            target,
-                            pred,
-                            float(payload.context.get("estimatedTokens", 0)),
-                            cfg,
-                            cache=cache_for_explain,
-                        )
-                        if pred
-                        else None,
-                        "excluded_reason": None if pred else "unknown_or_undertrained",
-                        "feature_importances": contributions.get(target.key, []),
-                        "latency_p95_ms": latency_for_explain.get(target.key),
+                        **decision.response(),
+                        "targets": explained,
+                        "floor": floor,
+                        "group_floor": cfg.quality_floor,
+                        "project_floor_override": payload.caller.project in cfg.floors_by_project,
+                        "cache_state": cache_for_explain.state,
+                        "latency_p95_ms_max": cfg.latency_p95_ms_max,
                     }
                 )
-            return JSONResponse(
-                {
-                    **decision.response(),
-                    "targets": explained,
-                    "floor": floor,
-                    "group_floor": cfg.quality_floor,
-                    "project_floor_override": payload.caller.project in cfg.floors_by_project,
-                    "cache_state": cache_for_explain.state,
-                    "latency_p95_ms_max": cfg.latency_p95_ms_max,
-                }
-            )
         except Exception:  # noqa: BLE001 - sanitize all exceptions at the HTTP boundary
             LOG.error("policy request failed: internal_error")
             return JSONResponse({"error": "internal_error"}, status_code=500)
         finally:
             runtime.latency.observe(time.monotonic() - started)
+            runtime.observe_phases(spans, token_bucket)
 
     @app.post("/route")
     async def route_endpoint(request: Request) -> Response:
