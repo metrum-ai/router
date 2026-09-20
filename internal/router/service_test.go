@@ -45,9 +45,9 @@ func init() {
 	// Parallel go test on the self-hosted runner often exceeds the 500ms
 	// production lookup budget. Keep the production default unchanged.
 	defaultImageURLDNSTimeout = 5 * time.Second
-	// Do not call the live resolver from the shared test binary. Literal IPs
-	// and per-test stubs still exercise private-destination and timeout paths.
-	defaultEgressLookupIP = func(ctx context.Context, host string) ([]net.IP, error) {
+	// Stub image-URL admission DNS only. Egress policy still uses the live
+	// resolver so localhost allowlists and redirect checks keep working.
+	defaultImageURLLookup = func(ctx context.Context, host string) ([]net.IP, error) {
 		if ip := net.ParseIP(host); ip != nil {
 			return []net.IP{ip}, nil
 		}
