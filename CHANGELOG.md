@@ -7,12 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-21
+
 ### Breaking Changes
 
 - Removed the Fleet lifecycle subsystem: `metrum-ai-router-fleetctl`,
   `metrum-ai-router-fleet-sign`, rename stubs, `internal/fleet`, Fleet-only
   scripts, and package packaging of those binaries. Self-managed installs use
   binary, Docker Compose, or Kubernetes manifests with `metrum-ai-routerctl`.
+- Config key `server.license` is rejected at startup. Remove the block before
+  upgrade. Existing `license.json` files stay unread and are not a deployment
+  prerequisite.
 
 ## [3.0.0] - 2026-09-19
 
@@ -174,7 +179,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/metrum-ai/router/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/metrum-ai/router/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0

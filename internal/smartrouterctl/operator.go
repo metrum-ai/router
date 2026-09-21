@@ -210,15 +210,6 @@ spec:
       driver: %q
       path: /app/state/usage.sqlite
       migration_policy: deployment-job
-    license:
-      enabled: true
-      path: /app/config/license.json
-      state_path: /app/state/license-state.json
-      recheck_interval: 1h
-      grace_period_on_validation_error: 24h
-      revocation:
-        mode: off
-      fail_open_for_dev: false
     decision_telemetry:
       enabled: false
   state_path: /app/state/router-state.json

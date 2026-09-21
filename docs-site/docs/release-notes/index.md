@@ -14,6 +14,49 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.0.0 - 2026-09-21
+
+### Highlights
+
+- The Fleet lifecycle subsystem is removed: `metrum-ai-router-fleetctl`,
+  `metrum-ai-router-fleet-sign`, rename stubs, and `internal/fleet`.
+  Self-managed installs use binary, Docker Compose, or Kubernetes manifests
+  with `metrum-ai-routerctl`.
+- `server.license` is a startup error. Remove the block before upgrade.
+  `license.json` is still never read.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Fleet | Fleet CLIs, Fleet signing, and Fleet deploy/plan/status are removed |
+| Config | `server.license` fails startup; delete the block |
+| License files | Existing `license.json` files remain inert and are not mounted by current manifests |
+| Packages | No Fleet binaries are packaged |
+| Database | No usage-database migration |
+
+### Upgrade
+
+1. Download `metrum-ai-router-v4.0.0-linux-<arch>.tar.gz` (and the Docker
+   package if used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Delete `server.license` from router config and drop license file mounts.
+3. Remove automation that calls `metrum-ai-router-fleetctl` or
+   `metrum-ai-router-fleet-sign`.
+4. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide).
+
+### Validation
+
+- `/readyz` and `/version` report v4.0.0
+- Startup fails if `server.license` is still present, and succeeds after it is removed
+- One authenticated `/v1/models` call succeeds without a license file
+
+### Rollback
+
+Roll back to GitHub Release **v3.0.0**. No usage-database restore is required.
+v3.0.0 still ignores `server.license` with one startup warning and still
+includes Fleet plan/deploy/status.
+
 ## v3.0.0 - 2026-09-19
 
 ### Highlights

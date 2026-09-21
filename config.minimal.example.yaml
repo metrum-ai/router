@@ -24,7 +24,7 @@ server:
     driver: sqlite
     path: usage.sqlite
     migration_policy: auto-safe
-  # server.license is ignored in 3.0.0 (removed in 4.0.0). Omit it for new installs.
+  # server.license is rejected in 4.0.0. Omit it.
   diagnostics:
     enabled: true
     retention_days: 7

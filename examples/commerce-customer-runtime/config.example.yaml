@@ -31,17 +31,6 @@ server:
     max_error_bytes: 2048
   retention:
     enabled: false
-  license:
-    enabled: true
-    path: /etc/smart-llmrouter-license/license.json
-    state_path: /var/lib/smart-llmrouter/license-state.json
-    instance_fingerprint: ""
-    recheck_interval: 1h
-    grace_period_on_validation_error: 24h
-    revocation:
-      mode: off
-      path: /etc/smart-llmrouter-license/revocations.json
-    fail_open_for_dev: false
 
 state_path: /var/lib/smart-llmrouter/router-state.json
 

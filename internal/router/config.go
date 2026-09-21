@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -869,7 +868,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	if hadDeprecatedLicense {
-		log.Printf("warning: config key server.license is ignored in 3.0.0 and will be rejected in 4.0.0")
+		return nil, fmt.Errorf("config key server.license is rejected in 4.0.0; remove the server.license block")
 	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
@@ -880,9 +879,9 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, cfg.Validate()
 }
 
-// discardDeprecatedServerLicenseYAML removes a legacy server.license mapping so
-// LoadConfig can accept deployed configs without enforcing licensing. It never
-// opens paths named inside that block.
+// discardDeprecatedServerLicenseYAML reports a legacy server.license mapping.
+// LoadConfig rejects that key in 4.0.0. Detection never opens paths named
+// inside the block.
 func discardDeprecatedServerLicenseYAML(raw []byte) ([]byte, bool, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(raw, &root); err != nil {

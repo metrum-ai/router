@@ -13,7 +13,7 @@
 # 3. NVIDIA GPU Operator at >=v26.7.0. The checked-in gpu-operator-values.yaml
 #    disables driver/toolkit for Shadeform CUDA images (AMI-owned). Prefer the
 #    blueprint-rendered values file. Never enable DRA with the device plugin.
-# 4. Mode-0600 runtime Secret with config.yaml, env.json, and license.json.
+# 4. Mode-0600 runtime Secret with config.yaml and env.json.
 #
 # Render a fresh blueprint:
 #   metrum-ai-routerctl blueprint render \

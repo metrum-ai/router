@@ -118,9 +118,8 @@ package downgrade follows the migration contract and may require restoring
 the approved pre-migration database.
 
 Runtime licensing was removed in 3.0.0. Leftover `license.json` files are
-inert (never read). Legacy `server.license` config is accepted with one startup
-warning in 3.0.0 and rejected in 4.0.0. Do not mount or issue a license as a
-deployment prerequisite.
+inert (never read). `server.license` is rejected at startup in 4.0.0; remove
+the block. Do not mount or issue a license as a deployment prerequisite.
 
 Docker Compose packages are built separately:
 
