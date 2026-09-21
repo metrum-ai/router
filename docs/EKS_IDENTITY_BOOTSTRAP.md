@@ -6,8 +6,8 @@ overlay. The shared operator and CI command wrapper is tracked separately; this
 document defines the guarantees it must preserve.
 
 **Authentication is a prerequisite, never a numbered delivery step.** Complete
-AWS and Kubernetes login, SSO, MFA, or profile setup out of band. Delivery,
-Fleet, and Make targets consume the currently authenticated session and fail
+AWS and Kubernetes login, SSO, MFA, or profile setup out of band. Delivery
+and Make targets consume the currently authenticated session and fail
 closed with a secret-free message when it is missing. They do not invoke login.
 
 ## Reauthenticate And Discover
@@ -114,38 +114,10 @@ The helper requires that assumed-role caller. It rejects root, direct IAM-user
 sessions, lifecycle-operator sessions, and delivery/bootstrap/image-publisher
 sessions. It also rejects another account, users outside
 `/smart-router-lifecycle/`, and users without `GenAISmartRouterLifecycle=true`.
-A preflight makes no mutation:
-
-```bash
-python3 scripts/enroll_fleet_operator.py \
-  --profile genai-smart-router-eks-staging-platform-iac \
-  --principal-arn arn:aws:iam::<ACCOUNT_ID>:user/smart-router-lifecycle/<operator>
-```
-
-After reviewing the sanitized `ready` result, perform the one group-membership
-mutation with the exact confirmation:
-
-```bash
-python3 scripts/enroll_fleet_operator.py \
-  --profile genai-smart-router-eks-staging-platform-iac \
-  --principal-arn arn:aws:iam::<ACCOUNT_ID>:user/smart-router-lifecycle/<operator> \
-  --apply \
-  --confirm ENROLL_FLEET_OPERATOR
-```
-
-The result deliberately reports only account, principal class/path, required
-tag, reviewed group, outcome, and membership state. It never reports the
-runtime IAM user name or ARN. Then authenticate as the enrolled operator with
-short-lived credentials and prove only the normal role chain; direct
-delivery/bootstrap/image-publisher access and all mutation must remain denied
-until their independently authorized gate. Enrolled operators must not use the
-platform-IaC role for Fleet deploy/delete.
 
 See this document for the credential-free profile shape and verification
-command. Fleet customer and production-stage operations:
-[Customer instance operations](CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md).
-Historical staging Make delivery is retired; do not revive those targets for
-live mutation.
+command. Historical staging Make delivery is retired; do not revive those
+targets for live mutation.
 
 Run the canonical bootstrap target. Before it creates a one-time source key,
 it atomically reserves the mode-0600 recovery-record path. It then exchanges

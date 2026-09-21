@@ -134,8 +134,7 @@ type productionDerivedCodexResponsesReasoningFixture struct {
 // production incident in which /admin/reports answered every request with a
 // Basic challenge, including a password that verified against the configured
 // bcrypt hash, because the bundle trusted a reverse-proxy range that did not
-// contain the cluster ingress controller address. The corresponding Fleet
-// bundle guard regression now lives with the Fleet package.
+// contain the cluster ingress controller address.
 func TestProductionDerivedAdminReportsForwardedHTTPSTrust(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "smokes", "production-derived", "admin-reports-forwarded-https-trust.json"))
 	if err != nil {

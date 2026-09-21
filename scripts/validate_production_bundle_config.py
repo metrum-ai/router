@@ -2,7 +2,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Validate a Fleet production runtime bundle config for EKS path and caller parity.
+"""Validate a production runtime bundle config for path and caller parity.
 
 Reads a local config.yaml (for example production-identical.yaml) and checks that
 state paths, trusted proxy CIDRs, and caller token_sha256 entries are present.

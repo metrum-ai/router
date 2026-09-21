@@ -3,7 +3,7 @@
 
 // Package smartrouterctl implements customer-local file-owned operations and
 // Kubernetes architecture blueprint rendering for Metrum AI Router.
-// It never calls AWS, EKS, RDS, Fleet, or the Kubernetes API.
+// It never calls AWS, EKS, RDS, or the Kubernetes API.
 package smartrouterctl
 
 import (

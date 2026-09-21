@@ -77,7 +77,7 @@ validated baseline.
 
 ### Out of scope / non-goals
 
-- Metrum Fleet EKS production cutover or Compose production.
+- Metrum EKS production cutover or Compose production.
 - Shadeform NVIDIA SKUs as the AMD conformance matrix.
 - Claiming Metrum AI Router schedules GPUs, owns ROCm drivers, or performs KV-aware replica pick.
 - Claiming Codex, tools, vision, or llm-d as AMD-validated without new evidence.

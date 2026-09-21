@@ -25,8 +25,10 @@ Collected 2026-09-03 from the following repository sources:
   that proves a change, distinguishes smoke compatibility evidence from broader
   outcome evaluation, specifies deterministic and live-smoke examples, and
   requires sanitized evidence fields for relevant validation.
-- `docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md` — Fleet customer instance
-  operations and recorded security/operations review checklist.
+- `docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md` — historical Fleet customer
+  instance operations and recorded security/operations review checklist
+  (document later removed with the Fleet lifecycle subsystem; cite only as
+  collection-date evidence).
 - `docs/DOCKER_DEPLOYMENT.md` — customer Compose install and upgrade procedure.
   The 2026-09-03 collection described the former customer Compose procedure body.
 - Supplied Google tracker — anonymous access returned HTTP 401. No authenticated

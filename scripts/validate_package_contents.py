@@ -45,7 +45,6 @@ DOCKER_PACKAGE_FILES = {
     "MODEL_LICENSES.md",
 }
 PACKAGE_BINARIES = set(_PACKAGE_BINARY_PATHS)
-FLEET_ONLY_BINARY_NAMES = set(product.PACKAGE_FLEET_BINARIES)
 DOCKER_RUNTIME_BINARIES = {f"/app/bin/{name}" for name in product.PACKAGE_RUNTIME_BINARIES}
 EXPECTED_ELF_MACHINE = {"amd64": 62, "arm64": 183}
 DOCKER_IMAGE_RE = re.compile(
@@ -268,8 +267,6 @@ def validate_docker_image_tar(archive: Path, image_rel: str, blob: bytes, expect
                             errors.append(f"{archive}: {image_rel} layer contains AppleDouble metadata entry: {layer_member.name}")
                         if FORBIDDEN_IMAGE_PATH_RE.search(normalized_layer_name):
                             errors.append(f"{archive}: {image_rel} layer contains forbidden runtime/source path: {layer_member.name}")
-                        if layer_member.isfile() and Path(normalized_layer_name).name in FLEET_ONLY_BINARY_NAMES:
-                            errors.append(f"{archive}: {image_rel} contains forbidden fleet lifecycle binary {name}")
                         if name in required and layer_member.isfile():
                             actual.add(name)
     except (json.JSONDecodeError, tarfile.TarError, UnicodeDecodeError) as exc:

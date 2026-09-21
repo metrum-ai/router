@@ -74,6 +74,5 @@ Generating a token is not the same as activating it.
   restart the router. Use `callers rotate` to replace the hash and emit a new token
   file, or `callers revoke` to disable a caller. The CLI never activates config on a
   remote managed hostname or signs licenses.
-- **Private managed / Fleet-operated installs:** use `customer grant-caller`, `customer list-callers`, and `customer revoke-caller` from the release binary package, then signed `customer create`. See [Customer Administrator Guide](./customer-administration). `metrum-ai-routerctl` alone does not change a live managed hostname.
 
 Never paste raw tokens, token hashes, or provider keys into tickets, chat, or public docs. Distribute the raw token once over an approved channel, then confirm access with `/v1/models`.

@@ -54,9 +54,6 @@ smart-llmrouter
 /router-usage-report
 /router-migrate
 /smartrouterctl
-/metrum-fleetctl
-/metrum-smartrouterctl
-/metrum-fleet-sign
 /router-license
 usage.sqlite
 examples/cli-e2e-c/cli-e2e

@@ -21,8 +21,6 @@ bin/metrum-ai-router-token-gen
 bin/metrum-ai-router-usage-report
 bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
-bin/metrum-ai-router-fleetctl
-bin/metrum-ai-router-fleet-sign
 config/config.example.yaml
 config/env.example.json
 config/scripts/router.ts
@@ -164,8 +162,7 @@ record the public URL and result in the release evidence.
 Release archival uses restic against an operator-configured backup repository.
 Set `RESTIC_REPOSITORY` or `RESTIC_REPO_HOST` plus `RESTIC_REPO_PATH` (with
 `BACKUP_USER`/`BACKUP_PASS`) in ignored `ops.env.json`; there are no compiled-in
-host or path defaults. `make package-all` produces the fleet-admin binary
-packages (includes `metrum-fleetctl` and related Fleet CLIs).
+host or path defaults. `make package-all` produces the release binary packages.
 `make package-docker-all` produces the shared customer Docker packages. After both
 families exist under `dist/`:
 
@@ -230,8 +227,7 @@ supported. Its offline gate checks manifest structure and security invariants;
 record hardware-backed direct-upstream and router smokes before making a
 deployment-specific compatibility claim.
 
-Fleet customer and production-stage operations use
-`docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md`. Generic Kubernetes samples remain under
+Generic Kubernetes samples remain under
 `deploy/kubernetes/base/` and `deploy/kubernetes/overlays/example/`. Historical
 staging Make delivery notes are retired (archived 2026-09-01); do not revive
 those targets for live mutation.

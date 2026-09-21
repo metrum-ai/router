@@ -5,16 +5,8 @@ Use this runbook for production issues reported by users or monitoring.
 ## Deployment Shape
 
 First identify the deployment under test: standalone binary, Docker Compose,
-generic Kubernetes, or a packaged Fleet-managed Kubernetes instance. Use only
-the procedure for that deployment and its currently authenticated operator
-session.
-
-For Fleet-managed instances, publish a protected runtime bundle and activate a
-signed immutable intent through `metrum-ai-router-fleetctl`; do not edit
-owned Kubernetes Secrets, ConfigMaps, or Deployments by hand because
-reconciliation replaces unrecorded changes. See [Customer instance operations
-runbook](CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md) and [Multi-environment
-deployment CLI](MULTI_ENVIRONMENT_DEPLOYMENT_CLI.md).
+or generic Kubernetes. Use only the procedure for that deployment and its
+currently authenticated operator session.
 
 Docker Compose remains a supported self-hosted option documented in [Docker
 deployment](DOCKER_DEPLOYMENT.md). Keep all hosts, namespaces, protected
@@ -98,8 +90,9 @@ kubectl rollout status deploy/router -n <namespace>
 kubectl logs deploy/router -n <namespace> --tail=200
 ```
 
-Release and configuration changes go through a new signed Fleet intent, never a
-manual edit. See [Customer instance operations runbook](CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md).
+Release and configuration changes follow the deployment owner's approved
+change process for the binary, Compose, or Kubernetes install under test.
+See [Deployment](DEPLOYMENT.md) and [Docker deployment](DOCKER_DEPLOYMENT.md).
 
 For self-hosted Compose installs, inspect the operator host with the deployment
 owner's SSH identity and path—never commit private IPs, key paths, or production

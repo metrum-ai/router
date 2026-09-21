@@ -38,14 +38,15 @@ def markdown_section(document: str, heading: str) -> str:
 def assert_offline_package_documentation_contract() -> None:
     repository = Path(__file__).resolve().parent.parent
     makefile = (repository / "Makefile").read_text(encoding="utf-8")
-    match = re.search(r"^FLEET_ONLY_BINARIES := (.+)$", makefile, re.MULTILINE)
+    match = re.search(r"^PACKAGE_BINARIES := (.+)$", makefile, re.MULTILINE)
     if match is None:
-        raise AssertionError("Makefile: missing FLEET_ONLY_BINARIES")
-    make_fleet_binaries = set(match.group(1).split())
-    if make_fleet_binaries != validate_package_contents.FLEET_ONLY_BINARY_NAMES:
+        raise AssertionError("Makefile: missing PACKAGE_BINARIES")
+    make_package_binaries = set(match.group(1).split())
+    expected_binaries = {Path(path).name for path in validate_package_contents.PACKAGE_BINARIES}
+    if make_package_binaries != expected_binaries:
         raise AssertionError(
-            "package validator Fleet-only binary set differs from Makefile: "
-            f"{make_fleet_binaries ^ validate_package_contents.FLEET_ONLY_BINARY_NAMES}"
+            "package validator binary set differs from Makefile: "
+            f"{make_package_binaries ^ expected_binaries}"
         )
 
     binary_manifest_sources = {
@@ -64,18 +65,6 @@ def assert_offline_package_documentation_contract() -> None:
     docker_start = docker_section.find("Docker Compose packages include:")
     if docker_start == -1:
         raise AssertionError("docs/PACKAGE_README.md: missing Docker Compose package manifest")
-    docker_manifest = docker_section[docker_start:]
-    for fleet_binary in (
-        f"bin/{name}" for name in validate_package_contents.FLEET_ONLY_BINARY_NAMES
-    ):
-        if fleet_binary in docker_manifest:
-            raise AssertionError(f"docs/PACKAGE_README.md: Docker package manifest must omit {fleet_binary}")
-    for guidance in (
-        "The standard Docker and Docker Compose images do not include",
-        "binary package on a separate trusted administration host.",
-    ):
-        if guidance not in docker_manifest:
-            raise AssertionError(f"docs/PACKAGE_README.md: missing Docker CLI guidance: {guidance}")
 
     dockerfile = (repository / "Dockerfile").read_text(encoding="utf-8")
     docker_build_steps = (
@@ -102,9 +91,6 @@ def assert_offline_package_documentation_contract() -> None:
         expected_copy = f"COPY --from=build /out/{runtime_binary} /app/bin/{runtime_binary}"
         if expected_copy not in dockerfile:
             raise AssertionError(f"Dockerfile: missing runtime binary copy: {runtime_binary}")
-    for fleet_binary in validate_package_contents.FLEET_ONLY_BINARY_NAMES:
-        if f"/out/{fleet_binary}" in dockerfile or f"/app/bin/{fleet_binary}" in dockerfile:
-            raise AssertionError(f"Dockerfile: standard image must not include {fleet_binary}")
 
 
 def write_allowlist(root: Path) -> Path:
@@ -151,8 +137,6 @@ def binary_package_files(root: str = "metrum-ai-router-v1.0.0-linux-amd64") -> d
         f"{root}/bin/metrum-ai-router-usage-report": elf(62),
         f"{root}/bin/metrum-ai-router-migrate": elf(62),
         f"{root}/bin/metrum-ai-routerctl": elf(62),
-        f"{root}/bin/metrum-ai-router-fleetctl": elf(62),
-        f"{root}/bin/metrum-ai-router-fleet-sign": elf(62),
         f"{root}/config/config.example.yaml": "server: {}\n",
         f"{root}/config/env.example.json": "{}\n",
         f"{root}/config/scripts/router.ts": "export function route() {}\n",
@@ -244,59 +228,13 @@ def main() -> int:
 
         missing_cli = root / "missing-cli.tar.gz"
         missing_cli_files = binary_package_files()
-        del missing_cli_files["metrum-ai-router-v1.0.0-linux-amd64/bin/metrum-ai-router-fleetctl"]
+        del missing_cli_files["metrum-ai-router-v1.0.0-linux-amd64/bin/metrum-ai-routerctl"]
         write_tar(missing_cli, missing_cli_files)
-        expect_errors(missing_cli, allowlist, ["required package file is missing: bin/metrum-ai-router-fleetctl"])
-
-        missing_fleet_sign = root / "missing-fleet-sign.tar.gz"
-        missing_fleet_sign_files = binary_package_files()
-        del missing_fleet_sign_files["metrum-ai-router-v1.0.0-linux-amd64/bin/metrum-ai-router-fleet-sign"]
-        write_tar(missing_fleet_sign, missing_fleet_sign_files)
-        expect_errors(
-            missing_fleet_sign,
-            allowlist,
-            ["required package file is missing: bin/metrum-ai-router-fleet-sign"],
-        )
+        expect_errors(missing_cli, allowlist, ["required package file is missing: bin/metrum-ai-routerctl"])
 
         good_docker = root / "metrum-ai-router-v1.0.0-docker-linux-amd64.tar.gz"
         write_tar(good_docker, docker_package_files())
         expect_ok(good_docker, allowlist)
-
-        for fleet_binary in sorted(validate_package_contents.FLEET_ONLY_BINARY_NAMES):
-            forbidden_image = root / f"forbidden-image-{fleet_binary}.tar.gz"
-            forbidden_image_files = docker_package_files()
-            image_path = (
-                "metrum-ai-router-v1.0.0-docker-linux-amd64/"
-                "images/metrum-ai-router-v1.0.0-linux-amd64.tar"
-            )
-            forbidden_image_files[image_path] = docker_image_tar(
-                {f"app/bin/{fleet_binary}": elf(62)}
-            )
-            write_tar(forbidden_image, forbidden_image_files)
-            expect_errors(
-                forbidden_image,
-                allowlist,
-                [f"forbidden fleet lifecycle binary /app/bin/{fleet_binary}"],
-            )
-
-        relocated_fleet_binary = root / "relocated-fleet-binary.tar.gz"
-        relocated_files = docker_package_files()
-        relocated_image_path = (
-            "metrum-ai-router-v1.0.0-docker-linux-amd64/"
-            "images/metrum-ai-router-v1.0.0-linux-amd64.tar"
-        )
-        relocated_files[relocated_image_path] = docker_image_tar(
-            {"usr/local/bin/metrum-ai-router-fleetctl": elf(62)}
-        )
-        write_tar(relocated_fleet_binary, relocated_files)
-        expect_errors(
-            relocated_fleet_binary,
-            allowlist,
-            [
-                "forbidden fleet lifecycle binary "
-                "/usr/local/bin/metrum-ai-router-fleetctl"
-            ],
-        )
 
         wrong_image_arch = root / "metrum-ai-router-v1.0.0-docker-linux-amd64.tar.gz"
         wrong_image_arch_files = docker_package_files()
@@ -334,7 +272,7 @@ def main() -> int:
 
         binary_source_path = root / "binary-source-path.tar.gz"
         binary_source_files = binary_package_files()
-        binary_source_files["metrum-ai-router-v1.0.0-linux-amd64/cmd/metrum-fleetctl/main.go"] = "package main\n"
+        binary_source_files["metrum-ai-router-v1.0.0-linux-amd64/cmd/metrum-ai-router/main.go"] = "package main\n"
         write_tar(binary_source_path, binary_source_files)
         expect_errors(binary_source_path, allowlist, ["forbidden source path"])
 

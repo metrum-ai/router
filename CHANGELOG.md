@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the Fleet lifecycle subsystem: `metrum-ai-router-fleetctl`,
+  `metrum-ai-router-fleet-sign`, rename stubs, `internal/fleet`, Fleet-only
+  scripts, and package packaging of those binaries. Self-managed installs use
+  binary, Docker Compose, or Kubernetes manifests with `metrum-ai-routerctl`.
+
 ## [3.0.0] - 2026-09-19
 
 ### Breaking Changes

@@ -4,7 +4,7 @@
 
 """Prepare a local/dev router directory: env template and one caller.
 
-This script composes existing CLIs. It does not add Fleet or signing authority
+This script composes existing CLIs. It does not add signing authority
 to metrum-ai-routerctl. Do not commit the output directory.
 
 Runtime licensing was removed in 3.0.0. Generated config omits server.license.

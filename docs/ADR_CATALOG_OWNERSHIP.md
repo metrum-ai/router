@@ -21,8 +21,8 @@ as this ADR.**
 
 This decision is distinct from:
 
-- **Fleet runtime bundles** (`config.yaml` + `env.json` in SM/SSM) — instance
-  config packaging, not a provider catalog.
+- **Protected runtime config bundles** (`config.yaml` + `env.json` in a secret
+  manager) — instance config packaging, not a provider catalog.
 - **LRP signed bundles** — optional Ed25519 manifests for learned-routing model
   artifacts under `$LRP_DATA_DIR`, not the OpenAI-compatible provider catalog.
 - **License Ed25519 signing** — runtime entitlement envelopes (being deleted in
@@ -88,7 +88,7 @@ and the first follow-up issue IDs (implementation stays out of this ADR PR).
 
 - Update `docs/DOCS_MAINTENANCE.md` source-of-truth map and public
   providers/models docs to state the chosen obligation clearly.
-- Cross-link from customer lifecycle / Fleet docs so operators do not confuse
+- Cross-link from deployment docs so operators do not confuse
   catalog bundles with runtime or LRP bundles.
 - If Option A: scrub any remaining copy that implies a Metrum-hosted appliance
   catalog.

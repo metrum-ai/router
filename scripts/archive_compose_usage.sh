@@ -64,7 +64,7 @@ cat > "${ARCHIVE_DIR}/MANIFEST-${VERSION_TAG}.txt" <<EOF
 purpose=compose-usage-archive
 version=${VERSION_TAG}
 driver=postgres
-note=EKS cutover forensics; not imported into Fleet SQLite
+note=EKS cutover forensics; not imported into router usage state
 EOF
 
 if command -v restic >/dev/null 2>&1 && [[ -f "${ROOT}/env.json" ]]; then

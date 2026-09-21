@@ -4,7 +4,7 @@
 **KV cache:** off — do not install LMCache or Mooncake for this run.
 
 This is the live, single-node k3s validation path for Metrum AI Router. It uses
-only in-cluster OpenAI-compatible Services as router upstreams. Do not use Fleet,
+only in-cluster OpenAI-compatible Services as router upstreams. Do not use
 OpenRouter, OpenAI, Anthropic, a router CRD controller, or a cloud inference API.
 
 ## Preconditions

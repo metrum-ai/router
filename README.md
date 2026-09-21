@@ -604,8 +604,6 @@ bin/metrum-ai-router-token-gen
 bin/metrum-ai-router-usage-report
 bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
-bin/metrum-ai-router-fleetctl
-bin/metrum-ai-router-fleet-sign
 config/config.example.yaml
 config/env.example.json
 config/scripts/router.ts
@@ -622,28 +620,12 @@ THIRD_PARTY_NOTICES.md
 MODEL_LICENSES.md
 caddy/Caddyfile
 ```
-`metrum-ai-router-fleetctl plan|deploy|status|delete|customer` is the
-binary-package-only Fleet lifecycle contract. `metrum-ai-router-fleet-sign`
-issues protected intent/admission/delete documents and ships only in binary
-packages (never in customer Docker images).
-`plan`, `deploy`, and `delete` consume one mode-`0600`,
-profile-key-signed, reference-only deployment intent; it contains the protected
-profile and runtime bundle references without their resolved values.
-`customer create|status|smoke|grant-caller|get-config|list-callers|revoke-caller|update-quota|quota-status|update-config|delete` orchestrates
-disposable SQLite Fleet instances from the packaged binary alone (no Python/repo).
 `metrum-ai-routerctl` provides customer-local safe config, caller-token-file,
-model, and aggregate-usage operations and is included in Docker images;
-Fleet binaries are not. The default deployment is SQLite state with one Router
-container and one replica; it neither provisions nor binds RDS. Dedicated RDS
-requires an explicit approved `database_profile` manifest branch and a
-separately signed, scoped external admission that Fleet never creates. After
-disposable-E2E evidence exists, one qualified maintainer may self-review before
-a production-like non-production rehearsal.
+model, and aggregate-usage operations and is included in Docker images.
+The default deployment is SQLite state with one Router container and one
+replica; it neither provisions nor binds RDS.
 Packages ship canonical `metrum-ai-router*` binaries only; older CLI names are
-source-only exit-2 notices under `cmd/` and are not packaged. Fleet and
-multi-environment customer CLI guidance lives in
-[docs/MULTI_ENVIRONMENT_DEPLOYMENT_CLI.md](docs/MULTI_ENVIRONMENT_DEPLOYMENT_CLI.md)
-and [docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md](docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md).
+source-only exit-2 notices under `cmd/` and are not packaged.
 
 
 Packaged Markdown is copied only from `scripts/package_docs_allowlist.txt`. That allowlist is limited to package-safe offline bootstrap docs such as `docs/PACKAGE_README.md`, quick install notes, validation notes, and the package-safe solution brief. Full customer/admin docs are built from `docs-site/` and served by the router under `/docs/`. Internal source-checkout runbooks such as `docs/DOCS_MAINTENANCE.md`, production runbooks, private host procedures, source-maintenance notes, and security-review working notes are intentionally not packaged. Private production runbooks, private host details, SSH paths, live compose config paths, raw token/provider-key patterns, AppleDouble `._*` metadata, and unexpected source/local-state files are blocked by package validation.

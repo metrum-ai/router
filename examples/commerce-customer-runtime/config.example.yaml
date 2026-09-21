@@ -1,9 +1,9 @@
-# Minimal instance-only router config template for commerce Fleet bootstrap.
+# Minimal instance-only router config template for commerce bootstrap.
 # Provider keys belong in env.json beside this file (see env.example.json).
 # Do not place Stripe, restic, backup, or commerce admin secrets in this bundle.
 #
-# Fleet EKS path rewrite (`--rewrite-paths fleet-eks`) expects durable state under
-# /var/lib/smart-llmrouter and license under /etc/smart-llmrouter-license.
+# Durable state under /var/lib/smart-llmrouter is the conventional layout for
+# containerized installs.
 # Router state_path is a TOP-LEVEL Config field (not under server:); nesting it
 # under server: is ignored and defaults to relative router-state.json (CrashLoop).
 server:

@@ -43,18 +43,9 @@ bin/metrum-ai-router-token-gen generate \
 ```
 
 Before starting a `deployment-job` router, version-check the non-serving runner and follow the canonical [Data migration framework](DATA_MIGRATIONS.md): `plan`, approved backup, `apply`, every required data job until its safe state is `validated`, `verify`, `status`, then serve. PostgreSQL receives its connection only through `--dsn-env`; `auto-safe` is not a PostgreSQL production procedure. Do not infer completion from checkpoint ordinal `0`.
-For Fleet lifecycle contract validation, run `bin/metrum-ai-router-fleetctl plan`, then
-`deploy`, exact-job `status`, and approved `delete` with a protected
-reference-only profile. A new intent/config revision reconciles the same
-instance in place. `metrum-ai-routerctl` provides local configuration, caller-token,
-license, model, and usage operations; it cannot activate config or access cloud
-systems. The default deployment is SQLite state with one Router container and
-one replica; it neither provisions nor binds RDS. Dedicated RDS requires an
-explicit approved `database_profile` manifest branch and a strictly scoped
-external admission file for its first disposable non-production E2E. Fleet
-consumes but never creates that file; the evidence review may be performed by
-the implementing maintainer. Fleet customer and production-stage operations are
-documented in `docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md`. The hosted
+`metrum-ai-routerctl` provides local configuration, caller-token,
+model, and usage operations. The default deployment is SQLite state with one
+Router process; it neither provisions nor binds RDS. The hosted
 **Operations > Deployment Patterns** page defines the customer-facing input and
 approval contract.
 

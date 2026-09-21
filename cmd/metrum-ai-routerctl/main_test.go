@@ -150,7 +150,7 @@ callers: []
 	}
 }
 
-func TestCustomerCLIFailsClosedForFleetAuthority(t *testing.T) {
+func TestCustomerCLIFailsClosedForRemoteAuthority(t *testing.T) {
 	for _, command := range [][]string{{"deploy"}, {"config", "activate"}, {"keys", "rotate"}} {
 		args := append([]string{"run", "."}, command...)
 		output, err := exec.Command("go", args...).CombinedOutput()

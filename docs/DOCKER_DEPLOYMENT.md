@@ -122,7 +122,7 @@ Use the `docker-linux-amd64` package on x86_64 hosts and the `docker-linux-arm64
 
 ## Compose package upgrade
 
-First-time bootstrap may unpack with `tar --strip-components=1` as shown above. Upgrading an existing Compose install must use `scripts/compose_package_upgrade.py`. Do not hand-write a remote unpacker, do not glob-move from `/`, do not stop or reboot the host, and do not use Fleet or EKS tooling for this path.
+First-time bootstrap may unpack with `tar --strip-components=1` as shown above. Upgrading an existing Compose install must use `scripts/compose_package_upgrade.py`. Do not hand-write a remote unpacker, do not glob-move from `/`, do not stop or reboot the host, and do not use EKS tooling for this path.
 
 ```bash
 python3 scripts/compose_package_upgrade.py plan \

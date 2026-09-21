@@ -19,8 +19,6 @@ metrum-ai-router-<version>-linux-<arch>/
     metrum-ai-router-usage-report
     metrum-ai-router-migrate
     metrum-ai-routerctl
-    metrum-ai-router-fleetctl
-    metrum-ai-router-fleet-sign
   config/
     config.example.yaml
     env.example.json
@@ -33,19 +31,9 @@ metrum-ai-router-<version>-linux-<arch>/
 
 Use `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts. Release validation checks the package binaries against the selected architecture and rejects unexpected files, deployment-private notes, raw secrets, local state, and macOS archive metadata.
 
-`metrum-ai-router-fleetctl` runs only from an extracted binary package on a separate
-trusted administration host. Its `plan`, `deploy`, `delete`, and `customer`
-commands consume signed reference-only deployment intents (or orchestrate them
-for disposable SQLite customers); intents contain only references to the
-protected profile and runtime bundle.
-Its default lifecycle uses SQLite state with one Router container and one
-replica; it neither provisions nor binds RDS.
-
-For Fleet SQLite customer onboarding, config updates, caller grants, and smoke
-checks, see the [Customer Administrator Guide](../operations/customer-administration).
-Packaged `customer` helpers require operator-supplied reference-only inputs and mutate only with signed intents or delete
-approvals. Dedicated RDS remains an optional **core** Fleet path with external
-admission—not a `customer` verb input.
+`metrum-ai-routerctl` provides customer-local configuration, caller-token,
+model, and usage operations. The default deployment is SQLite state with one
+Router process; it neither provisions nor binds RDS.
 
 Create a dedicated service account, then create deployment-owned directories:
 
@@ -97,7 +85,6 @@ sudo install -m 0755 bin/metrum-ai-router /usr/local/bin/metrum-ai-router
 sudo install -m 0755 bin/metrum-ai-router-token-gen /usr/local/bin/metrum-ai-router-token-gen
 sudo install -m 0755 bin/metrum-ai-router-usage-report /usr/local/bin/metrum-ai-router-usage-report
 sudo install -m 0755 bin/metrum-ai-routerctl /usr/local/bin/metrum-ai-routerctl
-sudo install -m 0755 bin/metrum-ai-router-fleetctl /usr/local/bin/metrum-ai-router-fleetctl
 sudo install -m 0640 -o router -g router config/config.yaml /etc/metrum-ai-router/config.yaml
 sudo install -m 0640 -o router -g router config/env.json /etc/metrum-ai-router/env.json
 ```
@@ -109,20 +96,7 @@ Kubernetes architecture blueprint from a stack intent, backs up or restores a
 SQLite usage database with `--confirm-offline`, generates a caller token into a
 new mode-`0600` file, and reports safe local configuration, model, and
 aggregate-usage status. It cannot activate configuration on a remote managed
-hostname or access cloud/Fleet/Kubernetes APIs.
-
-`metrum-ai-router-fleetctl` is the binary-package-only #555 Fleet lifecycle authority.
-It owns reference-only `plan`, idempotent `deploy`, exact-job `status`,
-approved `delete`, and packaged `customer` convenience verbs for disposable
-SQLite instances; each mutating or planning command accepts a signed
-reference-only deployment intent, and it is not included in the standard Docker
-image. Dedicated RDS plans contain only safe scalar identifiers. The first
-disposable non-production E2E may use a strictly scoped external admission
-file; after its evidence exists, one qualified reviewer records the required
-review before a production-like non-production rehearsal. A single-operator
-team may self-review. Customer packages do not grant authority over any
-Metrum-managed production profile; operators supply their own protected
-profile references.
+hostname or access cloud or Kubernetes APIs.
 
 Packages ship canonical `metrum-ai-router*` binaries only. Older CLI names remain
 as source-only exit-2 notices under `cmd/` and are not packaged.

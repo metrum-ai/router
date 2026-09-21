@@ -297,19 +297,11 @@ Run one small request through each client API shape that callers use:
 
 When admin reports are enabled, verify browser-admin authentication and authorization separately. An unauthenticated `/admin/reports/` request should return a `401` challenge, not `404`; an authorized browser-admin request should load the report shell and a SQL-backed summary. Ordinary caller tokens must not access `/admin/reports/` or `/metrics`.
 
-Fleet profiles can set `require_admin_reports: true` when browser reports are a
-deployment requirement. Such a profile rejects a runtime bundle before Secret
-mutation unless `/admin/reports`, Basic or OIDC admin authentication, and admin
-authorization are all enabled.
-
-Pair it with `admin_reports_proxy_cidrs`, set to the reverse-proxy networks that
-front the router. Admin Basic Auth checks forwarded HTTPS before it compares the
+Admin Basic Auth checks forwarded HTTPS before it compares the
 password, so a `trusted_proxy_cidrs` list that does not cover the ingress
-controller network returns `401` for correct credentials. With
-`admin_reports_proxy_cidrs` set, Fleet rejects that bundle rather than deploying
-it. In a cloud Kubernetes cluster the ingress controller pod address comes from
-the cluster pod network, which is normally different from a local kind or Docker
-bridge range:
+controller network returns `401` for correct credentials. In a cloud Kubernetes
+cluster the ingress controller pod address comes from the cluster pod network,
+which is normally different from a local kind or Docker bridge range:
 
 ```bash
 kubectl get pods -n <ingress-namespace> -o wide

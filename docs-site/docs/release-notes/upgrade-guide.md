@@ -32,7 +32,8 @@ These packaged names from the v2.0.0 table below are **removed**, not renamed:
 - `metrum-ai-router-customer-lifecycle`
 
 Also removed: `metrum-ai-routerctl license` and `metrum-ai-router-fleetctl licenses`.
-Fleet plan/deploy/status and `metrum-ai-router-fleet-sign` stay.
+Fleet plan/deploy/status and `metrum-ai-router-fleet-sign` stayed through the
+v3.0.0 licensing removal, and are removed from current packages.
 
 Before cutover, delete systemd units, Compose services, Kubernetes Jobs, and
 CI steps that invoke those binaries. License file and license-state backups
