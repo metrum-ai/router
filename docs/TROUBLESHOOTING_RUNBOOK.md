@@ -415,9 +415,9 @@ false`; switch to `weighted` for a full dynamic-score rollback.
 
 ## License Errors
 
-Runtime licensing was removed in 3.0.0. The router no longer emits `license-*` error codes, and `server.license` configuration is ignored with a startup warning (rejected in 4.0.0). Existing `license.json` files are inert and need no migration.
+Runtime licensing was removed in 3.0.0. The router no longer emits `license-*` error codes. `server.license` is rejected at startup in 4.0.0; remove the block. Existing `license.json` files are inert and need no migration.
 
-Runtime licensing was removed in 3.0.0. Do not triage `license-*` errors as a current product path; leftover `server.license` config is ignored with one startup warning.
+Runtime licensing was removed in 3.0.0. Do not triage `license-*` errors as a current product path. A leftover `server.license` block fails startup until it is removed.
 
 Provider rate limits are recorded as `upstream_rate_limited` and return `503 upstream-rate-limited` only after eligible fallbacks are exhausted. When adaptive backoff is configured, the next requests can skip that provider/model/target and either route around it or return `503 upstream-capacity-throttled` if no alternative is available. Do not paste raw provider error bodies, account IDs, API keys, router tokens, token hashes, prompts, images, or tool outputs into incident notes.
 

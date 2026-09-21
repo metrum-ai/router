@@ -43,22 +43,6 @@ server:
         security:
             enabled: false
             retention_days: 0
-    license:
-        enabled: true
-        path: /app/config/license.json
-        state_path: /app/state/license-state.json
-        revocation:
-            mode: ""
-            path: ""
-            recheck_interval: 0s
-            require_current_bundle: false
-            fail_closed_on_bundle_error: false
-        instance_fingerprint: ""
-        instance_fingerprint_file: ""
-        instance_fingerprint_env: ""
-        recheck_interval: 0s
-        grace_period_on_validation_error: 0s
-        fail_open_for_dev: false
     client_ip:
         trusted_proxy_cidrs: []
         header_order: []

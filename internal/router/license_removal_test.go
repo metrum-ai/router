@@ -38,7 +38,7 @@ func TestL001LoadConfigWithoutLicenseBlockEmitsNoWarning(t *testing.T) {
 	}
 }
 
-func TestL002LoadConfigWithLegacyLicenseBlockWarnsOnce(t *testing.T) {
+func TestL002LoadConfigWithLegacyLicenseBlockRejected(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	legacy := `
@@ -62,16 +62,15 @@ func TestL002LoadConfigWithLegacyLicenseBlockWarnsOnce(t *testing.T) {
 	prev := log.Writer()
 	log.SetOutput(&buf)
 	defer log.SetOutput(prev)
-	if _, err := LoadConfig(path); err != nil {
-		t.Fatal(err)
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected server.license rejection")
 	}
-	out := buf.String()
-	count := strings.Count(out, "server.license")
-	if count != 1 {
-		t.Fatalf("want exactly one server.license warning, got %d in %q", count, out)
+	if !strings.Contains(err.Error(), "server.license") || !strings.Contains(err.Error(), "rejected in 4.0.0") {
+		t.Fatalf("rejection missing version guidance: %v", err)
 	}
-	if !strings.Contains(out, "ignored in 3.0.0") || !strings.Contains(out, "rejected in 4.0.0") {
-		t.Fatalf("warning missing version guidance: %q", out)
+	if strings.Contains(buf.String(), "server.license") {
+		t.Fatalf("rejection must not also warn: %s", buf.String())
 	}
 }
 
@@ -91,9 +90,14 @@ func TestL003LicenseJSONPresentIsNeverOpened(t *testing.T) {
     recheck_interval: 1h
 `
 	writeMinimalYAMLConfig(t, path, legacy)
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "server.license") {
+		t.Fatalf("LoadConfig should reject server.license without opening license.json: %v", err)
+	}
+	writeMinimalYAMLConfig(t, path, "")
 	cfg, err := LoadConfig(path)
 	if err != nil {
-		t.Fatalf("LoadConfig opened or failed on unreadable license.json: %v", err)
+		t.Fatal(err)
 	}
 	svc, err := New(cfg)
 	if err != nil {

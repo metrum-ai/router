@@ -108,7 +108,6 @@ server:
   listen: ":8080"
   identifiers: {mode: passthrough}
   usage_db: {enabled: true, driver: sqlite, path: /tmp/x.sqlite, migration_policy: auto-safe}
-  license: {enabled: false}
 providers:
   seed:
     base_url: http://seed.svc:8000/v1

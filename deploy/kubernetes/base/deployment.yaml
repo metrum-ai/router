@@ -76,10 +76,6 @@ spec:
               mountPath: /app/config/env.json
               subPath: env.json
               readOnly: true
-            - name: secrets
-              mountPath: /app/config/license.json
-              subPath: license.json
-              readOnly: true
             - name: state
               mountPath: /app/state
             - name: logs

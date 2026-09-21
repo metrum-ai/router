@@ -1650,8 +1650,8 @@ own applicable terms; the Apache-2.0 license does not replace them. See
 [TRADEMARKS.md](TRADEMARKS.md) for mark usage.
 
 Runtime licensing was removed in 3.0.0. Existing `license.json` files are
-inert and are never read; `server.license` is accepted with a startup warning
-in 3.0.0 and rejected in 4.0.0. See [docs/LICENSE.md](docs/LICENSE.md) for the
+inert and are never read. `server.license` is rejected at startup in 4.0.0;
+remove the block. See [docs/LICENSE.md](docs/LICENSE.md) for the
 complete scope map and Apache terms.
 
 Current MVP capabilities:

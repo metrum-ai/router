@@ -20,6 +20,23 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Fleet removal and license config (v4.0.0)
+
+v4.0.0 removes the Fleet lifecycle subsystem. These names are gone, not renamed:
+
+- `metrum-ai-router-fleetctl` (including plan, deploy, status, and licenses)
+- `metrum-ai-router-fleet-sign`
+- packaged rename stubs for those CLIs
+
+Self-managed installs use the binary, Docker Compose, or Kubernetes manifests
+with `metrum-ai-routerctl`. Delete systemd units, Compose services, Kubernetes
+Jobs, and CI steps that invoke Fleet CLIs before cutover.
+
+`server.license` is rejected at startup. Remove the block. Do not mount
+`license.json`. v3.0.0 still accepts the key with one warning; rollback to
+v3.0.0 does not require a license file. This release has no usage-database
+migration.
+
 ## Licensing removal (v3.0.0)
 
 v3.0.0 does not enforce a license and does not read `license.json`.

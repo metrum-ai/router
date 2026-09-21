@@ -319,7 +319,7 @@ The router Pod does **not** request `+"`nvidia.com/gpu`"+`. Serving workloads ow
 
 1. Authenticate to the cluster before apply. Cloud/cluster login is a prerequisite, never a CLI step.
 2. Install the GPU Operator using `+"`gpu-operator-values.yaml`"+` when nodes do not already own drivers.
-3. Apply the generated serving manifests, then the router overlay with a runtime Secret containing `+"`config.yaml`"+`, `+"`env.json`"+`, and `+"`license.json`"+`.
+3. Apply the generated serving manifests, then the router overlay with a runtime Secret containing `+"`config.yaml`"+` and `+"`env.json`"+`.
 %s
 6. Keep LMCache and Mooncake off unless a later intent enables them.
 `, intent.Profile, intent.Namespace, intent.Edge, intent.UsageDriver, kv, servingLayer, gpuLine, kv, llmdLine(intent), modelLines.String(), routerNotes)
