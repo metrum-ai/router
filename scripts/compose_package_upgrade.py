@@ -5,7 +5,7 @@
 """Deterministic Docker Compose package upgrade for an existing install root.
 
 Upgrades copy live runtime forward from a timestamped backup. They never glob-move
-from `/`, never stop or reboot the host, and never invoke Fleet or EKS tooling.
+from `/`, never stop or reboot the host, and never invoke EKS tooling.
 """
 
 from __future__ import annotations
@@ -293,7 +293,6 @@ def plan_upgrade(info: PackageInfo, install_root: Path | None, suffix: str, stam
         "unpack": "tar --strip-components=1",
         "copy": copy_list,
         "skip_instance_reboot": True,
-        "fleet_eks": False,
     }
     if install_root is not None:
         root = reject_forbidden(install_root, label="install-root")
@@ -434,7 +433,6 @@ def print_plan(plan: dict[str, object]) -> None:
         "existing_tokens",
         "postgres_override",
         "skip_instance_reboot",
-        "fleet_eks",
     ):
         if key in plan:
             print(f"{key}: {plan[key]}")

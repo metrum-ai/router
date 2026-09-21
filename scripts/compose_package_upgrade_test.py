@@ -140,7 +140,7 @@ def test_plan_is_read_only() -> None:
         require(before == after, "plan mutated the install root")
         require(plan["unpack"] == "tar --strip-components=1", "plan missing strip unpack")
         require(plan["skip_instance_reboot"] is True, "plan should refuse instance reboot")
-        require(plan["fleet_eks"] is False, "plan should not use Fleet/EKS")
+        require(plan["skip_instance_reboot"] is True, "plan should skip instance reboot")
 
 
 def test_rollback_restores_backup() -> None:

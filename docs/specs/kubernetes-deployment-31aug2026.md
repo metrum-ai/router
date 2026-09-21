@@ -8,7 +8,8 @@
 This document is a historical interim design artifact. Current installation
 docs and repository packaging take precedence over aspirational text in this
 file. The dependency wording below was corrected after Fleet moved out of the
-request-path package; the remaining proposal is retained for design history.
+request-path package and later removed from the repository entirely; the
+remaining proposal is retained for design history.
 
 Layer-boundary diagrams below use the public Client → Metrum AI Router →
 upstream path. vLLM Semantic Router is optional/off-path. See
@@ -162,10 +163,10 @@ The serving router (`cmd/router`) is a standalone process. It does not read kube
 in-cluster service-account tokens, or cluster credentials. It does not call the
 Kubernetes API at runtime.
 
-Kubernetes client libraries exist in this Go module because Fleet EKS adapters
-live in `internal/fleet`. Only `metrum-ai-router-fleetctl` and its
-package-only support commands import that package. Architecture tests enforce
-that `cmd/router` and `internal/router` do not import `internal/fleet`.
+Kubernetes client libraries previously existed in this Go module because Fleet
+EKS adapters lived in `internal/fleet`. That package and its AWS/Kubernetes
+dependencies were later removed. Architecture tests continue to enforce that
+`cmd/metrum-ai-router` and `internal/router` do not import infrastructure SDKs.
 This specification MUST NOT add a serving-router
 Kubernetes dependency, `controller-runtime` import, CRD, or in-process cluster
 client.

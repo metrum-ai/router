@@ -222,7 +222,7 @@ def version_tags(version: str, packages: list[Path]) -> list[str]:
         if kind == "docker":
             tags.add("customer-docker")
         elif kind == "binary":
-            tags.add("fleet-admin-binary")
+            tags.add("release-binary")
     return sorted(tags)
 
 
@@ -346,7 +346,7 @@ def backup_packages(
 
     print(f"backing up release {version} ({len(packages)} package(s)) with stable restic names:")
     for path in packages:
-        kind = "customer-docker" if is_docker_package(path.name) else "fleet-admin-binary"
+        kind = "customer-docker" if is_docker_package(path.name) else "release-binary"
         print(f"  - {path.name} -> {stable_package_name(path)} ({kind})")
 
     staged = stage_stable_packages(packages, STABLE_STAGE_DIR)
@@ -447,7 +447,7 @@ def self_test() -> None:
         "cto",
         "metrum-ai-router",
         "release-packages",
-        "fleet-admin-binary",
+        "release-binary",
         "customer-docker",
         "version:v1",
     ):

@@ -11,5 +11,5 @@ Start here for operator-owned demos of Metrum AI Router extensibility:
 | [harbor-algotune-pca](harbor-algotune-pca/) | Outcome-gated coding evaluation template |
 | [fixed-model-ocr-baseline](fixed-model-ocr-baseline/) | Fixed-model OCR baseline template |
 
-Fleet/commerce examples under this tree are optional
+Optional commerce examples under this tree are optional
 operator tooling. They are not required to run the Community router.

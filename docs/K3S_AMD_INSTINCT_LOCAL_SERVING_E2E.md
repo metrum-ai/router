@@ -3,7 +3,7 @@
 **Profile:** manual `k3s-amd-instinct-local-serving`  
 **Issue:** #952  
 **KV cache:** off — do not install or use LMCache or Mooncake.  
-**Out of scope:** Shadeform, Fleet, Metrum EKS, llm-d / GAIE, cloud LLM APIs.
+**Out of scope:** Shadeform, Metrum EKS, llm-d / GAIE, cloud LLM APIs.
 
 This document is the operator runbook **and** the architecture/usage reference for
 running Metrum AI Router in front of in-cluster vLLM/ROCm on AMD Instinct.

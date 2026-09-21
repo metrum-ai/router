@@ -50,11 +50,8 @@ PACKAGE_RUNTIME_BINARIES = (
     "metrum-ai-router-migrate",
     "metrum-ai-routerctl",
 )
-PACKAGE_FLEET_BINARIES = (
-    "metrum-ai-router-fleetctl",
-    "metrum-ai-router-fleet-sign",
-)
-PACKAGE_BINARIES = PACKAGE_RUNTIME_BINARIES + PACKAGE_FLEET_BINARIES
+PACKAGE_BINARIES = PACKAGE_RUNTIME_BINARIES
+
 
 # Obsolete technical identifiers that must not appear as current product names
 # in release artifacts or new public docs (historical release-note titles exempt).

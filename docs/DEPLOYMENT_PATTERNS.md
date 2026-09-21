@@ -122,7 +122,6 @@ Ask these when a customer says "not sure it will work for us":
 
 - Public deployment patterns: `docs-site/docs/operations/deployment-patterns.md`
 - Public deployment readiness: `docs-site/docs/evaluation/deployment-readiness.md`
-- Fleet customer operations: `docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md`
 - Internal deployment: `docs/DEPLOYMENT.md`
 - Docker deployment: `docs/DOCKER_DEPLOYMENT.md`
 - Self-hosted upstreams: `docs/SELF_HOSTED_UPSTREAMS.md`

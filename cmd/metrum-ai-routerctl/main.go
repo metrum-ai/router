@@ -3,7 +3,7 @@
 
 // metrum-ai-routerctl is the customer-local Router operations CLI. It may write
 // local config.yaml and SQLite usage backups on file-owned installs. It has no
-// cloud, Fleet, Kubernetes API, or remote activation authority.
+// cloud, Kubernetes API, or remote activation authority.
 package main
 
 import (

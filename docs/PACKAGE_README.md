@@ -11,8 +11,6 @@ Binary packages include:
 - `bin/metrum-ai-router-usage-report`
 - `bin/metrum-ai-router-migrate`
 - `bin/metrum-ai-routerctl`
-- `bin/metrum-ai-router-fleetctl`
-- `bin/metrum-ai-router-fleet-sign`
 - `config/config.example.yaml`
 - `config/env.example.json`
 - `config/scripts/router.ts`
@@ -43,22 +41,13 @@ Docker Compose packages include:
 The saved Docker image includes only the canonical runtime CLIs:
 `/app/bin/metrum-ai-router`, `/app/bin/metrum-ai-router-token-gen`,
 `/app/bin/metrum-ai-router-usage-report`, `/app/bin/metrum-ai-router-migrate`,
-and customer-local `/app/bin/metrum-ai-routerctl`. Rename stubs and Fleet
-lifecycle binaries are excluded. Version-check the runtime with
+and customer-local `/app/bin/metrum-ai-routerctl`. Rename stubs are excluded.
+Version-check the runtime with
 `docker run --rm --entrypoint /app/bin/metrum-ai-routerctl
 metrum-ai-router:<version>-linux-<arch> version`.
 
-The standard Docker and Docker Compose images do not include
-`metrum-ai-router-fleetctl` or `metrum-ai-router-fleet-sign`.
-Docker-based Fleet operators run those tools from a binary package on a separate trusted administration host.
-Fleet CLIs are distributed as prebuilt binaries only; operator hosts must not require a Go toolchain or product source tree.
-
 Docker and Compose packages use SQLite state with one Router container and one
-replica by default; they neither provision nor bind RDS. Dedicated RDS is an
-optional, binary-package-only Fleet branch selected by an explicit approved
-`database_profile`. Its first disposable non-production E2E requires a
-strictly scoped external admission file that Fleet consumes but never creates;
-the follow-on review may be a single-maintainer self-review.
+replica by default; they neither provision nor bind RDS.
 
 Choose `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts.
 

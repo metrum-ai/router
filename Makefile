@@ -10,12 +10,11 @@ HOST_GOOS := $(shell go env GOHOSTOS)
 HOST_GOARCH := $(shell go env GOHOSTARCH)
 PYTHON ?= python3
 # Packaged CLIs are ELF binaries only. Release packages never ship Go source,
-# cmd/, internal/, or go.mod. Fleet-only CLIs stay out of customer Docker images.
-# Packages ship canonical metrum-ai-router* binaries only; rename stubs are
-# source-only under cmd/ and are never packaged.
-PACKAGE_BINARIES := metrum-ai-router metrum-ai-router-token-gen metrum-ai-router-usage-report metrum-ai-router-migrate metrum-ai-routerctl metrum-ai-router-fleetctl metrum-ai-router-fleet-sign
-FLEET_ONLY_BINARIES := metrum-ai-router-fleetctl metrum-ai-router-fleet-sign
+# cmd/, internal/, or go.mod. Packages ship canonical metrum-ai-router* binaries
+# only.
+PACKAGE_BINARIES := metrum-ai-router metrum-ai-router-token-gen metrum-ai-router-usage-report metrum-ai-router-migrate metrum-ai-routerctl
 DOCKER_RUNTIME_BINARIES := metrum-ai-router metrum-ai-router-token-gen metrum-ai-router-usage-report metrum-ai-router-migrate metrum-ai-routerctl
+
 
 # Inspect coding evaluations are deliberately opt-in: they call a live endpoint
 # and may start Docker sandboxes.  They are never prerequisites of test/build.
@@ -60,8 +59,9 @@ export EVAL_MODEL EVAL_BASE_URL EVAL_API EVAL_LIMIT EVAL_CONCURRENCY EVAL_TIMEOU
 # though the EKS help target appears earlier in this file.
 .DEFAULT_GOAL := test
 
-# Fleet tenant discovery/network-policy helpers (not staging delivery).
+# Tenant discovery/network-policy helpers (not staging delivery).
 DOCKER ?= docker
+
 DOCKER_BUILDX ?= $(DOCKER) buildx
 DOCKER_PLATFORM ?= linux/$(GOARCH)
 # Unqualified local tag used by make docker / docker save. Published images are
@@ -104,13 +104,12 @@ BUILD_LDFLAGS = -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VER
 .PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-mock e2e-live-c e2e-live-full e2e-compose-live eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture clean
 
 help:
-	@echo "Metrum AI Router make targets. Fleet ops: docs/CUSTOMER_INSTANCE_OPERATIONS_RUNBOOK.md"
+	@echo "Metrum AI Router make targets."
 	@echo "  test                   run full credential-free suite"
 	@echo "  test-fast              pull-request checks without uv suites"
 	@echo "  test-full              same contract as test, for the merge queue"
 	@echo "  proof-routing          same-group different-upstream dynamic_score proof"
 	@echo "  harbor-adapter-test    offline Harbor agent-adapter contracts (AGENT-01..06)"
-	@echo "  test-tenant-deploy-all Fleet offline contract tests"
 	@echo "  package-docker         build customer Docker packages"
 	@echo "  docs-build             build embedded public docs"
 	@echo "  sse-capture            generate synthetic SSE fixtures and replay goldens"
@@ -198,34 +197,8 @@ capability-smoke-unit: capability-smoke-contracts
 capability-smoke-live:
 	@$(PYTHON) scripts/provider_capability_smoke.py live
 
-.PHONY: test-tenant-deploy-contract test-tenant-deploy-adapters test-tenant-deploy-security test-tenant-deploy-activation test-fleet-customer-cli test-tenant-deploy-all
-
-# Offline, credential-free #555 fake-first suites. These do not claim or
-# authorize disposable EKS or production deployment evidence.
-test-tenant-deploy-contract:
-	go test ./internal/router -run '^TestTenantDeploymentContract' -count=1
-
-test-tenant-deploy-adapters:
-	go test ./internal/router -run '^TestTenantDeploymentAdapters' -count=1
-
-test-tenant-deploy-security:
-	go test ./internal/router -run '^TestTenantDeploymentSecurity' -count=1
-
-test-tenant-deploy-activation:
-	go test ./internal/router -run '^TestTenantDeploymentActivation' -count=1
-
-# Offline customer convenience CLI gates: signed-intent requirement, no ACME
-# defaults, no donor-key copy, SQLite-only manifests, dedicated-RDS refuse.
-test-fleet-customer-cli:
-	go test ./cmd/metrum-genai-smartrouter-fleetctl -run 'TestCustomer|TestWriteManifest|TestValidateIntentEnvelope|TestRejectForeignDefaultRefs|TestPlanSelectsDedicatedRDS|TestTransformRuntimeBundle|TestEnforceSecretsManager|TestTrimCatalog|TestPublishRuntimeBundle|TestFleetE2ERequiresRDSAdmissionOnlyForDedicatedRDSManifest|TestTenantDeploymentCLIPlanIsReadOnly|TestLifecycleCommandsRejectUnsupportedVerbs' -count=1
-
-# Gated live SQLite customer bootstrap using packaged dist/ binaries only.
-test-fleet-sqlite-customer-live:
-	@bash scripts/fleet_sqlite_customer_e2e.sh
-
-test-tenant-deploy-all: test-tenant-deploy-contract test-tenant-deploy-adapters test-tenant-deploy-security test-tenant-deploy-activation test-fleet-customer-cli
-
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
+
 # Offline gate for nvidia-local-serving blueprint + Kustomize overlay.
 # Live Shadeform steps are documented in docs/SHADEFORM_NVIDIA_LOCAL_SERVING_E2E.md.
 test-k8s-nvidia-local-serving:
@@ -409,7 +382,8 @@ secret-contract:
 
 secret-check: secret-contract
 	python3 scripts/local_dev_bootstrap_test.py
-	python3 scripts/prepare_fleet_production_bundle_test.py
+	python3 scripts/validate_production_bundle_config_test.py
+
 	python3 scripts/launch_operational_readiness_test.py
 	python3 scripts/validate_package_contents_test.py
 	python3 scripts/release_artifact_inventory_test.py
@@ -600,7 +574,7 @@ package-docker-all: validate-release-clean docs-build admin-build capability-smo
 # repository using stable snapshot basenames (version stays in local filenames
 # and restic tags). Requires BACKUP_USER, BACKUP_PASS, and RESTIC_PASSWORD from
 # ignored env.json (or the process environment). Never prints those values.
-# Includes fleet-admin binary packages and the shared customer Docker packages;
+# Includes binary packages and the shared customer Docker packages;
 # customer license files stay out of packages and out of this backup.
 dist-backup:
 	$(PYTHON) scripts/backup_dist_restic.py --dist-dir "$${DIST_DIR}" --env-json env.json --version "$${VERSION}"

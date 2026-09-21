@@ -18,8 +18,6 @@ metrum-ai-router-<version>-linux-<arch>/
   bin/metrum-ai-router-usage-report
   bin/metrum-ai-router-migrate
   bin/metrum-ai-routerctl
-  bin/metrum-ai-router-fleetctl
-  bin/metrum-ai-router-fleet-sign
   config/config.example.yaml
   config/env.example.json
   config/scripts/router.ts
@@ -43,12 +41,9 @@ metrum-ai-router-<version>-docker-linux-<arch>/
   docs/
 ```
 
-`metrum-ai-routerctl` and `metrum-ai-router-fleetctl` are
-required in the binary package. Only customer-local
-`metrum-ai-routerctl` (with the other canonical runtime CLIs) is included in
-the standard Docker image and Docker Compose package image.
-Fleet lifecycle binaries are excluded; run Fleet work from an extracted
-binary package on a separate trusted administration host.
+`metrum-ai-routerctl` is required in the binary package and is included with
+the other canonical runtime CLIs in the standard Docker image and Docker
+Compose package image.
 
 Confirm the architecture suffix matches the host and, for Docker packages, that
 `compose/.env` pins the packaged image tag. Until the PR3 compose env rename

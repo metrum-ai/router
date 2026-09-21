@@ -12,18 +12,15 @@ import (
 )
 
 const (
-	routerPackage   = "github.com/metrum-ai/router/internal/router"
-	fleetPackage    = "github.com/metrum-ai/router/internal/fleet"
 	commercePackage = "github.com/metrum-ai/router/internal/commerce"
 )
 
-func TestRequestPathDoesNotDependOnFleetOrInfrastructureSDKs(t *testing.T) {
+func TestRequestPathDoesNotDependOnInfrastructureSDKs(t *testing.T) {
 	for _, target := range []string{"./cmd/metrum-ai-router", "./internal/router"} {
 		t.Run(strings.TrimPrefix(target, "./"), func(t *testing.T) {
 			dependencies := goListDependencies(t, target)
 			for dependency := range dependencies {
-				if packageOrChild(dependency, fleetPackage) ||
-					packageOrChild(dependency, commercePackage) ||
+				if packageOrChild(dependency, commercePackage) ||
 					strings.HasPrefix(dependency, "k8s.io/") ||
 					strings.HasPrefix(dependency, "github.com/aws/aws-sdk-go-v2/service/eks") ||
 					strings.HasPrefix(dependency, "github.com/aws/aws-sdk-go-v2/service/rds") {
@@ -31,16 +28,6 @@ func TestRequestPathDoesNotDependOnFleetOrInfrastructureSDKs(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestFleetCLIOwnsFleetDependency(t *testing.T) {
-	dependencies := goListDependencies(t, "./cmd/metrum-ai-router-fleetctl")
-	if !dependencies[fleetPackage] {
-		t.Fatalf("Fleet CLI must depend on %s", fleetPackage)
-	}
-	if dependencies[routerPackage] {
-		t.Fatalf("Fleet CLI must not depend on request-path package %s", routerPackage)
 	}
 }
 

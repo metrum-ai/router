@@ -10,7 +10,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "prepare_fleet_production_bundle.py"
+SCRIPT = ROOT / "scripts" / "validate_production_bundle_config.py"
 
 
 def run_check(config: dict) -> subprocess.CompletedProcess[str]:

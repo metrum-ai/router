@@ -37,11 +37,8 @@ provider accounts.
 
 The serving router handles proxy traffic, caller policy, routing, usage, and
 safe diagnostics. Customer runtime images include the router and the
-customer-local `metrum-ai-routerctl`; they do not contain Fleet
-lifecycle or signing binaries. Release binary packages may include
-`metrum-ai-router-fleetctl` and related package-only lifecycle tools
-for approved deployment workflows. This keeps cluster lifecycle authority out
-of the customer request-serving image.
+customer-local `metrum-ai-routerctl`. Release packages ship the same
+customer-facing runtime CLIs for binary and Docker installs.
 
 Validate the exact artifact before deployment. See [Deployment
 Artifacts](../installation/deployment-artifacts) and [Package

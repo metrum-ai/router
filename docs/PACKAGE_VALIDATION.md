@@ -63,10 +63,10 @@ Packages must not contain:
 - Go source files (`.go`), `go.mod`, or `go.sum`;
 - full production config files.
 
-Packaged CLIs (`metrum-ai-router`, `metrum-ai-routerctl`,
-`metrum-ai-router-fleetctl`, and `metrum-ai-router-fleet-sign`) are prebuilt ELF
-binaries only. Operator and customer hosts must not require a Go toolchain or
-product source tree to run them. Leftover `license.json` files must not appear
+Packaged CLIs (`metrum-ai-router`, `metrum-ai-routerctl`, and related
+runtime tools) are prebuilt ELF binaries only. Operator and customer hosts
+must not require a Go toolchain or product source tree to run them. Leftover
+`license.json` files must not appear
 in customer runtime Docker images.
 
 ## Runtime Health Checks

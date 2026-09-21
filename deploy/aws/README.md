@@ -100,11 +100,6 @@ aws cloudformation deploy \
     ClusterName=metrum \
   --capabilities CAPABILITY_NAMED_IAM \
   --no-fail-on-empty-changeset
-
-# After org assignment to AuthorizedPlatformIacRoleArn, assume platform-IaC:
-rtk python3 scripts/enroll_fleet_operator.py \
-  --profile metrum-ai-router-eks-staging-platform-iac \
-  --principal-arn arn:aws:iam::<ACCOUNT_ID>:user/smart-router-lifecycle/<operator>
 ```
 
 ### Scoped Bootstrap Recovery

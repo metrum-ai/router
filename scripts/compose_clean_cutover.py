@@ -8,7 +8,7 @@ Archives the live Postgres usage database, replaces the packaged files, removes
 only the Compose postgres_data volume, runs the empty-DB migration gate, then
 serves. It never glob-moves from `/`, never runs compose down with volumes,
 never removes Caddy volumes, never stops or reboots the host, and never invokes
-Fleet or EKS tooling.
+EKS tooling.
 
 Callers, model groups, provider keys, license/quota state, and Caddy stay in
 the preserved runtime files and volumes. Usage rows, reports, and the
@@ -488,7 +488,6 @@ def plan_cutover(
         "restic_stage": str(STABLE_ARCHIVE_DIR),
         "confirm_reset_usage": CONFIRM_RESET,
         "skip_instance_reboot": True,
-        "fleet_eks": False,
         "compose_down_volumes": False,
         "steps": [
             "archive pg_dump and restic",
@@ -540,7 +539,6 @@ def apply_local(
         "install_root": str(root),
         "version": info.version,
         "skip_instance_reboot": True,
-        "fleet_eks": False,
     }
     if not skip_archive:
         dump = dump_path or REMOTE_DUMP_PATH
@@ -602,7 +600,6 @@ def print_plan(plan: dict[str, object]) -> None:
         "postgres_override",
         "confirm_reset_usage",
         "skip_instance_reboot",
-        "fleet_eks",
         "compose_down_volumes",
         "steps",
     ):
