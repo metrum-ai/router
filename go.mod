@@ -10,7 +10,7 @@ require (
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d
 	github.com/evanw/esbuild v0.28.1
 	github.com/glebarez/sqlite v1.11.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/secure-io/siv-go v0.0.0-20180922214919-5ff40651e2c4
 	golang.org/x/crypto v0.56.0
