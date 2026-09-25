@@ -1,7 +1,7 @@
 {
   "demo": "openjev-task-class-routing",
-  "generated_at": "2026-09-25T18:29:25.655808+00:00",
-  "git_commit": "c03c90ce9d441b27538196038f39f2866d366a5c",
+  "generated_at": "2026-09-25T18:29:49.987793+00:00",
+  "git_commit": "e081bcec5839e2e244b2a57c1268ccea01bc5343",
   "openjev": {
     "mode": "fake_systemone_shim",
     "note": "Sanitized wiring + labelled-prompt accuracy against deterministic fake OpenJev. Real weights are CC BY-NC 4.0; serve via Shadeform runbook scripts/openjev_shadeform.py.",
@@ -55,7 +55,7 @@
     "decision_latency_ms": {
       "p50": 1,
       "mean": 1,
-      "max": 19
+      "max": 18
     },
     "escalated_count": 0
   },
