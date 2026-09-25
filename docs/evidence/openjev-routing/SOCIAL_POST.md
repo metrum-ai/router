@@ -1,17 +1,24 @@
-# Social post draft (from live OpenJev run)
+# Announcement source pack (distill from this)
 
-A 27B model that writes nothing chose cheap summarization vs GPT-6 Astra — in ~193 ms.
+Do not post this whole file. Distill a short social post from the exact facts in
+[`ANNOUNCEMENT_FACTS.md`](ANNOUNCEMENT_FACTS.md) and the machine table
+[`routing-decisions.live.json`](routing-decisions.live.json).
 
-Measured on Shadeform **RTX PRO 6000 Blackwell** with real OpenJev weights + Metrum AI Router external policy:
+## One-liner candidates (all measured)
 
-- simple → `gpt-5.6-luna` ($0.20 / $1.20)
-- medium → `gpt-5.6-sol` ($4 / $20)
-- advanced → `gpt-6-astra` ($10 / $50)
+- OpenJev on an RTX PRO 6000 Blackwell classified 60 prompts in ~193 ms p50 and routed them to `gpt-5.6-luna` / `gpt-5.6-sol` / `gpt-6-astra` with **56/60** fixture matches and **0** repeat flips.
+- Example: “Summarize this product update…” → OpenJev `simple` (conf 0.993, probs 0.997/0.002/0.000) → `gpt-5.6-luna` in 186 ms.
+- Example: “Implement a Python function that merges two sorted lists…” → `medium` (0.998) → `gpt-5.6-sol` in 194 ms.
+- Example: “Prove the multi-constraint trade-offs…” → `advanced` (0.994) → `gpt-6-astra` in 195 ms.
+- Honest miss: “I was charged twice for order 4412” → OpenJev chose `simple` but `noul=0.97` → policy escalated to `gpt-5.6-sol`.
 
-Live labelled suite: **56/60 (93.3%)** task-class matches · **0** flips on repeat · OpenJev p50 **193 ms**.
+## Where the receipts are
 
-Cost sample (15 OpenAI calls): always-Astra projection ~$0.30 vs routed ~$0.15 on the same mean-cost model.
+| artifact | what |
+|---|---|
+| `ANNOUNCEMENT_FACTS.md` | every prompt + decision + 4 full System One JSON traces + OpenAI sample rows |
+| `routing-decisions.live.json` | machine-readable 60-row table |
+| `benchmark.live.json` | aggregates |
+| `ANIMATION_AGENT_PROMPT.md` | separate animation agent brief |
 
-Reproduce: `docs/OPENJEV_ROUTING_DEMO.md` · evidence: `docs/evidence/openjev-routing/benchmark.live.json`
-
-Notes: OpenJev weights CC BY-NC 4.0 · OpenJev ≠ hosted Jev · not 100% — we show the 4 misses too.
+Reproduce: `docs/OPENJEV_ROUTING_DEMO.md`.
