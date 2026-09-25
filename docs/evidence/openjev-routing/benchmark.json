@@ -1,0 +1,89 @@
+{
+  "demo": "openjev-task-class-routing",
+  "generated_at": "2026-09-25T18:29:25.655808+00:00",
+  "git_commit": "c03c90ce9d441b27538196038f39f2866d366a5c",
+  "openjev": {
+    "mode": "fake_systemone_shim",
+    "note": "Sanitized wiring + labelled-prompt accuracy against deterministic fake OpenJev. Real weights are CC BY-NC 4.0; serve via Shadeform runbook scripts/openjev_shadeform.py.",
+    "license": "CC BY-NC 4.0 (weights); Apache-2.0 (this example code)"
+  },
+  "models": {
+    "cheap": {
+      "id": "gpt-5.6-luna",
+      "input": 0.2,
+      "output": 1.2
+    },
+    "medium": {
+      "id": "gpt-5.6-sol",
+      "input": 4.0,
+      "output": 20.0
+    },
+    "advanced": {
+      "id": "gpt-6-astra",
+      "input": 10.0,
+      "output": 50.0
+    },
+    "selection_note": "Live OpenAI key listed gpt-6-astra but not gpt-6-luna/sol; used gpt-5.6-luna and gpt-5.6-sol as cheap/mid substitutes."
+  },
+  "shadeform": {
+    "preferred_sku": "RTXPro6000",
+    "preferred_cloud": "massedcompute",
+    "note": "Discovered available at plan time; serve OpenJev on localhost only."
+  },
+  "results": {
+    "n": 60,
+    "routing_accuracy": 1.0,
+    "by_label": {
+      "simple": {
+        "n": 20,
+        "accuracy": 1.0
+      },
+      "medium": {
+        "n": 20,
+        "accuracy": 1.0
+      },
+      "advanced": {
+        "n": 20,
+        "accuracy": 1.0
+      }
+    },
+    "tier_mix": {
+      "gpt-5.6-luna": 20,
+      "gpt-5.6-sol": 20,
+      "gpt-6-astra": 20
+    },
+    "decision_latency_ms": {
+      "p50": 1,
+      "mean": 1,
+      "max": 19
+    },
+    "escalated_count": 0
+  },
+  "live_openai": {
+    "n": 6,
+    "ok": 6,
+    "total_cost_usd": 0.009656,
+    "by_model": {
+      "gpt-5.6-luna": {
+        "n": 2,
+        "avg_latency_ms": 2145,
+        "cost_usd": 4e-05
+      },
+      "gpt-5.6-sol": {
+        "n": 2,
+        "avg_latency_ms": 2521,
+        "cost_usd": 0.002756
+      },
+      "gpt-6-astra": {
+        "n": 2,
+        "avg_latency_ms": 3822,
+        "cost_usd": 0.00686
+      }
+    }
+  },
+  "limitations": [
+    "Fake OpenJev classifier is keyword-based; not a claim about openjev/openjev weights.",
+    "No cherry-picked quality claims; accuracy is against human labels for this fixture.",
+    "Commercial marketing use of OpenJev weights requires author permission (CC BY-NC)."
+  ]
+}
