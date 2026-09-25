@@ -1,7 +1,7 @@
 # OpenJev live routing evidence
 
 Generated: `2026-09-25T18:51:19.384645+00:00`
-Commit: `a9b4f12693fa039b00b0debd4e31d98e9179ced7`
+Commit: `64663862eb124f1ca72c4524cb5560e4b8a33a71`
 Hardware: `Shadeform massedcompute RTXPro6000; NVIDIA RTX PRO 6000 Blackwell Server Edition 97887 MiB; driver 580.126.09; vLLM 0.29.0 fp8; CUDA_HOME=/usr/local/cuda-13.0`
 
 ## Routing (real OpenJev)
