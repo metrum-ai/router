@@ -19,6 +19,8 @@ Do not post this whole file. Distill a short social post from the exact facts in
 | `ANNOUNCEMENT_FACTS.md` | every prompt + decision + 4 full System One JSON traces + OpenAI sample rows |
 | `routing-decisions.live.json` | machine-readable 60-row table |
 | `benchmark.live.json` | aggregates |
-| `ANIMATION_AGENT_PROMPT.md` | separate animation agent brief |
+| `CLAUDE_OPUS_ANIMATION.md` | **paste-ready Opus 5.5 animation prompt** + how Claude animates (HTML/JS, not video) |
+| `claude-animation-data.json` | compact measured scenes for that prompt |
+| `ANIMATION_AGENT_PROMPT.md` | longer animation brief (any agent) |
 
 Reproduce: `docs/OPENJEV_ROUTING_DEMO.md`.

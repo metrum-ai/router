@@ -12,6 +12,8 @@ See [`README.live.md`](README.live.md) and [`benchmark.live.json`](benchmark.liv
 **For announcement writing (all prompts + decisions):**
 [`ANNOUNCEMENT_FACTS.md`](ANNOUNCEMENT_FACTS.md) · [`routing-decisions.live.json`](routing-decisions.live.json) · distill guide [`SOCIAL_POST.md`](SOCIAL_POST.md)
 
+**Animate with Claude Opus 5.5:** paste [`CLAUDE_OPUS_ANIMATION.md`](CLAUDE_OPUS_ANIMATION.md) (data inlined / [`claude-animation-data.json`](claude-animation-data.json)).
+
 Animation handoff for a separate agent (observed reality only):
 [`ANIMATION_AGENT_PROMPT.md`](ANIMATION_AGENT_PROMPT.md)
 
