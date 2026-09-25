@@ -1,28 +1,139 @@
 {
-  "run": {
+  "meta": {
+    "purpose": "Source of truth for a realistic OpenJev routing decision video. Every on-screen number must come from this file.",
     "date": "2026-09-25",
+    "do_not_invent": [
+      "model ids",
+      "prices",
+      "probabilities",
+      "latencies",
+      "accuracy",
+      "prompts"
+    ]
+  },
+  "system": {
+    "product": "Metrum AI Router",
+    "decision_model": "OpenJev (open weights)",
+    "openjev_role": "Chooses task class only. Does not write the user-facing answer. Returns typed choice / score / noul — no free-form text to parse.",
+    "router_role": "Owns eligibility, upstream call, usage, latency, fallback. Policy cannot invent targets outside the model group.",
     "hardware": "Shadeform massedcompute RTXPro6000 / NVIDIA RTX PRO 6000 Blackwell Server Edition 97887 MiB / driver 580.126.09 / vLLM 0.29.0 fp8",
+    "license": "OpenJev weights CC BY-NC 4.0; OpenJev != TypeSafe hosted Jev",
+    "pipeline": [
+      {
+        "step": 1,
+        "actor": "client",
+        "action": "POST chat/completions to router model group openjev-routing-demo"
+      },
+      {
+        "step": 2,
+        "actor": "router",
+        "action": "strategy:external — POST eligible targets + trusted request text to policy /route"
+      },
+      {
+        "step": 3,
+        "actor": "policy",
+        "action": "Build OpenJev state from request text; POST /v1/systemone with three typed questions in one call"
+      },
+      {
+        "step": 4,
+        "actor": "openjev",
+        "action": "Return answers.task (choice), answers.complexity (score), answers.high_risk (noul). usage.output_tokens=0"
+      },
+      {
+        "step": 5,
+        "actor": "policy",
+        "action": "Apply escalation rules; map final_task → targetIndex by tier/model id; return classLabel + metadata"
+      },
+      {
+        "step": 6,
+        "actor": "router",
+        "action": "Call selected OpenAI model; keep fallbackIndexes for fail-closed retries"
+      }
+    ],
+    "openjev_questions": [
+      {
+        "id": "task",
+        "type": "choice",
+        "options": ["simple", "medium", "advanced"],
+        "means": "What task class is this request?"
+      },
+      {
+        "id": "complexity",
+        "type": "score",
+        "legend": {
+          "0": "trivial",
+          "1": "light",
+          "2": "moderate",
+          "3": "hard",
+          "4": "expert"
+        },
+        "means": "How hard is the work? (used as metadata; not the primary map key)"
+      },
+      {
+        "id": "high_risk",
+        "type": "noul",
+        "threshold": 0.5,
+        "means": "Calibrated P(yes) that this request is high-stakes / high-risk"
+      }
+    ],
+    "policy_rules": [
+      {
+        "id": "R1_map",
+        "rule": "Map OpenJev task choice → priced ladder tier by model id (not array index)"
+      },
+      {
+        "id": "R2_escalate_risk",
+        "rule": "If high_risk.noul >= 0.5 → escalate one tier (simple→medium, medium→advanced)"
+      },
+      {
+        "id": "R3_escalate_confidence",
+        "rule": "If task.confidence < 0.45 → escalate one tier"
+      },
+      {
+        "id": "R4_fallbacks",
+        "rule": "Return higher-tier eligible targets first as fallbackIndexes"
+      }
+    ],
+    "ladder": [
+      {
+        "task": "simple",
+        "tier": "cheap",
+        "model": "gpt-5.6-luna",
+        "price_per_m_in_out": [0.2, 1.2],
+        "sample_avg_latency_ms": 1402
+      },
+      {
+        "task": "medium",
+        "tier": "medium",
+        "model": "gpt-5.6-sol",
+        "price_per_m_in_out": [4.0, 20.0],
+        "sample_avg_latency_ms": 2387
+      },
+      {
+        "task": "advanced",
+        "tier": "advanced",
+        "model": "gpt-6-astra",
+        "price_per_m_in_out": [10.0, 50.0],
+        "sample_avg_latency_ms": 5355
+      }
+    ]
+  },
+  "run": {
     "accuracy": "56/60 = 93.3%",
+    "accuracy_by_label": {
+      "simple": "95%",
+      "medium": "85%",
+      "advanced": "100%"
+    },
     "openjev_p50_ms": 193,
+    "openjev_max_ms": 254,
+    "policy_e2e_p50_ms": 194,
     "repeat_flips": 0,
+    "escalations": 4,
     "tier_mix": {
       "gpt-5.6-luna": 19,
       "gpt-5.6-sol": 18,
       "gpt-6-astra": 23
-    },
-    "prices_per_m": {
-      "gpt-5.6-luna": [
-        0.2,
-        1.2
-      ],
-      "gpt-5.6-sol": [
-        4.0,
-        20.0
-      ],
-      "gpt-6-astra": [
-        10.0,
-        50.0
-      ]
     },
     "cost_projection_usd": {
       "always_cheap": 0.00114,
@@ -30,26 +141,14 @@
       "always_advanced": 0.30096,
       "openjev_routed_est": 0.151513
     },
-    "license": "OpenJev weights CC BY-NC 4.0; OpenJev != TypeSafe hosted Jev"
+    "openai_sample_15_usd": 0.035115
   },
   "scenes": [
     {
       "id": "s01",
+      "beat": "clean simple → luna (no escalation)",
       "prompt": "Summarize this product update in one sentence: we shipped dark mode and fixed login timeouts.",
       "fixture_label": "simple",
-      "openjev_ms": 177,
-      "policy": {
-        "openjev_choice": "simple",
-        "final_task": "simple",
-        "model": "gpt-5.6-luna",
-        "escalated": false,
-        "highRisk": false,
-        "confidenceBand": "high",
-        "complexity": 0.6854,
-        "openjevLatencyMs": 186,
-        "e2e_ms": 188,
-        "correct": true
-      },
       "answers": {
         "task": {
           "type": "choice",
@@ -77,25 +176,44 @@
           "input_tokens": 330,
           "output_tokens": 0
         }
+      },
+      "rule_trace": [
+        {
+          "rule": "R2_escalate_risk",
+          "check": "noul 0.0071 >= 0.5?",
+          "result": "no"
+        },
+        {
+          "rule": "R3_escalate_confidence",
+          "check": "confidence 0.993 < 0.45?",
+          "result": "no"
+        },
+        {
+          "rule": "R1_map",
+          "check": "final_task=simple → tier cheap → gpt-5.6-luna @ $0.20/$1.20",
+          "result": "select"
+        }
+      ],
+      "why_this_model": "OpenJev is 99.53% on simple with confidence 0.993 and almost no risk signal (noul 0.007). Escalation rules stay off, so the policy keeps final_task=simple and maps that class to the cheap ladder slot gpt-5.6-luna.",
+      "policy": {
+        "openjev_choice": "simple",
+        "final_task": "simple",
+        "model": "gpt-5.6-luna",
+        "price_per_m_in_out": [0.2, 1.2],
+        "escalated": false,
+        "highRisk": false,
+        "confidenceBand": "high",
+        "complexity": 0.6854,
+        "openjevLatencyMs": 186,
+        "e2e_ms": 188,
+        "correct": true
       }
     },
     {
       "id": "m01",
+      "beat": "clean medium → sol (implementation work)",
       "prompt": "Implement a Python function that merges two sorted lists and include a unit test.",
       "fixture_label": "medium",
-      "openjev_ms": 191,
-      "policy": {
-        "openjev_choice": "medium",
-        "final_task": "medium",
-        "model": "gpt-5.6-sol",
-        "escalated": false,
-        "highRisk": false,
-        "confidenceBand": "high",
-        "complexity": 1.7661,
-        "openjevLatencyMs": 194,
-        "e2e_ms": 195,
-        "correct": true
-      },
       "answers": {
         "task": {
           "type": "choice",
@@ -123,25 +241,44 @@
           "input_tokens": 318,
           "output_tokens": 0
         }
+      },
+      "rule_trace": [
+        {
+          "rule": "R2_escalate_risk",
+          "check": "noul 0.0065 >= 0.5?",
+          "result": "no"
+        },
+        {
+          "rule": "R3_escalate_confidence",
+          "check": "confidence 0.9984 < 0.45?",
+          "result": "no"
+        },
+        {
+          "rule": "R1_map",
+          "check": "final_task=medium → tier medium → gpt-5.6-sol @ $4/$20",
+          "result": "select"
+        }
+      ],
+      "why_this_model": "Mass almost entirely on medium (0.9989). Complexity score ~1.74 (light→moderate) matches coding-with-tests, not ledger design. Risk stays low, so the policy does not bump the class — it pays for sol, not astra.",
+      "policy": {
+        "openjev_choice": "medium",
+        "final_task": "medium",
+        "model": "gpt-5.6-sol",
+        "price_per_m_in_out": [4.0, 20.0],
+        "escalated": false,
+        "highRisk": false,
+        "confidenceBand": "high",
+        "complexity": 1.7661,
+        "openjevLatencyMs": 194,
+        "e2e_ms": 195,
+        "correct": true
       }
     },
     {
       "id": "a01",
+      "beat": "clean advanced → astra (hard multi-constraint design)",
       "prompt": "Prove the multi-constraint trade-offs between consistency and latency for a global ledger design.",
       "fixture_label": "advanced",
-      "openjev_ms": 188,
-      "policy": {
-        "openjev_choice": "advanced",
-        "final_task": "advanced",
-        "model": "gpt-6-astra",
-        "escalated": false,
-        "highRisk": false,
-        "confidenceBand": "high",
-        "complexity": 3.6856,
-        "openjevLatencyMs": 195,
-        "e2e_ms": 196,
-        "correct": true
-      },
       "answers": {
         "task": {
           "type": "choice",
@@ -169,25 +306,44 @@
           "input_tokens": 327,
           "output_tokens": 0
         }
+      },
+      "rule_trace": [
+        {
+          "rule": "R2_escalate_risk",
+          "check": "noul 0.0163 >= 0.5?",
+          "result": "no"
+        },
+        {
+          "rule": "R3_escalate_confidence",
+          "check": "confidence 0.994 < 0.45?",
+          "result": "no"
+        },
+        {
+          "rule": "R1_map",
+          "check": "final_task=advanced → tier advanced → gpt-6-astra @ $10/$50",
+          "result": "select"
+        }
+      ],
+      "why_this_model": "OpenJev puts 0.996 on advanced; complexity mass sits on hard/expert (3–4). The request itself is a multi-constraint proof — that is the why for astra. Escalation is unnecessary because the base choice is already the top tier.",
+      "policy": {
+        "openjev_choice": "advanced",
+        "final_task": "advanced",
+        "model": "gpt-6-astra",
+        "price_per_m_in_out": [10.0, 50.0],
+        "escalated": false,
+        "highRisk": false,
+        "confidenceBand": "high",
+        "complexity": 3.6856,
+        "openjevLatencyMs": 195,
+        "e2e_ms": 196,
+        "correct": true
       }
     },
     {
       "id": "s03",
+      "beat": "honest miss: choice=simple but noul forces escalate → sol",
       "prompt": "Classify this ticket as billing, shipping, or technical: I was charged twice for order 4412.",
       "fixture_label": "simple",
-      "openjev_ms": 188,
-      "policy": {
-        "openjev_choice": "simple",
-        "final_task": "medium",
-        "model": "gpt-5.6-sol",
-        "escalated": true,
-        "highRisk": true,
-        "confidenceBand": "high",
-        "complexity": 0.8724,
-        "openjevLatencyMs": 254,
-        "e2e_ms": 255,
-        "correct": false
-      },
       "answers": {
         "task": {
           "type": "choice",
@@ -215,6 +371,37 @@
           "input_tokens": 345,
           "output_tokens": 0
         }
+      },
+      "rule_trace": [
+        {
+          "rule": "R2_escalate_risk",
+          "check": "noul 0.9717 >= 0.5?",
+          "result": "yes → escalate simple→medium"
+        },
+        {
+          "rule": "R3_escalate_confidence",
+          "check": "confidence 0.997 < 0.45?",
+          "result": "no (risk already escalated)"
+        },
+        {
+          "rule": "R1_map",
+          "check": "final_task=medium → tier medium → gpt-5.6-sol @ $4/$20",
+          "result": "select"
+        }
+      ],
+      "why_this_model": "Task choice still says simple (0.998) — the wording looks like a short classify — but high_risk noul is 0.9717 (billing dispute / double charge). Rule R2 fires: bump one tier. final_task becomes medium → gpt-5.6-sol. Fixture label was simple, so this counts as a miss (1 of 4); show it as deliberate policy caution, not a silent flip.",
+      "policy": {
+        "openjev_choice": "simple",
+        "final_task": "medium",
+        "model": "gpt-5.6-sol",
+        "price_per_m_in_out": [4.0, 20.0],
+        "escalated": true,
+        "highRisk": true,
+        "confidenceBand": "high",
+        "complexity": 0.8724,
+        "openjevLatencyMs": 254,
+        "e2e_ms": 255,
+        "correct": false
       }
     }
   ]
