@@ -1,7 +1,7 @@
 {
   "demo": "openjev-task-class-routing-live",
   "generated_at": "2026-09-25T18:51:19.384645+00:00",
-  "git_commit": "64663862eb124f1ca72c4524cb5560e4b8a33a71",
+  "git_commit": "979df51c06a6120a8db30a23d9cd0cfb1c9e821f",
   "openjev": {
     "mode": "real_systemone_shim",
     "url_host": "127.0.0.1:3000_via_ssh_tunnel",
