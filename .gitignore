@@ -61,6 +61,8 @@ dist/
 logs/
 reports/
 scripts/__pycache__/
+examples/**/__pycache__/
+
 tmp/eks-evidence/
 tmp/
 docs/evidence/**/*.local.json
