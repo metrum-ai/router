@@ -109,6 +109,32 @@ class OpenJevPolicyTests(unittest.TestCase):
         self.assertEqual(self.m.find_target_index(targets, "medium"), 1)
         self.assertEqual(self.m.find_target_index(targets, "advanced"), 2)
 
+    def test_noul_field_high_risk(self) -> None:
+        parsed = self.m.parse_openjev_answers(
+            {
+                "answers": {
+                    "task": {
+                        "choice": "simple",
+                        "confidence": 0.99,
+                        "probabilities": {"simple": 0.99, "medium": 0.005, "advanced": 0.005},
+                    },
+                    "complexity": {"score": 0.5},
+                    "high_risk": {"type": "noul", "noul": 0.97},
+                }
+            }
+        )
+        self.assertTrue(parsed["high_risk"])
+        targets = [
+            {"model": "gpt-5.6-luna", "tier": "cheap", "keyConfigured": True},
+            {"model": "gpt-5.6-sol", "tier": "medium", "keyConfigured": True},
+            {"model": "gpt-6-astra", "tier": "advanced", "keyConfigured": True},
+        ]
+        decision = self.m.decide_from_parsed(
+            {"targets": targets}, parsed, confidence_floor=0.45
+        )
+        self.assertEqual(decision["metadata"]["task"], "medium")
+        self.assertTrue(decision["metadata"]["escalated"])
+
     def test_invalid_task_raises(self) -> None:
         with self.assertRaises(ValueError):
             self.m.parse_openjev_answers({"answers": {"task": {"choice": "nope"}}})

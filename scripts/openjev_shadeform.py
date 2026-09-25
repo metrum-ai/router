@@ -40,16 +40,18 @@ def load_api_key() -> str:
 
 def api(method: str, path: str, key: str, body: dict | None = None) -> dict:
     data = None if body is None else json.dumps(body).encode()
+    headers = {
+        "X-API-KEY": key,
+        "Accept": "application/json",
+        "User-Agent": "metrum-openjev-shadeform/1.0",
+    }
+    if body is not None:
+        headers["Content-Type"] = "application/json"
     req = urllib.request.Request(
         API + path,
         data=data,
         method=method,
-        headers={
-            "X-API-KEY": key,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "metrum-openjev-shadeform/1.0",
-        },
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -164,12 +166,13 @@ def cmd_serve_script(_: argparse.Namespace) -> int:
     script = r'''#!/usr/bin/env bash
 # Run on the Shadeform GPU host. Binds OpenJev to localhost only.
 set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
 ROOT="${OPENJEV_DIR:-$HOME/openjev-serve}"
 mkdir -p "$ROOT"
 cd "$ROOT"
 python3 -m pip install -U pip
 python3 -m pip install "vllm==0.29.0" "openai==3.16.2" "httpx==0.28.1" "huggingface_hub"
-if [[ ! -d openjev ]]; then
+if [[ ! -f openjev/config.json ]]; then
   hf download openjev/openjev --local-dir openjev
 fi
 # Terminal 1: model
@@ -191,6 +194,13 @@ echo "Tunnel from laptop: ssh -N -L 3000:127.0.0.1:3000 <user>@<ip>"
 echo "Then: OPENJEV_URL=http://127.0.0.1:3000 python3 examples/external-routing-policy/openjev_policy.py"
 '''
     print(script)
+    return 0
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    key = load_api_key()
+    resp = api("POST", f"/instances/{args.instance_id}/delete", key, {})
+    print(json.dumps({"id": args.instance_id, "response_keys": sorted(resp.keys()) if isinstance(resp, dict) else type(resp).__name__}, indent=2))
     return 0
 
 
@@ -219,6 +229,10 @@ def main() -> int:
 
     s = sub.add_parser("serve-script", help="Print remote OpenJev bootstrap script")
     s.set_defaults(func=cmd_serve_script)
+
+    dl = sub.add_parser("delete", help="Delete an instance")
+    dl.add_argument("--instance-id", required=True)
+    dl.set_defaults(func=cmd_delete)
 
     args = ap.parse_args()
     return int(args.func(args))

@@ -1,29 +1,17 @@
-# Social post draft (OpenJev routing demo)
+# Social post draft (from live OpenJev run)
 
-A 27B model that writes nothing chose cheap summarization vs GPT-6 Astra.
+A 27B model that writes nothing chose cheap summarization vs GPT-6 Astra — in ~193 ms.
 
-Metrum AI Router + OpenJev as an external routing engine:
+Measured on Shadeform **RTX PRO 6000 Blackwell** with real OpenJev weights + Metrum AI Router external policy:
 
-- simple → gpt-5.6-luna ($0.20 / $1.20 per 1M)
-- medium → gpt-5.6-sol ($4 / $20)
-- advanced → gpt-6-astra ($10 / $50)
+- simple → `gpt-5.6-luna` ($0.20 / $1.20)
+- medium → `gpt-5.6-sol` ($4 / $20)
+- advanced → `gpt-6-astra` ($10 / $50)
 
-Measured on this repo's labelled fixture (fake OpenJev shim for CI wiring):
-60/60 task-class matches. Live OpenAI smoke on 6 prompts: ~$0.01 total,
-Astra alone ~170x Luna on that sample's token bill.
+Live labelled suite: **56/60 (93.3%)** task-class matches · **0** flips on repeat · OpenJev p50 **193 ms**.
 
-Reproduce:
+Cost sample (15 OpenAI calls): always-Astra projection ~$0.30 vs routed ~$0.15 on the same mean-cost model.
 
-```bash
-make openjev-routing-demo
-python3 scripts/openjev_routing_benchmark.py
-```
+Reproduce: `docs/OPENJEV_ROUTING_DEMO.md` · evidence: `docs/evidence/openjev-routing/benchmark.live.json`
 
-Shadeform RTXPro6000 runbook for real OpenJev weights:
-`docs/OPENJEV_ROUTING_DEMO.md`
-
-Notes for posting:
-- OpenJev weights are CC BY-NC 4.0 (research / non-commercial unless licensed).
-- OpenJev ≠ TypeSafe hosted Jev.
-- Do not claim GPU OpenJev accuracy until you run the Shadeform path and replace the fake shim.
-- Link commit SHA from `docs/evidence/openjev-routing/benchmark.json`.
+Notes: OpenJev weights CC BY-NC 4.0 · OpenJev ≠ hosted Jev · not 100% — we show the 4 misses too.

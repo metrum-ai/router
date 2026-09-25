@@ -80,9 +80,23 @@ Shut down the Shadeform instance when finished; capture hourly cost in your oper
   policy process as trusted infrastructure.
 - Fail closed on OpenJev errors (`on_error: fail_closed`).
 
-## Social post checklist
+## Live evaluation (real OpenJev)
 
-- Measured numbers only (see `docs/evidence/openjev-routing/`).
-- Name the live model IDs and prices.
-- Disclose CC BY-NC and that OpenJev ≠ hosted Jev.
-- Link commit SHA + reproduction commands.
+After the shim is reachable on `OPENJEV_URL` (SSH tunnel recommended):
+
+```bash
+OPENJEV_URL=http://127.0.0.1:3000 python3 scripts/openjev_routing_live_eval.py \
+  --live-openai --openai-per-tier 5 --shuffle-repeat 2
+```
+
+Observed live evidence: [`docs/evidence/openjev-routing/benchmark.live.json`](../evidence/openjev-routing/benchmark.live.json).
+
+For a separate animation agent, use the measured handoff prompt:
+[`docs/evidence/openjev-routing/ANIMATION_AGENT_PROMPT.md`](../evidence/openjev-routing/ANIMATION_AGENT_PROMPT.md).
+
+Operational notes from the live run:
+
+- Install `cuda-nvcc-13-0` and set `CUDA_HOME=/usr/local/cuda-13.0` before vLLM.
+- Set `VLLM_USE_FLASHINFER_SAMPLER=0` if flashinfer JIT fails without a full toolkit.
+- Start the helper with `python3 openjev/helper/shim.py` (not `python`).
+- Delete the Shadeform instance when finished (`scripts/openjev_shadeform.py delete`).

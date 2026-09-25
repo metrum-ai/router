@@ -180,7 +180,10 @@ def parse_openjev_answers(body: dict[str, Any]) -> dict[str, Any]:
     high_risk = False
     hblock = answers.get("high_risk") if isinstance(answers, dict) else None
     if isinstance(hblock, dict):
-        if "probability" in hblock:
+        if "noul" in hblock:
+            # OpenJev helper returns calibrated P(yes) in `noul`.
+            high_risk = float(hblock["noul"]) >= 0.5
+        elif "probability" in hblock:
             high_risk = float(hblock["probability"]) >= 0.5
         elif "yes" in (hblock.get("probabilities") or {}):
             high_risk = float(hblock["probabilities"]["yes"]) >= 0.5
