@@ -1,7 +1,7 @@
 # OpenJev routing — raw facts for announcement distillation
 
 All numbers below are from the live Shadeform run on 2026-09-25, not synthetic.
-Benchmark commit pointer: `a9b4f12693fa039b00b0debd4e31d98e9179ced7`.
+Benchmark commit pointer: `64663862eb124f1ca72c4524cb5560e4b8a33a71`.
 
 ## Hardware / software (observed)
 
