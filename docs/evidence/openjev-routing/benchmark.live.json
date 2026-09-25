@@ -1,0 +1,176 @@
+{
+  "demo": "openjev-task-class-routing-live",
+  "generated_at": "2026-09-25T18:51:19.384645+00:00",
+  "git_commit": "979df51c06a6120a8db30a23d9cd0cfb1c9e821f",
+  "openjev": {
+    "mode": "real_systemone_shim",
+    "url_host": "127.0.0.1:3000_via_ssh_tunnel",
+    "warmup_latency_ms": 129,
+    "license": "CC BY-NC 4.0 (weights); Apache-2.0 (example code)"
+  },
+  "hardware": {
+    "note": "Shadeform massedcompute RTXPro6000; NVIDIA RTX PRO 6000 Blackwell Server Edition 97887 MiB; driver 580.126.09; vLLM 0.29.0 fp8; CUDA_HOME=/usr/local/cuda-13.0",
+    "sku": "RTXPro6000",
+    "cloud": "massedcompute"
+  },
+  "models": {
+    "cheap": {
+      "id": "gpt-5.6-luna",
+      "input": 0.2,
+      "output": 1.2
+    },
+    "medium": {
+      "id": "gpt-5.6-sol",
+      "input": 4.0,
+      "output": 20.0
+    },
+    "advanced": {
+      "id": "gpt-6-astra",
+      "input": 10.0,
+      "output": 50.0
+    }
+  },
+  "results": {
+    "n": 60,
+    "routing_accuracy": 0.9333,
+    "by_label": {
+      "simple": {
+        "n": 20,
+        "accuracy": 0.95
+      },
+      "medium": {
+        "n": 20,
+        "accuracy": 0.85
+      },
+      "advanced": {
+        "n": 20,
+        "accuracy": 1.0
+      }
+    },
+    "tier_mix": {
+      "gpt-5.6-luna": 19,
+      "gpt-5.6-sol": 18,
+      "gpt-6-astra": 23
+    },
+    "openjev_latency_ms": {
+      "p50": 193,
+      "mean": 193,
+      "max": 254
+    },
+    "policy_e2e_ms": {
+      "p50": 194,
+      "mean": 194,
+      "max": 255
+    },
+    "escalated_count": 4,
+    "option_repeat_flips": 0,
+    "shuffle_repeat": 2
+  },
+  "live_openai": {
+    "n": 15,
+    "ok": 15,
+    "total_cost_usd": 0.035115,
+    "by_model": {
+      "gpt-5.6-luna": {
+        "n": 5,
+        "avg_latency_ms": 1402,
+        "cost_usd": 9.5e-05
+      },
+      "gpt-5.6-sol": {
+        "n": 5,
+        "avg_latency_ms": 2387,
+        "cost_usd": 0.00994
+      },
+      "gpt-6-astra": {
+        "n": 5,
+        "avg_latency_ms": 5355,
+        "cost_usd": 0.02508
+      }
+    },
+    "projected_full_set_cost_usd": {
+      "always_cheap": 0.00114,
+      "always_medium": 0.11928,
+      "always_advanced": 0.30096,
+      "openjev_routed_est": 0.151513
+    }
+  },
+  "limitations": [
+    "Quality is routing-label accuracy vs human fixture labels, not answer grading.",
+    "OpenJev weights CC BY-NC 4.0; commercial marketing needs author permission.",
+    "Projected always-* costs extrapolate mean per-model sample cost across the prompt set."
+  ],
+  "observed_trace_examples": [
+    {
+      "id": "s01",
+      "label": "simple",
+      "predicted": "simple",
+      "target_index": 0,
+      "model": "gpt-5.6-luna",
+      "correct": true,
+      "escalated": false,
+      "confidenceBand": "high",
+      "openjevLatencyMs": 186,
+      "e2e_ms": 188
+    },
+    {
+      "id": "s02",
+      "label": "simple",
+      "predicted": "simple",
+      "target_index": 0,
+      "model": "gpt-5.6-luna",
+      "correct": true,
+      "escalated": false,
+      "confidenceBand": "high",
+      "openjevLatencyMs": 194,
+      "e2e_ms": 195
+    },
+    {
+      "id": "s03",
+      "label": "simple",
+      "predicted": "medium",
+      "target_index": 1,
+      "model": "gpt-5.6-sol",
+      "correct": false,
+      "escalated": true,
+      "confidenceBand": "high",
+      "openjevLatencyMs": 254,
+      "e2e_ms": 255
+    },
+    {
+      "id": "s04",
+      "label": "simple",
+      "predicted": "simple",
+      "target_index": 0,
+      "model": "gpt-5.6-luna",
+      "correct": true,
+      "escalated": false,
+      "confidenceBand": "high",
+      "openjevLatencyMs": 191,
+      "e2e_ms": 193
+    },
+    {
+      "id": "s05",
+      "label": "simple",
+      "predicted": "simple",
+      "target_index": 0,
+      "model": "gpt-5.6-luna",
+      "correct": true,
+      "escalated": false,
+      "confidenceBand": "high",
+      "openjevLatencyMs": 192,
+      "e2e_ms": 193
+    },
+    {
+      "id": "s06",
+      "label": "simple",
+      "predicted": "simple",
+      "target_index": 0,
+      "model": "gpt-5.6-luna",
+      "correct": true,
+      "escalated": false,
+      "confidenceBand": "high",
+      "openjevLatencyMs": 193,
+      "e2e_ms": 194
+    }
+  ]
+}

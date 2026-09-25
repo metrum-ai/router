@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-09-25
+
+### Documentation
+
+- Add an OpenJev task-class external routing example: policy service, Shadeform
+  runbook, synthetic harness, and live evidence on RTX PRO 6000 Blackwell
+  (`examples/external-routing-policy/openjev_*`, `docs/OPENJEV_ROUTING_DEMO.md`,
+  `docs/evidence/openjev-routing/`).
+- Record measured live-key ladder (`gpt-5.6-luna` / `gpt-5.6-sol` /
+  `gpt-6-astra`), 56/60 label accuracy, and Claude Desktop animation data
+  pack for announcement use.
+
 ## [4.0.0] - 2026-09-21
 
 ### Breaking Changes
@@ -179,7 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/metrum-ai/router/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/metrum-ai/router/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/metrum-ai/router/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0

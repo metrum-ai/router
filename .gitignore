@@ -61,8 +61,11 @@ dist/
 logs/
 reports/
 scripts/__pycache__/
+examples/**/__pycache__/
+
 tmp/eks-evidence/
 tmp/
+docs/evidence/**/*.local.json
 jobs/
 examples/harbor-algotune-pca/generated/
 examples/harbor-algotune-pca/runs/
