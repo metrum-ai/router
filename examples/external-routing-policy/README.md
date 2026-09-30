@@ -192,3 +192,22 @@ the protected deployment boundary. Providers, model IDs, costs, thresholds,
 and datasets remain deployment-defined.
 
 This demo uses loopback HTTP, which the router treats as a trusted-local development exception. Non-local external policy services should use HTTPS, or set `external_policy.allow_http: true` only after deployment security review. Redirects are rechecked against the exact `allow_hosts` list before the router follows them.
+
+## OpenJev Task-Class Routing
+
+`openjev_policy.py` asks an OpenJev System One endpoint which task class a
+request is (`simple` / `medium` / `advanced`), then maps that onto cheap /
+medium / advanced OpenAI targets (default live-key ladder: `gpt-5.6-luna`,
+`gpt-5.6-sol`, `gpt-6-astra`). OpenJev weights are **CC BY-NC 4.0**.
+
+```bash
+# Synthetic wiring (fake OpenJev, no GPU):
+make openjev-routing-demo
+
+# Policy against a real OpenJev shim (SSH tunnel to Shadeform):
+OPENJEV_URL=http://127.0.0.1:3000 python3 examples/external-routing-policy/openjev_policy.py
+```
+
+Example router config: `config.openjev.example.yaml`. Full Shadeform runbook:
+[`docs/OPENJEV_ROUTING_DEMO.md`](../../docs/OPENJEV_ROUTING_DEMO.md). Sanitized
+evidence: [`docs/evidence/openjev-routing/`](../../docs/evidence/openjev-routing/).
