@@ -51,6 +51,7 @@ type ServerConfig struct {
 	Cache               CacheConfig               `yaml:"cache"`
 	Logging             LoggingConfig             `yaml:"logging"`
 	UsageDB             UsageDBConfig             `yaml:"usage_db"`
+	ConfigSource        ConfigSourceConfig        `yaml:"config_source" json:"config_source"`
 	Upstream            UpstreamConfig            `yaml:"upstream"`
 	Diagnostics         DiagnosticsConfig         `yaml:"diagnostics"`
 	ContentCapture      ContentCaptureConfig      `yaml:"content_capture"`
@@ -236,6 +237,19 @@ type UsageDBConfig struct {
 	DSN             string `yaml:"dsn"`
 	Enable          *bool  `yaml:"enabled"`
 	MigrationPolicy string `yaml:"migration_policy"`
+}
+
+// ConfigSourceConfig selects whether the router serves from a local YAML file
+// or from the relational configuration control plane. Mode "yaml" (default)
+// preserves today's file-owned installs. Mode "database" loads the active
+// canonical YAML document for RuntimeScope from the control-plane database.
+type ConfigSourceConfig struct {
+	Mode              string `yaml:"mode" json:"mode"`
+	RuntimeScope      string `yaml:"runtime_scope" json:"runtime_scope"`
+	DSNEnv            string `yaml:"dsn_env" json:"dsn_env"`
+	Driver            string `yaml:"driver" json:"driver"`
+	Path              string `yaml:"path" json:"path"`
+	RefreshIntervalMS int    `yaml:"refresh_interval_ms" json:"refresh_interval_ms"`
 }
 
 type DecisionTelemetryConfig struct {
@@ -1056,6 +1070,15 @@ func (c *Config) setDefaults() {
 			c.Server.UsageDB.Path = filepath.Join(dir, "usage.sqlite")
 		}
 	}
+	if strings.TrimSpace(c.Server.ConfigSource.Mode) == "" {
+		c.Server.ConfigSource.Mode = "yaml"
+	}
+	if c.Server.ConfigSource.RefreshIntervalMS == 0 {
+		c.Server.ConfigSource.RefreshIntervalMS = 1000
+	}
+	if strings.TrimSpace(c.Server.ConfigSource.Driver) == "" {
+		c.Server.ConfigSource.Driver = c.Server.UsageDB.Driver
+	}
 	if c.Server.Upstream.TimeoutMS == 0 {
 		c.Server.Upstream.TimeoutMS = int((10 * time.Minute).Milliseconds())
 	}
@@ -1157,6 +1180,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.UsageDB.MigrationPolicy != "" && !validUsageDBMigrationPolicy(c.Server.UsageDB.MigrationPolicy) {
 		return fmt.Errorf("server usage_db migration_policy must be one of %q, %q, or %q", usageDBMigrationPolicyValidate, usageDBMigrationPolicyAutoSafe, usageDBMigrationPolicyDeploymentJob)
+	}
+	if err := validateConfigSource(c.Server.ConfigSource); err != nil {
+		return err
 	}
 	if err := validateAdminAuth(c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
@@ -2000,6 +2026,43 @@ func validateAdminAuthorization(cfg AdminAuthorizationConfig, usage UsageDBConfi
 		}
 	}
 	return nil
+}
+
+func validateConfigSource(cfg ConfigSourceConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if mode == "" {
+		mode = "yaml"
+	}
+	switch mode {
+	case "yaml":
+		return nil
+	case "database":
+		if strings.TrimSpace(cfg.RuntimeScope) == "" {
+			return fmt.Errorf("server config_source.runtime_scope is required when mode is database")
+		}
+		driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
+		if driver == "" {
+			driver = "sqlite"
+		}
+		switch driver {
+		case "sqlite":
+			if strings.TrimSpace(cfg.Path) == "" && strings.TrimSpace(cfg.DSNEnv) == "" {
+				return fmt.Errorf("server config_source.path or dsn_env is required for sqlite database mode")
+			}
+		case "postgres":
+			if strings.TrimSpace(cfg.DSNEnv) == "" {
+				return fmt.Errorf("server config_source.dsn_env is required for postgres database mode")
+			}
+		default:
+			return fmt.Errorf("server config_source.driver must be sqlite or postgres")
+		}
+		if cfg.RefreshIntervalMS < 0 {
+			return fmt.Errorf("server config_source.refresh_interval_ms cannot be negative")
+		}
+		return nil
+	default:
+		return fmt.Errorf("server config_source.mode must be yaml or database")
+	}
 }
 
 func validateAdminReports(cfg AdminReportsConfig, auth AdminAuthConfig, usage UsageDBConfig) error {

@@ -18,7 +18,15 @@ func applyConfigControlPlaneMigrationsForTest(t *testing.T, r *migrationRunner) 
 		t.Fatalf("online control-plane migration must stop before maintenance DDL, got %v", err)
 	}
 	if err := r.ApplyMaintenancePending("test-maintenance"); err != nil {
-		t.Fatalf("explicit control-plane maintenance migration: %v", err)
+		// Phase 6 is online and follows the maintenance batch; the maintenance
+		// runner stops when it reaches that later online migration after
+		// applying phases 2-5.
+		if !strings.Contains(err.Error(), "requires its declared runner mode") {
+			t.Fatalf("explicit control-plane maintenance migration: %v", err)
+		}
+	}
+	if err := r.ApplyPending("test-online-phase6"); err != nil {
+		t.Fatalf("online control-plane phase-6 migration: %v", err)
 	}
 }
 
@@ -49,7 +57,7 @@ func TestConfigControlPlanePhase1MigratesRelationalSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !status.Compatible || status.State != "current" || status.SchemaVersion != 5 {
+	if !status.Compatible || status.State != "current" || status.SchemaVersion != 6 {
 		t.Fatalf("unexpected migration status: %+v", status)
 	}
 	for _, table := range ConfigControlPlaneTableNames() {
@@ -291,7 +299,11 @@ func TestConfigControlPlanePhase4BackfillsExistingProviderModelCapabilities(t *t
 		}
 	}
 	if err := r.ApplyMaintenancePending("test-maintenance"); err != nil {
-		t.Fatal(err)
+		// Phases 4-5 are maintenance; phase 6 is online and follows them, so the
+		// maintenance runner stops with a declared-mode error after backfill.
+		if !strings.Contains(err.Error(), "requires its declared runner mode") {
+			t.Fatal(err)
+		}
 	}
 	var capability providerModelCapabilityRow
 	if err := r.db.Where("config_set_id = ? AND provider_name = ? AND model_ref = ?", "set-1", "mock", "existing").First(&capability).Error; err != nil {

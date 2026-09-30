@@ -32,6 +32,7 @@ import (
 	"github.com/metrum-ai/router/internal/buildinfo"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // Production image-URL checks fail closed quickly. Tests raise this in
@@ -72,6 +73,9 @@ type Service struct {
 	shaping            *upstreamShapeManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
+	configControlPlane *gorm.DB
+	configSnapshot     *ConfigSnapshot
+	configDBCloser     func() error
 }
 
 type adminBasicRuntime struct {
@@ -223,6 +227,15 @@ func New(cfg *Config) (*Service, error) {
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		contentCaptureKeys: contentCaptureKeys,
+		configSnapshot:     NewConfigSnapshot(),
+	}
+	s.configSnapshot.Store(cfg)
+	if err := s.initConfigControlPlane(); err != nil {
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		bridgeSessions.Close()
+		return nil, err
 	}
 	if _, err := rand.Read(s.reportCursor[:]); err != nil {
 		_ = quota.Close()
@@ -303,6 +316,30 @@ func (s *Service) Close() {
 	for _, policy := range s.externalPolicies {
 		policy.Close()
 	}
+	if s.configDBCloser != nil {
+		_ = s.configDBCloser()
+	}
+}
+
+func (s *Service) initConfigControlPlane() error {
+	if s == nil || s.cfg == nil {
+		return nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(s.cfg.Server.ConfigSource.Mode))
+	if mode != "database" {
+		return nil
+	}
+	dbCfg, err := ResolveConfigSourceDB(s.cfg.Server.ConfigSource)
+	if err != nil {
+		return err
+	}
+	db, closer, err := OpenConfigControlPlaneDB(dbCfg)
+	if err != nil {
+		return fmt.Errorf("open config control-plane database: %w", err)
+	}
+	s.configControlPlane = db
+	s.configDBCloser = closer
+	return nil
 }
 
 func (s *Service) routes() {
@@ -332,6 +369,27 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
+	if s.configControlPlane != nil {
+		RegisterCallerDirectoryAdmin(s.mux, CallerAdminDeps{
+			DB:           s.configControlPlane,
+			RuntimeScope: s.cfg.Server.ConfigSource.RuntimeScope,
+			Authorize: func(r *http.Request, object, action string) bool {
+				w := &discardAdminAuthWriter{header: make(http.Header)}
+				subject, ok := s.authenticateAdminSubject(w, r)
+				if !ok {
+					return false
+				}
+				return s.authorizeAdmin(subject, object, action)
+			},
+			AfterMutate: func(r *http.Request, callerID string) {
+				_ = r
+				_ = callerID
+				if s.configSnapshot != nil {
+					s.configSnapshot.Store(s.cfg)
+				}
+			},
+		})
+	}
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
 	s.mux.HandleFunc("POST /v1/content-captures/purge-expired", s.handleContentCapturePurgeExpired)
 	s.mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)
@@ -356,6 +414,31 @@ func healthPayload(ok bool, errorText string) map[string]any {
 		payload["error"] = errorText
 	}
 	return payload
+}
+
+type discardAdminAuthWriter struct {
+	header http.Header
+	status int
+	body   []byte
+}
+
+func (w *discardAdminAuthWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *discardAdminAuthWriter) Write(b []byte) (int, error) {
+	w.body = append(w.body, b...)
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return len(b), nil
+}
+
+func (w *discardAdminAuthWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
 }
 
 func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {

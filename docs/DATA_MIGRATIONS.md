@@ -89,6 +89,23 @@ transactional, online, bounded, has no data job, and is `restore-required` for
 package rollback. Historical rows keep null cache evidence rather than inventing
 prompt-cache savings.
 
+The config-control-plane phase 6 increment raises the `router_config` scope to
+schema version 6 and adds three online tables through
+`ConfigControlPlaneMigrationRunner`: `router_config_documents` for the
+canonical configuration document, `router_config_runtime` for the active-set
+pointer per runtime scope, and `router_config_change_events` for the
+append-only audit log of import, activate, rollback, and caller
+issue/rotate/revoke actions. These tables are all online migrations: they
+require no maintenance window and no serving downtime, have no data job, and
+apply through `ConfigControlPlaneMigrationRunner` against the config database
+using the same non-serving deployment-job gate described above (with the
+reviewed backup evidence reference for that database, no `--driver`/`--dsn`
+substitution required beyond what the install already uses). The phase does not change the secrets contract: provider
+credentials remain `api_key_env` references, caller tokens remain SHA-256
+hashes, and neither raw values nor resolved environment-variable contents
+appear in any new column or change event. The serving source-of-truth
+contract for DB-backed mode is documented in `docs/CONFIG_CONTROL_PLANE.md`.
+
 ```sh
 router-migrate --driver=sqlite --db=/app/state/usage.sqlite --action=verify-serving --json
 router-migrate --driver=sqlite --db=/app/state/usage.sqlite --action=status
