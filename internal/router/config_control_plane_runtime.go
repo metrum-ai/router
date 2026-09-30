@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -51,6 +52,75 @@ func (s *ConfigSnapshot) Load() *Config {
 // or nil when nothing has been stored.
 func (s *ConfigSnapshot) Get() *Config {
 	return s.ptr.Load()
+}
+
+// bumpConfigRevision increments router_config_runtime.config_revision for
+// runtimeScope and appends a router_config_change_events row, all inside the
+// provided transaction. The caller is responsible for ensuring the runtime
+// tables exist (e.g. via ensureConfigControlPlaneRuntimeTables). The action
+// and actor are recorded in the change event. The configSetID identifies the
+// active set being mutated. Returns the new revision number.
+func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor string) (int64, error) {
+	if tx == nil {
+		return 0, errors.New("config control-plane transaction is required")
+	}
+	runtimeScope = strings.TrimSpace(runtimeScope)
+	if runtimeScope == "" {
+		return 0, errors.New("config runtime scope is required")
+	}
+	configSetID = strings.TrimSpace(configSetID)
+	if configSetID == "" {
+		return 0, errors.New("config set ID is required")
+	}
+	action = strings.TrimSpace(action)
+	if action == "" {
+		return 0, errors.New("config change action is required")
+	}
+	actor = strings.TrimSpace(actor)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	// Upsert the runtime row: insert with revision 1 if missing, otherwise
+	// increment the existing revision. This mirrors the activate path but
+	// does not change the active_set_id pointer.
+	switch tx.Dialector.Name() {
+	case "sqlite":
+		if err := tx.Exec(
+			`INSERT INTO router_config_runtime (runtime_scope, config_revision, active_set_id)
+			 VALUES (?, 1, ?)
+			 ON CONFLICT(runtime_scope) DO UPDATE SET config_revision = config_revision + 1`,
+			runtimeScope, configSetID,
+		).Error; err != nil {
+			return 0, fmt.Errorf("upsert runtime revision: %w", err)
+		}
+	case "postgres":
+		if err := tx.Exec(
+			`INSERT INTO router_config_runtime (runtime_scope, config_revision, active_set_id)
+			 VALUES (?, 1, ?)
+			 ON CONFLICT(runtime_scope) DO UPDATE SET config_revision = router_config_runtime.config_revision + 1`,
+			runtimeScope, configSetID,
+		).Error; err != nil {
+			return 0, fmt.Errorf("upsert runtime revision: %w", err)
+		}
+	default:
+		return 0, fmt.Errorf("unsupported control-plane database driver %q", tx.Dialector.Name())
+	}
+
+	var revision int64
+	if err := tx.Raw(
+		`SELECT config_revision FROM router_config_runtime WHERE runtime_scope = ?`,
+		runtimeScope,
+	).Row().Scan(&revision); err != nil {
+		return 0, fmt.Errorf("read runtime revision: %w", err)
+	}
+
+	eventID := newConfigChangeEventID()
+	if err := tx.Exec(
+		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		eventID, runtimeScope, configSetID, action, actor, now, revision,
+	).Error; err != nil {
+		return 0, fmt.Errorf("append change event: %w", err)
+	}
+	return revision, nil
 }
 
 // currentRevisionForScope returns the cached revision counter for runtimeScope
