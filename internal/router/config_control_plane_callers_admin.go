@@ -11,6 +11,8 @@ package router
 // non-secret public token identifier are stored.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,12 +38,13 @@ const (
 // service passes a closure that resolves the authenticated admin subject and
 // enforces the admin:callers policy. AfterMutate is invoked once after every
 // successful mutation so the runtime can bump its configuration revision and
-// schedule a reload; it is called outside the database transaction.
+// schedule a reload; it is called outside the database transaction. If
+// AfterMutate returns an error, the mutation is rolled back.
 type CallerAdminDeps struct {
 	DB           *gorm.DB
 	RuntimeScope string
 	Authorize    func(r *http.Request, object, action string) bool
-	AfterMutate  func(r *http.Request, callerID string)
+	AfterMutate  func(r *http.Request, callerID string) error
 	Now          func() time.Time
 }
 
@@ -61,6 +64,7 @@ type callerAdminHandler struct {
 }
 
 var errCallerAdminConflict = errors.New("caller already exists")
+var errCallerAdminNotFound = errors.New("caller not found")
 
 type callerAdminError struct {
 	Type    string `json:"type"`
@@ -236,6 +240,9 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		Concurrent:   rate.Concurrent,
 	}
 	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
+		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
+			return err
+		}
 		var existing int64
 		if err := tx.Table("router_config_callers").Where("config_set_id = ? AND caller_id = ?", set.ID, row.CallerID).Count(&existing).Error; err != nil {
 			return err
@@ -253,6 +260,29 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				return err
 			}
 		}
+		// Sync the canonical document with the new caller.
+		if err := h.syncCanonicalDocument(tx, set.ID, func(callers []CallerConfig) ([]CallerConfig, error) {
+			newCaller := CallerConfig{
+				ID:           row.CallerID,
+				OwnerUser:    row.OwnerUser,
+				Project:      row.Project,
+				Environment:  row.Environment,
+				Status:       row.Status,
+				TokenSHA256:  row.TokenSHA256,
+				TokenID:      row.TokenID,
+				Allow:        append([]string(nil), caller.Allow...),
+				MetricsAdmin: row.MetricsAdmin,
+				ContentAdmin: row.ContentAdmin,
+				Rate:         rate,
+			}
+			return append(callers, newCaller), nil
+		}); err != nil {
+			return err
+		}
+		// Bump revision and append change event.
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r)); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -264,7 +294,10 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if h.deps.AfterMutate != nil {
-		h.deps.AfterMutate(r, row.CallerID)
+		if err := h.deps.AfterMutate(r, row.CallerID); err != nil {
+			writeCallerAdminError(w, http.StatusInternalServerError, "callers-reload-failed")
+			return
+		}
 	}
 	// The raw token is returned exactly once here. Only the SHA-256 hash and
 	// the non-secret token identifier were persisted above.
@@ -330,13 +363,41 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 	}
 	// Persist only the new hash and public token identifier; the raw token
 	// never touches the database or logs.
-	if err := h.deps.DB.Exec(`UPDATE router_config_callers SET token_sha256 = ?, token_id = ? WHERE config_set_id = ? AND caller_id = ?`,
-		generated.TokenSHA256, generated.TokenID, set.ID, callerID).Error; err != nil {
+	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
+		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE router_config_callers SET token_sha256 = ?, token_id = ? WHERE config_set_id = ? AND caller_id = ?`,
+			generated.TokenSHA256, generated.TokenID, set.ID, callerID).Error; err != nil {
+			return err
+		}
+		// Sync the canonical document with the rotated token hash.
+		if err := h.syncCanonicalDocument(tx, set.ID, func(callers []CallerConfig) ([]CallerConfig, error) {
+			for i, c := range callers {
+				if c.ID == callerID {
+					callers[i].TokenSHA256 = generated.TokenSHA256
+					callers[i].TokenID = generated.TokenID
+					break
+				}
+			}
+			return callers, nil
+		}); err != nil {
+			return err
+		}
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_rotate", h.actor(r)); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		writeCallerAdminError(w, http.StatusInternalServerError, "callers-mutation-failed")
 		return
 	}
 	if h.deps.AfterMutate != nil {
-		h.deps.AfterMutate(r, callerID)
+		if err := h.deps.AfterMutate(r, callerID); err != nil {
+			writeCallerAdminError(w, http.StatusInternalServerError, "callers-reload-failed")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, callerAdminTokenResponse{
 		CallerID: callerID,
@@ -360,17 +421,47 @@ func (h *callerAdminHandler) handleRevoke(w http.ResponseWriter, r *http.Request
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-config-set-unavailable")
 		return
 	}
-	res := h.deps.DB.Exec(`UPDATE router_config_callers SET status = ? WHERE config_set_id = ? AND caller_id = ?`, accountStatusDisabled, set.ID, callerID)
-	if res.Error != nil {
+	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
+		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
+			return err
+		}
+		res := tx.Exec(`UPDATE router_config_callers SET status = ? WHERE config_set_id = ? AND caller_id = ?`, accountStatusDisabled, set.ID, callerID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return errCallerAdminNotFound
+		}
+		// Sync the canonical document with the revoked status.
+		if err := h.syncCanonicalDocument(tx, set.ID, func(callers []CallerConfig) ([]CallerConfig, error) {
+			for i, c := range callers {
+				if c.ID == callerID {
+					callers[i].Status = accountStatusDisabled
+					break
+				}
+			}
+			return callers, nil
+		}); err != nil {
+			return err
+		}
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_revoke", h.actor(r)); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errCallerAdminNotFound) {
+			writeCallerAdminError(w, http.StatusNotFound, "callers-not-found")
+			return
+		}
 		writeCallerAdminError(w, http.StatusInternalServerError, "callers-mutation-failed")
 		return
 	}
-	if res.RowsAffected == 0 {
-		writeCallerAdminError(w, http.StatusNotFound, "callers-not-found")
-		return
-	}
 	if h.deps.AfterMutate != nil {
-		h.deps.AfterMutate(r, callerID)
+		if err := h.deps.AfterMutate(r, callerID); err != nil {
+			writeCallerAdminError(w, http.StatusInternalServerError, "callers-reload-failed")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, callerAdminTokenResponse{CallerID: callerID, Status: accountStatusDisabled})
 }
@@ -393,6 +484,66 @@ func (h *callerAdminHandler) loadCaller(configSetID, callerID string) (callerRow
 		allow = append(allow, a.GroupName)
 	}
 	return rows[0], allow, nil
+}
+
+// syncCanonicalDocument loads the canonical YAML for configSetID inside the
+// supplied transaction, applies mutate to the callers slice, and writes the
+// patched document back to router_config_documents. The document content hash
+// and updated_at are refreshed. The stored document is never expanded:
+// environment references remain verbatim so the YAML written here matches the
+// source document semantically. If no document row exists yet, the function
+// returns an error and the surrounding transaction rolls back the relational
+// mutation, ensuring the projection and document cannot diverge.
+func (h *callerAdminHandler) syncCanonicalDocument(tx *gorm.DB, configSetID string, mutate func(callers []CallerConfig) ([]CallerConfig, error)) error {
+	if tx == nil {
+		return errors.New("sync canonical document: transaction is required")
+	}
+	if strings.TrimSpace(configSetID) == "" {
+		return errors.New("sync canonical document: config set ID is required")
+	}
+	var row configControlPlaneDocumentRow
+	if err := tx.Where("config_set_id = ?", configSetID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("sync canonical document: no document for config set %q", configSetID)
+		}
+		return fmt.Errorf("load canonical document: %w", err)
+	}
+	patched, err := PatchCanonicalCallersYAML([]byte(row.CanonicalYAML), mutate)
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256(patched)
+	updatedAt := h.now().Format(time.RFC3339Nano)
+	if err := tx.Exec(
+		`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`,
+		string(patched), hex.EncodeToString(hash[:]), updatedAt, configSetID,
+	).Error; err != nil {
+		return fmt.Errorf("write canonical document: %w", err)
+	}
+	return nil
+}
+
+// actor extracts a non-secret actor identifier from the request. The caller
+// directory admin endpoints do not require authentication beyond the policy
+// callback; when an authenticated admin subject is available (for example a
+// JWT or basic-auth user) the X-Actor header surfaces it. Otherwise the
+// remote address is used as a deployment-stable label. Secret material is
+// never copied into the change-event actor column.
+func (h *callerAdminHandler) actor(r *http.Request) string {
+	if r == nil {
+		return "anonymous"
+	}
+	if actor := strings.TrimSpace(r.Header.Get("X-Actor")); actor != "" {
+		return actor
+	}
+	if actor := strings.TrimSpace(r.Header.Get("X-Admin-Subject")); actor != "" {
+		return actor
+	}
+	host := strings.TrimSpace(r.RemoteAddr)
+	if host == "" {
+		return "anonymous"
+	}
+	return host
 }
 
 // PatchCanonicalCallersYAML parses a canonical router configuration YAML

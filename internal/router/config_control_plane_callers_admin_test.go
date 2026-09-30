@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
@@ -42,6 +43,19 @@ func callerAdminTestDB(t *testing.T) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
+	// Seed a canonical document so caller mutations can sync the YAML.
+	canonicalYAML := `server:
+  listen: ':8080'
+  default_model_group: default
+callers: []
+`
+	hash := sha256.Sum256([]byte(canonicalYAML))
+	if err := db.Exec(
+		`INSERT INTO router_config_documents (config_set_id, canonical_yaml, content_sha256, updated_at) VALUES (?, ?, ?, ?)`,
+		"set-1", canonicalYAML, hex.EncodeToString(hash[:]), now,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 
@@ -54,10 +68,11 @@ func callerAdminTestMux(t *testing.T, db *gorm.DB, mutated *[]string) *http.Serv
 		Authorize: func(r *http.Request, object, action string) bool {
 			return r.Header.Get("X-Test-Admin") == "yes" && object == authzObjectAdminCallers
 		},
-		AfterMutate: func(r *http.Request, callerID string) {
+		AfterMutate: func(r *http.Request, callerID string) error {
 			if mutated != nil {
 				*mutated = append(*mutated, callerID)
 			}
+			return nil
 		},
 		Now: func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) },
 	})
@@ -290,5 +305,291 @@ func TestCanonicalCallersPatchRejectsInvalidYAML(t *testing.T) {
 	}
 	if _, err := PatchCanonicalCallersYAML([]byte("server: {}"), nil); err == nil {
 		t.Fatal("nil mutate callback must fail")
+	}
+}
+
+// TestCallerAdminMutationsSyncCanonicalDocument verifies that issue, rotate,
+// and revoke each update the canonical YAML document inside the same
+// transaction as the relational mutation. The document must reflect the
+// caller directory after every successful mutation.
+func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
+	db := callerAdminTestDB(t)
+	mux := callerAdminTestMux(t, db, nil)
+
+	// Issue a new caller.
+	issueRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/issue", map[string]any{
+		"owner_user": "Alice",
+		"project":    "Search",
+		"allow":      []string{"default"},
+	}, true)
+	if issueRec.Code != http.StatusCreated {
+		t.Fatalf("issue status = %d body = %s", issueRec.Code, issueRec.Body.String())
+	}
+	var issueResp callerAdminIssueResponse
+	if err := json.Unmarshal(issueRec.Body.Bytes(), &issueResp); err != nil {
+		t.Fatal(err)
+	}
+
+	// The canonical document must contain the new caller with the persisted
+	// token hash and public token id.
+	var docYAML string
+	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&docYAML); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(docYAML, "alice-search-dev") {
+		t.Fatalf("canonical document missing issued caller: %s", docYAML)
+	}
+	if !strings.Contains(docYAML, issueResp.Caller.TokenSHA256) {
+		t.Fatalf("canonical document missing issued caller token hash: %s", docYAML)
+	}
+	if strings.Contains(docYAML, issueResp.Token) {
+		t.Fatal("canonical document must never contain a raw token")
+	}
+
+	// Rotate replaces the stored hash in the document.
+	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/rotate", nil, true)
+	if rotateRec.Code != http.StatusOK {
+		t.Fatalf("rotate status = %d body = %s", rotateRec.Code, rotateRec.Body.String())
+	}
+	var rotateResp callerAdminTokenResponse
+	if err := json.Unmarshal(rotateRec.Body.Bytes(), &rotateResp); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&docYAML); err != nil {
+		t.Fatal(err)
+	}
+	rotatedSum := sha256.Sum256([]byte(rotateResp.Token))
+	if !strings.Contains(docYAML, hex.EncodeToString(rotatedSum[:])) {
+		t.Fatalf("canonical document missing rotated token hash: %s", docYAML)
+	}
+	if strings.Contains(docYAML, rotateResp.Token) {
+		t.Fatal("canonical document must never contain a raw token")
+	}
+
+	// Revoke marks the caller disabled in the document.
+	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/revoke", nil, true)
+	if revokeRec.Code != http.StatusOK {
+		t.Fatalf("revoke status = %d body = %s", revokeRec.Code, revokeRec.Body.String())
+	}
+	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&docYAML); err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Callers []CallerConfig `yaml:"callers"`
+	}
+	if err := yaml.Unmarshal([]byte(docYAML), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Callers) != 1 || doc.Callers[0].Status != accountStatusDisabled {
+		t.Fatalf("canonical document caller status = %+v, want disabled", doc.Callers)
+	}
+}
+
+// TestCallerAdminMutationsBumpRevisionAndAppendEvents verifies that every
+// successful caller mutation bumps router_config_runtime.config_revision and
+// appends a router_config_change_events row with the expected action.
+func TestCallerAdminMutationsBumpRevisionAndAppendEvents(t *testing.T) {
+	db := callerAdminTestDB(t)
+	mux := callerAdminTestMux(t, db, nil)
+
+	var initialRevision int64
+	if err := db.Raw(`SELECT config_revision FROM router_config_runtime WHERE runtime_scope = ?`, "staging").Row().Scan(&initialRevision); err != nil {
+		// No runtime row yet; the first mutation will create it.
+		initialRevision = 0
+	}
+
+	// Issue bumps revision to 1.
+	issueRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/issue", map[string]any{
+		"owner_user": "Alice",
+		"project":    "Search",
+		"allow":      []string{"default"},
+	}, true)
+	if issueRec.Code != http.StatusCreated {
+		t.Fatalf("issue status = %d body = %s", issueRec.Code, issueRec.Body.String())
+	}
+	var rev1 int64
+	if err := db.Raw(`SELECT config_revision FROM router_config_runtime WHERE runtime_scope = ?`, "staging").Row().Scan(&rev1); err != nil {
+		t.Fatal(err)
+	}
+	if rev1 != initialRevision+1 {
+		t.Fatalf("revision after issue = %d, want %d", rev1, initialRevision+1)
+	}
+
+	// Rotate bumps revision to 2.
+	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/rotate", nil, true)
+	if rotateRec.Code != http.StatusOK {
+		t.Fatalf("rotate status = %d body = %s", rotateRec.Code, rotateRec.Body.String())
+	}
+	var rev2 int64
+	if err := db.Raw(`SELECT config_revision FROM router_config_runtime WHERE runtime_scope = ?`, "staging").Row().Scan(&rev2); err != nil {
+		t.Fatal(err)
+	}
+	if rev2 != rev1+1 {
+		t.Fatalf("revision after rotate = %d, want %d", rev2, rev1+1)
+	}
+
+	// Revoke bumps revision to 3.
+	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/revoke", nil, true)
+	if revokeRec.Code != http.StatusOK {
+		t.Fatalf("revoke status = %d body = %s", revokeRec.Code, revokeRec.Body.String())
+	}
+	var rev3 int64
+	if err := db.Raw(`SELECT config_revision FROM router_config_runtime WHERE runtime_scope = ?`, "staging").Row().Scan(&rev3); err != nil {
+		t.Fatal(err)
+	}
+	if rev3 != rev2+1 {
+		t.Fatalf("revision after revoke = %d, want %d", rev3, rev2+1)
+	}
+
+	// The change-event log must contain one row per mutation with the
+	// expected actions and monotonically increasing revisions.
+	var actions []string
+	rows, err := db.Raw(`SELECT action FROM router_config_change_events WHERE runtime_scope = ? ORDER BY config_revision ASC`, "staging").Rows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var action string
+		if err := rows.Scan(&action); err != nil {
+			t.Fatal(err)
+		}
+		actions = append(actions, action)
+	}
+	if len(actions) != 3 {
+		t.Fatalf("change events = %v, want 3 actions", actions)
+	}
+	expected := []string{"caller_issue", "caller_rotate", "caller_revoke"}
+	for i, want := range expected {
+		if actions[i] != want {
+			t.Fatalf("change event %d = %q, want %q", i, actions[i], want)
+		}
+	}
+}
+
+// TestServiceReloadActiveConfigFromDB verifies that the service reload path
+// loads the active canonical document, rebuilds caller runtimes, and swaps
+// the in-memory configuration. The test exercises the same code path used by
+// AfterMutate and the revision poller.
+func TestServiceReloadActiveConfigFromDB(t *testing.T) {
+	db := callerAdminTestDB(t)
+
+	// Seed a canonical document with one caller.
+	tokenHash := strings.Repeat("a", 64)
+	canonicalYAML := `server:
+  listen: ':8080'
+  default_model_group: default
+  identifiers:
+    mode: passthrough
+providers:
+  mock:
+    base_url: http://127.0.0.1:1/v1
+    dialect: openai
+    api_key_env: TEST_API_KEY
+models:
+  default:
+    strategy: static
+    targets:
+      - provider: mock
+        model: mock-model
+callers:
+  - id: alice-search-dev
+    owner_user: alice
+    project: search
+    environment: dev
+    status: active
+    token_sha256: ` + tokenHash + `
+    token_id: rtr_metrum_alice_search_dev_k20260721
+    allow:
+      - default
+    rate:
+      rpm: 120
+      tpm: 200000
+      concurrent: 8
+`
+	hash := sha256.Sum256([]byte(canonicalYAML))
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := db.Exec(
+		`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`,
+		canonicalYAML, hex.EncodeToString(hash[:]), now, "set-1",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Also seed the relational projection so the service can load the active
+	// config from the DB.
+	if err := db.Exec(
+		`INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"set-1", "alice-search-dev", "alice", "search", "dev", "active", tokenHash, "rtr_metrum_alice_search_dev_k20260721", false, false, 120, 200000, 8,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(
+		`INSERT INTO router_config_caller_allowed_groups (config_set_id, caller_id, group_name) VALUES (?, ?, ?)`,
+		"set-1", "alice-search-dev", "default",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a minimal service with a DB-backed config source.
+	dir := t.TempDir()
+	usageDBDisabled := false
+	cfg := &Config{
+		Server: ServerConfig{
+			Identifiers:       IdentifierConfig{Mode: "passthrough"},
+			Listen:            ":0",
+			DefaultModelGroup: "default",
+			UsageDB: UsageDBConfig{
+				Enable:          &usageDBDisabled,
+				MigrationPolicy: usageDBMigrationPolicyAutoSafe,
+				Driver:          "sqlite",
+				Path:            filepath.Join(dir, "usage.sqlite"),
+			},
+			ConfigSource: ConfigSourceConfig{
+				Mode:         "database",
+				Driver:       "sqlite",
+				Path:         filepath.Join(dir, "config.sqlite"),
+				RuntimeScope: "staging",
+			},
+		},
+		StatePath: filepath.Join(dir, "state.json"),
+		Provider: map[string]ProviderConfig{
+			"mock": {BaseURL: "http://127.0.0.1:1/v1", Dialect: "openai", APIKey: "test-key"},
+		},
+		Models: map[string]ModelGroup{
+			"default": {Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-model"}}},
+		},
+		Callers: []CallerConfig{},
+	}
+	// Point the service at the same SQLite file used by the test DB.
+	cfg.Server.ConfigSource.Path = db.Config.Dialector.(*sqlite.Dialector).DSN
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	// The initial service has no callers because the bootstrap YAML had none.
+	if len(svc.callersBySum) != 0 {
+		t.Fatalf("initial callersBySum = %d, want 0", len(svc.callersBySum))
+	}
+
+	// Reload from the DB.
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("reloadActiveConfigFromDB: %v", err)
+	}
+
+	// The service must now have the caller from the canonical document.
+	if len(svc.callersBySum) != 1 {
+		t.Fatalf("reloaded callersBySum = %d, want 1", len(svc.callersBySum))
+	}
+	rt, ok := svc.callersBySum[tokenHash]
+	if !ok {
+		t.Fatalf("reloaded caller missing from callersBySum: %v", svc.callersBySum)
+	}
+	if rt.cfg.ID != "alice-search-dev" || rt.cfg.Rate.RPM != 120 {
+		t.Fatalf("reloaded caller runtime mismatch: %+v", rt.cfg)
+	}
+	if svc.configSnapshot.Load() == nil || svc.configSnapshot.Load().Callers[0].ID != "alice-search-dev" {
+		t.Fatal("config snapshot must reflect the reloaded configuration")
 	}
 }

@@ -28,6 +28,73 @@ type quotaStore struct {
 	saveFault error
 }
 
+// rebuildCallers replaces the in-memory caller runtime map with runtimes built
+// from cfg.Callers. Existing caller state (day/month/lifetime counters) is
+// preserved for caller IDs that still exist in the new configuration. New
+// callers get fresh state. The caller's allow map and status are rebuilt from
+// the new configuration. This is used by the DB-mode reload path to swap in
+// updated caller definitions without losing quota history.
+func (q *quotaStore) rebuildCallers(cfg *Config) error {
+	if cfg == nil {
+		return errors.New("rebuild callers: config is required")
+	}
+	now := time.Now().UTC()
+	dir, err := cfg.validateAccounts()
+	if err != nil {
+		return fmt.Errorf("rebuild callers: %w", err)
+	}
+	newCallers := make(map[string]*callerRuntime, len(cfg.Callers))
+	for _, callerCfg := range cfg.Callers {
+		allow := map[string]bool{}
+		for _, group := range callerCfg.Allow {
+			allow[group] = true
+		}
+		rt := &callerRuntime{cfg: callerCfg, allow: allow, keyStatus: normalizeStatusDefault(callerCfg.Status)}
+		rt.ownerUser, _ = callerOwnerUser(callerCfg)
+		rt.project = normalizeAccountID(callerCfg.Project)
+		if user, ok := dir.users[rt.ownerUser]; ok {
+			rt.ownerUserStatus = normalizeStatusDefault(user.Status)
+		} else {
+			rt.ownerUserStatus = accountStatusActive
+		}
+		if project, ok := dir.projects[rt.project]; ok {
+			rt.projectStatus = normalizeStatusDefault(project.Status)
+		} else {
+			rt.projectStatus = accountStatusActive
+		}
+		if membership, ok := dir.memberships[membershipKey(rt.ownerUser, rt.project)]; ok {
+			rt.membershipRole = normalizeRoleDefault(membership.Role)
+			rt.membershipStatus = normalizeStatusDefault(membership.Status)
+		} else {
+			rt.membershipRole = "member"
+			rt.membershipStatus = accountStatusActive
+		}
+		newCallers[callerCfg.ID] = rt
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	// Preserve existing caller state for IDs that survive the reload.
+	for id, rt := range newCallers {
+		if existing, ok := q.callers[id]; ok {
+			rt.inFlight = existing.inFlight
+			rt.inFlightReservedTokens = existing.inFlightReservedTokens
+			rt.reqTimes = existing.reqTimes
+			rt.tokenTimes = existing.tokenTimes
+		}
+		if q.state.Callers[id] == nil {
+			q.state.Callers[id] = &callerState{DayStart: dayStart(now), MonthStart: monthStart(now)}
+		}
+	}
+	// Remove state for callers that no longer exist.
+	for id := range q.state.Callers {
+		if newCallers[id] == nil {
+			delete(q.state.Callers, id)
+		}
+	}
+	q.callers = newCallers
+	return nil
+}
+
 type callerRuntime struct {
 	cfg                    CallerConfig
 	allow                  map[string]bool

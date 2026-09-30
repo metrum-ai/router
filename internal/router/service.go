@@ -40,6 +40,12 @@ import (
 // than 500ms under parallel load.
 var defaultImageURLDNSTimeout = 500 * time.Millisecond
 
+// configControlPlaneReloadInterval is the poll interval used by the SQLite
+// revision poller when server.config_source.mode is database. PostgreSQL
+// deployments use LISTEN/NOTIFY (see StartConfigRevisionNotifier) and do not
+// poll.
+const configControlPlaneReloadInterval = 2 * time.Second
+
 // defaultImageURLLookup resolves image-URL hostnames for admission checks.
 // Tests may replace it without changing egress policy DNS.
 var defaultImageURLLookup egressLookupIPFunc = func(ctx context.Context, host string) ([]net.IP, error) {
@@ -76,6 +82,7 @@ type Service struct {
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
+	configReloadStop   func()
 }
 
 type adminBasicRuntime struct {
@@ -309,6 +316,10 @@ func (s *Service) Handler() http.Handler {
 }
 
 func (s *Service) Close() {
+	if s.configReloadStop != nil {
+		s.configReloadStop()
+		s.configReloadStop = nil
+	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
 	_ = s.usage.Close()
@@ -339,6 +350,87 @@ func (s *Service) initConfigControlPlane() error {
 	}
 	s.configControlPlane = db
 	s.configDBCloser = closer
+	scope := strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope)
+	if scope != "" {
+		reload := func() {
+			if err := s.reloadActiveConfigFromDB(); err != nil {
+				// Never log the underlying error: Validate/Load paths can
+				// include env-backed credential identifiers.
+				log.Printf("config control-plane reload failed for scope %q", scope)
+			}
+		}
+		stop, err := StartConfigRevisionPoller(context.Background(), db, scope, configControlPlaneReloadInterval, reload)
+		if err != nil {
+			return fmt.Errorf("start config control-plane revision poller: %w", err)
+		}
+		s.configReloadStop = stop
+		if _, err := StartConfigRevisionNotifier(context.Background(), db, scope, reload); err != nil {
+			// PostgreSQL notifier returns a no-op stub today; any real
+			// failure would surface here and fail service startup loudly.
+			return fmt.Errorf("start config control-plane revision notifier: %w", err)
+		}
+	}
+	return nil
+}
+
+// reloadActiveConfigFromDB reloads the active canonical configuration from
+// the control-plane database and rebuilds the in-memory state used by the
+// service. The ConfigSource block is preserved so runtime refresh keeps the
+// same database coordinates without requiring them inside the document.
+// Caller runtimes are rebuilt from the new configuration while preserving
+// quota state for caller IDs that survive the reload. The authorizer is
+// rebuilt so admin policies reflect the new caller directory. Returns an
+// error when the active canonical document cannot be loaded or validated; in
+// that case the existing in-memory state is left unchanged.
+func (s *Service) reloadActiveConfigFromDB() error {
+	if s == nil {
+		return nil
+	}
+	if s.configControlPlane == nil {
+		return nil
+	}
+	if s.cfg == nil {
+		return fmt.Errorf("reload active config: service has no current configuration")
+	}
+	scope := strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope)
+	if scope == "" {
+		return fmt.Errorf("reload active config: runtime scope is required")
+	}
+	newCfg, err := LoadActiveCanonicalConfig(s.configControlPlane, scope)
+	if err != nil {
+		return fmt.Errorf("reload active config: %w", err)
+	}
+	// Preserve the bootstrap config_source block so runtime refresh keeps the
+	// same database coordinates without requiring them inside the document.
+	newCfg.Server.ConfigSource = s.cfg.Server.ConfigSource
+	if err := newCfg.Validate(); err != nil {
+		return fmt.Errorf("reload active config: validate: %w", err)
+	}
+	// Rebuild quota caller runtimes before swapping the config so any
+	// validation failure leaves the existing state untouched.
+	if s.quota == nil {
+		return fmt.Errorf("reload active config: quota store is required")
+	}
+	if err := s.quota.rebuildCallers(newCfg); err != nil {
+		return fmt.Errorf("reload active config: rebuild callers: %w", err)
+	}
+	// Rebuild the authorizer so admin policies reflect the new caller
+	// directory. The authorizer is recreated with the latest callers map and
+	// the same admin authorization config.
+	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage)
+	if err != nil {
+		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
+	}
+	s.cfg = newCfg
+	s.authorizer = newAuthorizer
+	s.callersBySum = make(map[string]*callerRuntime, len(s.quota.callers))
+	for _, rt := range s.quota.callers {
+		s.callersBySum[strings.ToLower(rt.cfg.TokenSHA256)] = rt
+	}
+	if s.configSnapshot != nil {
+		s.configSnapshot.Store(newCfg)
+	}
+	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
 }
 
@@ -381,12 +473,10 @@ func (s *Service) routes() {
 				}
 				return s.authorizeAdmin(subject, object, action)
 			},
-			AfterMutate: func(r *http.Request, callerID string) {
+			AfterMutate: func(r *http.Request, callerID string) error {
 				_ = r
 				_ = callerID
-				if s.configSnapshot != nil {
-					s.configSnapshot.Store(s.cfg)
-				}
+				return s.reloadActiveConfigFromDB()
 			},
 		})
 	}
