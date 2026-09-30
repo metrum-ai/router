@@ -1,0 +1,91 @@
+# OpenJev task-class routing demo (trusted local / research use).
+# OpenJev weights: CC BY-NC 4.0 — non-commercial unless you have permission.
+# Live model IDs were verified against an OpenAI key that listed:
+#   gpt-5.6-luna, gpt-5.6-sol, gpt-6-astra (not gpt-6-luna / gpt-6-sol).
+# Published short-context prices (USD / 1M tokens) at plan time:
+#   luna $0.20/$1.20, sol $4/$20, astra $10/$50.
+# Start external_policy.mode at shadow; promote to enforce after review.
+
+state_path: tmp/openjev-routing-demo/router-state.json
+
+logging:
+  level: info
+  request_log_path: tmp/openjev-routing-demo/requests.jsonl
+
+providers:
+  openai:
+    dialect: openai-chat
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    api_key_env: OPENAI_API_KEY
+    key_id: openai-openjev-demo
+    models:
+      luna:
+        model: gpt-5.6-luna
+        input_price_per_million_usd: 0.20
+        output_price_per_million_usd: 1.20
+        pricing_source: openai-api-docs-gpt-5.6-luna
+        pricing_updated_at: "2026-09-25"
+        pricing_notes: Live key substitute for gpt-6-luna when unavailable.
+        input_modalities: [text]
+        output_modalities: [text]
+        tool_support:
+          openai_chat: [tools, tool_choice]
+      sol:
+        model: gpt-5.6-sol
+        input_price_per_million_usd: 4.00
+        output_price_per_million_usd: 20.00
+        pricing_source: openai-api-docs-gpt-5.6-sol
+        pricing_updated_at: "2026-09-25"
+        pricing_notes: Mid tier on the live key; gpt-6-sol preferred when listed.
+        input_modalities: [text]
+        output_modalities: [text]
+        tool_support:
+          openai_chat: [tools, tool_choice]
+      astra:
+        model: gpt-6-astra
+        input_price_per_million_usd: 10.00
+        output_price_per_million_usd: 50.00
+        pricing_source: openai-api-docs-gpt-6-astra
+        pricing_updated_at: "2026-09-25"
+        pricing_notes: Flagship advanced tier.
+        input_modalities: [text]
+        output_modalities: [text]
+        tool_support:
+          openai_chat: [tools, tool_choice]
+
+models:
+  openjev-routing-demo:
+    strategy: external
+    external_policy:
+      url: http://127.0.0.1:18093/route
+      mode: shadow
+      allow_hosts: [127.0.0.1]
+      timeout_ms: 2000
+      max_response_bytes: 65536
+      on_error: fail_closed
+      # Trusted demo only: OpenJev classifies request text.
+      include_request: true
+    targets:
+      - { provider: openai, model_ref: luna, tier: cheap, weight: 50 }
+      - { provider: openai, model_ref: sol, tier: medium, weight: 30 }
+      - { provider: openai, model_ref: astra, tier: advanced, weight: 20 }
+
+users:
+  - id: openjev-demo
+    name: OpenJev Demo
+    type: service_account
+    status: active
+
+projects:
+  - id: openjev-demo
+    name: OpenJev Demo
+    status: active
+
+project_memberships:
+  - user_id: openjev-demo
+    project: openjev-demo
+    role: developer
+    status: active
+
+callers: []
