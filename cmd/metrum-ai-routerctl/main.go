@@ -20,6 +20,7 @@ import (
 	"github.com/metrum-ai/router/internal/buildinfo"
 	"github.com/metrum-ai/router/internal/router"
 	"github.com/metrum-ai/router/internal/smartrouterctl"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -54,7 +55,7 @@ func main() {
 
 func configCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl config <validate|diff> [flags]")
+		die("usage: metrum-ai-routerctl config <validate|diff|import|export|activate|rollback> [flags]")
 	}
 	switch args[0] {
 	case "validate":
@@ -70,9 +71,110 @@ func configCommand(args []string) {
 		fs.Parse(args[1:])
 		before, after := loadConfig(*from), loadConfig(*to)
 		writeJSON(configDiff(before, after))
+	case "import":
+		fs := flag.NewFlagSet("config import", flag.ExitOnError)
+		yamlPath := fs.String("yaml", "", "canonical YAML path to import")
+		name := fs.String("name", "", "config set name")
+		opts := addConfigDBFlags(fs)
+		fs.Parse(args[1:])
+		if strings.TrimSpace(*yamlPath) == "" || strings.TrimSpace(*name) == "" {
+			die("config import requires --yaml and --name")
+		}
+		raw, err := os.ReadFile(*yamlPath)
+		if err != nil {
+			die("%v", err)
+		}
+		db, closer, err := openConfigDB(*opts)
+		if err != nil {
+			die("%v", err)
+		}
+		defer closer()
+		setID, err := router.ImportCanonicalYAML(db, opts.RuntimeScope, *name, raw, opts.Actor)
+		if err != nil {
+			die("%v", err)
+		}
+		writeJSON(map[string]any{"set_id": setID, "runtime_scope": opts.RuntimeScope, "name": *name})
+	case "export":
+		fs := flag.NewFlagSet("config export", flag.ExitOnError)
+		setID := fs.String("set-id", "", "config set id (empty = active)")
+		outPath := fs.String("out", "", "output path (default: stdout)")
+		opts := addConfigDBFlags(fs)
+		fs.Parse(args[1:])
+		db, closer, err := openConfigDB(*opts)
+		if err != nil {
+			die("%v", err)
+		}
+		defer closer()
+		var raw []byte
+		if strings.TrimSpace(*setID) == "" {
+			raw, err = router.LoadActiveCanonicalYAML(db, opts.RuntimeScope)
+		} else {
+			raw, err = router.ExportCanonicalYAML(db, *setID)
+		}
+		if err != nil {
+			die("%v", err)
+		}
+		if strings.TrimSpace(*outPath) == "" {
+			_, _ = os.Stdout.Write(raw)
+			return
+		}
+		if err := os.WriteFile(*outPath, raw, 0o600); err != nil {
+			die("%v", err)
+		}
+	case "activate":
+		fs := flag.NewFlagSet("config activate", flag.ExitOnError)
+		setID := fs.String("set-id", "", "config set id to activate")
+		opts := addConfigDBFlags(fs)
+		fs.Parse(args[1:])
+		if strings.TrimSpace(*setID) == "" {
+			die("config activate requires --set-id")
+		}
+		db, closer, err := openConfigDB(*opts)
+		if err != nil {
+			die("%v", err)
+		}
+		defer closer()
+		if err := router.ActivateConfigSet(db, opts.RuntimeScope, *setID, opts.Actor); err != nil {
+			die("%v", err)
+		}
+		writeJSON(map[string]any{"set_id": *setID, "runtime_scope": opts.RuntimeScope, "status": "active"})
+	case "rollback":
+		fs := flag.NewFlagSet("config rollback", flag.ExitOnError)
+		setID := fs.String("set-id", "", "prior config set id to reactivate")
+		opts := addConfigDBFlags(fs)
+		fs.Parse(args[1:])
+		if strings.TrimSpace(*setID) == "" {
+			die("config rollback requires --set-id")
+		}
+		db, closer, err := openConfigDB(*opts)
+		if err != nil {
+			die("%v", err)
+		}
+		defer closer()
+		if err := router.RollbackConfigSet(db, opts.RuntimeScope, *setID, opts.Actor); err != nil {
+			die("%v", err)
+		}
+		writeJSON(map[string]any{"set_id": *setID, "runtime_scope": opts.RuntimeScope, "status": "active", "action": "rollback"})
 	default:
 		die("unsupported config command %q", args[0])
 	}
+}
+
+func addConfigDBFlags(fs *flag.FlagSet) *smartrouterctl.ConfigDBOptions {
+	opts := &smartrouterctl.ConfigDBOptions{}
+	fs.StringVar(&opts.Driver, "driver", "sqlite", "config control-plane driver")
+	fs.StringVar(&opts.Path, "db", "", "sqlite config control-plane path")
+	fs.StringVar(&opts.DSN, "dsn", "", "postgres config control-plane dsn")
+	fs.StringVar(&opts.RuntimeScope, "scope", "prod", "runtime scope")
+	fs.StringVar(&opts.Actor, "actor", "operator", "audit actor")
+	return opts
+}
+
+func openConfigDB(opts smartrouterctl.ConfigDBOptions) (*gorm.DB, func() error, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, nil, err
+	}
+	return router.OpenConfigControlPlaneDB(opts.UsageDBConfig())
 }
 
 func callersCommand(args []string) {

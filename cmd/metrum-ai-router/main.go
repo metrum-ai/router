@@ -27,7 +27,7 @@ func main() {
 		return
 	}
 
-	cfg, err := router.LoadConfig(*configPath)
+	cfg, err := router.LoadConfigForServe(*configPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}

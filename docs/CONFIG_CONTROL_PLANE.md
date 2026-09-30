@@ -5,6 +5,15 @@ future managed deployments. It is not enabled by router startup and does not
 replace `config.yaml`; YAML remains the only production configuration source
 in this phase.
 
+Phase 6 adds the optional DB-backed serving mode. When
+`server.config_source.mode` is `database`, the active configuration set stored
+in the `router_config` scope is the serving source of truth. YAML is then an
+import/export and bootstrap artifact only: it seeds a new deployment, moves a
+reviewed document between environments, and provides an offline recovery
+input, but the running router does not read it for serving decisions. When
+`server.config_source.mode` is `file` (the default), nothing in this section
+applies and YAML remains the only serving source.
+
 The `router_config` migration scope creates scalar, foreign-keyed records for:
 
 - versioned configuration-set metadata and one active set per runtime scope;
@@ -109,3 +118,96 @@ pricing. `ApplyPending` stops before those phases. A non-serving deployment
 job must first apply the online prefix, take the approved backup, then
 explicitly invoke `ApplyMaintenancePending` in a scheduled maintenance window
 and finish with `Verify`; it must never be run by router startup.
+
+## Phase 6: DB-backed serving source of truth
+
+Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and
+adds three **online** tables through `ConfigControlPlaneMigrationRunner`:
+
+- `router_config_documents` stores the canonical configuration document for
+  each versioned set. The relational projection remains the queryable form;
+  the document is the reviewed, round-trippable representation used for
+  import, export, diff, and audit.
+- `router_config_runtime` records which document is active per runtime scope
+  and the activation/rollback lineage, so a restart or a second replica
+  resolves the same active set without guessing from history rows.
+- `router_config_change_events` is the append-only audit log for import,
+  activate, rollback, and caller issue/rotate/revoke actions. It records
+  actor, action, target identifiers, and safe scalar metadata only — never
+  raw tokens, provider credentials, DSNs, or request content.
+
+All three are online migrations: `ApplyPending` applies them without a
+maintenance window, and no serving downtime is required to add them to an
+existing phase-5 schema.
+
+### Canonical document and relational projection
+
+The configuration set has two coordinated representations:
+
+1. The **canonical document** in `router_config_documents` is the complete,
+   versioned, human-reviewable form. It is what `import` accepts, what
+   `export` emits, and what a change review diffs.
+2. The **relational projection** in the phase-1 through phase-5 tables is the
+   normalized, foreign-keyed form the router reads on the serving path via
+   `LoadActiveConfigFromDB`.
+
+Import writes both representations in one reviewed transaction; activation
+flips `router_config_runtime` to point at the new document. The serving read
+path stays relational and read-only; the document is never parsed per
+request.
+
+### Secrets boundary
+
+The DB-backed mode does not change the secrets contract:
+
+- Provider credentials remain `api_key_env` environment/secret references.
+  `LoadActiveConfigFromDB` resolves the named variable only into the returned
+  in-memory runtime configuration and never writes or logs the value.
+- Caller tokens remain SHA-256 `token_sha256` hashes plus the public
+  `token_id`. Raw caller tokens have no column in any `router_config` table
+  and are never stored in `router_config_documents` or
+  `router_config_change_events`.
+
+### Import, export, activate, rollback
+
+The intended operator flows, exposed through the admin API and the
+`metrum-ai-routerctl` CLI at a high level, are:
+
+- **Import** — validate a YAML or canonical-document payload, write the
+  canonical document to `router_config_documents`, project it into the
+  relational tables, and record an `import` change event. Import does not
+  activate; the running set is unchanged.
+- **Export** — read the canonical document for a specified set (or the active
+  set) and emit it as YAML for review, backup, or transfer. Export is
+  read-only and never includes resolved secrets.
+- **Activate** — atomically repoint `router_config_runtime` for a runtime
+  scope at an imported, validated set, record an `activate` change event, and
+  have serving replicas pick up the new active set on their next load.
+- **Rollback** — repoint `router_config_runtime` at a previously active set,
+  record a `rollback` change event, and leave the superseded document intact
+  for audit. Rollback is a runtime-pointer change, not a reverse migration.
+
+Exact CLI subcommand names and flags are owned by the CLI phase and follow the
+existing `metrum-ai-routerctl` style; this document intentionally does not
+specify them.
+
+### Caller issue, rotate, and revoke against the active set
+
+When `server.config_source.mode=database`, caller lifecycle operations act
+directly on the active relational projection and take effect without a
+router restart or a YAML edit:
+
+- **Issue** — insert a new caller row with its `token_sha256`, public
+  `token_id`, owner/project references, rate limits, and allowed groups, then
+  record an `issue` change event. The raw token is shown to the operator once
+  and never stored.
+- **Rotate** — insert the replacement caller row, mark the prior row
+  `rotated`, and record a `rotate` change event.
+- **Revoke** — mark the caller row `disabled`, `suspended`, or `expired` and
+  record a `revoke` change event. Revocation is effective on the next
+  authenticated request; there is no config reload step.
+
+These operations are available through the admin API and the
+`metrum-ai-routerctl callers` family. They are only meaningful in DB-backed
+mode; in file mode, caller changes remain a YAML edit plus reload/restart as
+documented in `docs-site/docs/operations/key-generation.md`.

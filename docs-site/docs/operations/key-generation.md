@@ -76,3 +76,33 @@ Generating a token is not the same as activating it.
   remote managed hostname or signs licenses.
 
 Never paste raw tokens, token hashes, or provider keys into tickets, chat, or public docs. Distribute the raw token once over an approved channel, then confirm access with `/v1/models`.
+
+## DB-backed config source
+
+When `server.config_source.mode` is `database`, the active configuration set in
+the `router_config` scope is the serving source of truth. `config.yaml` is then
+an import/export/bootstrap artifact only; the running router reads the active
+relational projection, not a YAML file. See
+[`docs/CONFIG_CONTROL_PLANE.md`](../../CONFIG_CONTROL_PLANE.md) for the full
+contract.
+
+In DB-backed mode, caller lifecycle is performed against the active set and
+takes effect without a reload or restart:
+
+- **Issue** — `metrum-ai-routerctl callers issue` (or the equivalent admin API
+  call) inserts the hashed caller row, the public `token_id`, and the
+  configured allow list into the active relational projection. The CLI prints
+  the raw token once; the router stores only its SHA-256 hash.
+- **Rotate** — `metrum-ai-routerctl callers rotate` inserts the replacement
+  caller, marks the prior caller `rotated`, and records a change event.
+- **Revoke** — `metrum-ai-routerctl callers revoke` flips the caller to
+  `disabled`, `suspended`, or `expired` and records a change event. The
+  revocation is effective on the next authenticated request; there is no
+  reload step.
+
+All three operations are recorded in `router_config_change_events`. The CLI
+flags and subcommand names follow the existing `metrum-ai-routerctl` style
+and are owned by the caller-lifecycle phase.
+
+In file mode (the default), caller changes remain a YAML edit plus
+reload/restart as described above; the DB-backed commands are rejected.

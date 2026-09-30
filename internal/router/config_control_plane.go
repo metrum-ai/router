@@ -40,7 +40,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 5, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 6, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -140,9 +140,21 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 }
 
 func init() {
+	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}
+}
+
+// OpenConfigControlPlaneDB opens the config-control-plane database and
+// returns the handle plus a closer. Callers must close when finished.
+func OpenConfigControlPlaneDB(cfg UsageDBConfig) (*gorm.DB, func() error, error) {
+	runner, closer, err := ConfigControlPlaneMigrationRunner(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return runner.db, closer, nil
 }
 
 // ConfigControlPlaneMigrationRunner opens a dedicated config-control-plane
@@ -1519,6 +1531,7 @@ func (callerAllowedGroupRow) TableName() string { return "router_config_caller_a
 func ConfigControlPlaneTableNames() []string {
 	names := append([]string(nil), configControlPlaneTables...)
 	names = append(names, configControlPlanePhase4Tables...)
+	names = append(names, configControlPlanePhase6Tables...)
 	sort.Strings(names)
 	return names
 }
