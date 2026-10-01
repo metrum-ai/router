@@ -128,6 +128,19 @@ local-router-setup:
 		$(LOCAL_ROUTER_EXTRA_ARGS)
 
 local-router: local-router-setup
+	@mkdir -p "$(LOCAL_ROUTER_OUT)/logs"
+	@echo "local-router supervised on $(LOCAL_ROUTER_LISTEN); log $(LOCAL_ROUTER_OUT)/logs/router.supervised.log"
+	@go build -o "$(LOCAL_ROUTER_OUT)/metrum-ai-router" ./cmd/metrum-ai-router
+	@while true; do \
+		echo "$$(date -u +%Y-%m-%dT%H:%M:%SZ) starting local-router" | tee -a "$(LOCAL_ROUTER_OUT)/logs/router.supervised.log"; \
+		"$(LOCAL_ROUTER_OUT)/metrum-ai-router" --config "$(LOCAL_ROUTER_OUT)/config.yaml" >>"$(LOCAL_ROUTER_OUT)/logs/router.supervised.log" 2>&1; \
+		code=$$?; \
+		echo "$$(date -u +%Y-%m-%dT%H:%M:%SZ) local-router exited $$code; rebuilding and restarting in 2s" | tee -a "$(LOCAL_ROUTER_OUT)/logs/router.supervised.log"; \
+		go build -o "$(LOCAL_ROUTER_OUT)/metrum-ai-router" ./cmd/metrum-ai-router || true; \
+		sleep 2; \
+	done
+
+local-router-once: local-router-setup
 	"$(LOCAL_ROUTER_OUT)/start.sh"
 
 local-router-configure-pi: local-router-setup
