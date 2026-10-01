@@ -7,17 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.0.1] - 2026-09-25
+## [4.0.1] - 2026-10-01
+
+### Fixes
+
+- Restore rewritten `mr_` identifiers on OpenAI Chat `tool_calls[].id` and
+  Anthropic `tool_use` content-block `id` during ingress decode so tool
+  continuations round-trip under `identifiers.mode: rewrite` (#244).
+
+### Features
+
+- Add optional DB-backed router config source of truth
+  (`server.config_source.mode: database`) with import/export/activate/rollback,
+  relational projection, and caller issue/rotate/revoke against the active set
+  (#242, #243). File-mode installs are unchanged.
 
 ### Documentation
 
 - Add an OpenJev task-class external routing example: policy service, Shadeform
-  runbook, synthetic harness, and live evidence on RTX PRO 6000 Blackwell
+  runbook, synthetic harness, and live evidence
   (`examples/external-routing-policy/openjev_*`, `docs/OPENJEV_ROUTING_DEMO.md`,
-  `docs/evidence/openjev-routing/`).
-- Record measured live-key ladder (`gpt-5.6-luna` / `gpt-5.6-sol` /
-  `gpt-6-astra`), 56/60 label accuracy, and Claude Desktop animation data
-  pack for announcement use.
+  `docs/evidence/openjev-routing/`) (#241).
+- Add `make local-router` for a weighted local coding-agent instance from
+  source (`scripts/local_pi_instance.py`).
 
 ## [4.0.0] - 2026-09-21
 
