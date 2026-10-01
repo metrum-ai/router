@@ -44,8 +44,20 @@ def main() -> int:
         selected = inventory.select_complete_set(root, "v1.2.3")
         if len(selected) != 4:
             raise AssertionError(f"expected four artifacts, got {selected}")
+        binary_only = inventory.select_complete_set(root, "v1.2.3", required=inventory.REQUIRED_BINARY)
+        if len(binary_only) != 2:
+            raise AssertionError(f"expected two binary artifacts, got {binary_only}")
         (root / names[-1]).unlink()
         require_raises("incomplete release set accepted", lambda: inventory.select_complete_set(root, "v1.2.3"))
+        # Binary set still complete without the missing docker arm64 package.
+        still_binary = inventory.select_complete_set(root, "v1.2.3", required=inventory.REQUIRED_BINARY)
+        if len(still_binary) != 2:
+            raise AssertionError(f"expected binary set to remain complete, got {still_binary}")
+        (root / names[0]).unlink()
+        require_raises(
+            "incomplete binary set accepted",
+            lambda: inventory.select_complete_set(root, "v1.2.3", required=inventory.REQUIRED_BINARY),
+        )
 
     print("release artifact inventory self-test passed")
     return 0

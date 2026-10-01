@@ -462,7 +462,7 @@ launch-operational-readiness:
 	python3 scripts/launch_operational_readiness.py
 
 release-artifact-inventory:
-	python3 scripts/release_artifact_inventory.py --dist-dir "$${DIST_DIR}" --version "$${VERSION}" --commit "$${COMMIT}" --build-date "$${BUILD_DATE}"
+	python3 scripts/release_artifact_inventory.py --dist-dir "$${DIST_DIR}" --version "$${VERSION}" --commit "$${COMMIT}" --build-date "$${BUILD_DATE}" $${RELEASE_ARTIFACT_SET:+--set $${RELEASE_ARTIFACT_SET}}
 
 release-security-evidence:
 	python3 scripts/release_security_evidence.py --dist-dir "$${DIST_DIR}" --version "$${VERSION}" $${RELEASE_SECURITY_ARGS}
