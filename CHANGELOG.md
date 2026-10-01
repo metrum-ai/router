@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-10-01
+
 ### Fixes
 
 - Replace `github.com/secure-io/siv-go` with an in-tree pure-Go AES-SIV-CMAC
   (`internal/aessiv`) for `identifiers.mode: rewrite`. The abandoned amd64
   assembly path SIGSEGV'd under concurrent SSE tool-id rewrite; wire format
   stays RFC 5297 / existing `mr_` tokens. Serialize Seal/Open on the shared
-  AEAD and add concurrent round-trip coverage.
+  AEAD and add concurrent round-trip coverage (#246).
 
 ## [4.0.1] - 2026-10-01
 

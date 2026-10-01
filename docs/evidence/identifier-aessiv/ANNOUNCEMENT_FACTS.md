@@ -1,8 +1,7 @@
-# Next patch — identifier AES-SIV facts for announcement
+# v4.0.2 — identifier AES-SIV facts for announcement
 
 Raw facts for the release that ships the `internal/aessiv` change. Distill
-into customer-safe release notes / announcement copy at tag time; do not paste
-this file into `docs-site/docs/release-notes/` until the version is shipped.
+into customer-safe release notes / announcement copy at tag time.
 
 ## One-liner
 
@@ -39,4 +38,4 @@ AES-SIV-CMAC.
 
 ## Changelog anchor
 
-See `CHANGELOG.md` → `[Unreleased]` → Fixes (AES-SIV / `internal/aessiv`).
+See `CHANGELOG.md` → `[4.0.2]` → Fixes (AES-SIV / `internal/aessiv`).
