@@ -21,6 +21,11 @@ import (
 
 var errOpen = errors.New("aessiv: message authentication failed")
 
+// Identifier rewrite payloads are small; keep allocations bounded.
+const maxPlaintext = 1 << 20
+
+const maxOut = maxPlaintext + aes.BlockSize
+
 // NewCMAC returns a cipher.AEAD implementing AES-SIV-CMAC (RFC 5297).
 // key must be 32, 48, or 64 bytes (two AES keys concatenated).
 // The AEAD accepts a nil/empty nonce or a NonceSize()-byte nonce.
@@ -52,7 +57,11 @@ func (c *aesSIV) Seal(dst, nonce, plaintext, additionalData []byte) []byte {
 	if n := len(nonce); n != 0 && n != c.NonceSize() {
 		panic("aessiv: incorrect nonce length given to AES-SIV-CMAC")
 	}
-	ret, ciphertext := sliceForAppend(dst, c.Overhead()+len(plaintext))
+	if len(plaintext) > maxPlaintext {
+		panic("aessiv: plaintext too large")
+	}
+	outLen := c.Overhead() + len(plaintext)
+	ret, ciphertext := sliceForAppend(dst, outLen)
 	v := s2v(additionalData, nonce, plaintext, c.mac)
 	copy(ciphertext, v[:])
 	iv := newIV(v)
@@ -64,10 +73,15 @@ func (c *aesSIV) Open(dst, nonce, ciphertext, additionalData []byte) ([]byte, er
 	if n := len(nonce); n != 0 && n != c.NonceSize() {
 		panic("aessiv: incorrect nonce length given to AES-SIV-CMAC")
 	}
-	if len(ciphertext) < c.Overhead() {
+	overhead := c.Overhead()
+	if len(ciphertext) < overhead {
 		return dst, errOpen
 	}
-	ret, plaintext := sliceForAppend(dst, len(ciphertext)-c.Overhead())
+	plainLen := len(ciphertext) - overhead
+	if plainLen > maxPlaintext {
+		return dst, errOpen
+	}
+	ret, plaintext := sliceForAppend(dst, plainLen)
 	var tag [16]byte
 	copy(tag[:], ciphertext[:16])
 	body := ciphertext[16:]
@@ -149,13 +163,13 @@ func dbl(b *[16]byte) {
 }
 
 func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if n < 0 {
-		panic("aessiv: negative append size")
-	}
-	if len(in) > int(^uint(0)>>1)-n {
-		panic("aessiv: append size overflow")
+	if n < 0 || n > maxOut || len(in) > maxOut {
+		panic("aessiv: invalid append size")
 	}
 	total := len(in) + n
+	if total > maxOut+maxOut {
+		panic("aessiv: append size too large")
+	}
 	if cap(in) >= total {
 		head = in[:total]
 	} else {
