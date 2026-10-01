@@ -14,6 +14,58 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.0.1 - 2026-10-01
+
+### Highlights
+
+- Tool-call identifier rewrite round-trips again: under
+  `identifiers.mode: rewrite`, OpenAI Chat `tool_calls[].id` and Anthropic
+  `tool_use` ids decode back to `mr_` values on ingress so multi-turn tool
+  continuations keep matching.
+- Optional database config source (`server.config_source.mode: database`)
+  stores canonical YAML in the control plane with import/export/activate/
+  rollback and caller issue/rotate/revoke against the active set. Default
+  file-mode installs are unchanged.
+- Docs include an OpenJev task-class external routing example and evidence.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Identifiers | Rewrite-mode tool continuations no longer drop protocol tool ids |
+| Config source | Optional `server.config_source.mode: database`; omit or keep file mode for existing installs |
+| Database | No usage-database migration required for file-mode upgrades |
+| Packages | Same binary and Docker package layout as v4.0.0 |
+
+### Caller Impact
+
+- Clients that send tool results referencing rewritten tool-call ids under
+  rewrite mode succeed again.
+- Request and response shapes are otherwise unchanged from v4.0.0.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v4.0.1-linux-<arch>.tar.gz` (and the Docker
+   package if used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Replace the package or image; keep existing file-mode config unless you
+   intentionally enable `server.config_source.mode: database`.
+3. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide).
+
+### Validation
+
+- `/readyz` and `/version` report v4.0.1
+- One authenticated `/v1/models` call succeeds
+- If rewrite mode is enabled: a Chat tool-call continuation that echoes the
+  model-issued tool-call id completes without a tool-id mismatch
+
+### Rollback
+
+Roll back to GitHub Release **v4.0.0**. No usage-database restore is required
+for file-mode installs. If you activated a database config set in v4.0.1,
+restore the previous package and file config (or re-activate the prior DB set
+only if you intentionally keep database mode).
+
 ## v4.0.0 - 2026-09-21
 
 ### Highlights

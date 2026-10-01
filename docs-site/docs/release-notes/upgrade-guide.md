@@ -20,6 +20,18 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Identifier rewrite and optional DB config (v4.0.1)
+
+v4.0.1 fixes tool-call identifier decode under `identifiers.mode: rewrite` so
+OpenAI Chat `tool_calls[].id` and Anthropic `tool_use` ids round-trip on
+ingress. No config change is required for that fix.
+
+Optional: `server.config_source.mode: database` serves canonical config from
+the control-plane database. File-mode installs (the default) need no config
+or usage-database migration. Do not enable database mode in the same change
+window as the package upgrade unless you have already rehearsed import/
+activate and rollback.
+
 ## Fleet removal and license config (v4.0.0)
 
 v4.0.0 removes the Fleet lifecycle subsystem. These names are gone, not renamed:

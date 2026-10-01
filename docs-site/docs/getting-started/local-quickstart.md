@@ -86,6 +86,39 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
 `/v1/models` is the source of truth for the `model` value. The starter group is
 `local`. Do not echo `$ROUTER_TOKEN` into tickets or chat.
 
+## Local coding-agent instance
+
+For a weighted local coding group (`big-coder`: kimi-k3 40 / MiniMax-M3 40 /
+gpt-5.6-sol 20) on `0.0.0.0:18081`, with upstream keys from repo `env.json`
+and a reusable caller token stored as `METRUM_API_KEY`:
+
+```bash
+# Requires: Go, uv, and MOONSHOT_API_KEY / MINIMAX_API_KEY / OPENAI_API_KEY in env.json
+make local-router
+```
+
+That target runs `scripts/local_pi_instance.py` via `uv` (not system Python),
+writes gitignored files under `tmp/local-pi/`, and starts the router in the
+foreground. Point clients at `http://127.0.0.1:18081/v1` with:
+
+```bash
+export METRUM_API_KEY="$(tr -d '\n' < tmp/local-pi/METRUM_API_KEY)"
+```
+
+Optional Make helpers:
+
+```bash
+make local-router-setup          # write files only
+make local-router-configure-pi   # also point ~/.pi/agent at this instance
+```
+
+Equivalent direct invocation:
+
+```bash
+uv run --with pyyaml python scripts/local_pi_instance.py
+./tmp/local-pi/start.sh
+```
+
 Client-only examples against an **already running** deployment:
 [API Quickstart](./hosted-quickstart). Codex and Claude Code:
 [Codex CLI](./codex-cli) and [Claude Code CLI](./claude-code-cli).

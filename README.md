@@ -74,6 +74,21 @@ The bootstrap prepares a local config, env template, and one caller token.
 Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 [Local Quickstart](docs-site/docs/getting-started/local-quickstart.md).
 
+### Local coding-agent router
+
+For a weighted `big-coder` mix (kimi-k3 40 / MiniMax-M3 40 / gpt-5.6-sol 20)
+listening on `0.0.0.0:18081`, with upstream keys from repo `env.json` and a
+reusable `METRUM_API_KEY` (requires [uv](https://github.com/astral-sh/uv)):
+
+```bash
+make local-router
+```
+
+Clients use `http://127.0.0.1:18081/v1` and
+`tmp/local-pi/METRUM_API_KEY`. Setup-only / Pi wiring:
+`make local-router-setup` and `make local-router-configure-pi`. Details:
+[Local Quickstart](docs-site/docs/getting-started/local-quickstart.md#local-coding-agent-instance).
+
 `config.example.yaml` remains the full catalog reference. Do not copy it for a
 first local trial.
 

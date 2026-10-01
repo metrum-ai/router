@@ -14,6 +14,9 @@ These short answers route integrators to the canonical documentation page.
 Use [Local Quickstart](./getting-started/local-quickstart) and
 `python3 scripts/local_dev_bootstrap.py --out-dir tmp/local-dev`.
 
+For a weighted local coding-agent instance (`big-coder` on `0.0.0.0:18081`):
+`make local-router` (requires `uv` and upstream keys in repo `env.json`).
+
 ### Which base URL should my client use?
 
 Use the router deployment URL, not a direct provider URL. Start with [API Quickstart](./getting-started/hosted-quickstart) and [API Compatibility](./reference/api-compatibility).
