@@ -39,6 +39,15 @@ OWNER_USER = "local-dev"
 PROJECT = "example-project"
 GROUP = "big-coder"
 
+# Local coding-agent caller policy: 20x the original local-dev defaults.
+LOCAL_RATE_RPM = 120 * 20
+LOCAL_RATE_TPM = 200_000 * 20
+LOCAL_RATE_CONCURRENT = 8 * 20
+LOCAL_QUOTA_DAY_REQUESTS = 5_000 * 20
+LOCAL_QUOTA_DAY_TOKENS = 20_000_000 * 20
+LOCAL_QUOTA_MONTH_TOKENS = 400_000_000 * 20
+LOCAL_KEY_LIFETIME_TOKENS = 2_000_000_000 * 20
+
 
 def die(message: str, code: int = 2) -> None:
     print(message, file=sys.stderr)
@@ -108,8 +117,10 @@ def public_token_id(token: str) -> str:
     return "_".join(parts[:-1])
 
 
-def token_sha256(token: str) -> str:
-    return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
+def token_sha256(caller_token: str) -> str:
+    # Router caller auth indexes bearer tokens by SHA-256 digest (not a password KDF).
+    # codeql[py/weak-sensitive-data-hashing]
+    return hashlib.sha256(caller_token.strip().encode("utf-8")).hexdigest()
 
 
 def resolve_existing_token(out_dir: Path, source_env: dict[str, str]) -> str:
@@ -315,14 +326,21 @@ def build_config(
                 "token_sha256": token_sha256(token),
                 "token_id": public_token_id(token),
                 "allow": [GROUP],
-                "rate": {"rpm": 120, "tpm": 200000, "concurrent": 8},
+                "rate": {
+                    "rpm": LOCAL_RATE_RPM,
+                    "tpm": LOCAL_RATE_TPM,
+                    "concurrent": LOCAL_RATE_CONCURRENT,
+                },
                 "quota": {
-                    "day": {"requests": 5000, "tokens": 20000000},
-                    "month": {"requests": 0, "tokens": 400000000},
+                    "day": {
+                        "requests": LOCAL_QUOTA_DAY_REQUESTS,
+                        "tokens": LOCAL_QUOTA_DAY_TOKENS,
+                    },
+                    "month": {"requests": 0, "tokens": LOCAL_QUOTA_MONTH_TOKENS},
                     "soft_pct": 80,
                 },
                 "key": {
-                    "lifetime_tokens": 2000000000,
+                    "lifetime_tokens": LOCAL_KEY_LIFETIME_TOKENS,
                     "soft_pct": 90,
                     "on_exhaust": "disable",
                 },
@@ -605,6 +623,7 @@ def main() -> None:
     write_start_script(out_dir, repo_root)
     write_readme(out_dir, args.listen)
 
+    # Do not print bearer tokens or values derived from them on stdout.
     summary = {
         "schema": "metrum.ai/smartrouter-local-pi-instance/v1",
         "out_dir": str(out_dir),
@@ -619,7 +638,6 @@ def main() -> None:
         "token_file": str(token_path),
         "token_reused": token_reused,
         "caller_id": CALLER_ID,
-        "token_id": public_token_id(token),
         "start": str(out_dir / "start.sh"),
     }
     print(json.dumps(summary, indent=2))

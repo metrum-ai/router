@@ -110,6 +110,16 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         want_hash = hashlib.sha256(token.encode()).hexdigest()
         if cfg["callers"][0]["token_sha256"] != want_hash:
             raise AssertionError(cfg["callers"][0]["token_sha256"])
+        rate = cfg["callers"][0]["rate"]
+        if rate != {"rpm": 2400, "tpm": 4_000_000, "concurrent": 160}:
+            raise AssertionError(rate)
+        quota = cfg["callers"][0]["quota"]
+        if quota["day"] != {"requests": 100_000, "tokens": 400_000_000}:
+            raise AssertionError(quota["day"])
+        if quota["month"]["tokens"] != 8_000_000_000:
+            raise AssertionError(quota["month"])
+        if cfg["callers"][0]["key"]["lifetime_tokens"] != 40_000_000_000:
+            raise AssertionError(cfg["callers"][0]["key"])
         readme = (out / "README.txt").read_text(encoding="utf-8")
         if "http://127.0.0.1:18081/v1" not in readme:
             raise AssertionError(readme)
