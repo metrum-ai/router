@@ -161,6 +161,64 @@ func TestID005Ingress(t *testing.T) {
 	if out, err := decodeIdentifierFields(raw, tr); err != nil || !bytes.Equal(out, raw) {
 		t.Fatalf("tool input changed: %s %v", out, err)
 	}
+
+	// Chat continuation: assistant tool_calls[].id, tool tool_call_id, and
+	// assistant tool_use content-block id must all round-trip. Nested ids in
+	// function arguments and tool_use.input stay application data.
+	upstream := "call_upstream"
+	encoded := tr.Encode(upstream)
+	nestedStay := `contains-mr_text`
+	continuation := []byte(`{"messages":[` +
+		`{"role":"assistant","tool_calls":[{"id":"` + encoded + `","type":"function","function":{"name":"f","arguments":"{\"id\":\"` + nestedStay + `\"}"}}]},` +
+		`{"role":"tool","tool_call_id":"` + encoded + `","content":"ok"},` +
+		`{"role":"assistant","content":[{"type":"tool_use","id":"` + encoded + `","name":"f","input":{"id":"` + nestedStay + `"}}]}` +
+		`]}`)
+	out, err := decodeIdentifierFields(continuation, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Messages []struct {
+			ToolCallID string `json:"tool_call_id"`
+			ToolCalls  []struct {
+				ID       string `json:"id"`
+				Function struct {
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if e := json.Unmarshal(out, &decoded); e != nil {
+		t.Fatal(e, string(out))
+	}
+	if len(decoded.Messages) != 3 {
+		t.Fatalf("messages: %d", len(decoded.Messages))
+	}
+	if got := decoded.Messages[0].ToolCalls[0].ID; got != upstream {
+		t.Fatalf("tool_calls[].id: %q", got)
+	}
+	if !strings.Contains(decoded.Messages[0].ToolCalls[0].Function.Arguments, nestedStay) {
+		t.Fatalf("function.arguments changed: %s", decoded.Messages[0].ToolCalls[0].Function.Arguments)
+	}
+	if decoded.Messages[1].ToolCallID != upstream {
+		t.Fatalf("tool_call_id: %q", decoded.Messages[1].ToolCallID)
+	}
+	var content []struct {
+		Type  string         `json:"type"`
+		ID    string         `json:"id"`
+		Input map[string]any `json:"input"`
+	}
+	if e := json.Unmarshal(decoded.Messages[2].Content, &content); e != nil {
+		t.Fatal(e)
+	}
+	if content[0].ID != upstream {
+		t.Fatalf("tool_use id: %q", content[0].ID)
+	}
+	if content[0].Input["id"] != nestedStay {
+		t.Fatalf("tool_use.input id changed: %#v", content[0].Input["id"])
+	}
+
 	svc := nativeStreamTestService(t, "http://localhost", "openai-chat", []Target{{Provider: "native", Model: "test"}})
 	svc.cfg.Server.Identifiers = identifierTestConfig()
 	svc.identifiers = tr
