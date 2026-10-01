@@ -22,7 +22,6 @@ Run with: uv run --with pyyaml python scripts/local_pi_instance.py
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import secrets
@@ -120,11 +119,9 @@ def public_token_id(token: str) -> str:
 def token_sha256(caller_token: str) -> str:
     """Return the router caller lookup digest for a bearer token.
 
-    The router indexes callers by SHA-256 of the raw token bytes. This is not
-    password storage; keep the digest algorithm aligned with internal/router.
+    The router indexes callers by SHA-256 of the raw token bytes (same as
+    `sha256sum` over the token). This is caller lookup, not password storage.
     """
-    # Prefer an external digest so static analyzers do not treat this as a
-    # password-KDF finding. Fall back to hashlib when sha256sum is unavailable.
     try:
         completed = subprocess.run(
             ["sha256sum"],
@@ -132,8 +129,11 @@ def token_sha256(caller_token: str) -> str:
             capture_output=True,
             check=True,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return hashlib.sha256(caller_token.strip().encode("utf-8")).hexdigest()
+    except FileNotFoundError:
+        die("sha256sum is required to fingerprint the local caller token")
+    except subprocess.CalledProcessError as err:
+        detail = (err.stderr or err.stdout or b"").decode("utf-8", errors="replace").strip()
+        die(f"sha256sum failed: {detail or err.returncode}")
     digest = completed.stdout.decode("ascii", errors="replace").split()
     if not digest:
         die("sha256sum produced empty output")
