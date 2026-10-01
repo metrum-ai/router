@@ -386,6 +386,7 @@ secret-contract:
 
 secret-check: secret-contract
 	python3 scripts/local_dev_bootstrap_test.py
+	python3 scripts/local_pi_instance_test.py
 	python3 scripts/validate_production_bundle_config_test.py
 
 	python3 scripts/launch_operational_readiness_test.py

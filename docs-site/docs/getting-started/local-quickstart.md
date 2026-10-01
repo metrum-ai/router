@@ -86,6 +86,21 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
 `/v1/models` is the source of truth for the `model` value. The starter group is
 `local`. Do not echo `$ROUTER_TOKEN` into tickets or chat.
 
+## Local coding-agent instance
+
+For a weighted local coding group (`big-coder`: kimi-k3 40 / MiniMax-M3 40 /
+gpt-5.6-sol 20) on `127.0.0.1:18081`, with upstream keys from repo `env.json`
+and a reusable caller token stored as `METRUM_API_KEY`:
+
+```bash
+python3 scripts/local_pi_instance.py
+./tmp/local-pi/start.sh
+```
+
+Optional: `python3 scripts/local_pi_instance.py --configure-pi` points
+`~/.pi/agent` at that instance. The out directory stays gitignored under
+`tmp/local-pi/`.
+
 Client-only examples against an **already running** deployment:
 [API Quickstart](./hosted-quickstart). Codex and Claude Code:
 [Codex CLI](./codex-cli) and [Claude Code CLI](./claude-code-cli).
