@@ -20,6 +20,13 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Concurrent rewrite-mode stability (v4.0.2)
+
+v4.0.2 replaces the abandoned `secure-io/siv-go` AES-SIV library with in-tree
+pure-Go AES-SIV-CMAC so `identifiers.mode: rewrite` no longer SIGSEGV under
+concurrent streaming tool-call id rewrite. No config change. Existing `mr_`
+tokens remain valid. No usage-database migration.
+
 ## Identifier rewrite and optional DB config (v4.0.1)
 
 v4.0.1 fixes tool-call identifier decode under `identifiers.mode: rewrite` so

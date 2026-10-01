@@ -14,6 +14,50 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.0.2 - 2026-10-01
+
+### Highlights
+
+- Rewrite-mode routers no longer crash under concurrent streaming tool-call
+  id rewrite: abandoned `secure-io/siv-go` is replaced with in-tree pure-Go
+  AES-SIV-CMAC (`internal/aessiv`). Existing `mr_` tokens stay valid (same
+  RFC 5297 wire format). No config change.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Identifiers | Concurrent SSE tool-id rewrite no longer SIGSEGV under rewrite mode |
+| Config | Unchanged |
+| Database | No usage-database migration |
+| Packages | Same binary and Docker package layout as v4.0.1 |
+
+### Caller Impact
+
+- Request and response shapes are unchanged from v4.0.1.
+- Prior `mr_` tool-call ids continue to decode.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v4.0.2-linux-<arch>.tar.gz` (and the Docker
+   package if used) from the GitHub Release; verify against `SHA256SUMS` /
+   `release-artifacts.json`.
+2. Replace the package or image; keep existing config.
+3. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide).
+
+### Validation
+
+- `/readyz` and `/version` report v4.0.2
+- One authenticated `/v1/models` call succeeds
+- If rewrite mode is enabled: concurrent Chat / Anthropic tool streams
+  complete without router process exit; prior `mr_` tool-call ids still decode
+
+### Rollback
+
+Roll back to GitHub Release **v4.0.0** (v4.0.1 was tagged but never published
+as a GitHub Release). No usage-database restore is required for file-mode
+installs.
+
 ## v4.0.1 - 2026-10-01
 
 ### Highlights

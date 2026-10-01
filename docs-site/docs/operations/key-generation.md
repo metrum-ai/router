@@ -83,8 +83,8 @@ When `server.config_source.mode` is `database`, the active configuration set in
 the `router_config` scope is the serving source of truth. `config.yaml` is then
 an import/export/bootstrap artifact only; the running router reads the active
 relational projection, not a YAML file. See
-[`docs/CONFIG_CONTROL_PLANE.md`](../../CONFIG_CONTROL_PLANE.md) for the full
-contract.
+[`docs/CONFIG_CONTROL_PLANE.md`](https://github.com/metrum-ai/router/blob/main/docs/CONFIG_CONTROL_PLANE.md)
+for the full contract.
 
 In DB-backed mode, caller lifecycle is performed against the active set and
 takes effect without a reload or restart:
