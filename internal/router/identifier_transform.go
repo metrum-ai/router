@@ -11,10 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
-	siv "github.com/secure-io/siv-go"
+	siv "github.com/metrum-ai/router/internal/aessiv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -52,6 +53,7 @@ type IdentifierKeyConfig struct {
 	ValidUntil time.Time `yaml:"valid_until"`
 }
 type identifierTransform struct {
+	mu                          sync.Mutex
 	current, previous           cipher.AEAD
 	currentID, previousID       string
 	currentEpoch, previousEpoch string
@@ -131,10 +133,15 @@ func newIdentifierTransform(c IdentifierConfig) (IdentifierTransform, error) {
 }
 func (t *identifierTransform) KeyIDs() (string, string) { return t.currentID, t.previousID }
 func (t *identifierTransform) Encode(id string) string {
+	// AES-SIV CMAC keeps mutable MAC state; serialize Seal/Open on the shared AEAD.
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	prefix := "mr_" + t.currentEpoch
 	return prefix + base64.RawURLEncoding.EncodeToString(t.current.Seal(nil, nil, []byte(id), []byte(prefix)))
 }
 func (t *identifierTransform) Decode(id string) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if len(id) < 5 || !strings.HasPrefix(id, "mr_") || !strings.Contains(identifierEpochAlphabet, id[3:4]) {
 		return "", errors.New("id-decode-malformed")
 	}

@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.8
 
 require (
+	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1
 	github.com/casbin/casbin/v2 v2.134.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d
@@ -12,7 +13,6 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/redis/go-redis/v9 v9.21.0
-	github.com/secure-io/siv-go v0.0.0-20180922214919-5ff40651e2c4
 	golang.org/x/crypto v0.56.0
 	golang.org/x/oauth2 v0.36.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -21,7 +21,6 @@ require (
 )
 
 require (
-	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.6.1 // indirect
 	github.com/casbin/govaluate v1.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
