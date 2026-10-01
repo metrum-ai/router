@@ -119,38 +119,55 @@ func decodeIdentifierFields(raw []byte, t IdentifierTransform) ([]byte, error) {
 		return raw, nil
 	} // Ordinary request validation handles malformed JSON.
 	var changes []idReplacement
-	var walk func(*idJSONNode) error
-	walk = func(n *idJSONNode) error {
+	decodeField := func(v *idJSONNode) error {
+		if v == nil || !strings.HasPrefix(v.text, "mr_") {
+			return nil
+		}
+		id, e := t.Decode(v.text)
+		if e != nil {
+			return e
+		}
+		b, _ := json.Marshal(id)
+		changes = append(changes, idReplacement{v.start, v.end, b})
+		return nil
+	}
+	// parentKey is the array key that owns this object (messages, content, tool_calls).
+	var walk func(n *idJSONNode, parentKey string) error
+	walk = func(n *idJSONNode, parentKey string) error {
 		for k, v := range n.fields {
 			switch k {
 			case "tool_call_id", "tool_use_id", "call_id", "previous_response_id":
-				if strings.HasPrefix(v.text, "mr_") {
-					id, e := t.Decode(v.text)
-					if e != nil {
+				if e := decodeField(v); e != nil {
+					return e
+				}
+			case "id":
+				// Restore only OpenAI Chat tool_calls[].id and Anthropic tool_use
+				// content-block id. Leave function arguments, tool input, schemas,
+				// and arbitrary id fields alone.
+				if parentKey == "tool_calls" || (parentKey == "content" && n.field("type").value() == "tool_use") {
+					if e := decodeField(v); e != nil {
 						return e
 					}
-					b, _ := json.Marshal(id)
-					changes = append(changes, idReplacement{v.start, v.end, b})
 				}
 			}
 			// Recurse only through protocol containers, never tool arguments,
 			// metadata, schemas, or arbitrary user-provided JSON objects.
 			if k == "messages" || k == "content" || k == "tool_calls" || (k == "input" && n == root) {
 				if v.items != nil {
-					if e := walk(v); e != nil {
+					if e := walk(v, k); e != nil {
 						return e
 					}
 				}
 			}
 		}
 		for _, v := range n.items {
-			if e := walk(v); e != nil {
+			if e := walk(v, parentKey); e != nil {
 				return e
 			}
 		}
 		return nil
 	}
-	if e = walk(root); e != nil {
+	if e = walk(root, ""); e != nil {
 		return nil, e
 	}
 	if len(changes) == 0 {
