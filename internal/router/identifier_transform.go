@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode"
 
-	siv "github.com/secure-io/siv-go"
+	siv "github.com/metrum-ai/router/internal/aessiv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -133,8 +133,7 @@ func newIdentifierTransform(c IdentifierConfig) (IdentifierTransform, error) {
 }
 func (t *identifierTransform) KeyIDs() (string, string) { return t.currentID, t.previousID }
 func (t *identifierTransform) Encode(id string) string {
-	// secure-io/siv-go's amd64 CMAC AEAD keeps mutable hash state and is not
-	// safe for concurrent Seal/Open on one instance.
+	// AES-SIV CMAC keeps mutable MAC state; serialize Seal/Open on the shared AEAD.
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	prefix := "mr_" + t.currentEpoch

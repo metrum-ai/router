@@ -58,9 +58,8 @@ func TestID001RoundTrip(t *testing.T) {
 }
 
 func TestID001ConcurrentEncodeDecode(t *testing.T) {
-	// secure-io/siv-go amd64 CMAC panics under concurrent Seal on one AEAD;
-	// the shared transform must serialize crypto. This used to crash the
-	// local rewrite-mode router during parallel SSE tool-call rewrites.
+	// Shared AES-SIV AEAD must be serialized; concurrent rewrite used to SIGSEGV
+	// with secure-io/siv-go's amd64 assembly path under load.
 	tr := testIdentifierTransform(t)
 	const workers = 32
 	const iters = 500
