@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -52,6 +53,7 @@ type IdentifierKeyConfig struct {
 	ValidUntil time.Time `yaml:"valid_until"`
 }
 type identifierTransform struct {
+	mu                          sync.Mutex
 	current, previous           cipher.AEAD
 	currentID, previousID       string
 	currentEpoch, previousEpoch string
@@ -131,10 +133,16 @@ func newIdentifierTransform(c IdentifierConfig) (IdentifierTransform, error) {
 }
 func (t *identifierTransform) KeyIDs() (string, string) { return t.currentID, t.previousID }
 func (t *identifierTransform) Encode(id string) string {
+	// secure-io/siv-go's amd64 CMAC AEAD keeps mutable hash state and is not
+	// safe for concurrent Seal/Open on one instance.
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	prefix := "mr_" + t.currentEpoch
 	return prefix + base64.RawURLEncoding.EncodeToString(t.current.Seal(nil, nil, []byte(id), []byte(prefix)))
 }
 func (t *identifierTransform) Decode(id string) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if len(id) < 5 || !strings.HasPrefix(id, "mr_") || !strings.Contains(identifierEpochAlphabet, id[3:4]) {
 		return "", errors.New("id-decode-malformed")
 	}

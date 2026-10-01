@@ -56,6 +56,35 @@ func TestID001RoundTrip(t *testing.T) {
 		t.Fatal("base64 key parity", e)
 	}
 }
+
+func TestID001ConcurrentEncodeDecode(t *testing.T) {
+	// secure-io/siv-go amd64 CMAC panics under concurrent Seal on one AEAD;
+	// the shared transform must serialize crypto. This used to crash the
+	// local rewrite-mode router during parallel SSE tool-call rewrites.
+	tr := testIdentifierTransform(t)
+	const workers = 32
+	const iters = 500
+	errCh := make(chan error, workers)
+	for w := 0; w < workers; w++ {
+		go func(w int) {
+			for i := 0; i < iters; i++ {
+				id := strings.Repeat("x", 8) + string(rune('A'+(w%26))) + string(rune('0'+(i%10)))
+				enc := tr.Encode(id)
+				got, err := tr.Decode(enc)
+				if err != nil || got != id {
+					errCh <- err
+					return
+				}
+			}
+			errCh <- nil
+		}(w)
+	}
+	for w := 0; w < workers; w++ {
+		if err := <-errCh; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 func TestID002Rotation(t *testing.T) {
 	old := testIdentifierTransform(t)
 	c := identifierTestConfig()
