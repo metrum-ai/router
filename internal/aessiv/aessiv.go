@@ -149,7 +149,14 @@ func dbl(b *[16]byte) {
 }
 
 func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if total := len(in) + n; cap(in) >= total {
+	if n < 0 {
+		panic("aessiv: negative append size")
+	}
+	if len(in) > int(^uint(0)>>1)-n {
+		panic("aessiv: append size overflow")
+	}
+	total := len(in) + n
+	if cap(in) >= total {
 		head = in[:total]
 	} else {
 		head = make([]byte, total)
