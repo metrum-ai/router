@@ -136,10 +136,10 @@ python3 scripts/validate_package_contents.py --allowlist scripts/package_docs_al
 ```
 
 Bind the complete four-artifact set to the approved version, full commit ID,
-and one UTC build timestamp before upload. This reruns package validation and
-writes deterministic `dist/SHA256SUMS` plus `dist/release-artifacts.json` with
-filename, byte size, SHA-256, package family, platform, validation result, and
-reproducible commands:
+and one UTC build timestamp before a full local handoff. This reruns package
+validation and writes deterministic `dist/SHA256SUMS` plus
+`dist/release-artifacts.json` with filename, byte size, SHA-256, package
+family, platform, validation result, and reproducible commands:
 
 ```bash
 export VERSION=vX.Y.Z
@@ -150,13 +150,16 @@ make release-artifact-inventory
 (cd dist && sha256sum --check SHA256SUMS)
 ```
 
-Use the same three metadata values for both build commands. The inventory
-fails unless exactly one binary and one Docker package exist for each of
-`linux/amd64` and `linux/arm64`. Keep these local files as candidate evidence;
-publishing them, adding release URLs, signing a tag, and creating the public
-GitHub Release remain release-authority actions. After publication, download
-every asset into an empty directory, run `sha256sum --check SHA256SUMS`, and
-record the public URL and result in the release evidence.
+Use the same three metadata values for both build commands. The default
+inventory fails unless exactly one binary and one Docker package exist for
+each of `linux/amd64` and `linux/arm64`. The tagged GitHub Actions release on
+the self-hosted `router` pool publishes **binary packages only** (`make
+package` plus `release_artifact_inventory.py --set binary`); it does not run
+Docker. Keep these local files as candidate evidence; publishing them, adding
+release URLs, signing a tag, and creating the public GitHub Release remain
+release-authority actions. After publication, download every asset into an
+empty directory, run `sha256sum --check SHA256SUMS`, and record the public URL
+and result in the release evidence.
 
 Release archival uses restic against an operator-configured backup repository.
 Set `RESTIC_REPOSITORY` or `RESTIC_REPO_HOST` plus `RESTIC_REPO_PATH` (with

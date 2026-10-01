@@ -25,11 +25,19 @@ ROOT = Path(__file__).resolve().parents[1]
 CANONICAL_ARCHIVE_PREFIX = "metrum-ai-router"
 assert CANONICAL_ARCHIVE_PREFIX == product.PRODUCT_SLUG
 PACKAGE_RE = product.RELEASE_ARCHIVE_RE
-REQUIRED = {
+REQUIRED_FULL = {
     ("binary", "amd64"),
     ("binary", "arm64"),
     ("docker", "amd64"),
     ("docker", "arm64"),
+}
+REQUIRED_BINARY = {
+    ("binary", "amd64"),
+    ("binary", "arm64"),
+}
+REQUIRED_SETS = {
+    "full": REQUIRED_FULL,
+    "binary": REQUIRED_BINARY,
 }
 COMMIT_RE = re.compile(r"^[0-9a-f]{7,64}$")
 BUILD_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
@@ -51,7 +59,12 @@ def parse_package(path: Path) -> tuple[str, str, str]:
     return match.group("version"), kind, match.group("arch")
 
 
-def select_complete_set(dist_dir: Path, version: str) -> list[tuple[Path, str, str]]:
+def select_complete_set(
+    dist_dir: Path,
+    version: str,
+    required: set[tuple[str, str]] | None = None,
+) -> list[tuple[Path, str, str]]:
+    required_keys = required if required is not None else REQUIRED_FULL
     selected: dict[tuple[str, str], Path] = {}
     errors: list[str] = []
     for path in sorted(dist_dir.glob(f"{product.PKG_NAME}-*.tar.gz")):
@@ -63,15 +76,17 @@ def select_complete_set(dist_dir: Path, version: str) -> list[tuple[Path, str, s
         if found_version != version:
             continue
         key = (kind, arch)
+        if key not in required_keys:
+            continue
         if key in selected:
             errors.append(f"duplicate {kind} linux-{arch} artifact for {version}")
         selected[key] = path
-    missing = REQUIRED - set(selected)
+    missing = required_keys - set(selected)
     if missing:
         errors.append("missing artifacts: " + ", ".join(f"{kind} linux-{arch}" for kind, arch in sorted(missing)))
     if errors:
         raise ValueError("; ".join(errors))
-    return [(selected[key], key[0], key[1]) for key in sorted(REQUIRED)]
+    return [(selected[key], key[0], key[1]) for key in sorted(required_keys)]
 
 
 def atomic_write(path: Path, content: str) -> None:
@@ -118,9 +133,14 @@ def create_inventory(
     build_date: str,
     allowlist: Path,
     release_url: str | None,
+    artifact_set: str = "full",
 ) -> tuple[dict[str, object], str]:
     validate_metadata(version, commit, build_date)
-    selected = select_complete_set(dist_dir, version)
+    try:
+        required = REQUIRED_SETS[artifact_set]
+    except KeyError as exc:
+        raise ValueError(f"unknown artifact set: {artifact_set}") from exc
+    selected = select_complete_set(dist_dir, version, required=required)
     run_content_validator([path for path, _, _ in selected], allowlist)
     artifacts: list[dict[str, object]] = []
     checksum_lines: list[str] = []
@@ -138,15 +158,26 @@ def create_inventory(
         if release_url:
             item["release_url"] = release_url.rstrip("/") + "/" + path.name
         artifacts.append(item)
+    if artifact_set == "binary":
+        build_commands = [
+            f"VERSION={version} COMMIT={commit} BUILD_DATE={build_date} make package-all",
+            (
+                f"VERSION={version} COMMIT={commit} BUILD_DATE={build_date} "
+                "make release-artifact-inventory RELEASE_ARTIFACT_SET=binary"
+            ),
+        ]
+    else:
+        build_commands = [
+            f"VERSION={version} COMMIT={commit} BUILD_DATE={build_date} make package-all package-docker-all",
+            f"VERSION={version} COMMIT={commit} BUILD_DATE={build_date} make release-artifact-inventory",
+        ]
     inventory: dict[str, object] = {
         "schema": f"{product.PRODUCT_SLUG}.release-artifact-inventory/v1",
         "version": version,
         "commit": commit,
         "build_date": build_date,
-        "reproducible_commands": [
-            f"VERSION={version} COMMIT={commit} BUILD_DATE={build_date} make package-all package-docker-all",
-            f"VERSION={version} COMMIT={commit} BUILD_DATE={build_date} make release-artifact-inventory",
-        ],
+        "artifact_set": artifact_set,
+        "reproducible_commands": build_commands,
         "artifacts": artifacts,
     }
     return inventory, "\n".join(checksum_lines) + "\n"
@@ -158,6 +189,13 @@ def main() -> int:
     parser.add_argument("--version", default=os.environ.get("VERSION", ""))
     parser.add_argument("--commit", default=os.environ.get("COMMIT", ""))
     parser.add_argument("--build-date", default=os.environ.get("BUILD_DATE", ""))
+    parser.add_argument(
+        "--set",
+        dest="artifact_set",
+        choices=sorted(REQUIRED_SETS),
+        default=os.environ.get("RELEASE_ARTIFACT_SET", "full"),
+        help="full = binary+docker (local handoff); binary = GitHub Actions self-hosted release",
+    )
     parser.add_argument("--allowlist", type=Path, default=ROOT / "scripts/package_docs_allowlist.txt")
     parser.add_argument("--release-url", help="Optional public asset URL prefix; omit before publication")
     parser.add_argument("--inventory", type=Path)
@@ -169,7 +207,13 @@ def main() -> int:
     checksums_path = args.checksums or dist_dir / "SHA256SUMS"
     try:
         inventory, checksums = create_inventory(
-            dist_dir, args.version, args.commit, args.build_date, args.allowlist, args.release_url
+            dist_dir,
+            args.version,
+            args.commit,
+            args.build_date,
+            args.allowlist,
+            args.release_url,
+            artifact_set=args.artifact_set,
         )
     except (ValueError, subprocess.CalledProcessError) as exc:
         print(f"release artifact inventory failed: {exc}", file=sys.stderr)

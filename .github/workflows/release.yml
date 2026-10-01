@@ -50,15 +50,19 @@ jobs:
           fi
       - name: Build packages
         run: |
+          # Binary packages only: the self-hosted router runner pool has no
+          # Docker daemon (and must not mount the host socket). Build customer
+          # Docker packages on a Docker-capable host with `make package-docker`.
           export VERSION="${{ steps.version.outputs.tag }}"
-          make package package-docker
+          make package
       - name: Inventory and checksums
         run: |
           python3 scripts/release_artifact_inventory.py \
             --dist-dir dist \
             --version "${{ steps.version.outputs.tag }}" \
             --commit "$(git rev-parse HEAD)" \
-            --build-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            --build-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --set binary
       - name: Upload inventory-validated release assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

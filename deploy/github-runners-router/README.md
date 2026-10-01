@@ -50,8 +50,10 @@ Tokens expire in about an hour. If containers loop on registration errors, run `
 - **Privileged** containers so nested `bubblewrap` user namespaces work for LRP.
 - **AppArmor is not required**; LRP CI uses bubblewrap namespaces only.
 - **Ephemeral runners**: one job per registration life; compose `restart: unless-stopped` brings a fresh listener back.
+- **No Docker-in-Docker / host socket**: do not mount `/var/run/docker.sock`. Release CI publishes binary packages only (`make package`); build `make package-docker` on a Docker-capable host.
 
 ## Do not
 
 - Do not start the old bare-metal `~/github-runners-router` listener again with the same labels (jobs will split / fight).
+- Do not remount the host Docker socket into these runners.
 - Leave `~/github-runners-bench-cli` and `~/github-runners-all-smi` alone; they are separate pools.

@@ -23,7 +23,8 @@ x-runner: &runner
     DISABLE_AUTO_UPDATE: "true"
     RUNNER_WORKDIR: /tmp/runner-work
   volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
+    # No docker.sock: release and CI jobs on this pool must not use Docker.
+    # Build customer Docker packages on a Docker-capable host instead.
     - runner-tools:/opt/hostedtoolcache
 
 services:
