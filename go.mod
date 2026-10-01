@@ -6,7 +6,7 @@ toolchain go1.26.8
 
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1
-	github.com/casbin/casbin/v2 v2.134.0
+	github.com/casbin/casbin/v2 v2.135.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dop251/goja v0.0.0-20260607120635-348e6bea910d
 	github.com/evanw/esbuild v0.28.1
