@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --with pyyaml python
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
 """Create or refresh a local weighted coding-agent router instance.
 
 Default shape matches the local pi setup:
-  listen 127.0.0.1:18081
+  listen 0.0.0.0:18081
   group big-coder (weighted)
     40% kimi / kimi-k3
     40% minimax / MiniMax-M3
@@ -16,6 +16,7 @@ The local caller token is stored as METRUM_API_KEY (file + out-dir env.json)
 and reused when already present unless --rotate-key is set.
 
 Output stays under a gitignored directory (default tmp/local-pi).
+Run with: uv run --with pyyaml python scripts/local_pi_instance.py
 """
 
 from __future__ import annotations
@@ -42,6 +43,16 @@ GROUP = "big-coder"
 def die(message: str, code: int = 2) -> None:
     print(message, file=sys.stderr)
     raise SystemExit(code)
+
+
+def client_listen(listen: str) -> str:
+    """Map wildcard bind addresses to a loopback client URL host."""
+    host, sep, port = listen.rpartition(":")
+    if not sep:
+        return listen
+    if host in ("0.0.0.0", "::", "[::]"):
+        return f"127.0.0.1:{port}"
+    return listen
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> str:
@@ -324,7 +335,7 @@ def write_yaml(path: Path, data: dict) -> None:
     try:
         import yaml  # type: ignore
     except ImportError:
-        die("PyYAML is required (python3 -c 'import yaml')")
+        die("PyYAML is required (uv run --with pyyaml python scripts/local_pi_instance.py)")
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
@@ -396,13 +407,14 @@ def write_start_script(out_dir: Path, repo_root: Path) -> None:
 
 
 def write_readme(out_dir: Path, listen: str) -> None:
-    base = f"http://{listen}/v1"
+    base = f"http://{client_listen(listen)}/v1"
     (out_dir / "README.txt").write_text(
         "\n".join(
             [
                 "Local weighted coding-agent router instance.",
                 "",
                 f"Listen: {listen}",
+                f"Client base: {base}",
                 "Group: big-coder (weighted)",
                 "  40% kimi / kimi-k3",
                 "  40% minimax / MiniMax-M3",
@@ -414,7 +426,8 @@ def write_readme(out_dir: Path, listen: str) -> None:
                 "Also stored as METRUM_API_KEY in env.json (not printed by the script).",
                 "",
                 "Start:",
-                f"  {out_dir / 'start.sh'}",
+                "  make local-router",
+                f"  # or: {out_dir / 'start.sh'}",
                 "",
                 "Smoke:",
                 f'  export METRUM_API_KEY="$(tr -d \'\\n\' < {out_dir / "METRUM_API_KEY"})"',
@@ -422,7 +435,7 @@ def write_readme(out_dir: Path, listen: str) -> None:
                 "",
                 "Pi (optional):",
                 "  unset PI_CODING_AGENT_DIR",
-                "  python3 scripts/local_pi_instance.py --configure-pi",
+                "  make local-router-configure-pi",
                 "",
             ]
         ),
@@ -437,7 +450,7 @@ def configure_pi(out_dir: Path, listen: str) -> None:
     if not token:
         die("METRUM_API_KEY file is empty; run without --configure-pi first")
     write_private(agent_dir / "metrum-api-key", token)
-    base = f"http://{listen}/v1"
+    base = f"http://{client_listen(listen)}/v1"
     models = {
         "providers": {
             "metrum": {
@@ -502,8 +515,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--listen",
-        default="127.0.0.1:18081",
-        help="router listen address (default: 127.0.0.1:18081)",
+        default="0.0.0.0:18081",
+        help="router listen address (default: 0.0.0.0:18081)",
     )
     parser.add_argument(
         "--smartrouterctl",

@@ -50,6 +50,8 @@ required):
 
 ```bash
 python3 scripts/local_dev_bootstrap.py --out-dir tmp/local-dev
+# Weighted coding-agent local router (uv; keys from env.json):
+# make local-router
 make test-fast
 make test
 make docs-qa

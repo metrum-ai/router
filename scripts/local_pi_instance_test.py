@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --with pyyaml python
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
@@ -9,15 +9,22 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
-import sys
 import tempfile
 import textwrap
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "local_pi_instance.py"
+
+
+def uv_python(*args: str) -> list[str]:
+    uv = shutil.which("uv")
+    if not uv:
+        raise AssertionError("uv is required")
+    return [uv, "run", "--with", "pyyaml", "python", *args]
 
 
 def write_executable(path: Path, body: str) -> None:
@@ -57,8 +64,7 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             """,
         )
         first = subprocess.run(
-            [
-                sys.executable,
+            uv_python(
                 str(SCRIPT),
                 "--out-dir",
                 str(out),
@@ -68,7 +74,7 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
                 str(env_json),
                 "--smartrouterctl",
                 str(root / "smartrouterctl"),
-            ],
+            ),
             capture_output=True,
             text=True,
         )
@@ -77,6 +83,8 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         summary = json.loads(first.stdout)
         if summary.get("token_reused") is not False:
             raise AssertionError(summary)
+        if summary.get("listen") != "0.0.0.0:18081":
+            raise AssertionError(summary.get("listen"))
         token = (out / "METRUM_API_KEY").read_text(encoding="utf-8").strip()
         if token != "rtr_metrum_local-dev_example-project_dev_kdemo_SECRET":
             raise AssertionError(token)
@@ -91,6 +99,8 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         import yaml  # type: ignore
 
         cfg = yaml.safe_load((out / "config.yaml").read_text(encoding="utf-8"))
+        if cfg["server"]["listen"] != "0.0.0.0:18081":
+            raise AssertionError(cfg["server"]["listen"])
         targets = cfg["models"]["big-coder"]["targets"]
         weights = [(t["provider"], t["model_ref"], t["weight"]) for t in targets]
         if weights != [("kimi", "kimi-k3", 40), ("minimax", "m3", 40), ("openai", "gpt-5.6-sol", 20)]:
@@ -100,10 +110,12 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         want_hash = hashlib.sha256(token.encode()).hexdigest()
         if cfg["callers"][0]["token_sha256"] != want_hash:
             raise AssertionError(cfg["callers"][0]["token_sha256"])
+        readme = (out / "README.txt").read_text(encoding="utf-8")
+        if "http://127.0.0.1:18081/v1" not in readme:
+            raise AssertionError(readme)
 
         second = subprocess.run(
-            [
-                sys.executable,
+            uv_python(
                 str(SCRIPT),
                 "--out-dir",
                 str(out),
@@ -113,7 +125,7 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
                 str(env_json),
                 "--smartrouterctl",
                 str(root / "smartrouterctl"),
-            ],
+            ),
             capture_output=True,
             text=True,
         )
@@ -136,8 +148,7 @@ def test_missing_upstream_keys_fails() -> None:
         for key in ("MOONSHOT_API_KEY", "MINIMAX_API_KEY", "OPENAI_API_KEY", "METRUM_API_KEY"):
             env.pop(key, None)
         result = subprocess.run(
-            [
-                sys.executable,
+            uv_python(
                 str(SCRIPT),
                 "--out-dir",
                 str(out),
@@ -145,7 +156,7 @@ def test_missing_upstream_keys_fails() -> None:
                 str(ROOT),
                 "--env-json",
                 str(env_json),
-            ],
+            ),
             env=env,
             capture_output=True,
             text=True,
