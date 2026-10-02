@@ -6,10 +6,9 @@
 
 Default shape matches the local pi setup:
   listen 0.0.0.0:18081
-  group big-coder (weighted)
-    40% kimi / kimi-k3
-    40% minimax / MiniMax-M3
-    20% openai / gpt-5.6-sol (Responses via chat_to_responses)
+  group big-coder only (weighted)
+    70% fireworks / accounts/fireworks/models/deepseek-v4p1-flash
+    30% openai / gpt-5.6-sol (Responses via chat_to_responses)
 
 Upstream keys are copied from a source env.json (repo env.json by default).
 The local caller token is stored as METRUM_API_KEY (file + out-dir env.json)
@@ -32,7 +31,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-UPSTREAM_KEYS = ("MOONSHOT_API_KEY", "MINIMAX_API_KEY", "OPENAI_API_KEY")
+UPSTREAM_KEYS = ("FIREWORKS_API_KEY", "OPENAI_API_KEY")
 CALLER_ID = "local-dev-example-project-dev"
 OWNER_USER = "local-dev"
 PROJECT = "example-project"
@@ -221,54 +220,29 @@ def build_config(
             }
         ],
         "providers": {
-            "kimi": {
-                "base_url": "https://api.moonshot.ai/v1",
+            "fireworks": {
+                "base_url": "https://api.fireworks.ai/inference/v1",
                 "dialect": "openai-chat",
-                "api_key": "${MOONSHOT_API_KEY}",
-                "api_key_env": "MOONSHOT_API_KEY",
-                "key_id": "moonshot-kimi-local",
+                "auth_scheme": "bearer",
+                "api_key": "${FIREWORKS_API_KEY}",
+                "api_key_env": "FIREWORKS_API_KEY",
+                "key_id": "fireworks-local",
                 "models": {
-                    "kimi-k3": {
-                        "model": "kimi-k3",
-                        "tier": "frontier",
+                    "deepseek-v4p1-flash": {
+                        "model": "accounts/fireworks/models/deepseek-v4p1-flash",
+                        "tier": "coding",
                         "context_tokens": 1000000,
                         "input_modalities": ["text"],
                         "output_modalities": ["text"],
-                        "input_price_per_million_usd": 3.0,
-                        "output_price_per_million_usd": 15.0,
-                        "pricing_source": "https://platform.kimi.ai/",
-                        "pricing_updated_at": "2026-07-19",
+                        "input_price_per_million_usd": 0.22,
+                        "output_price_per_million_usd": 0.66,
+                        "pricing_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash",
+                        "pricing_updated_at": "2026-10-01",
                         "request_shape_support": {
                             "supported_inbound_dialects": ["openai-chat"],
                         },
                         "tool_support": {
-                            "openai_chat": ["tools", "tool_choice", "structured_outputs"],
-                        },
-                    }
-                },
-            },
-            "minimax": {
-                "base_url": "https://api.minimax.io/v1",
-                "dialect": "openai-chat",
-                "auth_scheme": "bearer",
-                "api_key": "${MINIMAX_API_KEY}",
-                "api_key_env": "MINIMAX_API_KEY",
-                "key_id": "minimax-local",
-                "models": {
-                    "m3": {
-                        "model": "MiniMax-M3",
-                        "tier": "heavy",
-                        "input_price_per_million_usd": 0.3,
-                        "output_price_per_million_usd": 1.2,
-                        "input_modalities": ["text"],
-                        "output_modalities": ["text"],
-                        "pricing_source": "https://platform.minimax.io/docs/pricing/overview",
-                        "pricing_updated_at": "2026-06-17",
-                        "request_shape_support": {
-                            "supported_inbound_dialects": ["openai-chat"],
-                        },
-                        "tool_support": {
-                            "openai_chat": ["tools", "tool_choice"],
+                            "openai_chat": ["tools"],
                         },
                     }
                 },
@@ -311,16 +285,14 @@ def build_config(
                 "strategy": "weighted",
                 "targets": [
                     {
-                        "provider": "kimi",
-                        "model_ref": "kimi-k3",
-                        "weight": 40,
-                        "default_openai_chat_thinking": {"type": "disabled"},
+                        "provider": "fireworks",
+                        "model_ref": "deepseek-v4p1-flash",
+                        "weight": 70,
                     },
-                    {"provider": "minimax", "model_ref": "m3", "weight": 40},
                     {
                         "provider": "openai",
                         "model_ref": "gpt-5.6-sol",
-                        "weight": 20,
+                        "weight": 30,
                         "bridges": {
                             "chat_to_responses": {
                                 "enabled": True,
@@ -450,10 +422,9 @@ def write_readme(out_dir: Path, listen: str) -> None:
                 "",
                 f"Listen: {listen}",
                 f"Client base: {base}",
-                "Group: big-coder (weighted)",
-                "  40% kimi / kimi-k3",
-                "  40% minimax / MiniMax-M3",
-                "  20% openai / gpt-5.6-sol (chat_to_responses)",
+                "Group: big-coder (weighted; only group)",
+                "  70% fireworks / accounts/fireworks/models/deepseek-v4p1-flash",
+                "  30% openai / gpt-5.6-sol (chat_to_responses)",
                 "",
                 "Caller token files (mode 0600):",
                 f"  {out_dir / 'METRUM_API_KEY'}",
@@ -501,7 +472,7 @@ def configure_pi(out_dir: Path, listen: str) -> None:
                 "models": [
                     {
                         "id": GROUP,
-                        "name": "Local big-coder (kimi-k3 40 / MiniMax-M3 40 / gpt-5.6-sol 20)",
+                        "name": "Local big-coder (deepseek-v4p1-flash 70 / gpt-5.6-sol 30)",
                         "contextWindow": 124518,
                         "maxTokens": 8192,
                         "reasoning": False,
@@ -648,9 +619,12 @@ def main() -> None:
         "listen": args.listen,
         "group": GROUP,
         "targets": [
-            {"provider": "kimi", "model": "kimi-k3", "weight": 40},
-            {"provider": "minimax", "model": "MiniMax-M3", "weight": 40},
-            {"provider": "openai", "model": "gpt-5.6-sol", "weight": 20},
+            {
+                "provider": "fireworks",
+                "model": "accounts/fireworks/models/deepseek-v4p1-flash",
+                "weight": 70,
+            },
+            {"provider": "openai", "model": "gpt-5.6-sol", "weight": 30},
         ],
         "token_file": str(token_path),
         "token_reused": token_reused,

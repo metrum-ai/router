@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `make local-router` keeps only the `big-coder` group, weighted 70% Fireworks
+  `accounts/fireworks/models/deepseek-v4p1-flash` and 30% OpenAI `gpt-5.6-sol`.
+
 ## [4.0.2] - 2026-10-01
 
 ### Fixes

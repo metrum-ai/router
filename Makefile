@@ -120,7 +120,7 @@ help:
 	@echo "  sse-capture            generate synthetic SSE fixtures and replay goldens"
 
 # Weighted local coding-agent instance: upstream keys from repo env.json,
-# reusable METRUM_API_KEY, listen 0.0.0.0:18081, group big-coder 40/40/20.
+# reusable METRUM_API_KEY, listen 0.0.0.0:18081, only group big-coder 70/30.
 local-router-setup:
 	uv run --with pyyaml python scripts/local_pi_instance.py \
 		--out-dir "$(LOCAL_ROUTER_OUT)" \

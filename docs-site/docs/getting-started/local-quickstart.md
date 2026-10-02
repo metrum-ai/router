@@ -88,12 +88,13 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
 
 ## Local coding-agent instance
 
-For a weighted local coding group (`big-coder`: kimi-k3 40 / MiniMax-M3 40 /
-gpt-5.6-sol 20) on `0.0.0.0:18081`, with upstream keys from repo `env.json`
-and a reusable caller token stored as `METRUM_API_KEY`:
+For a weighted local coding group (`big-coder` only: Fireworks
+`accounts/fireworks/models/deepseek-v4p1-flash` 70 / gpt-5.6-sol 30) on
+`0.0.0.0:18081`, with upstream keys from repo `env.json` and a reusable
+caller token stored as `METRUM_API_KEY`:
 
 ```bash
-# Requires: Go, uv, and MOONSHOT_API_KEY / MINIMAX_API_KEY / OPENAI_API_KEY in env.json
+# Requires: Go, uv, and FIREWORKS_API_KEY / OPENAI_API_KEY in env.json
 make local-router
 ```
 

@@ -41,8 +41,7 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         env_json.write_text(
             json.dumps(
                 {
-                    "MOONSHOT_API_KEY": "moon-test",
-                    "MINIMAX_API_KEY": "mini-test",
+                    "FIREWORKS_API_KEY": "fireworks-test",
                     "OPENAI_API_KEY": "openai-test",
                 }
             ),
@@ -93,17 +92,26 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         local_env = json.loads((out / "env.json").read_text(encoding="utf-8"))
         if local_env.get("METRUM_API_KEY") != token:
             raise AssertionError(local_env)
-        if local_env.get("MOONSHOT_API_KEY") != "moon-test":
+        if local_env.get("FIREWORKS_API_KEY") != "fireworks-test":
             raise AssertionError(local_env)
+        if set(local_env) != {"FIREWORKS_API_KEY", "OPENAI_API_KEY", "METRUM_API_KEY"}:
+            raise AssertionError(sorted(local_env))
 
         import yaml  # type: ignore
 
         cfg = yaml.safe_load((out / "config.yaml").read_text(encoding="utf-8"))
         if cfg["server"]["listen"] != "0.0.0.0:18081":
             raise AssertionError(cfg["server"]["listen"])
+        if list(cfg["models"]) != ["big-coder"]:
+            raise AssertionError(list(cfg["models"]))
+        if set(cfg["providers"]) != {"fireworks", "openai"}:
+            raise AssertionError(set(cfg["providers"]))
+        flash = cfg["providers"]["fireworks"]["models"]["deepseek-v4p1-flash"]
+        if flash["model"] != "accounts/fireworks/models/deepseek-v4p1-flash":
+            raise AssertionError(flash["model"])
         targets = cfg["models"]["big-coder"]["targets"]
         weights = [(t["provider"], t["model_ref"], t["weight"]) for t in targets]
-        if weights != [("kimi", "kimi-k3", 40), ("minimax", "m3", 40), ("openai", "gpt-5.6-sol", 20)]:
+        if weights != [("fireworks", "deepseek-v4p1-flash", 70), ("openai", "gpt-5.6-sol", 30)]:
             raise AssertionError(weights)
         if cfg["providers"]["openai"]["dialect"] != "openai-responses":
             raise AssertionError(cfg["providers"]["openai"]["dialect"])
@@ -155,7 +163,7 @@ def test_missing_upstream_keys_fails() -> None:
         env_json = root / "env.json"
         env_json.write_text(json.dumps({"OPENAI_API_KEY": "only-one"}), encoding="utf-8")
         env = os.environ.copy()
-        for key in ("MOONSHOT_API_KEY", "MINIMAX_API_KEY", "OPENAI_API_KEY", "METRUM_API_KEY"):
+        for key in ("FIREWORKS_API_KEY", "OPENAI_API_KEY", "METRUM_API_KEY"):
             env.pop(key, None)
         result = subprocess.run(
             uv_python(

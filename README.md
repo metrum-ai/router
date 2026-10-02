@@ -76,7 +76,7 @@ Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 
 ### Local coding-agent router
 
-For a weighted `big-coder` mix (kimi-k3 40 / MiniMax-M3 40 / gpt-5.6-sol 20)
+For a weighted `big-coder` mix (Fireworks deepseek-v4p1-flash 70 / gpt-5.6-sol 30)
 listening on `0.0.0.0:18081`, with upstream keys from repo `env.json` and a
 reusable `METRUM_API_KEY` (requires [uv](https://github.com/astral-sh/uv)):
 
