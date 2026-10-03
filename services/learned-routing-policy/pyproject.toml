@@ -21,7 +21,7 @@ dependencies = [
 # Optional sentence-transformers path. Does not change the default CPU lockfile.
 # Install with: uv sync --project services/learned-routing-policy --extra embed-st
 embed-st = [
-  "sentence-transformers>=3.0,<6",
+  "sentence-transformers>=3.0,<7",
   "torch>=2.2,<3",
 ]
 
