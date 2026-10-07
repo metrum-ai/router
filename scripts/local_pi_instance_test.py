@@ -115,6 +115,16 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError(weights)
         if cfg["providers"]["openai"]["dialect"] != "openai-responses":
             raise AssertionError(cfg["providers"]["openai"]["dialect"])
+        sol = cfg["providers"]["openai"]["models"]["gpt-5.6-sol"]
+        prices = (
+            sol["input_price_per_million_usd"],
+            sol["cached_input_price_per_million_usd"],
+            sol["output_price_per_million_usd"],
+        )
+        if prices != (4.0, 0.4, 20.0):
+            raise AssertionError("gpt-5.6-sol pricing metadata")
+        if sol["pricing_source"] != "https://developers.openai.com/api/docs/models/gpt-5.6-sol":
+            raise AssertionError(sol["pricing_source"])
         want_hash = hashlib.sha256(token.encode()).hexdigest()
         if cfg["callers"][0]["token_sha256"] != want_hash:
             raise AssertionError(cfg["callers"][0]["token_sha256"])
