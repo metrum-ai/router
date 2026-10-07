@@ -30,6 +30,11 @@
     "serialize-javascript": "^7.0.5",
     "qs": "^6.16.0",
     "brace-expansion": "^1.1.21",
+    "source-map-js": "^1.2.2",
+    "tinypool": "^2.1.2",
+    "compression": "^1.8.2",
+    "shell-quote": "^1.11.0",
+    "proxy-addr": "^2.0.8",
     "joi": "^17.13.8",
     "sockjs": {
       "uuid": "^11.1.1"

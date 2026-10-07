@@ -259,10 +259,15 @@ def build_config(
                         "tier": "frontier",
                         "input_modalities": ["text"],
                         "output_modalities": ["text"],
-                        "input_price_per_million_usd": 0.0,
-                        "output_price_per_million_usd": 0.0,
-                        "pricing_source": "openai-catalog",
-                        "pricing_updated_at": "2026-09-30",
+                        "input_price_per_million_usd": 4.0,
+                        "cached_input_price_per_million_usd": 0.4,
+                        "output_price_per_million_usd": 20.0,
+                        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+                        "pricing_updated_at": "2026-10-07",
+                        "pricing_notes": (
+                            "Promotional pricing through at least 2026-11-21; "
+                            "long-context and cache-write surcharges may apply."
+                        ),
                         "force_store_false": True,
                         "tool_support": {"openai_responses": ["function"]},
                         "request_shape_support": {
