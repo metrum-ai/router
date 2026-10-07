@@ -13,3 +13,16 @@ ignore:
       name: image-size
       version: 2.0.2
       type: npm
+# Temporary build-tool-only exceptions with no patched release. Track removal
+# in https://github.com/metrum-ai/router/issues/253. Owner: release/compliance.
+# Reviewed 2026-10-07; revisit on every docs/admin dependency refresh.
+  - vulnerability: GHSA-vfj7-8cjw-p6xm
+    package:
+      name: braces
+      version: 3.0.3
+      type: npm
+  - vulnerability: GHSA-ch52-4w7c-c8xp
+    package:
+      name: http-cache-semantics
+      version: 4.2.0
+      type: npm
