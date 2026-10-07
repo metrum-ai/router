@@ -87,7 +87,9 @@ callers:
         text=True,
     )
     base = f"http://127.0.0.1:{port}"
-    for _ in range(400):
+    # Auto-safe SQLite startup can exceed the old poll count on a busy CI runner.
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
         if process.poll() is not None:
             stderr_file.close()
             raise RuntimeError(stderr_path.read_text()[-4000:])
@@ -95,7 +97,8 @@ callers:
             if request(base, "/readyz", token=CALLER)[0] == 200:
                 break
         except OSError:
-            time.sleep(0.05)
+            pass
+        time.sleep(0.05)
     else:
         process.terminate()
         stderr_file.close()
