@@ -29,7 +29,7 @@ embed-st = [
 lrp = "lrp.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "hypothesis>=6,<7", "respx>=0.22,<1", "ruff>=0.11,<1", "mypy>=1.15,<2", "types-PyYAML", "pandas-stubs", "types-jsonschema"]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "hypothesis>=6,<7", "respx>=0.22,<1", "ruff>=0.11,<1", "mypy>=1.15,<3", "types-PyYAML", "pandas-stubs", "types-jsonschema"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["lrp"]
