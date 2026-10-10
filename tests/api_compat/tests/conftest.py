@@ -57,8 +57,8 @@ def request(base, path, payload=None, token=CALLER):
         return error.code, error.headers, error.read()
 
 
-@pytest.fixture(scope="session")
-def router(tmp_path_factory):
+def _start_router(tmp_path_factory, server_extra=""):
+    """Build and start a router against the fake upstream; yields the handle."""
     work = tmp_path_factory.mktemp("api-compat")
     FakeUpstream.reset_state()
     upstream, thread, upstream_url = start_fake_upstream(FakeUpstream)
@@ -70,7 +70,7 @@ def router(tmp_path_factory):
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
   logging: {{path: "{work / 'router.jsonl'}"}}
-state_path: "{work / 'state.json'}"
+{server_extra}state_path: "{work / 'state.json'}"
 providers:
   chat: {{base_url: "{upstream_url}/v1", dialect: openai-chat}}
   responses: {{base_url: "{upstream_url}/v1", dialect: openai-responses}}
@@ -127,6 +127,23 @@ callers:
     process.wait(timeout=5)
     upstream.shutdown()
     thread.join(timeout=5)
+
+
+@pytest.fixture(scope="session")
+def router(tmp_path_factory):
+    yield from _start_router(tmp_path_factory)
+
+
+@pytest.fixture(scope="session")
+def router_group(tmp_path_factory):
+    """Same catalog with server.responses.model_identity: requested_group.
+
+    Group names (chat, responses, messages, ...) differ from the upstream
+    models (synthetic-*), so caller-facing model fields are distinguishable.
+    """
+    yield from _start_router(
+        tmp_path_factory, "  responses: {model_identity: requested_group}\n"
+    )
 
 
 @pytest.fixture(autouse=True)

@@ -306,3 +306,31 @@ func TestResponsesUsageSurvivesWriteFailure(t *testing.T) {
 		t.Fatal(result, err)
 	}
 }
+
+// Metrum AI issue #256: same-dialect Responses streams report the group on
+// response objects; the IR response keeps the upstream model for usage.
+func TestResponsesStreamModelIdentity(t *testing.T) {
+	raw := strings.ReplaceAll(responseDelta+responseEnd, `"id":"resp_test"`, `"id":"resp_test","model":"gpt-6-luna"`)
+	raw = "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_test\",\"model\":\"gpt-6-luna\",\"status\":\"in_progress\"}}\n\n" + raw
+	for _, identity := range []string{ModelIdentityUpstream, ModelIdentityRequestedGroup} {
+		t.Run(identity, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			rc := &requestContext{start: time.Now(), modelIdentity: identity, rec: logRecord{RequestedModel: "big-coder"}}
+			result, err := proxyResponsesSSE(context.Background(), rr, strings.NewReader(raw), "openai-responses", "gpt-6-luna", 0, rc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "gpt-6-luna"
+			if identity == ModelIdentityRequestedGroup {
+				want = "big-coder"
+			}
+			assertSSEModels(t, rr.Body.String(), want)
+			if len(sseModels(t, rr.Body.String())) != 2 {
+				t.Fatalf("want created and completed models: %s", rr.Body.String())
+			}
+			if result.Response.Model != "gpt-6-luna" {
+				t.Fatalf("IR model=%q, want upstream", result.Response.Model)
+			}
+		})
+	}
+}

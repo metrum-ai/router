@@ -138,6 +138,44 @@ the response or diagnostics. Use a reviewed public object-store URL or a data
 URL; operators should keep private-address allowance disabled unless a private
 VLM deployment has independent egress controls.
 
+## Requested-Group Error Redaction
+
+In the default `server.responses.model_identity: upstream` mode, `upstream-failed` and related upstream failure errors include `error.details.targets` as a list of attempted `{provider, model}` pairs, `target_dialect`, and a sanitized `last_error`.
+
+With `server.responses.model_identity: requested_group`, the same errors do not name upstream providers, provider hosts or upstream models:
+
+- `error.details.targets` lists one `{attempt, error_class}` entry per attempt, in order. `attempt` starts at 1. `error_class` is present when that attempt was classified.
+- `error.details.last_error` is cut to the `upstream status N` line when the upstream returned a body. Catalog provider names, provider base-URL hosts and upstream model IDs are replaced with `[upstream]`, case-insensitively.
+- `error.details.target_dialect` is omitted, because an upstream wire dialect can name a provider.
+- `model` (the requested group), `attempts`, `fallbackUsed`, `retryable`, `request_id`, `error_class`, `reason_code`, `reason`, `upstream_status` and the request-shape and quota/key-state hints are unchanged. The `X-Router-Error-Class` and `X-Upstream-Status` headers are unchanged.
+- External routing-policy error messages get the same redaction.
+
+```json
+{
+  "error": {
+    "type": "upstream-failed",
+    "message": "all eligible upstream targets failed for model \"big-coder\" after 2 attempt(s)",
+    "details": {
+      "request_id": "req_0123456789abcdef0123456789abcdef",
+      "model": "big-coder",
+      "dialect": "openai-chat",
+      "attempts": 2,
+      "targets": [
+        {"attempt": 1, "error_class": "upstream_status_5xx"},
+        {"attempt": 2, "error_class": "upstream_status_5xx"}
+      ],
+      "last_error": "upstream status 503",
+      "error_class": "upstream_status_5xx",
+      "upstream_status": 503,
+      "retryable": true,
+      "fallbackUsed": true
+    }
+  }
+}
+```
+
+When fallback succeeds, the caller gets the normal successful response with `model` set to the group and no failure detail. Operators find the failed providers and models for the same `request_id` in `request_attempts` and the request evidence bundle, which keep the full sanitized detail in both modes.
+
 ## Native Stream Failures
 
 Same-dialect OpenAI Chat and Anthropic Messages streams commit the downstream

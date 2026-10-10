@@ -9,6 +9,9 @@ Default shape matches the local pi setup:
   group big-coder only (weighted)
     70% openai / gpt-6-luna (Responses via chat_to_responses)
     30% fireworks / accounts/fireworks/models/deepseek-v4p1-flash
+  server.responses.model_identity: requested_group
+    caller-facing responses report model "big-coder"; usage rows, attempt
+    rows and admin reports keep the serving upstream model
 
 Upstream keys are copied from a source env.json (repo env.json by default).
 The local caller token is stored as METRUM_API_KEY (file + out-dir env.json)
@@ -39,6 +42,7 @@ CALLER_ID = "local-dev-example-project-dev"
 OWNER_USER = "local-dev"
 PROJECT = "example-project"
 GROUP = "big-coder"
+MODEL_IDENTITY = "requested_group"
 
 # Local coding-agent caller policy: 20x the original local-dev defaults.
 LOCAL_RATE_RPM = 120 * 20
@@ -168,6 +172,8 @@ def build_config(
         "server": {
             "listen": listen,
             "default_model_group": GROUP,
+            # Callers see the group name; operators keep the upstream in usage rows.
+            "responses": {"model_identity": MODEL_IDENTITY},
             "identifiers": {
                 "mode": "rewrite",
                 "transform": {
@@ -459,6 +465,8 @@ def write_readme(out_dir: Path, listen: str) -> None:
                 "Group: big-coder (weighted; only group)",
                 "  70% openai / gpt-6-luna (chat_to_responses)",
                 "  30% fireworks / accounts/fireworks/models/deepseek-v4p1-flash",
+                f"Model identity: {MODEL_IDENTITY} (responses report model: big-coder;",
+                "  usage.sqlite request_usage.target_model keeps the serving upstream)",
                 "",
                 f"Admin reports: http://{client_listen(listen)}/admin/reports/",
                 "Demo login: admin / admin (override LOCAL_PI_ADMIN_PASSWORD_HASH in env.json)",
@@ -660,6 +668,7 @@ def main() -> None:
         "config": str(config_path),
         "listen": args.listen,
         "group": GROUP,
+        "model_identity": MODEL_IDENTITY,
         "targets": [
             {"provider": "openai", "model": "gpt-6-luna", "weight": 70},
             {

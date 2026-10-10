@@ -111,6 +111,18 @@ default. Open `http://127.0.0.1:18081/admin/reports/`. The router listens on
 all interfaces, so replace `LOCAL_PI_ADMIN_PASSWORD_HASH` in `env.json` and
 restrict network access before using this setup outside a controlled demo.
 
+The generated config sets `server.responses.model_identity: requested_group`,
+so every response from this instance reports `"model": "big-coder"`, whichever
+upstream served it. To see which upstream served a request, use the admin
+reports or `request_usage.target_model` in `tmp/local-pi/usage.sqlite`. Restart
+the router after regenerating the config.
+
+To prove a tool-using continuation against a running instance, run
+`make local-router-pi-smoke`. It needs the `pi` CLI on `PATH`, uses a temporary
+`PI_CODING_AGENT_DIR` (never `~/.pi`), has pi write and read back a file, and
+checks that each response `model` and each new usage row matches the configured
+model identity.
+
 Optional Make helpers:
 
 ```bash

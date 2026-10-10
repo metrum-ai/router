@@ -1,6 +1,12 @@
 server:
   streaming:
     translator: incremental # Or synthesized for unary upstream + caller SSE.
+  responses:
+    # Caller-facing protocol `model` field. upstream (default) reports the
+    # serving upstream model; requested_group reports the requested group
+    # (for example big-coder) and redacts upstream names from caller errors.
+    # Usage rows, attempt rows and admin reports keep the upstream either way.
+    model_identity: upstream
   identifiers:
     mode: rewrite
     transform:

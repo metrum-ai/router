@@ -89,6 +89,11 @@ Clients use `http://127.0.0.1:18081/v1` and
 `make local-router-setup` and `make local-router-configure-pi`. Details:
 [Local Quickstart](docs-site/docs/getting-started/local-quickstart.md#local-coding-agent-instance).
 
+The local instance sets `server.responses.model_identity: requested_group`, so
+responses report `model: big-coder`. The serving upstream is in
+`request_usage.target_model` and the admin reports. `make local-router-pi-smoke`
+runs a pi write/read tool continuation against it.
+
 The local demo and `config.example.yaml` enable the admin reports dashboard by
 default at `http://127.0.0.1:18081/admin/reports/`, with `admin` / `admin`.
 Both listen on all interfaces; replace `LOCAL_PI_ADMIN_PASSWORD_HASH` in

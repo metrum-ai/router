@@ -52,7 +52,7 @@ type nativeStreamResult struct {
 
 func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
 	result := nativeStreamResult{Response: &IRResponse{Model: model, Streamed: true}}
-	rewriter := nativeIDRewriter{}
+	rewriter := nativeIDRewriter{model: rc.publicModel()}
 	if len(transforms) > 0 {
 		rewriter.transform = transforms[0]
 	}

@@ -51,6 +51,49 @@ func TestUsageDBMigrationPolicyValidation(t *testing.T) {
 	}
 }
 
+func TestResponsesModelIdentityValidation(t *testing.T) {
+	for _, tc := range []struct {
+		value   string
+		wantErr bool
+	}{
+		{value: ""},
+		{value: ModelIdentityUpstream},
+		{value: ModelIdentityRequestedGroup},
+		{value: "group", wantErr: true},
+		{value: "Requested_Group", wantErr: true},
+	} {
+		t.Run(defaultString(tc.value, "empty"), func(t *testing.T) {
+			cfg := minimalConfig(t)
+			cfg.Server.Responses.ModelIdentity = tc.value
+			err := cfg.Validate()
+			if tc.wantErr {
+				if err == nil || err.Error() != "server.responses.model_identity must be upstream or requested_group" {
+					t.Fatalf("model_identity %q error = %v", tc.value, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("model_identity %q error = %v", tc.value, err)
+			}
+		})
+	}
+	cfg := minimalConfig(t)
+	cfg.setDefaults()
+	if cfg.Server.Responses.ModelIdentity != ModelIdentityUpstream {
+		t.Fatalf("model_identity default = %q", cfg.Server.Responses.ModelIdentity)
+	}
+}
+
+func TestResponsesModelIdentityYAML(t *testing.T) {
+	var server ServerConfig
+	if err := yaml.Unmarshal([]byte("responses:\n  model_identity: requested_group\n"), &server); err != nil {
+		t.Fatal(err)
+	}
+	if server.Responses.ModelIdentity != ModelIdentityRequestedGroup {
+		t.Fatalf("model_identity = %q", server.Responses.ModelIdentity)
+	}
+}
+
 func TestAdminBasicAuthRealmDefaultsToCanonicalProductName(t *testing.T) {
 	cfg := &Config{}
 	cfg.setDefaults()

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `server.responses.model_identity: requested_group` makes caller-facing
+  responses report the requested router model group (for example
+  `model: big-coder`) instead of the serving upstream model. It covers Chat
+  Completions, Responses and Anthropic Messages, unary and streaming, bridges,
+  fallback and response-cache hits (#254, #255, #256).
+- In `requested_group` mode, upstream failure errors no longer name providers
+  or upstream models: `error.details.targets` becomes `{attempt, error_class}`,
+  `last_error` is cut to the status line with provider, host and model names
+  replaced by `[upstream]`, and `target_dialect` is omitted (#257).
+- The default stays `model_identity: upstream`, which keeps today's response
+  bytes. Usage rows, attempt rows, logs and admin reports keep the upstream
+  provider and model in both modes.
+- `make local-router` enables `requested_group`, so the local `big-coder`
+  instance reports `model: big-coder`. `make local-router-pi-smoke` runs a pi
+  write/read tool continuation against a running instance and checks the
+  reported model and usage rows (#258).
+
 ### Changed
 
 - `make local-router` keeps only the `big-coder` group, weighted 70% OpenAI

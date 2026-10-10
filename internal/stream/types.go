@@ -17,6 +17,16 @@ type Event struct {
 	Data []byte `json:"data,omitempty"`
 }
 
+// callerModel returns the model name translators emit to the caller: the
+// public router group when set (model_identity: requested_group), otherwise
+// the upstream model. Metrum AI Router issue #256.
+func callerModel(public, upstream string) string {
+	if public != "" {
+		return public
+	}
+	return upstream
+}
+
 // TokenEstimate is the reservation-time input estimate passed to Begin.
 type TokenEstimate struct {
 	InputTokens      int `json:"input_tokens,omitempty"`

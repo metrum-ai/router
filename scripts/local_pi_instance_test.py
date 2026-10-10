@@ -84,6 +84,8 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError(summary)
         if summary.get("listen") != "0.0.0.0:18081":
             raise AssertionError(summary.get("listen"))
+        if summary.get("model_identity") != "requested_group":
+            raise AssertionError(summary.get("model_identity"))
         token = (out / "METRUM_API_KEY").read_text(encoding="utf-8").strip()
         if token != "rtr_metrum_local-dev_example-project_dev_kdemo_SECRET":
             raise AssertionError(token)
@@ -102,6 +104,10 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         cfg = yaml.safe_load((out / "config.yaml").read_text(encoding="utf-8"))
         if cfg["server"]["listen"] != "0.0.0.0:18081":
             raise AssertionError(cfg["server"]["listen"])
+        if cfg["server"]["responses"] != {"model_identity": "requested_group"}:
+            raise AssertionError(cfg["server"].get("responses"))
+        if "Model identity: requested_group" not in (out / "README.txt").read_text(encoding="utf-8"):
+            raise AssertionError("README.txt missing model identity")
         admin = cfg["server"]["admin_auth"]
         if not admin["basic"]["enabled"] or not admin["basic"]["allow_insecure_http"]:
             raise AssertionError(admin["basic"])

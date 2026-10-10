@@ -694,15 +694,17 @@ func replicateOutputText(v any) string {
 	}
 }
 
-func encodeAnthropicResponse(resp *IRResponse) map[string]any {
+// The unary encoders below report publicModel (when non-empty) instead of the
+// upstream model on the caller-facing body. resp.Raw is never mutated.
+func encodeAnthropicResponse(resp *IRResponse, publicModel string) map[string]any {
 	if resp.RawResponse && resp.Raw != nil {
-		return resp.Raw
+		return withPublicModel(resp.Raw, publicModel)
 	}
 	return map[string]any{
 		"id":            resp.ID,
 		"type":          "message",
 		"role":          "assistant",
-		"model":         resp.Model,
+		"model":         defaultString(publicModel, resp.Model),
 		"content":       []map[string]any{{"type": "text", "text": resp.Text}},
 		"stop_reason":   defaultString(resp.StopReason, "end_turn"),
 		"stop_sequence": nil,
@@ -713,16 +715,16 @@ func encodeAnthropicResponse(resp *IRResponse) map[string]any {
 	}
 }
 
-func encodeChatResponse(resp *IRResponse) map[string]any {
+func encodeChatResponse(resp *IRResponse, publicModel string) map[string]any {
 	if resp.RawResponse && resp.Raw != nil {
-		return resp.Raw
+		return withPublicModel(resp.Raw, publicModel)
 	}
 	usage := chatUsageMap(resp.Usage)
 	return map[string]any{
 		"id":      resp.ID,
 		"object":  "chat.completion",
 		"created": time.Now().Unix(),
-		"model":   resp.Model,
+		"model":   defaultString(publicModel, resp.Model),
 		"choices": []map[string]any{{
 			"index":         0,
 			"finish_reason": defaultString(resp.StopReason, "stop"),
@@ -732,9 +734,9 @@ func encodeChatResponse(resp *IRResponse) map[string]any {
 	}
 }
 
-func encodeResponsesResponse(resp *IRResponse) map[string]any {
+func encodeResponsesResponse(resp *IRResponse, publicModel string) map[string]any {
 	if resp.RawResponse && resp.Raw != nil {
-		return resp.Raw
+		return withPublicModel(resp.Raw, publicModel)
 	}
 	usage := responsesUsageMap(resp.Usage)
 	return map[string]any{
@@ -742,7 +744,7 @@ func encodeResponsesResponse(resp *IRResponse) map[string]any {
 		"object":      "response",
 		"created_at":  time.Now().Unix(),
 		"status":      "completed",
-		"model":       resp.Model,
+		"model":       defaultString(publicModel, resp.Model),
 		"output_text": resp.Text,
 		"output": []map[string]any{{
 			"type": "message",

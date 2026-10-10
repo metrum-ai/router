@@ -407,3 +407,43 @@ func TestIdentifierF011RestoreAlias(t *testing.T) {
 		t.Fatal("rewrite not default")
 	}
 }
+
+// Metrum AI issue #256: the native rewriter replaces only protocol model
+// fields, also when identifier passthrough leaves transform nil.
+func TestNativeRewriterPublicModel(t *testing.T) {
+	for _, tc := range []struct {
+		dialect, in, want string
+	}{
+		{"openai-chat",
+			`data: {"id":"c1","model":"gpt-6-luna","choices":[{"delta":{"content":"gpt-6-luna","tool_calls":[{"index":0,"function":{"arguments":"{\"model\":\"gpt-6-luna\"}"}}]}}]}`,
+			`data: {"id":"c1","model":"luna","choices":[{"delta":{"content":"gpt-6-luna","tool_calls":[{"index":0,"function":{"arguments":"{\"model\":\"gpt-6-luna\"}"}}]}}]}`},
+		{"openai-responses",
+			"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"r1\",\"model\":\"gpt-6-luna\"}}",
+			"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"r1\",\"model\":\"luna\"}}"},
+		{"openai-responses",
+			`data: {"type":"response.incomplete","response":{"id":"r1","model":"gpt-6-luna"}}`,
+			`data: {"type":"response.incomplete","response":{"id":"r1","model":"luna"}}`},
+		{"openai-responses",
+			`data: {"type":"response.output_text.delta","delta":"model gpt-6-luna","model":"gpt-6-luna"}`,
+			`data: {"type":"response.output_text.delta","delta":"model gpt-6-luna","model":"gpt-6-luna"}`},
+		{"anthropic",
+			"event: message_start\r\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"model\":\"gpt-6-luna\"}}",
+			"event: message_start\r\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"model\":\"luna\"}}"},
+		{"anthropic",
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\"model\":\"gpt-6-luna\""}}`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\"model\":\"gpt-6-luna\""}}`},
+	} {
+		// "luna" is a substring of the upstream ID; only the field changes.
+		r := nativeIDRewriter{model: "luna"}
+		if got := string(r.rewrite([]byte(tc.in+"\n\n"), tc.dialect)); got != tc.want+"\n\n" {
+			t.Fatalf("%s\n got %s\nwant %s", tc.dialect, got, tc.want)
+		}
+	}
+	// With identifier rewrite on, IDs and the model change together.
+	tr := testIdentifierTransform(t)
+	r := nativeIDRewriter{transform: tr, model: "big-coder"}
+	got := string(r.rewrite([]byte(`data: {"id":"c1","model":"gpt-6-luna"}`+"\n\n"), "openai-chat"))
+	if want := `data: {"id":"` + tr.Encode("c1") + `","model":"big-coder"}` + "\n\n"; got != want {
+		t.Fatalf("got %s want %s", got, want)
+	}
+}

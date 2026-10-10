@@ -107,3 +107,39 @@ The first flushed caller frame commits the response. After a partial write or
 flush failure, fallback is also forbidden because bytes may have reached the
 caller. Cancellation closes the attempt's upstream request. Truncation never
 fabricates a successful `response.completed` event.
+
+## Response model identity
+
+`server.responses.model_identity` controls the protocol `model` field that
+callers see. It accepts `upstream` (default) or `requested_group`. Any other
+value fails config load.
+
+```yaml title="config.example.yaml"
+server:
+  responses:
+    model_identity: upstream
+```
+
+- `upstream` keeps the existing behavior: responses report the model of the
+  upstream target that served the request, so the value can change between
+  requests to one weighted group or after fallback.
+- `requested_group` reports the router model group the caller requested on
+  every caller-facing `model` field. That covers Chat Completions, Responses and
+  Anthropic Messages; unary JSON, synthesized SSE, native same-dialect SSE and
+  every dialect bridge stream; fallback; and response-cache hits. Upstream
+  failure errors are redacted as described in
+  [Errors](../reference/errors#requested-group-error-redaction).
+
+```yaml
+server:
+  responses:
+    model_identity: requested_group
+```
+
+Only the protocol `model` field (and the caller-facing error target list)
+changes. Model names inside assistant text, tool arguments or reasoning are not
+rewritten. Operators keep the upstream identity in both modes:
+`request_usage.target_provider` / `target_model`, `request_attempts.provider` /
+`model`, request logs, admin reports and Prometheus labels. Cache keys stay
+target-specific. The setting is read at startup, so restart the router after
+changing it. The local `make local-router` instance sets `requested_group`.

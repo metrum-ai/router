@@ -275,6 +275,15 @@ The `model` field is a router model group, not necessarily a provider model ID. 
 
 If a compatible API request omits `model`, the router uses `server.default_model_group` when configured. If no default is configured, the router returns `400 missing-model`.
 
+### Response model identity
+
+The `model` field in a completion response depends on `server.responses.model_identity`:
+
+- `upstream` (default): the response reports the upstream model that served the request. In a weighted or fallback group, the value can change from one request to the next.
+- `requested_group`: the response reports the group the caller requested, which is one of the IDs returned by `/v1/models`. The value is the same on unary bodies, on every streaming chunk or event, after fallback, on response-cache hits and on every hop of a tool-call continuation. Upstream failure errors stop naming providers and upstream models (see [Errors](./errors#requested-group-error-redaction)).
+
+Callers should treat the response `model` as an echo of the router group, not as a provider model ID to parse or branch on. Operators still see the serving upstream provider and model in `request_usage`, `request_attempts`, request logs and admin reports in both modes.
+
 ## Discover Allowed Model Groups
 
 Call `/v1/models` with the same router token that the client will use for completions. The response is filtered to that token's allow list, so it shows the deployment-defined model groups the caller can request.
@@ -306,7 +315,7 @@ Example response:
 
 Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Requests for unlisted groups fail with `403 model-not-allowed` before any upstream provider is called.
 
-The returned IDs are router model groups, not a full inventory of every upstream provider model. Platform teams can change the upstream provider/model mix behind a group without changing the caller-facing group name.
+The returned IDs are router model groups, not a full inventory of every upstream provider model. Platform teams can change the upstream provider/model mix behind a group without changing the caller-facing group name. With `server.responses.model_identity: requested_group`, these IDs are also exactly what completion responses report in their `model` field.
 
 For caller-facing troubleshooting and administrator handoff guidance, see [Available Models And Access](../getting-started/available-models).
 

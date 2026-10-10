@@ -445,6 +445,25 @@ Codex/OpenAI Responses traffic is eligible only for targets whose resolved provi
 
 Run the appropriate real tool smoke and assert file contents, not only assistant text.
 
+### Caller Only Sees The Group Name
+
+With `server.responses.model_identity: requested_group`, callers see the requested group (for example `big-coder`) as the response `model`, and upstream failure errors list `{attempt, error_class}` instead of provider and model. That is expected. To find the upstream that served or failed a request:
+
+1. Get the `X-Request-Id` (or `error.details.request_id`) from the caller.
+2. Open `/admin/reports/api/request-evidence?request_id=<request_id>`. The selected provider/model/dialect and each attempt's provider and model are there in both modes.
+3. Without the admin API, query the usage DB directly:
+
+```sql
+SELECT requested_model, target_provider, target_model, status
+  FROM request_usage WHERE request_id = '<request_id>';
+SELECT attempt_index, provider, model, status_code, error_class
+  FROM request_attempts WHERE request_id = '<request_id>' ORDER BY attempt_index;
+```
+
+4. For volume questions such as "which upstream served this caller today", use the admin reports provider/model mix filtered by caller or project.
+
+Do not ask callers to report a provider model ID from the response body. In `requested_group` mode it is not there by design. Switch back to `upstream` only if a client depends on upstream IDs, and restart the router after the change.
+
 ### One Upstream Takes All Traffic
 
 When a weighted group appears to send all requests for one client to one upstream, first separate configured weight from effective eligibility. Use request rows or provider/model mix to identify the inbound endpoint and selected upstream dialect, then inspect Provider catalog status:
