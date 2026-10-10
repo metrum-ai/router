@@ -90,60 +90,85 @@ cases:
     owner: api-compat
     component: stateful-bridges
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     transport: unary
-    disposition: blocked
+    disposition: supported_translation
     assertions:
-      - Chat→Responses continuation across two router processes sharing Redis
-    rationale: Requires Redis-backed bridge session profile; deferred linked issue.
+      - two router processes sharing a Redis backend continue one Chat→Responses session (turn 2 on process B carries turn 1's previous_response_id)
+      - restarting a router process between turns continues from the latest stored response id
+      - requests without the session header stay stateless; only the latest id is stored, under a hashed key without the raw header value
+    evidence_paths:
+      - tests/api_compat/tests/test_route_state.py
+      - internal/router/bridge_sessions.go
+    test_id: test_route_06_redis_continuation_across_two_processes_and_restart
 
   - id: ROUTE-07
     priority: P1
     owner: api-compat
     component: stateful-bridges
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     transport: unary
-    disposition: blocked
+    disposition: supported_translation
     assertions:
-      - TTL, stale continuation ID, and Redis outage map to designated retry policy
-    rationale: Requires Redis-backed bridge session profile; deferred linked issue.
+      - designated stale-state 4xx purges the mapping and retries the same request once without previous_response_id
+      - a second stale error after the stateless retry is terminal (bounded to one retry)
+      - unrelated 400s and upstream 401 never replay history statelessly (exactly one upstream attempt)
+      - the configured TTL is written with each Redis mapping; an expired mapping or a Redis outage continues stateless
+    evidence_paths:
+      - tests/api_compat/tests/test_route_state.py
+      - internal/router/bridge_sessions.go
+    test_id: test_route_07_stale_continuation_retries_once_stateless
 
   - id: ROUTE-08
     priority: P1
     owner: api-compat
     component: stateful-bridges
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     transport: unary
-    disposition: blocked
+    disposition: supported_translation
     assertions:
-      - cross-caller conversation key isolation at the HTTP boundary
-    rationale: Requires Redis-backed bridge session profile; deferred linked issue.
+      - identical session labels from two callers, or in two model groups, never share a stored previous_response_id
+      - concurrent turns in one session settle on a single stored id issued in that session (last writer wins)
+    evidence_paths:
+      - tests/api_compat/tests/test_route_state.py
+      - internal/router/bridge_sessions.go
+    test_id: test_route_08_session_keys_isolated_by_caller_and_group
 
   - id: ROUTE-09
     priority: P1
     owner: api-compat
     component: stateful-bridges
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     transport: unary
-    disposition: blocked
+    disposition: supported_translation
     assertions:
-      - target removal and affinity expiry never forward foreign opaque IDs
-    rationale: Requires Redis-backed bridge session profile; deferred linked issue.
+      - reconfiguring a group's target between turns resets continuation instead of forwarding the old target's response id
+      - the new target starts a fresh continuation chain under the same session label
+    evidence_paths:
+      - tests/api_compat/tests/test_route_state.py
+      - internal/router/bridge_sessions.go
+    test_id: test_route_09_target_reconfiguration_never_forwards_foreign_ids
 
   - id: ROUTE-10
     priority: P1
     owner: api-compat
     component: encoder-fidelity
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     transport: unary
-    disposition: blocked
+    disposition: supported_translation
     assertions:
-      - omitted/null/false/zero field distinctions across bridge encoders
-    rationale: Deferred encoder property matrix; Redis not required but out of P0 ship scope.
+      - omitted sampling/tool/cap controls stay absent on Chat→Responses and Responses→Chat upstream bodies
+      - explicit temperature/top_p 0, parallel_tool_calls false and output caps are forwarded, not dropped as falsy
+      - explicit null tool_choice is rejected before upstream on both bridges (no-eligible-target, zero upstream calls)
+    evidence_paths:
+      - tests/api_compat/tests/test_route_state.py
+      - internal/router/chat_responses_bridge.go
+      - internal/router/responses_to_chat_bridge.go
+    test_id: test_route_10_bridge_encoders_preserve_null_false_zero_distinctions
 
   - id: ROUTE-MI-01
     priority: P0

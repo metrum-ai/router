@@ -41,15 +41,16 @@ def _body(raw: bytes) -> dict:
     return json.loads(raw)
 
 
-def test_route_manifest_rows_cover_p0_and_blocked_redis():
+def test_route_manifest_rows_cover_p0_and_stateful_p1():
     cases = cases_by_id()
     for case_id in ("ROUTE-01", "ROUTE-02", "ROUTE-03", "ROUTE-04", "ROUTE-05"):
         assert cases[case_id]["priority"] == "P0"
         assert cases[case_id]["disposition"] != "blocked"
-    for case_id in ("ROUTE-06", "ROUTE-07", "ROUTE-08", "ROUTE-09"):
-        assert cases[case_id]["disposition"] == "blocked"
-        assert "Redis" in cases[case_id]["rationale"]
-    assert cases["ROUTE-10"]["disposition"] == "blocked"
+    # ROUTE-06..10 are covered by test_route_state.py (fake-Redis and memory profiles).
+    for case_id in ("ROUTE-06", "ROUTE-07", "ROUTE-08", "ROUTE-09", "ROUTE-10"):
+        assert cases[case_id]["disposition"] == "supported_translation"
+        assert cases[case_id]["test_id"].startswith("test_route_")
+        assert "tests/api_compat/tests/test_route_state.py" in cases[case_id]["evidence_paths"]
     assert any(c["id"].startswith("ROUTE-") for c in load_manifests())
 
 
