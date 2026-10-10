@@ -93,56 +93,81 @@ cases:
     owner: api-compat
     component: anthropic-thinking-controls
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
+    capability_profile: reasoning token_budget min 1024 max 4096 budget_must_be_less_than_max_tokens
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - manual/adaptive/disabled/omitted thinking and effort/budget combinations follow capability profiles
-    rationale: deferred linked issue
+      - omitted thinking is not synthesized; disabled thinking is forwarded verbatim
+      - manual thinking on a target without reasoning metadata (native or translated) returns 502 no-eligible-target with zero upstream calls
+      - caller budget inside the target range is preserved; budgets outside are clamped to target min/max (documented normalization)
+      - budget >= max_tokens on a budget_must_be_less_than_max_tokens target rejects before upstream (502 encode_error, zero calls)
+      - thinking plus client tools and caller tool_choice are forwarded unchanged
+      - adaptive thinking and output_config.effort are provider-owned and forwarded verbatim to native targets (not router-gated)
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_capabilities.py
+      - internal/router/reasoning.go
+      - internal/router/service.go
+    test_id: test_anth_06_thinking_controls_follow_capability_profile
 
   - id: ANTH-07
     priority: P1
     owner: api-compat
     component: anthropic-fine-grained-tools
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
     transport: sse
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - per-tool eager_input_streaming and legacy beta interactions are capability-gated
-    rationale: deferred linked issue — do not assume fine-grained tool streaming support
+      - per-tool eager_input_streaming true/false/omitted reaches the native upstream unchanged
+      - input_json_delta fragments (escapes, unicode, truncated final JSON) are forwarded byte-exact and in order, never repaired
+      - truncated tool input keeps stop_reason max_tokens so the executor can refuse it
+      - caller anthropic-beta headers are not forwarded; upstream headers are router-controlled (see HTTP-06)
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_capabilities.py
+      - internal/router/service.go
+    test_id: test_anth_07_eager_input_streaming_fragments_passthrough
+    rationale: Fine-grained streaming is transparent native passthrough (provider-owned validation per ARCH-02), not a router capability gate; any model-specific support claim needs live evidence.
 
   - id: ANTH-08
     priority: P1
     owner: api-compat
     component: anthropic-stop-reasons
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
-    transport: unary
-    disposition: blocked
+    transport: mixed
+    disposition: native_supported
     assertions:
       - end_turn, tool_use, stop_sequence, max_tokens, refusal, and pause_turn remain distinguishable
-    rationale: deferred linked issue
+      - unary with and without tools keeps stop_reason, stop_sequence, content and message id verbatim
+      - SSE message_delta keeps stop_reason and stop_sequence verbatim
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_capabilities.py
+      - internal/router/service.go
+    test_id: test_anth_08_stop_reasons_remain_distinguishable
 
   - id: ANTH-09
     priority: P1
     owner: api-compat
     component: anthropic-structured-output
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
     transport: unary
     disposition: blocked
     assertions:
       - native output_config.format and strict tools are capability-gated, not inferred from OpenAI fields
-    rationale: deferred linked issue — capability candidate, not assumed supported
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_capabilities.py
+    test_id: test_anth_09_native_output_config_and_strict_tools_forwarded
+    rationale: Partial evidence only. Native Anthropic targets receive output_config.format and strict tools verbatim (test above), but no router capability gate exists (requestHasStructuredOutput ignores output_config) and an Anthropic caller routed to a translated openai-chat target (supported_inbound_dialects [anthropic]) gets 200 with output_config silently dropped. Gating or rejecting needs a product decision.
 
   - id: ANTH-10
     priority: P1
@@ -166,25 +191,35 @@ cases:
     owner: api-compat
     component: anthropic-images
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
+    capability_profile: mixed text-only plus vision targets
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - URL/base64/file images and images nested in tool results trigger eligibility and preserve order
-    rationale: deferred linked issue
+      - URL, file and base64 image sources on a text-only group return 502 no-eligible-target with zero upstream calls
+      - an image nested only inside a tool_result triggers image eligibility
+      - mixed groups route nested text+image tool results to the vision target with order and image bytes (sha256) intact
+      - top-level interleaved text/URL/base64 content keeps semantic order
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_capabilities.py
+      - internal/router/dialect.go
+    test_id: test_anth_11_image_sources_and_nested_tool_result_images
 
   - id: ANTH-12
     priority: P1
     owner: api-compat
     component: anthropic-server-tools
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
     transport: unary
     disposition: blocked
     assertions:
       - versioned server tools, citations, and unknown future blocks have explicit preserve-or-reject dispositions
-    rationale: deferred linked issue
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_capabilities.py
+    test_id: test_anth_12_native_server_tools_documents_and_unknown_blocks
+    rationale: Partial evidence only. Native targets preserve server tools, document/search_result/unknown blocks and server_tool_use/citation response blocks verbatim, and translated targets reject server tools before upstream (test above). Still open - translated openai-chat targets silently drop document and unknown content blocks (200, flattened text), and Anthropic server tools (e.g. web_search) bypass the provider-hosted tool policy that rejects Responses hosted tools. Both need a product decision.
