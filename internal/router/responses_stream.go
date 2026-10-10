@@ -14,7 +14,7 @@ import (
 )
 
 func proxyResponsesSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
-	t := &stream.Responses{}
+	t := &stream.Responses{PublicModel: rc.publicModel()}
 	if len(transforms) > 0 {
 		t.IDs = transforms[0]
 	}
@@ -40,6 +40,11 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			// Only terminal metadata is retained, never deltas or complete output items.
 			if e.Type == "response.completed" || e.Type == "response.failed" || e.Type == "response.incomplete" {
 				accumulateNativeSSE(result.Response, "openai-responses", e.Frame())
+				if rc.publicModel() != "" {
+					// Caller frames carry the public group; keep the upstream
+					// model on the IR response for usage and diagnostics.
+					result.Response.Model = model
+				}
 			}
 			if !result.Committed {
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -158,7 +163,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 }
 
 func proxyChatUpstreamToResponsesCallerSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
-	t := &stream.ChatUpstreamToResponsesCaller{ResponseID: "resp_" + requestID(), Model: model, CreatedAt: time.Now().Unix()}
+	t := &stream.ChatUpstreamToResponsesCaller{ResponseID: "resp_" + requestID(), Model: model, PublicModel: rc.publicModel(), CreatedAt: time.Now().Unix()}
 	if len(transforms) > 0 {
 		t.IDs = transforms[0]
 	}
@@ -166,7 +171,7 @@ func proxyChatUpstreamToResponsesCallerSSE(ctx context.Context, w http.ResponseW
 }
 
 func proxyResponsesUpstreamToChatCallerSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, dialect, model string, maxBytes int64, rc *requestContext, transforms ...IdentifierTransform) (nativeStreamResult, error) {
-	t := &stream.ResponsesUpstreamToChatCaller{Model: model}
+	t := &stream.ResponsesUpstreamToChatCaller{Model: model, PublicModel: rc.publicModel()}
 	if len(transforms) > 0 {
 		t.IDs = transforms[0]
 	}

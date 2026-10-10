@@ -264,3 +264,16 @@ func TestAnthropicBridgeInterruptedUsage(t *testing.T) {
 		}
 	}
 }
+
+// Metrum AI issue #256: all four Anthropic stream bridges.
+func TestAnthropicBridgeStreamingModelIdentity(t *testing.T) {
+	for _, pair := range [][2]string{{"anthropic", "openai-chat"}, {"anthropic", "openai-responses"}, {"openai-chat", "anthropic"}, {"openai-responses", "anthropic"}} {
+		for _, identity := range []string{ModelIdentityUpstream, ModelIdentityRequestedGroup} {
+			t.Run(fmt.Sprint(pair, identity), func(t *testing.T) {
+				path, reqBody := anthropicBridgeRequest(pair[0])
+				body := serveModelIdentityStream(t, pair[1], anthropicBridgeTarget(), identity, path, reqBody, anthropicBridgeFixture(t, pair[1]))
+				assertSSEModels(t, body, modelIdentityWant(identity, "bridge"))
+			})
+		}
+	}
+}

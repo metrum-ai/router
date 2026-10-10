@@ -20,6 +20,7 @@ func typedEvent(typ string, p map[string]any) Event {
 type AnthropicUpstreamToChatCaller struct {
 	IDs                         IdentifierEncoder
 	Model                       string
+	PublicModel                 string // caller-facing model; empty keeps Model
 	CreatedAt                   int64
 	chat                        ResponsesUpstreamToChatCaller
 	blocks                      map[int]string
@@ -80,7 +81,7 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		t.blocks = map[int]string{}
 		t.tools = map[int]int{}
 		t.argumentsSeen = map[int]bool{}
-		t.chat = ResponsesUpstreamToChatCaller{IDs: t.IDs, ResponseID: p.Message.ID, Model: t.Model, CreatedAt: t.CreatedAt}
+		t.chat = ResponsesUpstreamToChatCaller{IDs: t.IDs, ResponseID: p.Message.ID, Model: t.Model, PublicModel: t.PublicModel, CreatedAt: t.CreatedAt}
 		t.usage = Usage{InputTokens: p.Message.Usage.Input, OutputTokens: p.Message.Usage.Output, CachedInputTokens: p.Message.Usage.Cached}
 		t.usage.TotalTokens = t.usage.InputTokens + t.usage.OutputTokens
 		return []Event{t.chat.chunk(map[string]any{"role": "assistant"}, nil)}, nil
@@ -219,6 +220,7 @@ func (t *ResponsesUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {
 type ChatUpstreamToAnthropicCaller struct {
 	IDs                       IdentifierEncoder
 	ResponseID, Model         string
+	PublicModel               string // caller-facing model; empty keeps Model
 	reader                    ChatUpstreamToResponsesCaller
 	begun, finished, terminal bool
 	blocks                    map[int]int
@@ -231,13 +233,13 @@ func (t *ChatUpstreamToAnthropicCaller) Begin(est TokenEstimate) ([]Event, error
 	}
 	t.begun = true
 	t.blocks = map[int]int{}
-	t.reader = ChatUpstreamToResponsesCaller{ResponseID: t.ResponseID, Model: t.Model}
+	t.reader = ChatUpstreamToResponsesCaller{ResponseID: t.ResponseID, Model: t.Model, PublicModel: t.PublicModel}
 	_, err := t.reader.Begin(est)
 	id := t.ResponseID
 	if t.IDs != nil {
 		id = t.IDs.Encode(id)
 	}
-	return []Event{typedEvent("message_start", map[string]any{"message": map[string]any{"id": id, "type": "message", "role": "assistant", "model": t.Model, "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": est.InputTokens, "output_tokens": 0}}})}, err
+	return []Event{typedEvent("message_start", map[string]any{"message": map[string]any{"id": id, "type": "message", "role": "assistant", "model": callerModel(t.PublicModel, t.Model), "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": map[string]any{"input_tokens": est.InputTokens, "output_tokens": 0}}})}, err
 }
 func (t *ChatUpstreamToAnthropicCaller) UsageSnapshot() Usage { return t.reader.UsageSnapshot() }
 func (t *ChatUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {

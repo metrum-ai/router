@@ -13,7 +13,10 @@ type IdentifierEncoder interface{ Encode(string) string }
 
 // Responses is a same-dialect translator. It retains no content or item history.
 type Responses struct {
-	IDs                IdentifierEncoder
+	IDs IdentifierEncoder
+	// PublicModel, when set, replaces response.model on re-marshalled
+	// response objects sent to the caller.
+	PublicModel        string
 	UnknownEvents      int
 	terminal, finished bool
 }
@@ -65,6 +68,11 @@ func (t *Responses) Next(up Event) ([]Event, error) {
 			return nil, errors.New("stream: invalid response object")
 		}
 		rewrite(response, "id")
+		if t.PublicModel != "" {
+			if _, ok := response["model"]; ok {
+				response["model"], _ = json.Marshal(t.PublicModel)
+			}
+		}
 		var output []json.RawMessage
 		if json.Unmarshal(response["output"], &output) == nil && output != nil {
 			for i := range output {

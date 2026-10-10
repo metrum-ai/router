@@ -152,11 +152,11 @@ func TestAdminReasoningCoverageDTOsPreserveNullability(t *testing.T) {
 func TestReasoningUsageResponseEncodingAndAttemptCoverage(t *testing.T) {
 	n := 7
 	usage := Usage{InputTokens: 2, OutputTokens: 10, TotalTokens: 12, ReasoningTokens: &n}
-	chat := encodeChatResponse(&IRResponse{Usage: usage})["usage"].(map[string]any)
+	chat := encodeChatResponse(&IRResponse{Usage: usage}, "")["usage"].(map[string]any)
 	if got := chat["completion_tokens_details"].(map[string]any)["reasoning_tokens"]; got != 7 {
 		t.Fatalf("chat reasoning usage=%#v", chat)
 	}
-	responses := encodeResponsesResponse(&IRResponse{Usage: usage})["usage"].(map[string]any)
+	responses := encodeResponsesResponse(&IRResponse{Usage: usage}, "")["usage"].(map[string]any)
 	if got := responses["output_tokens_details"].(map[string]any)["reasoning_tokens"]; got != 7 {
 		t.Fatalf("responses reasoning usage=%#v", responses)
 	}
@@ -169,7 +169,7 @@ func TestReasoningUsageResponseEncodingAndAttemptCoverage(t *testing.T) {
 		t.Fatalf("absence was not preserved: total=%v reported=%d", absent, count)
 	}
 	stream := httptest.NewRecorder()
-	writeChatTextSSE(func(_ string, v any) { _ = json.NewEncoder(stream).Encode(v) }, stream, &IRResponse{ID: "id", Model: "model", Usage: usage})
+	writeChatTextSSE(func(_ string, v any) { _ = json.NewEncoder(stream).Encode(v) }, stream, &IRResponse{ID: "id", Model: "model", Usage: usage}, "")
 	if !bytes.Contains(stream.Body.Bytes(), []byte("reasoning_tokens")) {
 		t.Fatalf("streaming usage lost reasoning tokens: %s", stream.Body.String())
 	}

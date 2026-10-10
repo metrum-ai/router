@@ -140,6 +140,9 @@ type requestContext struct {
 	traceSeq             int
 	sanitizeTraceMessage func(string, string) string
 	conversationKey      string
+	// modelIdentity is server.responses.model_identity captured at request
+	// start; see publicModel.
+	modelIdentity string
 }
 
 type upstreamError struct {
@@ -1475,6 +1478,7 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 		method:               r.Method,
 		pathTemplate:         requestPathTemplate(r),
 		sanitizeTraceMessage: s.sanitizeDiagnosticTraceMessage,
+		modelIdentity:        s.cfg.Server.Responses.ModelIdentity,
 		rec: logRecord{
 			RequestID:            id,
 			Client:               inferClient(r),
@@ -3360,20 +3364,20 @@ func (s *Service) writeIR(w http.ResponseWriter, dialect string, resp *IRRespons
 	if stream {
 		s.writeIRStream(w, dialect, resp, rc)
 	} else {
-		s.writeIRResponse(w, dialect, resp)
+		s.writeIRResponse(w, dialect, resp, rc.publicModel())
 	}
 	downstreamMS := durationMillis(time.Since(start))
 	rc.rec.DownstreamMS = &downstreamMS
 }
 
-func (s *Service) writeIRResponse(w http.ResponseWriter, dialect string, resp *IRResponse) {
+func (s *Service) writeIRResponse(w http.ResponseWriter, dialect string, resp *IRResponse, publicModel string) {
 	switch dialect {
 	case "anthropic":
-		writeJSON(w, http.StatusOK, encodeAnthropicResponse(resp))
+		writeJSON(w, http.StatusOK, encodeAnthropicResponse(resp, publicModel))
 	case "openai-chat":
-		writeJSON(w, http.StatusOK, encodeChatResponse(resp))
+		writeJSON(w, http.StatusOK, encodeChatResponse(resp, publicModel))
 	case "openai-responses":
-		writeJSON(w, http.StatusOK, encodeResponsesResponse(resp))
+		writeJSON(w, http.StatusOK, encodeResponsesResponse(resp, publicModel))
 	default:
 		writeJSON(w, http.StatusOK, resp)
 	}
@@ -3400,13 +3404,17 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 			flusher.Flush()
 		}
 	}
+	// publicModel comes from the current request, so a cache hit stored from
+	// another target still reports the requested group.
+	publicModel := rc.publicModel()
+	model := defaultString(publicModel, resp.Model)
 	switch dialect {
 	case "anthropic":
 		if resp.RawResponse && resp.Raw != nil {
-			writeRawAnthropicSSE(writeSSE, resp)
+			writeRawAnthropicSSE(writeSSE, resp, publicModel)
 			break
 		}
-		writeSSE("message_start", map[string]any{"type": "message_start", "message": encodeAnthropicResponse(resp)})
+		writeSSE("message_start", map[string]any{"type": "message_start", "message": encodeAnthropicResponse(resp, publicModel)})
 		writeSSE("content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}})
 		writeSSE("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": resp.Text}})
 		writeSSE("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
@@ -3414,46 +3422,47 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 		writeSSE("message_stop", map[string]any{"type": "message_stop"})
 	case "openai-responses":
 		if resp.RawResponse && resp.Raw != nil {
-			writeRawResponsesSSE(writeSSE, resp)
+			writeRawResponsesSSE(writeSSE, resp, publicModel)
 			break
 		}
 		itemID := "msg_" + strings.TrimPrefix(resp.ID, "resp_")
-		writeSSE("response.created", map[string]any{"type": "response.created", "sequence_number": 1, "response": map[string]any{"id": resp.ID, "object": "response", "status": "in_progress", "model": resp.Model, "output": []any{}}})
-		writeSSE("response.in_progress", map[string]any{"type": "response.in_progress", "sequence_number": 2, "response": map[string]any{"id": resp.ID, "object": "response", "status": "in_progress", "model": resp.Model, "output": []any{}}})
+		writeSSE("response.created", map[string]any{"type": "response.created", "sequence_number": 1, "response": map[string]any{"id": resp.ID, "object": "response", "status": "in_progress", "model": model, "output": []any{}}})
+		writeSSE("response.in_progress", map[string]any{"type": "response.in_progress", "sequence_number": 2, "response": map[string]any{"id": resp.ID, "object": "response", "status": "in_progress", "model": model, "output": []any{}}})
 		writeSSE("response.output_item.added", map[string]any{"type": "response.output_item.added", "sequence_number": 3, "output_index": 0, "item": map[string]any{"id": itemID, "type": "message", "status": "in_progress", "role": "assistant", "content": []any{}}})
 		writeSSE("response.content_part.added", map[string]any{"type": "response.content_part.added", "sequence_number": 4, "item_id": itemID, "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": "", "annotations": []any{}}})
 		writeSSE("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "sequence_number": 5, "item_id": itemID, "output_index": 0, "content_index": 0, "delta": resp.Text})
 		writeSSE("response.output_text.done", map[string]any{"type": "response.output_text.done", "sequence_number": 6, "item_id": itemID, "output_index": 0, "content_index": 0, "text": resp.Text})
 		writeSSE("response.content_part.done", map[string]any{"type": "response.content_part.done", "sequence_number": 7, "item_id": itemID, "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": resp.Text, "annotations": []any{}}})
 		writeSSE("response.output_item.done", map[string]any{"type": "response.output_item.done", "sequence_number": 8, "output_index": 0, "item": map[string]any{"id": itemID, "type": "message", "status": "completed", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": resp.Text, "annotations": []any{}}}}})
-		completed := encodeResponsesResponse(resp)
+		completed := encodeResponsesResponse(resp, publicModel)
 		completed["status"] = "completed"
 		writeSSE("response.completed", map[string]any{"type": "response.completed", "sequence_number": 9, "response": completed})
 		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	case "openai-chat":
 		if resp.RawResponse && resp.Raw != nil {
-			writeRawChatSSE(writeSSE, w, resp)
+			writeRawChatSSE(writeSSE, w, resp, publicModel)
 			break
 		}
-		writeChatTextSSE(writeSSE, w, resp)
+		writeChatTextSSE(writeSSE, w, resp, publicModel)
 	default:
-		writeChatTextSSE(writeSSE, w, resp)
+		writeChatTextSSE(writeSSE, w, resp, publicModel)
 	}
 	if flusher != nil {
 		flusher.Flush()
 	}
 }
 
-func writeChatTextSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse) {
-	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": resp.Model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant", "content": resp.Text}, "finish_reason": nil}}})
-	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": resp.Model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": defaultString(resp.StopReason, "stop")}}, "usage": chatUsageMap(resp.Usage)})
+func writeChatTextSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string) {
+	model := defaultString(publicModel, resp.Model)
+	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant", "content": resp.Text}, "finish_reason": nil}}})
+	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": defaultString(resp.StopReason, "stop")}}, "usage": chatUsageMap(resp.Usage)})
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse) {
+func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string) {
 	raw := resp.Raw
 	id := defaultString(stringValue(raw["id"]), resp.ID)
-	model := defaultString(stringValue(raw["model"]), resp.Model)
+	model := defaultString(publicModel, defaultString(stringValue(raw["model"]), resp.Model))
 	created := time.Now().Unix()
 	if n, ok := numberAsInt(raw["created"]); ok {
 		created = int64(n)
@@ -3504,9 +3513,9 @@ func chatToolCallDeltas(calls []any) []map[string]any {
 	return out
 }
 
-func writeRawAnthropicSSE(writeSSE func(string, any), resp *IRResponse) {
+func writeRawAnthropicSSE(writeSSE func(string, any), resp *IRResponse, publicModel string) {
 	raw := resp.Raw
-	message := cloneMap(raw)
+	message := withPublicModel(cloneMap(raw), publicModel)
 	content := valueAsSlice(raw["content"])
 	message["content"] = []any{}
 	message["stop_reason"] = nil
@@ -3553,8 +3562,12 @@ func writeRawAnthropicSSE(writeSSE func(string, any), resp *IRResponse) {
 	writeSSE("message_stop", map[string]any{"type": "message_stop"})
 }
 
-func writeRawResponsesSSE(writeSSE func(string, any), resp *IRResponse) {
-	raw := resp.Raw
+func writeRawResponsesSSE(writeSSE func(string, any), resp *IRResponse, publicModel string) {
+	// Work on a copy: resp.Raw can be shared with the response cache.
+	raw := cloneMap(resp.Raw)
+	if publicModel != "" {
+		raw["model"] = publicModel
+	}
 	if raw["id"] == nil {
 		raw["id"] = resp.ID
 	}

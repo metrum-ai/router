@@ -177,13 +177,17 @@ func decodeIdentifierFields(raw []byte, t IdentifierTransform) ([]byte, error) {
 }
 
 type nativeIDRewriter struct {
-	transform     IdentifierTransform
+	transform IdentifierTransform
+	// model, when non-empty, replaces the protocol model field on caller
+	// frames (model_identity: requested_group). It is field-targeted so text,
+	// tool arguments and reasoning that mention the upstream model survive.
+	model         string
 	chatSeen      map[string]bool
 	functionItems map[string]bool
 }
 
 func (r *nativeIDRewriter) rewrite(frame []byte, dialect string) []byte {
-	if r.transform == nil {
+	if r.transform == nil && r.model == "" {
 		return frame
 	}
 	// Keep an offset map for multiline SSE data, preserving all event framing.
@@ -222,10 +226,17 @@ func (r *nativeIDRewriter) rewrite(frame []byte, dialect string) []byte {
 	}
 	var changes []idReplacement
 	add := func(n *idJSONNode) {
-		if n == nil || n.text == "" {
+		if r.transform == nil || n == nil || n.text == "" {
 			return
 		}
 		b, _ := json.Marshal(r.transform.Encode(n.text))
+		changes = append(changes, idReplacement{offsets[n.start], offsets[n.end-1] + 1, b})
+	}
+	setModel := func(n *idJSONNode) {
+		if r.model == "" || n == nil || n.text == "" || n.text == r.model {
+			return
+		}
+		b, _ := json.Marshal(r.model)
 		changes = append(changes, idReplacement{offsets[n.start], offsets[n.end-1] + 1, b})
 	}
 	typ := root.field("type").value()
@@ -233,6 +244,7 @@ func (r *nativeIDRewriter) rewrite(frame []byte, dialect string) []byte {
 	case "anthropic":
 		if typ == "message_start" {
 			add(root.field("message", "id"))
+			setModel(root.field("message", "model"))
 		}
 		if typ == "content_block_start" && root.field("content_block", "type").value() == "tool_use" {
 			add(root.field("content_block", "id"))
@@ -241,6 +253,10 @@ func (r *nativeIDRewriter) rewrite(frame []byte, dialect string) []byte {
 		switch typ {
 		case "response.created", "response.in_progress", "response.completed":
 			add(root.field("response", "id"))
+		}
+		switch typ {
+		case "response.created", "response.in_progress", "response.completed", "response.failed", "response.incomplete":
+			setModel(root.field("response", "model"))
 		}
 		item := root.field("item")
 		if item.field("type").value() == "function_call" {
@@ -264,6 +280,7 @@ func (r *nativeIDRewriter) rewrite(frame []byte, dialect string) []byte {
 		}
 	case "openai-chat":
 		add(root.field("id"))
+		setModel(root.field("model"))
 		if choices := root.field("choices"); choices != nil {
 			for _, choice := range choices.items {
 				if calls := choice.field("delta", "tool_calls"); calls != nil {

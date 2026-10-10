@@ -252,3 +252,17 @@ func TestChatToResponsesStreamingToolsAndIdentifiers(t *testing.T) {
 		t.Fatal(args)
 	}
 }
+
+// Metrum AI issue #256: Chat caller over a Responses upstream.
+func TestChatToResponsesStreamingModelIdentity(t *testing.T) {
+	upstreamSSE := strings.ReplaceAll(responsesBridgeDelta+responsesBridgeEnd, `"id":"resp_private"`, `"id":"resp_private","model":"gpt-6-luna"`)
+	for _, identity := range []string{ModelIdentityUpstream, ModelIdentityRequestedGroup} {
+		t.Run(identity, func(t *testing.T) {
+			body := serveModelIdentityStream(t, "openai-responses", responsesBridgeTarget(), identity, "/v1/chat/completions", `{"model":"native-stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`, upstreamSSE)
+			assertSSEModels(t, body, modelIdentityWant(identity, "responses-bridge"))
+			if !strings.Contains(body, `"total_tokens":8`) {
+				t.Fatalf("terminal usage chunk missing: %s", body)
+			}
+		})
+	}
+}

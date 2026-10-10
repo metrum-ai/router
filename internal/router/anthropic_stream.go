@@ -24,18 +24,19 @@ func anthropicBridgeProxy(caller string) func(context.Context, http.ResponseWrit
 			encoder = ids[0]
 		}
 		var t stream.StreamTranslator
+		public := rc.publicModel()
 		switch normalizeDialect(caller) {
 		case "anthropic":
-			base := stream.ChatUpstreamToAnthropicCaller{IDs: encoder, ResponseID: "msg_" + requestID(), Model: model}
+			base := stream.ChatUpstreamToAnthropicCaller{IDs: encoder, ResponseID: "msg_" + requestID(), Model: model, PublicModel: public}
 			if normalizeDialect(upstream) == "openai-responses" {
 				t = &stream.ResponsesUpstreamToAnthropicCaller{ChatUpstreamToAnthropicCaller: base}
 			} else {
 				t = &base
 			}
 		case "openai-chat":
-			t = &stream.AnthropicUpstreamToChatCaller{IDs: encoder, Model: model, CreatedAt: time.Now().Unix()}
+			t = &stream.AnthropicUpstreamToChatCaller{IDs: encoder, Model: model, PublicModel: public, CreatedAt: time.Now().Unix()}
 		case "openai-responses":
-			t = &stream.AnthropicUpstreamToResponsesCaller{ChatUpstreamToResponsesCaller: stream.ChatUpstreamToResponsesCaller{IDs: encoder, ResponseID: "resp_" + requestID(), Model: model, CreatedAt: time.Now().Unix()}}
+			t = &stream.AnthropicUpstreamToResponsesCaller{ChatUpstreamToResponsesCaller: stream.ChatUpstreamToResponsesCaller{IDs: encoder, ResponseID: "resp_" + requestID(), Model: model, PublicModel: public, CreatedAt: time.Now().Unix()}}
 		}
 		return runResponsesStream(ctx, w, body, model, maxBytes, rc, t)
 	}

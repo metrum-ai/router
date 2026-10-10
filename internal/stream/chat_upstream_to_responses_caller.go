@@ -17,6 +17,7 @@ import (
 type ChatUpstreamToResponsesCaller struct {
 	IDs                       IdentifierEncoder
 	ResponseID, Model         string
+	PublicModel               string // caller-facing model; empty keeps Model
 	CreatedAt                 int64
 	sequence                  int
 	begun, finished, terminal bool
@@ -52,7 +53,7 @@ func (t *ChatUpstreamToResponsesCaller) response(status string) map[string]any {
 	for _, i := range t.items {
 		output = append(output, t.item(i))
 	}
-	p := map[string]any{"id": t.ResponseID, "object": "response", "created_at": t.CreatedAt, "model": t.Model, "status": status, "output": output}
+	p := map[string]any{"id": t.ResponseID, "object": "response", "created_at": t.CreatedAt, "model": callerModel(t.PublicModel, t.Model), "status": status, "output": output}
 	if t.usage != nil {
 		p["usage"] = t.usage
 	}

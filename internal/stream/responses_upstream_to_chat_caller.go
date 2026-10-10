@@ -13,6 +13,7 @@ import (
 type ResponsesUpstreamToChatCaller struct {
 	IDs                      IdentifierEncoder
 	ResponseID, Model        string
+	PublicModel              string // caller-facing model; empty keeps Model
 	CreatedAt                int64
 	role, terminal, finished bool
 	tools                    map[int]responsesChatTool
@@ -36,7 +37,7 @@ func (t *ResponsesUpstreamToChatCaller) chunk(delta map[string]any, finish any) 
 	if t.IDs != nil {
 		id = t.IDs.Encode(id)
 	}
-	p := map[string]any{"id": id, "object": "chat.completion.chunk", "created": t.CreatedAt, "model": t.Model, "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+	p := map[string]any{"id": id, "object": "chat.completion.chunk", "created": t.CreatedAt, "model": callerModel(t.PublicModel, t.Model), "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
 	if finish != nil && t.usage != nil {
 		p["usage"] = t.usage
 	}

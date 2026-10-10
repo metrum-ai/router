@@ -172,3 +172,154 @@ func TestResponsesValidationAndIDs(t *testing.T) {
 		t.Fatal("event after terminal")
 	}
 }
+
+// eventModels collects every JSON "model" string in the caller events.
+func eventModels(t *testing.T, events []Event) []string {
+	t.Helper()
+	var models []string
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, child := range x {
+				if s, ok := child.(string); ok && k == "model" {
+					models = append(models, s)
+					continue
+				}
+				walk(child)
+			}
+		case []any:
+			for _, child := range x {
+				walk(child)
+			}
+		}
+	}
+	for _, e := range events {
+		if bytes.Equal(bytes.TrimSpace(e.Data), []byte("[DONE]")) {
+			continue
+		}
+		var payload any
+		if err := json.Unmarshal(e.Data, &payload); err != nil {
+			t.Fatalf("event %q: %v", e.Data, err)
+		}
+		walk(payload)
+	}
+	return models
+}
+
+func runTranslator(t *testing.T, tr StreamTranslator, raw []byte) []Event {
+	t.Helper()
+	events, err := tr.Begin(TokenEstimate{InputTokens: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := NewFramer(bytes.NewReader(raw), 1<<20)
+	for {
+		up, err := f.Next()
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := tr.Next(up)
+		events = append(events, out...)
+		if errors.Is(err, ErrTerminal) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := tr.Finish(StopComplete, Usage{InputTokens: 5, OutputTokens: 3, TotalTokens: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(events, out...)
+}
+
+// Metrum AI issue #256: every caller-facing model a translator emits
+// (created, completed and terminal usage chunks) is PublicModel when set and
+// the upstream Model otherwise.
+func TestTranslatorsEmitPublicModel(t *testing.T) {
+	const upstream, public = "gpt-6-luna", "big-coder"
+	responsesFrames := strings.Join([]string{
+		"event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-6-luna\",\"status\":\"in_progress\",\"output\":[]}}",
+		"event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-6-luna\",\"status\":\"in_progress\",\"output\":[]}}",
+		"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"delta\":\"gpt-6-luna here\"}",
+		"event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"model\":\"gpt-6-luna\",\"status\":\"completed\",\"output\":[]}}",
+	}, "\n\n") + "\n\n"
+	fixture := func(dir string) []byte {
+		raw, err := os.ReadFile("../../testdata/sse/synthetic/" + dir + "/tools.sse")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	cases := []struct {
+		name string
+		make func(public string) StreamTranslator
+		raw  []byte
+	}{
+		{"responses", func(p string) StreamTranslator { return &Responses{PublicModel: p} }, []byte(responsesFrames)},
+		{"chat-to-responses", func(p string) StreamTranslator {
+			return &ChatUpstreamToResponsesCaller{ResponseID: "resp_1", Model: upstream, PublicModel: p}
+		}, fixture("openai-chat")},
+		{"responses-to-chat", func(p string) StreamTranslator {
+			return &ResponsesUpstreamToChatCaller{Model: upstream, PublicModel: p}
+		}, fixture("responses-to-chat")},
+		{"chat-to-anthropic", func(p string) StreamTranslator {
+			return &ChatUpstreamToAnthropicCaller{ResponseID: "msg_1", Model: upstream, PublicModel: p}
+		}, fixture("openai-chat")},
+		{"responses-to-anthropic", func(p string) StreamTranslator {
+			return &ResponsesUpstreamToAnthropicCaller{ChatUpstreamToAnthropicCaller: ChatUpstreamToAnthropicCaller{ResponseID: "msg_1", Model: upstream, PublicModel: p}}
+		}, fixture("responses-to-chat")},
+		{"anthropic-to-chat", func(p string) StreamTranslator {
+			return &AnthropicUpstreamToChatCaller{Model: upstream, PublicModel: p}
+		}, fixture("anthropic-bridges")},
+		{"anthropic-to-responses", func(p string) StreamTranslator {
+			return &AnthropicUpstreamToResponsesCaller{ChatUpstreamToResponsesCaller: ChatUpstreamToResponsesCaller{ResponseID: "resp_1", Model: upstream, PublicModel: p}}
+		}, fixture("anthropic-bridges")},
+	}
+	for _, tc := range cases {
+		for _, p := range []string{"", public} {
+			t.Run(tc.name+"/"+defaultModelLabel(p), func(t *testing.T) {
+				events := runTranslator(t, tc.make(p), tc.raw)
+				models := eventModels(t, events)
+				want := upstream
+				if p != "" {
+					want = public
+				}
+				if len(models) < 2 && tc.name != "chat-to-anthropic" && tc.name != "responses-to-anthropic" {
+					t.Fatalf("models=%v, want created and terminal model fields", models)
+				}
+				if len(models) == 0 {
+					t.Fatal("no model fields emitted")
+				}
+				for _, got := range models {
+					if got != want {
+						t.Fatalf("models=%v, want all %q", models, want)
+					}
+				}
+				if tc.name == "responses" && !bytes.Contains(joinEvents(events), []byte("gpt-6-luna here")) {
+					t.Fatal("delta text rewritten")
+				}
+			})
+		}
+	}
+}
+
+func defaultModelLabel(p string) string {
+	if p == "" {
+		return "upstream"
+	}
+	return "public"
+}
+
+func joinEvents(events []Event) []byte {
+	var out []byte
+	for _, e := range events {
+		out = append(out, e.Data...)
+	}
+	return out
+}

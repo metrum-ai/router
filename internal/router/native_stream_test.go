@@ -429,16 +429,218 @@ func TestNativeStreamPIIRestoreModePreservesPlaceholders(t *testing.T) {
 	}
 }
 
-func nativeStreamTestService(t *testing.T, upstreamURL, dialect string, targets []Target) *Service {
+func nativeStreamTestService(t *testing.T, upstreamURL, dialect string, targets []Target, mutate ...func(*Config)) *Service {
 	t.Helper()
 	cfg := testConfig(t, upstreamURL, "provider-key", t.TempDir())
 	cfg.Provider["native"] = ProviderConfig{BaseURL: upstreamURL, Dialect: dialect, APIKey: "provider-key"}
 	cfg.Models["native-stream"] = ModelGroup{Strategy: "static", Targets: targets}
 	cfg.Callers[0].Allow = []string{"native-stream"}
+	for _, fn := range mutate {
+		fn(cfg)
+	}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(svc.Close)
 	return svc
+}
+
+// requestedGroupIdentity switches a test config to
+// server.responses.model_identity: requested_group (Metrum AI issue #254).
+func requestedGroupIdentity(cfg *Config) {
+	cfg.Server.Responses.ModelIdentity = ModelIdentityRequestedGroup
+}
+
+// sseModels returns every JSON "model" value found in the SSE data payloads
+// of body, at any depth, in order.
+func sseModels(t *testing.T, body string) []string {
+	t.Helper()
+	var models []string
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			for k, child := range x {
+				if k == "model" {
+					if s, ok := child.(string); ok {
+						models = append(models, s)
+						continue
+					}
+				}
+				walk(child)
+			}
+		case []any:
+			for _, child := range x {
+				walk(child)
+			}
+		}
+	}
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(strings.TrimRight(line, "\r"), "data:")
+		data = strings.TrimSpace(data)
+		if !ok || data == "" || data == "[DONE]" {
+			continue
+		}
+		var payload any
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			t.Fatalf("SSE data is not JSON: %q", data)
+		}
+		walk(payload)
+	}
+	return models
+}
+
+// assertSSEModels requires at least one SSE model field and that every one
+// equals want.
+func assertSSEModels(t *testing.T, body, want string) {
+	t.Helper()
+	models := sseModels(t, body)
+	if len(models) == 0 {
+		t.Fatalf("no SSE model fields in %s", body)
+	}
+	for _, got := range models {
+		if got != want {
+			t.Fatalf("SSE models=%v, want all %q\n%s", models, want, body)
+		}
+	}
+}
+
+func TestNativeStreamModelIdentity(t *testing.T) {
+	cases := []struct {
+		name, dialect, path, body, upstreamModel string
+		frames                                   []string
+		ids                                      []string
+	}{
+		{
+			name: "chat", dialect: "openai-chat", path: "/v1/chat/completions", upstreamModel: "gpt-6-luna",
+			body: `{"model":"native-stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`,
+			frames: []string{
+				`data: {"id":"chat_mi","object":"chat.completion.chunk","model":"gpt-6-luna","choices":[{"index":0,"delta":{"role":"assistant","content":"I am gpt-6-luna"},"finish_reason":null}]}`,
+				`data: {"id":"chat_mi","object":"chat.completion.chunk","model":"gpt-6-luna","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_mi","type":"function","function":{"name":"write","arguments":"{\"model\":\"gpt-6-luna\"}"}}]},"finish_reason":null}]}`,
+				`data: {"id":"chat_mi","object":"chat.completion.chunk","model":"gpt-6-luna","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}`,
+				`data: [DONE]`,
+			},
+			ids: []string{"chat_mi", "call_mi"},
+		},
+		{
+			name: "responses", dialect: "openai-responses", path: "/v1/responses", upstreamModel: "gpt-6-luna",
+			body: `{"model":"native-stream","stream":true,"input":"hi"}`,
+			frames: []string{
+				"event: response.created\n" + `data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_mi","object":"response","model":"gpt-6-luna","status":"in_progress","output":[]}}`,
+				"event: response.in_progress\n" + `data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_mi","object":"response","model":"gpt-6-luna","status":"in_progress","output":[]}}`,
+				"event: response.output_text.delta\n" + `data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_mi","output_index":0,"content_index":0,"delta":"I am gpt-6-luna"}`,
+				"event: response.output_item.added\n" + `data: {"type":"response.output_item.added","sequence_number":3,"output_index":1,"item":{"id":"fc_mi","type":"function_call","call_id":"call_mi","name":"write","arguments":""}}`,
+				"event: response.function_call_arguments.delta\n" + `data: {"type":"response.function_call_arguments.delta","sequence_number":4,"item_id":"fc_mi","output_index":1,"delta":"{\"model\":\"gpt-6-luna\"}"}`,
+				"event: response.completed\n" + `data: {"type":"response.completed","sequence_number":5,"response":{"id":"resp_mi","object":"response","model":"gpt-6-luna","status":"completed","output":[{"id":"fc_mi","type":"function_call","call_id":"call_mi","name":"write","arguments":"{}"}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}`,
+			},
+			ids: []string{"resp_mi", "fc_mi", "call_mi"},
+		},
+		{
+			name: "anthropic", dialect: "anthropic", path: "/v1/messages", upstreamModel: "claude-upstream-mi",
+			body: `{"model":"native-stream","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"hi"}]}`,
+			frames: []string{
+				"event: message_start\n" + `data: {"type":"message_start","message":{"id":"msg_mi","type":"message","role":"assistant","model":"claude-upstream-mi","content":[],"usage":{"input_tokens":3,"output_tokens":0}}}`,
+				"event: content_block_start\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+				"event: content_block_delta\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I am claude-upstream-mi"}}`,
+				"event: content_block_stop\n" + `data: {"type":"content_block_stop","index":0}`,
+				"event: content_block_start\n" + `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_mi","name":"write","input":{}}}`,
+				"event: content_block_stop\n" + `data: {"type":"content_block_stop","index":1}`,
+				"event: message_delta\n" + `data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":2}}`,
+				"event: message_stop\n" + `data: {"type":"message_stop"}`,
+			},
+			ids: []string{"msg_mi", "toolu_mi"},
+		},
+	}
+	for _, tc := range cases {
+		for _, mode := range []struct {
+			name     string
+			identity string
+			rewrite  bool
+		}{
+			{name: "upstream", identity: ModelIdentityUpstream},
+			{name: "requested_group", identity: ModelIdentityRequestedGroup},
+			{name: "requested_group_rewrite_ids", identity: ModelIdentityRequestedGroup, rewrite: true},
+		} {
+			t.Run(tc.name+"/"+mode.name, func(t *testing.T) {
+				var upstreamBody map[string]any
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_ = json.NewDecoder(r.Body).Decode(&upstreamBody)
+					w.Header().Set("Content-Type", "text/event-stream")
+					for _, frame := range tc.frames {
+						fmt.Fprint(w, frame+"\n\n")
+					}
+				}))
+				defer upstream.Close()
+				svc := nativeStreamTestService(t, upstream.URL, tc.dialect, []Target{{Provider: "native", Model: tc.upstreamModel}}, func(cfg *Config) {
+					cfg.Server.Responses.ModelIdentity = mode.identity
+					if mode.rewrite {
+						cfg.Server.Identifiers = identifierTestConfig()
+					}
+				})
+				req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+				req.Header.Set("Authorization", "Bearer "+testToken)
+				rr := httptest.NewRecorder()
+				svc.Handler().ServeHTTP(rr, req)
+				if rr.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+				}
+				if upstreamBody["model"] != tc.upstreamModel {
+					t.Fatalf("upstream model=%v, want %s", upstreamBody["model"], tc.upstreamModel)
+				}
+				body := rr.Body.String()
+				want := tc.upstreamModel
+				if mode.identity == ModelIdentityRequestedGroup {
+					want = "native-stream"
+				}
+				assertSSEModels(t, body, want)
+				// Assistant text and tool arguments that mention the upstream
+				// model are never rewritten.
+				if !strings.Contains(body, "I am "+tc.upstreamModel) {
+					t.Fatalf("assistant text rewritten: %s", body)
+				}
+				for _, id := range tc.ids {
+					quoted := `"` + id + `"`
+					if mode.rewrite == strings.Contains(body, quoted) {
+						t.Fatalf("identifier %s rewrite=%v body=%s", id, mode.rewrite, body)
+					}
+				}
+			})
+		}
+	}
+}
+
+// serveModelIdentityStream runs one caller stream through a router whose
+// single "native-stream" target replies with upstreamSSE, and returns the
+// caller body. Upstream requests must carry the target's provider model.
+func serveModelIdentityStream(t *testing.T, upstreamDialect string, target Target, identity, path, body, upstreamSSE string) string {
+	t.Helper()
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var upstreamBody map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&upstreamBody)
+		if upstreamBody["model"] != target.Model {
+			t.Errorf("upstream model=%v, want %s", upstreamBody["model"], target.Model)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, upstreamSSE)
+	}))
+	defer up.Close()
+	svc := nativeStreamTestService(t, up.URL, upstreamDialect, []Target{target}, func(cfg *Config) {
+		cfg.Server.Responses.ModelIdentity = identity
+	})
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	return rr.Body.String()
+}
+
+func modelIdentityWant(identity, upstream string) string {
+	if identity == ModelIdentityRequestedGroup {
+		return "native-stream"
+	}
+	return upstream
 }
