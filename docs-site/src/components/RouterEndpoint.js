@@ -2,37 +2,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import React, { useEffect, useState } from "react";
+import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
+import docsOrigin from "@site/docs-origin.json";
+import { isEmbeddedRouterDocsLocation } from "./docsHost.mjs";
 import styles from "./RouterEndpoint.module.css";
 
 const FALLBACK_ORIGIN = "https://<router-host>";
 
-function isLikelyEmbeddedRouterDocs() {
+function isLikelyEmbeddedRouterDocs(siteUrl) {
   if (typeof window === "undefined" || !window.location) {
     return false;
   }
-  const { hostname, pathname } = window.location;
-  // Standalone hosted docs (current temporary origin and future docs.metrum.ai)
-  // must keep the placeholder; do not treat them as an embedded router.
-  if (
-    !hostname ||
-    hostname === "docs.metrum.ai" ||
-    hostname === new URL("https://llm-api.apps.metrum.ai/docs").hostname
-  ) {
-    return false;
-  }
-  // Standalone Docusaurus hosts and GitHub Pages must keep the placeholder.
-  // Embedded router docs are served under /docs/ from the customer router origin.
-  return pathname === "/docs" || pathname.startsWith("/docs/");
+  // Standalone hosted docs (temporary origin, docs.metrum.ai, or a DOCS_SITE_URL
+  // build) keep the placeholder. Embedded router docs are served under /docs/
+  // from the customer router origin.
+  return isEmbeddedRouterDocsLocation(window.location, docsOrigin, [siteUrl]);
 }
 
 function useRouterOrigin() {
+  const { siteConfig } = useDocusaurusContext();
   const [origin, setOrigin] = useState(FALLBACK_ORIGIN);
 
   useEffect(() => {
-    if (isLikelyEmbeddedRouterDocs() && window.location?.origin) {
+    if (isLikelyEmbeddedRouterDocs(siteConfig.url) && window.location?.origin) {
       setOrigin(window.location.origin);
     }
-  }, []);
+  }, [siteConfig.url]);
 
   return origin;
 }

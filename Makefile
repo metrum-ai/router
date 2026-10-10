@@ -478,8 +478,14 @@ docs-diag-schema-check:
 docs-brand-policy-test:
 	python3 scripts/check_docs_public_face_test.py
 
-docs-qa: docs-diag-schema-check docs-brand-policy-test
+.PHONY: docs-origin-test
+docs-origin-test:
+	python3 scripts/canonical_product_test.py
+	python3 scripts/check_docs_origin_test.py
+
+docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
 	python3 scripts/check_docs_public_face.py
+	python3 scripts/check_docs_origin.py
 	python3 scripts/validate_docs_versioning.py
 	python3 scripts/check_docs_sidebar.py
 	go run ./cmd/docs-config-example-check

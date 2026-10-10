@@ -6,6 +6,10 @@
 const lightCodeTheme = require("prism-react-renderer").themes.github;
 const darkCodeTheme = require("prism-react-renderer").themes.dracula;
 const childProcess = require("child_process");
+// Public docs origin shared with RouterEndpoint.js and scripts/canonical_product.py.
+// To serve canonical URLs from docs.metrum.ai, set "canonicalOrigin" in
+// docs-origin.json to its "permanentOrigin" (Metrum AI docs hosting, issue #123).
+const docsOrigin = require("./docs-origin.json");
 
 function latestRouterTag() {
   if (process.env.DOCS_LATEST_ROUTER_VERSION) {
@@ -42,8 +46,8 @@ const config = {
   title: "Metrum AI Router",
   tagline: "An open-source LLM smart router",
   favicon: "img/favicon/favicon.ico",
-  url: process.env.DOCS_SITE_URL || "https://llm-api.apps.metrum.ai",
-  baseUrl: "/docs/",
+  url: process.env.DOCS_SITE_URL || docsOrigin.canonicalOrigin,
+  baseUrl: docsOrigin.baseUrl,
   organizationName: "metrum-ai",
   projectName: "router",
   customFields: {

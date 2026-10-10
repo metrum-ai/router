@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 import canonical_product as product
@@ -19,11 +20,25 @@ class CanonicalProductTest(unittest.TestCase):
         self.assertEqual(product.PRODUCT_SLUG, product.IMAGE_NAME)
 
     def test_docs_url(self) -> None:
-        self.assertEqual("https://llm-api.apps.metrum.ai/docs", product.DOCS_SITE_URL)
-        self.assertTrue(product.is_allowed_docs_url(product.DOCS_SITE_URL))
-        self.assertTrue(product.is_allowed_docs_url(product.DOCS_SITE_URL + "/overview"))
+        self.assertEqual(product.DOCS_SITE_ORIGIN + "/docs", product.DOCS_SITE_URL)
+        temporary_url = product.TEMPORARY_DOCS_SITE_ORIGIN + "/docs"
+        self.assertTrue(product.is_allowed_docs_url(temporary_url))
+        self.assertTrue(product.is_allowed_docs_url(temporary_url + "/overview#fragment"))
         self.assertFalse(product.is_allowed_docs_url("https://llm-api.apps.metrum.ai/v1"))
         self.assertFalse(product.is_allowed_docs_url("https://docs.metrum.ai/docs/overview"))
+
+    def test_docs_origin_config_is_single_source(self) -> None:
+        config = json.loads(product.DOCS_ORIGIN_CONFIG_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(config["canonicalOrigin"], product.DOCS_SITE_ORIGIN)
+        self.assertEqual("https://docs.metrum.ai", product.PERMANENT_DOCS_SITE_ORIGIN)
+        self.assertEqual("https://llm-api.apps.metrum.ai", product.TEMPORARY_DOCS_SITE_ORIGIN)
+        self.assertEqual("/docs/", product.DOCS_SITE_BASE_URL)
+        self.assertIn(product.DOCS_SITE_ORIGIN, product.allowed_docs_origins())
+        if product.DOCS_ORIGIN_SWITCH_PENDING:
+            self.assertIn(product.TEMPORARY_DOCS_SITE_ORIGIN, product.allowed_docs_origins())
+            self.assertNotIn(product.PERMANENT_DOCS_SITE_ORIGIN, product.allowed_docs_origins())
+        else:
+            self.assertEqual((product.PERMANENT_DOCS_SITE_ORIGIN,), product.allowed_docs_origins())
 
     def test_strip_allowed_docs_urls(self) -> None:
         text = "See https://llm-api.apps.metrum.ai/docs/overview and llm-api.apps.metrum.ai/v1"
