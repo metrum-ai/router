@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.9-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
