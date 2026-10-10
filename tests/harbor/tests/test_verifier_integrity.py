@@ -100,3 +100,22 @@ def test_harbor01_test_sh_entrypoint_writes_reward_from_isolated_tests_dir(tmp_p
     )
     assert (reward_dir / "reward.txt").read_text().strip() == expected, proc.stderr
     assert (proc.returncode == 0) is (expected == "1.0")
+
+
+HARBOR_RUNNABLE_TASK_IDS = [t for t in TASK_IDS if (TASK_DIR_BY_ID[t] / "tests" / "test.sh").is_file()]
+
+
+def test_harbor01_is_harbor_runnable():
+    assert "HARBOR-01" in HARBOR_RUNNABLE_TASK_IDS
+
+
+@pytest.mark.parametrize("task_id", HARBOR_RUNNABLE_TASK_IDS)
+def test_harbor_runnable_task_builds_workspace_into_container(task_id: str):
+    """A task with a Harbor test.sh must build its Dockerfile; a prebuilt docker_image skips COPY workspace."""
+    import tomllib
+
+    task_dir = TASK_DIR_BY_ID[task_id]
+    config = tomllib.loads((task_dir / "task.toml").read_text())
+    assert "docker_image" not in config.get("environment", {})
+    dockerfile = (task_dir / "environment" / "Dockerfile").read_text()
+    assert "COPY workspace/ /app/" in dockerfile
