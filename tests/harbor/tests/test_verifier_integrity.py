@@ -39,3 +39,38 @@ def test_wrong_result_fails(task_id: str):
     wrong = evaluate_mode(task_id, "wrong")
     assert wrong.passed is False, f"{task_id} wrong result unexpectedly passed: {wrong.detail}"
     assert wrong.reward == 0.0
+
+
+def test_harbor01_verifier_runs_without_task_tree_and_ignores_workspace_cases(tmp_path):
+    """HARBOR-01 must grade inside a container where only /tests exists (HARBOR-REAL-AGENT)."""
+    import hashlib
+    import json
+    import shutil
+
+    from harness.runner import run_verifier
+
+    task_dir = TASK_DIR_BY_ID["HARBOR-01"]
+    starter = task_dir / "environment" / "workspace" / "normalize.py"
+    tests_copy = tmp_path / "tests"
+    shutil.copytree(task_dir / "tests", tests_copy)
+    verify_src = (tests_copy / "verify.py").read_text()
+    assert hashlib.sha256(starter.read_bytes()).hexdigest() in verify_src
+    hidden = json.loads((task_dir / "tests" / "cases.json").read_text())
+    visible = json.loads((task_dir / "environment" / "workspace" / "cases.json").read_text())
+    assert hidden == visible
+
+    # Mutation: agent rewrites the visible cases to match a wrong implementation.
+    workspace = tmp_path / "app"
+    shutil.copytree(task_dir / "environment" / "workspace", workspace)
+    (workspace / "normalize.py").write_text("def normalize(text):\n    return text\n")
+    (workspace / "cases.json").write_text(
+        json.dumps({"cases": [{"input": c["input"], "expected": c["input"]} for c in visible["cases"]]})
+    )
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("harbor01_verify_isolated", tests_copy / "verify.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    result = mod.verify(workspace)
+    assert result["passed"] is False and result["reward"] == 0.0
+    assert run_verifier("HARBOR-01", workspace).passed is False
