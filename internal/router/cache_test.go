@@ -147,6 +147,15 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withBias, target, "caller-a", "proj-1") {
 		t.Fatal("cache key must include logit_bias")
 	}
+	withChoices := &IRRequest{
+		Model:       base.Model,
+		Messages:    base.Messages,
+		Temperature: &zero,
+		Raw:         map[string]any{"n": 2},
+	}
+	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withChoices, target, "caller-a", "proj-1") {
+		t.Fatal("cache key must include n")
+	}
 }
 
 func TestCacheBypassesUnknownBehaviorChangingRawFields(t *testing.T) {
