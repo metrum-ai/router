@@ -144,3 +144,69 @@ cases:
     assertions:
       - omitted/null/false/zero field distinctions across bridge encoders
     rationale: Deferred encoder property matrix; Redis not required but out of P0 ship scope.
+
+  - id: ROUTE-MI-01
+    priority: P0
+    owner: api-compat
+    component: model-identity
+    source_url: https://github.com/metrum-ai/router/issues/255
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/*
+    transport: unary
+    disposition: native_supported
+    assertions:
+      - model_identity requested_group reports the requested group as the unary response model
+      - model_identity upstream (default) keeps the provider model
+      - upstream requests always name the provider model
+    evidence_paths:
+      - tests/api_compat/tests/test_route_model_identity.py
+      - internal/router/model_identity_test.go
+    test_id: test_route_model_identity_unary
+
+  - id: ROUTE-MI-02
+    priority: P0
+    owner: api-compat
+    component: model-identity
+    source_url: https://github.com/metrum-ai/router/issues/256
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/*
+    transport: sse
+    disposition: native_supported
+    assertions:
+      - every SSE model field is the requested group under requested_group and the provider model under upstream
+      - assistant text that mentions the provider model is not rewritten
+    evidence_paths:
+      - tests/api_compat/tests/test_route_model_identity.py
+      - internal/router/native_stream_test.go
+    test_id: test_route_model_identity_sse
+
+  - id: ROUTE-MI-03
+    priority: P0
+    owner: api-compat
+    component: model-identity
+    source_url: https://github.com/metrum-ai/router/issues/255
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/*
+    transport: unary
+    disposition: native_supported
+    assertions:
+      - chat-to-responses and responses-to-chat bridges report the requested group to the caller under requested_group
+      - bridge upstream requests keep the provider model
+    evidence_paths:
+      - tests/api_compat/tests/test_route_model_identity.py
+    test_id: test_route_model_identity_bridges
+
+  - id: ROUTE-MI-04
+    priority: P1
+    owner: api-compat
+    component: model-identity
+    source_url: https://github.com/metrum-ai/router/issues/254
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/models
+    transport: unary
+    disposition: native_supported
+    assertions:
+      - /v1/models stays group-scoped and lists no upstream model IDs under requested_group
+    evidence_paths:
+      - tests/api_compat/tests/test_route_model_identity.py
+    test_id: test_route_model_identity_models_list_is_group_scoped
