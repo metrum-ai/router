@@ -162,7 +162,7 @@ export default function App() {
               <p className="text-sm text-white/58">Operational usage, savings, routing, and security reporting.</p>
               {version && (
                 <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[0.68rem] uppercase text-white/66 xl:justify-end">
-                  {versionLabel && <span className="rounded border border-white/14 bg-white/[0.06] px-2 py-1 text-white">{versionLabel}</span>}
+                  {versionLabel && <span className="rounded border border-white/14 bg-white/6 px-2 py-1 text-white">{versionLabel}</span>}
                   {commitLabel && <span className="rounded border border-white/14 bg-white/[0.035] px-2 py-1">Commit {commitLabel}</span>}
                   {buildLabel && <span className="rounded border border-white/14 bg-white/[0.035] px-2 py-1">Built {buildLabel}</span>}
                   {version.license_compile_mode && <span className="rounded border border-metrum-purple/45 bg-metrum-purple/15 px-2 py-1 text-white/80">{version.license_compile_mode}</span>}

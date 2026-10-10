@@ -42,7 +42,7 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
         </p>
       </div>
       <details className="rounded-lg border border-white/10 bg-white/[0.035] p-4 text-sm text-white/72">
-        <summary className="cursor-pointer select-none font-mono text-xs uppercase text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-metrum-blue">
+        <summary className="cursor-pointer select-none font-mono text-xs uppercase text-white/70 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-metrum-blue">
           How to use this report
         </summary>
         <div className="mt-3 grid gap-4 lg:grid-cols-[1.25fr_1fr]">
@@ -67,7 +67,7 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
                     <a
                       key={related.id}
                       href={relatedReportHref(related.id)}
-                      className="rounded-md border border-white/10 px-2 py-1 text-xs text-white/70 hover:border-metrum-blue/50 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-metrum-blue"
+                      className="rounded-md border border-white/10 px-2 py-1 text-xs text-white/70 hover:border-metrum-blue/50 hover:text-white focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-metrum-blue"
                     >
                       {related.label}
                     </a>

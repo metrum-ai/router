@@ -19,7 +19,7 @@ export function SidebarItem({ tab, active, showDescription = false, onSelect }: 
       aria-current={active ? "page" : undefined}
       title={tab.metadata.shortDescription}
       className={cn(
-        "grid w-full gap-0.5 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-metrum-blue",
+        "grid w-full gap-0.5 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-metrum-blue",
         active ? "bg-metrum-purple text-white" : "text-white/64 hover:bg-white/[0.07] hover:text-white",
       )}
       onClick={() => onSelect(tab.id)}

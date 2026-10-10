@@ -25,7 +25,7 @@ export function SidebarGroup({ id, label, description, tabs, activeTab, collapse
       <button
         type="button"
         className={cn(
-          "flex w-full items-center justify-between rounded-md px-2 py-1.5 font-mono text-[0.68rem] uppercase text-white/50 transition-colors hover:bg-white/[0.05] hover:text-white/74 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-metrum-blue",
+          "flex w-full items-center justify-between rounded-md px-2 py-1.5 font-mono text-[0.68rem] uppercase text-white/50 transition-colors hover:bg-white/5 hover:text-white/74 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-metrum-blue",
           containsActiveTab && "text-white/74",
         )}
         aria-expanded={!collapsed}
