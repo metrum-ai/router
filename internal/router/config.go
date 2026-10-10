@@ -39,8 +39,22 @@ type StreamingConfig struct {
 	Translator string `yaml:"translator" json:"translator"`
 }
 
+// Model identity modes for server.responses.model_identity. Upstream reports
+// the selected provider model on caller-facing responses (the historical
+// behavior); requested_group reports the router model group the caller asked
+// for, while usage, attempts, logs and cache keys keep the upstream model.
+const (
+	ModelIdentityUpstream       = "upstream"
+	ModelIdentityRequestedGroup = "requested_group"
+)
+
+type ResponsesConfig struct {
+	ModelIdentity string `yaml:"model_identity" json:"model_identity"`
+}
+
 type ServerConfig struct {
 	Streaming           StreamingConfig           `yaml:"streaming" json:"streaming"`
+	Responses           ResponsesConfig           `yaml:"responses" json:"responses"`
 	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
@@ -977,6 +991,9 @@ func (c *Config) setDefaults() {
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
 	}
+	if c.Server.Responses.ModelIdentity == "" {
+		c.Server.Responses.ModelIdentity = ModelIdentityUpstream
+	}
 	if c.Server.Identifiers.Mode == "" {
 		c.Server.Identifiers.Mode = "rewrite"
 	}
@@ -1147,6 +1164,11 @@ func (c *Config) Validate() error {
 	case "", "incremental", "synthesized":
 	default:
 		return fmt.Errorf("server.streaming.translator must be incremental or synthesized")
+	}
+	switch c.Server.Responses.ModelIdentity {
+	case "", ModelIdentityUpstream, ModelIdentityRequestedGroup:
+	default:
+		return fmt.Errorf("server.responses.model_identity must be upstream or requested_group")
 	}
 	if _, err := newIdentifierTransform(c.Server.Identifiers); err != nil {
 		return err
