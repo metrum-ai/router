@@ -88,8 +88,8 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
 
 ## Local coding-agent instance
 
-For a weighted local coding group (`big-coder` only: Fireworks
-`accounts/fireworks/models/deepseek-v4p1-flash` 70 / gpt-5.6-sol 30) on
+For a weighted local coding group (`big-coder` only: OpenAI `gpt-6-luna` 70 /
+Fireworks `accounts/fireworks/models/deepseek-v4p1-flash` 30) on
 `0.0.0.0:18081`, with upstream keys from repo `env.json` and a reusable
 caller token stored as `METRUM_API_KEY`:
 
@@ -105,6 +105,11 @@ foreground. Point clients at `http://127.0.0.1:18081/v1` with:
 ```bash
 export METRUM_API_KEY="$(tr -d '\n' < tmp/local-pi/METRUM_API_KEY)"
 ```
+
+The demo enables `/admin/reports/` with HTTP Basic login `admin` / `admin` by
+default. Open `http://127.0.0.1:18081/admin/reports/`. The router listens on
+all interfaces, so replace `LOCAL_PI_ADMIN_PASSWORD_HASH` in `env.json` and
+restrict network access before using this setup outside a controlled demo.
 
 Optional Make helpers:
 

@@ -94,7 +94,7 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError(local_env)
         if local_env.get("FIREWORKS_API_KEY") != "fireworks-test":
             raise AssertionError(local_env)
-        if set(local_env) != {"FIREWORKS_API_KEY", "OPENAI_API_KEY", "METRUM_API_KEY"}:
+        if set(local_env) != {"FIREWORKS_API_KEY", "OPENAI_API_KEY", "METRUM_API_KEY", "LOCAL_PI_ADMIN_PASSWORD_HASH"}:
             raise AssertionError(sorted(local_env))
 
         import yaml  # type: ignore
@@ -102,6 +102,17 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
         cfg = yaml.safe_load((out / "config.yaml").read_text(encoding="utf-8"))
         if cfg["server"]["listen"] != "0.0.0.0:18081":
             raise AssertionError(cfg["server"]["listen"])
+        admin = cfg["server"]["admin_auth"]
+        if not admin["basic"]["enabled"] or not admin["basic"]["allow_insecure_http"]:
+            raise AssertionError(admin["basic"])
+        if admin["basic"]["users"][0]["password_hash_env"] != "LOCAL_PI_ADMIN_PASSWORD_HASH":
+            raise AssertionError(admin["basic"]["users"])
+        if not admin["authorization"]["enabled"] or not cfg["server"]["admin_reports"]["enabled"]:
+            raise AssertionError("admin reports disabled")
+        if not any("admin:reports, read|export|drilldown" in p for p in admin["authorization"]["policy"]):
+            raise AssertionError(admin["authorization"]["policy"])
+        if not local_env["LOCAL_PI_ADMIN_PASSWORD_HASH"].startswith("$2b$"):
+            raise AssertionError("missing demo admin bcrypt hash")
         if list(cfg["models"]) != ["big-coder"]:
             raise AssertionError(list(cfg["models"]))
         if set(cfg["providers"]) != {"fireworks", "openai"}:
@@ -111,20 +122,22 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError(flash["model"])
         targets = cfg["models"]["big-coder"]["targets"]
         weights = [(t["provider"], t["model_ref"], t["weight"]) for t in targets]
-        if weights != [("fireworks", "deepseek-v4p1-flash", 70), ("openai", "gpt-5.6-sol", 30)]:
+        if weights != [("openai", "gpt-6-luna", 70), ("fireworks", "deepseek-v4p1-flash", 30)]:
             raise AssertionError(weights)
         if cfg["providers"]["openai"]["dialect"] != "openai-responses":
             raise AssertionError(cfg["providers"]["openai"]["dialect"])
-        sol = cfg["providers"]["openai"]["models"]["gpt-5.6-sol"]
+        luna = cfg["providers"]["openai"]["models"]["gpt-6-luna"]
+        if luna["model"] != "gpt-6-luna":
+            raise AssertionError(luna["model"])
         prices = (
-            sol["input_price_per_million_usd"],
-            sol["cached_input_price_per_million_usd"],
-            sol["output_price_per_million_usd"],
+            luna["input_price_per_million_usd"],
+            luna["cached_input_price_per_million_usd"],
+            luna["output_price_per_million_usd"],
         )
-        if prices != (4.0, 0.4, 20.0):
-            raise AssertionError("gpt-5.6-sol pricing metadata")
-        if sol["pricing_source"] != "https://developers.openai.com/api/docs/models/gpt-5.6-sol":
-            raise AssertionError(sol["pricing_source"])
+        if prices != (0.1, 0.01, 0.5):
+            raise AssertionError("gpt-6-luna pricing metadata")
+        if luna["pricing_source"] != "https://developers.openai.com/api/docs/models/gpt-6-luna":
+            raise AssertionError(luna["pricing_source"])
         want_hash = hashlib.sha256(token.encode()).hexdigest()
         if cfg["callers"][0]["token_sha256"] != want_hash:
             raise AssertionError(cfg["callers"][0]["token_sha256"])

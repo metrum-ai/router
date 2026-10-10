@@ -1332,6 +1332,7 @@ func TestWeightedOrderTreatsOmittedTargetWeightAsOne(t *testing.T) {
 }
 
 func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
+	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", mustBcryptHash(t, "admin"))
 	raw, err := os.ReadFile("../../config.example.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -1702,6 +1703,7 @@ func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
 }
 
 func TestExampleConfigOpenAINanoResponsesReasoningMetadata(t *testing.T) {
+	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", mustBcryptHash(t, "admin"))
 	raw, err := os.ReadFile("../../config.example.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -1766,6 +1768,7 @@ func TestExampleConfigOpenAINanoResponsesReasoningMetadata(t *testing.T) {
 }
 
 func TestExampleConfigPreservesAnthropicTextEligibilityInBroadGroups(t *testing.T) {
+	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", mustBcryptHash(t, "admin"))
 	raw, err := os.ReadFile(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -1814,6 +1817,7 @@ func TestExampleConfigPreservesAnthropicTextEligibilityInBroadGroups(t *testing.
 }
 
 func TestExampleConfigLargeOpenAIChatToolsSmokeHasShapeGate(t *testing.T) {
+	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", mustBcryptHash(t, "admin"))
 	raw, err := os.ReadFile(filepath.Join("..", "..", "config.example.yaml"))
 	if err != nil {
 		t.Fatal(err)
