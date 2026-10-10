@@ -3001,7 +3001,7 @@ func classifyContextOrNetworkError(parentCtx, attemptCtx context.Context, err er
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return upstreamError{Class: "upstream_timeout", Message: "upstream request timed out", TimedOut: true, Retryable: true, Err: err}
 	}
-	return upstreamError{Class: "upstream_network_error", Message: err.Error(), Retryable: true, Err: err}
+	return upstreamError{Class: "upstream_network_error", Message: safeUpstreamNetworkErrorMessage(err), Retryable: true, Err: err}
 }
 
 func classifyError(err error) upstreamError {
