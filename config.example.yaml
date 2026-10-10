@@ -91,24 +91,22 @@ server:
         enabled: false
         max_wait_ms: 0
         max_depth: 0
-  # Browser-admin HTTP Basic authentication is disabled by default. It only
-  # establishes an admin subject; control-plane authorization uses explicit
-  # Casbin grants under server.admin_auth.authorization.
+  # Demo/reference login: admin/admin. Replace the bcrypt hash in env.json
+  # before exposing this example outside a controlled demo network. Basic
+  # establishes identity; the report grant below authorizes the dashboard.
   admin_auth:
     basic:
-      enabled: false
+      enabled: true
       realm: Metrum AI Router Admin
-      allow_insecure_http: false
+      allow_insecure_http: true
       trusted_proxy_cidrs: []
-      users: []
-      # Example enabling shape, using a deployment secret for the bcrypt hash:
-      # users:
-      # - username: admin
-      #   password_hash_env: SMART_ROUTER_ADMIN_PASSWORD_HASH
-      #   subject: basic:admin
-      #   domain: example/prod
-      #   permissions:
-      #   - admin:auth:read
+      users:
+      - username: admin
+        password_hash_env: LOCAL_PI_ADMIN_PASSWORD_HASH
+        subject: basic:admin
+        domain: example/prod
+        permissions:
+        - admin:auth:read
     oidc:
       enabled: false
       issuer_url: https://accounts.google.com
@@ -130,13 +128,14 @@ server:
       secure_cookies: true
       same_site: strict
     authorization:
-      enabled: false
+      enabled: true
       # source: static loads deployment-owned policy_file and inline policy.
       # source: db loads the single active policy set from the usage DB and
       # fails closed at startup if no active validated policy set exists.
       source: static
       policy_file: ''
-      policy: []
+      policy:
+      - p, basic:admin, example/prod, admin:reports, read|export|drilldown
       # Example Casbin policy for metrics, admin reports, and content maintenance after AuthN is enabled.
       # Use policy_file for deployment-owned CSV files, or inline policy for small installs.
       # For DB-backed policy lifecycle, create policy rows in the usage DB, validate
@@ -151,7 +150,7 @@ server:
       # - p, reports_admin, example/prod, admin:reports, read|export|drilldown
       # - p, reports_admin, example/prod, admin:security_reports, read|export
   admin_reports:
-    enabled: false
+    enabled: true
     path_prefix: /admin/reports
     default_since: 24h
     max_range: 31d

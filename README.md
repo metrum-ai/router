@@ -76,7 +76,7 @@ Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 
 ### Local coding-agent router
 
-For a weighted `big-coder` mix (Fireworks deepseek-v4p1-flash 70 / gpt-5.6-sol 30)
+For a weighted `big-coder` mix (OpenAI gpt-6-luna 70 / Fireworks deepseek-v4p1-flash 30)
 listening on `0.0.0.0:18081`, with upstream keys from repo `env.json` and a
 reusable `METRUM_API_KEY` (requires [uv](https://github.com/astral-sh/uv)):
 
@@ -88,6 +88,11 @@ Clients use `http://127.0.0.1:18081/v1` and
 `tmp/local-pi/METRUM_API_KEY`. Setup-only / Pi wiring:
 `make local-router-setup` and `make local-router-configure-pi`. Details:
 [Local Quickstart](docs-site/docs/getting-started/local-quickstart.md#local-coding-agent-instance).
+
+The local demo and `config.example.yaml` enable the admin reports dashboard by
+default at `http://127.0.0.1:18081/admin/reports/`, with `admin` / `admin`.
+Both listen on all interfaces; replace `LOCAL_PI_ADMIN_PASSWORD_HASH` in
+`env.json` and restrict network access before using these examples elsewhere.
 
 `config.example.yaml` remains the full catalog reference. Do not copy it for a
 first local trial.
@@ -1708,4 +1713,3 @@ Current MVP capabilities:
 - JSONL request logs using the SRS schema.
 - Metrics-admin-only Prometheus-compatible `/metrics` with caller/user/project labels.
 - Usage reports, admin browser reports, and optional signed runtime-policy licensing.
-

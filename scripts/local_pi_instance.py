@@ -7,8 +7,8 @@
 Default shape matches the local pi setup:
   listen 0.0.0.0:18081
   group big-coder only (weighted)
-    70% fireworks / accounts/fireworks/models/deepseek-v4p1-flash
-    30% openai / gpt-5.6-sol (Responses via chat_to_responses)
+    70% openai / gpt-6-luna (Responses via chat_to_responses)
+    30% fireworks / accounts/fireworks/models/deepseek-v4p1-flash
 
 Upstream keys are copied from a source env.json (repo env.json by default).
 The local caller token is stored as METRUM_API_KEY (file + out-dir env.json)
@@ -32,6 +32,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 UPSTREAM_KEYS = ("FIREWORKS_API_KEY", "OPENAI_API_KEY")
+ADMIN_HASH_ENV = "LOCAL_PI_ADMIN_PASSWORD_HASH"
+# Demo-only default login: admin/admin. Override with ADMIN_HASH_ENV in env.json.
+DEMO_ADMIN_PASSWORD_HASH = "$2b$12$o8v1ntt3UOcyHUoCRKF4.eYHga/4SHaiGlOTrw8YEcp97knODcP/m"
 CALLER_ID = "local-dev-example-project-dev"
 OWNER_USER = "local-dev"
 PROJECT = "example-project"
@@ -193,7 +196,33 @@ def build_config(
                 "max_error_bytes": 2048,
             },
             "retention": {"enabled": False},
-            "admin_auth": {"basic": {"enabled": False, "users": []}},
+            "admin_auth": {
+                "basic": {
+                    "enabled": True,
+                    "realm": "Local Router Admin",
+                    "allow_insecure_http": True,
+                    "users": [{
+                        "username": "admin",
+                        "password_hash_env": ADMIN_HASH_ENV,
+                        "subject": "basic:admin",
+                        "domain": "example-project/dev",
+                        "permissions": ["admin:auth:read"],
+                    }],
+                },
+                "authorization": {
+                    "enabled": True,
+                    "source": "static",
+                    "policy": [
+                        "p, basic:admin, example-project/dev, admin:reports, read|export|drilldown"
+                    ],
+                },
+            },
+            "admin_reports": {
+                "enabled": True,
+                "default_since": "24h",
+                "max_range": "31d",
+                "max_rows": 500,
+            },
         },
         "state_path": str(out_dir / "router-state.json"),
         "users": [
@@ -254,19 +283,19 @@ def build_config(
                 "api_key_env": "OPENAI_API_KEY",
                 "key_id": "openai-local",
                 "models": {
-                    "gpt-5.6-sol": {
-                        "model": "gpt-5.6-sol",
+                    "gpt-6-luna": {
+                        "model": "gpt-6-luna",
                         "tier": "frontier",
                         "input_modalities": ["text"],
                         "output_modalities": ["text"],
-                        "input_price_per_million_usd": 4.0,
-                        "cached_input_price_per_million_usd": 0.4,
-                        "output_price_per_million_usd": 20.0,
-                        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+                        "input_price_per_million_usd": 0.10,
+                        "cached_input_price_per_million_usd": 0.01,
+                        "output_price_per_million_usd": 0.50,
+                        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
                         "pricing_updated_at": "2026-10-07",
                         "pricing_notes": (
-                            "Promotional pricing through at least 2026-11-21; "
-                            "long-context and cache-write surcharges may apply."
+                            "Standard short-context rates. Prompts over 272K input "
+                            "tokens are 2x input and cache rates and 1.5x output."
                         ),
                         "force_store_false": True,
                         "tool_support": {"openai_responses": ["function"]},
@@ -290,14 +319,9 @@ def build_config(
                 "strategy": "weighted",
                 "targets": [
                     {
-                        "provider": "fireworks",
-                        "model_ref": "deepseek-v4p1-flash",
-                        "weight": 70,
-                    },
-                    {
                         "provider": "openai",
-                        "model_ref": "gpt-5.6-sol",
-                        "weight": 30,
+                        "model_ref": "gpt-6-luna",
+                        "weight": 70,
                         "bridges": {
                             "chat_to_responses": {
                                 "enabled": True,
@@ -306,6 +330,11 @@ def build_config(
                                 "text": True,
                             }
                         },
+                    },
+                    {
+                        "provider": "fireworks",
+                        "model_ref": "deepseek-v4p1-flash",
+                        "weight": 30,
                     },
                 ],
             }
@@ -428,8 +457,11 @@ def write_readme(out_dir: Path, listen: str) -> None:
                 f"Listen: {listen}",
                 f"Client base: {base}",
                 "Group: big-coder (weighted; only group)",
-                "  70% fireworks / accounts/fireworks/models/deepseek-v4p1-flash",
-                "  30% openai / gpt-5.6-sol (chat_to_responses)",
+                "  70% openai / gpt-6-luna (chat_to_responses)",
+                "  30% fireworks / accounts/fireworks/models/deepseek-v4p1-flash",
+                "",
+                f"Admin reports: http://{client_listen(listen)}/admin/reports/",
+                "Demo login: admin / admin (override LOCAL_PI_ADMIN_PASSWORD_HASH in env.json)",
                 "",
                 "Caller token files (mode 0600):",
                 f"  {out_dir / 'METRUM_API_KEY'}",
@@ -477,7 +509,7 @@ def configure_pi(out_dir: Path, listen: str) -> None:
                 "models": [
                     {
                         "id": GROUP,
-                        "name": "Local big-coder (deepseek-v4p1-flash 70 / gpt-5.6-sol 30)",
+                        "name": "Local big-coder (gpt-6-luna 70 / deepseek-v4p1-flash 30)",
                         "contextWindow": 124518,
                         "maxTokens": 8192,
                         "reasoning": False,
@@ -610,6 +642,11 @@ def main() -> None:
     write_private(router_token_path, token)
 
     local_env = {key: (source_env.get(key) or os.environ.get(key, "")) for key in UPSTREAM_KEYS}
+    local_env[ADMIN_HASH_ENV] = (
+        source_env.get(ADMIN_HASH_ENV)
+        or os.environ.get(ADMIN_HASH_ENV)
+        or DEMO_ADMIN_PASSWORD_HASH
+    )
     local_env["METRUM_API_KEY"] = token
     write_private(out_dir / "env.json", json.dumps(local_env, indent=2) + "\n")
 
@@ -624,16 +661,17 @@ def main() -> None:
         "listen": args.listen,
         "group": GROUP,
         "targets": [
+            {"provider": "openai", "model": "gpt-6-luna", "weight": 70},
             {
                 "provider": "fireworks",
                 "model": "accounts/fireworks/models/deepseek-v4p1-flash",
-                "weight": 70,
+                "weight": 30,
             },
-            {"provider": "openai", "model": "gpt-5.6-sol", "weight": 30},
         ],
         "token_file": str(token_path),
         "token_reused": token_reused,
         "caller_id": CALLER_ID,
+        "admin_reports_url": f"http://{client_listen(args.listen)}/admin/reports/",
         "start": str(out_dir / "start.sh"),
     }
     print(json.dumps(summary, indent=2))
