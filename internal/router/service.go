@@ -1352,6 +1352,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 					rc.rec.KeyState = "error"
 				} else {
 					rc.rec.Usage = usage
+					if !committedStreamUsageReported(err) {
+						// Same provenance marker as the unary path: the settled
+						// tokens are the router's reservation estimate.
+						rc.rec.Warnings = appendWarning(rc.rec.Warnings, "usage-estimated")
+					}
 				}
 			}
 			classified := classifyError(err)
@@ -1444,9 +1449,14 @@ func estimatedUsageForReservation(req *IRRequest, dialect string, reservationTok
 	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total}
 }
 
+func committedStreamUsageReported(err error) bool {
+	var upstream upstreamError
+	return errors.As(err, &upstream) && upstream.PartialUsage != nil && totalTokens(*upstream.PartialUsage) > 0
+}
+
 func committedStreamUsage(err error, req *IRRequest, dialect string, reservationTokens int) Usage {
 	var upstream upstreamError
-	if errors.As(err, &upstream) && upstream.PartialUsage != nil && totalTokens(*upstream.PartialUsage) > 0 {
+	if committedStreamUsageReported(err) && errors.As(err, &upstream) {
 		return *upstream.PartialUsage
 	}
 	if reservationTokens > 0 {
