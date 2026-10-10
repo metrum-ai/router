@@ -47,7 +47,7 @@ export function TabFilterPanel({ tab, columns, supportedSortKeys, filters, onFil
   }
 
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.025] p-3" aria-label={`${tab.label} filters`}>
+    <section className="rounded-lg border border-white/10 bg-white/2.5 p-3" aria-label={`${tab.label} filters`}>
       <div className="flex flex-wrap items-center justify-between gap-2 lg:hidden">
         <Button type="button" variant="outline" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
           Filters

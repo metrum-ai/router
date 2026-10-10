@@ -134,7 +134,7 @@ export function DataTable({
   return (
     <section className="space-y-3" aria-busy={loading}>
       <div className="flex flex-wrap items-end gap-2">
-        <label className="grid min-w-[14rem] gap-1 font-mono text-[0.68rem] uppercase text-white/58">
+        <label className="grid min-w-56 gap-1 font-mono text-[0.68rem] uppercase text-white/58">
           {quickFilterLabel}
           <Input className="max-w-xs" placeholder={quickFilterLabel} value={quickFilter} onChange={(event) => setQuickFilter(event.target.value)} />
         </label>
@@ -177,7 +177,7 @@ export function DataTable({
       </p>
       <div className="overflow-auto rounded-lg border border-white/10">
         <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-          <thead className="bg-white/[0.06] text-xs uppercase text-white/60">
+          <thead className="bg-white/6 text-xs uppercase text-white/60">
             <tr>
               {columns.map((column) => (
                 <th key={column.key} className="whitespace-nowrap px-3 py-2" aria-sort={sortKey === column.key ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
@@ -199,7 +199,7 @@ export function DataTable({
           </thead>
           <tbody>
             {visibleRows.map((row, index) => (
-              <tr key={index} className="border-t border-white/10 odd:bg-white/[0.025]">
+              <tr key={index} className="border-t border-white/10 odd:bg-white/2.5">
                 {columns.map((column) => (
                   <td key={column.key} className="max-w-[360px] truncate px-3 py-2 text-white/82" title={formatValue(row[column.key], column.key)}>
                     {renderCell(row, column)}

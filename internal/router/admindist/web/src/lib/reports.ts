@@ -475,7 +475,7 @@ function meta(id: string, metadata: Omit<ReportMetadata, "docsPath">): ReportMet
 }
 
 export const reportMetadataById = {
-  migrations: meta("data-migrations", { shortDescription: "Shows the checked-in migration contract and safe ledger state. This page is read-only.", purpose: "Use it before an upgrade or recovery to confirm compatibility, pending work, maintenance class, validation, audit timing, and rollback contract.", dataSemantics: "Checked-in metadata joined to scalar ledger state; SQL, DSNs, credentials, content, and write actions are excluded.", commonFilters: ["scope", "release", "state", "type", "date"], keyColumns: [{ key: "state", description: "Safe ledger state." }, { key: "rollbackClass", description: "Release rollback requirement." }], caveats: "Apply, retry, and recovery remain deployment-job CLI operations with approved evidence; this dashboard never performs them.", relatedReports: ["retention-status", "overview"], emptyState: "No migration definitions are registered for this deployment." }),
+  "data-migrations": meta("data-migrations", { shortDescription: "Shows the checked-in migration contract and safe ledger state. This page is read-only.", purpose: "Use it before an upgrade or recovery to confirm compatibility, pending work, maintenance class, validation, audit timing, and rollback contract.", dataSemantics: "Checked-in metadata joined to scalar ledger state; SQL, DSNs, credentials, content, and write actions are excluded.", commonFilters: ["scope", "release", "state", "type", "date"], keyColumns: [{ key: "state", description: "Safe ledger state." }, { key: "rollbackClass", description: "Release rollback requirement." }], caveats: "Apply, retry, and recovery remain deployment-job CLI operations with approved evidence; this dashboard never performs them.", relatedReports: ["retention-status", "overview"], emptyState: "No migration definitions are registered for this deployment." }),
   overview: meta("overview", {
     shortDescription: "Shows overall usage, spend, latency, cache, fallback, and provider trends.",
     purpose: "Start here to confirm whether the selected time range is healthy before drilling into a specific dimension.",
@@ -1216,7 +1216,7 @@ function reportMeta(id: keyof typeof reportMetadataById): ReportMetadata {
 }
 
 export const tabSpecs: TabSpec[] = [
-  { id: "data-migrations", label: "Data migrations", endpoint: "migrations", metadata: reportMeta("migrations"), columns: migrationColumns, filters: ["scope", "release", "state", "type", "date"] },
+  { id: "data-migrations", label: "Data migrations", endpoint: "migrations", metadata: reportMeta("data-migrations"), columns: migrationColumns, filters: ["scope", "release", "state", "type", "date"] },
   { id: "overview", label: "Overview", endpoint: "summary", metadata: reportMeta("overview"), overview: true },
   { id: "groups", label: "Groups", endpoint: "summary", metadata: reportMeta("groups"), columns: defaultScalarColumns, filters: statusCacheFilters },
   { id: "providers", label: "Providers", endpoint: "summary", metadata: reportMeta("providers"), columns: defaultScalarColumns, filters: statusCacheFilters },

@@ -57,7 +57,7 @@ export function GlobalFilters({ draftFilters, filters, onDraftChange, onClearTab
         <FilterInput field={sinceField} value={draftFilters[sinceField[0]]} onDraftChange={onDraftChange} className="w-32 sm:mr-auto" />
         <Button type="submit">Apply</Button>
         <a
-          className="inline-flex h-9 items-center rounded-md border border-white/15 px-3 text-sm text-white hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-metrum-blue"
+          className="inline-flex h-9 items-center rounded-md border border-white/15 px-3 text-sm text-white hover:bg-white/8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-metrum-blue"
           href={`export.md?${markdownParams}`}
           aria-label="Markdown full report for current filters"
           title="Markdown full report for current filters"

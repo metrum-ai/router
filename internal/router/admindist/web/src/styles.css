@@ -1,9 +1,14 @@
 /* Copyright 2026 Metrum AI */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+  Metrum AI Router admin reports: Tailwind CSS 4 CSS-first configuration.
+  The theme tokens below replace the former tailwind.config.ts.
+*/
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 @font-face {
   font-family: "MetrumDisplay";
@@ -55,28 +60,82 @@
   --metrum-blue: #465cda;
 }
 
-* {
-  box-sizing: border-box;
+@theme inline {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  background:
-    radial-gradient(circle at top left, rgba(254, 0, 95, 0.14), transparent 28rem),
-    radial-gradient(circle at top right, rgba(70, 92, 218, 0.14), transparent 30rem),
-    #000;
-  color: #fff;
-  font-family: "MetrumSans", Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-weight: 400;
-  letter-spacing: 0;
+@theme {
+  --color-metrum-red: #ff3132;
+  --color-metrum-pink: #fe005f;
+  --color-metrum-magenta: #ee0089;
+  --color-metrum-purple: #cc28af;
+  --color-metrum-violet: #9948cb;
+  --color-metrum-blue: #465cda;
+
+  --font-display: "MetrumDisplay", "MetrumSans", "Inter", system-ui, sans-serif;
+  --font-sans: "MetrumSans", "Inter", system-ui, sans-serif;
+  --font-mono: "MetrumMono", ui-monospace, "SFMono-Regular", "Menlo", monospace;
 }
 
-a {
-  color: inherit;
+/*
+  Tailwind 3 compatibility: v4 preflight defaults borders to currentcolor and
+  buttons to the default cursor. Keep the v3 look for elements that rely on it.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background:
+      radial-gradient(circle at top left, rgba(254, 0, 95, 0.14), transparent 28rem),
+      radial-gradient(circle at top right, rgba(70, 92, 218, 0.14), transparent 30rem),
+      #000;
+    color: #fff;
+    font-family: "MetrumSans", Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  a {
+    color: inherit;
+  }
+
   h1,
   h2,
   h3,
@@ -91,12 +150,12 @@ a {
   option {
     font-weight: 400;
   }
-}
 
-button,
-input,
-select {
-  letter-spacing: 0;
+  button,
+  input,
+  select {
+    letter-spacing: 0;
+  }
 }
 
 .panel-gradient {

@@ -442,7 +442,7 @@ function showChartTooltip(title: string, rows: string[], x: number, y: number) {
   const element = tooltipElement();
   element.replaceChildren();
   const titleEl = document.createElement("div");
-  titleEl.className = "mb-1 break-words text-white/92";
+  titleEl.className = "mb-1 wrap-break-word text-white/92";
   titleEl.textContent = title;
   element.appendChild(titleEl);
   for (const row of rows) {
@@ -475,7 +475,7 @@ function ChartLegend({ entries }: { entries: ShortLabelMap[] }) {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="mb-2 inline-flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-white/30"
+        className="mb-2 inline-flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-white/70 hover:bg-white/5 focus:outline-hidden focus:ring-2 focus:ring-white/30"
         aria-expanded={open}
       >
         {open ? "Hide" : "Show"} bucket legend ({entries.length})
