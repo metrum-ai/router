@@ -20,6 +20,8 @@ import threading
 import time
 import zlib
 from pathlib import Path
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -27,7 +29,6 @@ from conftest import (
     CALLER,
     CALLER_DIGEST,
     assert_generated_artifacts_redacted,
-    request,
     spawn_router,
     stop_router,
 )
@@ -203,7 +204,18 @@ def _clear_media_calls(media_router):
 
 
 def _api(media_router, path, payload=None):
-    return request(media_router["base"], path, payload, CALLER)
+    # The matrix issues ~40 requests; a longer per-request timeout than the shared
+    # 5s helper keeps it stable on a loaded runner without hiding real hangs.
+    headers = {"Authorization": f"Bearer {CALLER}"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode()
+        headers["Content-Type"] = "application/json"
+    try:
+        with urlopen(Request(media_router["base"] + path, data=data, headers=headers), timeout=30) as response:
+            return response.status, response.headers, response.read()
+    except HTTPError as error:
+        return error.code, error.headers, error.read()
 
 
 def _chat_ok(model: str) -> dict:
