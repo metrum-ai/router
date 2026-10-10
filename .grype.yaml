@@ -10,3 +10,116 @@ ignore:
       name: braces
       version: 3.0.3
       type: npm
+
+# Temporary, advisory-specific exception for the Go toolchain embedded in the
+# TypeScript 7 native compiler binary (@typescript/typescript-<os>-<arch>/lib/tsc),
+# a build-time-only devDependency of internal/router/admindist/web that is never
+# shipped in the router binary or image. typescript 7.0.2, the latest stable
+# release, is built with go1.26.4 and golang.org/x/text v0.38.0; only 7.1 dev
+# nightlies use a patched toolchain. Owner: release/compliance. Expiry: when a
+# stable typescript release ships a tsc built with go >= 1.26.6 and
+# golang.org/x/text >= 0.41.0, or when
+# https://github.com/metrum-ai/router/issues/253 is closed. Reviewed 2026-10-10;
+# revisit on every admin dependency refresh.
+  - vulnerability: CVE-2026-33818
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-39822
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-46600
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-56853
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-56859
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-56862
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-56864
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: CVE-2026-56865
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-4970
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-5026
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-5942
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-5972
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-6088
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-6089
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-6090
+    package:
+      name: stdlib
+      version: go1.26.4
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-5970
+    package:
+      name: golang.org/x/text
+      version: v0.38.0
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+  - vulnerability: GO-2026-6629
+    package:
+      name: golang.org/x/text
+      version: v0.38.0
+      type: go-module
+      location: "**/node_modules/@typescript/typescript-*/lib/tsc"
