@@ -14,6 +14,70 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.1.0 - 2026-10-10
+
+### Highlights
+
+- Opt-in `server.responses.model_identity: requested_group` makes every
+  caller-facing `model` field report the requested router group (for example
+  `big-coder`) instead of the upstream model that served it, across Chat
+  Completions, Responses and Anthropic Messages, unary and streaming. In that
+  mode, upstream failure errors no longer name providers or upstream models.
+  The default stays `upstream`, so existing deployments see no change.
+- Release binaries are built with Go 1.26.9, which fixes standard-library
+  vulnerabilities in the `net/http` HTTP/1 and HTTP/2 server and client,
+  `net/textproto` and `crypto/tls` (GO-2026-6603 through GO-2026-6617).
+- API compatibility fixes: verbatim passthrough for tool-less same-dialect
+  Anthropic and Responses requests, the response cache key includes `n`,
+  provider URLs no longer appear in network error details, images inside
+  Anthropic `tool_result` blocks trigger image eligibility, and Codex
+  continuations under `identifiers.mode: rewrite` decode replayed Responses
+  item ids.
+- Admin UI toolchain refresh (Vite 8, TypeScript 7, Tailwind CSS 4,
+  React 19.3) with a rebuilt embedded admin dist.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Config | New optional `server.responses.model_identity` (`upstream` default, or `requested_group`) |
+| Errors | Under `requested_group`, `error.details.targets` becomes `{attempt, error_class}` and `last_error` is redacted |
+| Usage and reports | Unchanged: usage rows, attempts, logs and admin reports keep upstream provider and model in both modes |
+| Database | No usage-database migration |
+| Packages | GitHub Release publishes binary packages, `SHA256SUMS` and `release-artifacts.json` only; Docker packages are built from a checkout with `make package-docker` |
+| Runtime | Built with Go 1.26.9 |
+
+### Caller Impact
+
+- With the default `model_identity: upstream`, request and response shapes are
+  unchanged from v4.0.2 except for the passthrough fidelity fixes above (for
+  example, tool-less same-dialect Responses calls now return the upstream
+  `resp_` id, so `previous_response_id` continuation works).
+- With `requested_group`, callers see the group name in `model` and redacted
+  upstream error details.
+
+### Upgrade
+
+1. Download `metrum-ai-router-v4.1.0-linux-<arch>.tar.gz` from the GitHub
+   Release and verify it against `SHA256SUMS` / `release-artifacts.json`. For
+   Docker, build the package from the `v4.1.0` tag with `make package-docker`.
+2. Replace the package; keep existing config. Optionally set
+   `server.responses.model_identity: requested_group`.
+3. Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide).
+
+### Validation
+
+- `/readyz` and `/version` report v4.1.0, and `/version` reports `go1.26.9`
+- One authenticated `/v1/models` call succeeds
+- If `requested_group` is enabled: one Chat request reports the group name in
+  `model`, and a tool-using client continuation completes
+
+### Rollback
+
+Roll back to GitHub Release **v4.0.2**. No usage-database restore is required.
+v4.0.2 ignores `server.responses.model_identity`, so callers see upstream
+model names again after rollback; remove the key to keep config tidy.
+
 ## v4.0.2 - 2026-10-01
 
 ### Highlights

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-10-10
+
 ### Added
 
 - `server.responses.model_identity: requested_group` makes caller-facing
@@ -38,6 +40,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `make local-router` keeps only the `big-coder` group, weighted 70% OpenAI
   `gpt-6-luna` and 30% Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`.
+- Tagged GitHub releases publish the binary packages
+  (`metrum-ai-router-<version>-linux-<arch>.tar.gz`), `SHA256SUMS` and
+  `release-artifacts.json` only. Docker packages are no longer attached to the
+  GitHub Release; build them from a checkout with `make package-docker` (#248).
+- The admin web toolchain moves to Vite 8, TypeScript 7, Vitest 5,
+  Tailwind CSS 4 (CSS-first, autoprefixer removed) and React 19.3 with paired
+  type packages. The embedded admin dist is rebuilt; only intended
+  text-opacity rendering changes (#221, #225).
+- Docs site: `@mermaid-js/layout-elk` 1.0.1 with Mermaid 12, Node `>=22.12`.
+  The docs origin is set in one file (`docs-site/docs-origin.json`), and
+  `make docs-qa` rejects non-canonical docs origins (#224, #17, #123).
+- Learned routing policy service: pandas 3, mypy 2 and sentence-transformers 6
+  are allowed, and `uv.lock` is refreshed (#223).
+- CI: `actions/checkout` v7, `actions/setup-python` v7, `astral-sh/setup-uv`
+  v10.2 and `anchore/sbom-action` 0.24.3 (#222).
+- Go modules: `pgx/v5` 5.11.0, `golang.org/x/crypto` 0.57.0, `casbin/v2`
+  2.135.0, `go-redis/v9` 9.23.0.
 
 ### Fixed
 
@@ -56,6 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   eligibility, so a text-only target no longer receives them (#94).
 - A committed stream that ends without provider usage marks its settled usage
   as `usage-estimated`.
+- Local-router GPT pricing entries and Node scan dependencies are corrected
+  (#252).
 - Under `identifiers.mode: rewrite`, replayed Responses input item ids
   (`reasoning`, `message`, `function_call`) are decoded on ingress. Codex
   continuations no longer fail with `string_above_max_length` on
@@ -69,6 +90,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `net/textproto` MIME header limits and `crypto/tls` ECH: GO-2026-6603,
   GO-2026-6605, GO-2026-6607, GO-2026-6608, GO-2026-6609, GO-2026-6610,
   GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
+- Docs-site `image-size` 2.0.4 and `http-cache-semantics` 4.3.0 clear their
+  advisories, and their `.grype.yaml` exceptions are removed. `braces` stays
+  excepted (no fixed release). A location-scoped exception covers the Go
+  toolchain embedded in TypeScript 7's build-time `tsc` binary, which is not
+  shipped in the router (#253).
 
 ## [4.0.2] - 2026-10-01
 
@@ -276,7 +302,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v4.0.1...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v4.1.0...HEAD
+[4.1.0]: https://github.com/metrum-ai/router/compare/v4.0.2...v4.1.0
+[4.0.2]: https://github.com/metrum-ai/router/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/metrum-ai/router/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/metrum-ai/router/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/metrum-ai/router/compare/v2.2.0...v3.0.0
