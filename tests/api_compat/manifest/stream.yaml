@@ -139,67 +139,100 @@ cases:
     owner: api-compat
     component: sse-transport
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: sse
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - huge lines tiny frames stream limits and idle timeout stay bounded
+      - 600 one-character frames written one per flush reconstruct exactly with a single [DONE]
+      - a single data line above server.upstream.max_response_bytes before any frame returns 502 upstream_response_too_large without echoing the line and without a retry
+      - crossing the byte limit after commitment ends the stream with the committed prefix only and no invented finish_reason or [DONE]
+      - heartbeat-comment-only and idle-after-first-frame streams end at the attempt deadline (the router has no separate idle timer) and the router closes the upstream socket
     evidence_paths:
-      - tests/api_compat/manifest/stream.yaml
-    rationale: Deferred linked issue for soak/limit matrix.
+      - tests/api_compat/tests/test_stream_limits.py
+      - internal/router/native_stream.go
+    test_id: test_stream_08_size_line_heartbeat_and_idle_bounds
 
   - id: STREAM-09
     priority: P1
     owner: api-compat
     component: sse-transport
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: mixed
+    outbound_dialect: mixed
     transport: sse
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - duplicate terminals and unknown additive events do not double-settle usage
+      - Chat duplicate usage chunk and data after [DONE] are not forwarded; exactly one [DONE]
+      - Responses duplicate response.completed and trailing deltas are not forwarded
+      - Messages duplicate message_stop and trailing deltas are not forwarded
+      - unknown additive events and obfuscation fields pass through transparently
+      - usage_db records exactly one row per stream with single (not doubled) 3/2/5 usage
     evidence_paths:
-      - tests/api_compat/manifest/stream.yaml
-    rationale: Deferred linked issue.
+      - tests/api_compat/tests/test_stream_limits.py
+      - internal/router/native_stream.go
+    test_id: test_stream_09_duplicate_terminals_trailing_data_and_additive_fields
 
   - id: STREAM-10
     priority: P1
     owner: api-compat
     component: sse-transport
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     transport: sse
     disposition: blocked
     assertions:
       - HTTP/1.1 vs HTTP/2 and reverse-proxy buffering keep first-event incremental
     evidence_paths:
-      - tests/api_compat/manifest/stream.yaml
-    rationale: Deferred deployment/proxy configuration follow-up.
+      - tests/api_compat/tests/test_stream_limits.py
+      - tests/api_compat/tests/test_stream_faults.py
+      - cmd/metrum-ai-router/main.go
+    rationale: >-
+      Router side covered offline: the binary listens with plain net/http ListenAndServe (HTTP/1.1, no TLS, no h2c);
+      test_stream_10_router_listener_is_http11_without_h2c pins chunked SSE without Content-Length plus Cache-Control no-cache
+      and that an h2c prior-knowledge preface gets no HTTP/2 SETTINGS, and STREAM-03/RESP-02 prove gated first-event delivery over HTTP/1.1.
+      HTTP/2 and reverse-proxy compression/buffering exist only at the deployment ingress, so the end-to-end first-event and cancel
+      check needs a deployed ingress profile (live). Note: the router does not send X-Accel-Buffering no, so nginx-style proxies need proxy_buffering off.
+    test_id: test_stream_10_router_listener_is_http11_without_h2c
 
   - id: STREAM-11
     priority: P1
     owner: api-compat
     component: sse-transport
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    sdk_client_version: "openai==1.109.1"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: sse
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - SDK retry plus router retry budget has an explicit total attempt ceiling
+      - for upstream 503 and 429 the total upstream attempts equal (OpenAI SDK max_retries + 1) x eligible targets, for max_retries 0 and 2
+      - the router makes one attempt per eligible target in order (primary then backup) and never re-attempts a target
+      - total wall time stays bounded (no retry storm or unbounded Retry-After wait)
+      - after a committed stream ends early the SDK does not retry and the router makes exactly one attempt
     evidence_paths:
-      - tests/api_compat/manifest/stream.yaml
-    rationale: Deferred linked issue.
+      - tests/api_compat/tests/test_stream_limits.py
+      - internal/router/service.go
+    test_id: test_stream_11_sdk_and_router_retry_ceiling
 
   - id: STREAM-12
     priority: P2
     owner: api-compat
     component: sse-transport
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: mixed
+    outbound_dialect: mixed
     transport: sse
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - concurrent mixed streams and cancel cycles stay race-free and leak-free
+      - 90 mixed Chat/Responses/Messages streams at 16-way concurrency each receive only their own nonce
+      - 20 connect/read-first-event/cancel cycles each propagate the hang-up to the upstream socket
+      - the router fd table returns to the warm baseline (plus small slack) and /readyz stays 200
+      - the load runs against a -race build with GORACE halt_on_error and no race report is produced
     evidence_paths:
-      - tests/api_compat/manifest/stream.yaml
-    rationale: Deferred soak follow-up.
+      - tests/api_compat/tests/test_stream_limits.py
+    test_id: test_stream_12_concurrent_mixed_streams_and_cancel_cycles

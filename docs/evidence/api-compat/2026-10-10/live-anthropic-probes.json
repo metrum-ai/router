@@ -1,0 +1,26 @@
+{
+ "router_sha": "c402232",
+ "group": "live-smoke (Anthropic target: MiniMax-M3 native anthropic dialect)",
+ "probes": {
+  "ANTH-stream-live": {
+   "status": 200,
+   "content_type": "text/event-stream",
+   "first_event": [
+    "message_start"
+   ],
+   "last_event": [
+    "message_stop"
+   ],
+   "has_text_delta": true,
+   "ends_message_stop": true
+  },
+  "ANTH-tool-turn-two-live": {
+   "turn1_status": 200,
+   "turn1_stop_reason": "tool_use",
+   "tool_use_count": 1,
+   "turn2_status": 200,
+   "turn2_stop_reason": "end_turn",
+   "turn2_echoes_tool_result": true
+  }
+ }
+}

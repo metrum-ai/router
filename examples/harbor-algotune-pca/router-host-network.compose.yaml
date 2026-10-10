@@ -1,0 +1,8 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Live-only Harbor override: share the host network so a task container can reach
+# a loopback-bound local Metrum AI Router (pass with --extra-docker-compose).
+# Never used by offline CI. Do not use against shared or production hosts.
+services:
+  main:
+    network_mode: host

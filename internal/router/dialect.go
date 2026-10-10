@@ -277,10 +277,9 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 	if tools, ok := body["tools"]; ok {
 		body["tools"] = filterResponsesToolsForUpstream(tools)
 	}
-	// Same-dialect native streaming keeps stream=true so the upstream emits
-	// provider SSE. Unary requests stay false; enableNativeUpstreamStream is a
-	// belt-and-suspenders rewrite on the native path.
-	body["stream"] = req != nil && req.Stream
+	// Encode a unary upstream call. The native streaming path flips stream=true
+	// via enableNativeUpstreamStream; the synthesized translator needs unary.
+	body["stream"] = false
 	if target.ForceStoreFalse {
 		body["store"] = false
 	}
@@ -862,6 +861,13 @@ func decodeContentParts(v any) []IRContentPart {
 			if m, ok := item.(map[string]any); ok {
 				if _, hasContent := m["content"]; hasContent && stringValue(m["type"]) == "" {
 					out = append(out, decodeContentParts(m["content"])...)
+					continue
+				}
+				// Anthropic tool_result blocks may nest text and image blocks; surface
+				// them so image eligibility sees images that only appear in tool
+				// results (issue #94 ANTH-11).
+				if nested, ok := m["content"].([]any); ok && stringValue(m["type"]) == "tool_result" {
+					out = append(out, decodeContentParts(nested)...)
 					continue
 				}
 			}

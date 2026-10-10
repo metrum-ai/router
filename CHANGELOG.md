@@ -25,11 +25,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instance reports `model: big-coder`. `make local-router-pi-smoke` runs a pi
   write/read tool continuation against a running instance and checks the
   reported model and usage rows (#258).
+- The api-compat suite now has offline contracts for 35 of the 43 rows that
+  were `blocked` in the #94 catalog (Chat, Anthropic, Responses, routing,
+  streaming, HTTP, media and ops). Remaining gaps stay `blocked` with a
+  rationale (`make api-compat-mock`). Harbor HARBOR-01 runs inside its task container,
+  and a router-only pi Harbor adapter is in `examples/harbor-algotune-pca/`.
+  Dated live evidence for the smoke matrix and pi, Claude Code and Codex
+  HARBOR-01 runs through the router is in
+  `docs/evidence/api-compat/2026-10-10/` (#94).
 
 ### Changed
 
 - `make local-router` keeps only the `big-coder` group, weighted 70% OpenAI
   `gpt-6-luna` and 30% Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`.
+
+### Fixed
+
+- The response cache key includes the choice count `n`, so an `n=2` request is
+  no longer served a cached `n=1` response.
+- Upstream network errors no longer include the provider URL in
+  `error.details.last_error`.
+- Tool-less same-dialect Anthropic Messages and Responses requests are
+  forwarded verbatim through the native passthrough codec instead of the
+  re-encoder. Anthropic keeps `thinking`, `output_config`, system blocks,
+  document and unknown blocks and the upstream `msg_` id. Responses keeps the
+  upstream `resp_` id (so `previous_response_id` continuation works), reasoning
+  items, item-array input and `incomplete` status. Under `requested_group`
+  only the top-level `model` is replaced (#94).
+- Images nested in Anthropic `tool_result` content now trigger image
+  eligibility, so a text-only target no longer receives them (#94).
+- A committed stream that ends without provider usage marks its settled usage
+  as `usage-estimated`.
+- Under `identifiers.mode: rewrite`, replayed Responses input item ids
+  (`reasoning`, `message`, `function_call`) are decoded on ingress. Codex
+  continuations no longer fail with `string_above_max_length` on
+  `input[N].id`.
 
 ## [4.0.2] - 2026-10-01
 

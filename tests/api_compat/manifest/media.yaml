@@ -65,12 +65,21 @@ cases:
     owner: api-compat
     component: media
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions|/v1/responses|/anthropic/v1/messages
+    outbound_dialect: openai-chat|openai-responses|anthropic
+    capability_profile: vision
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - JPEG/PNG/WebP/GIF profile and detail variants need a follow-up matrix
-    rationale: deferred linked issue — format/detail/OCR live matrix not in Wave 1 P0
+      - PNG (landscape, portrait with alpha), JPEG, WebP and transparent GIF fixtures reach the native upstream byte-identical by sha256 with their media type
+      - Chat image_url.detail and Responses input_image.detail high/low/auto are preserved upstream
+      - Anthropic base64 image sources keep media_type and bytes (Messages has no detail control)
+    evidence_paths:
+      - tests/api_compat/tests/test_media_matrix.py
+      - tests/api_compat/manifest/media.yaml
+    test_id: test_media_04_format_and_detail_matrix
+    rationale: Offline router contract only; live OCR fact checks against real vision models remain a live-matrix concern.
 
   - id: MEDIA-05
     priority: P1
@@ -111,24 +120,47 @@ cases:
     owner: api-compat
     component: media
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions|/v1/responses|/anthropic/v1/messages
     transport: unary
     disposition: blocked
     assertions:
       - provider file_id and document blocks need explicit supported-route coverage
-    rationale: deferred linked issue — opaque file_id/PDF matrix not in Wave 1 P0
+    rationale: >-
+      Blocked on a router product decision (found 2026-10-10). File/document parts are
+      handled inconsistently: tool-bearing same-dialect requests forward Chat
+      {"type":"file"}, Responses {"type":"input_file"} and Anthropic {"type":"document"}
+      blocks raw (with no file/pdf modality check on the target), while text-only
+      same-dialect requests, streaming requests and both Chat/Responses bridges re-encode
+      through the IR and silently drop those blocks with HTTP 200. The contract
+      (preserve only on explicitly supported routes, otherwise reject before upstream) needs
+      a decision between rejecting file parts or adding file/pdf eligibility plus
+      preservation; neither is a small contained fix. Repro on the session router -
+      POST /v1/chat/completions {"model":"chat","messages":[{"role":"user","content":[{"type":"text","text":"hi"},{"type":"file","file":{"file_id":"file-abc"}}]}]}
+      returns 200 and the upstream body is {"messages":[{"role":"user","content":"hi"}]}.
 
   - id: MEDIA-08
     priority: P1
     owner: api-compat
     component: media
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
-    transport: n/a
-    disposition: blocked
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions|/v1/responses|/anthropic/v1/messages
+    outbound_dialect: openai-chat|openai-responses|anthropic
+    capability_profile: vision+cache+usage_db+pii_filter
+    transport: mixed
+    disposition: native_supported
     assertions:
-      - image canaries in PII/cache/artifact paths need OPS-linked follow-up
-    rationale: deferred linked issue — redaction canaries for images tracked with OPS-10
+      - identical deterministic image requests bypass the enabled response cache (two upstream calls) while a text control is served once
+      - pii_filter redacts text but leaves image data URLs and URLs byte-identical upstream (apply_to.image_urls off)
+      - upstream error, private-URL rejection (image_url_forbidden, zero attempts, zero upstream calls) and streamed Responses/Messages image paths complete
+      - image URL, base64 payload, embedded pixel canary, prompt and PII canaries are absent from usage.sqlite, router log, state, stderr and /v1/usage
+      - the artifact scanner detects each planted canary (ARCH-08 self-check)
+    evidence_paths:
+      - tests/api_compat/tests/test_media_matrix.py
+      - tests/api_compat/manifest/media.yaml
+    test_id: test_media_08_image_canaries_through_cache_pii_error_and_usage
+    rationale: Content-capture storage is encrypted and covered by Go tests (redactImages); admin report paths are disabled in this profile.
 
   - id: MEDIA-09
     priority: P2

@@ -1,0 +1,9 @@
+{
+  "cases": [
+    {"input": "  Hello World  ", "expected": "hello world", "edge": false},
+    {"input": "A\t\tB\nC", "expected": "a b c", "edge": false},
+    {"input": "MiXeD", "expected": "mixed", "edge": false},
+    {"input": "   ", "expected": "", "edge": true},
+    {"input": "", "expected": "", "edge": true}
+  ]
+}

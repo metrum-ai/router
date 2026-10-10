@@ -4,8 +4,12 @@
 """Independent verifier for HARBOR-01.
 
 Pass requires:
-  1. Hidden cases (from cases.json) all match.
+  1. Hidden cases (tests/cases.json, outside the agent-editable /app) all match.
   2. Implementation differs from the starter (catches no-edit/read-loop).
+
+Inside a Harbor container only ``/tests`` is present, so the starter fingerprint
+is pinned here instead of being read from ``environment/workspace``; the offline
+suite checks that the pin matches the checked-in starter. Metrum AI.
 """
 
 from __future__ import annotations
@@ -16,13 +20,13 @@ import json
 import sys
 from pathlib import Path
 
-STARTER_HASH = None  # filled at module load from sibling starter bytes fingerprint
+# sha256 of environment/workspace/normalize.py (pinned; see module docstring).
+STARTER_SHA256 = "e84daa64bd7b71d15cea2c47183ae3b58874b4a75b7dec6d695fa9813176ac4b"
+HIDDEN_CASES = Path(__file__).resolve().parent / "cases.json"
 
 
 def _starter_fingerprint() -> str:
-    # Canonical starter body fingerprint (must match environment/workspace/normalize.py).
-    starter = Path(__file__).resolve().parents[1] / "environment" / "workspace" / "normalize.py"
-    return hashlib.sha256(starter.read_bytes()).hexdigest()
+    return STARTER_SHA256
 
 
 def _load_normalize(workspace: Path):
@@ -37,7 +41,8 @@ def _load_normalize(workspace: Path):
 
 
 def verify(workspace: Path) -> dict:
-    cases_path = workspace / "cases.json"
+    # Grade against the verifier's own copy so editing /app/cases.json cannot pass.
+    cases_path = HIDDEN_CASES if HIDDEN_CASES.is_file() else workspace / "cases.json"
     cases = json.loads(cases_path.read_text(encoding="utf-8"))["cases"]
     artifact = workspace / "normalize.py"
     if not artifact.is_file():

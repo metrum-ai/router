@@ -19,5 +19,6 @@ timeout_sec = 600.0
 build_timeout_sec = 120.0
 cpus = 1
 memory_mb = 1024
-# Pinned env stub: offline CI does not build this image.
-docker_image = "python:3.11.13-slim-bookworm"
+# Built from environment/Dockerfile (pinned python:3.11.13-slim-bookworm base) so
+# the workspace is copied into /app. A docker_image override would skip the build
+# and start the agent in an empty container. Offline CI does not build it.

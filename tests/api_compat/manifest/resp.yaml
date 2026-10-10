@@ -111,59 +111,84 @@ cases:
     owner: api-compat
     component: openai-responses
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/responses
     outbound_dialect: openai-responses
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - previous_response_id multi-turn and stale/mismatched id behavior
-    rationale: Stateful previous_response_id matrix deferred; existing Go bridge-session coverage remains authoritative until a dedicated follow-up lands.
+      - caller receives the upstream response id unchanged so previous_response_id continuation works, including plain-text turns
+      - continuation turns forward the exact previous_response_id, only the new input items, and the new instructions (no history replay)
+      - function_call_output continuation keeps call_id distinct from the output item id
+      - provider-owned stale previous_response_id error surfaces after exactly one upstream attempt (no stateless replay)
+      - previous_response_id on a stateless Responses-to-Chat bridge group rejects with 502 no-eligible-target and zero upstream calls
+    evidence_paths:
+      - tests/api_compat/tests/test_responses_contracts.py
+      - tests/api_compat/manifest/resp.yaml
+      - docs/evidence/api-compat/2026-10-10/live-resp07-continuation.json
+    test_id: test_resp_07_previous_response_id_continuation
 
   - id: RESP-08
     priority: P1
     owner: api-compat
     component: openai-responses
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/responses
     outbound_dialect: openai-responses
     transport: mixed
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - opaque encrypted reasoning item replay without logging secrets
-    rationale: Reasoning-item opacity and redaction matrix deferred to a follow-up; do not fabricate unavailable reasoning in this slice.
+      - reasoning items with encrypted_content and summaries reach the upstream byte-for-byte in item order, with and without tools
+      - include, store:false and reasoning controls are forwarded on the same-dialect path
+      - unary reasoning and function_call output items return to the caller unchanged; no message item is fabricated when visible text is empty
+      - native SSE output_item.done and response.completed carry the opaque reasoning item verbatim
+      - encrypted reasoning and summary canaries never appear in router logs, state, or other generated artifacts
+    evidence_paths:
+      - tests/api_compat/tests/test_responses_contracts.py
+      - tests/api_compat/manifest/resp.yaml
+    test_id: test_resp_08_encrypted_reasoning_replay_unary
 
   - id: RESP-09
     priority: P1
     owner: api-compat
     component: openai-responses
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/responses
     outbound_dialect: openai-responses
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - text.format JSON Schema and reasoning/store control overrides
-    rationale: >-
-      Still blocked: Go dialect conformance already covers text.format
-      forwarding, and an independent public HTTP schema-validation matrix
-      would expand beyond this RESP-11 capability-boundary slice.
+      - text.format json_schema (nested, enum, nullable, Unicode) reaches the upstream unmutated on a structured_outputs target
+      - max_output_tokens and reasoning effort/summary keep Responses control names; no Chat cap fields are invented
+      - force_store_false overrides caller store:true and caller metadata is stripped
+      - returned structured output passes an independent schema check
+      - text.format or reasoning on a target without that metadata rejects 502 no-eligible-target with zero upstream calls
+    evidence_paths:
+      - tests/api_compat/tests/test_responses_contracts.py
+      - tests/api_compat/manifest/resp.yaml
+    test_id: test_resp_09_text_format_reasoning_and_store_overrides
 
   - id: RESP-10
     priority: P1
     owner: api-compat
     component: openai-responses
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/responses
     outbound_dialect: openai-responses
     transport: unary
-    disposition: blocked
+    disposition: documented_normalization
     assertions:
-      - namespace/custom/hosted/MCP tool support-strip-reject matrix
-    rationale: Hosted-tool policy remains in Go tests; full public HTTP matrix deferred.
+      - function, custom and namespace tools pass through verbatim on native Responses targets and custom_tool_call output is returned as-is
+      - generic hosted web_search and image_generation descriptors are stripped before upstream
+      - mcp, sse, file_search, code_interpreter and computer_use_preview reject with 400 provider-hosted-tools-forbidden and zero upstream calls
+      - custom, namespace and hosted tools skip the function-only Responses-to-Chat bridge with 502 no-eligible-target and zero upstream calls
+    evidence_paths:
+      - tests/api_compat/tests/test_responses_contracts.py
+      - tests/api_compat/manifest/resp.yaml
+    test_id: test_resp_10_client_tools_forwarded_and_generic_hosted_stripped
 
   - id: RESP-11
     priority: P1
@@ -190,11 +215,18 @@ cases:
     owner: api-compat
     component: openai-responses
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-responses
     transport: mixed
-    disposition: blocked
+    disposition: documented_normalization
     assertions:
-      - Responses-shaped body on Chat endpoint with stream/tools/state under the opt-in switch
-    rationale: Covered partially by Go openai_compatibility tests; public api-compat expansion deferred to avoid conflicting with the HTTP catalog slice.
+      - switch disabled (default) rejects Responses bodies on /v1/chat/completions with 400 responses-body-on-chat-endpoint-disabled and zero upstream calls; Chat bodies still succeed
+      - switch enabled routes as Responses ingress to the native target with max_tokens normalized to max_output_tokens and tools/tool_choice/previous_response_id preserved
+      - stream true returns Responses SSE lifecycle events, not Chat chunks
+      - Chat-only groups are reached through the validated Responses-to-Chat bridge
+      - previous_response_id without a native Responses target, unsupported fields, mixed bodies, hosted tools and cap conflicts reject 400 before upstream
+    evidence_paths:
+      - tests/api_compat/tests/test_responses_contracts.py
+      - tests/api_compat/manifest/resp.yaml
+    test_id: test_resp_12_enabled_unary_tools_and_state_route_as_responses

@@ -1,0 +1,139 @@
+{
+ "window_utc": [
+  "2026-10-10T00:00:00Z",
+  "9999"
+ ],
+ "router_requests": 455,
+ "total_cost_usd": 0.721692,
+ "routing_config_fingerprints": [
+  "4cb99c3d64bdf7d3c21c14f13e40160cbc11d2adbe20a417f5d9316275c90b50",
+  "60724e35160a5312c5afb37e14061a04fc059ce4357d7cdb6dc499e6c7d1a4a3",
+  "cae9a598a8b9a70b7434bb695f4308b0bac405005eb26b36b75c1123b8c30c78",
+  "ed17f09449083a6e23a13d0928c7d1d7b28b00e150e652079a99fc682825d2a4"
+ ],
+ "by_route": {
+  "big-coder | openai-chat -> openai/gpt-5.6-sol (openai-responses)": {
+   "requests": 27,
+   "status": {
+    "200": 27
+   },
+   "input_tokens": 236661,
+   "output_tokens": 6328,
+   "cached_input_tokens": 162931,
+   "cost_usd": 0.486652,
+   "fallback_used": 0,
+   "stream": 27
+  },
+  "big-coder | openai-chat -> fireworks/accounts/fireworks/models/deepseek-v4p1-flash (openai-chat)": {
+   "requests": 45,
+   "status": {
+    "200": 45
+   },
+   "input_tokens": 327859,
+   "output_tokens": 10503,
+   "cached_input_tokens": 242182,
+   "cost_usd": 0.079061,
+   "fallback_used": 0,
+   "stream": 45
+  },
+  "live-smoke | openai-chat -> fireworks/accounts/fireworks/models/deepseek-v4p1-flash (openai-chat)": {
+   "requests": 4,
+   "status": {
+    "200": 4
+   },
+   "input_tokens": 148,
+   "output_tokens": 61,
+   "cached_input_tokens": 0,
+   "cost_usd": 7.3e-05,
+   "fallback_used": 0,
+   "stream": 0
+  },
+  "live-smoke | openai-responses -> minimax_anthropic/MiniMax-M3 (anthropic)": {
+   "requests": 5,
+   "status": {
+    "200": 5
+   },
+   "input_tokens": 872,
+   "output_tokens": 60,
+   "cached_input_tokens": 640,
+   "cost_usd": 0.000334,
+   "fallback_used": 0,
+   "stream": 0
+  },
+  "live-smoke | anthropic -> minimax_anthropic/MiniMax-M3 (anthropic)": {
+   "requests": 10,
+   "status": {
+    "200": 10
+   },
+   "input_tokens": 2661,
+   "output_tokens": 81,
+   "cached_input_tokens": 1860,
+   "cost_usd": 0.000896,
+   "fallback_used": 0,
+   "stream": 2
+  },
+  "live-smoke | openai-responses -> openai/gpt-5.4-nano (openai-responses)": {
+   "requests": 5,
+   "status": {
+    "502": 2,
+    "200": 3
+   },
+   "input_tokens": 46,
+   "output_tokens": 15,
+   "cached_input_tokens": 0,
+   "cost_usd": 2.8e-05,
+   "fallback_used": 0,
+   "stream": 0
+  },
+  "live-resp-stored | openai-responses -> openai/gpt-5.4-nano (openai-responses)": {
+   "requests": 6,
+   "status": {
+    "200": 4,
+    "502": 2
+   },
+   "input_tokens": 132,
+   "output_tokens": 28,
+   "cached_input_tokens": 0,
+   "cost_usd": 6.1e-05,
+   "fallback_used": 0,
+   "stream": 0
+  },
+  "live-codex | openai-responses -> / ()": {
+   "requests": 90,
+   "status": {
+    "502": 90
+   },
+   "input_tokens": 0,
+   "output_tokens": 0,
+   "cached_input_tokens": 0,
+   "cost_usd": 0.0,
+   "fallback_used": 0,
+   "stream": 90
+  },
+  "live-anthropic | anthropic -> minimax_anthropic/MiniMax-M3 (anthropic)": {
+   "requests": 17,
+   "status": {
+    "200": 17
+   },
+   "input_tokens": 277146,
+   "output_tokens": 3701,
+   "cached_input_tokens": 241121,
+   "cost_usd": 0.087585,
+   "fallback_used": 0,
+   "stream": 17
+  },
+  "live-codex | openai-responses -> openai/gpt-5.4-nano (openai-responses)": {
+   "requests": 246,
+   "status": {
+    "200": 36,
+    "502": 210
+   },
+   "input_tokens": 285776,
+   "output_tokens": 7878,
+   "cached_input_tokens": 205312,
+   "cost_usd": 0.067003,
+   "fallback_used": 0,
+   "stream": 246
+  }
+ }
+}

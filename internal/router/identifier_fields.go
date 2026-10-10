@@ -141,10 +141,13 @@ func decodeIdentifierFields(raw []byte, t IdentifierTransform) ([]byte, error) {
 					return e
 				}
 			case "id":
-				// Restore only OpenAI Chat tool_calls[].id and Anthropic tool_use
-				// content-block id. Leave function arguments, tool input, schemas,
-				// and arbitrary id fields alone.
-				if parentKey == "tool_calls" || (parentKey == "content" && n.field("type").value() == "tool_use") {
+				// Restore only OpenAI Chat tool_calls[].id, Anthropic tool_use
+				// content-block id, and replayed top-level Responses input item ids
+				// (the native Responses stream encodes every output item id).
+				// Leave function arguments, tool input, schemas, and arbitrary id
+				// fields alone.
+				if parentKey == "tool_calls" || (parentKey == "content" && n.field("type").value() == "tool_use") ||
+					parentKey == "input" {
 					if e := decodeField(v); e != nil {
 						return e
 					}

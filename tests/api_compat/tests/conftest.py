@@ -33,6 +33,8 @@ __all__ = [
     "FORBIDDEN_ARTIFACT_VALUES",
     "assert_generated_artifacts_redacted",
     "request",
+    "spawn_router",
+    "stop_router",
     "unused_port",
 ]
 
@@ -144,6 +146,64 @@ def router_group(tmp_path_factory):
     yield from _start_router(
         tmp_path_factory, "  responses: {model_identity: requested_group}\n"
     )
+
+
+def spawn_router(router, work, config_text, *, ready_timeout_s=90.0, env=None):
+    """Start an extra router from the session-built binary with a module-specific config.
+
+    Reuses the binary built by the ``router`` fixture so profile-specific modules
+    (usage DB, retries, limits, alternate upstreams) do not rebuild it. Returns a
+    dict with ``base``, ``work``, ``port`` and ``process``; call ``stop_router``
+    when done. The config file is removed once the router is ready. Metrum AI.
+    """
+    work = Path(work)
+    work.mkdir(parents=True, exist_ok=True)
+    port = unused_port()
+    config_path = work / "config.yaml"
+    config_path.write_text(config_text.replace("{port}", str(port)))
+    run_env = os.environ | {"GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
+    if env:
+        run_env |= env
+    stderr_path = work / "router.stderr"
+    stderr_file = stderr_path.open("w", encoding="utf-8")
+    process = subprocess.Popen(
+        [str(Path(router["work"]) / "router"), "-config", "config.yaml"],
+        cwd=work,
+        env=run_env,
+        stdout=subprocess.DEVNULL,
+        stderr=stderr_file,
+        text=True,
+    )
+    base = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + ready_timeout_s
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            stderr_file.close()
+            raise RuntimeError(stderr_path.read_text()[-4000:])
+        try:
+            if request(base, "/readyz", token=CALLER)[0] == 200:
+                break
+        except OSError:
+            pass
+        time.sleep(0.05)
+    else:
+        process.terminate()
+        stderr_file.close()
+        raise RuntimeError(stderr_path.read_text()[-4000:] or "router failed to become ready")
+    config_path.unlink(missing_ok=True)
+    return {"base": base, "work": work, "port": port, "process": process, "_stderr": stderr_file}
+
+
+def stop_router(handle):
+    process = handle["process"]
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+    handle["_stderr"].close()
 
 
 @pytest.fixture(autouse=True)

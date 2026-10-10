@@ -69,6 +69,7 @@ func cacheKey(req *IRRequest, target Target, callerID, project string) string {
 		LogitBias          any             `json:"logit_bias,omitempty"`
 		PreviousResponseID string          `json:"previous_response_id,omitempty"`
 		ReasoningEffort    any             `json:"reasoning_effort,omitempty"`
+		N                  any             `json:"n,omitempty"`
 		Provider           string          `json:"provider"`
 		TargetModel        string          `json:"target_model"`
 	}
@@ -96,6 +97,8 @@ func cacheKey(req *IRRequest, target Target, callerID, project string) string {
 		n.LogitBias = req.Raw["logit_bias"]
 		n.PreviousResponseID = strings.TrimSpace(stringValue(req.Raw["previous_response_id"]))
 		n.ReasoningEffort = req.Raw["reasoning_effort"]
+		// n changes how many choices come back, so it is part of response identity.
+		n.N = req.Raw["n"]
 		if n.Thinking == nil {
 			if thinking, ok := req.Raw["thinking"].(map[string]any); ok {
 				n.Thinking = thinking

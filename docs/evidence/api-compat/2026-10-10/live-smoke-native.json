@@ -1,0 +1,153 @@
+{
+ "matrix": "smoke-nonprod",
+ "environment": "local-dev",
+ "router_sha": "c402232",
+ "routing_config_fingerprints": [
+  "cae9a598a8b9a70b7434bb695f4308b0bac405005eb26b36b75c1123b8c30c78"
+ ],
+ "runs": [
+  {
+   "caller": "local-dev-example-project-dev",
+   "caps": {
+    "max_requests": 6.0,
+    "max_spend_usd": 0.25,
+    "max_tokens": 1024.0,
+    "max_wall_seconds": 120.0
+   },
+   "certification": false,
+   "date_utc": "2026-10-10T03:46:46Z",
+   "disposition": "passed",
+   "environment": "local-dev",
+   "estimated_spend_usd": 0.00117,
+   "git_sha": "c402232919885f3f08791b57e4d6a01f1bce2597",
+   "limitations": [
+    "Bounded operator smoke only; not Harbor, agent, or statistical certification.",
+    "Historical synthetic Responses streaming in offline suites was not native streaming; native Responses streaming is covered by issue #103 offline contracts."
+   ],
+   "matrix_id": "smoke-nonprod",
+   "requests": 3,
+   "results": [
+    {
+     "elapsed_seconds": 2.019,
+     "expected_status": 200,
+     "id": "LIVE-CHAT-TEXT-01",
+     "ok": true,
+     "status": 200,
+     "token_budget": 32,
+     "tokens": 53
+    },
+    {
+     "elapsed_seconds": 1.581,
+     "expected_status": 200,
+     "id": "LIVE-RESP-TEXT-01",
+     "ok": true,
+     "status": 200,
+     "token_budget": 32,
+     "tokens": 18
+    },
+    {
+     "elapsed_seconds": 1.443,
+     "expected_status": 200,
+     "id": "LIVE-ANTH-TEXT-01",
+     "ok": true,
+     "status": 200,
+     "token_budget": 32,
+     "tokens": 29
+    }
+   ],
+   "schema_version": "api-compat-live/v1",
+   "tokens_used": 117
+  },
+  {
+   "caller": "local-dev-example-project-dev",
+   "caps": {
+    "max_requests": 6.0,
+    "max_spend_usd": 0.25,
+    "max_tokens": 1024.0,
+    "max_wall_seconds": 120.0
+   },
+   "certification": false,
+   "date_utc": "2026-10-10T03:46:53Z",
+   "disposition": "passed",
+   "environment": "local-dev",
+   "estimated_spend_usd": 0.00129,
+   "git_sha": "c402232919885f3f08791b57e4d6a01f1bce2597",
+   "limitations": [
+    "Bounded operator smoke only; not Harbor, agent, or statistical certification.",
+    "Historical synthetic Responses streaming in offline suites was not native streaming; native Responses streaming is covered by issue #103 offline contracts."
+   ],
+   "matrix_id": "smoke-nonprod",
+   "requests": 3,
+   "results": [
+    {
+     "elapsed_seconds": 2.121,
+     "expected_status": 200,
+     "id": "LIVE-CHAT-TEXT-01",
+     "ok": true,
+     "status": 200,
+     "token_budget": 32,
+     "tokens": 53
+    },
+    {
+     "elapsed_seconds": 2.669,
+     "expected_status": 200,
+     "id": "LIVE-RESP-TEXT-01",
+     "ok": true,
+     "status": 200,
+     "token_budget": 32,
+     "tokens": 18
+    },
+    {
+     "elapsed_seconds": 2.14,
+     "expected_status": 200,
+     "id": "LIVE-ANTH-TEXT-01",
+     "ok": true,
+     "status": 200,
+     "token_budget": 32,
+     "tokens": 44
+    }
+   ],
+   "schema_version": "api-compat-live/v1",
+   "tokens_used": 129
+  }
+ ],
+ "served_targets_in_order": [
+  {
+   "inbound_dialect": "openai-chat",
+   "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+   "target_dialect": "openai-chat",
+   "status": 200
+  },
+  {
+   "inbound_dialect": "openai-responses",
+   "target": "openai/gpt-5.4-nano",
+   "target_dialect": "openai-responses",
+   "status": 200
+  },
+  {
+   "inbound_dialect": "anthropic",
+   "target": "minimax_anthropic/MiniMax-M3",
+   "target_dialect": "anthropic",
+   "status": 200
+  },
+  {
+   "inbound_dialect": "openai-chat",
+   "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+   "target_dialect": "openai-chat",
+   "status": 200
+  },
+  {
+   "inbound_dialect": "openai-responses",
+   "target": "openai/gpt-5.4-nano",
+   "target_dialect": "openai-responses",
+   "status": 200
+  },
+  {
+   "inbound_dialect": "anthropic",
+   "target": "minimax_anthropic/MiniMax-M3",
+   "target_dialect": "anthropic",
+   "status": 200
+  }
+ ],
+ "earlier_runs_note": "Two earlier passing runs (router 24215aa and c402232) served LIVE-RESP-TEXT-01 through a native Anthropic target via Responses->Anthropic translation because that target had no supported_inbound_dialects restriction; they are retained in the README, not counted as native Responses evidence."
+}

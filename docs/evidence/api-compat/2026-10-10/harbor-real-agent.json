@@ -1,0 +1,469 @@
+{
+ "schema": "harbor-real-agent-evidence/v1",
+ "date": "2026-10-10",
+ "harbor_version": "0.13.2",
+ "docker": "29.0.1",
+ "cells": [
+  {
+   "client": "pi",
+   "client_version": "@earendil-works/pi-coding-agent@1.1.0 (MetrumPi adapter)",
+   "router_model_group": "big-coder",
+   "router_sha": "24215aa",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "failed-first-attempt: infra: verifier test.sh import error (RewardFileNotFoundError), fixed in cb9f886",
+   "job": "2026-10-10__03-00-03",
+   "n_trials": 1,
+   "n_errored": 1,
+   "trials": [
+    {
+     "reward": null,
+     "exception": "RewardFileNotFoundError",
+     "started_at": "2026-10-10T03:00:06.024922Z",
+     "finished_at": "2026-10-10T03:02:16.325183Z",
+     "verifier_detail": "ModuleNotFoundError: No module named 'verify'"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 180283,
+    "cached": 153362,
+    "output": 4160
+   },
+   "router_usage": {
+    "router_requests": 14,
+    "cost_usd": 0.192504,
+    "routing_config_fingerprints": [
+     "4cb99c3d64bdf7d3c21c14f13e40160cbc11d2adbe20a417f5d9316275c90b50"
+    ],
+    "by_route_status": [
+     {
+      "target": "openai/gpt-5.6-sol",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-chat",
+      "status": 200,
+      "count": 6
+     },
+     {
+      "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+      "target_dialect": "openai-chat",
+      "inbound_dialect": "openai-chat",
+      "status": 200,
+      "count": 8
+     }
+    ]
+   }
+  },
+  {
+   "client": "pi",
+   "client_version": "@earendil-works/pi-coding-agent@1.1.0 (MetrumPi adapter)",
+   "router_model_group": "big-coder",
+   "router_sha": "24215aa",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "failed-first-attempt: infra: task.toml docker_image skipped workspace COPY ('missing normalize.py'), fixed in ec8cfa0",
+   "job": "2026-10-10__03-02-48",
+   "n_trials": 3,
+   "n_errored": 0,
+   "trials": [
+    {
+     "reward": 0.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:04:34.509521Z",
+     "finished_at": "2026-10-10T03:06:46.592748Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'missing normalize.py'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:06:46.595514Z",
+     "finished_at": "2026-10-10T03:08:18.295211Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'missing normalize.py'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:02:50.866411Z",
+     "finished_at": "2026-10-10T03:04:34.507253Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'missing normalize.py'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 279489,
+    "cached": 230335,
+    "output": 10412
+   },
+   "router_usage": {
+    "router_requests": 40,
+    "cost_usd": 0.314768,
+    "routing_config_fingerprints": [
+     "4cb99c3d64bdf7d3c21c14f13e40160cbc11d2adbe20a417f5d9316275c90b50"
+    ],
+    "by_route_status": [
+     {
+      "target": "openai/gpt-5.6-sol",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-chat",
+      "status": 200,
+      "count": 14
+     },
+     {
+      "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+      "target_dialect": "openai-chat",
+      "inbound_dialect": "openai-chat",
+      "status": 200,
+      "count": 26
+     }
+    ]
+   }
+  },
+  {
+   "client": "pi",
+   "client_version": "@earendil-works/pi-coding-agent@1.1.0 (MetrumPi adapter)",
+   "router_model_group": "big-coder",
+   "router_sha": "24215aa",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "certified",
+   "job": "2026-10-10__03-08-54",
+   "n_trials": 3,
+   "n_errored": 0,
+   "trials": [
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:10:08.478918Z",
+     "finished_at": "2026-10-10T03:11:26.224032Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    },
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:11:26.226116Z",
+     "finished_at": "2026-10-10T03:12:38.874997Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    },
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:08:55.950750Z",
+     "finished_at": "2026-10-10T03:10:08.476773Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 21903,
+    "cached": 17261,
+    "output": 2087
+   },
+   "router_usage": {
+    "router_requests": 12,
+    "cost_usd": 0.039159,
+    "routing_config_fingerprints": [
+     "4cb99c3d64bdf7d3c21c14f13e40160cbc11d2adbe20a417f5d9316275c90b50"
+    ],
+    "by_route_status": [
+     {
+      "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+      "target_dialect": "openai-chat",
+      "inbound_dialect": "openai-chat",
+      "status": 200,
+      "count": 8
+     },
+     {
+      "target": "openai/gpt-5.6-sol",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-chat",
+      "status": 200,
+      "count": 4
+     }
+    ]
+   }
+  },
+  {
+   "client": "claude-code",
+   "client_version": "@anthropic-ai/claude-code@2.1.296 (Harbor built-in)",
+   "router_model_group": "live-anthropic",
+   "router_sha": "24215aa",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "certified",
+   "job": "2026-10-10__03-13-32",
+   "n_trials": 3,
+   "n_errored": 0,
+   "trials": [
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:13:34.966665Z",
+     "finished_at": "2026-10-10T03:15:13.084292Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    },
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:15:13.086610Z",
+     "finished_at": "2026-10-10T03:16:35.209087Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    },
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:16:35.211150Z",
+     "finished_at": "2026-10-10T03:18:22.036567Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 277146,
+    "cached": 241121,
+    "output": 3701
+   },
+   "router_usage": {
+    "router_requests": 17,
+    "cost_usd": 0.087585,
+    "routing_config_fingerprints": [
+     "60724e35160a5312c5afb37e14061a04fc059ce4357d7cdb6dc499e6c7d1a4a3"
+    ],
+    "by_route_status": [
+     {
+      "target": "minimax_anthropic/MiniMax-M3",
+      "target_dialect": "anthropic",
+      "inbound_dialect": "anthropic",
+      "status": 200,
+      "count": 17
+     }
+    ]
+   }
+  },
+  {
+   "client": "codex",
+   "client_version": "codex-cli 0.162.0 (MetrumCodex adapter)",
+   "router_model_group": "live-codex",
+   "router_sha": "24215aa",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "failed-first-attempt: config: live-codex target lacked reasoning metadata -> 502 no-eligible-target before upstream",
+   "job": "2026-10-10__03-13-32",
+   "n_trials": 3,
+   "n_errored": 3,
+   "trials": [
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:17:31.397430Z",
+     "finished_at": "2026-10-10T03:19:35.248907Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:15:21.487422Z",
+     "finished_at": "2026-10-10T03:17:31.372900Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:13:34.923717Z",
+     "finished_at": "2026-10-10T03:15:21.485191Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": null,
+    "cached": null,
+    "output": null
+   },
+   "router_usage": {
+    "router_requests": 90,
+    "cost_usd": 0,
+    "routing_config_fingerprints": [
+     "60724e35160a5312c5afb37e14061a04fc059ce4357d7cdb6dc499e6c7d1a4a3"
+    ],
+    "by_route_status": [
+     {
+      "target": "/",
+      "target_dialect": "",
+      "inbound_dialect": "openai-responses",
+      "status": 502,
+      "count": 90
+     }
+    ]
+   }
+  },
+  {
+   "client": "codex",
+   "client_version": "codex-cli 0.162.0 (MetrumCodex adapter)",
+   "router_model_group": "live-codex",
+   "router_sha": "24215aa",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "failed-first-attempt: router bug: replayed Responses output item ids not decoded under identifier rewrite (input[N].id string_above_max_length)",
+   "job": "2026-10-10__03-22-57",
+   "n_trials": 3,
+   "n_errored": 3,
+   "trials": [
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:23:01.020090Z",
+     "finished_at": "2026-10-10T03:24:53.515590Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:24:53.522505Z",
+     "finished_at": "2026-10-10T03:26:52.474753Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:26:52.481975Z",
+     "finished_at": "2026-10-10T03:29:05.804807Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 22527,
+    "cached": 0,
+    "output": 523
+   },
+   "router_usage": {
+    "router_requests": 93,
+    "cost_usd": 0.005159,
+    "routing_config_fingerprints": [
+     "cae9a598a8b9a70b7434bb695f4308b0bac405005eb26b36b75c1123b8c30c78"
+    ],
+    "by_route_status": [
+     {
+      "target": "openai/gpt-5.4-nano",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-responses",
+      "status": 200,
+      "count": 3
+     },
+     {
+      "target": "openai/gpt-5.4-nano",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-responses",
+      "status": 502,
+      "count": 90
+     }
+    ]
+   }
+  },
+  {
+   "client": "codex",
+   "client_version": "codex-cli 0.162.0 (MetrumCodex adapter)",
+   "router_model_group": "live-codex",
+   "router_sha": "ed124cf (local, amended into c402232)",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "failed-first-attempt: router bug: first fix decoded only function_call item ids; reasoning/message ids still failed (superseded by c402232)",
+   "job": "2026-10-10__03-32-17",
+   "n_trials": 3,
+   "n_errored": 3,
+   "trials": [
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:32:20.081218Z",
+     "finished_at": "2026-10-10T03:34:04.294276Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:35:39.214673Z",
+     "finished_at": "2026-10-10T03:37:17.326224Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    },
+    {
+     "reward": 0.0,
+     "exception": "NonZeroAgentExitCodeError",
+     "started_at": "2026-10-10T03:34:04.296665Z",
+     "finished_at": "2026-10-10T03:35:39.212412Z",
+     "verifier_detail": "{'passed': False, 'reward': 0.0, 'detail': 'no-edit/read-loop: artifact identical to starter'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 22527,
+    "cached": 6656,
+    "output": 713
+   },
+   "router_usage": {
+    "router_requests": 93,
+    "cost_usd": 0.005397,
+    "routing_config_fingerprints": [
+     "cae9a598a8b9a70b7434bb695f4308b0bac405005eb26b36b75c1123b8c30c78"
+    ],
+    "by_route_status": [
+     {
+      "target": "openai/gpt-5.4-nano",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-responses",
+      "status": 200,
+      "count": 3
+     },
+     {
+      "target": "openai/gpt-5.4-nano",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-responses",
+      "status": 502,
+      "count": 90
+     }
+    ]
+   }
+  },
+  {
+   "client": "codex",
+   "client_version": "codex-cli 0.162.0 (MetrumCodex adapter)",
+   "router_model_group": "live-codex",
+   "router_sha": "c402232",
+   "task": "HARBOR-01-read-edit-repair",
+   "classification": "certified",
+   "job": "2026-10-10__03-41-13",
+   "n_trials": 3,
+   "n_errored": 0,
+   "trials": [
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:43:59.044601Z",
+     "finished_at": "2026-10-10T03:45:08.929696Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    },
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:41:15.376428Z",
+     "finished_at": "2026-10-10T03:42:30.209214Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    },
+    {
+     "reward": 1.0,
+     "exception": null,
+     "started_at": "2026-10-10T03:42:30.211403Z",
+     "finished_at": "2026-10-10T03:43:59.042554Z",
+     "verifier_detail": "{'passed': True, 'reward': 1.0, 'detail': 'all cases passed; differs from starter'}"
+    }
+   ],
+   "harbor_tokens": {
+    "input": 182474,
+    "cached": 159232,
+    "output": 5036
+   },
+   "router_usage": {
+    "router_requests": 20,
+    "cost_usd": 0.04279,
+    "routing_config_fingerprints": [
+     "cae9a598a8b9a70b7434bb695f4308b0bac405005eb26b36b75c1123b8c30c78"
+    ],
+    "by_route_status": [
+     {
+      "target": "openai/gpt-5.4-nano",
+      "target_dialect": "openai-responses",
+      "inbound_dialect": "openai-responses",
+      "status": 200,
+      "count": 20
+     }
+    ]
+   }
+  }
+ ]
+}

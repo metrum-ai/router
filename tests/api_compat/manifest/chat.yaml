@@ -96,71 +96,144 @@ cases:
     owner: api-compat
     component: openai-chat
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
+    capability_profile: openai_chat [tools, tool_choice]; request_shape_support.unsupported_request_features [forced_tool_choice] / [tool_choice]
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - tool_choice auto/none/required/named and parallel_tool_calls matrix beyond smoke coverage
-      - omitted tools requests do not invent tool_choice
-    rationale: Deferred beyond Wave 1 P0; expand tool_choice/parallel_tool_calls matrix in a follow-up linked to issue #94.
+      - tool_choice omitted/null/auto/none/required/named x parallel_tool_calls omitted/true/false reach upstream verbatim; omitted stays absent
+      - requests without tools reach upstream without tools, tool_choice or parallel_tool_calls
+      - a named choice for a nonexistent tool is forwarded once unchanged and the provider 400 surfaces as sanitized 502 upstream_bad_request with attempts=1 and no fallback
+      - required/named choices against a forced_tool_choice-unsupported target return 502 no-eligible-target with zero upstream calls; auto still routes
+      - explicit null/auto/none choices against a tool_choice-unsupported target return 502 no-eligible-target with zero upstream calls; omitted still routes
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+      - internal/router/service.go
+    test_id: test_chat_06_tool_choice_and_parallel_preserved_natively
 
   - id: CHAT-07
     priority: P1
     owner: api-compat
     component: openai-chat
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - function parameter schemas including nested objects enums nullable and ref are not mutated on native chat
-    rationale: Deferred beyond Wave 1 P0; strict-output/schema fidelity matrix tracked under issue #94 follow-up.
+      - function schemas with strict true/false/omitted, nested objects, arrays, enums, nullable type unions, $defs/$ref, anyOf, Unicode and a ~30 KB description reach upstream semantically identical (no inlining, no strict injection)
+      - a strict json_schema response_format reaches a structured_outputs-capable target unmutated
+      - live strict-output validation against a real provider remains a live-matrix concern, not claimed here
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+    test_id: test_chat_07_function_schemas_reach_upstream_unmutated
 
   - id: CHAT-08
     priority: P1
     owner: api-compat
     component: openai-chat
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
+    capability_profile: openai_chat [tools, tool_choice, structured_outputs]
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - response_format json_object and json_schema are forwarded on native chat
-      - finish_reason length and content-filter remain distinguishable from stop
-    rationale: Deferred beyond Wave 1 P0; structured-output and refusal/content-filter matrix tracked under issue #94 follow-up.
+      - response_format json_object and json_schema return 502 no-eligible-target with zero upstream calls when no target advertises structured_outputs
+      - json_object and json_schema are forwarded unchanged to a structured_outputs target and complete JSON is returned verbatim
+      - finish_reason length (with unparseable truncated JSON), content_filter and a refusal (content null + refusal text) stay distinct per choice and are never collapsed to a successful stop
+      - plain-text truncation keeps finish_reason length
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+      - internal/router/dynamic_strategy.go
+    test_id: test_chat_08_truncation_refusal_and_content_filter_stay_distinct
 
   - id: CHAT-09
     priority: P1
     owner: api-compat
     component: openai-chat
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
+    capability_profile: default output_token_field vs output_token_field max_completion_tokens
     transport: unary
-    disposition: blocked
+    disposition: documented_normalization
     assertions:
-      - max_tokens and max_completion_tokens precedence for chat target encoding
-      - invalid zero/negative caps reject before upstream
-    rationale: Deferred beyond Wave 1 P0; token-cap precedence already covered in Go dialect tests; HTTP matrix follow-up under issue #94.
+      - when both max_tokens and max_completion_tokens are sent, max_tokens wins and exactly one cap field reaches upstream (text and tool paths)
+      - default targets receive max_tokens; output_token_field max_completion_tokens targets receive only max_completion_tokens
+      - stop lists reach upstream unchanged; the text path normalizes a stop string to a one-element list, the tool passthrough keeps the string
+      - zero/negative/non-integer caps are tracked separately in CHAT-09-INVALID-CAPS
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+      - internal/router/dialect.go
+      - docs-site/docs/reference/api-compatibility.md
+    test_id: test_chat_09_output_token_field_target_encodes_max_completion_tokens
 
   - id: CHAT-10
     priority: P1
     owner: api-compat
     component: openai-chat
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
+    capability_profile: same-dialect passthrough (tools or structured output present)
+    transport: unary
+    disposition: native_supported
+    assertions:
+      - on the same-dialect passthrough path temperature, top_p, seed, n, presence/frequency penalties, logprobs, top_logprobs, logit_bias and stop reach upstream unchanged
+      - store and metadata are stripped on passthrough; force_store_false targets receive store false
+      - n>1 responses keep independent choice indexes, tool calls, content and finish reasons
+      - the plain-text (non-passthrough) path is tracked separately in CHAT-10-TEXT-PATH
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+      - internal/router/dialect.go
+    test_id: test_chat_10_sampling_controls_forwarded_and_persistence_fields_stripped
+
+  - id: CHAT-09-INVALID-CAPS
+    priority: P1
+    owner: api-compat
+    component: openai-chat
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
     transport: unary
     disposition: blocked
     assertions:
-      - temperature top_p seed n and stop reach upstream unchanged
-      - store and metadata are stripped on provider passthrough by design
-    rationale: Deferred beyond Wave 1 P0; sampling/passthrough stripping follow-up under issue #94.
+      - zero, negative and non-integer output caps have one documented disposition (router 400 before upstream, or provider-owned forwarding) that admission and forwarding agree on
+    rationale: >-
+      Needs a product decision. Today the router does not validate caps: on the plain-text path
+      max_tokens 0, -5 or "10" is silently dropped (admission reserves the default, upstream gets no
+      cap); on the tool/structured passthrough path the raw invalid value is forwarded upstream while
+      admission still reserves the default; 1.5 is truncated to 1 on both. Repro: POST
+      /v1/chat/completions {"model":"chat","messages":[...],"max_tokens":-5} -> 200 and upstream body
+      has no max_tokens; same body plus "tools":[...] -> upstream body has "max_tokens":-5.
+
+  - id: CHAT-10-TEXT-PATH
+    priority: P1
+    owner: api-compat
+    component: openai-chat
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
+    transport: unary
+    disposition: blocked
+    assertions:
+      - plain-text same-dialect Chat requests preserve or explicitly reject top_p, seed, n, penalties, logprobs, logit_bias and user
+      - n>1 plain-text responses keep every choice, refusal and finish reason
+    rationale: >-
+      Real gap needing a product decision; the fix is not small. Plain-text same-dialect Chat
+      (no tools, no structured output) is re-encoded from the IR (encodeUpstreamForTarget openai-chat),
+      which forwards only model/messages/max-token/temperature/stop and silently drops top_p, seed, n,
+      presence/frequency_penalty, logprobs, top_logprobs, logit_bias and user; the IR response decode
+      also collapses n>1 to a single choice and turns a refusal (content null + refusal) into content "".
+      Repro: POST /v1/chat/completions {"model":"chat","messages":[...],"seed":7,"n":2,"top_p":0.9}
+      -> 200 and upstream body is {"model","messages","stream"} only. The tool/structured passthrough
+      path preserves all of these (CHAT-10).

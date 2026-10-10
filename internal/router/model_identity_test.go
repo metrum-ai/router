@@ -310,6 +310,56 @@ func TestModelIdentitySynthesizedSSE(t *testing.T) {
 	}
 }
 
+// Tool-less same-dialect Responses and Anthropic requests use the raw
+// passthrough codec (issue #94 RESP-07/08, ANTH-06/09/12). Under
+// requested_group the caller body is the upstream object with only the
+// top-level model replaced, so upstream ids and previous_response_id
+// continuation survive while the provider model never reaches the caller.
+// Metrum AI Router compat/model-identity interaction check.
+func TestModelIdentityToolLessSameDialectPassthrough(t *testing.T) {
+	for _, tc := range []struct {
+		name, dialect, path, body, id string
+	}{
+		{"responses", "openai-responses", "/v1/responses", `{"model":"big-coder","input":"hi"}`, "resp_mi"},
+		{"anthropic", "anthropic", "/v1/messages", `{"model":"big-coder","max_tokens":32,"messages":[{"role":"user","content":"hi"}]}`, "msg_mi"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, up := modelIdentityTestService(t, ModelIdentityRequestedGroup, tc.dialect)
+			rr := miPerform(t, svc, tc.path, tc.body)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			direct := httptest.NewRecorder()
+			up.ServeHTTP(direct, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(`{"model":"`+miLunaModel+`"}`)))
+			want := mustJSONMap(t, direct.Body.String())
+			want["model"] = miGroup
+			if got := mustJSONMap(t, rr.Body.String()); !reflect.DeepEqual(got, want) {
+				t.Fatalf("passthrough body changed beyond model:\n got %v\nwant %v", got, want)
+			}
+			if tc.dialect == "openai-responses" {
+				next := miPerform(t, svc, tc.path, `{"model":"big-coder","input":"again","previous_response_id":"`+tc.id+`"}`)
+				if next.Code != http.StatusOK || mustJSONMap(t, next.Body.String())["model"] != miGroup {
+					t.Fatalf("continuation status=%d body=%s", next.Code, next.Body.String())
+				}
+				reqs := up.requests()
+				if last := reqs[len(reqs)-1]; last["previous_response_id"] != tc.id || last["model"] != miLunaModel {
+					t.Fatalf("continuation upstream body=%v", last)
+				}
+			}
+			// The synthesized translator replays the unary passthrough object;
+			// native SSE for these bodies is TestNativeStreamModelIdentity.
+			synth, _ := modelIdentityTestService(t, ModelIdentityRequestedGroup, tc.dialect, func(cfg *Config) {
+				cfg.Server.Streaming.Translator = "synthesized"
+			})
+			stream := miPerform(t, synth, tc.path, strings.Replace(tc.body, `"model":"big-coder",`, `"model":"big-coder","stream":true,`, 1))
+			if stream.Code != http.StatusOK || !strings.Contains(stream.Body.String(), `"`+tc.id+`"`) {
+				t.Fatalf("stream status=%d body=%s", stream.Code, stream.Body.String())
+			}
+			assertSSEModels(t, stream.Body.String(), miGroup)
+		})
+	}
+}
+
 // writeRawResponsesSSE and the raw encoders must not mutate resp.Raw, which
 // the response cache shares.
 func TestModelIdentityRawResponseNotMutated(t *testing.T) {

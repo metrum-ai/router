@@ -138,6 +138,7 @@ with an approved non-production matrix.
 | Evidence date | 2026-09-11 |
 | Evidence tip SHA | `d9a05eda611689808d7c470537ac8b0050945367` (main at Wave 3 docs refresh; re-record after merges) |
 | What is validated offline | Manifest-backed HTTP/SDK, Chat/Responses/Messages P0 shapes, MEDIA/STREAM/ROUTE/OPS/Harbor adapter contracts against loopback fake upstreams |
+| Live evidence (local non-production) | 2026-10-10, repository `docs/evidence/api-compat/2026-10-10/`: native Chat/Responses/Messages `smoke-nonprod` matrix, Responses `previous_response_id` continuation, Anthropic stream and tool turn two, and real pi, Claude Code and Codex agents passing Harbor task HARBOR-01 (3 trials each) through the router |
 | What is not claimed | Real provider entitlement, Harbor statistical certification, or production spend without operator-gated live evidence |
 
 **Limitation (historical):** Older offline Responses smoke paths synthesized

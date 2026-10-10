@@ -1352,6 +1352,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 					rc.rec.KeyState = "error"
 				} else {
 					rc.rec.Usage = usage
+					if !committedStreamUsageReported(err) {
+						// Same provenance marker as the unary path: the settled
+						// tokens are the router's reservation estimate.
+						rc.rec.Warnings = appendWarning(rc.rec.Warnings, "usage-estimated")
+					}
 				}
 			}
 			classified := classifyError(err)
@@ -1444,9 +1449,14 @@ func estimatedUsageForReservation(req *IRRequest, dialect string, reservationTok
 	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total}
 }
 
+func committedStreamUsageReported(err error) bool {
+	var upstream upstreamError
+	return errors.As(err, &upstream) && upstream.PartialUsage != nil && totalTokens(*upstream.PartialUsage) > 0
+}
+
 func committedStreamUsage(err error, req *IRRequest, dialect string, reservationTokens int) Usage {
 	var upstream upstreamError
-	if errors.As(err, &upstream) && upstream.PartialUsage != nil && totalTokens(*upstream.PartialUsage) > 0 {
+	if committedStreamUsageReported(err) && errors.As(err, &upstream) {
 		return *upstream.PartialUsage
 	}
 	if reservationTokens > 0 {
@@ -2991,7 +3001,7 @@ func classifyContextOrNetworkError(parentCtx, attemptCtx context.Context, err er
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return upstreamError{Class: "upstream_timeout", Message: "upstream request timed out", TimedOut: true, Retryable: true, Err: err}
 	}
-	return upstreamError{Class: "upstream_network_error", Message: err.Error(), Retryable: true, Err: err}
+	return upstreamError{Class: "upstream_network_error", Message: safeUpstreamNetworkErrorMessage(err), Retryable: true, Err: err}
 }
 
 func classifyError(err error) upstreamError {
@@ -3022,6 +3032,21 @@ func toolPassthrough(callerDialect, outDialect string, req *IRRequest) bool {
 
 func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) bool {
 	if toolPassthrough(callerDialect, outDialect, req) {
+		return true
+	}
+	// Same-dialect Anthropic Messages always uses the native passthrough codec.
+	// The IR re-encoder flattens system blocks and drops thinking, cache_control,
+	// document/citation blocks and native fields such as output_config, so a
+	// tool-less request must not lose them (issue #94 ANTH-06/09/12).
+	if callerDialect == outDialect && outDialect == "anthropic" {
+		return true
+	}
+	// Same-dialect OpenAI Responses likewise forwards the caller body and returns
+	// the upstream object: the IR re-encoder flattens item-array history, drops
+	// opaque reasoning items, replaces the upstream response id (breaking
+	// previous_response_id continuation) and reports incomplete responses as
+	// completed (issue #94 RESP-07/08).
+	if callerDialect == outDialect && outDialect == "openai-responses" {
 		return true
 	}
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")

@@ -26,81 +26,160 @@ cases:
     priority: P0
     owner: api-compat
     component: usage
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: mixed
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - abort truncation timeout and late usage settle exactly once
-    rationale: deferred linked issue — abort/settlement race fixtures not yet CI-bounded
+      - omitted/null/zero provider usage settles the router estimate once and records usage-estimated provenance (never a silent zero)
+      - provider 5xx and attempt timeout write one failure row and settle no tokens
+      - late empty-choices usage chunk after finish settles provider-reported totals once, not doubled or estimated
+      - post-commit truncation and client abort write one row, settle the estimate once with usage-estimated provenance, and never replay
+      - caller day counters move by exactly the sum of per-request settled rows
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+      - internal/router/committed_stream_usage_test.go
+    test_id: test_ops02_settlement_exactly_once_across_failure_classes
 
   - id: OPS-03
     priority: P0
     owner: api-compat
     component: quota
-    transport: mixed
-    disposition: blocked
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
+    transport: unary
+    disposition: native_supported
     assertions:
-      - parallel admissions at quota boundary do not overshoot reservations
-    rationale: deferred linked issue — quota race harness requires dedicated fixtures
+      - six parallel admissions against a 1000-token day budget admit exactly two in-flight 450-token reservations
+      - over-budget admissions return 429 quota-exhausted with zero upstream calls
+      - settled reservations reconcile to provider-reported usage, never the reserved cap
+      - a client abort racing completion releases its reservation so a near-budget follow-up is admitted
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+    test_id: test_ops03_parallel_admissions_at_quota_boundary
+    rationale: Key-expiry between turns is covered by HTTP-02 key-state tests; streaming reservation races share the same reservation code path.
 
   - id: OPS-04
     priority: P1
     owner: api-compat
     component: cache
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: mixed
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - cache-read/write and reasoning details attribute correctly
-    rationale: deferred linked issue — cache-enabled profile attribution matrix
+      - after fallback, usage rows attribute provider/model, prices and cost to the serving backup target
+      - provider cached_tokens and reasoning_tokens map to canonical columns for Chat and Responses; omitted details stay NULL
+      - cached-input pricing applies only to provider cache reads
+      - request_attempts keep the failed primary and selected backup distinct
+      - router response-cache hits are labelled hit with zero attempts, no quota, and no replayed provider prompt-cache count
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+    test_id: test_ops04_cache_and_reasoning_details_attribute_to_serving_target
+    rationale: Cache-hit rows currently carry the cached response's token counts and list-price cost (attempts=0); whether hit rows should report zero actual spend is an open product question, not asserted here.
 
   - id: OPS-05
     priority: P1
     owner: api-compat
     component: cache
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - semantically different cache keys never collide
-    rationale: deferred linked issue — cache key collision matrix
+      - stop, max_tokens, reasoning_effort, seed, top_p and n variants never read another variant's cache entry
+      - an identical body from another caller never reads this caller's entry
+      - tools, tool_choice, response_format schemas and image-bearing requests (any image order) bypass the cache
+      - streaming and non-zero or omitted temperature bypass the cache
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+      - internal/router/cache_test.go
+    test_id: test_ops05_cache_keys_never_collide_across_semantic_variants
 
   - id: OPS-06
     priority: P1
     owner: api-compat
     component: anthropic-cache
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /anthropic/v1/messages
+    outbound_dialect: anthropic
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - native Anthropic cache-control breakpoints remain consistent
-    rationale: deferred linked issue — Anthropic cache-control fixtures
+      - cache_control breakpoints in system blocks, tools and message blocks (including ttl) reach the native upstream unchanged and in place
+      - canonical input includes cache writes and reads; cached_input_tokens equals cache reads; reported zero stays zero and omitted stays NULL
+      - cached-read pricing applies to cache reads only and caller-visible native usage is unchanged
+      - "invalid ttl is provider-owned: forwarded once and propagated as non-retryable upstream_bad_request"
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+    test_id: test_ops06_anthropic_cache_control_breakpoints_and_accounting
 
   - id: OPS-07
     priority: P1
     owner: api-compat
     component: errors
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/*, /anthropic/v1/messages
+    outbound_dialect: mixed
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - nuanced retry classes preserved across caller dialects
-    rationale: deferred linked issue — full error-class retry matrix
+      - 400/401/402/403/404/408/413/429/5xx keep their documented class across Chat, Responses and Messages callers
+      - retryable or access classes fall back once to the backup; 400/401/413 stop after one attempt
+      - terminal caller status and error type follow the documented class mapping when every target fails
+      - request_attempts distinguish the failed attempt (fallback_reason) from the selected terminal attempt
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+    test_id: test_ops07_error_classes_retry_policy_across_dialects
+    rationale: DNS/TLS failures are represented by the unreachable-target network error in OPS-08.
 
   - id: OPS-08
     priority: P1
     owner: api-compat
     component: errors
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - Retry-After and unreachable fallback remain bounded and sanitized
-    rationale: deferred linked issue — Retry-After and fallback policy fixtures
+      - very large, HTTP-date, invalid and negative Retry-After values never stall the request; one attempt per target
+      - Retry-After is recorded per attempt in milliseconds (0 when invalid)
+      - provider secrets, hosts and debug headers never reach the caller or persisted diagnostics; safe class and upstream status survive
+      - upstream redirects are not followed or retried and the Location is not exposed
+      - an unreachable first target fails fast as upstream_network_error and the eligible fallback serves
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+    test_id: test_ops08_retry_after_redirect_and_unreachable_fallback_bounded
 
   - id: OPS-09
     priority: P1
     owner: api-compat
     component: usage
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: mixed
     disposition: blocked
     assertions:
-      - usage DB unavailable or restart does not duplicate settlement
-    rationale: deferred linked issue — fault-injection against usage_db/redis profiles
+      - router restart on the same state and SQLite usage DB keeps rows and quota counters exactly once
+      - a briefly locked usage DB still serves the request, settles quota once and never duplicates the row
+    evidence_paths:
+      - tests/api_compat/tests/test_ops_profile.py
+    test_id: test_ops09_restart_and_locked_usage_db_do_not_duplicate_settlement
+    rationale: "Partial: restart and short SQLite lock are tested. Still blocked because usage rows are written synchronously before the handler returns (a held SQLite lock delayed a unary response ~53s and silently dropped the row) and write failures have no metric although observability docs tell operators to alert on them; Postgres, Redis and queue-saturation profiles need non-offline services."
 
   - id: OPS-10
     priority: P0
@@ -120,8 +199,10 @@ cases:
     priority: P2
     owner: api-compat
     component: fuzz
+    source_url: https://github.com/metrum-ai/router/issues/94
+    reviewed_date: "2026-10-10"
     transport: mixed
     disposition: blocked
     assertions:
       - fuzz seeds do not panic or corrupt semantics
-    rationale: deferred linked issue — decoder/SSE fuzz corpus is expensive for default CI
+    rationale: No Go fuzz targets (func Fuzz*) or seed corpora exist under internal/ for decoders, SSE framing or tool-argument accumulation; adding them is new P2 work, not a CI-wiring change.

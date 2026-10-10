@@ -99,46 +99,93 @@ cases:
     owner: api-compat
     component: anthropic-headers
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    sdk_client_version: "anthropic==0.68.1"
     inbound_route: /anthropic/v1/messages
+    outbound_dialect: anthropic
     transport: unary
     disposition: blocked
     assertions:
-      - anthropic-version and beta header policy applied consistently
-    rationale: deferred linked issue
+      - caller anthropic-version (newer or omitted) never reaches upstream; router pins 2023-06-01
+      - caller anthropic-beta values (comma list and repeated header lines) are not forwarded; only provider-configured beta headers are sent
+      - x-api-key provider skin receives the provider key in x-api-key and no Authorization; caller token never forwarded
+      - bearer provider skin receives Authorization Bearer plus anthropic-version, no x-api-key
+    evidence_paths:
+      - tests/api_compat/tests/test_http_contracts_p1.py
+      - internal/router/service.go
+    test_id: test_http_06_anthropic_version_and_beta_header_policy
+    rationale: >-
+      Header policy above is implemented and tested (also test_http_06_provider_skin_bearer_vs_api_key),
+      but the row's "accepted fields are not stripped while their required headers disappear" clause is
+      not met: same-dialect Anthropic passthrough forwards unknown beta-gated body fields (for example
+      context_management) while dropping the caller's anthropic-beta header, so a real provider would
+      reject the request. Needs a product decision (forward an allow-list of caller betas, or strip
+      beta-gated fields with an explicit disposition) before this row can be certified.
 
   - id: HTTP-07
     priority: P1
     owner: api-compat
     component: error-surface
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    sdk_client_version: "openai==1.109.1,anthropic==0.68.1"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - SDK exceptions stay usable without leaking keys, provider URLs, or raw bodies
-    rationale: deferred linked issue
+      - provider 400/500/429, HTML proxy 502, malformed error JSON and 200 with wrong content type map to parseable router JSON errors (upstream-failed or upstream-rate-limited)
+      - X-Request-Id is the router request id with or without an upstream request id; X-Upstream-Status and X-Router-Error-Class carry safe scalars
+      - exactly one upstream attempt per single-target request; no hidden replay
+      - upstream body text, upstream request id, provider key and provider URL never appear in the caller body or headers
+      - transport failure (socket closed) reports upstream_network_error without provider URL or address
+      - OpenAI and Anthropic SDKs raise typed APIStatusError with status, request_id and parsed body
+    evidence_paths:
+      - tests/api_compat/tests/test_http_contracts_p1.py
+      - internal/router/upstream_network_error.go
+      - internal/router/upstream_network_error_test.go
+    test_id: test_http_07_upstream_errors_are_sanitized_and_sdk_usable
 
   - id: HTTP-08
     priority: P1
     owner: api-compat
     component: limits
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    inbound_route: /v1/chat/completions
+    outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: policy_rejection
     assertions:
-      - payload size and slow-body limits bound processing and recover for a healthy follow-up
-    rationale: deferred linked issue
+      - target request_shape_support.max_request_bytes admits bodies at limit-1 and at the limit
+      - limit+1 rejects with 502 no-eligible-target and zero upstream calls, then a healthy request succeeds
+      - 64 MiB ingress cap + 1 byte rejects with 400 invalid-body (or early close) and zero upstream calls
+      - a slowly trickled body is admitted exactly once; an abandoned partial body never reaches upstream
+      - keep-alive connection reuse serves consecutive healthy requests on one socket
+    evidence_paths:
+      - tests/api_compat/tests/test_http_contracts_p1.py
+      - internal/router/request_shape_eligibility.go
+    test_id: test_http_08_target_request_byte_limit_boundary
+    rationale: >-
+      Oversize-response and oversize-header cases are covered by Go upstream response-size tests
+      (upstream_response_too_large) and net/http defaults, not re-tested here.
 
   - id: HTTP-09
     priority: P2
     owner: api-compat
     component: sdk-versions
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    reviewed_date: "2026-10-10"
+    sdk_client_version: "openai==1.109.1"
     transport: mixed
     disposition: blocked
     assertions:
       - baseline versus canary SDK versions and cancel/reuse behavior are identified independently
-    rationale: deferred linked issue
+    evidence_paths:
+      - tests/api_compat/tests/test_http_contracts_p1.py
+    test_id: test_http_09_pinned_sdk_pool_reuse_and_async_cancel
+    rationale: >-
+      Partial: the pinned baseline SDK (openai==1.109.1) is covered for async cancellation with no
+      SDK retry and pooled-connection reuse afterwards. The baseline-versus-current-stable canary
+      comparison needs a second locked SDK environment (a separate uv lock or dependency group),
+      which this suite does not have yet; until then version-specific failures cannot be told apart.
