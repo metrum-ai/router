@@ -415,3 +415,58 @@ func assertPersistedRequestShapeEligibilityRowsDoNotContain(t *testing.T, estima
 		}
 	}
 }
+
+// Issue #94 ANTH-11: an image that only appears inside an Anthropic tool_result
+// must still make the request image-bearing for target eligibility.
+func TestAnthropicToolResultNestedImageRequiresImageModality(t *testing.T) {
+	body := []byte(`{"model":"m","max_tokens":8,"messages":[
+		{"role":"user","content":"x"},
+		{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"lookup","input":{}}]},
+		{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":[
+			{"type":"text","text":"a"},
+			{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}]}]}`)
+	req, err := decodeRequest("anthropic", body, http.Header{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requestHasImages(req) || requestImageCount(req) != 1 {
+		t.Fatalf("nested tool_result image not detected: images=%d", requestImageCount(req))
+	}
+	plain, err := decodeRequest("anthropic", []byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}]}`), http.Header{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestHasImages(plain) {
+		t.Fatal("string tool_result must not be image-bearing")
+	}
+}
+
+// Issue #94 ANTH-06/09/12: same-dialect Anthropic requests use the native
+// passthrough codec even without tools, so native fields and blocks survive.
+func TestAnthropicSameDialectAlwaysPassthrough(t *testing.T) {
+	req, err := decodeRequest("anthropic", []byte(`{"model":"m","max_tokens":8,"thinking":{"type":"disabled"},"output_config":{"effort":"low"},"messages":[{"role":"user","content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"d"}}]}]}`), http.Header{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requestShapePassthrough("anthropic", "anthropic", req) {
+		t.Fatal("tool-less same-dialect Anthropic request must use passthrough")
+	}
+	if requestShapePassthrough("anthropic", "openai-chat", req) {
+		t.Fatal("translated Anthropic request must not use passthrough")
+	}
+	raw, err := encodeToolPassthrough("anthropic", "up", req, Target{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["output_config"] == nil || body["thinking"] == nil {
+		t.Fatalf("native fields dropped: %s", raw)
+	}
+	content := body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	if content[0].(map[string]any)["type"] != "document" {
+		t.Fatalf("document block dropped: %s", raw)
+	}
+}

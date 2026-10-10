@@ -3034,6 +3034,13 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	if toolPassthrough(callerDialect, outDialect, req) {
 		return true
 	}
+	// Same-dialect Anthropic Messages always uses the native passthrough codec.
+	// The IR re-encoder flattens system blocks and drops thinking, cache_control,
+	// document/citation blocks and native fields such as output_config, so a
+	// tool-less request must not lose them (issue #94 ANTH-06/09/12).
+	if callerDialect == outDialect && outDialect == "anthropic" {
+		return true
+	}
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
