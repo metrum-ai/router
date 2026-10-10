@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metrum-ai/router/internal/stream"
 	"gopkg.in/yaml.v3"
 )
 
@@ -327,6 +328,81 @@ func TestID007cResponses(t *testing.T) {
 		}
 	}
 }
+
+// Native Responses streams encode every output item id (reasoning, message,
+// function_call). A Responses caller such as Codex replays those items as input,
+// so ingress must restore them: providers cap item id length.
+func TestID007eResponsesReplayedOutputItemIDsDecode(t *testing.T) {
+	tr := testIdentifierTransform(t)
+	translator := &stream.Responses{IDs: tr}
+	var items []json.RawMessage
+	for _, raw := range []string{
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_upstream","encrypted_content":"opaque","summary":[]}}`,
+		`{"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_upstream","role":"assistant","content":[{"type":"output_text","text":"mr_text"}]}}`,
+		`{"type":"response.output_item.done","output_index":2,"item":{"type":"function_call","id":"fc_upstream","call_id":"call_upstream","name":"f","arguments":"{\"id\":\"mr_keep\"}"}}`,
+	} {
+		events, err := translator.Next(stream.Event{Data: []byte(raw)})
+		if err != nil || len(events) != 1 {
+			t.Fatal(events, err)
+		}
+		var event struct {
+			Item json.RawMessage `json:"item"`
+		}
+		if err := json.Unmarshal(events[0].Data, &event); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(event.Item, []byte(`_upstream"`)) {
+			t.Fatalf("stream did not encode item ids: %s", event.Item)
+		}
+		items = append(items, event.Item)
+	}
+	callID := decodedField(t, items[2], "call_id")
+	replay := []byte(`{"model":"m","input":[{"type":"message","id":"msg_caller","role":"user","content":[{"type":"input_text","text":"hi"}]},` +
+		string(items[0]) + `,` + string(items[1]) + `,` + string(items[2]) +
+		`,{"type":"function_call_output","call_id":` + string(mustJSON(t, callID)) + `,"output":"ok"}]}`)
+	out, err := decodeIdentifierFields(replay, tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Input []map[string]any `json:"input"`
+	}
+	if err := json.Unmarshal(out, &decoded); err != nil {
+		t.Fatal(err, string(out))
+	}
+	want := []string{"msg_caller", "rs_upstream", "msg_upstream", "fc_upstream"}
+	for i, id := range want {
+		if decoded.Input[i]["id"] != id {
+			t.Fatalf("input[%d].id = %v, want %s: %s", i, decoded.Input[i]["id"], id, out)
+		}
+	}
+	if decoded.Input[3]["call_id"] != "call_upstream" || decoded.Input[4]["call_id"] != "call_upstream" {
+		t.Fatalf("call_id not decoded: %s", out)
+	}
+	if decoded.Input[3]["arguments"] != `{"id":"mr_keep"}` || !bytes.Contains(out, []byte(`"mr_text"`)) {
+		t.Fatalf("non-protocol fields changed: %s", out)
+	}
+}
+
+func decodedField(t *testing.T, raw json.RawMessage, key string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := m[key].(string)
+	return v
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
 func TestID007dNativeProxyMultiline(t *testing.T) {
 	tr := testIdentifierTransform(t)
 	frame := "event: chunk\r\ndata: {\"id\":\"target\",\r\ndata: \"choices\":[{\"delta\":{\"content\":\"a\\u0062\"},\"finish_reason\":\"stop\"}]}\r\n\r\ndata: [DONE]\r\n\r\n"
