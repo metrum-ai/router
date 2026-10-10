@@ -1,0 +1,15 @@
+{
+ "router_sha": "c402232",
+ "group": "live-resp-stored (openai gpt-5.4-nano, native openai-responses, store not forced false)",
+ "result": {
+  "turn1": 200,
+  "turn1_upstream_id": true,
+  "turn2": 200,
+  "turn2_status": "completed",
+  "turn2_recalls": true,
+  "bogus_id_status": 502,
+  "bogus_id_error_class": "upstream_bad_request",
+  "bogus_id_attempts": 1
+ },
+ "force_store_false_note": "On a target with force_store_false: true the same continuation fails with provider 400 relayed as 502 upstream_bad_request after exactly one attempt (no replay): the provider cannot resolve a response it never stored."
+}

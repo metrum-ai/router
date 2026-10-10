@@ -102,13 +102,20 @@ cases:
     owner: harbor-local
     component: harbor-real-agent
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
-    transport: n/a
-    disposition: blocked
+    reviewed_date: "2026-10-10"
+    sdk_client_version: "harbor==0.13.2,pi==1.1.0,claude-code==2.1.296,codex-cli==0.162.0"
+    capability_profile: HARBOR-01 x {pi, claude-code, codex} through a local non-production router, 3 trials each
+    transport: mixed
+    disposition: native_supported
     assertions:
-      - missing credentials yield blocked evidence not a green pass
+      - real pi, Claude Code and Codex agents each pass HARBOR-01 3/3 with independent verifier reward 1.0 through the router
+      - every model call is attributed to a router group and serving target in usage rows (no direct-provider fallback)
+      - failed first attempts are retained and classified, not dropped
+      - offline CI without credentials still reports blocked evidence, never a green pass
     evidence_paths:
+      - docs/evidence/api-compat/2026-10-10/README.md
+      - docs/evidence/api-compat/2026-10-10/harbor-real-agent.json
       - tests/harbor/harness/credentials.py
       - tests/harbor/tests/test_credentials_blocked.py
-    test_id: test_missing_credentials_are_blocked_not_pass
-    rationale: Real Harbor agent cells require operator credentials; offline CI reports blocked.
+    test_id: test_real_agent_row_is_blocked_or_backed_by_dated_evidence
+    rationale: Live operator cell only (one task, 3 trials per client); not statistical certification. HARBOR-02..06 have no Harbor test.sh entrypoint and were not run live; no direct-provider controls (EVAL-01).

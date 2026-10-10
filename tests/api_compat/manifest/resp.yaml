@@ -125,6 +125,7 @@ cases:
     evidence_paths:
       - tests/api_compat/tests/test_responses_contracts.py
       - tests/api_compat/manifest/resp.yaml
+      - docs/evidence/api-compat/2026-10-10/live-resp07-continuation.json
     test_id: test_resp_07_previous_response_id_continuation
 
   - id: RESP-08

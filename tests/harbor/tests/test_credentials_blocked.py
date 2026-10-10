@@ -39,8 +39,30 @@ def test_manifest_lists_harbor_p0_cases():
         assert task_id in by_id
         assert by_id[task_id]["priority"] == "P0"
         assert by_id[task_id]["disposition"] == "native_supported"
-    assert by_id["HARBOR-REAL-AGENT"]["disposition"] == "blocked"
     assert by_id["HARBOR-REAL-AGENT"].get("rationale")
+
+
+def test_real_agent_row_is_blocked_or_backed_by_dated_evidence():
+    """A real-agent cell is green only with dated live evidence on disk; otherwise blocked."""
+    root = Path(__file__).resolve().parents[3]
+    for manifest in (MANIFEST_PATH, root / "tests" / "api_compat" / "manifest" / "harbor.yaml"):
+        raw = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        row = {case["id"]: case for case in raw["cases"]}["HARBOR-REAL-AGENT"]
+        if row["disposition"] == "blocked":
+            continue
+        assert row["disposition"] == "native_supported"
+        dated = [p for p in row["evidence_paths"] if p.startswith(f"docs/evidence/api-compat/{row['reviewed_date']}/")]
+        assert dated, f"{manifest.name}: green real-agent row needs evidence dated {row['reviewed_date']}"
+        for rel in dated:
+            assert (root / rel).is_file(), rel
+        evidence = (root / f"docs/evidence/api-compat/{row['reviewed_date']}/harbor-real-agent.json").read_text()
+        import json
+
+        cells = [c for c in json.loads(evidence)["cells"] if c["classification"] == "certified"]
+        assert {c["client"] for c in cells} >= {"pi", "claude-code", "codex"}
+        for cell in cells:
+            assert cell["trials"] and all(t["reward"] == 1.0 for t in cell["trials"])
+            assert cell["router_usage"]["router_requests"] > 0
 
 
 def test_api_compat_mirror_manifest_present():

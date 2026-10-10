@@ -1,0 +1,34 @@
+{
+ "router_sha": "c402232",
+ "client": "pi 1.1.0 (@earendil-works/pi-coding-agent), api openai-completions, group big-coder",
+ "token": "PROOF-2bd4456612b5",
+ "tools_used": [
+  "write",
+  "read"
+ ],
+ "final_reply_echoes_token": true,
+ "file_contains_token": true,
+ "usage_rows": [
+  {
+   "target": "openai/gpt-5.6-sol",
+   "target_dialect": "openai-responses",
+   "stream": true,
+   "status": 200
+  },
+  {
+   "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+   "target_dialect": "openai-chat",
+   "stream": true,
+   "status": 200
+  },
+  {
+   "target": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
+   "target_dialect": "openai-chat",
+   "stream": true,
+   "status": 200
+  }
+ ],
+ "routing_config_fingerprints": [
+  "cae9a598a8b9a70b7434bb695f4308b0bac405005eb26b36b75c1123b8c30c78"
+ ]
+}
