@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   continuations no longer fail with `string_above_max_length` on
   `input[N].id`.
 
+### Security
+
+- Build with Go 1.26.9 (`go.mod` toolchain and the Docker build image), which
+  fixes standard-library vulnerabilities in the `net/http` HTTP/1 and HTTP/2
+  client and server (Trailer, CONNECT, Range, flow control, framing, HPACK),
+  `net/textproto` MIME header limits and `crypto/tls` ECH: GO-2026-6603,
+  GO-2026-6605, GO-2026-6607, GO-2026-6608, GO-2026-6609, GO-2026-6610,
+  GO-2026-6611, GO-2026-6612, GO-2026-6613 and GO-2026-6617.
+
 ## [4.0.2] - 2026-10-01
 
 ### Fixes
