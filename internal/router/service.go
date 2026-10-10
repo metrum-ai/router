@@ -3041,6 +3041,14 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	if callerDialect == outDialect && outDialect == "anthropic" {
 		return true
 	}
+	// Same-dialect OpenAI Responses likewise forwards the caller body and returns
+	// the upstream object: the IR re-encoder flattens item-array history, drops
+	// opaque reasoning items, replaces the upstream response id (breaking
+	// previous_response_id continuation) and reports incomplete responses as
+	// completed (issue #94 RESP-07/08).
+	if callerDialect == outDialect && outDialect == "openai-responses" {
+		return true
+	}
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
