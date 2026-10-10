@@ -20,6 +20,16 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Requested-group model identity and Go 1.26.9 (v4.1.0)
+
+v4.1.0 adds opt-in `server.responses.model_identity: requested_group`, which
+reports the requested router group as the caller-facing `model` and redacts
+upstream provider and model names from errors. The default (`upstream`) keeps
+v4.0.2 behavior. Release binaries are built with Go 1.26.9. The GitHub Release
+no longer attaches Docker packages; build them from the tag with
+`make package-docker`. No usage-database migration. v4.0.2 ignores
+`model_identity`, so a rollback returns callers to upstream model names.
+
 ## Concurrent rewrite-mode stability (v4.0.2)
 
 v4.0.2 replaces the abandoned `secure-io/siv-go` AES-SIV library with in-tree
