@@ -22,6 +22,19 @@ certification (EVAL-03): each Harbor cell is 3 trials of one task.
 | Upstreams | Fireworks `deepseek-v4p1-flash` (Chat), OpenAI `gpt-5.6-sol` (Responses via Chat→Responses bridge in `big-coder`), OpenAI `gpt-5.4-nano` (Responses), MiniMax `MiniMax-M3` (native Anthropic Messages) |
 | Total provider spend (router-recorded) | **$0.72** across 455 router requests, all cells and failed attempts included (`usage-session-summary.json`) |
 
+## Reproduce
+
+```bash
+# Router: scripts/local_pi_instance.py --listen 127.0.0.1:<port>, plus the overlay groups above.
+export METRUM_ROUTER_BASE_URL=http://127.0.0.1:<port>/v1 METRUM_ROUTER_KEY=<router caller token>
+PYTHONPATH=examples/harbor-algotune-pca harbor run -p tests/harbor/tasks/HARBOR-01-read-edit-repair \
+  -m metrum/big-coder --agent-import-path metrum_pi_agent:MetrumPi \
+  --extra-docker-compose examples/harbor-algotune-pca/router-host-network.compose.yaml -k 3 --yes
+# Codex: -m live-codex --agent-import-path metrum_codex_agent:MetrumCodex --ak version=0.162.0
+# Claude Code: ANTHROPIC_BASE_URL=http://127.0.0.1:<port>/anthropic ANTHROPIC_API_KEY=<router token> \
+#   -a claude-code -m live-anthropic --ak version=2.1.296
+```
+
 ## Results
 
 | Cell | Outcome | Evidence |
