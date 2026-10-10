@@ -10,14 +10,14 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   build: {
     outDir: "..",
     emptyOutDir: false,
     assetsDir: "assets",
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         entryFileNames: "static/assets/admin-[hash].js",
         chunkFileNames: "static/assets/admin-[hash].js",
