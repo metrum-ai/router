@@ -144,8 +144,10 @@ func TestServeE2EImportActivateServeAuth(t *testing.T) {
 	}
 
 	// Build a service from the loaded config. Usage DB needs an explicit
-	// SQLite path so newUsageStore does not reuse the bootstrap one.
+	// SQLite path so newUsageStore does not reuse the bootstrap one, and the
+	// quota state file must not default into the package directory.
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg.StatePath = filepath.Join(t.TempDir(), "router-state.json")
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -206,6 +208,7 @@ func TestServeE2ERevokeWithoutRestart(t *testing.T) {
 		t.Fatalf("LoadConfigForServe: %v", err)
 	}
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg.StatePath = filepath.Join(t.TempDir(), "router-state.json")
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatalf("New: %v", err)
