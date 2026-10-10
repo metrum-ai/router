@@ -77,6 +77,13 @@ those controls and the exact upstream model/API combinations they enable.
   without an incremental translator retain unary upstream plus synthesized SSE
   where streaming is eligible; Gemini generateContent rejects streaming. The
   default is `incremental` on the implemented paths.
+- By default (`server.responses.model_identity: upstream`), caller-facing
+  responses report the serving upstream model, which can change between
+  requests to a weighted group or after fallback. `requested_group` reports the
+  requested group on every response and stream and redacts upstream names from
+  caller errors. Only the protocol `model` field changes; model names inside
+  assistant text, tool arguments or reasoning are not rewritten. Usage rows,
+  attempt rows, logs and admin reports keep the upstream in both modes.
 - After the first flushed caller SSE frame, the HTTP response is committed. A later
   failure cannot change the caller's `200`, append a reliable error envelope,
   or fall back to another target; clients must detect a missing terminal event.
