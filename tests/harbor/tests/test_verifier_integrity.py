@@ -74,3 +74,29 @@ def test_harbor01_verifier_runs_without_task_tree_and_ignores_workspace_cases(tm
     result = mod.verify(workspace)
     assert result["passed"] is False and result["reward"] == 0.0
     assert run_verifier("HARBOR-01", workspace).passed is False
+
+
+@pytest.mark.parametrize("mode,expected", [("solution", "1.0"), ("starter", "0.0")])
+def test_harbor01_test_sh_entrypoint_writes_reward_from_isolated_tests_dir(tmp_path, mode, expected):
+    """Run the real test.sh from a /tests-like copy, as Harbor does (stdin python, no task tree)."""
+    import os
+    import shutil
+    import subprocess
+
+    from harness.runner import stage_workspace
+
+    task_dir = TASK_DIR_BY_ID["HARBOR-01"]
+    tests_copy = tmp_path / "tests"
+    shutil.copytree(task_dir / "tests", tests_copy)
+    workspace = stage_workspace("HARBOR-01", mode=mode)
+    reward_dir = tmp_path / "logs" / "verifier"
+    proc = subprocess.run(
+        ["bash", str(tests_copy / "test.sh")],
+        cwd=tmp_path,
+        env=os.environ | {"HARBOR_WORKSPACE": str(workspace), "HARBOR_REWARD_DIR": str(reward_dir)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert (reward_dir / "reward.txt").read_text().strip() == expected, proc.stderr
+    assert (proc.returncode == 0) is (expected == "1.0")
