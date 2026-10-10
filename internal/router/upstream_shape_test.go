@@ -275,6 +275,11 @@ func TestAdaptiveBackoffHonorsBoundedRetryAfter(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	// Pin the shaping clock so the 1s cooldown cannot lapse in wall-clock time
+	// while a loaded host is still writing usage rows between requests.
+	base := time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)
+	var offset atomic.Int64
+	svc.shaping.now = func() time.Time { return base.Add(time.Duration(offset.Load())) }
 
 	first := performChatRequest(t, svc, `{"model":"default","messages":[{"role":"user","content":"one"}]}`)
 	if first.Code != http.StatusServiceUnavailable || !strings.Contains(first.Body.String(), `"type":"upstream-rate-limited"`) {
@@ -291,8 +296,19 @@ func TestAdaptiveBackoffHonorsBoundedRetryAfter(t *testing.T) {
 	if err := svc.usage.db.Where("decision = ?", shapeDecisionCooldownStarted).First(&cooldown).Error; err != nil {
 		t.Fatal(err)
 	}
-	if cooldown.BackoffReason != "adaptive-backoff-provider-429" || cooldown.RetryAfterMS <= 0 || cooldown.RetryAfterMS > 1000 {
-		t.Fatalf("cooldown=%#v, want bounded retry-after 429 backoff", cooldown)
+	if cooldown.BackoffReason != "adaptive-backoff-provider-429" || cooldown.RetryAfterMS != 1000 {
+		t.Fatalf("cooldown=%#v, want Retry-After 120s bounded to max_backoff_ms 1000", cooldown)
+	}
+
+	offset.Store(int64(999 * time.Millisecond))
+	third := performChatRequest(t, svc, `{"model":"default","messages":[{"role":"user","content":"three"}]}`)
+	if third.Code != http.StatusServiceUnavailable || !strings.Contains(third.Body.String(), `"type":"upstream-capacity-throttled"`) || calls.Load() != 1 {
+		t.Fatalf("third status/body/calls=%d %s %d, want still throttled just before the bound", third.Code, third.Body.String(), calls.Load())
+	}
+	offset.Store(int64(time.Second))
+	fourth := performChatRequest(t, svc, `{"model":"default","messages":[{"role":"user","content":"four"}]}`)
+	if fourth.Code != http.StatusServiceUnavailable || !strings.Contains(fourth.Body.String(), `"type":"upstream-rate-limited"`) || calls.Load() != 2 {
+		t.Fatalf("fourth status/body/calls=%d %s %d, want upstream retried once the bounded cooldown expires", fourth.Code, fourth.Body.String(), calls.Load())
 	}
 }
 
