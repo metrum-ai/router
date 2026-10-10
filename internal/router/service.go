@@ -3887,6 +3887,10 @@ func (s *Service) writeRoutingPolicyError(w http.ResponseWriter, rc *requestCont
 	if message == "" {
 		message = "external routing policy failed"
 	}
+	callerMessage := message
+	if rc.publicModel() != "" {
+		callerMessage = s.callerSafeErrorText(message, err.Group)
+	}
 	if rc != nil {
 		rc.trace("routing_policy_error", message, Target{}, 0, http.StatusBadGateway, code, false, 0)
 		rc.rec.Status = http.StatusBadGateway
@@ -3898,7 +3902,7 @@ func (s *Service) writeRoutingPolicyError(w http.ResponseWriter, rc *requestCont
 	writeJSON(w, http.StatusBadGateway, map[string]any{
 		"error": map[string]any{
 			"type":    code,
-			"message": message,
+			"message": callerMessage,
 			"details": map[string]any{
 				"model": err.Group,
 				"hint":  "the configured external routing policy service did not return a valid target decision",
@@ -3950,6 +3954,13 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 		"retryable":      classified.Retryable,
 		"request_id":     rc.id,
 		"fallbackUsed":   attempts > 1,
+	}
+	if rc.publicModel() != "" {
+		// requested_group: name no upstream provider, host or model to the
+		// caller. Attempt rows and logs keep them for operators.
+		delete(details, "target_dialect")
+		details["targets"] = callerSafeAttemptTargets(rc, len(attempted))
+		details["last_error"] = s.callerSafeErrorText(classified.Message, req.Model)
 	}
 	if reasonCode != "" {
 		details["reason_code"] = reasonCode

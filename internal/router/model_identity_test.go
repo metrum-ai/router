@@ -450,3 +450,146 @@ func TestModelIdentityFallback(t *testing.T) {
 		})
 	}
 }
+
+// #257: when every upstream fails, requested_group bodies and headers carry
+// no provider or upstream model; upstream mode keeps today's targets list.
+func TestModelIdentityUpstreamFailureRedaction(t *testing.T) {
+	for _, identity := range miIdentities {
+		t.Run(identity, func(t *testing.T) {
+			svc, up := modelIdentityTestService(t, identity, "openai-chat", miUsageDB(t))
+			up.fail[miLunaModel] = http.StatusInternalServerError
+			up.fail[miFireModel] = http.StatusInternalServerError
+			rr := miPerform(t, svc, "/v1/chat/completions", `{"model":"big-coder","messages":[{"role":"user","content":"fail"}]}`)
+			if rr.Code < 400 {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			var payload struct {
+				Error struct {
+					Type    string         `json:"type"`
+					Details map[string]any `json:"details"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			details := payload.Error.Details
+			for _, key := range []string{"model", "attempts", "fallbackUsed", "retryable", "request_id", "error_class"} {
+				if _, ok := details[key]; !ok {
+					t.Fatalf("details missing %s: %v", key, details)
+				}
+			}
+			if details["model"] != miGroup || details["attempts"] != float64(2) || details["fallbackUsed"] != true {
+				t.Fatalf("details=%v", details)
+			}
+			targets, _ := details["targets"].([]any)
+			if len(targets) != 2 {
+				t.Fatalf("targets=%v", details["targets"])
+			}
+			if identity == ModelIdentityRequestedGroup {
+				assertNoUpstreamIdentity(t, rr)
+				if details["last_error"] != "upstream status 500" {
+					t.Fatalf("requested_group last_error=%v", details["last_error"])
+				}
+				if _, ok := details["target_dialect"]; ok {
+					t.Fatalf("requested_group target_dialect=%v", details["target_dialect"])
+				}
+				for i, raw := range targets {
+					entry := raw.(map[string]any)
+					if entry["attempt"] != float64(i+1) || entry["error_class"] == nil || len(entry) != 2 {
+						t.Fatalf("redacted target %d=%v", i, entry)
+					}
+				}
+			} else {
+				first := targets[0].(map[string]any)
+				second := targets[1].(map[string]any)
+				if first["provider"] != miLunaProvider || first["model"] != miLunaModel || second["provider"] != miFireProvider || second["model"] != miFireModel {
+					t.Fatalf("upstream-mode targets=%v", targets)
+				}
+				if last := fmt.Sprint(details["last_error"]); !strings.HasPrefix(last, "upstream status 500") {
+					t.Fatalf("upstream-mode last_error=%q", last)
+				}
+			}
+			if rr.Header().Get(headerRouterErrorClass) == "" || rr.Header().Get("X-Upstream-Status") != "500" {
+				t.Fatalf("headers=%v", rr.Header())
+			}
+			rows := miRequestRows(t, svc, rr.Header().Get("X-Request-Id"))
+			if len(rows.attempts) != 2 || rows.attempts[0].Model != miLunaModel || rows.attempts[1].Provider != miFireProvider || rows.attempts[1].Model != miFireModel {
+				t.Fatalf("attempt rows=%+v", rows.attempts)
+			}
+		})
+	}
+}
+
+func TestCallerSafeErrorText(t *testing.T) {
+	svc, _ := modelIdentityTestService(t, ModelIdentityRequestedGroup, "openai-chat")
+	got := svc.callerSafeErrorText("upstream request failed: dial tcp: lookup api.LUNA-PROVIDER.test for gpt-6-luna", miGroup)
+	for _, term := range []string{"luna-provider", "gpt-6-luna"} {
+		if strings.Contains(strings.ToLower(got), term) {
+			t.Fatalf("callerSafeErrorText=%q", got)
+		}
+	}
+	// Upstream status bodies are reduced to the status line.
+	if got := svc.callerSafeErrorText("upstream status 400: "+miUpstreamError, miGroup); got != "upstream status 400" {
+		t.Fatalf("status body=%q", got)
+	}
+}
+
+// #257: eligibility, policy and capacity errors already name only the group.
+func TestModelIdentityRoutingErrorsUseGroup(t *testing.T) {
+	t.Run("eligibility", func(t *testing.T) {
+		svc, _ := modelIdentityTestService(t, ModelIdentityRequestedGroup, "openai-chat", func(cfg *Config) {
+			group := cfg.Models[miGroup]
+			for i := range group.Targets {
+				group.Targets[i].ToolSupport = ToolSupport{}
+			}
+			cfg.Models[miGroup] = group
+		})
+		rr := miPerform(t, svc, "/v1/chat/completions", fmt.Sprintf(miDialectCases[0].tools, "x"))
+		if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "no-eligible-target") {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		assertNoUpstreamIdentity(t, rr)
+	})
+	t.Run("capacity", func(t *testing.T) {
+		svc, _ := modelIdentityTestService(t, ModelIdentityRequestedGroup, "openai-chat", func(cfg *Config) {
+			cfg.Server.Cache.Enabled = false
+			cfg.Models[miGroup] = ModelGroup{Strategy: "static", Targets: []Target{miTargets()[0]}}
+			p := cfg.Provider[miLunaProvider]
+			p.TrafficShape = TrafficShapeConfig{RequestStartPerSec: 0.1, RequestBurst: 1}
+			cfg.Provider[miLunaProvider] = p
+		})
+		_ = miPerform(t, svc, "/v1/chat/completions", `{"model":"big-coder","messages":[{"role":"user","content":"one"}]}`)
+		rr := miPerform(t, svc, "/v1/chat/completions", `{"model":"big-coder","messages":[{"role":"user","content":"two"}]}`)
+		if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), "upstream-capacity-throttled") {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		assertNoUpstreamIdentity(t, rr)
+	})
+	t.Run("policy", func(t *testing.T) {
+		for _, identity := range miIdentities {
+			svc, _ := modelIdentityTestService(t, identity, "openai-chat")
+			rr := httptest.NewRecorder()
+			rc := &requestContext{id: "req_policy", modelIdentity: identity, rec: logRecord{RequestedModel: miGroup}}
+			svc.writeRoutingPolicyError(rr, rc, routingPolicyError{Group: miGroup, Message: "policy picked luna-provider/gpt-6-luna which is unavailable"})
+			if identity == ModelIdentityRequestedGroup {
+				assertNoUpstreamIdentity(t, rr)
+			} else if !strings.Contains(rr.Body.String(), miLunaModel) {
+				t.Fatalf("upstream-mode policy message changed: %s", rr.Body.String())
+			}
+			if !strings.Contains(rr.Body.String(), `"model":"`+miGroup+`"`) {
+				t.Fatalf("policy body=%s", rr.Body.String())
+			}
+		}
+	})
+	t.Run("models-list", func(t *testing.T) {
+		svc, _ := modelIdentityTestService(t, ModelIdentityRequestedGroup, "openai-chat")
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), miGroup) {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		assertNoUpstreamIdentity(t, rr)
+	})
+}
