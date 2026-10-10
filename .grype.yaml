@@ -1,28 +1,12 @@
-# Temporary, advisory-specific exceptions for Docusaurus's build-only
-# image-size dependency. Owner: release/compliance. Expiry: when
-# https://github.com/metrum-ai/router/issues/17 is closed or image-size
-# publishes a fixed release. Reviewed 2026-09-10.
+# Temporary, advisory-specific exception for the build-tool-only braces
+# dependency (docs-site and internal/router/admindist/web), which has no
+# patched release. Owner: release/compliance. Expiry: when
+# https://github.com/metrum-ai/router/issues/253 is closed or braces publishes
+# a fixed release. Reviewed 2026-10-10; revisit on every docs/admin dependency
+# refresh.
 ignore:
-  - vulnerability: GHSA-5p2g-fcmc-qvqq
-    package:
-      name: image-size
-      version: 2.0.2
-      type: npm
-  - vulnerability: GHSA-w3rx-r6r6-pgpr
-    package:
-      name: image-size
-      version: 2.0.2
-      type: npm
-# Temporary build-tool-only exceptions with no patched release. Track removal
-# in https://github.com/metrum-ai/router/issues/253. Owner: release/compliance.
-# Reviewed 2026-10-07; revisit on every docs/admin dependency refresh.
   - vulnerability: GHSA-vfj7-8cjw-p6xm
     package:
       name: braces
       version: 3.0.3
-      type: npm
-  - vulnerability: GHSA-ch52-4w7c-c8xp
-    package:
-      name: http-cache-semantics
-      version: 4.2.0
       type: npm
