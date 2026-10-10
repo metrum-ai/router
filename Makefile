@@ -104,8 +104,11 @@ BUILD_LDFLAGS = -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VER
 LOCAL_ROUTER_OUT ?= tmp/local-pi
 LOCAL_ROUTER_LISTEN ?= 0.0.0.0:18081
 LOCAL_ROUTER_EXTRA_ARGS ?=
+LOCAL_ROUTER_BASE_URL ?= http://$(subst 0.0.0.0,127.0.0.1,$(LOCAL_ROUTER_LISTEN))/v1
+LOCAL_ROUTER_GROUP ?= big-coder
+LOCAL_ROUTER_MODEL_IDENTITY ?= requested_group
 
-.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo openjev-routing-demo secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-live-c e2e-live-full e2e-compose-live e2e-mock eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture local-router local-router-setup local-router-configure-pi clean
+.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo openjev-routing-demo secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-live-c e2e-live-full e2e-compose-live e2e-mock eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture local-router local-router-setup local-router-configure-pi local-router-pi-smoke clean
 
 help:
 	@echo "Metrum AI Router make targets."
@@ -113,6 +116,7 @@ help:
 	@echo "  test-fast              pull-request checks without uv suites"
 	@echo "  test-full              same contract as test, for the merge queue"
 	@echo "  local-router           create/start weighted local coding router (0.0.0.0:18081)"
+	@echo "  local-router-pi-smoke  pi write/read tool continuation against a running local router"
 	@echo "  proof-routing          same-group different-upstream dynamic_score proof"
 	@echo "  harbor-adapter-test    offline Harbor agent-adapter contracts (AGENT-01..06)"
 	@echo "  package-docker         build customer Docker packages"
@@ -149,6 +153,16 @@ local-router-configure-pi: local-router-setup
 		--out-dir "$(LOCAL_ROUTER_OUT)" \
 		--listen "$(LOCAL_ROUTER_LISTEN)" \
 		--configure-pi
+
+# Live pi tool-continuation smoke against an already running local router.
+# Needs pi on PATH; uses a temporary PI_CODING_AGENT_DIR, never ~/.pi.
+local-router-pi-smoke:
+	python3 scripts/pi_tool_continuation_smoke.py \
+		--base-url "$(LOCAL_ROUTER_BASE_URL)" \
+		--token-file "$(LOCAL_ROUTER_OUT)/METRUM_API_KEY" \
+		--usage-db "$(LOCAL_ROUTER_OUT)/usage.sqlite" \
+		--group "$(LOCAL_ROUTER_GROUP)" \
+		--expect-model-identity "$(LOCAL_ROUTER_MODEL_IDENTITY)"
 
 test-reasoning-telemetry-postgres:
 	bash scripts/test_reasoning_telemetry_postgres.sh
@@ -423,6 +437,7 @@ secret-contract:
 secret-check: secret-contract
 	python3 scripts/local_dev_bootstrap_test.py
 	uv run --with pyyaml python scripts/local_pi_instance_test.py
+	python3 scripts/pi_tool_continuation_smoke_test.py
 	python3 scripts/validate_production_bundle_config_test.py
 
 	python3 scripts/launch_operational_readiness_test.py
