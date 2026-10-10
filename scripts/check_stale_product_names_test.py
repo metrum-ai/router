@@ -28,6 +28,26 @@ class StaleProductNameScanTest(unittest.TestCase):
     def test_scan_docs_links_optional(self) -> None:
         self.assertEqual([], scanner.scan_docs_links(enforce_docs_origin=False))
 
+    def test_scan_docs_links_uses_docs_origin_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            readme = root / "README.md"
+            permanent = scanner.product.PERMANENT_DOCS_SITE_ORIGIN
+            canonical = scanner.product.DOCS_SITE_ORIGIN
+            readme.write_text(
+                f"[ok]({canonical}/docs/overview)\n[future]({permanent}/docs/overview)\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(scanner, "ROOT", root), mock.patch.object(
+                scanner, "DOCS_LINK_PATHS", [readme]
+            ):
+                errors = scanner.scan_docs_links(enforce_docs_origin=True)
+        if scanner.product.DOCS_ORIGIN_SWITCH_PENDING:
+            self.assertEqual(1, len(errors), errors)
+            self.assertIn("README.md:2:", errors[0])
+        else:
+            self.assertEqual([], errors)
+
     def test_canonical_product_contract_file(self) -> None:
         # The checked-in constants module must always declare the canonical slug.
         errors = scanner.scan_contract_files()

@@ -5,7 +5,7 @@
 """Fail-closed scan for obsolete product filenames and docs origins.
 
 Checks release archives under dist/ (when present). Optional flags enforce
-the temporary docs origin and packaging contract scripts. Unit tests always
+the canonical docs origin and packaging contract scripts. Unit tests always
 exercise the scanner against fixtures. Full enforcement is enabled from
 docs-qa after the rename PRs land.
 """
@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import canonical_product as product
+import check_docs_origin
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,10 +37,6 @@ DOCS_LINK_PATHS = [
     ROOT / "docs" / "LEARNED_ROUTING_POLICY_EVIDENCE.md",
 ]
 
-FUTURE_DOCS_LINK_RE = re.compile(
-    r"https://docs\.metrum\.ai(?:/docs)?(?:/[^\s)\"']*)?",
-    re.IGNORECASE,
-)
 
 
 def scan_dist(dist_dir: Path) -> list[str]:
@@ -96,6 +93,9 @@ def scan_contract_files() -> list[str]:
 def scan_docs_links(*, enforce_docs_origin: bool) -> list[str]:
     if not enforce_docs_origin:
         return []
+    # Same origin policy as docs-qa (scripts/check_docs_origin.py), so flipping
+    # docs-site/docs-origin.json moves both checks together.
+    policy = check_docs_origin.current_policy()
     errors: list[str] = []
     for path in DOCS_LINK_PATHS:
         if not path.exists():
@@ -103,11 +103,7 @@ def scan_docs_links(*, enforce_docs_origin: bool) -> list[str]:
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if "branding-exception:" in line:
                 continue
-            if FUTURE_DOCS_LINK_RE.search(line):
-                errors.append(
-                    f"{path.relative_to(ROOT)}:{line_no}: use {product.DOCS_SITE_URL} "
-                    "until docs.metrum.ai is hosted"
-                )
+            errors.extend(check_docs_origin.line_errors(path.relative_to(ROOT), line_no, line, policy))
     return errors
 
 
@@ -117,7 +113,7 @@ def main() -> int:
     parser.add_argument(
         "--enforce-docs-origin",
         action="store_true",
-        help="Reject https://docs.metrum.ai product links in public docs sources",
+        help="Reject docs links that do not use the canonical docs origin",
     )
     parser.add_argument(
         "--enforce-contract",
