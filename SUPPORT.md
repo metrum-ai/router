@@ -28,7 +28,8 @@ installations.
 
 Chetan Gadgil is the approved community and support owner. Public project
 questions use the GitHub issue forms linked above. Private commercial or
-deployment inquiries may use [contact@metrum.ai](mailto:contact@metrum.ai), and
+deployment inquiries may use the [Metrum website](https://www.metrum.ai) or
+[contact@metrum.ai](mailto:contact@metrum.ai), and
 security reports must use the separate private path in
 [SECURITY.md](SECURITY.md). An owner assignment does not promise continuous
 availability or a response time; any time-bounded launch coverage must be

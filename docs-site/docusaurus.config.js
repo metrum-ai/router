@@ -113,6 +113,7 @@ const config = {
           { to: "/solution-brief", label: "Solution Brief", position: "left" },
           { to: "/evaluation/harbor-case-study", label: "Case Study", position: "left" },
           { to: "/privacy", label: "Privacy", position: "right" },
+          { href: "https://www.metrum.ai", label: "Metrum AI", position: "right" },
           { href: "https://github.com/metrum-ai/router", label: "GitHub", position: "right" },
         ],
       },
@@ -140,6 +141,13 @@ const config = {
               { label: "Solution Brief", to: "/solution-brief" },
               { label: "Harbor Case Study", to: "/evaluation/harbor-case-study" },
               { label: "Upgrade Guide", to: "/release-notes/upgrade-guide" },
+            ],
+          },
+          {
+            title: "Metrum AI",
+            items: [
+              { label: "Website", href: "https://www.metrum.ai" },
+              { label: "Router Product", href: "https://www.metrum.ai/router" },
             ],
           },
           {
