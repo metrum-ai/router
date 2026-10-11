@@ -60,6 +60,18 @@ def latency_summary(values: list[float]) -> dict[str, Any]:
             "max": round(max(values), 2) if values else None}
 
 
+def label_tier(label: str | None) -> str | None:
+    """Tier the default d3_policy rules pick, re-derived from a classLabel like d3:hard:code:r0.71."""
+    parts = (label or "").split(":")
+    if len(parts) != 4 or parts[0] != "d3" or not parts[3].startswith("r"):
+        return None
+    try:
+        reasoning = float(parts[3][1:])
+    except ValueError:
+        return None
+    return "strong" if parts[1] in ("hard", "expert") or reasoning >= 0.6 else "cheap"
+
+
 def opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -205,7 +217,8 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
                            (rid,)).fetchone()
         use = conn.execute("SELECT target_provider, target_model, input_tokens, output_tokens, total_cost_usd, "
                            "status FROM request_usage WHERE request_id = ?", (rid,)).fetchone()
-        rec = conn.execute("SELECT c.model FROM request_routing_signals s JOIN request_target_candidates c "
+        rec = conn.execute("SELECT s.candidate_index, c.model FROM request_routing_signals s "
+                           "LEFT JOIN request_target_candidates c "
                            "ON c.request_id = s.request_id AND c.candidate_index = s.candidate_index "
                            "WHERE s.request_id = ? AND s.signal_name = 'shadow_recommended_candidate'",
                            (rid,)).fetchone()
@@ -215,8 +228,12 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
         if use:
             row.update({"served_model": use["target_model"], "input_tokens": use["input_tokens"],
                         "output_tokens": use["output_tokens"], "cost_usd": use["total_cost_usd"]})
+        if pol:
+            row["label_tier"] = label_tier(pol["class_label"])
         if rec:
-            row["shadow_recommended_model"] = rec["model"]
+            row["shadow_signal_candidate_index"] = rec["candidate_index"]
+            if rec["model"]:
+                row["shadow_recommended_model"] = rec["model"]
     statuses = Counter(r["status"] for r in sent)
     policy_ms = [float(r["policy_ms"]) for r in sent if r.get("policy_ms") is not None]
     served = Counter(r.get("served_model") for r in sent)
@@ -231,6 +248,21 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
     }
     if args.mode_label == "shadow":
         recs = [r for r in sent if r.get("shadow_recommended_model")]
+        tiers = [r for r in sent if r.get("label_tier")]
+        result["shadow_by_label_tier"] = {
+            "decisions": len(tiers),
+            "recommended_tier": dict(Counter(r["label_tier"] for r in tiers)),
+            "hard_to_strong": f"{sum(1 for r in tiers if r['difficulty_label'] == 'hard' and r['label_tier'] == 'strong')}/"
+                              f"{sum(1 for r in tiers if r['difficulty_label'] == 'hard')}",
+            "easy_to_cheap": f"{sum(1 for r in tiers if r['difficulty_label'] == 'easy' and r['label_tier'] == 'cheap')}/"
+                             f"{sum(1 for r in tiers if r['difficulty_label'] == 'easy')}",
+            "agreement_with_labels": round(sum(1 for r in tiers if (r["difficulty_label"] == "hard")
+                                               == (r["label_tier"] == "strong")) / max(1, len(tiers)), 3),
+            "recommended_equals_served": sum(1 for r in tiers if r["label_tier"] == "cheap"),
+            "unresolved_signal_rows": sum(1 for r in sent if r.get("shadow_signal_candidate_index") == -1),
+            "note": "tier re-derived from the scalar class label with the adapter's default rules (difficulty "
+                    "hard|expert or reasoning >= 0.6 -> strong); target 0 (served) is the cheap tier",
+        }
         result["shadow"] = {
             "recommendations": len(recs),
             "recommended_equals_served": sum(1 for r in recs if r["shadow_recommended_model"] == r.get("served_model")),
@@ -246,6 +278,8 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
         actual = sum(float(r.get("cost_usd") or 0) for r in ok)
         always_strong = sum((r.get("input_tokens") or 0) * args.strong_input_price / 1e6
                             + (r.get("output_tokens") or 0) * args.strong_output_price / 1e6 for r in ok)
+        always_cheap = sum((r.get("input_tokens") or 0) * args.cheap_input_price / 1e6
+                           + (r.get("output_tokens") or 0) * args.cheap_output_price / 1e6 for r in ok)
         result["enforce"] = {
             "served": len(ok), "strong_share": round(len(strong) / max(1, len(ok)), 3),
             "hard_prompts_to_strong": f"{sum(1 for r in strong if r['difficulty_label'] == 'hard')}/"
@@ -253,7 +287,9 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
             "easy_prompts_to_cheap": f"{sum(1 for r in ok if r['difficulty_label'] == 'easy' and r not in strong)}/"
                                      f"{sum(1 for r in ok if r['difficulty_label'] == 'easy')}",
             "actual_cost_usd": round(actual, 6), "always_strong_cost_usd_estimate": round(always_strong, 6),
-            "note": "always-strong estimate prices the same token counts at the strong target's list price",
+            "always_cheap_cost_usd_estimate": round(always_cheap, 6),
+            "note": "always-strong and always-cheap estimates price the same token counts at that target's list "
+                    "price; check which tier is cheaper per token before reading the delta",
         }
     for r in sent:
         r.pop("request_id", None)
@@ -284,6 +320,8 @@ def main() -> int:
     r.add_argument("--strong-model", default="gpt-6-luna")
     r.add_argument("--strong-input-price", type=float, default=0.10)
     r.add_argument("--strong-output-price", type=float, default=0.50)
+    r.add_argument("--cheap-input-price", type=float, default=0.22)
+    r.add_argument("--cheap-output-price", type=float, default=0.66)
     r.add_argument("--max-tokens", type=int, default=32)
     r.add_argument("--run-marker", default="")
     r.add_argument("--timeout", type=float, default=120)
