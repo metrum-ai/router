@@ -64,6 +64,7 @@ Helper scripts are in `scripts/`:
 - `remote_setup.sh`: pinned snapshots and venv.
 - `remote_serve.sh`: serves a model and measures cold load and GPU memory.
 - `tunnel_kill_drill.py`: the f.5 drill.
+- `pi_smoke_summarize.py`: turns a `local-router-pi-smoke` run plus the usage DB into the scalar f.4 JSON.
 
 ## f.1 d3 alone: latency, memory, cold load, answers (204 prompts)
 
@@ -209,12 +210,25 @@ engine's throughput on CUDA is still the open question for loads above about
 
 ## GPU spend
 
-See `WORKLOG.md` in the stream worktree and the teardown section below.
+| Instance | Type | $/h | Created (UTC) | Delete requested (UTC) | Gone from `GET /v1/instances` | Billed span | Cost |
+|---|---|---|---|---|---|---|---|
+| `fe9e00de-0ec6-4512-b9af-54e7a8327b85` (`metrum-d3-20261011-1`) | RTXPro6000 | 2.19 | 15:10:15 | 16:49:46 | 16:50:15 | 1 h 39 m 31 s (1.659 h) | **$3.63** |
+
+Total GPU spend: **$3.63**, against the $100 cap (the issue's original working cap
+was $40). The figure counts from create, not from active (15:12:32), so it
+errs on the high side. It includes a coordinator-requested demo hold from 16:38
+to 16:49 with d3-lite served.
 
 ## Teardown
 
-Recorded at the end of the run, after a demo hold the coordinator requested:
-instance deletion, SSH key removal and the total cost.
+- 16:49:46Z: `shadeform_d3.py delete --id fe9e00de-…` returned HTTP 200. At
+  16:50:15Z, `GET /v1/instances` returned `{"instances": []}`, so no
+  `metrum-d3-*` instance remains.
+- The SSH key added for this run (`metrum-d3-live-20261011`) was deleted
+  (HTTP 200). `GET /v1/sshkeys` no longer lists it.
+- The SSH tunnel, local router and adapter were stopped, and ports
+  18300–18302 are free. The local out dir (keys, router state, usage DB) was
+  deleted. The model weights lived only on the deleted instance.
 
 ## Commands (workstation; keys are read from ignored files and never printed)
 
