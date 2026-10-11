@@ -17,6 +17,12 @@ Upstream keys are copied from a source env.json (repo env.json by default).
 The local caller token is stored as METRUM_API_KEY (file + out-dir env.json)
 and reused when already present unless --rotate-key is set.
 
+Optional d3-auto group (--d3-policy-url, issue #278): strategy external through
+examples/external-routing-policy/d3_policy.py. tier cheap -> fireworks
+deepseek-v4p1-flash, tier strong -> openai gpt-6-luna. It is added to the
+caller allow list and to the pi model list. Without the flag the generated
+config is unchanged.
+
 Output stays under a gitignored directory (default tmp/local-pi).
 Run with: uv run --with pyyaml python scripts/local_pi_instance.py
 """
@@ -31,6 +37,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,6 +49,9 @@ CALLER_ID = "local-dev-example-project-dev"
 OWNER_USER = "local-dev"
 PROJECT = "example-project"
 GROUP = "big-coder"
+D3_GROUP = "d3-auto"
+D3_POLICY_MODES = ("shadow", "enforce", "baseline")
+D3_ON_ERROR = ("fail_closed", "fallback")
 MODEL_IDENTITY = "requested_group"
 
 # Local coding-agent caller policy: 20x the original local-dev defaults.
@@ -161,14 +171,76 @@ def resolve_existing_token(out_dir: Path, source_env: dict[str, str]) -> str:
     return ""
 
 
+def openai_luna_target(**extra: object) -> dict:
+    return {
+        "provider": "openai",
+        "model_ref": "gpt-6-luna",
+        **extra,
+        "bridges": {
+            "chat_to_responses": {
+                "enabled": True,
+                "tools": True,
+                "tool_choice": True,
+                "text": True,
+            }
+        },
+    }
+
+
+def d3_group(policy_url: str, mode: str, on_error: str, timeout_ms: int) -> dict:
+    """d3-auto: external policy (d3_policy.py) choosing cheap vs strong (#278)."""
+    host = urlparse(policy_url).hostname or ""
+    return {
+        "strategy": "external",
+        "external_policy": {
+            "url": policy_url,
+            "allow_hosts": [host],
+            "include_request": True,
+            "timeout_ms": timeout_ms,
+            "max_response_bytes": 65536,
+            "mode": mode,
+            "on_error": on_error,
+        },
+        "targets": [
+            {
+                "provider": "fireworks",
+                "model_ref": "deepseek-v4p1-flash",
+                "tier": "cheap",
+                "weight": 1,
+            },
+            openai_luna_target(tier="strong", weight=1),
+        ],
+    }
+
+
+def group_names(d3_policy: dict | None) -> list[str]:
+    return [GROUP, D3_GROUP] if d3_policy else [GROUP]
+
+
 def build_config(
     *,
     out_dir: Path,
     listen: str,
     id_key_hex: str,
     token: str,
+    d3_policy: dict | None = None,
 ) -> dict:
-    return {
+    models = {
+        GROUP: {
+            "strategy": "weighted",
+            "targets": [
+                openai_luna_target(weight=70),
+                {
+                    "provider": "fireworks",
+                    "model_ref": "deepseek-v4p1-flash",
+                    "weight": 30,
+                },
+            ],
+        }
+    }
+    if d3_policy:
+        models[D3_GROUP] = d3_group(**d3_policy)
+    config = {
         "server": {
             "listen": listen,
             "default_model_group": GROUP,
@@ -320,31 +392,7 @@ def build_config(
                 },
             },
         },
-        "models": {
-            GROUP: {
-                "strategy": "weighted",
-                "targets": [
-                    {
-                        "provider": "openai",
-                        "model_ref": "gpt-6-luna",
-                        "weight": 70,
-                        "bridges": {
-                            "chat_to_responses": {
-                                "enabled": True,
-                                "tools": True,
-                                "tool_choice": True,
-                                "text": True,
-                            }
-                        },
-                    },
-                    {
-                        "provider": "fireworks",
-                        "model_ref": "deepseek-v4p1-flash",
-                        "weight": 30,
-                    },
-                ],
-            }
-        },
+        "models": models,
         "callers": [
             {
                 "id": CALLER_ID,
@@ -354,7 +402,7 @@ def build_config(
                 "status": "active",
                 "token_sha256": token_sha256(token),
                 "token_id": public_token_id(token),
-                "allow": [GROUP],
+                "allow": group_names(d3_policy),
                 "rate": {
                     "rpm": LOCAL_RATE_RPM,
                     "tpm": LOCAL_RATE_TPM,
@@ -376,6 +424,10 @@ def build_config(
             }
         ],
     }
+    if d3_policy:
+        # Shadow agreement and policy latency come from request_policy_executions.
+        config["server"]["decision_telemetry"] = {"enabled": True}
+    return config
 
 
 def write_yaml(path: Path, data: dict) -> None:
@@ -494,7 +546,32 @@ def write_readme(out_dir: Path, listen: str) -> None:
     )
 
 
-def configure_pi(out_dir: Path, listen: str) -> None:
+def pi_models(d3_policy: dict | None) -> list[dict]:
+    models = [
+        {
+            "id": GROUP,
+            "name": "Local big-coder (gpt-6-luna 70 / deepseek-v4p1-flash 30)",
+            "contextWindow": 124518,
+            "maxTokens": 8192,
+            "reasoning": False,
+            "input": ["text"],
+        }
+    ]
+    if d3_policy:
+        models.append(
+            {
+                "id": D3_GROUP,
+                "name": "Local d3-auto (d3 policy: deepseek-v4p1-flash cheap / gpt-6-luna strong)",
+                "contextWindow": 124518,
+                "maxTokens": 8192,
+                "reasoning": False,
+                "input": ["text"],
+            }
+        )
+    return models
+
+
+def configure_pi(out_dir: Path, listen: str, d3_policy: dict | None = None) -> None:
     agent_dir = Path.home() / ".pi" / "agent"
     agent_dir.mkdir(parents=True, exist_ok=True)
     token = (out_dir / "METRUM_API_KEY").read_text(encoding="utf-8").strip()
@@ -514,16 +591,7 @@ def configure_pi(out_dir: Path, listen: str) -> None:
                     "supportsDeveloperRole": False,
                     "supportsReasoningEffort": False,
                 },
-                "models": [
-                    {
-                        "id": GROUP,
-                        "name": "Local big-coder (gpt-6-luna 70 / deepseek-v4p1-flash 30)",
-                        "contextWindow": 124518,
-                        "maxTokens": 8192,
-                        "reasoning": False,
-                        "input": ["text"],
-                    }
-                ],
+                "models": pi_models(d3_policy),
             }
         }
     }
@@ -590,6 +658,29 @@ def parse_args() -> argparse.Namespace:
         help="point ~/.pi/agent at this local instance",
     )
     parser.add_argument(
+        "--d3-policy-url",
+        default="",
+        help="add the d3-auto group using this d3_policy.py /route URL (e.g. http://127.0.0.1:18302/route)",
+    )
+    parser.add_argument(
+        "--d3-policy-mode",
+        default="shadow",
+        choices=D3_POLICY_MODES,
+        help="external_policy.mode for d3-auto (default: shadow)",
+    )
+    parser.add_argument(
+        "--d3-policy-on-error",
+        default="fail_closed",
+        choices=D3_ON_ERROR,
+        help="external_policy.on_error for d3-auto (default: fail_closed)",
+    )
+    parser.add_argument(
+        "--d3-policy-timeout-ms",
+        type=int,
+        default=300,
+        help="external_policy.timeout_ms for d3-auto (default: 300)",
+    )
+    parser.add_argument(
         "--run",
         action="store_true",
         help="start the router in the foreground after writing files",
@@ -612,6 +703,17 @@ def main() -> None:
             f"{env_json} or process env: {', '.join(missing)}"
         )
 
+    d3_policy = None
+    if args.d3_policy_url:
+        if urlparse(args.d3_policy_url).scheme not in ("http", "https"):
+            die("--d3-policy-url must be an http(s) URL")
+        d3_policy = {
+            "policy_url": args.d3_policy_url,
+            "mode": args.d3_policy_mode,
+            "on_error": args.d3_policy_on_error,
+            "timeout_ms": args.d3_policy_timeout_ms,
+        }
+
     id_key = reuse_or_create_identifier_key(out_dir, rotate=args.rotate_identifier_key)
     ctl = resolve_cli(args.smartrouterctl, repo_root)
     config_path = out_dir / "config.yaml"
@@ -623,7 +725,9 @@ def main() -> None:
         token = existing
         write_yaml(
             config_path,
-            build_config(out_dir=out_dir, listen=args.listen, id_key_hex=id_key, token=token),
+            build_config(
+                out_dir=out_dir, listen=args.listen, id_key_hex=id_key, token=token, d3_policy=d3_policy
+            ),
         )
         token_reused = True
     else:
@@ -635,13 +739,16 @@ def main() -> None:
                 listen=args.listen,
                 id_key_hex=id_key,
                 token="rtr_metrum_placeholder_example-project_dev_k00000000_PLACEHOLDER",
+                d3_policy=d3_policy,
             ),
         )
         tmp_token = out_dir / ".metrum-api-key.new"
         token = create_token_via_ctl(ctl, repo_root, config_path, tmp_token)
         write_yaml(
             config_path,
-            build_config(out_dir=out_dir, listen=args.listen, id_key_hex=id_key, token=token),
+            build_config(
+                out_dir=out_dir, listen=args.listen, id_key_hex=id_key, token=token, d3_policy=d3_policy
+            ),
         )
         tmp_token.unlink(missing_ok=True)
         token_reused = False
@@ -668,6 +775,7 @@ def main() -> None:
         "config": str(config_path),
         "listen": args.listen,
         "group": GROUP,
+        "groups": group_names(d3_policy),
         "model_identity": MODEL_IDENTITY,
         "targets": [
             {"provider": "openai", "model": "gpt-6-luna", "weight": 70},
@@ -691,7 +799,7 @@ def main() -> None:
     )
 
     if args.configure_pi:
-        configure_pi(out_dir, args.listen)
+        configure_pi(out_dir, args.listen, d3_policy)
 
     if args.run:
         start = out_dir / "start.sh"

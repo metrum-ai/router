@@ -1689,6 +1689,17 @@ func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
 			}
 			continue
 		}
+		if name == "d3-policy-demo" {
+			if group.Strategy != "external" ||
+				group.ExternalPolicy.URL != "http://127.0.0.1:18094/route" ||
+				group.ExternalPolicy.Mode != "shadow" ||
+				!group.ExternalPolicy.IncludeRequest ||
+				len(group.Targets) != 2 ||
+				group.Targets[0].Tier != "cheap" || group.Targets[1].Tier != "strong" {
+				t.Fatalf("example config d3-policy-demo=%#v, want d3 external policy reference in shadow", group)
+			}
+			continue
+		}
 		if name == "adaptive-agent" {
 			if group.Strategy != "dynamic_score" || len(group.Targets) != 3 || len(group.RoutingPolicy.DynamicScore.ScoreTerms) != 2 {
 				t.Fatalf("example config adaptive-agent=%#v, want dynamic_score reference group with three targets and score terms", group)

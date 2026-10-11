@@ -211,3 +211,24 @@ OPENJEV_URL=http://127.0.0.1:3000 python3 examples/external-routing-policy/openj
 Example router config: `config.openjev.example.yaml`. Full Shadeform runbook:
 [`docs/OPENJEV_ROUTING_DEMO.md`](../../docs/OPENJEV_ROUTING_DEMO.md). Sanitized
 evidence: [`docs/evidence/openjev-routing/`](../../docs/evidence/openjev-routing/).
+
+## Decision 3.0 (d3) Policy
+
+`d3_policy.py` asks a vLLM Semantic Router Decision 3.0 (d3) System One
+endpoint typed questions about the redacted request text (difficulty, multi-step
+reasoning, task kind) and maps the answers onto `strong` or `cheap` eligible
+targets with declarative rules (`d3_policy.example.yaml`, or the equivalent
+stdlib-only `d3_policy.example.json`). d3 failures return HTTP 502 so the
+router's `on_error` decides; labels such as `d3:hard:code:r0.71` never carry
+request content. d3 models are Apache-2.0. Contributed by Metrum AI (issue #278).
+
+```bash
+# Credential-free: unit tests and a router e2e against fake_d3.py
+make d3-policy-test d3-policy-e2e
+
+# Against a real d3 server reached over an SSH tunnel on 127.0.0.1:18300:
+D3_API_KEY=... python3 examples/external-routing-policy/d3_policy.py \
+  --port 18094 --url http://127.0.0.1:18300 --model vllm-sr/d3-lite
+```
+
+Full guide: `docs-site/docs/routing/d3-external-policy.md`.

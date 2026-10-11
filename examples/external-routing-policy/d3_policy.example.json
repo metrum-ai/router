@@ -1,0 +1,99 @@
+{
+  "d3": {
+    "url": "http://127.0.0.1:8000",
+    "model": "vllm-sr/d3-lite",
+    "revision": "a8d25a91ef75552803f7009d25b7bd435991abd9",
+    "timeout_ms": 250,
+    "api_key_env": "D3_API_KEY",
+    "max_concurrency": 1
+  },
+  "text": {
+    "max_chars": 32768
+  },
+  "questions": {
+    "difficulty": {
+      "type": "score",
+      "instructions": "How difficult is it to answer this request well?",
+      "criteria": [
+        "trivial",
+        "moderate",
+        "hard",
+        "expert"
+      ]
+    },
+    "reasoning": {
+      "type": "noul",
+      "instructions": "Does answering this need multi-step reasoning?"
+    },
+    "kind": {
+      "type": "choice",
+      "instructions": "What kind of work is this?",
+      "criteria": {
+        "code": "Writing, reviewing or fixing code",
+        "math": "Mathematics or quantitative reasoning",
+        "chat": "Conversation, writing or anything else",
+        "agentic": "Multi-step agentic tool use such as editing files or running commands"
+      }
+    }
+  },
+  "label": [
+    "difficulty",
+    "kind",
+    "reasoning"
+  ],
+  "rules": [
+    {
+      "name": "strong-hard-or-reasoning",
+      "when": {
+        "any": [
+          {
+            "question": "difficulty",
+            "in": [
+              "hard",
+              "expert"
+            ]
+          },
+          {
+            "question": "reasoning",
+            "gte": 0.6
+          }
+        ]
+      },
+      "prefer": [
+        {
+          "tier": "strong"
+        }
+      ]
+    },
+    {
+      "name": "cheap-default",
+      "prefer": [
+        {
+          "tier": "cheap"
+        }
+      ]
+    }
+  ],
+  "no_content_rules": [
+    {
+      "name": "strong-large-context",
+      "when": {
+        "context": "estimatedTokens",
+        "gte": 8000
+      },
+      "prefer": [
+        {
+          "tier": "strong"
+        }
+      ]
+    },
+    {
+      "name": "cheap-default",
+      "prefer": [
+        {
+          "tier": "cheap"
+        }
+      ]
+    }
+  ]
+}

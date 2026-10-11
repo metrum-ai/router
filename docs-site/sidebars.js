@@ -51,6 +51,7 @@ const sidebars = {
         "configuration/routing-typescript",
         "configuration/external-routing-policy",
         "configuration/external-policy-context",
+        "routing/d3-external-policy",
         "configuration/image-analysis-vlm",
         "configuration/reasoning-routing",
         "configuration/self-hosted-upstreams",
