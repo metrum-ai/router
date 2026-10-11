@@ -13,12 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "validate_production_bundle_config.py"
 
 
-def run_check(config: dict) -> subprocess.CompletedProcess[str]:
+def run_check(config: dict, *extra: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "config.yaml"
         path.write_text(yaml.safe_dump(config))
         return subprocess.run(
-            ["python3", str(SCRIPT), str(path)],
+            ["python3", str(SCRIPT), str(path), *extra],
             check=False,
             capture_output=True,
             text=True,
@@ -88,6 +88,17 @@ def main() -> int:
     insecure = valid_config()
     insecure["server"]["admin_auth"]["basic"] = {"enabled": True, "allow_insecure_http": True}
     assert run_check(insecure).returncode == 0
+
+    # Output echoes only the canonical CIDR, never a free-form CLI value.
+    assert "trusted proxy 192.168.0.0/16" in passed.stdout, passed.stdout
+    not_cidr = "not-a-cidr-sk-live-value"
+    failed = run_check(valid_config(), "--require-trusted-proxy", not_cidr)
+    assert failed.returncode == 2
+    assert "--require-trusted-proxy must be a CIDR network" in failed.stderr
+    assert not_cidr not in failed.stderr + failed.stdout
+    failed = run_check(valid_config(), "--require-trusted-proxy", "10.0.0.0/8")
+    assert failed.returncode == 1
+    assert "missing trusted_proxy_cidrs entry 10.0.0.0/8" in failed.stderr
 
     print("production bundle admin reports contract test passed")
     return 0

@@ -12,6 +12,7 @@ Never reads or prints raw router tokens.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import pathlib
 import sys
 
@@ -27,6 +28,12 @@ def main() -> int:
         help="Expected server.client_ip.trusted_proxy_cidrs entry",
     )
     args = parser.parse_args()
+    # Messages echo only the canonical CIDR form of the operator-supplied proxy
+    # network, so no free-form CLI value reaches stderr or stdout.
+    try:
+        proxy_cidr = str(ipaddress.ip_network(args.require_trusted_proxy))
+    except ValueError:
+        parser.error("--require-trusted-proxy must be a CIDR network such as 192.168.0.0/16")
     data = yaml.safe_load(args.config.read_text())
     server = data.get("server") or {}
     state_path = data.get("state_path", "")
@@ -35,8 +42,8 @@ def main() -> int:
         errors.append(f"state_path must use /var/lib/smart-llmrouter, got {state_path!r}")
     client_ip = server.get("client_ip") or {}
     cidrs = client_ip.get("trusted_proxy_cidrs") or []
-    if args.require_trusted_proxy not in cidrs:
-        errors.append(f"missing trusted_proxy_cidrs entry {args.require_trusted_proxy}")
+    if proxy_cidr not in cidrs:
+        errors.append(f"missing trusted_proxy_cidrs entry {proxy_cidr}")
     admin_auth = server.get("admin_auth") or {}
     basic = admin_auth.get("basic") or {}
     basic_enabled = bool(basic.get("enabled"))
@@ -48,10 +55,10 @@ def main() -> int:
     # challenges every request whether or not the credentials are correct.
     if basic_enabled and not bool(basic.get("allow_insecure_http")):
         admin_cidrs = basic.get("trusted_proxy_cidrs") or []
-        if args.require_trusted_proxy not in admin_cidrs:
+        if proxy_cidr not in admin_cidrs:
             errors.append(
                 "missing admin_auth.basic.trusted_proxy_cidrs entry "
-                f"{args.require_trusted_proxy}; admin Basic Auth returns 401 for correct "
+                f"{proxy_cidr}; admin Basic Auth returns 401 for correct "
                 "passwords when the reverse proxy network is not trusted"
             )
     if not bool((admin_auth.get("authorization") or {}).get("enabled")):
@@ -72,7 +79,7 @@ def main() -> int:
         for err in errors:
             print(err, file=sys.stderr)
         return 1
-    print(f"ok: {len(callers)} callers, trusted proxy {args.require_trusted_proxy}")
+    print(f"ok: {len(callers)} callers, trusted proxy {proxy_cidr}")
     return 0
 
 

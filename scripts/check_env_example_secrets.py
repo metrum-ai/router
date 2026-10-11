@@ -69,7 +69,12 @@ def tracked_env_examples() -> list[Path]:
     return [ROOT / line for line in result.stdout.splitlines() if line]
 
 
-def secret_key_errors(path: Path, data: object) -> Iterable[str]:
+def placeholder_key_errors(path: Path, data: object) -> Iterable[str]:
+    """Report credential-named keys whose values are not empty or placeholders.
+
+    Messages carry only the file path and key name, never the value, so the
+    failure output is safe to print in CI logs (Metrum AI secret hygiene).
+    """
     if not isinstance(data, dict):
         yield f"{path.relative_to(ROOT)} must contain a JSON object"
         return
@@ -149,7 +154,7 @@ def main() -> int:
         except json.JSONDecodeError as exc:
             errors.append(f"{path.relative_to(ROOT)} is not valid JSON: {exc}")
             continue
-        errors.extend(secret_key_errors(path, data))
+        errors.extend(placeholder_key_errors(path, data))
     errors.extend(retired_agent_ignore_errors())
     errors.extend(local_credential_ignore_errors())
     # Service fixtures are public too. Content-bearing runtime artifacts must
