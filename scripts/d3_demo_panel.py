@@ -15,11 +15,14 @@ sees request content.
 
 Usage:
     python3 scripts/d3_demo_panel.py --db tmp/test-demo/usage.sqlite --since now \
-        --tier deepseek=cheap --tier gpt-6-luna=strong
+        --tier deepseek=cheap --tier gpt-6.1-sol=strong
     python3 scripts/d3_demo_panel.py --db ... --since 2026-10-11T15:00:00Z --summary
 
 `--summary` prints the turn count, tier split, total cost and an all-strong
-estimate (same token counts priced at the strong target's recorded list price).
+estimate: turns that went strong keep their recorded cost, and every other
+turn's tokens are priced at the strong target's list price (input, cached
+input and output, as recorded on a strong usage row or given with
+--strong-price IN/CACHED/OUT). The second line compares the two (issue #287).
 
 Copyright 2026 Metrum AI.
 """
@@ -37,6 +40,7 @@ QUERY = """
 SELECT u.request_id, u.ts, u.target_provider, u.target_model, u.status, u.latency_ms,
        u.total_cost_usd, u.input_tokens, u.output_tokens,
        u.input_price_per_million_usd, u.output_price_per_million_usd,
+       u.cached_input_tokens, u.cached_input_price_per_million_usd,
        p.class_label, p.outcome, p.duration_ms
 FROM request_usage u
 LEFT JOIN request_policy_executions p ON p.request_id = u.request_id
@@ -110,19 +114,50 @@ def format_row(n: int, row: sqlite3.Row, tiers: list[tuple[str, str]], color: bo
     )
 
 
-def summarize(rows: list[sqlite3.Row], tiers: list[tuple[str, str]]) -> dict:
+def parse_price(text: str | None) -> tuple[float, float, float] | None:
+    """`2/0.1/10` -> (input, cached input, output) USD per 1M tokens."""
+    if not text:
+        return None
+    parts = text.split("/")
+    try:
+        values = tuple(float(p) for p in parts)
+    except ValueError:
+        values = ()
+    if len(values) != 3:
+        raise SystemExit(f"--strong-price wants IN/CACHED/OUT, got {text!r}")
+    return values  # type: ignore[return-value]
+
+
+def strong_estimate(row: sqlite3.Row, price: tuple[float, float, float]) -> float:
+    """This turn's tokens at the strong list price; cached input at the cached rate."""
+    cached = min(row["cached_input_tokens"] or 0, row["input_tokens"] or 0)
+    fresh = (row["input_tokens"] or 0) - cached
+    return (fresh * price[0] + cached * price[1] + (row["output_tokens"] or 0) * price[2]) / 1e6
+
+
+def summarize(
+    rows: list[sqlite3.Row],
+    tiers: list[tuple[str, str]],
+    strong_price: tuple[float, float, float] | None = None,
+) -> dict:
     by_tier: dict[str, int] = {}
-    strong_price = None
     for row in rows:
         tier = tier_for(row["target_model"], tiers)
         by_tier[tier] = by_tier.get(tier, 0) + 1
         if tier == "strong" and row["input_price_per_million_usd"] is not None:
-            strong_price = (row["input_price_per_million_usd"], row["output_price_per_million_usd"] or 0.0)
+            cached_price = row["cached_input_price_per_million_usd"]
+            strong_price = (
+                row["input_price_per_million_usd"],
+                row["input_price_per_million_usd"] if cached_price is None else cached_price,
+                row["output_price_per_million_usd"] or 0.0,
+            )
     total = sum((r["total_cost_usd"] or 0.0) for r in rows)
     all_strong = None
     if strong_price is not None:
         all_strong = sum(
-            ((r["input_tokens"] or 0) * strong_price[0] + (r["output_tokens"] or 0) * strong_price[1]) / 1e6
+            (r["total_cost_usd"] or 0.0)
+            if tier_for(r["target_model"], tiers) == "strong"
+            else strong_estimate(r, strong_price)
             for r in rows
         )
     durations = [r["duration_ms"] for r in rows if r["duration_ms"] is not None]
@@ -143,8 +178,13 @@ def format_summary(s: dict) -> str:
         f"{s['by_tier'].get('strong', 0)} strong ({s['cheap_share'] * 100:.0f}% cheap)"
     )
     parts = [f"cost ${s['total_cost_usd']:.4f}"]
-    if s["all_strong_cost_usd_estimate"] is not None:
-        parts.append(f"all-strong est. ${s['all_strong_cost_usd_estimate']:.4f}")
+    est = s["all_strong_cost_usd_estimate"]
+    if est is not None:
+        part = f"all-strong est. ${est:.4f}"
+        if est > 0:
+            part += f" ({(1 - s['total_cost_usd'] / est) * 100:.0f}% less)" if s["total_cost_usd"] <= est else (
+                f" ({(s['total_cost_usd'] / est - 1) * 100:.0f}% more)")
+        parts.append(part)
     if s["policy_ms_p50"] is not None:
         parts.append(f"router→policy hop p50 {s['policy_ms_p50']:.0f} ms")
     return line1 + "\n" + " · ".join(parts)
@@ -160,11 +200,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--once", action="store_true", help="print current rows and exit")
     ap.add_argument("--summary", action="store_true", help="print a one-line summary and exit")
     ap.add_argument("--no-color", action="store_true")
+    ap.add_argument("--strong-price", help="IN/CACHED/OUT USD per 1M tokens when no strong row exists")
     args = ap.parse_args(argv)
     tiers = parse_tiers(args.tier)
     since = utc_now_ts() if args.since == "now" else args.since
     if args.summary:
-        print(format_summary(summarize(fetch(args.db, args.group, since), tiers)))
+        print(format_summary(summarize(fetch(args.db, args.group, since), tiers, parse_price(args.strong_price))))
         return 0
     seen: set[str] = set()
     first_seen: dict[str, float] = {}
