@@ -25,6 +25,13 @@ d3-lite.**
   an easy prompt to the strong tier, but it sent 19–21 of 102 hard prompts to
   the cheap tier. d3-lite scored 0.80–0.84, with only 56–70 of 102 hard prompts
   sent to strong.
+- **How to read the quality numbers.** The 204 seed prompts are synthetic. They
+  were written and labelled for this test, and they deliberately separate
+  clearly easy from clearly hard requests. These scores show that each model
+  separates such a set. They are not a benchmark of routing quality on real
+  traffic, which has more borderline requests. In the demo recording, for
+  example, d3-lite rated a hard-sounding refactor `moderate`. Run shadow mode
+  on your own traffic before switching to enforce.
 - **Latency.** The issue asked whether the quality gain is worth about 4–5×
   the latency. On CUDA it costs **5.4×**: 102 ms vs 19 ms p50 co-located. The
   extra ~85 ms is about 4% of the median end-to-end request here (1.4–2.7 s).
