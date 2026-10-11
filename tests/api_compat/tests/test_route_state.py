@@ -226,6 +226,26 @@ def _redis_sessions(redis: FakeRedis) -> str:
     )
 
 
+BRIDGE_SESSION_V2_PREFIX = "metrum-ai-router:bridge-session-v2:api-compat-route:"
+BRIDGE_SESSION_LEGACY_PREFIX = "metrum-ai-router:bridge-session:api-compat-route:"
+
+
+def _bridge_session_entries(redis: FakeRedis) -> dict[str, tuple[str, float | None]]:
+    """Return the SHA3 (v2) bridge-session keys, checking the legacy mirror.
+
+    Inside the router's bounded upgrade window each write also lands under the
+    pre-SHA3 key layout so not-yet-upgraded replicas keep reading it. Every
+    stored key must be one of the two layouts, and each legacy mirror must
+    hold the same value as a v2 key.
+    """
+    v2 = {k: v for k, v in redis.store.items() if k.startswith(BRIDGE_SESSION_V2_PREFIX)}
+    legacy = {k: v for k, v in redis.store.items() if k.startswith(BRIDGE_SESSION_LEGACY_PREFIX)}
+    assert set(redis.store) == set(v2) | set(legacy), sorted(redis.store)
+    assert len(legacy) <= len(v2)
+    assert {value for value, _ in legacy.values()} <= {value for value, _ in v2.values()}
+    return v2
+
+
 def _chat(base, text, *, session=None, token=CALLER, model="stateful"):
     headers = {SESSION_HEADER: session} if session else {}
     return request_with_headers(
@@ -347,12 +367,13 @@ def test_route_06_redis_continuation_across_two_processes_and_restart(router, tm
         scenario.assert_complete()
 
         # Only the latest id is stored, under one hashed key that never contains
-        # the raw session header value.
-        assert len(fake_redis.store) == 1
-        (key, (value, _)), = fake_redis.store.items()
+        # the raw session header value (plus its legacy-layout upgrade mirror).
+        v2 = _bridge_session_entries(fake_redis)
+        assert len(v2) == 1
+        (key, (value, _)), = v2.items()
         assert value == "resp_turn_3"
-        assert "case-route-06" not in key
-        assert key.startswith("metrum-ai-router:bridge-session:api-compat-route:")
+        assert all("case-route-06" not in stored for stored in fake_redis.store)
+        assert key.startswith(BRIDGE_SESSION_V2_PREFIX)
     finally:
         stop_router(a)
         stop_router(b)
@@ -517,7 +538,7 @@ def test_route_09_target_reconfiguration_never_forwards_foreign_ids(router, tmp_
         scenario.assert_complete()
     finally:
         stop_router(handle)
-    assert len(fake_redis.store) == 1
+    assert len(_bridge_session_entries(fake_redis)) == 1
 
     # Same group/session, but the group's target now points at another upstream model.
     work = tmp_path / "after"
