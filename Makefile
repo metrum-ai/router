@@ -422,6 +422,7 @@ adaptive-signal-policy-demo:
 # Live GPU steps: docs-site/docs/routing/d3-external-policy.md
 d3-policy-test:
 	python3 scripts/d3_policy_test.py
+	python3 scripts/d3_demo_panel_test.py
 
 d3-policy-e2e:
 	python3 scripts/run_d3_policy_e2e.py
