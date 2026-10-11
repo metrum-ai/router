@@ -198,6 +198,23 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError("token changed on reuse")
 
 
+def test_public_token_id_never_includes_secret_with_underscores() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("local_pi_instance", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    token = "rtr_metrum_local-dev_example-project_dev_k20261011_abc_def-ghi_jkl"
+    if module.public_token_id(token) != "rtr_metrum_local-dev_example-project_dev_k20261011":
+        raise AssertionError(module.public_token_id(token))
+    fields = module.caller_token_fields(token)
+    if fields["token_id"] != "rtr_metrum_local-dev_example-project_dev_k20261011" or "token_hash" not in fields:
+        raise AssertionError(sorted(fields))
+    if "abc" in fields["token_id"]:
+        raise AssertionError("token_id leaked secret material")
+
+
 def test_missing_upstream_keys_fails() -> None:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -229,5 +246,6 @@ def test_missing_upstream_keys_fails() -> None:
 
 if __name__ == "__main__":
     test_creates_weighted_instance_and_reuses_metrum_key()
+    test_public_token_id_never_includes_secret_with_underscores()
     test_missing_upstream_keys_fails()
     print("local_pi_instance_test: ok")

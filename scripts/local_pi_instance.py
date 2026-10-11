@@ -125,13 +125,20 @@ def write_private(path: Path, text: str) -> None:
 
 
 def public_token_id(token: str) -> str:
+    """Return the public token_id of a structured rtr_metrum_ token.
+
+    Mirrors publicTokenID in internal/router/token.go: the first six
+    "_"-separated parts (rtr, metrum, user, project, env, key). The secret
+    suffix is base64url and may itself contain "_", so it must never be
+    split from the right.
+    """
     token = token.strip()
     if not token.startswith("rtr_metrum_"):
         return token
     parts = token.split("_")
     if len(parts) < 7:
         return token
-    return "_".join(parts[:-1])
+    return "_".join(parts[:6])
 
 
 def token_sha256(caller_token: str) -> str:
