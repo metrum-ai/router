@@ -11,6 +11,13 @@ Subcommands (all read the fixed seed set docs/evidence/d3/seed_prompts.json):
   router  Send every seed prompt through a router group, then read the usage
           DB: policy outcome, class label, policy duration, served target,
           shadow recommendation, tier split and upstream cost (f.2, f.3).
+          --mode-label always-strong / always-cheap runs the same prompts
+          through a single-target group (local_pi_instance.py
+          --d3-tier-groups) as a measured cost baseline (#287).
+  compare Read an enforce run and the always-strong / always-cheap runs and
+          report cost per run and per request, the saving against
+          always-strong, the extra cost against always-cheap, the strong share
+          and latency (#287).
 
 Outputs are scalar JSON: seed prompt IDs, labels, answers, timings, models and
 costs. Prompt text, tokens and keys never appear in the output. Bearer keys
@@ -181,6 +188,77 @@ def direct(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def finish_reason(raw: bytes) -> str | None:
+    """choices[0].finish_reason of a chat completion; the only response field kept."""
+    try:
+        choices = json.loads(raw).get("choices") or [{}]
+    except (ValueError, AttributeError):
+        return None
+    reason = choices[0].get("finish_reason") if isinstance(choices[0], dict) else None
+    return reason if isinstance(reason, str) and len(reason) <= 32 else None
+
+
+def strong_upstream(model_ref: str) -> str:
+    """Usage rows keep the upstream model; Fireworks refs carry the accounts/ prefix."""
+    return model_ref if "/" in model_ref or model_ref.startswith("gpt-") else f"accounts/fireworks/models/{model_ref}"
+
+
+def cost_summary(sent: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measured upstream cost and cheap quality signals (output cap hits) from usage rows."""
+    ok = [r for r in sent if r.get("served_model")]
+    total = sum(float(r.get("cost_usd") or 0) for r in ok)
+    out: dict[str, Any] = {
+        "served": len(ok), "actual_cost_usd": round(total, 6),
+        "cost_per_request_usd": round(total / max(1, len(ok)), 8),
+        "input_tokens": sum(r.get("input_tokens") or 0 for r in ok),
+        "cached_input_tokens": sum(r.get("cached_input_tokens") or 0 for r in ok),
+        "output_tokens": sum(r.get("output_tokens") or 0 for r in ok),
+        "reasoning_tokens": sum(r.get("reasoning_tokens") or 0 for r in ok),
+        "finish_reasons": dict(Counter(r.get("finish_reason") or "none" for r in sent)),
+        "by_difficulty": {},
+    }
+    for label in ("easy", "hard"):
+        rows = [r for r in ok if r["difficulty_label"] == label]
+        cost = sum(float(r.get("cost_usd") or 0) for r in rows)
+        out["by_difficulty"][label] = {
+            "served": len(rows), "cost_usd": round(cost, 6),
+            "output_tokens": sum(r.get("output_tokens") or 0 for r in rows),
+            "hit_max_tokens": sum(1 for r in rows if r.get("finish_reason") == "length"),
+            "served_models": dict(Counter(r["served_model"] for r in rows)),
+        }
+    return out
+
+
+def compare(args: argparse.Namespace) -> dict[str, Any]:
+    runs = {name: json.loads(Path(path).read_text(encoding="utf-8"))
+            for name, path in (("enforce", args.enforce), ("always_strong", args.always_strong),
+                               ("always_cheap", args.always_cheap))}
+    table: dict[str, Any] = {}
+    for name, run in runs.items():
+        cost = run["cost"]
+        table[name] = {
+            "group": run["group"], "prompts": run["prompts"], "http_status": run["http_status"],
+            "served_models": run["served_models"], "cost_usd": cost["actual_cost_usd"],
+            "cost_per_request_usd": cost["cost_per_request_usd"],
+            "output_tokens": cost["output_tokens"], "reasoning_tokens": cost["reasoning_tokens"],
+            "hit_max_tokens": {k: v["hit_max_tokens"] for k, v in cost["by_difficulty"].items()},
+            "e2e_ms": run["e2e_ms"], "policy_duration_ms": run["policy_duration_ms"],
+        }
+    enforce, strong, cheap = (table[k]["cost_usd"] for k in ("enforce", "always_strong", "always_cheap"))
+    return {
+        "schema": "metrum.d3-live.compare.v1", "runs": table,
+        "strong_share": runs["enforce"].get("enforce", {}).get("strong_share"),
+        "hard_prompts_to_strong": runs["enforce"].get("enforce", {}).get("hard_prompts_to_strong"),
+        "easy_prompts_to_cheap": runs["enforce"].get("enforce", {}).get("easy_prompts_to_cheap"),
+        "saving_vs_always_strong_usd": round(strong - enforce, 6),
+        "saving_vs_always_strong_pct": round(100 * (strong - enforce) / strong, 1) if strong else None,
+        "extra_vs_always_cheap_usd": round(enforce - cheap, 6),
+        "extra_vs_always_cheap_x": round(enforce / cheap, 2) if cheap else None,
+        "note": "each run is a separate live pass over the same 204 prompts; output lengths differ per run, "
+                "so the comparison is measured spend, not the same tokens repriced",
+    }
+
+
 def router(args: argparse.Namespace) -> dict[str, Any]:
     token = Path(args.token_file).read_text(encoding="utf-8").strip()
     op = opener()
@@ -193,18 +271,20 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
                 "max_tokens": args.max_tokens}
         req = urllib.request.Request(args.base_url.rstrip("/") + "/chat/completions", json.dumps(body).encode(),
                                      {"Content-Type": "application/json", "Authorization": "Bearer " + token})
+        finish = None
         t0 = time.perf_counter()
         try:
             with op.open(req, timeout=args.timeout) as resp:
                 status, rid = resp.status, resp.headers.get("X-Request-Id", "")
-                resp.read()
+                finish = finish_reason(resp.read())
         except urllib.error.HTTPError as err:
             status, rid = err.code, err.headers.get("X-Request-Id", "")
             err.close()
         except OSError:
             status, rid = 0, ""
         sent.append({"id": item["id"], "difficulty_label": item["difficulty"], "domain_label": item["domain"],
-                     "status": status, "request_id": rid, "e2e_ms": round((time.perf_counter() - t0) * 1000, 1)})
+                     "status": status, "request_id": rid, "e2e_ms": round((time.perf_counter() - t0) * 1000, 1),
+                     "finish_reason": finish})
     time.sleep(2)
     conn = sqlite3.connect(f"file:{args.usage_db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -216,7 +296,8 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
                            "FROM request_policy_executions WHERE request_id = ? ORDER BY seq DESC LIMIT 1",
                            (rid,)).fetchone()
         use = conn.execute("SELECT target_provider, target_model, input_tokens, output_tokens, total_cost_usd, "
-                           "status FROM request_usage WHERE request_id = ?", (rid,)).fetchone()
+                           "status, reasoning_tokens, cached_input_tokens, upstream_duration_ms "
+                           "FROM request_usage WHERE request_id = ?", (rid,)).fetchone()
         rec = conn.execute("SELECT s.candidate_index, c.model FROM request_routing_signals s "
                            "LEFT JOIN request_target_candidates c "
                            "ON c.request_id = s.request_id AND c.candidate_index = s.candidate_index "
@@ -227,7 +308,9 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
                         "policy_ms": pol["duration_ms"], "policy_error": pol["error_class"]})
         if use:
             row.update({"served_model": use["target_model"], "input_tokens": use["input_tokens"],
-                        "output_tokens": use["output_tokens"], "cost_usd": use["total_cost_usd"]})
+                        "output_tokens": use["output_tokens"], "cost_usd": use["total_cost_usd"],
+                        "reasoning_tokens": use["reasoning_tokens"], "cached_input_tokens": use["cached_input_tokens"],
+                        "upstream_ms": use["upstream_duration_ms"]})
         if pol:
             row["label_tier"] = label_tier(pol["class_label"])
         if rec:
@@ -245,6 +328,8 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
         "policy_duration_ms": latency_summary(policy_ms),
         "e2e_ms": latency_summary([float(r["e2e_ms"]) for r in sent]),
         "requests_failed_due_to_policy": sum(1 for r in sent if r["status"] == 502),
+        "max_tokens": args.max_tokens,
+        "cost": cost_summary(sent),
     }
     if args.mode_label == "shadow":
         recs = [r for r in sent if r.get("shadow_recommended_model")]
@@ -274,7 +359,7 @@ def router(args: argparse.Namespace) -> dict[str, Any]:
         }
     if args.mode_label == "enforce":
         ok = [r for r in sent if r.get("served_model")]
-        strong = [r for r in ok if r["served_model"] == args.strong_model]
+        strong = [r for r in ok if r["served_model"] in (args.strong_model, strong_upstream(args.strong_model))]
         actual = sum(float(r.get("cost_usd") or 0) for r in ok)
         always_strong = sum((r.get("input_tokens") or 0) * args.strong_input_price / 1e6
                             + (r.get("output_tokens") or 0) * args.strong_output_price / 1e6 for r in ok)
@@ -316,7 +401,8 @@ def main() -> int:
     r.add_argument("--token-file", required=True)
     r.add_argument("--usage-db", required=True)
     r.add_argument("--group", default="d3-auto")
-    r.add_argument("--mode-label", required=True, choices=("shadow", "enforce", "baseline"))
+    r.add_argument("--mode-label", required=True,
+                   choices=("shadow", "enforce", "baseline", "always-strong", "always-cheap"))
     r.add_argument("--strong-model", default="gpt-6-luna")
     r.add_argument("--strong-input-price", type=float, default=0.10)
     r.add_argument("--strong-output-price", type=float, default=0.50)
@@ -327,10 +413,15 @@ def main() -> int:
     r.add_argument("--timeout", type=float, default=120)
     r.add_argument("--limit", type=int)
     for p in (d, r):
-        p.add_argument("--out", type=Path, required=True)
         p.add_argument("--per-cell", type=int, help="first N prompts of each difficulty x domain cell")
+    c = sub.add_parser("compare")
+    c.add_argument("--enforce", required=True)
+    c.add_argument("--always-strong", required=True)
+    c.add_argument("--always-cheap", required=True)
+    for p in (d, r, c):
+        p.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
-    result = direct(args) if args.cmd == "direct" else router(args)
+    result = {"direct": direct, "router": router, "compare": compare}[args.cmd](args)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
     summary = {k: v for k, v in result.items() if k != "rows"}
