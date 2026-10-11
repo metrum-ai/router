@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -144,9 +145,21 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError("gpt-6-luna pricing metadata")
         if luna["pricing_source"] != "https://developers.openai.com/api/docs/models/gpt-6-luna":
             raise AssertionError(luna["pricing_source"])
-        want_hash = hashlib.sha256(token.encode()).hexdigest()
-        if cfg["callers"][0]["token_sha256"] != want_hash:
-            raise AssertionError(cfg["callers"][0]["token_sha256"])
+        caller = cfg["callers"][0]
+        if "token_sha256" in caller:
+            raise AssertionError("structured caller tokens must use token_hash, not token_sha256")
+        if caller["token_id"] != "rtr_metrum_local-dev_example-project_dev_kdemo":
+            raise AssertionError(caller["token_id"])
+        scheme, iterations, salt, key = caller["token_hash"].split(":")
+        if scheme != "pbkdf2-sha3-512" or iterations != "i=20000":
+            raise AssertionError("token_hash scheme/iterations")
+
+        def b64decode(value: str) -> bytes:
+            return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+        derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), b64decode(salt), 20000, 64)
+        if derived != b64decode(key) or len(b64decode(salt)) != 32:
+            raise AssertionError("token_hash does not verify the local caller token")
         rate = cfg["callers"][0]["rate"]
         if rate != {"rpm": 2400, "tpm": 4_000_000, "concurrent": 160}:
             raise AssertionError(rate)

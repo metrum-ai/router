@@ -100,6 +100,36 @@ def main() -> int:
     assert failed.returncode == 1
     assert "missing trusted_proxy_cidrs entry 10.0.0.0/8" in failed.stderr
 
+    # token_hash (PBKDF2-SHA3-512) callers are accepted alongside legacy
+    # token_sha256 callers; malformed verifiers fail without being echoed.
+    good_hash = "pbkdf2-sha3-512:i=20000:" + "s" * 43 + ":" + "k" * 86
+    hashed = valid_config()
+    hashed["callers"] = [
+        {"id": "new", "token_hash": good_hash, "token_id": "rtr_metrum_new_p_dev_k1"},
+        {"id": "legacy", "token_sha256": "a" * 64},
+    ]
+    passed = run_check(hashed)
+    assert passed.returncode == 0, passed.stderr
+
+    for bad in (
+        "pbkdf2-sha3-512$i=20000$" + "s" * 43 + "$" + "k" * 86,
+        "pbkdf2-sha3-512:i=100:" + "s" * 43 + ":" + "k" * 86,
+        "pbkdf2-sha256:i=20000:" + "s" * 43 + ":" + "k" * 86,
+        "pbkdf2-sha3-512:i=20000:" + "s" * 43 + ":" + "k" * 43,
+    ):
+        bad_hash = valid_config()
+        bad_hash["callers"] = [{"id": "new", "token_hash": bad, "token_id": "rtr_metrum_new_p_dev_k1"}]
+        failed = run_check(bad_hash)
+        assert failed.returncode == 1
+        assert "caller new has invalid token_hash" in failed.stderr
+        assert bad not in failed.stderr
+
+    no_token_id = valid_config()
+    no_token_id["callers"] = [{"id": "new", "token_hash": good_hash}]
+    failed = run_check(no_token_id)
+    assert failed.returncode == 1
+    assert "token_hash requires token_id" in failed.stderr
+
     print("production bundle admin reports contract test passed")
     return 0
 

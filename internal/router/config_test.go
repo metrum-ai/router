@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -926,6 +924,70 @@ func TestValidateRejectsDuplicateCallerIdentifiers(t *testing.T) {
 	}
 }
 
+func TestValidateCallerTokenHashFormat(t *testing.T) {
+	good, err := HashCallerToken("rtr_metrum_alice_test_dev_k1_secret", strings.NewReader(strings.Repeat("s", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := HashCallerToken("rtr_metrum_bob_test_dev_k1_secret", strings.NewReader(strings.Repeat("t", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(good, ":")
+	salt, key := parts[2], parts[3]
+	shortSalt := callerTokenB64.EncodeToString([]byte("short"))
+	shortKey := callerTokenB64.EncodeToString(make([]byte, 32))
+	const legacy = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	for _, tt := range []struct {
+		name    string
+		callers []CallerConfig
+		want    string
+	}{
+		{name: "wrong algorithm", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha256:i=20000:" + salt + ":" + key}}, want: "unsupported algorithm"},
+		{name: "missing fields", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:" + salt}}, want: "must have the form"},
+		{name: "missing iterations label", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:20000:" + salt + ":" + key}}, want: "missing i=<iterations>"},
+		{name: "non canonical iterations", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=020000:" + salt + ":" + key}}, want: "decimal integer"},
+		{name: "too few iterations", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=1000:" + salt + ":" + key}}, want: "iterations must be between"},
+		{name: "too many iterations", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=1000001:" + salt + ":" + key}}, want: "iterations must be between"},
+		{name: "salt not base64url", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:***:" + key}}, want: "salt must be unpadded base64url"},
+		{name: "salt too short", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:" + shortSalt + ":" + key}}, want: "salt must be"},
+		{name: "key wrong length", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:" + salt + ":" + shortKey}}, want: "key must be 64 bytes"},
+		{name: "both formats", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: good, TokenSHA256: legacy}}, want: "sets both token_hash and deprecated token_sha256"},
+		{name: "token id required", callers: []CallerConfig{{ID: "alice", TokenHash: good}}, want: "token_hash requires token_id"},
+		{name: "duplicate token hash", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: good}, {ID: "bob", TokenID: "rtr_b", TokenHash: good}}, want: "duplicate caller token_hash for callers alice and bob"},
+		{name: "token id prefix overlap", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_metrum_alice", TokenHash: good}, {ID: "bob", TokenID: "rtr_metrum_alice_k2", TokenHash: other}}, want: "overlap"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := minimalConfig(t)
+			for i := range tt.callers {
+				tt.callers[i].Allow = []string{"default"}
+			}
+			cfg.Callers = tt.callers
+			err := cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() err=%v, want %q", err, tt.want)
+			}
+			for _, caller := range tt.callers {
+				if caller.TokenHash != "" && strings.Contains(err.Error(), caller.TokenHash) {
+					t.Fatalf("Validate() exposed token_hash in error: %v", err)
+				}
+			}
+		})
+	}
+
+	t.Run("mixed formats accepted", func(t *testing.T) {
+		cfg := minimalConfig(t)
+		cfg.Callers = []CallerConfig{
+			{ID: "alice", TokenID: "rtr_metrum_alice_test_dev_k1", TokenHash: good, Allow: []string{"default"}},
+			{ID: "bob", TokenID: "rtr_metrum_bob_test_dev_k1", TokenHash: other, Allow: []string{"default"}},
+			{ID: "carol", TokenSHA256: legacy, Allow: []string{"default"}},
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() err=%v", err)
+		}
+	})
+}
+
 func TestPIIFilterValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
@@ -1382,14 +1444,7 @@ func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	standardSum := sha256.Sum256([]byte("rtr_example_standard_test"))
-	codingSum := sha256.Sum256([]byte("rtr_example_coding_test"))
-	metricsAdminSum := sha256.Sum256([]byte("rtr_example_metrics_admin_test"))
-	contentAdminSum := sha256.Sum256([]byte("rtr_example_content_admin_test"))
-	text := strings.ReplaceAll(string(raw), "REPLACE_WITH_SHA256_HEX_OF_STANDARD_ROUTER_TOKEN", hex.EncodeToString(standardSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CODING_ROUTER_TOKEN", hex.EncodeToString(codingSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_METRICS_ADMIN_ROUTER_TOKEN", hex.EncodeToString(metricsAdminSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CONTENT_ADMIN_ROUTER_TOKEN", hex.EncodeToString(contentAdminSum[:]))
+	text := replaceExampleCallerTokenHashes(t, string(raw))
 	text = strings.ReplaceAll(text, "script: scripts/router.ts", "script: ../../scripts/router.ts")
 
 	dir := t.TempDir()
@@ -1764,14 +1819,7 @@ func TestExampleConfigOpenAINanoResponsesReasoningMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	standardSum := sha256.Sum256([]byte("rtr_example_standard_test"))
-	codingSum := sha256.Sum256([]byte("rtr_example_coding_test"))
-	metricsAdminSum := sha256.Sum256([]byte("rtr_example_metrics_admin_test"))
-	contentAdminSum := sha256.Sum256([]byte("rtr_example_content_admin_test"))
-	text := strings.ReplaceAll(string(raw), "REPLACE_WITH_SHA256_HEX_OF_STANDARD_ROUTER_TOKEN", hex.EncodeToString(standardSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CODING_ROUTER_TOKEN", hex.EncodeToString(codingSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_METRICS_ADMIN_ROUTER_TOKEN", hex.EncodeToString(metricsAdminSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CONTENT_ADMIN_ROUTER_TOKEN", hex.EncodeToString(contentAdminSum[:]))
+	text := replaceExampleCallerTokenHashes(t, string(raw))
 	text = strings.ReplaceAll(text, "script: scripts/router.ts", "script: ../../scripts/router.ts")
 
 	dir := t.TempDir()
@@ -1829,14 +1877,7 @@ func TestExampleConfigPreservesAnthropicTextEligibilityInBroadGroups(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	standardSum := sha256.Sum256([]byte("rtr_example_standard_test"))
-	codingSum := sha256.Sum256([]byte("rtr_example_coding_test"))
-	metricsAdminSum := sha256.Sum256([]byte("rtr_example_metrics_admin_test"))
-	contentAdminSum := sha256.Sum256([]byte("rtr_example_content_admin_test"))
-	text := strings.ReplaceAll(string(raw), "REPLACE_WITH_SHA256_HEX_OF_STANDARD_ROUTER_TOKEN", hex.EncodeToString(standardSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CODING_ROUTER_TOKEN", hex.EncodeToString(codingSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_METRICS_ADMIN_ROUTER_TOKEN", hex.EncodeToString(metricsAdminSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CONTENT_ADMIN_ROUTER_TOKEN", hex.EncodeToString(contentAdminSum[:]))
+	text := replaceExampleCallerTokenHashes(t, string(raw))
 	text = strings.ReplaceAll(text, "script: scripts/router.ts", "script: ../../scripts/router.ts")
 
 	dir := t.TempDir()
@@ -1878,14 +1919,7 @@ func TestExampleConfigLargeOpenAIChatToolsSmokeHasShapeGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	standardSum := sha256.Sum256([]byte("rtr_example_standard_test"))
-	codingSum := sha256.Sum256([]byte("rtr_example_coding_test"))
-	metricsAdminSum := sha256.Sum256([]byte("rtr_example_metrics_admin_test"))
-	contentAdminSum := sha256.Sum256([]byte("rtr_example_content_admin_test"))
-	text := strings.ReplaceAll(string(raw), "REPLACE_WITH_SHA256_HEX_OF_STANDARD_ROUTER_TOKEN", hex.EncodeToString(standardSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CODING_ROUTER_TOKEN", hex.EncodeToString(codingSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_METRICS_ADMIN_ROUTER_TOKEN", hex.EncodeToString(metricsAdminSum[:]))
-	text = strings.ReplaceAll(text, "REPLACE_WITH_SHA256_HEX_OF_CONTENT_ADMIN_ROUTER_TOKEN", hex.EncodeToString(contentAdminSum[:]))
+	text := replaceExampleCallerTokenHashes(t, string(raw))
 	text = strings.ReplaceAll(text, "script: scripts/router.ts", "script: ../../scripts/router.ts")
 
 	dir := t.TempDir()
@@ -2878,4 +2912,18 @@ func TestCleanAdminReportsPrefixRejectsOffsiteRedirectTargets(t *testing.T) {
 			t.Errorf("Validate accepted admin_reports path_prefix %q: %v", bad, err)
 		}
 	}
+}
+
+// replaceExampleCallerTokenHashes fills config.example.yaml's token_hash
+// placeholders with valid PBKDF2-SHA3-512 verifiers for test tokens.
+func replaceExampleCallerTokenHashes(t *testing.T, text string) string {
+	t.Helper()
+	for _, name := range []string{"STANDARD", "CODING", "METRICS_ADMIN", "CONTENT_ADMIN"} {
+		tokenHash, err := HashCallerToken("rtr_example_"+strings.ToLower(name)+"_test", nil, callerTokenHashMinIterations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text = strings.ReplaceAll(text, "REPLACE_WITH_TOKEN_HASH_OF_"+name+"_ROUTER_TOKEN", tokenHash)
+	}
+	return text
 }

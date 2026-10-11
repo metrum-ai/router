@@ -124,9 +124,8 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if issueResp.Token == "" || !strings.HasPrefix(issueResp.Token, issueResp.TokenID+"_") {
 		t.Fatalf("raw token must be returned once with the public token id prefix: %+v", issueResp)
 	}
-	sum := sha256.Sum256([]byte(issueResp.Token))
-	if issueResp.Caller.TokenSHA256 != hex.EncodeToString(sum[:]) {
-		t.Fatal("persisted hash must match the returned raw token")
+	if issueResp.Caller.TokenSHA256 != "" || !callerTokenHashVerifies(t, issueResp.Caller.TokenHash, issueResp.Token) {
+		t.Fatal("issued caller must carry a token_hash that verifies the returned raw token and no legacy token_sha256")
 	}
 
 	// The relational projection stores the hash and allows, never the raw token.
@@ -134,7 +133,7 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if err := db.Raw(`SELECT token_sha256, token_id FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-dev").Row().Scan(&storedHash, &storedTokenID); err != nil {
 		t.Fatal(err)
 	}
-	if storedHash != issueResp.Caller.TokenSHA256 || storedTokenID != issueResp.TokenID {
+	if storedHash != issueResp.Caller.TokenHash || storedTokenID != issueResp.TokenID {
 		t.Fatal("relational caller row mismatch")
 	}
 	var rawCount int64
@@ -194,8 +193,7 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if err := db.Raw(`SELECT token_sha256 FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-dev").Row().Scan(&rotatedHash); err != nil {
 		t.Fatal(err)
 	}
-	rotatedSum := sha256.Sum256([]byte(rotateResp.Token))
-	if rotatedHash != hex.EncodeToString(rotatedSum[:]) || rotatedHash == storedHash {
+	if !callerTokenHashVerifies(t, rotatedHash, rotateResp.Token) || rotatedHash == storedHash {
 		t.Fatal("rotate must replace the stored hash with the new token hash")
 	}
 
@@ -339,7 +337,7 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	if !strings.Contains(docYAML, "alice-search-dev") {
 		t.Fatalf("canonical document missing issued caller: %s", docYAML)
 	}
-	if !strings.Contains(docYAML, issueResp.Caller.TokenSHA256) {
+	if !strings.Contains(docYAML, issueResp.Caller.TokenHash) {
 		t.Fatalf("canonical document missing issued caller token hash: %s", docYAML)
 	}
 	if strings.Contains(docYAML, issueResp.Token) {
@@ -358,8 +356,7 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&docYAML); err != nil {
 		t.Fatal(err)
 	}
-	rotatedSum := sha256.Sum256([]byte(rotateResp.Token))
-	if !strings.Contains(docYAML, hex.EncodeToString(rotatedSum[:])) {
+	if !canonicalDocumentHasTokenHashFor(t, docYAML, rotateResp.Token) {
 		t.Fatalf("canonical document missing rotated token hash: %s", docYAML)
 	}
 	if strings.Contains(docYAML, rotateResp.Token) {
@@ -569,8 +566,8 @@ callers:
 	defer svc.Close()
 
 	// The initial service has no callers because the bootstrap YAML had none.
-	if len(svc.callersBySum) != 0 {
-		t.Fatalf("initial callersBySum = %d, want 0", len(svc.callersBySum))
+	if idx := svc.callerAuth.index.Load(); len(idx.legacyBySHA256)+len(idx.byTokenID) != 0 {
+		t.Fatalf("initial caller auth index = %d legacy, %d token_hash, want 0", len(idx.legacyBySHA256), len(idx.byTokenID))
 	}
 
 	// Reload from the DB.
@@ -579,12 +576,13 @@ callers:
 	}
 
 	// The service must now have the caller from the canonical document.
-	if len(svc.callersBySum) != 1 {
-		t.Fatalf("reloaded callersBySum = %d, want 1", len(svc.callersBySum))
+	idx := svc.callerAuth.index.Load()
+	if len(idx.legacyBySHA256) != 1 {
+		t.Fatalf("reloaded legacy callers = %d, want 1", len(idx.legacyBySHA256))
 	}
-	rt, ok := svc.callersBySum[tokenHash]
+	rt, ok := idx.legacyBySHA256[tokenHash]
 	if !ok {
-		t.Fatalf("reloaded caller missing from callersBySum: %v", svc.callersBySum)
+		t.Fatal("reloaded caller missing from caller auth index")
 	}
 	if rt.cfg.ID != "alice-search-dev" || rt.cfg.Rate.RPM != 120 {
 		t.Fatalf("reloaded caller runtime mismatch: %+v", rt.cfg)
@@ -592,4 +590,29 @@ callers:
 	if svc.configSnapshot.Load() == nil || svc.configSnapshot.Load().Callers[0].ID != "alice-search-dev" {
 		t.Fatal("config snapshot must reflect the reloaded configuration")
 	}
+}
+
+func callerTokenHashVerifies(t *testing.T, encoded, token string) bool {
+	t.Helper()
+	ok, err := VerifyCallerTokenHash(encoded, token)
+	if err != nil {
+		t.Fatalf("token_hash is malformed: %v", err)
+	}
+	return ok
+}
+
+func canonicalDocumentHasTokenHashFor(t *testing.T, docYAML, token string) bool {
+	t.Helper()
+	var doc struct {
+		Callers []CallerConfig `yaml:"callers"`
+	}
+	if err := yaml.Unmarshal([]byte(docYAML), &doc); err != nil {
+		t.Fatalf("parse canonical document: %v", err)
+	}
+	for _, caller := range doc.Callers {
+		if caller.TokenHash != "" && caller.TokenSHA256 == "" && callerTokenHashVerifies(t, caller.TokenHash, token) {
+			return true
+		}
+	}
+	return false
 }

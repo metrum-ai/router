@@ -47,6 +47,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   start with `//` or `/\`, or that contain a backslash, `%`, `?`, `#`, `:` or a
   control character, now fail validation. The reports handler never redirects
   to such a prefix (CodeQL `go/bad-redirect-check`, alert #12).
+- Caller bearer tokens are now verified against `callers[].token_hash`, a
+  salted PBKDF2-HMAC-SHA3-512 verifier
+  (`pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`, pure Go `crypto/pbkdf2` and
+  `crypto/sha3`), instead of an unsalted SHA-256 digest (code scanning alert
+  #11, `go/weak-sensitive-data-hashing`). The router finds the candidate
+  caller by its public `token_id` prefix, runs the expensive check once per
+  process, and then authenticates with a constant-time HMAC-SHA3-512 digest
+  under a per-process random key. A cached request costs about 4.7 µs against
+  about 1.5–2.6 µs before. First-use verification is about 40 ms and runs in a
+  bounded pool.
+- The Redis bridge-session backend fingerprint now uses SHA3-512 and is
+  documented and tested to cover only connection settings and credential
+  environment-variable *names*, never their values or inline credentials
+  (alert #10). Redis session keys move to a SHA3-512 `bridge-session-v2`
+  layout. For one TTL plus one hour after startup, the router also reads,
+  writes and deletes the old layout, so rolling upgrades keep in-flight
+  sessions.
+
+### Changed
+
+- `metrum-ai-routerctl callers generate|rotate`, `metrum-ai-router-token-gen`
+  and the database-mode caller admin API issue `token_hash` by default.
+  `--hash-format legacy-sha256` keeps the old output for older routers. New
+  `metrum-ai-routerctl callers hash` converts an existing token to
+  `token_hash` without rotating it, and `callers verify` checks a token
+  against a configured or given `token_hash`.
+- `config.example.yaml`, `scripts/local_pi_instance.py` and the production
+  bundle validator use or accept `token_hash`. The control-plane database
+  stores it in the existing caller verifier column, so no schema migration is
+  needed.
+
+### Deprecated
+
+- `callers[].token_sha256` still authenticates but logs
+  `caller <id> uses deprecated token_sha256` at startup and on reload. Convert
+  with `callers hash` or rotate; see the upgrade guide. A caller must not set
+  both fields.
 
 ## [4.1.0] - 2026-10-10
 

@@ -173,16 +173,35 @@ func RevokeCaller(cfg *router.Config, callerID string) error {
 }
 
 // RotateCallerHash replaces token_sha256 and token_id for an existing caller.
+//
+// Deprecated: use RotateCallerTokenHash, which writes token_hash.
 func RotateCallerHash(cfg *router.Config, callerID, tokenSHA256, tokenID string) error {
+	if len(tokenSHA256) != 64 {
+		return fmt.Errorf("token_sha256 must be 64 hex characters")
+	}
+	return rotateCallerVerifier(cfg, callerID, "", tokenSHA256, tokenID)
+}
+
+// RotateCallerTokenHash replaces token_hash and token_id for an existing
+// caller and clears any deprecated token_sha256.
+func RotateCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID string) error {
+	if err := router.ValidateCallerTokenHash(tokenHash); err != nil {
+		return fmt.Errorf("invalid token_hash: %w", err)
+	}
+	if strings.TrimSpace(tokenID) == "" {
+		return fmt.Errorf("token_hash requires token_id")
+	}
+	return rotateCallerVerifier(cfg, callerID, tokenHash, "", tokenID)
+}
+
+func rotateCallerVerifier(cfg *router.Config, callerID, tokenHash, tokenSHA256, tokenID string) error {
 	callerID = strings.TrimSpace(callerID)
 	if callerID == "" {
 		return fmt.Errorf("caller id is required")
 	}
-	if len(tokenSHA256) != 64 {
-		return fmt.Errorf("token_sha256 must be 64 hex characters")
-	}
 	for i, existing := range cfg.Callers {
 		if existing.ID == callerID {
+			cfg.Callers[i].TokenHash = tokenHash
 			cfg.Callers[i].TokenSHA256 = tokenSHA256
 			if strings.TrimSpace(tokenID) != "" {
 				cfg.Callers[i].TokenID = tokenID

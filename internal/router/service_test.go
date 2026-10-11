@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/big"
 	"net"
@@ -169,6 +170,212 @@ func TestAuthRejectsUnknownTokenBeforeUpstream(t *testing.T) {
 	}
 	if _, tokenID, err := svc.authenticate("Bearer bogus-secret-token", ""); err == nil || tokenID != "invalid-token" {
 		t.Fatalf("invalid token id=%q err=%v", tokenID, err)
+	}
+}
+
+// tokenHashTestToken and tokenHashTestTokenID exercise the token_hash
+// (PBKDF2-HMAC-SHA3-512) caller path alongside the legacy testToken caller.
+const (
+	tokenHashTestTokenID = "rtr_metrum_bob_insights_test_k1"
+	tokenHashTestToken   = tokenHashTestTokenID + "_c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LXNlY3I"
+)
+
+func addTokenHashTestCaller(t testing.TB, cfg *Config) {
+	t.Helper()
+	tokenHash, err := HashCallerToken(tokenHashTestToken, nil, callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob := cfg.Callers[0]
+	bob.ID = "bob"
+	bob.User = "bob"
+	bob.TokenSHA256 = ""
+	bob.TokenHash = tokenHash
+	bob.TokenID = tokenHashTestTokenID
+	cfg.Callers = append(cfg.Callers, bob)
+}
+
+func TestAuthenticateTokenHashAndLegacyCallers(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogOutput := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(previousLogOutput)
+
+	dir := t.TempDir()
+	cfg := testConfig(t, "http://127.0.0.1:9", "provider-key", dir)
+	addTokenHashTestCaller(t, cfg)
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	log.SetOutput(previousLogOutput)
+
+	logText := logs.String()
+	if !strings.Contains(logText, "caller alice uses deprecated token_sha256") {
+		t.Fatalf("legacy caller deprecation warning missing: %s", logText)
+	}
+	if strings.Contains(logText, "caller bob uses deprecated") {
+		t.Fatalf("token_hash caller must not warn: %s", logText)
+	}
+	for _, secret := range []string{testToken, tokenHashTestToken, cfg.Callers[0].TokenSHA256, cfg.Callers[1].TokenHash} {
+		if strings.Contains(logText, secret) {
+			t.Fatal("deprecation warning must name the caller id only")
+		}
+	}
+
+	t.Run("token_hash success via bearer and x-api-key", func(t *testing.T) {
+		for _, creds := range [][2]string{{"Bearer " + tokenHashTestToken, ""}, {"", tokenHashTestToken}} {
+			caller, tokenID, err := svc.authenticate(creds[0], creds[1])
+			if err != nil || caller == nil || caller.cfg.ID != "bob" || tokenID != tokenHashTestTokenID {
+				t.Fatalf("authenticate token_hash caller: caller=%v tokenID=%q err=%v", caller, tokenID, err)
+			}
+		}
+	})
+	t.Run("token_hash failures", func(t *testing.T) {
+		for _, token := range []string{
+			tokenHashTestToken + "x",
+			tokenHashTestTokenID + "_wrong-secret",
+			tokenHashTestTokenID,
+			tokenHashTestTokenID + "_",
+			strings.Repeat("a", maxCallerTokenBytes+1),
+		} {
+			if caller, tokenID, err := svc.authenticate("Bearer "+token, ""); err == nil || caller != nil || tokenID != "invalid-token" {
+				t.Fatalf("wrong token accepted: tokenID=%q err=%v", tokenID, err)
+			}
+		}
+	})
+	t.Run("legacy token_sha256 still works", func(t *testing.T) {
+		caller, tokenID, err := svc.authenticate("Bearer "+testToken, "")
+		if err != nil || caller == nil || caller.cfg.ID != "alice" || tokenID != "rtr_alice_test" {
+			t.Fatalf("legacy caller: caller=%v tokenID=%q err=%v", caller, tokenID, err)
+		}
+	})
+	t.Run("verified digest cache", func(t *testing.T) {
+		entry := svc.callerAuth.index.Load().byTokenID[tokenHashTestTokenID]
+		if entry == nil || entry.verified.Load() == nil {
+			t.Fatal("successful token_hash verification must populate the bounded verified-digest slot")
+		}
+		cached := *entry.verified.Load()
+		if _, _, err := svc.authenticate("Bearer "+tokenHashTestTokenID+"_wrong-secret", ""); err == nil {
+			t.Fatal("wrong secret must not authenticate after caching")
+		}
+		if got := *entry.verified.Load(); got != cached {
+			t.Fatal("failed verification must not replace the cached digest")
+		}
+		for _, digest := range cached {
+			if digest != 0 {
+				return
+			}
+		}
+		t.Fatal("cached digest is empty")
+	})
+	t.Run("reload keeps digest only for unchanged hash", func(t *testing.T) {
+		before := svc.callerAuth.index.Load().byTokenID[tokenHashTestTokenID].verified.Load()
+		svc.callerAuth.rebuild(callerRuntimesInConfigOrder(svc.cfg, svc.quota.callers))
+		if got := svc.callerAuth.index.Load().byTokenID[tokenHashTestTokenID].verified.Load(); got != before {
+			t.Fatal("unchanged token_hash must keep its verified digest across rebuild")
+		}
+		rotated, err := HashCallerToken(tokenHashTestTokenID+"_rotated-secret", nil, callerTokenHashMinIterations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bob := svc.quota.callers["bob"]
+		original := bob.cfg.TokenHash
+		bob.cfg.TokenHash = rotated
+		defer func() {
+			bob.cfg.TokenHash = original
+			svc.callerAuth.rebuild(callerRuntimesInConfigOrder(svc.cfg, svc.quota.callers))
+		}()
+		svc.callerAuth.rebuild(callerRuntimesInConfigOrder(svc.cfg, svc.quota.callers))
+		if svc.callerAuth.index.Load().byTokenID[tokenHashTestTokenID].verified.Load() != nil {
+			t.Fatal("rotated token_hash must drop the old verified digest")
+		}
+		if _, _, err := svc.authenticate("Bearer "+tokenHashTestToken, ""); err == nil {
+			t.Fatal("old token must fail after its token_hash rotates")
+		}
+		if caller, _, err := svc.authenticate("Bearer "+tokenHashTestTokenID+"_rotated-secret", ""); err != nil || caller.cfg.ID != "bob" {
+			t.Fatalf("rotated token: %v", err)
+		}
+	})
+}
+
+// TestCallerAuthComparisonsStayConstantTime guards the auth path against a
+// regression to variable-time comparison of secret-derived values.
+func TestCallerAuthComparisonsStayConstantTime(t *testing.T) {
+	want := map[string][]string{
+		"caller_auth.go":       {"hmac.Equal(cached[:], d[:])", "subtle.ConstantTimeCompare([]byte(configured), []byte(sumHex))"},
+		"caller_token_hash.go": {"subtle.ConstantTimeCompare(derived, v.key)"},
+	}
+	for file, needles := range want {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src := string(raw)
+		for _, needle := range needles {
+			if !strings.Contains(src, needle) {
+				t.Fatalf("%s no longer uses %s", file, needle)
+			}
+		}
+		for _, forbidden := range []string{"bytes.Equal(", "reflect.DeepEqual(", "== sumHex", "== v.key", "== d"} {
+			if strings.Contains(src, forbidden) {
+				t.Fatalf("%s uses variable-time comparison %q", file, forbidden)
+			}
+		}
+	}
+	// Equal-length and different-length wrong tokens are rejected the same
+	// way: the cached comparison is always over fixed 64-byte digests.
+	st := newCallerAuthState()
+	if len(st.digest("a")) != callerAuthDigestBytes || len(st.digest(strings.Repeat("a", 1000))) != callerAuthDigestBytes {
+		t.Fatal("verified-token digests must be fixed length")
+	}
+}
+
+func benchmarkAuthenticate(b *testing.B, header string) {
+	dir := b.TempDir()
+	cfg := testConfig(b, "http://127.0.0.1:9", "provider-key", dir)
+	addTokenHashTestCaller(b, cfg)
+	previousLogOutput := log.Writer()
+	log.SetOutput(io.Discard)
+	svc, err := New(cfg)
+	log.SetOutput(previousLogOutput)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer svc.Close()
+	if _, _, err := svc.authenticate(header, ""); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, _, err := svc.authenticate(header, ""); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkAuthenticateLegacyTokenSHA256(b *testing.B) {
+	benchmarkAuthenticate(b, "Bearer "+testToken)
+}
+
+func BenchmarkAuthenticateTokenHashCached(b *testing.B) {
+	benchmarkAuthenticate(b, "Bearer "+tokenHashTestToken)
+}
+
+func BenchmarkCallerTokenHashFirstUseVerify(b *testing.B) {
+	tokenHash, err := HashCallerToken(tokenHashTestToken, nil, CallerTokenHashDefaultIterations)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < b.N; i++ {
+		if ok, _ := VerifyCallerTokenHash(tokenHash, tokenHashTestToken); !ok {
+			b.Fatal("verify failed")
+		}
 	}
 }
 
@@ -14920,7 +15127,7 @@ func newTestService(t *testing.T, upstreamURL, providerKey string) *Service {
 	return svc
 }
 
-func testConfig(t *testing.T, upstreamURL, providerKey, dir string) *Config {
+func testConfig(t testing.TB, upstreamURL, providerKey, dir string) *Config {
 	t.Helper()
 	sum := sha256.Sum256([]byte(testToken))
 	usageDBDisabled := false

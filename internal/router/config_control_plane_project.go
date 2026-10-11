@@ -44,8 +44,9 @@ var ProjectConfigHook = ProjectConfigToRelational
 //   - Provider headers: only the allowlisted non-secret metadata headers
 //     (HTTP-Referer, User-Agent, X-Title) are persisted; other headers are
 //     dropped to honor the database-level allowlist check.
-//   - Caller tokens: only token_sha256 and token_id are stored; raw caller
-//     tokens are never represented.
+//   - Caller tokens: only the token verifier and token_id are stored; raw
+//     caller tokens are never represented. The token_sha256 column holds
+//     either a self-describing token_hash value or legacy SHA-256 hex.
 //   - Users / projects / memberships: written only when the corresponding
 //     tables already exist. The current control-plane schema does not create
 //     them, so the projection skips that work rather than failing.
@@ -543,8 +544,9 @@ func projectControlPlaneModelGroupTarget(tx *gorm.DB, configSetID, groupName str
 }
 
 // projectControlPlaneCallers writes caller identity rows plus their allowed
-// model groups. Only token_sha256 and token_id are persisted; raw caller
-// tokens are never represented in the relational projection.
+// model groups. Only the token verifier (see storedCallerTokenVerifier) and
+// token_id are persisted; raw caller tokens are never represented in the
+// relational projection.
 func projectControlPlaneCallers(tx *gorm.DB, configSetID string, cfg *Config) error {
 	callers := append([]CallerConfig(nil), cfg.Callers...)
 	sort.Slice(callers, func(i, j int) bool { return callers[i].ID < callers[j].ID })
@@ -556,7 +558,7 @@ func projectControlPlaneCallers(tx *gorm.DB, configSetID string, cfg *Config) er
 			"project":       caller.Project,
 			"environment":   caller.Environment,
 			"status":        caller.Status,
-			"token_sha256":  caller.TokenSHA256,
+			"token_sha256":  storedCallerTokenVerifier(caller),
 			"token_id":      caller.TokenID,
 			"metrics_admin": caller.MetricsAdmin,
 			"content_admin": caller.ContentAdmin,

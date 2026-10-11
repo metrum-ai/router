@@ -802,13 +802,18 @@ type TargetValidation struct {
 }
 
 type CallerConfig struct {
-	ID             string               `yaml:"id" json:"id"`
-	OwnerUser      string               `yaml:"owner_user" json:"owner_user"`
-	User           string               `yaml:"user" json:"user"`
-	Project        string               `yaml:"project" json:"project"`
-	Environment    string               `yaml:"environment" json:"environment"`
-	Status         string               `yaml:"status" json:"status"`
-	TokenSHA256    string               `yaml:"token_sha256" json:"token_sha256"`
+	ID          string `yaml:"id" json:"id"`
+	OwnerUser   string `yaml:"owner_user" json:"owner_user"`
+	User        string `yaml:"user" json:"user"`
+	Project     string `yaml:"project" json:"project"`
+	Environment string `yaml:"environment" json:"environment"`
+	Status      string `yaml:"status" json:"status"`
+	// TokenHash is the caller token verifier,
+	// "pbkdf2-sha3-512:i=<iterations>:<salt>:<key>". It requires TokenID.
+	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
+	// TokenSHA256 is the deprecated unsalted SHA-256 hex of the caller token.
+	// It is still accepted, with a startup warning; use TokenHash instead.
+	TokenSHA256    string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
 	TokenID        string               `yaml:"token_id" json:"token_id"`
 	Allow          []string             `yaml:"allow" json:"allow"`
 	MetricsAdmin   bool                 `yaml:"metrics_admin" json:"metrics_admin"`
@@ -1553,6 +1558,7 @@ func (c *Config) Validate() error {
 	}
 	callerIDs := map[string]string{}
 	callerTokenHashes := map[string]string{}
+	hashedCallerTokenIDs := map[string]string{}
 	callerTokenIDs := map[string]string{}
 	for _, caller := range c.Callers {
 		if caller.ID == "" {
@@ -1579,17 +1585,41 @@ func (c *Config) Validate() error {
 		if !validCallerKeyStatus(status) {
 			return fmt.Errorf("caller %s has invalid status %q", caller.ID, caller.Status)
 		}
-		if caller.TokenSHA256 == "" || len(caller.TokenSHA256) != sha256.Size*2 {
-			return fmt.Errorf("caller %s has invalid token_sha256", caller.ID)
+		if strings.TrimSpace(caller.TokenHash) != "" {
+			if caller.TokenSHA256 != "" {
+				return fmt.Errorf("caller %s sets both token_hash and deprecated token_sha256; keep only token_hash", caller.ID)
+			}
+			if err := ValidateCallerTokenHash(caller.TokenHash); err != nil {
+				return fmt.Errorf("caller %s has invalid token_hash: %w", caller.ID, err)
+			}
+			tokenID := strings.TrimSpace(caller.TokenID)
+			if tokenID == "" {
+				return fmt.Errorf("caller %s token_hash requires token_id", caller.ID)
+			}
+			for otherID, otherCallerID := range hashedCallerTokenIDs {
+				if callerTokenIDPrefixConflict(tokenID, otherID) {
+					return fmt.Errorf("caller token_id values for callers %s and %s overlap; one must not be an underscore-delimited prefix of the other", otherCallerID, caller.ID)
+				}
+			}
+			hashedCallerTokenIDs[tokenID] = caller.ID
+			tokenHashKey := strings.TrimSpace(caller.TokenHash)
+			if previousCallerID, ok := callerTokenHashes[tokenHashKey]; ok {
+				return fmt.Errorf("duplicate caller token_hash for callers %s and %s", previousCallerID, caller.ID)
+			}
+			callerTokenHashes[tokenHashKey] = caller.ID
+		} else {
+			if caller.TokenSHA256 == "" || len(caller.TokenSHA256) != sha256.Size*2 {
+				return fmt.Errorf("caller %s has invalid token_sha256", caller.ID)
+			}
+			if _, err := hex.DecodeString(caller.TokenSHA256); err != nil {
+				return fmt.Errorf("caller %s has invalid token_sha256: %w", caller.ID, err)
+			}
+			tokenHashKey := strings.ToLower(caller.TokenSHA256)
+			if previousCallerID, ok := callerTokenHashes[tokenHashKey]; ok {
+				return fmt.Errorf("duplicate caller token_sha256 for callers %s and %s", previousCallerID, caller.ID)
+			}
+			callerTokenHashes[tokenHashKey] = caller.ID
 		}
-		if _, err := hex.DecodeString(caller.TokenSHA256); err != nil {
-			return fmt.Errorf("caller %s has invalid token_sha256: %w", caller.ID, err)
-		}
-		tokenHashKey := strings.ToLower(caller.TokenSHA256)
-		if previousCallerID, ok := callerTokenHashes[tokenHashKey]; ok {
-			return fmt.Errorf("duplicate caller token_sha256 for callers %s and %s", previousCallerID, caller.ID)
-		}
-		callerTokenHashes[tokenHashKey] = caller.ID
 		if caller.TokenID != "" {
 			if previousCallerID, ok := callerTokenIDs[caller.TokenID]; ok {
 				return fmt.Errorf("duplicate caller token_id for callers %s and %s", previousCallerID, caller.ID)

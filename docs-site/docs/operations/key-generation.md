@@ -23,9 +23,9 @@ The tool prints:
 
 - The full token to give to the caller once.
 - A public `token_id` used in logs and reports.
-- A `callers:` YAML entry containing `owner_user`, `project`, and `token_sha256`.
+- A `callers:` YAML entry containing `owner_user`, `project`, `token_id`, and `token_hash`, a salted PBKDF2-HMAC-SHA3-512 verifier in the form `pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`. Pass `--hash-format legacy-sha256` only for routers older than this release; that writes the deprecated `token_sha256` instead.
 
-Before the caller token can authenticate, `owner_user` must exist in `users`, `project` must exist in `projects`, and `project_memberships` must contain an active membership for that user/project pair. Each configured user id, project id, caller `id`, `token_sha256`, and non-empty `token_id` must be unique after normalization. Token hashes are checked case-insensitively, and duplicate-hash validation errors identify the caller IDs without printing hash values. User, project, and membership statuses support `active`, `disabled`, `suspended`, `removed`, and `archived`; caller token statuses also support `expired` and `rotated`. `--username` is an alias for `--owner-user`; `--user` remains a deprecated compatibility alias.
+Before the caller token can authenticate, `owner_user` must exist in `users`, `project` must exist in `projects`, and `project_memberships` must contain an active membership for that user/project pair. Each configured user id, project id, caller `id`, `token_hash` or `token_sha256`, and non-empty `token_id` must be unique after normalization. Legacy `token_sha256` values are checked case-insensitively, and validation errors identify the caller IDs without printing hash values. `metrum-ai-routerctl callers verify --token-file <file> --config <config.yaml> --id <caller-id>` checks a token against its configured `token_hash`, and `metrum-ai-routerctl callers hash --token-file <file>` converts an existing token to `token_hash` without rotating it. User, project, and membership statuses support `active`, `disabled`, `suspended`, `removed`, and `archived`; caller token statuses also support `expired` and `rotated`. `--username` is an alias for `--owner-user`; `--user` remains a deprecated compatibility alias.
 
 ## Identity Model
 

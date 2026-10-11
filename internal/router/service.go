@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -60,7 +59,7 @@ type Service struct {
 	externalPolicies   map[string]*externalPolicyStrategy
 	imageURLLookup     egressLookupIPFunc
 	imageURLDNSTimeout time.Duration
-	callersBySum       map[string]*callerRuntime
+	callerAuth         *callerAuthState
 	adminBasic         map[string]adminBasicRuntime
 	adminOIDC          *adminOIDCRuntime
 	adminSession       *adminSessionStore
@@ -235,7 +234,7 @@ func newService(cfg *Config) (*Service, error) {
 		externalPolicies:   map[string]*externalPolicyStrategy{},
 		imageURLLookup:     defaultImageURLLookup,
 		imageURLDNSTimeout: defaultImageURLDNSTimeout,
-		callersBySum:       map[string]*callerRuntime{},
+		callerAuth:         newCallerAuthState(),
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
 		quota:              quota,
@@ -293,9 +292,7 @@ func newService(cfg *Config) (*Service, error) {
 		return nil, err
 	}
 	s.loadExternalPolicies()
-	for _, rt := range quota.callers {
-		s.callersBySum[strings.ToLower(rt.cfg.TokenSHA256)] = rt
-	}
+	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers))
 	for _, user := range cfg.Server.AdminAuth.Basic.Users {
 		subject := strings.TrimSpace(user.Subject)
 		if subject == "" {
@@ -439,10 +436,7 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	s.cfg = newCfg
 	s.authorizer = newAuthorizer
-	s.callersBySum = make(map[string]*callerRuntime, len(s.quota.callers))
-	for _, rt := range s.quota.callers {
-		s.callersBySum[strings.ToLower(rt.cfg.TokenSHA256)] = rt
-	}
+	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
 	}
@@ -1715,21 +1709,14 @@ func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, e
 	if token == "" {
 		return nil, "missing-token", errors.New("missing bearer token")
 	}
-	sum := sha256.Sum256([]byte(token))
-	sumHex := hex.EncodeToString(sum[:])
-	for configured, caller := range s.callersBySum {
-		if subtle.ConstantTimeCompare([]byte(configured), []byte(sumHex)) == 1 {
-			tokenID := "sha256:" + sumHex[:12]
-			if caller.cfg.TokenID != "" {
-				tokenID = publicTokenID(caller.cfg.TokenID)
-			}
-			if err := caller.authPolicyError(); err != nil {
-				return nil, tokenID, err
-			}
-			return caller, tokenID, nil
-		}
+	caller, tokenID := s.callerAuth.lookup(token)
+	if caller == nil {
+		return nil, "invalid-token", errors.New("unknown token")
 	}
-	return nil, "invalid-token", errors.New("unknown token")
+	if err := caller.authPolicyError(); err != nil {
+		return nil, tokenID, err
+	}
+	return caller, tokenID, nil
 }
 
 type authPolicyError struct {

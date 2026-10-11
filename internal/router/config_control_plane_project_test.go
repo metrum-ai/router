@@ -385,3 +385,38 @@ func TestProjectConfigToRelationalRoundTripsThroughLoader(t *testing.T) {
 		t.Fatalf("round-trip caller mismatch: %+v", loaded.Callers)
 	}
 }
+
+func TestProjectConfigToRelationalRoundTripsTokenHashCaller(t *testing.T) {
+	t.Setenv("MOCK_API_KEY", "test-only-projection-provider-key")
+	r, closeDB := newRelationalProjectionTestDB(t, "set-1")
+	defer func() { _ = closeDB() }()
+	db := r.db
+
+	tokenHash, err := HashCallerToken("tok-1_secret", strings.NewReader(strings.Repeat("s", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := minimalProjectionConfig()
+	cfg.Callers[0].TokenSHA256 = ""
+	cfg.Callers[0].TokenHash = tokenHash
+	if err := ProjectConfigToRelational(db, "set-1", cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE router_config_sets SET status = ?, validation_status = ? WHERE id = ?`, "active", "valid", "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := db.Raw(`SELECT token_sha256 FROM router_config_callers WHERE config_set_id = ?`, "set-1").Row().Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != tokenHash {
+		t.Fatal("token_hash must be persisted in the caller verifier column")
+	}
+	loaded, err := LoadActiveConfigFromDB(db, "staging", IdentifierConfig{Mode: "passthrough"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Callers) != 1 || loaded.Callers[0].TokenHash != tokenHash || loaded.Callers[0].TokenSHA256 != "" {
+		t.Fatalf("round-trip token_hash caller mismatch: hash=%v legacy=%q", loaded.Callers[0].TokenHash == tokenHash, loaded.Callers[0].TokenSHA256)
+	}
+}

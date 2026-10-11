@@ -4,11 +4,14 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/metrum-ai/router/internal/router"
 )
 
 func TestCallerGenerateWritesTokenOnceAndNeverPrintsIt(t *testing.T) {
@@ -49,12 +52,15 @@ func TestCustomerConfigAndModelReadCommands(t *testing.T) {
 		target := name
 		if name == "config.example.yaml" {
 			target = "config.yaml"
-			body = []byte(strings.NewReplacer(
-				"REPLACE_WITH_SHA256_HEX_OF_STANDARD_ROUTER_TOKEN", strings.Repeat("a", 64),
-				"REPLACE_WITH_SHA256_HEX_OF_CODING_ROUTER_TOKEN", strings.Repeat("b", 64),
-				"REPLACE_WITH_SHA256_HEX_OF_METRICS_ADMIN_ROUTER_TOKEN", strings.Repeat("c", 64),
-				"REPLACE_WITH_SHA256_HEX_OF_CONTENT_ADMIN_ROUTER_TOKEN", strings.Repeat("d", 64),
-			).Replace(string(body)))
+			text := string(body)
+			for _, name := range []string{"STANDARD", "CODING", "METRICS_ADMIN", "CONTENT_ADMIN"} {
+				tokenHash, err := router.HashCallerToken("rtr_example_"+strings.ToLower(name)+"_test", nil, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				text = strings.ReplaceAll(text, "REPLACE_WITH_TOKEN_HASH_OF_"+name+"_ROUTER_TOKEN", tokenHash)
+			}
+			body = []byte(text)
 		} else {
 			target = "env.json"
 			// Example env keeps the transform key empty; fill a valid 64-byte
@@ -141,11 +147,72 @@ callers: []
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "op-local-dev") || !strings.Contains(string(raw), "token_sha256") {
-		t.Fatalf("caller not merged: %s", raw)
+	if !strings.Contains(string(raw), "op-local-dev") || !strings.Contains(string(raw), "token_hash: pbkdf2-sha3-512:i=20000:") || strings.Contains(string(raw), "token_sha256") {
+		t.Fatalf("caller not merged with token_hash: %s", raw)
 	}
 	if strings.Contains(string(output), strings.TrimSpace(string(mustRead(t, tokenPath)))) {
 		t.Fatal("raw token must not appear in CLI output")
+	}
+	if strings.Contains(string(raw), strings.TrimSpace(string(mustRead(t, tokenPath)))) {
+		t.Fatal("raw token must not be written to config")
+	}
+
+	// verify round-trips the generated token against the merged caller.
+	verify := exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--config", cfgPath, "--id", "op-local-dev")
+	if out, err := verify.CombinedOutput(); err != nil || !strings.Contains(string(out), `"match": true`) {
+		t.Fatalf("verify generated token: %v: %s", err, out)
+	}
+	wrongPath := filepath.Join(dir, "wrong.token")
+	if err := os.WriteFile(wrongPath, append(mustRead(t, tokenPath)[:20], []byte("not-the-secret\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", wrongPath, "--config", cfgPath, "--id", "op-local-dev").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), `"match": false`) {
+		t.Fatalf("verify accepted a wrong token: %v: %s", err, out)
+	}
+
+	// hash converts an existing token to token_hash without rotating it.
+	out, err = exec.Command("go", "run", ".", "callers", "hash", "--token-file", tokenPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("hash: %v: %s", err, out)
+	}
+	var hashed struct {
+		TokenHash string `json:"token_hash"`
+	}
+	if err := json.Unmarshal(out, &hashed); err != nil || !strings.HasPrefix(hashed.TokenHash, "pbkdf2-sha3-512:") {
+		t.Fatalf("hash output: %v: %s", err, out)
+	}
+	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--token-hash", hashed.TokenHash).CombinedOutput(); err != nil {
+		t.Fatalf("verify --token-hash: %v: %s", err, out)
+	}
+	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--token-hash", "pbkdf2-sha3-512:i=1:x:y").CombinedOutput(); err == nil || !strings.Contains(string(out), "invalid token_hash") {
+		t.Fatalf("malformed token_hash accepted: %v: %s", err, out)
+	}
+
+	// rotate writes a fresh token_hash; the old token no longer verifies.
+	rotatedPath := filepath.Join(dir, "rotated.token")
+	if out, err := exec.Command("go", "run", ".", "callers", "rotate", "--config", cfgPath, "--id", "op-local-dev", "--token-out", rotatedPath).CombinedOutput(); err != nil || !strings.Contains(string(out), `"token_hash_format": "pbkdf2-sha3-512"`) {
+		t.Fatalf("rotate: %v: %s", err, out)
+	}
+	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", rotatedPath, "--config", cfgPath, "--id", "op-local-dev").CombinedOutput(); err != nil {
+		t.Fatalf("verify rotated token: %v: %s", err, out)
+	}
+	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--config", cfgPath, "--id", "op-local-dev").CombinedOutput(); err == nil {
+		t.Fatalf("old token still verifies after rotate: %s", out)
+	}
+}
+
+func TestCallerGenerateLegacyHashFormat(t *testing.T) {
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "caller.token")
+	out, err := exec.Command("go", "run", ".", "callers", "generate", "--owner-user", "op", "--project", "local", "--allow", "default",
+		"--token-out", tokenPath, "--hash-format", "legacy-sha256").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), `"token_hash_format": "legacy-sha256"`) {
+		t.Fatalf("legacy generate: %v: %s", err, out)
+	}
+	if out, err := exec.Command("go", "run", ".", "callers", "generate", "--owner-user", "op", "--project", "local", "--allow", "default",
+		"--token-out", filepath.Join(dir, "other.token"), "--hash-format", "md5").CombinedOutput(); err == nil {
+		t.Fatalf("unknown hash format accepted: %s", out)
 	}
 }
 

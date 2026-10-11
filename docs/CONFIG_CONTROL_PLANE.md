@@ -163,8 +163,12 @@ The DB-backed mode does not change the secrets contract:
 - Provider credentials remain `api_key_env` environment/secret references.
   `LoadActiveConfigFromDB` resolves the named variable only into the returned
   in-memory runtime configuration and never writes or logs the value.
-- Caller tokens remain SHA-256 `token_sha256` hashes plus the public
-  `token_id`. Raw caller tokens have no column in any `router_config` table
+- Caller tokens are stored only as a verifier plus the public `token_id`.
+  New and rotated callers use `token_hash` (salted PBKDF2-HMAC-SHA3-512);
+  legacy callers may still carry deprecated `token_sha256`. Both forms share
+  the existing `router_config_callers.token_sha256` column, distinguished by
+  the self-describing `pbkdf2-sha3-512:` prefix, so no schema migration is
+  needed. Raw caller tokens have no column in any `router_config` table
   and are never stored in `router_config_documents` or
   `router_config_change_events`.
 
@@ -197,7 +201,7 @@ When `server.config_source.mode=database`, caller lifecycle operations act
 directly on the active relational projection and take effect without a
 router restart or a YAML edit:
 
-- **Issue** — insert a new caller row with its `token_sha256`, public
+- **Issue** — insert a new caller row with its `token_hash`, public
   `token_id`, owner/project references, rate limits, and allowed groups, then
   record an `issue` change event. The raw token is shown to the operator once
   and never stored.

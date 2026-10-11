@@ -303,7 +303,8 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 		return nil, err
 	}
 	for _, row := range callers {
-		caller := CallerConfig{ID: row.CallerID, OwnerUser: row.OwnerUser, Project: row.Project, Environment: row.Environment, Status: row.Status, TokenSHA256: row.TokenSHA256, TokenID: row.TokenID, MetricsAdmin: row.MetricsAdmin, ContentAdmin: row.ContentAdmin, Rate: RateConfig{RPM: row.RPM, TPM: row.TPM, Concurrent: row.Concurrent}}
+		caller := CallerConfig{ID: row.CallerID, OwnerUser: row.OwnerUser, Project: row.Project, Environment: row.Environment, Status: row.Status, TokenID: row.TokenID, MetricsAdmin: row.MetricsAdmin, ContentAdmin: row.ContentAdmin, Rate: RateConfig{RPM: row.RPM, TPM: row.TPM, Concurrent: row.Concurrent}}
+		caller.TokenHash, caller.TokenSHA256 = splitStoredCallerTokenVerifier(row.TokenSHA256)
 		var allowed []callerAllowedGroupRow
 		if err := db.Where("config_set_id = ? AND caller_id = ?", set.ID, row.CallerID).Order("group_name ASC").Find(&allowed).Error; err != nil {
 			return nil, err

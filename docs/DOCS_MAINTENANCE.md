@@ -109,7 +109,7 @@ Style rules:
 - Prefer "the upstream/provider model is not entitled or not validated for this request shape" over broad "not supported" language.
 - Refer to `/v1/models` as the caller-facing source of truth for allowed model groups.
 - Refer to request drilldown output as request evidence or diagnostics, and explicitly say it is sanitized when discussing support packets.
-- Keep field names such as `token_id`, `token_sha256`, `model`, `provider`, `model-not-allowed`, `no-eligible-target`, and report column labels exact when documenting configuration, JSON, SQL, errors, or UI labels.
+- Keep field names such as `token_id`, `token_hash`, `token_sha256`, `model`, `provider`, `model-not-allowed`, `no-eligible-target`, and report column labels exact when documenting configuration, JSON, SQL, errors, or UI labels.
 
 ## Evaluation And Security Grouping
 

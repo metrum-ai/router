@@ -118,7 +118,8 @@ type callerAdminCallerView struct {
 	Environment  string     `json:"environment"`
 	Status       string     `json:"status"`
 	TokenID      string     `json:"token_id"`
-	TokenSHA256  string     `json:"token_sha256"`
+	TokenHash    string     `json:"token_hash,omitempty"`
+	TokenSHA256  string     `json:"token_sha256,omitempty"`
 	Allow        []string   `json:"allow"`
 	MetricsAdmin bool       `json:"metrics_admin"`
 	ContentAdmin bool       `json:"content_admin"`
@@ -160,6 +161,7 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 		for _, a := range allowed {
 			allow = append(allow, a.GroupName)
 		}
+		tokenHash, legacySHA256 := splitStoredCallerTokenVerifier(row.TokenSHA256)
 		resp.Callers = append(resp.Callers, callerAdminCallerView{
 			ID:           row.CallerID,
 			OwnerUser:    row.OwnerUser,
@@ -167,7 +169,8 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 			Environment:  row.Environment,
 			Status:       row.Status,
 			TokenID:      row.TokenID,
-			TokenSHA256:  row.TokenSHA256,
+			TokenHash:    tokenHash,
+			TokenSHA256:  legacySHA256,
 			Allow:        allow,
 			MetricsAdmin: row.MetricsAdmin,
 			ContentAdmin: row.ContentAdmin,
@@ -231,7 +234,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		Project:      caller.Project,
 		Environment:  caller.Environment,
 		Status:       accountStatusActive,
-		TokenSHA256:  generated.TokenSHA256,
+		TokenSHA256:  storedCallerTokenVerifier(caller),
 		TokenID:      generated.TokenID,
 		MetricsAdmin: req.MetricsAdmin,
 		ContentAdmin: req.ContentAdmin,
@@ -268,7 +271,8 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				Project:      row.Project,
 				Environment:  row.Environment,
 				Status:       row.Status,
-				TokenSHA256:  row.TokenSHA256,
+				TokenHash:    caller.TokenHash,
+				TokenSHA256:  caller.TokenSHA256,
 				TokenID:      row.TokenID,
 				Allow:        append([]string(nil), caller.Allow...),
 				MetricsAdmin: row.MetricsAdmin,
@@ -299,7 +303,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	// The raw token is returned exactly once here. Only the SHA-256 hash and
+	// The raw token is returned exactly once here. Only the token verifier and
 	// the non-secret token identifier were persisted above.
 	writeJSON(w, http.StatusCreated, callerAdminIssueResponse{
 		Caller: callerAdminCallerView{
@@ -309,7 +313,8 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 			Environment:  row.Environment,
 			Status:       row.Status,
 			TokenID:      row.TokenID,
-			TokenSHA256:  row.TokenSHA256,
+			TokenHash:    caller.TokenHash,
+			TokenSHA256:  caller.TokenSHA256,
 			Allow:        append([]string(nil), caller.Allow...),
 			MetricsAdmin: row.MetricsAdmin,
 			ContentAdmin: row.ContentAdmin,
@@ -368,13 +373,14 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 			return err
 		}
 		if err := tx.Exec(`UPDATE router_config_callers SET token_sha256 = ?, token_id = ? WHERE config_set_id = ? AND caller_id = ?`,
-			generated.TokenSHA256, generated.TokenID, set.ID, callerID).Error; err != nil {
+			storedCallerTokenVerifier(generated.Caller), generated.TokenID, set.ID, callerID).Error; err != nil {
 			return err
 		}
 		// Sync the canonical document with the rotated token hash.
 		if err := h.syncCanonicalDocument(tx, set.ID, func(callers []CallerConfig) ([]CallerConfig, error) {
 			for i, c := range callers {
 				if c.ID == callerID {
+					callers[i].TokenHash = generated.TokenHash
 					callers[i].TokenSHA256 = generated.TokenSHA256
 					callers[i].TokenID = generated.TokenID
 					break

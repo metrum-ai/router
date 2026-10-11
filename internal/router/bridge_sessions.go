@@ -79,7 +79,10 @@ func newBridgeSessionBackends(ctx context.Context, cfg *Config) (*bridgeSessionB
 				continue
 			}
 			key := bridgeRedisBackendKey(sessionCfg.Redis)
-			if _, ok := backends.redis[key]; ok {
+			if existing, ok := backends.redis[key]; ok {
+				if store, ok := existing.(*redisBridgeSessionStore); ok {
+					store.extendLegacyKeyWindow(bridgeStatefulSessionTTL(sessionCfg))
+				}
 				continue
 			}
 			store, err := newRedisBridgeSessionStore(ctx, sessionCfg.Redis)
@@ -87,6 +90,7 @@ func newBridgeSessionBackends(ctx context.Context, cfg *Config) (*bridgeSessionB
 				backends.Close()
 				return nil, fmt.Errorf("chat_to_responses stateful_sessions redis backend for model group %s: %w", groupName, err)
 			}
+			store.extendLegacyKeyWindow(bridgeStatefulSessionTTL(sessionCfg))
 			backends.redis[key] = store
 		}
 	}

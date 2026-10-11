@@ -180,7 +180,7 @@ func openConfigDB(opts smartrouterctl.ConfigDBOptions) (*gorm.DB, func() error, 
 
 func callersCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl callers <list|generate|revoke|rotate> [flags]")
+		die("usage: metrum-ai-routerctl callers <list|generate|revoke|rotate|hash|verify> [flags]")
 	}
 	switch args[0] {
 	case "list":
@@ -207,12 +207,14 @@ func callersCommand(args []string) {
 		tokenOut := fs.String("token-out", "", "new mode-0600 token file; must not already exist")
 		configPath := fs.String("config", "", "optional config to merge hashed caller into")
 		writeCfg := fs.Bool("write", false, "merge hashed caller into --config")
+		hashFormat, hashIterations := addTokenHashFlags(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*tokenOut) == "" {
 			die("token-out is required")
 		}
 		generated, err := router.GenerateCallerToken(router.TokenGenerateOptions{
 			OwnerUser: *owner, Project: *project, Environment: *environment, KeySlug: *key, Allow: splitCSV(*allow),
+			HashFormat: *hashFormat, HashIterations: *hashIterations,
 		})
 		if err != nil {
 			die("generate caller token: %v", err)
@@ -241,6 +243,7 @@ func callersCommand(args []string) {
 			"schema": "metrum.ai/smartrouter-caller-grant/v1", "caller_id": generated.Caller.ID,
 			"token_id": generated.TokenID, "allowed_model_groups": generated.Caller.Allow,
 			"token_file": filepath.Base(*tokenOut), "activation": activation,
+			"token_hash_format": tokenHashFormat(generated),
 		}
 		if backup != "" {
 			out["config_backup"] = filepath.Base(backup)
@@ -268,6 +271,7 @@ func callersCommand(args []string) {
 		path := fs.String("config", "", "router configuration path")
 		id := fs.String("id", "", "caller id")
 		tokenOut := fs.String("token-out", "", "new mode-0600 token file")
+		hashFormat, hashIterations := addTokenHashFlags(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*tokenOut) == "" {
 			die("token-out is required")
@@ -286,6 +290,7 @@ func callersCommand(args []string) {
 		generated, err := router.GenerateCallerToken(router.TokenGenerateOptions{
 			OwnerUser: existing.OwnerUser, Project: existing.Project, Environment: existing.Environment,
 			KeySlug: "rot" + time.Now().UTC().Format("150405"), Allow: append([]string(nil), existing.Allow...),
+			HashFormat: *hashFormat, HashIterations: *hashIterations,
 		})
 		if err != nil {
 			die("generate caller token: %v", err)
@@ -293,7 +298,12 @@ func callersCommand(args []string) {
 		if err := writeNewPrivateFile(*tokenOut, []byte(generated.Token+"\n")); err != nil {
 			die("write token: %v", err)
 		}
-		if err := smartrouterctl.RotateCallerHash(cfg, *id, generated.TokenSHA256, generated.TokenID); err != nil {
+		if generated.TokenHash != "" {
+			err = smartrouterctl.RotateCallerTokenHash(cfg, *id, generated.TokenHash, generated.TokenID)
+		} else {
+			err = smartrouterctl.RotateCallerHash(cfg, *id, generated.TokenSHA256, generated.TokenID)
+		}
+		if err != nil {
 			die("%v", err)
 		}
 		backup, err := smartrouterctl.WriteConfigAtomic(*path, cfg)
@@ -303,8 +313,52 @@ func callersCommand(args []string) {
 		writeJSON(map[string]any{
 			"schema": "metrum.ai/smartrouter-caller-rotate/v1", "caller_id": *id, "token_id": generated.TokenID,
 			"token_file": filepath.Base(*tokenOut), "config_backup": filepath.Base(backup),
-			"activation": "local-config-written-restart-required",
+			"activation": "local-config-written-restart-required", "token_hash_format": tokenHashFormat(generated),
 		})
+	case "hash":
+		// Converts an existing token (for example one whose config entry still
+		// uses deprecated token_sha256) to token_hash without rotating it.
+		fs := flag.NewFlagSet("callers hash", flag.ExitOnError)
+		tokenFile := fs.String("token-file", "", "file containing the raw caller token")
+		iterations := fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations")
+		fs.Parse(args[1:])
+		token := readTokenFile(*tokenFile)
+		tokenHash, err := router.HashCallerToken(token, nil, *iterations)
+		if err != nil {
+			die("hash caller token: %v", err)
+		}
+		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-token-hash/v1", "token_hash": tokenHash})
+	case "verify":
+		fs := flag.NewFlagSet("callers verify", flag.ExitOnError)
+		tokenFile := fs.String("token-file", "", "file containing the raw caller token")
+		tokenHash := fs.String("token-hash", "", "token_hash value to check; alternative to --config/--id")
+		path := fs.String("config", "", "router configuration path")
+		id := fs.String("id", "", "caller id in --config")
+		fs.Parse(args[1:])
+		token := readTokenFile(*tokenFile)
+		encoded := strings.TrimSpace(*tokenHash)
+		if encoded == "" {
+			if strings.TrimSpace(*path) == "" || strings.TrimSpace(*id) == "" {
+				die("verify requires --token-hash or --config with --id")
+			}
+			cfg := loadConfigRaw(*path)
+			for _, caller := range cfg.Callers {
+				if caller.ID == *id {
+					encoded = strings.TrimSpace(caller.TokenHash)
+				}
+			}
+			if encoded == "" {
+				die("caller %q has no token_hash", *id)
+			}
+		}
+		ok, err := router.VerifyCallerTokenHash(encoded, token)
+		if err != nil {
+			die("invalid token_hash: %v", err)
+		}
+		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-token-verify/v1", "match": ok})
+		if !ok {
+			os.Exit(1)
+		}
 	default:
 		die("unsupported callers command %q", args[0])
 	}
@@ -682,6 +736,31 @@ func redactURLCredentials(raw string) string {
 	return parsed.String()
 }
 
+func addTokenHashFlags(fs *flag.FlagSet) (*string, *int) {
+	format := fs.String("hash-format", router.TokenHashFormatPBKDF2SHA3, "stored token verifier: "+router.TokenHashFormatPBKDF2SHA3+" (token_hash) or "+router.TokenHashFormatLegacySHA256+" (deprecated token_sha256)")
+	iterations := fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations for token_hash")
+	return format, iterations
+}
+func tokenHashFormat(generated router.GeneratedToken) string {
+	if generated.TokenHash != "" {
+		return router.TokenHashFormatPBKDF2SHA3
+	}
+	return router.TokenHashFormatLegacySHA256
+}
+func readTokenFile(path string) string {
+	if strings.TrimSpace(path) == "" {
+		die("--token-file is required")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		die("read token file: %v", err)
+	}
+	token := strings.TrimSpace(string(raw))
+	if token == "" {
+		die("token file is empty")
+	}
+	return token
+}
 func writeJSON(value any) {
 	body, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
