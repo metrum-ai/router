@@ -56,7 +56,7 @@ User IDs, project IDs, membership pairs, caller IDs, token hashes, and non-empty
 
 A `token_hash` caller needs a `token_id`, and the presented token must start with `<token_id>_`, which generated `rtr_metrum_` tokens always do. The router uses that public prefix to find the one candidate caller, runs the expensive verification once per process, and then authenticates later requests with a constant-time HMAC-SHA3-512 digest under a per-process random key. Expensive first-use verifications run in a small bounded pool. No caller `token_id` may be an underscore-delimited prefix of another.
 
-`token_sha256` (unsalted SHA-256 hex) is deprecated. It still authenticates, and the router logs `caller <id> uses deprecated token_sha256` at startup and on control-plane reload. Set exactly one of `token_hash` or `token_sha256` per caller. Use `metrum-ai-routerctl callers hash --token-file <file>` to convert a token you still hold, or `callers rotate` to issue a new one.
+`token_sha256` (unsalted SHA-256 hex) is deprecated and will be removed in a future major release (#281). It still authenticates, and the router logs `caller <id> uses deprecated token_sha256` at startup and on control-plane reload. Set exactly one of `token_hash` or `token_sha256` per caller. Use `metrum-ai-routerctl callers hash --token-file <file>` to convert a token you still hold, or `callers rotate` to issue a new one.
 
 Disallowed model-group requests return `403 model-not-allowed`. Inactive caller tokens return status-specific safe errors such as `key-disabled`, `key-suspended`, `key-expired`, or `key-rotated`. `/metrics` remains global operational telemetry and is restricted to metrics-authorized subjects.
 

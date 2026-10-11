@@ -81,9 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 
 - `callers[].token_sha256` still authenticates but logs
-  `caller <id> uses deprecated token_sha256` at startup and on reload. Convert
-  with `callers hash` or rotate; see the upgrade guide. A caller must not set
-  both fields.
+  `caller <id> uses deprecated token_sha256` at startup and on reload, and
+  will be removed in a future major release (#281). Convert with
+  `callers hash` or rotate; see the upgrade guide. A caller must not set both
+  fields.
 
 ## [4.1.0] - 2026-10-10
 

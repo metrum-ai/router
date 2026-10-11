@@ -26,7 +26,7 @@ package router
 // The deprecated callers[].token_sha256 field (unsalted SHA-256 hex) still
 // works for existing deployments. Its only hashing call is
 // legacyCallerTokenSHA256Hex, kept isolated so it can be deleted once
-// token_sha256 support is removed.
+// token_sha256 support is removed (#281).
 
 import (
 	"crypto/pbkdf2"
@@ -208,7 +208,8 @@ func splitStoredCallerTokenVerifier(stored string) (tokenHash, legacySHA256 stri
 // callers[].token_sha256 field during the migration window and to let
 // operators generate that legacy form explicitly. Its static-analysis
 // finding (go/weak-sensitive-data-hashing) is expected while token_sha256 is
-// supported; delete this function when that field is removed.
+// supported; delete this function when that field is removed (remove with
+// #281, planned for a future major release).
 func legacyCallerTokenSHA256Hex(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])

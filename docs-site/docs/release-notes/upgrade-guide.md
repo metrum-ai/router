@@ -26,7 +26,8 @@ Caller tokens now use `callers[].token_hash`, a salted PBKDF2-HMAC-SHA3-512
 verifier (`pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`). Existing
 `token_sha256` callers keep authenticating; the router logs
 `caller <id> uses deprecated token_sha256` at startup and on control-plane
-reload. No usage-database or control-plane schema migration.
+reload. `token_sha256` will be removed in a future major release (#281), so
+plan the conversion now. No usage-database or control-plane schema migration.
 
 1. Upgrade the router first. Older routers reject `token_hash`, so do not
    write it to a shared config until every replica runs this release.

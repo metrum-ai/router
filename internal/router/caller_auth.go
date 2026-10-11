@@ -119,7 +119,7 @@ func (st *callerAuthState) rebuild(callers []*callerRuntime) {
 		}
 		if legacy := strings.TrimSpace(rt.cfg.TokenSHA256); legacy != "" {
 			next.legacyBySHA256[strings.ToLower(legacy)] = rt
-			log.Printf("caller %s uses deprecated token_sha256; rotate it to token_hash (%s)", rt.cfg.ID, CallerTokenHashScheme)
+			log.Printf("caller %s uses deprecated token_sha256; rotate it to token_hash (%s) (see #281)", rt.cfg.ID, CallerTokenHashScheme)
 		}
 	}
 	st.index.Store(next)
