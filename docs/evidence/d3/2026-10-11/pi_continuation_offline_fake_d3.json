@@ -1,0 +1,77 @@
+{
+ "scope": "offline: real router + real d3_policy.py + fake d3 + real upstreams (Fireworks, OpenAI)",
+ "command": "make local-router-pi-smoke LOCAL_ROUTER_OUT=tmp/test-d3 LOCAL_ROUTER_LISTEN=127.0.0.1:18301 LOCAL_ROUTER_GROUP=d3-auto < /dev/null",
+ "group_mode": "enforce, fail_closed",
+ "result": {
+  "schema": "metrum.ai/router-pi-tool-continuation-smoke/v1",
+  "ok": true,
+  "expect_model_identity": "requested_group",
+  "group": "d3-auto",
+  "proof_token": "PROOF-2140a5826555",
+  "pi": {
+   "exit_code": 0,
+   "tools": [
+    "write",
+    "read"
+   ],
+   "tool_errors": [],
+   "final_text": "DONE PROOF-2140a5826555",
+   "models": [
+    "d3-auto",
+    "d3-auto",
+    "d3-auto"
+   ],
+   "usage_rows": [
+    {
+     "request_id": "req_7a7937449418a2eff30938476e038bfb",
+     "status": 200,
+     "target_provider": "openai",
+     "target_model": "gpt-6-luna"
+    },
+    {
+     "request_id": "req_87afc5a38018079bd3f329fac29c9ffa",
+     "status": 200,
+     "target_provider": "openai",
+     "target_model": "gpt-6-luna"
+    },
+    {
+     "request_id": "req_e2ea1c102f045f72e173933185fb624a",
+     "status": 200,
+     "target_provider": "openai",
+     "target_model": "gpt-6-luna"
+    }
+   ],
+   "new_rows_during_pi": 3
+  },
+  "chat": {
+   "unary": {
+    "status": 200,
+    "request_id": "req_a0b0c999d1b283f533ca4208b0063026",
+    "chunks": 1,
+    "models": [
+     "d3-auto"
+    ],
+    "target_provider": "fireworks",
+    "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+   },
+   "stream": {
+    "status": 200,
+    "request_id": "req_c442e1cbb3204a9f1f92897adae61a71",
+    "chunks": 21,
+    "models": [
+     "d3-auto"
+    ],
+    "target_provider": "fireworks",
+    "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+   }
+  },
+  "failures": []
+ },
+ "policy_rows": [
+  "('req_7a7937449418a2eff30938476e038bfb', 'selected', 'd3:hard:agentic:r0.82', 2, 200, 'gpt-6-luna', 1)",
+  "('req_87afc5a38018079bd3f329fac29c9ffa', 'selected', 'd3:hard:agentic:r0.82', 9, 200, 'gpt-6-luna', 1)",
+  "('req_e2ea1c102f045f72e173933185fb624a', 'selected', 'd3:hard:agentic:r0.82', 16, 200, 'gpt-6-luna', 1)",
+  "('req_a0b0c999d1b283f533ca4208b0063026', 'selected', 'd3:trivial:chat:r0.18', 8, 200, 'accounts/fireworks/models/deepseek-v4p1-flash', 0)",
+  "('req_c442e1cbb3204a9f1f92897adae61a71', 'selected', 'd3:trivial:chat:r0.18', 2, 200, 'accounts/fireworks/models/deepseek-v4p1-flash', 1)"
+ ]
+}
