@@ -886,6 +886,10 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prefix := cleanAdminReportsPrefix(s.cfg.Server.AdminReports.PathPrefix)
+	if prefix == "" {
+		http.NotFound(w, r)
+		return
+	}
 	relPath := strings.TrimPrefix(r.URL.Path, prefix)
 	securityReport := strings.HasPrefix(relPath, "/api/security/") || strings.HasPrefix(relPath, "/security/")
 	subject, ok := s.authenticateAdminSubject(w, r)
@@ -911,7 +915,7 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	}
 	globalReports := s.authorizeGlobalAdmin(subject, object, action)
 	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
-	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, cleanAdminReportsPrefix(s.cfg.Server.AdminReports.PathPrefix)+"/static/"))
+	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, prefix+"/static/"))
 	scalarSpec, scalarOK := adminScalarEndpointSpecs(strings.TrimPrefix(r.URL.Path, prefix))
 	switch {
 	case r.URL.Path == prefix:

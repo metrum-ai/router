@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -2688,4 +2690,192 @@ func mustBcryptHash(t *testing.T, password string) string {
 		t.Fatal(err)
 	}
 	return string(hash)
+}
+
+// redactionSentinel is a fake credential used to prove secret values never
+// reach error text. It is intentionally not a valid environment variable
+// name so validation paths that quote env-name fields would otherwise echo it.
+const redactionSentinel = "sk-metrum-sentinel-DO-NOT-LOG-7f3a9c"
+
+func assertNoSentinel(t *testing.T, label, text string) {
+	t.Helper()
+	if strings.Contains(text, redactionSentinel) {
+		t.Fatalf("%s leaked the secret sentinel: %s", label, text)
+	}
+}
+
+func TestLoadConfigErrorsRedactSecretEnvValues(t *testing.T) {
+	t.Setenv("ROUTER_REDACTION_TEST_SECRET", redactionSentinel)
+
+	t.Run("yaml type error from expanded env", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		raw := "server:\n  admin_reports:\n    max_rows: ${ROUTER_REDACTION_TEST_SECRET}\n"
+		if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Fatal("LoadConfig accepted a non-integer max_rows")
+		}
+		assertNoSentinel(t, "LoadConfig yaml error", err.Error())
+		if !strings.Contains(err.Error(), "$ROUTER_REDACTION_TEST_SECRET") {
+			t.Fatalf("redacted error does not name the env var: %v", err)
+		}
+	})
+
+	t.Run("validation quotes expanded password_env", func(t *testing.T) {
+		cfg := minimalConfig(t)
+		cfg.Models["default"].Targets[0].Bridges = BridgeSupport{ChatToResponses: DialectBridgeSupport{
+			Enabled: true,
+			StatefulSessions: BridgeStatefulSessionsConfig{
+				Enabled: true,
+				Backend: "redis",
+				Redis: BridgeStatefulSessionsRedisConfig{
+					Address:     "127.0.0.1:1",
+					PasswordEnv: "${ROUTER_REDACTION_TEST_SECRET}",
+				},
+			},
+		}}
+		raw, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err = LoadConfig(path)
+		if err == nil {
+			t.Fatal("LoadConfig accepted a credential in password_env")
+		}
+		assertNoSentinel(t, "LoadConfig validation error", err.Error())
+		if !strings.Contains(err.Error(), "password_env") || !strings.Contains(err.Error(), "$ROUTER_REDACTION_TEST_SECRET") {
+			t.Fatalf("redacted error does not name the field and env var: %v", err)
+		}
+	})
+
+	t.Run("env.json value", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "env.json"), []byte(`{"ROUTER_REDACTION_ENVJSON_SECRET":"`+redactionSentinel+`"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("ROUTER_REDACTION_ENVJSON_SECRET", "")
+		os.Unsetenv("ROUTER_REDACTION_ENVJSON_SECRET")
+		path := filepath.Join(dir, "config.yaml")
+		raw := "server:\n  admin_reports:\n    max_rows: ${ROUTER_REDACTION_ENVJSON_SECRET}\n"
+		if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := LoadConfig(path)
+		if err == nil {
+			t.Fatal("LoadConfig accepted a non-integer max_rows")
+		}
+		assertNoSentinel(t, "LoadConfig env.json error", err.Error())
+	})
+
+	t.Run("config_source dsn_env", func(t *testing.T) {
+		t.Setenv("ROUTER_REDACTION_TEST_DSN", "postgres://router@127.0.0.1:1/"+redactionSentinel+"?sslmode=bogus")
+		cfg := minimalConfig(t)
+		cfg.Server.ConfigSource = ConfigSourceConfig{Mode: "database", Driver: "postgres", DSNEnv: "ROUTER_REDACTION_TEST_DSN", RuntimeScope: "default"}
+		raw, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err = LoadConfigForServe(path)
+		if err == nil {
+			t.Fatal("LoadConfigForServe opened a malformed DSN")
+		}
+		assertNoSentinel(t, "LoadConfigForServe error", err.Error())
+		if !strings.Contains(err.Error(), "$ROUTER_REDACTION_TEST_DSN") {
+			t.Fatalf("redacted error does not name dsn_env: %v", err)
+		}
+	})
+}
+
+func TestNewRedactsSecretsFromInitErrors(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.Models["default"].Targets[0].Bridges = BridgeSupport{ChatToResponses: DialectBridgeSupport{
+		Enabled: true,
+		StatefulSessions: BridgeStatefulSessionsConfig{
+			Enabled: true,
+			Backend: "redis",
+			Redis: BridgeStatefulSessionsRedisConfig{
+				Address: "127.0.0.1:1",
+				// Operator pasted the credential where the env var name belongs.
+				PasswordEnv: redactionSentinel,
+			},
+		},
+	}}
+	_, err := New(cfg)
+	if err == nil {
+		t.Fatal("New accepted a credential in password_env")
+	}
+	assertNoSentinel(t, "New error", err.Error())
+	if !strings.Contains(err.Error(), "password_env") {
+		t.Fatalf("redacted error does not name the field: %v", err)
+	}
+}
+
+func TestSecretRedactorScrubsConfigSecrets(t *testing.T) {
+	t.Setenv("ROUTER_REDACTION_TEST_SECRET", redactionSentinel+"-env")
+	cfg := minimalConfig(t)
+	provider := cfg.Provider["mock"]
+	provider.APIKey = redactionSentinel + "-literal"
+	provider.APIKeyEnv = "ROUTER_REDACTION_TEST_SECRET"
+	provider.Headers = map[string]string{"Authorization": "Bearer " + redactionSentinel + "-header", "X-Title": "visible-title"}
+	cfg.Provider["mock"] = provider
+	redactor := newSecretRedactor()
+	redactor.addConfig(cfg)
+	err := redactConfigError(fmt.Errorf("upstream said %s / %s / Bearer %s-header / visible-title",
+		redactionSentinel+"-env", redactionSentinel+"-literal", redactionSentinel), redactor)
+	assertNoSentinel(t, "redacted error", err.Error())
+	for _, want := range []string{"$ROUTER_REDACTION_TEST_SECRET", "[redacted: api_key]", "visible-title"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("redacted error %q missing %q", err, want)
+		}
+	}
+	if errors.Unwrap(err) != nil {
+		t.Fatal("redacted error must not unwrap to the unredacted original")
+	}
+	if redactConfigError(nil, redactor) != nil {
+		t.Fatal("nil error must stay nil")
+	}
+}
+
+func TestCleanAdminReportsPrefixRejectsOffsiteRedirectTargets(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"", "/admin/reports"},
+		{"/admin/reports", "/admin/reports"},
+		{"admin/reports/team", "/admin/reports/team"},
+		{"/admin/reports/team/", "/admin/reports/team"},
+		{"/admin/reports/./team", "/admin/reports/team"},
+		{"//evil.com", ""},
+		{"//evil.com/admin/reports", ""},
+		{"/\\evil.com", ""},
+		{"\\\\evil.com", ""},
+		{"/admin/reports\\..\\..\\evil", ""},
+		{"/%2fevil.com", ""},
+		{"/%2F%2Fevil.com", ""},
+		{"/admin/reports/%2f%2fevil.com", ""},
+		{"https://evil.com/admin/reports", ""},
+		{"/admin/reports?next=//evil.com", ""},
+		{"/admin/reports#frag", ""},
+		{"/admin/reports/\tx", ""},
+		{"/admin/reports/\r\nLocation: //evil.com", ""},
+	} {
+		if got := cleanAdminReportsPrefix(tc.in); got != tc.want {
+			t.Errorf("cleanAdminReportsPrefix(%q)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+	for _, bad := range []string{"//evil.com", "/\\evil.com", "/%2fevil.com", "https://evil.com", "/admin/reports/../../evil", "/admin/reportsevil"} {
+		cfg := minimalConfig(t)
+		cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, PathPrefix: bad}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "path_prefix") {
+			t.Errorf("Validate accepted admin_reports path_prefix %q: %v", bad, err)
+		}
+	}
 }

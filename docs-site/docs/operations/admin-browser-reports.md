@@ -65,6 +65,12 @@ server:
     store_ip: true
 ```
 
+`path_prefix` must be `/admin/reports` or a child path such as
+`/admin/reports/team`. The router redirects the bare prefix to the same path
+with a trailing slash, so validation rejects any prefix that could point off
+the router: protocol-relative (`//host`) or backslash (`/\host`) forms, and
+any value with a backslash, `%`, `?`, `#`, `:` or a control character.
+
 Ordinary router caller tokens receive `403 reports-forbidden`. Missing or invalid Basic credentials or missing/invalid OIDC sessions receive `401`.
 
 ## What It Shows

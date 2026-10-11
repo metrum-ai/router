@@ -167,3 +167,124 @@ func mustRead(t *testing.T, path string) []byte {
 	}
 	return raw
 }
+
+// routerctlSecretSentinel is a fake credential. It is not a valid environment
+// variable name, so env-name fields holding it are treated as misconfigured.
+const routerctlSecretSentinel = "sk-metrum-sentinel-DO-NOT-LOG-c41d02"
+
+const routerctlRedactionConfig = `server:
+  identifiers:
+    mode: passthrough
+  usage_db:
+    migration_policy: auto-safe
+  logging:
+    path: LOGDIR/requests.jsonl
+state_path: LOGDIR/state.json
+providers:
+  mock:
+    base_url: https://svc:SENTINEL@upstream.example.test/v1
+    dialect: openai-chat
+    api_key: ${ROUTERCTL_TEST_API_KEY}
+    api_key_env: SENTINEL
+callers:
+  - id: alice
+    token_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    allow: [default]
+models:
+  default:
+    strategy: static
+    targets:
+      - provider: mock
+        model: mock-model
+        bridges:
+          chat_to_responses:
+            enabled: true
+            stateful_sessions:
+              enabled: true
+              backend: redis
+              redis:
+                address: 127.0.0.1:1
+                password_env: ${ROUTERCTL_TEST_SECRET}
+`
+
+// TestRouterctlNeverPrintsSecretValues feeds a config whose secret env vars,
+// api_key_env and base_url userinfo hold a sentinel through the read path
+// (providers list), the validating load path (config validate) and the
+// write path (providers upsert), and checks the sentinel never
+// reaches stdout or stderr.
+func TestRouterctlNeverPrintsSecretValues(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "metrum-ai-routerctl")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build routerctl: %v: %s", err, out)
+	}
+	configPath := filepath.Join(dir, "config.yaml")
+	body := strings.NewReplacer("LOGDIR", dir, "SENTINEL", routerctlSecretSentinel).Replace(routerctlRedactionConfig)
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) (string, string, error) {
+		cmd := exec.Command(bin, args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"ROUTERCTL_TEST_SECRET="+routerctlSecretSentinel,
+			"ROUTERCTL_TEST_API_KEY="+routerctlSecretSentinel+"-api",
+		)
+		var stdout, stderr strings.Builder
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		return stdout.String(), stderr.String(), err
+	}
+	check := func(label, stdout, stderr string) {
+		t.Helper()
+		for stream, text := range map[string]string{"stdout": stdout, "stderr": stderr} {
+			if strings.Contains(text, routerctlSecretSentinel) {
+				t.Fatalf("%s %s leaked the secret sentinel: %s", label, stream, text)
+			}
+		}
+	}
+
+	stdout, stderr, err := run("providers", "list", "--config", configPath)
+	check("providers list", stdout, stderr)
+	if err != nil || !strings.Contains(stdout, `"api_key_env": "[redacted`) || !strings.Contains(stdout, "upstream.example.test") {
+		t.Fatalf("providers list: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+
+	stdout, stderr, err = run("config", "validate", "--config", configPath)
+	check("config validate", stdout, stderr)
+	if err == nil || !strings.Contains(stderr, "password_env") || !strings.Contains(stderr, "$ROUTERCTL_TEST_SECRET") {
+		t.Fatalf("config validate: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+
+	// Upserting an existing provider without --base-url keeps the stored
+	// base_url (with userinfo) and echoes it; the credential must be stripped.
+	stdout, stderr, err = run("providers", "upsert", "--config", configPath, "--name", "mock", "--model-ref", "extra")
+	check("providers upsert", stdout, stderr)
+	if err != nil || !strings.Contains(stdout, "https://redacted@upstream.example.test/v1") {
+		t.Fatalf("providers upsert: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+}
+
+func TestRedactURLCredentialsAndEnvReference(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                                    "",
+		"http://127.0.0.1:8000/v1":            "http://127.0.0.1:8000/v1",
+		"https://user:pw-secret@host.test/v1": "https://redacted@host.test/v1",
+		"https://token-secret@host.test/v1":   "https://redacted@host.test/v1",
+	} {
+		if got := redactURLCredentials(in); got != want {
+			t.Errorf("redactURLCredentials(%q)=%q want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{
+		"":               "",
+		"OPENAI_API_KEY": "OPENAI_API_KEY",
+		" LOCAL_KEY ":    "LOCAL_KEY",
+		"sk-live-abc123": "[redacted: not a valid environment variable name]",
+		"9STARTS_DIGIT":  "[redacted: not a valid environment variable name]",
+	} {
+		if got := redactEnvReference(in); got != want {
+			t.Errorf("redactEnvReference(%q)=%q want %q", in, got, want)
+		}
+	}
+}

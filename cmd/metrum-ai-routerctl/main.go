@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -322,8 +323,8 @@ func providersCommand(args []string) {
 		rows := make([]map[string]any, 0, len(cfg.Provider))
 		for name, provider := range cfg.Provider {
 			rows = append(rows, map[string]any{
-				"name": name, "base_url": provider.BaseURL, "dialect": provider.Dialect,
-				"api_key_env": provider.APIKeyEnv, "model_count": len(provider.Models),
+				"name": name, "base_url": redactURLCredentials(provider.BaseURL), "dialect": provider.Dialect,
+				"api_key_env": redactEnvReference(provider.APIKeyEnv), "model_count": len(provider.Models),
 			})
 		}
 		sort.Slice(rows, func(i, j int) bool { return rows[i]["name"].(string) < rows[j]["name"].(string) })
@@ -375,7 +376,7 @@ func providersCommand(args []string) {
 		}
 		writeJSON(map[string]any{
 			"schema": "metrum.ai/smartrouter-provider-upsert/v1", "name": *name,
-			"base_url": provider.BaseURL, "config_backup": filepath.Base(backup),
+			"base_url": redactURLCredentials(provider.BaseURL), "config_backup": filepath.Base(backup),
 			"activation": "local-config-written-restart-required",
 		})
 	case "remove":
@@ -640,6 +641,47 @@ func writeNewPrivateFile(path string, contents []byte) error {
 	}
 	return f.Sync()
 }
+
+// redactEnvReference returns name when it is a well-formed environment
+// variable name (the only thing an *_env field may hold). Anything else may
+// be a credential pasted into the wrong field, so it is never echoed.
+func redactEnvReference(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	if !validEnvReferenceName(trimmed) {
+		return "[redacted: not a valid environment variable name]"
+	}
+	return trimmed
+}
+
+func validEnvReferenceName(name string) bool {
+	for i, r := range name {
+		if r == '_' || ('A' <= r && r <= 'Z') || (i > 0 && '0' <= r && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return name != ""
+}
+
+// redactURLCredentials strips userinfo (user:password@) from a base URL
+// before it is printed. Unparseable values are withheld entirely.
+func redactURLCredentials(raw string) string {
+	if strings.TrimSpace(raw) == "" || !strings.Contains(raw, "@") {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "[redacted: unparseable base_url]"
+	}
+	if parsed.User != nil {
+		parsed.User = url.User("redacted")
+	}
+	return parsed.String()
+}
+
 func writeJSON(value any) {
 	body, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

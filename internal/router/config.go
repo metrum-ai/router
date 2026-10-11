@@ -33,6 +33,10 @@ type Config struct {
 	Callers            []CallerConfig            `yaml:"callers"`
 	StatePath          string                    `yaml:"state_path"`
 	baseDir            string
+	// secretEnvRefs names the environment variables expanded into this
+	// config (${NAME} references and env.json keys) so later errors can be
+	// redacted by name. See secret_redaction.go.
+	secretEnvRefs []string
 }
 
 type StreamingConfig struct {
@@ -877,18 +881,41 @@ type KeyConfig struct {
 	OnExhaust      string `yaml:"on_exhaust" json:"on_exhaust"`
 }
 
+// LoadConfig reads, expands and validates the YAML config at path. Errors
+// never carry the value of an expanded environment variable or a literal
+// credential field; those values are replaced with a label naming the
+// variable or field.
 func LoadConfig(path string) (*Config, error) {
-	if err := loadEnvJSON(filepath.Join(filepath.Dir(path), "env.json")); err != nil {
+	redactor := newSecretRedactor()
+	cfg, err := loadConfigFile(path, redactor)
+	if err != nil {
+		redactor.addConfig(cfg)
+		return cfg, redactConfigError(err, redactor)
+	}
+	return cfg, nil
+}
+
+func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
+	var envRefs []string
+	envJSONKeys, err := loadEnvJSONKeys(filepath.Join(filepath.Dir(path), "env.json"))
+	envRefs = append(envRefs, envJSONKeys...)
+	if err != nil {
 		return nil, err
 	}
 	if filepath.Dir(path) != "." {
-		if err := loadEnvJSON("env.json"); err != nil {
+		envJSONKeys, err := loadEnvJSONKeys("env.json")
+		envRefs = append(envRefs, envJSONKeys...)
+		if err != nil {
 			return nil, err
 		}
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
+	}
+	envRefs = append(envRefs, envReferenceNames(raw)...)
+	for _, name := range envRefs {
+		redactor.addEnv(name)
 	}
 	expanded := os.ExpandEnv(string(raw))
 	cleaned, hadDeprecatedLicense, err := discardDeprecatedServerLicenseYAML([]byte(expanded))
@@ -904,6 +931,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	cfg.setDefaults()
 	cfg.baseDir = filepath.Dir(path)
+	cfg.secretEnvRefs = envRefs
 	return &cfg, cfg.Validate()
 }
 
@@ -952,26 +980,39 @@ func discardDeprecatedServerLicenseYAML(raw []byte) ([]byte, bool, error) {
 }
 
 func loadEnvJSON(path string) error {
+	_, err := loadEnvJSONKeys(path)
+	return err
+}
+
+// loadEnvJSONKeys applies env.json and returns its valid keys, which are
+// treated as secret references for error redaction.
+func loadEnvJSONKeys(path string) ([]string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
 	env := map[string]string{}
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return fmt.Errorf("load %s: %w", path, err)
+		return nil, fmt.Errorf("load %s: %w", path, err)
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		if validEnvName(k) {
+			keys = append(keys, k)
+		}
 	}
 	for k, v := range env {
 		if !validEnvName(k) {
-			return fmt.Errorf("load %s: invalid env key %q", path, k)
+			return keys, fmt.Errorf("load %s: invalid env key %q", path, k)
 		}
 		if _, exists := os.LookupEnv(k); !exists {
 			os.Setenv(k, v)
 		}
 	}
-	return nil
+	return keys, nil
 }
 
 func validEnvName(k string) bool {
@@ -2104,7 +2145,7 @@ func validateAdminReports(cfg AdminReportsConfig, auth AdminAuthConfig, usage Us
 		return fmt.Errorf("server admin_reports path_prefix is required")
 	}
 	prefix := cleanAdminReportsPrefix(cfg.PathPrefix)
-	if prefix != "/admin/reports" && !strings.HasPrefix(prefix, "/admin/reports/") {
+	if prefix == "" || (prefix != "/admin/reports" && !strings.HasPrefix(prefix, "/admin/reports/")) {
 		return fmt.Errorf("server admin_reports path_prefix must be /admin/reports or a child path")
 	}
 	defaultSince, err := parseReportDuration(cfg.DefaultSince)
@@ -2212,13 +2253,25 @@ func defaultAdminReportBaselines() []AdminReportBaselineConfig {
 	}
 }
 
+// cleanAdminReportsPrefix normalises the admin reports path prefix, which is
+// also used as a redirect target. It returns "" for any value that is not a
+// plain local path: protocol-relative ("//host") and backslash ("/\host")
+// forms, schemes, percent-encoding, query or fragment markers, and control
+// characters are rejected rather than cleaned into something that looks
+// local.
 func cleanAdminReportsPrefix(prefix string) string {
 	prefix = strings.TrimSpace(prefix)
 	if prefix == "" {
 		return "/admin/reports"
 	}
+	if strings.ContainsAny(prefix, "\\%?#:") || strings.IndexFunc(prefix, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return ""
+	}
 	if !strings.HasPrefix(prefix, "/") {
 		prefix = "/" + prefix
+	}
+	if len(prefix) > 1 && (prefix[1] == '/' || prefix[1] == '\\') {
+		return ""
 	}
 	prefix = path.Clean(prefix)
 	if prefix == "." {
