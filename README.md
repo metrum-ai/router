@@ -74,7 +74,7 @@ The bootstrap prepares a local config, env template, and one caller token.
 Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 [Local Quickstart](docs-site/docs/getting-started/local-quickstart.md).
 
-### Local coding-agent router
+### Local coding-agent router (example config)
 
 For a weighted `big-coder` mix (OpenAI gpt-6-luna 70 / Fireworks deepseek-v4p1-flash 30)
 listening on `0.0.0.0:18081`, with upstream keys from repo `env.json` and a
