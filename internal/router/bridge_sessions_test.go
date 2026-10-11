@@ -4,10 +4,14 @@
 package router
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -201,4 +205,282 @@ func TestChatResponsesBridgeStaleStateRetryRequiresSpecificContinuationError(t *
 	if chatResponsesBridgeStaleStateRetryAllowed(true, lookup, http.StatusBadRequest, []byte(`{"error":{"message":"previous_response_id was not found"}}`), true) {
 		t.Fatal("already retried request should not retry again")
 	}
+}
+
+func TestRedisBridgeBackendKeyNeverIncludesSecretValues(t *testing.T) {
+	cfg := BridgeStatefulSessionsRedisConfig{
+		Address:     "127.0.0.1:6379",
+		Namespace:   "prod-router",
+		UsernameEnv: "ROUTER_TEST_REDIS_USERNAME",
+		PasswordEnv: "ROUTER_TEST_REDIS_PASSWORD",
+	}
+	t.Setenv("ROUTER_TEST_REDIS_USERNAME", "redis-user-value")
+	t.Setenv("ROUTER_TEST_REDIS_PASSWORD", "redis-password-value-1")
+	first := bridgeRedisBackendKey(cfg)
+	if rendered := fmt.Sprintf("%+v", first); strings.Contains(rendered, "redis-user-value") || strings.Contains(rendered, "redis-password-value") {
+		t.Fatalf("fingerprint holds a secret value: %s", rendered)
+	}
+	t.Setenv("ROUTER_TEST_REDIS_PASSWORD", "redis-password-value-2")
+	if got := bridgeRedisBackendKey(cfg); got != first {
+		t.Fatal("fingerprint changed when only the password environment value changed; it must not read secret values")
+	}
+	withInline := cfg
+	withInline.Username = "inline-user"
+	withInline.Password = "inline-password"
+	if got := bridgeRedisBackendKey(withInline); got != first {
+		t.Fatal("fingerprint must not include inline username/password values")
+	}
+	if rendered := fmt.Sprintf("%+v", bridgeRedisBackendKey(withInline)); strings.Contains(rendered, "inline-") {
+		t.Fatalf("fingerprint holds inline credentials: %s", rendered)
+	}
+	if got := bridgeRedisBackendKey(BridgeStatefulSessionsRedisConfig{Address: " 127.0.0.1:6379 ", Namespace: "prod-router ", UsernameEnv: " ROUTER_TEST_REDIS_USERNAME", PasswordEnv: "ROUTER_TEST_REDIS_PASSWORD "}); got != first {
+		t.Fatal("equivalent configuration (whitespace only) must produce the same key")
+	}
+}
+
+func TestRedisBridgeBackendKeyChangesWithEveryListedField(t *testing.T) {
+	base := BridgeStatefulSessionsRedisConfig{
+		Address:          "127.0.0.1:6379",
+		Namespace:        "prod-router",
+		DB:               1,
+		UsernameEnv:      "REDIS_USER",
+		PasswordEnv:      "REDIS_PASS",
+		TLS:              BridgeStatefulSessionsRedisTLSConfig{Enabled: false, ServerName: "redis.internal"},
+		ConnectTimeoutMS: 100,
+		ReadTimeoutMS:    200,
+		WriteTimeoutMS:   300,
+		PoolSize:         4,
+	}
+	baseKey := bridgeRedisBackendKey(base)
+	if bridgeRedisBackendKey(base) != baseKey {
+		t.Fatal("same configuration must produce the same key")
+	}
+	for name, mutate := range map[string]func(*BridgeStatefulSessionsRedisConfig){
+		"address":            func(c *BridgeStatefulSessionsRedisConfig) { c.Address = "127.0.0.1:6380" },
+		"namespace":          func(c *BridgeStatefulSessionsRedisConfig) { c.Namespace = "staging-router" },
+		"db":                 func(c *BridgeStatefulSessionsRedisConfig) { c.DB = 2 },
+		"username_env":       func(c *BridgeStatefulSessionsRedisConfig) { c.UsernameEnv = "REDIS_USER_2" },
+		"password_env":       func(c *BridgeStatefulSessionsRedisConfig) { c.PasswordEnv = "REDIS_PASS_2" },
+		"tls.enabled":        func(c *BridgeStatefulSessionsRedisConfig) { c.TLS.Enabled = true },
+		"tls.server_name":    func(c *BridgeStatefulSessionsRedisConfig) { c.TLS.ServerName = "other.internal" },
+		"tls.insecure_skip":  func(c *BridgeStatefulSessionsRedisConfig) { c.TLS.InsecureSkipVerify = true },
+		"connect_timeout_ms": func(c *BridgeStatefulSessionsRedisConfig) { c.ConnectTimeoutMS = 101 },
+		"read_timeout_ms":    func(c *BridgeStatefulSessionsRedisConfig) { c.ReadTimeoutMS = 201 },
+		"write_timeout_ms":   func(c *BridgeStatefulSessionsRedisConfig) { c.WriteTimeoutMS = 301 },
+		"pool_size":          func(c *BridgeStatefulSessionsRedisConfig) { c.PoolSize = 5 },
+	} {
+		changed := base
+		mutate(&changed)
+		if bridgeRedisBackendKey(changed) == baseKey {
+			t.Fatalf("changing %s must produce a new backend key", name)
+		}
+	}
+}
+
+func TestRedisBridgeSessionKeyMigratesFromLegacyLayout(t *testing.T) {
+	hashed := bridgeSessionKey(nil, "smoke-a", Target{Provider: "p", Model: "m"}, "session-alpha")
+	v2 := bridgeRedisSessionKey("prod-router", hashed)
+	legacy := bridgeRedisLegacySessionKey("prod-router", hashed)
+	if !strings.HasPrefix(v2, "metrum-ai-router:bridge-session-v2:prod-router:") || len(v2) != len("metrum-ai-router:bridge-session-v2:prod-router:")+128 {
+		t.Fatalf("v2 key should carry a full SHA3-512 digest: %q", v2)
+	}
+	if !strings.HasPrefix(legacy, "metrum-ai-router:bridge-session:prod-router:") || v2 == legacy {
+		t.Fatalf("legacy key layout changed: %q", legacy)
+	}
+	if bridgeRedisSessionKey("", hashed) != bridgeRedisSessionKey(defaultBridgeStatefulSessionRedisNamespace, hashed) {
+		t.Fatal("empty namespace must use the default namespace")
+	}
+
+	fake := startFakeRedis(t)
+	ctx := context.Background()
+	store, err := newRedisBridgeSessionStore(ctx, BridgeStatefulSessionsRedisConfig{Address: fake.addr, Namespace: "prod-router", ConnectTimeoutMS: 1000, ReadTimeoutMS: 1000, WriteTimeoutMS: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	store.extendLegacyKeyWindow(time.Hour)
+
+	// A session written by a pre-upgrade replica is still readable.
+	fake.set(legacy, "resp_legacy")
+	if got, ok, err := store.Get(ctx, hashed); err != nil || !ok || got.PreviousResponseID != "resp_legacy" {
+		t.Fatalf("legacy dual-read get=%#v ok=%v err=%v", got, ok, err)
+	}
+	// Inside the window, writes land in both layouts so old replicas keep
+	// reading sessions created by upgraded ones.
+	if err := store.Set(ctx, hashed, "resp_new", time.Minute, 0); err != nil {
+		t.Fatal(err)
+	}
+	if fake.get(v2) != "resp_new" || fake.get(legacy) != "resp_new" {
+		t.Fatalf("dual-write missing: v2=%q legacy=%q", fake.get(v2), fake.get(legacy))
+	}
+	if got, ok, err := store.Get(ctx, hashed); err != nil || !ok || got.PreviousResponseID != "resp_new" {
+		t.Fatalf("v2 get=%#v ok=%v err=%v", got, ok, err)
+	}
+	if err := store.Delete(ctx, hashed); err != nil {
+		t.Fatal(err)
+	}
+	if fake.has(v2) || fake.has(legacy) {
+		t.Fatal("delete must clear both layouts inside the window")
+	}
+
+	// After the bounded window, legacy keys are ignored and not written.
+	now = now.Add(2*time.Hour + bridgeRedisLegacyKeyGrace)
+	fake.set(legacy, "resp_stale")
+	if _, ok, err := store.Get(ctx, hashed); err != nil || ok {
+		t.Fatalf("legacy key read after window: ok=%v err=%v", ok, err)
+	}
+	if err := store.Set(ctx, hashed, "resp_after", time.Minute, 0); err != nil {
+		t.Fatal(err)
+	}
+	if fake.get(v2) != "resp_after" || fake.get(legacy) != "resp_stale" {
+		t.Fatalf("after window only v2 should be written: v2=%q legacy=%q", fake.get(v2), fake.get(legacy))
+	}
+}
+
+// fakeRedis is a minimal in-process RESP2 server covering the commands the
+// bridge session store uses (PING, GET, SET, DEL, MULTI/EXEC). Unknown
+// commands, such as go-redis's HELLO/CLIENT handshake, get an error reply.
+type fakeRedis struct {
+	addr string
+	mu   sync.Mutex
+	data map[string]string
+}
+
+func startFakeRedis(t *testing.T) *fakeRedis {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fakeRedis{addr: ln.Addr().String(), data: map[string]string{}}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go f.serve(conn)
+		}
+	}()
+	return f
+}
+
+func (f *fakeRedis) set(key, value string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.data[key] = value
+}
+
+func (f *fakeRedis) get(key string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.data[key]
+}
+
+func (f *fakeRedis) has(key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.data[key]
+	return ok
+}
+
+func (f *fakeRedis) serve(conn net.Conn) {
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	var queued [][]string
+	inMulti := false
+	for {
+		args, err := readRESPCommand(r)
+		if err != nil {
+			return
+		}
+		if len(args) == 0 {
+			continue
+		}
+		cmd := strings.ToUpper(args[0])
+		var reply string
+		switch {
+		case cmd == "MULTI":
+			inMulti, queued = true, nil
+			reply = "+OK\r\n"
+		case cmd == "EXEC":
+			reply = "*" + strconv.Itoa(len(queued)) + "\r\n"
+			for _, q := range queued {
+				reply += f.exec(q)
+			}
+			inMulti, queued = false, nil
+		case inMulti:
+			queued = append(queued, args)
+			reply = "+QUEUED\r\n"
+		default:
+			reply = f.exec(args)
+		}
+		if _, err := io.WriteString(conn, reply); err != nil {
+			return
+		}
+	}
+}
+
+func (f *fakeRedis) exec(args []string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch strings.ToUpper(args[0]) {
+	case "PING":
+		return "+PONG\r\n"
+	case "SET":
+		f.data[args[1]] = args[2]
+		return "+OK\r\n"
+	case "GET":
+		value, ok := f.data[args[1]]
+		if !ok {
+			return "$-1\r\n"
+		}
+		return "$" + strconv.Itoa(len(value)) + "\r\n" + value + "\r\n"
+	case "DEL":
+		n := 0
+		for _, key := range args[1:] {
+			if _, ok := f.data[key]; ok {
+				delete(f.data, key)
+				n++
+			}
+		}
+		return ":" + strconv.Itoa(n) + "\r\n"
+	default:
+		return "-ERR unknown command\r\n"
+	}
+}
+
+func readRESPCommand(r *bufio.Reader) ([]string, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	line = strings.TrimRight(line, "\r\n")
+	if !strings.HasPrefix(line, "*") {
+		return strings.Fields(line), nil
+	}
+	n, err := strconv.Atoi(line[1:])
+	if err != nil {
+		return nil, err
+	}
+	args := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		header, err := r.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		size, err := strconv.Atoi(strings.TrimRight(header, "\r\n")[1:])
+		if err != nil {
+			return nil, err
+		}
+		buf := make([]byte, size+2)
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return nil, err
+		}
+		args = append(args, string(buf[:size]))
+	}
+	return args, nil
 }

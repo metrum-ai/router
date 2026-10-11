@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -144,9 +145,21 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError("gpt-6-luna pricing metadata")
         if luna["pricing_source"] != "https://developers.openai.com/api/docs/models/gpt-6-luna":
             raise AssertionError(luna["pricing_source"])
-        want_hash = hashlib.sha256(token.encode()).hexdigest()
-        if cfg["callers"][0]["token_sha256"] != want_hash:
-            raise AssertionError(cfg["callers"][0]["token_sha256"])
+        caller = cfg["callers"][0]
+        if "token_sha256" in caller:
+            raise AssertionError("structured caller tokens must use token_hash, not token_sha256")
+        if caller["token_id"] != "rtr_metrum_local-dev_example-project_dev_kdemo":
+            raise AssertionError(caller["token_id"])
+        scheme, iterations, salt, key = caller["token_hash"].split(":")
+        if scheme != "pbkdf2-sha3-512" or iterations != "i=20000":
+            raise AssertionError("token_hash scheme/iterations")
+
+        def b64decode(value: str) -> bytes:
+            return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+        derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), b64decode(salt), 20000, 64)
+        if derived != b64decode(key) or len(b64decode(salt)) != 32:
+            raise AssertionError("token_hash does not verify the local caller token")
         rate = cfg["callers"][0]["rate"]
         if rate != {"rpm": 2400, "tpm": 4_000_000, "concurrent": 160}:
             raise AssertionError(rate)
@@ -185,6 +198,55 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError("token changed on reuse")
 
 
+def test_public_token_id_never_includes_secret_with_underscores() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("local_pi_instance", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    token = "rtr_metrum_local-dev_example-project_dev_k20261011_abc_def-ghi_jkl"
+    if module.public_token_id(token) != "rtr_metrum_local-dev_example-project_dev_k20261011":
+        raise AssertionError(module.public_token_id(token))
+    fields = module.caller_token_fields(token)
+    if fields["token_id"] != "rtr_metrum_local-dev_example-project_dev_k20261011" or "token_hash" not in fields:
+        raise AssertionError(sorted(fields))
+    if "abc" in fields["token_id"]:
+        raise AssertionError("token_id leaked secret material")
+
+
+def test_d3_group_caller_uses_token_hash() -> None:
+    """--d3-policy-url (#282) and token_hash callers compose in one config."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("local_pi_instance", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    token = "rtr_metrum_local-dev_example-project_dev_k20261011_abc_def-ghi_jkl"
+    cfg = module.build_config(
+        out_dir=Path("/nonexistent"),
+        listen="127.0.0.1:18081",
+        id_key_hex="00" * 32,
+        token=token,
+        d3_policy={
+            "policy_url": "http://127.0.0.1:18302/route",
+            "mode": "shadow",
+            "on_error": "fail_closed",
+            "timeout_ms": 300,
+        },
+    )
+    if list(cfg["models"]) != ["big-coder", "d3-auto"]:
+        raise AssertionError(list(cfg["models"]))
+    caller = cfg["callers"][0]
+    if caller["allow"] != ["big-coder", "d3-auto"]:
+        raise AssertionError(caller["allow"])
+    if "token_sha256" in caller or not caller["token_hash"].startswith("pbkdf2-sha3-512:i=20000:"):
+        raise AssertionError("d3 config caller must use token_hash")
+    if caller["token_id"] != "rtr_metrum_local-dev_example-project_dev_k20261011":
+        raise AssertionError(caller["token_id"])
+
+
 def test_missing_upstream_keys_fails() -> None:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -216,5 +278,7 @@ def test_missing_upstream_keys_fails() -> None:
 
 if __name__ == "__main__":
     test_creates_weighted_instance_and_reuses_metrum_key()
+    test_public_token_id_never_includes_secret_with_underscores()
+    test_d3_group_caller_uses_token_hash()
     test_missing_upstream_keys_fails()
     print("local_pi_instance_test: ok")

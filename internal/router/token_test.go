@@ -33,9 +33,17 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	if strings.Contains(generated.TokenID, generated.Token[strings.LastIndex(generated.Token, "_")+1:]) {
 		t.Fatal("token id contains secret")
 	}
-	sum := sha256.Sum256([]byte(generated.Token))
-	if generated.TokenSHA256 != hex.EncodeToString(sum[:]) || generated.Caller.TokenSHA256 != generated.TokenSHA256 {
-		t.Fatalf("hash mismatch: %#v", generated)
+	if generated.TokenSHA256 != "" || generated.Caller.TokenSHA256 != "" {
+		t.Fatalf("default generation must not emit deprecated token_sha256: %#v", generated)
+	}
+	if !strings.HasPrefix(generated.TokenHash, "pbkdf2-sha3-512:i=20000:") || generated.Caller.TokenHash != generated.TokenHash {
+		t.Fatalf("token_hash format mismatch: %q", generated.TokenHash)
+	}
+	if ok, err := VerifyCallerTokenHash(generated.TokenHash, generated.Token); err != nil || !ok {
+		t.Fatalf("token_hash does not verify the generated token: ok=%v err=%v", ok, err)
+	}
+	if ok, _ := VerifyCallerTokenHash(generated.TokenHash, generated.Token+"x"); ok {
+		t.Fatal("token_hash must reject a different token")
 	}
 	if generated.Caller.ID != "alice-example-project-dev" || generated.Caller.OwnerUser != "alice" || generated.Caller.Project != "example-project" || generated.Caller.Environment != "dev" {
 		t.Fatalf("caller metadata not normalized: %#v", generated.Caller)
@@ -119,5 +127,44 @@ func TestPublicTokenIDStripsSecretSuffix(t *testing.T) {
 	}
 	if got := publicTokenID("sha256:abcdef123456"); got != "sha256:abcdef123456" {
 		t.Fatalf("non-router token id changed: %q", got)
+	}
+}
+
+func TestGenerateCallerTokenLegacySHA256Format(t *testing.T) {
+	generated, err := GenerateCallerToken(TokenGenerateOptions{
+		OwnerUser:  "alice",
+		Project:    "search",
+		Allow:      []string{"default"},
+		HashFormat: TokenHashFormatLegacySHA256,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(generated.Token))
+	if generated.TokenHash != "" || generated.TokenSHA256 != hex.EncodeToString(sum[:]) || generated.Caller.TokenSHA256 != generated.TokenSHA256 {
+		t.Fatalf("legacy format mismatch: %#v", generated)
+	}
+	if _, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "alice", Project: "search", Allow: []string{"default"}, HashFormat: "md5"}); err == nil {
+		t.Fatal("unknown hash format must be rejected")
+	}
+}
+
+func TestCallerTokenIDFromToken(t *testing.T) {
+	for _, tt := range []struct {
+		token, want string
+		ok          bool
+	}{
+		{"rtr_metrum_alice_search_dev_k1_c2VjcmV0", "rtr_metrum_alice_search_dev_k1", true},
+		{"rtr_metrum_alice_search_dev_k1_abc_def-ghi_jkl", "rtr_metrum_alice_search_dev_k1", true},
+		{"  rtr_metrum_alice_search_dev_k1_secret\n", "rtr_metrum_alice_search_dev_k1", true},
+		{"rtr_metrum_alice_search_dev_k1", "", false},
+		{"rtr_metrum_alice_search_dev_k1_", "", false},
+		{"rtr_test_token", "", false},
+		{"legacy-free-form-caller-secret-value", "", false},
+	} {
+		got, ok := CallerTokenIDFromToken(tt.token)
+		if got != tt.want || ok != tt.ok {
+			t.Fatalf("CallerTokenIDFromToken(%q) = %q, %v; want %q, %v", tt.token, got, ok, tt.want, tt.ok)
+		}
 	}
 }

@@ -5,8 +5,10 @@
 """Validate a production runtime bundle config for path and caller parity.
 
 Reads a local config.yaml (for example production-identical.yaml) and checks that
-state paths, trusted proxy CIDRs, and caller token_sha256 entries are present.
-Never reads or prints raw router tokens.
+state paths, trusted proxy CIDRs, and a caller token verifier are present: either
+token_hash (pbkdf2-sha3-512:i=<iterations>:<salt>:<key>, with token_id) or the
+deprecated token_sha256. Never reads or prints raw router tokens or verifiers.
+Metrum AI Router operations tooling.
 """
 
 from __future__ import annotations
@@ -14,9 +16,26 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import pathlib
+import re
 import sys
 
 import yaml
+
+
+# Mirrors internal/router/caller_token_hash.go: 16-64 byte salt and a 64-byte
+# key as unpadded base64url, iterations 10000-1000000.
+TOKEN_HASH_RE = re.compile(
+    r"^pbkdf2-sha3-512:i=(?P<iterations>[1-9][0-9]*):(?P<salt>[A-Za-z0-9_-]{22,86}):(?P<key>[A-Za-z0-9_-]{86})$"
+)
+
+
+def valid_token_hash(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = TOKEN_HASH_RE.match(value.strip())
+    if not match:
+        return False
+    return 10000 <= int(match.group("iterations")) <= 1000000
 
 
 def main() -> int:
@@ -72,6 +91,12 @@ def main() -> int:
     if not callers:
         errors.append("callers list is empty")
     for caller in callers:
+        if caller.get("token_hash"):
+            if not valid_token_hash(caller.get("token_hash")):
+                errors.append(f"caller {caller.get('id')} has invalid token_hash")
+            elif not str(caller.get("token_id") or "").strip():
+                errors.append(f"caller {caller.get('id')} token_hash requires token_id")
+            continue
         token_hash = caller.get("token_sha256") or ""
         if len(token_hash) != 64:
             errors.append(f"caller {caller.get('id')} missing valid token_sha256")

@@ -2557,15 +2557,20 @@ project_memberships:
   role: operator
   status: active
 callers:
-# Each caller id, token_sha256, and non-empty token_id must be unique. Token
-# hashes are compared case-insensitively, and duplicate-hash validation errors
-# name the caller ids without printing the hash value.
+# Each caller id, token_hash, and non-empty token_id must be unique.
+# token_hash is a salted PBKDF2-HMAC-SHA3-512 verifier in the self-describing
+# form pbkdf2-sha3-512:i=<iterations>:<salt>:<key>; generate it with
+# `metrum-ai-routerctl callers generate` (new token) or `callers hash`
+# (existing token). token_hash requires token_id, and one caller's token_id
+# must not be an underscore-delimited prefix of another's. The deprecated
+# token_sha256 (unsalted SHA-256 hex) still works but logs a startup warning;
+# set exactly one of the two. Validation errors name caller ids, never hashes.
 - id: standard-dev
   owner_user: standard
   project: example-project
   environment: dev
   status: active
-  token_sha256: REPLACE_WITH_SHA256_HEX_OF_STANDARD_ROUTER_TOKEN
+  token_hash: REPLACE_WITH_TOKEN_HASH_OF_STANDARD_ROUTER_TOKEN
   token_id: rtr_metrum_standard_example-project_dev_kreplace
   metrics_admin: false
   content_admin: false
@@ -2619,7 +2624,7 @@ callers:
   project: example-project
   environment: dev
   status: active
-  token_sha256: REPLACE_WITH_SHA256_HEX_OF_CODING_ROUTER_TOKEN
+  token_hash: REPLACE_WITH_TOKEN_HASH_OF_CODING_ROUTER_TOKEN
   token_id: rtr_metrum_coding_example-project_dev_kreplace
   metrics_admin: false
   content_admin: false
@@ -2693,7 +2698,7 @@ callers:
   project: observability
   environment: dev
   status: active
-  token_sha256: REPLACE_WITH_SHA256_HEX_OF_METRICS_ADMIN_ROUTER_TOKEN
+  token_hash: REPLACE_WITH_TOKEN_HASH_OF_METRICS_ADMIN_ROUTER_TOKEN
   token_id: rtr_metrum_metrics-admin_observability_dev_kreplace
   metrics_admin: true
   content_admin: false
@@ -2707,7 +2712,7 @@ callers:
   project: compliance
   environment: dev
   status: active
-  token_sha256: REPLACE_WITH_SHA256_HEX_OF_CONTENT_ADMIN_ROUTER_TOKEN
+  token_hash: REPLACE_WITH_TOKEN_HASH_OF_CONTENT_ADMIN_ROUTER_TOKEN
   token_id: rtr_metrum_content-admin_compliance_dev_kreplace
   metrics_admin: false
   content_admin: true

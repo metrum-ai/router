@@ -41,6 +41,14 @@ var literalSecretYAMLKeys = map[string]bool{
 	"dsn":           true,
 }
 
+// callerVerifierYAMLKeys hold caller token verifiers. A verifier is not a
+// credential, but config errors still never print one, so a stray quote of
+// it (for example a YAML type error) is scrubbed like a secret.
+var callerVerifierYAMLKeys = map[string]bool{
+	"token_hash":   true,
+	"token_sha256": true,
+}
+
 // redactedConfigError carries scrubbed error text only. It deliberately does
 // not unwrap to the original error, because the original message is the one
 // that may quote a secret value.
@@ -117,8 +125,8 @@ func envReferenceNames(raw []byte) []string {
 }
 
 // addConfig registers secrets reachable from a parsed configuration: the
-// resolved value of every *_env field, literal credential fields, and
-// credential-bearing header values.
+// resolved value of every *_env field, literal credential fields, caller
+// token verifiers, and credential-bearing header values.
 func (r *secretRedactor) addConfig(cfg *Config) {
 	if r == nil || cfg == nil {
 		return
@@ -174,7 +182,7 @@ func (r *secretRedactor) walk(v reflect.Value, yamlKey string) {
 				return
 			}
 			r.addEnv(name)
-		case literalSecretYAMLKeys[yamlKey]:
+		case literalSecretYAMLKeys[yamlKey], callerVerifierYAMLKeys[yamlKey]:
 			r.addValue(v.String(), "[redacted: "+yamlKey+"]")
 		}
 	}

@@ -30,6 +30,8 @@ Run with: uv run --with pyyaml python scripts/local_pi_instance.py
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
 import secrets
@@ -123,13 +125,20 @@ def write_private(path: Path, text: str) -> None:
 
 
 def public_token_id(token: str) -> str:
+    """Return the public token_id of a structured rtr_metrum_ token.
+
+    Mirrors publicTokenID in internal/router/token.go: the first six
+    "_"-separated parts (rtr, metrum, user, project, env, key). The secret
+    suffix is base64url and may itself contain "_", so it must never be
+    split from the right.
+    """
     token = token.strip()
     if not token.startswith("rtr_metrum_"):
         return token
     parts = token.split("_")
     if len(parts) < 7:
         return token
-    return "_".join(parts[:-1])
+    return "_".join(parts[:6])
 
 
 def token_sha256(caller_token: str) -> str:
@@ -154,6 +163,40 @@ def token_sha256(caller_token: str) -> str:
     if not digest:
         die("sha256sum produced empty output")
     return digest[0]
+
+
+CALLER_TOKEN_HASH_ITERATIONS = 20000
+
+
+def caller_token_hash(caller_token: str) -> str:
+    """Return a router token_hash verifier for a bearer token.
+
+    Matches internal/router/caller_token_hash.go: PBKDF2-HMAC-SHA3-512 with a
+    random 32-byte salt and a 64-byte key, rendered as
+    pbkdf2-sha3-512:i=<iterations>:<salt>:<key> with unpadded base64url.
+    """
+    salt = secrets.token_bytes(32)
+    key = hashlib.pbkdf2_hmac(
+        "sha3_512", caller_token.strip().encode("utf-8"), salt, CALLER_TOKEN_HASH_ITERATIONS, 64
+    )
+
+    def b64(raw: bytes) -> str:
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+    return f"pbkdf2-sha3-512:i={CALLER_TOKEN_HASH_ITERATIONS}:{b64(salt)}:{b64(key)}"
+
+
+def caller_token_fields(caller_token: str) -> dict[str, str]:
+    """Return the caller verifier and token_id config fields for a token.
+
+    Structured rtr_metrum_ tokens get token_hash, which the router finds by
+    its public token_id prefix. Any other token keeps the deprecated
+    token_sha256 field, because token_hash lookup needs that prefix.
+    """
+    token_id = public_token_id(caller_token)
+    if token_id != caller_token.strip() and caller_token.strip().startswith(token_id + "_"):
+        return {"token_hash": caller_token_hash(caller_token), "token_id": token_id}
+    return {"token_sha256": token_sha256(caller_token), "token_id": token_id}
 
 
 def resolve_existing_token(out_dir: Path, source_env: dict[str, str]) -> str:
@@ -400,8 +443,7 @@ def build_config(
                 "project": PROJECT,
                 "environment": "dev",
                 "status": "active",
-                "token_sha256": token_sha256(token),
-                "token_id": public_token_id(token),
+                **caller_token_fields(token),
                 "allow": group_names(d3_policy),
                 "rate": {
                     "rpm": LOCAL_RATE_RPM,

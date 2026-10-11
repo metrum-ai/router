@@ -20,6 +20,38 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Caller token_hash and deprecated token_sha256 (Unreleased)
+
+Caller tokens now use `callers[].token_hash`, a salted PBKDF2-HMAC-SHA3-512
+verifier (`pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`). Existing
+`token_sha256` callers keep authenticating; the router logs
+`caller <id> uses deprecated token_sha256` at startup and on control-plane
+reload. `token_sha256` will be removed in a future major release (#281), so
+plan the conversion now. No usage-database or control-plane schema migration.
+
+1. Upgrade the router first. Older routers reject `token_hash`, so do not
+   write it to a shared config until every replica runs this release.
+2. For each legacy caller, either convert the token you still hold with
+   `metrum-ai-routerctl callers hash --token-file <file>`, replacing
+   `token_sha256` with the printed `token_hash` and keeping `token_id`, or
+   rotate it with `metrum-ai-routerctl callers rotate`. A `token_hash`
+   caller needs `token_id`, and set exactly one of the two fields. Only
+   tokens of the form `<token_id>_<secret>` can be converted in place
+   (`callers hash` prints the `token_id` and refuses anything else); any
+   other token must be rotated.
+3. Check with `metrum-ai-routerctl callers verify --token-file <file>
+   --config <config.yaml> --id <caller-id>` and restart the router.
+4. `metrum-ai-routerctl callers generate`, `metrum-ai-router-token-gen` and
+   the database-mode caller admin API now issue `token_hash` by default. Use
+   `--hash-format legacy-sha256` only when issuing tokens for older routers.
+
+Redis-backed bridge sessions move to a SHA3-512 key layout
+(`metrum-ai-router:bridge-session-v2:...`). For one session TTL plus one hour
+after startup, the router also reads, writes and deletes the old layout, so
+in-flight sessions and mixed-version replicas keep working during a rolling
+upgrade. Rolling back within that window keeps sessions; after it, sessions
+created by the new version reset on the old one.
+
 ## Requested-group model identity and Go 1.26.9 (v4.1.0)
 
 v4.1.0 adds opt-in `server.responses.model_identity: requested_group`, which

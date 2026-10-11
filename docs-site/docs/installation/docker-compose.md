@@ -63,7 +63,7 @@ docker run --rm \
   --allow <allowed-model-group>[,<allowed-model-group>...]
 ```
 
-Save the printed raw token for the caller through an approved secret channel. In `config/config.yaml`, add or verify the referenced `users`, `projects`, and `project_memberships` entries, then replace the placeholder `callers:` entries with the generated caller YAML. A fresh template with `REPLACE_WITH_SHA256_HEX_OF_*` values is intentionally not startable.
+Save the printed raw token for the caller through an approved secret channel. In `config/config.yaml`, add or verify the referenced `users`, `projects`, and `project_memberships` entries, then replace the placeholder `callers:` entries with the generated caller YAML. A fresh template with `REPLACE_WITH_TOKEN_HASH_OF_*` values is intentionally not startable.
 
 Edit `config/config.yaml` for durable container paths before startup:
 

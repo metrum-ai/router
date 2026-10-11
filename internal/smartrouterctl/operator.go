@@ -175,14 +175,15 @@ spec:
             spec:
               type: object
               x-kubernetes-preserve-unknown-fields: true
-              required: [id, owner_user, project, token_sha256, allow]
+              required: [id, owner_user, project, allow]
               properties:
                 id: { type: string }
                 owner_user: { type: string }
                 project: { type: string }
                 environment: { type: string }
                 status: { type: string }
-                token_sha256: { type: string }
+                token_hash: { type: string }
+                token_sha256: { type: string, description: Deprecated; use token_hash. }
                 token_id: { type: string }
                 allow:
                   type: array
