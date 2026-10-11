@@ -1,0 +1,10 @@
+turn 1  │ d3 trivial·agentic·r0.37  │ → cheap   deepseek-v4p1-flash  │  4.1 s │ $0.00076
+turn 2  │ d3 trivial·agentic·r0.27  │ → cheap   deepseek-v4p1-flash  │  1.2 s │ $0.00067
+turn 3  │ d3 trivial·agentic·r0.35  │ → cheap   deepseek-v4p1-flash  │  1.3 s │ $0.00068
+turn 4  │ d3 hard·agentic·r0.99     │ → strong  gpt-6.1-sol          │  2.7 s │ $0.00409
+turn 5  │ d3 hard·agentic·r0.94     │ → strong  gpt-6.1-sol          │  2.5 s │ $0.00129
+turn 6  │ d3 hard·agentic·r0.97     │ → strong  gpt-6.1-sol          │ 15.1 s │ $0.00906
+turn 7  │ d3 hard·agentic·r0.97     │ → strong  gpt-6.1-sol          │  4.0 s │ $0.00375
+turn 8  │ d3 hard·agentic·r0.98     │ → strong  gpt-6.1-sol          │  4.6 s │ $0.00245
+8 turns · 3 cheap / 5 strong (38% cheap)
+cost $0.0228 · all-strong est. $0.0304 (25% less) · router→policy hop p50 318 ms

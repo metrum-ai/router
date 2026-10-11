@@ -1,0 +1,2079 @@
+{
+ "schema": "metrum.d3-live.colocated.v1",
+ "d3_model": "d3",
+ "d3_revision": "cbff3a3cb0b074b6585fe9f747b9f9f5557a0e75",
+ "prompts": 204,
+ "http_status": {
+  "200": 204
+ },
+ "policy_duration_ms": {
+  "n": 204,
+  "p50": 104.0,
+  "p95": 107.0,
+  "p99": 108.0,
+  "mean": 104.0,
+  "max": 110.0
+ },
+ "adapter_d3_ms": {
+  "n": 204,
+  "p50": 103.3,
+  "p95": 106.2,
+  "p99": 107.9,
+  "mean": 103.7,
+  "max": 109.2
+ },
+ "e2e_ms_mock_upstream": {
+  "n": 204,
+  "p50": 147.16,
+  "p95": 156.89,
+  "p99": 160.51,
+  "mean": 148.4,
+  "max": 166.79
+ },
+ "strong_share": 0.5,
+ "hard_to_strong": "102/102",
+ "easy_to_cheap": "102/102",
+ "note": "router, adapter, d3 and a mock upstream on one host over 127.0.0.1; policy_duration_ms is the router's request_policy_executions.duration_ms",
+ "rows": [
+  {
+   "id": "easy-code-00",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 157.55,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:code:r0.10",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-01",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 160.51,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.09",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-02",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 157.04,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.05",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-03",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 155.69,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:code:r0.16",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-04",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 154.56,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.22",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-05",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 166.79,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.13",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-06",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 156.52,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.31",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-07",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 153.75,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.20",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-08",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 151.57,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.18",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-09",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 152.2,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.19",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-10",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.71,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.32",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-11",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 152.74,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.18",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-12",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 150.64,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.19",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-13",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 155.17,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.25",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-14",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 153.18,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.28",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-15",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 153.49,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.26",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-16",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 155.49,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.08",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-17",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 155.52,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:code:r0.09",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-18",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 150.46,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.03",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-19",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.26,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.08",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-20",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.64,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.14",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-21",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.28,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.05",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-22",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.03,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.12",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-23",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 151.0,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.12",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-24",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 158.44,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.15",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-25",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 164.82,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.11",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-26",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 151.48,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-27",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 154.68,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.09",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-28",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 152.82,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:code:r0.25",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-29",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.54,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.04",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-30",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 150.18,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.12",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-31",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.39,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.13",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-32",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.81,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:code:r0.09",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-code-33",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.25,
+   "policy_ms": 105,
+   "class_label": "d3:trivial:code:r0.05",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "hard-code-00",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 156.89,
+   "policy_ms": 108,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-01",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.47,
+   "policy_ms": 106,
+   "class_label": "d3:expert:code:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-02",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 149.56,
+   "policy_ms": 107,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-03",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 152.48,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-04",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.2,
+   "policy_ms": 106,
+   "class_label": "d3:expert:code:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-05",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.92,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-06",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.52,
+   "policy_ms": 108,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-07",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 153.93,
+   "policy_ms": 105,
+   "class_label": "d3:hard:code:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-08",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.24,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-09",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.45,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-10",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 151.55,
+   "policy_ms": 106,
+   "class_label": "d3:expert:code:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-11",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.9,
+   "policy_ms": 104,
+   "class_label": "d3:expert:code:r0.92",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-12",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 149.17,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-13",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.57,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-14",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.47,
+   "policy_ms": 107,
+   "class_label": "d3:expert:code:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-15",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 158.17,
+   "policy_ms": 106,
+   "class_label": "d3:hard:code:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-16",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.91,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-17",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.52,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-18",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.31,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-19",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.93,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-20",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 149.02,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-21",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.69,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-22",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.06,
+   "policy_ms": 104,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-23",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 149.44,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-24",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.39,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-25",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.41,
+   "policy_ms": 104,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-26",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.04,
+   "policy_ms": 106,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-27",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 155.69,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-28",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.82,
+   "policy_ms": 104,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-29",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 152.73,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.90",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-30",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 154.7,
+   "policy_ms": 106,
+   "class_label": "d3:expert:code:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-31",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 154.26,
+   "policy_ms": 105,
+   "class_label": "d3:expert:code:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-32",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.93,
+   "policy_ms": 104,
+   "class_label": "d3:expert:code:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-code-33",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 156.58,
+   "policy_ms": 105,
+   "class_label": "d3:expert:chat:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "easy-math-00",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 150.25,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-01",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.37,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-02",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 152.35,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-03",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.93,
+   "policy_ms": 107,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-04",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.82,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.05",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-05",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 153.42,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.25",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-06",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.92,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.11",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-07",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 155.16,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-08",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.7,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.03",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-09",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.52,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-10",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.12,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.19",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-11",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.31,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-12",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.73,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:math:r0.04",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-13",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.61,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:math:r0.21",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-14",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 150.68,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:math:r0.05",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-15",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.66,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.10",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-16",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 150.09,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.03",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-17",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 159.61,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-18",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.96,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.24",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-19",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.25,
+   "policy_ms": 107,
+   "class_label": "d3:trivial:math:r0.08",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-20",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.22,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.59",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-21",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.89,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-22",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.23,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.11",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-23",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.16,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:math:r0.14",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-24",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.85,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.34",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-25",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.99,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-26",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.41,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-27",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.11,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.12",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-28",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 140.07,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.19",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-29",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.96,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-30",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.37,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-31",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.3,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:math:r0.04",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-32",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.38,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-math-33",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 142.76,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:math:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "hard-math-00",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 149.06,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-01",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.44,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-02",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.16,
+   "policy_ms": 104,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-03",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.21,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-04",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 141.8,
+   "policy_ms": 102,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-05",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 151.42,
+   "policy_ms": 102,
+   "class_label": "d3:moderate:math:r0.94",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-06",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.5,
+   "policy_ms": 105,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-07",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 150.73,
+   "policy_ms": 102,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-08",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.7,
+   "policy_ms": 104,
+   "class_label": "d3:moderate:math:r0.93",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-09",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.66,
+   "policy_ms": 106,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-10",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.78,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-11",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.29,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-12",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.77,
+   "policy_ms": 104,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-13",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.35,
+   "policy_ms": 102,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-14",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.29,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-15",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.68,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-16",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 142.41,
+   "policy_ms": 102,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-17",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.75,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-18",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.25,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-19",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 151.98,
+   "policy_ms": 104,
+   "class_label": "d3:moderate:math:r1.00",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-20",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.21,
+   "policy_ms": 105,
+   "class_label": "d3:moderate:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-21",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.17,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-22",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.54,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-23",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.41,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-24",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.57,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-25",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.36,
+   "policy_ms": 104,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-26",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.57,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-27",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.32,
+   "policy_ms": 104,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-28",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.92,
+   "policy_ms": 103,
+   "class_label": "d3:moderate:math:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-29",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.97,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.97",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-30",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.79,
+   "policy_ms": 103,
+   "class_label": "d3:hard:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-31",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 153.49,
+   "policy_ms": 102,
+   "class_label": "d3:hard:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-32",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.35,
+   "policy_ms": 106,
+   "class_label": "d3:hard:math:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-math-33",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.32,
+   "policy_ms": 104,
+   "class_label": "d3:expert:math:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "easy-chat-00",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.3,
+   "policy_ms": 107,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-01",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.41,
+   "policy_ms": 107,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-02",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.64,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-03",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.58,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-04",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.42,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-05",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.99,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-06",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 152.51,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-07",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 153.87,
+   "policy_ms": 108,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-08",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 155.09,
+   "policy_ms": 110,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-09",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 156.97,
+   "policy_ms": 107,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-10",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.9,
+   "policy_ms": 104,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-11",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.66,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-12",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.76,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-13",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.88,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-14",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.93,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-15",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 151.78,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-16",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.59,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-17",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.91,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-18",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.3,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-19",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.5,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.04",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-20",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 144.89,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-21",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 157.17,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-22",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.39,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-23",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.66,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-24",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.54,
+   "policy_ms": 103,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-25",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 145.9,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-26",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.98,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-27",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 143.14,
+   "policy_ms": 102,
+   "class_label": "d3:moderate:chat:r0.04",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-28",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.43,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-29",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.45,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.01",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-30",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 147.39,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-31",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 146.46,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.00",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-32",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 148.58,
+   "policy_ms": 106,
+   "class_label": "d3:trivial:chat:r0.08",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "easy-chat-33",
+   "difficulty_label": "easy",
+   "status": 200,
+   "e2e_ms": 149.22,
+   "policy_ms": 102,
+   "class_label": "d3:trivial:chat:r0.02",
+   "label_tier": "cheap",
+   "served_model": "mock-cheap-1"
+  },
+  {
+   "id": "hard-chat-00",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.72,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-01",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.79,
+   "policy_ms": 105,
+   "class_label": "d3:expert:chat:r0.86",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-02",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.34,
+   "policy_ms": 103,
+   "class_label": "d3:expert:chat:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-03",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.96,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-04",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.58,
+   "policy_ms": 103,
+   "class_label": "d3:expert:chat:r0.89",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-05",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.77,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.93",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-06",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.72,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.89",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-07",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.93,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.78",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-08",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.25,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.91",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-09",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.52,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-10",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.48,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-11",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 152.54,
+   "policy_ms": 105,
+   "class_label": "d3:hard:chat:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-12",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.42,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-13",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.44,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-14",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.22,
+   "policy_ms": 105,
+   "class_label": "d3:hard:chat:r0.69",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-15",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.13,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-16",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.68,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.99",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-17",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.31,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-18",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 143.17,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-19",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 147.68,
+   "policy_ms": 105,
+   "class_label": "d3:hard:chat:r0.96",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-20",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.4,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.92",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-21",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 142.36,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.95",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-22",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.04,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.91",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-23",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 152.07,
+   "policy_ms": 104,
+   "class_label": "d3:expert:chat:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-24",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 142.11,
+   "policy_ms": 102,
+   "class_label": "d3:hard:chat:r0.90",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-25",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.8,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.83",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-26",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 145.96,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.73",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-27",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.31,
+   "policy_ms": 102,
+   "class_label": "d3:hard:chat:r0.89",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-28",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.67,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.86",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-29",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 148.01,
+   "policy_ms": 104,
+   "class_label": "d3:expert:chat:r0.98",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-30",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.72,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.89",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-31",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 144.99,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.91",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-32",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.78,
+   "policy_ms": 103,
+   "class_label": "d3:hard:chat:r0.93",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  },
+  {
+   "id": "hard-chat-33",
+   "difficulty_label": "hard",
+   "status": 200,
+   "e2e_ms": 146.29,
+   "policy_ms": 104,
+   "class_label": "d3:hard:chat:r0.94",
+   "label_tier": "strong",
+   "served_model": "mock-strong-1"
+  }
+ ]
+}
