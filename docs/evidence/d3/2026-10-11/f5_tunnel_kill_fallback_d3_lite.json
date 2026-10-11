@@ -1,0 +1,175 @@
+{
+ "schema": "metrum.d3-live.tunnel-drill.v1",
+ "on_error": "fallback",
+ "expectation": "every request after the kill: HTTP 200 served by target 0 (accounts/fireworks/models/deepseek-v4p1-flash)",
+ "passed": true,
+ "tunnel_up": {
+  "n": 4,
+  "status": {
+   "200": 4
+  },
+  "policy_outcomes": {
+   "selected": 4
+  }
+ },
+ "tunnel_killed": {
+  "n": 6,
+  "status": {
+   "200": 6
+  },
+  "error_types": {
+   "": 6
+  },
+  "policy_outcomes": {
+   "fallback": 6
+  },
+  "served_models": {
+   "accounts/fireworks/models/deepseek-v4p1-flash": 6
+  },
+  "upstream_attempts": {
+   "1": 6
+  }
+ },
+ "rows": [
+  {
+   "id": "hard-code-00",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1214.7,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:moderate:code:r0.47",
+   "policy_ms": 164,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-01",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1234.7,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:hard:code:r0.55",
+   "policy_ms": 158,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-02",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1286.1,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:expert:code:r0.53",
+   "policy_ms": 166,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-03",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1746.1,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:hard:code:r0.55",
+   "policy_ms": 165,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-04",
+   "phase": "tunnel_killed",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1555.1,
+   "policy_outcome": "fallback",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "external-policy:fallback",
+   "policy_ms": 2,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-05",
+   "phase": "tunnel_killed",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1103.0,
+   "policy_outcome": "fallback",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "external-policy:fallback",
+   "policy_ms": 4,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-06",
+   "phase": "tunnel_killed",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 2652.8,
+   "policy_outcome": "fallback",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "external-policy:fallback",
+   "policy_ms": 1,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-07",
+   "phase": "tunnel_killed",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1256.2,
+   "policy_outcome": "fallback",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "external-policy:fallback",
+   "policy_ms": 3,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-08",
+   "phase": "tunnel_killed",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1140.7,
+   "policy_outcome": "fallback",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "external-policy:fallback",
+   "policy_ms": 1,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-09",
+   "phase": "tunnel_killed",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 874.7,
+   "policy_outcome": "fallback",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "external-policy:fallback",
+   "policy_ms": 1,
+   "usage_status": 200,
+   "served_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+   "upstream_attempts": 1
+  }
+ ]
+}

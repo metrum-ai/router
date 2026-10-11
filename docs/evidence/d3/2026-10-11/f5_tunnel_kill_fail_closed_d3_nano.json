@@ -1,0 +1,175 @@
+{
+ "schema": "metrum.d3-live.tunnel-drill.v1",
+ "on_error": "fail_closed",
+ "expectation": "every request after the kill: HTTP 502 routing-policy-error, 0 upstream attempts",
+ "passed": true,
+ "tunnel_up": {
+  "n": 4,
+  "status": {
+   "200": 4
+  },
+  "policy_outcomes": {
+   "selected": 4
+  }
+ },
+ "tunnel_killed": {
+  "n": 6,
+  "status": {
+   "502": 6
+  },
+  "error_types": {
+   "routing-policy-error": 6
+  },
+  "policy_outcomes": {
+   "error": 6
+  },
+  "served_models": {
+   "null": 6
+  },
+  "upstream_attempts": {
+   "0": 6
+  }
+ },
+ "rows": [
+  {
+   "id": "hard-code-00",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1019.2,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:expert:code:r0.66",
+   "policy_ms": 156,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-01",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1194.2,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:expert:code:r0.74",
+   "policy_ms": 174,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-02",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1552.3,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:expert:code:r0.67",
+   "policy_ms": 158,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-03",
+   "phase": "tunnel_up",
+   "status": 200,
+   "error_type": "",
+   "e2e_ms": 1119.0,
+   "policy_outcome": "selected",
+   "policy_error_class": "",
+   "class_label": "d3:expert:code:r0.83",
+   "policy_ms": 157,
+   "usage_status": 200,
+   "served_model": "gpt-6-luna",
+   "upstream_attempts": 1
+  },
+  {
+   "id": "hard-code-04",
+   "phase": "tunnel_killed",
+   "status": 502,
+   "error_type": "routing-policy-error",
+   "e2e_ms": 119.6,
+   "policy_outcome": "error",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "",
+   "policy_ms": 1,
+   "usage_status": 502,
+   "served_model": null,
+   "upstream_attempts": 0
+  },
+  {
+   "id": "hard-code-05",
+   "phase": "tunnel_killed",
+   "status": 502,
+   "error_type": "routing-policy-error",
+   "e2e_ms": 119.1,
+   "policy_outcome": "error",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "",
+   "policy_ms": 1,
+   "usage_status": 502,
+   "served_model": null,
+   "upstream_attempts": 0
+  },
+  {
+   "id": "hard-code-06",
+   "phase": "tunnel_killed",
+   "status": 502,
+   "error_type": "routing-policy-error",
+   "e2e_ms": 118.0,
+   "policy_outcome": "error",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "",
+   "policy_ms": 1,
+   "usage_status": 502,
+   "served_model": null,
+   "upstream_attempts": 0
+  },
+  {
+   "id": "hard-code-07",
+   "phase": "tunnel_killed",
+   "status": 502,
+   "error_type": "routing-policy-error",
+   "e2e_ms": 118.5,
+   "policy_outcome": "error",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "",
+   "policy_ms": 1,
+   "usage_status": 502,
+   "served_model": null,
+   "upstream_attempts": 0
+  },
+  {
+   "id": "hard-code-08",
+   "phase": "tunnel_killed",
+   "status": 502,
+   "error_type": "routing-policy-error",
+   "e2e_ms": 115.1,
+   "policy_outcome": "error",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "",
+   "policy_ms": 1,
+   "usage_status": 502,
+   "served_model": null,
+   "upstream_attempts": 0
+  },
+  {
+   "id": "hard-code-09",
+   "phase": "tunnel_killed",
+   "status": 502,
+   "error_type": "routing-policy-error",
+   "e2e_ms": 118.9,
+   "policy_outcome": "error",
+   "policy_error_class": "external-policy-http-error",
+   "class_label": "",
+   "policy_ms": 1,
+   "usage_status": 502,
+   "served_model": null,
+   "upstream_attempts": 0
+  }
+ ]
+}

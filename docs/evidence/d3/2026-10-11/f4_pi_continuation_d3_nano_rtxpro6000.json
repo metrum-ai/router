@@ -1,0 +1,58 @@
+{
+ "schema": "metrum.d3-live.pi-continuation.v1",
+ "d3_model": "vllm-sr/d3-nano@3aeb1c2 (RTX PRO 6000)",
+ "command": "make local-router-pi-smoke LOCAL_ROUTER_OUT=tmp/test-d3 LOCAL_ROUTER_LISTEN=127.0.0.1:18301 LOCAL_ROUTER_GROUP=d3-auto < /dev/null",
+ "ok": true,
+ "failures": [],
+ "pi_new_rows": 3,
+ "pi_exit_code": 0,
+ "pi_tools": [
+  "write",
+  "read"
+ ],
+ "pi_tool_errors": [],
+ "group_mode": "enforce, fail_closed",
+ "turns": [
+  {
+   "seq": 1,
+   "policy_outcome": "selected",
+   "class_label": "d3:trivial:agentic:r0.09",
+   "policy_ms": 159,
+   "status": 200,
+   "served": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  {
+   "seq": 2,
+   "policy_outcome": "selected",
+   "class_label": "d3:trivial:agentic:r0.27",
+   "policy_ms": 159,
+   "status": 200,
+   "served": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  {
+   "seq": 3,
+   "policy_outcome": "selected",
+   "class_label": "d3:trivial:agentic:r0.10",
+   "policy_ms": 158,
+   "status": 200,
+   "served": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  {
+   "seq": 4,
+   "policy_outcome": "selected",
+   "class_label": "d3:trivial:chat:r0.00",
+   "policy_ms": 157,
+   "status": 200,
+   "served": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  {
+   "seq": 5,
+   "policy_outcome": "selected",
+   "class_label": "d3:trivial:chat:r0.00",
+   "policy_ms": 158,
+   "status": 200,
+   "served": "fireworks/accounts/fireworks/models/deepseek-v4p1-flash"
+  }
+ ],
+ "note": "turns 1..n are pi write/read tool continuation turns, then the smoke's unary and streaming chat"
+}
