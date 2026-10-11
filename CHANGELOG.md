@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Decision 3.0 (d3) external routing policy reference (#278):
+  `examples/external-routing-policy/d3_policy.py` asks a vLLM Semantic Router
+  d3 System One server typed questions about the redacted request text and
+  maps the answers to `strong` or `cheap` eligible targets with declarative
+  rules. d3 failures return HTTP 502 so the group's `on_error` decides. Adds a
+  scripted fake d3, unit tests (`make d3-policy-test`, in `make test-fast`), a
+  credential-free router e2e (`make d3-policy-e2e`, in `make test`), the
+  `d3-policy-demo` reference group, a docs page, and an optional `d3-auto`
+  group for `scripts/local_pi_instance.py` (`--d3-policy-url`).
+
 ### Security
 
 - The outcome-calibrated policy example now parses `[[outcome-calibration:…]]`

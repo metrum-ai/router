@@ -108,7 +108,7 @@ LOCAL_ROUTER_BASE_URL ?= http://$(subst 0.0.0.0,127.0.0.1,$(LOCAL_ROUTER_LISTEN)
 LOCAL_ROUTER_GROUP ?= big-coder
 LOCAL_ROUTER_MODEL_IDENTITY ?= requested_group
 
-.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo openjev-routing-demo secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-live-c e2e-live-full e2e-compose-live e2e-mock eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture local-router local-router-setup local-router-configure-pi local-router-pi-smoke clean
+.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo openjev-routing-demo d3-policy-test d3-policy-e2e secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-live-c e2e-live-full e2e-compose-live e2e-mock eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture local-router local-router-setup local-router-configure-pi local-router-pi-smoke clean
 
 help:
 	@echo "Metrum AI Router make targets."
@@ -269,6 +269,7 @@ test-k8s-nvidia-llmd-compat:
 test-fast: secret-contract capability-smoke-contracts
 	go test ./...
 	python3 scripts/outcome_calibrated_policy_test.py
+	"$${MAKE:-make}" d3-policy-test
 	python3 scripts/api_compat_bootstrap_test.py
 	"$${MAKE:-make}" harbor-adapter-test
 	python3 scripts/ci_topology_test.py
@@ -277,6 +278,7 @@ test-fast: secret-contract capability-smoke-contracts
 # Full credential-free suite. Heavy targets stay behind shell Make invocations so
 # `make -n` does not execute them. test-full is the merge-queue name for `test`.
 test: test-fast secret-check
+	"$${MAKE:-make}" d3-policy-e2e
 	"$${MAKE:-make}" api-compat-mock \
 		$(call api_compat_make_data,API_COMPAT_BOOTSTRAP_GO_PROXY) \
 		$(call api_compat_make_data,API_COMPAT_BOOTSTRAP_GO_SUMDB)
@@ -414,6 +416,15 @@ outcome-calibrated-synthetic-demo:
 
 adaptive-signal-policy-demo:
 	python3 scripts/run_adaptive_signal_policy_demo.py
+
+# d3 (vLLM Semantic Router Decision 3.0) external policy, issue #278.
+# Credential-free: adapter unit tests and a router e2e against a fake d3.
+# Live GPU steps: docs-site/docs/routing/d3-external-policy.md
+d3-policy-test:
+	python3 scripts/d3_policy_test.py
+
+d3-policy-e2e:
+	python3 scripts/run_d3_policy_e2e.py
 
 openjev-routing-demo:
 	python3 scripts/openjev_policy_test.py

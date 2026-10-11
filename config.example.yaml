@@ -1964,6 +1964,35 @@ models:
       model_ref: m3
       tier: heavy
       weight: 30
+  # vLLM Semantic Router Decision 3.0 (d3) policy reference (issue #278). Run
+  # examples/external-routing-policy/d3_policy.py on loopback, next to a d3
+  # System One server reached over loopback or an SSH tunnel. It asks d3 for
+  # difficulty, reasoning and kind, then picks the strong or cheap tier. Not in
+  # any caller allow list: copy it into a deployment config to use it.
+  d3-policy-demo:
+    strategy: external
+    external_policy:
+      url: http://127.0.0.1:18094/route
+      # Start in shadow; promote with enforce after reviewing shadow agreement.
+      mode: shadow
+      allow_hosts:
+      - 127.0.0.1
+      # The adapter's own d3 budget is 250 ms; keep this above it.
+      timeout_ms: 300
+      max_response_bytes: 65536
+      on_error: fail_closed
+      # d3 classifies redacted request text, so this group opts in. Keep the
+      # adapter and d3 inside the router's trust boundary.
+      include_request: true
+    targets:
+    - provider: baseten
+      model_ref: gpt-oss-120b
+      tier: cheap
+      weight: 1
+    - provider: openai
+      model_ref: gpt-5.5
+      tier: strong
+      weight: 1
   fast:
     strategy: weighted
     targets:

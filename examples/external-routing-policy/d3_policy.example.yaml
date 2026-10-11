@@ -1,0 +1,77 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# d3 external routing policy config for Metrum AI Router (issue #278).
+# Run: uv run --with pyyaml python examples/external-routing-policy/d3_policy.py \
+#        --config examples/external-routing-policy/d3_policy.example.yaml
+# d3_policy.example.json is the same config for stdlib-only runs.
+# These values equal the adapter's built-in defaults.
+
+d3:
+  # d3 System One base URL. Keep it on loopback or an SSH tunnel: with
+  # include_request: true the adapter sends redacted request text to d3.
+  url: http://127.0.0.1:8000
+  model: vllm-sr/d3-lite
+  # Pinned Hub revision of the served model (recorded in metadata and /health).
+  revision: a8d25a91ef75552803f7009d25b7bd435991abd9
+  # Total d3 budget per policy call, including waiting for a concurrency slot.
+  # Keep it below the router's external_policy.timeout_ms.
+  timeout_ms: 250
+  # Environment variable that holds the d3 bearer key (DECISION_API_KEY on the server).
+  api_key_env: D3_API_KEY
+  # d3_server.py serves one request at a time; the vllm-sr engine batches.
+  max_concurrency: 1
+
+text:
+  # Left-truncate the router's redacted text to this many characters (latest turns kept).
+  max_chars: 32768
+
+# Typed questions sent to d3. Names and option keys appear in classLabel, so
+# they must match [A-Za-z0-9_.-] and must never contain request content.
+questions:
+  difficulty:
+    type: score
+    instructions: How difficult is it to answer this request well?
+    criteria: [trivial, moderate, hard, expert]
+  reasoning:
+    type: noul
+    instructions: Does answering this need multi-step reasoning?
+  kind:
+    type: choice
+    instructions: What kind of work is this?
+    criteria:
+      code: Writing, reviewing or fixing code
+      math: Mathematics or quantitative reasoning
+      chat: Conversation, writing or anything else
+      agentic: Multi-step agentic tool use such as editing files or running commands
+
+# classLabel parts: choice/score -> answer key; noul -> first letter + P(yes).
+# Example: d3:hard:code:r0.71
+label: [difficulty, kind, reasoning]
+
+# First matching rule wins. Conditions:
+#   {question: <score|choice>, in: [...]}   score uses the most likely level
+#   {question: <noul>, gte: 0.6}            noul compares P(yes)
+#   {question: <score>, gte: 1.5}           score compares the expected level index
+#   {context: estimatedTokens, gte: 8000}   any scalar field of the policy request context
+#   any: [...], all: [...], not: {...}
+# prefer: selectors over eligible targets (tier, provider, model, modelRef).
+# If none of a rule's selectors match an eligible target, the next rule is tried.
+rules:
+  - name: strong-hard-or-reasoning
+    when:
+      any:
+        - {question: difficulty, in: [hard, expert]}
+        - {question: reasoning, gte: 0.6}
+    prefer: [{tier: strong}]
+  - name: cheap-default
+    prefer: [{tier: cheap}]
+
+# Used when the policy request has no text (include_request: false). d3 is not called
+# and classLabel is d3:no-request-content.
+no_content_rules:
+  - name: strong-large-context
+    when: {context: estimatedTokens, gte: 8000}
+    prefer: [{tier: strong}]
+  - name: cheap-default
+    prefer: [{tier: cheap}]

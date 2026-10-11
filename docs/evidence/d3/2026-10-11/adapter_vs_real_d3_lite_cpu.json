@@ -1,0 +1,38 @@
+[
+ {
+  "id": "easy-chat-04",
+  "status": 200,
+  "decision": {
+   "targetIndex": 0,
+   "fallbackIndexes": [
+    1
+   ],
+   "classLabel": "d3:trivial:chat:r0.02",
+   "metadata": {
+    "rule": "cheap-default",
+    "d3": true,
+    "d3Ms": 29966.3,
+    "d3Model": "vllm-sr/d3-lite",
+    "d3Revision": "a8d25a91ef75"
+   }
+  }
+ },
+ {
+  "id": "hard-code-04",
+  "status": 200,
+  "decision": {
+   "targetIndex": 1,
+   "fallbackIndexes": [
+    0
+   ],
+   "classLabel": "d3:hard:code:r0.75",
+   "metadata": {
+    "rule": "strong-hard-or-reasoning",
+    "d3": true,
+    "d3Ms": 31287.6,
+    "d3Model": "vllm-sr/d3-lite",
+    "d3Revision": "a8d25a91ef75"
+   }
+  }
+ }
+]

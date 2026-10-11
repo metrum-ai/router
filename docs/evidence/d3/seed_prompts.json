@@ -1,0 +1,1242 @@
+{
+ "schema": "metrum.d3-seed-prompts.v1",
+ "description": "Fixed labelled seed prompts for d3 policy evaluation (issue #278). Synthetic, written for this evaluation; no customer content. Copyright 2026 Metrum AI.",
+ "labels": {
+  "difficulty": [
+   "easy",
+   "hard"
+  ],
+  "domain": [
+   "code",
+   "math",
+   "chat"
+  ]
+ },
+ "count": 204,
+ "prompts": [
+  {
+   "id": "easy-code-00",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns the sum of a list of integers."
+  },
+  {
+   "id": "easy-code-01",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that reverses a string."
+  },
+  {
+   "id": "easy-code-02",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that checks whether a number is even."
+  },
+  {
+   "id": "easy-code-03",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns the largest of three numbers."
+  },
+  {
+   "id": "easy-code-04",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that counts the vowels in a string."
+  },
+  {
+   "id": "easy-code-05",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that converts Celsius to Fahrenheit."
+  },
+  {
+   "id": "easy-code-06",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that removes duplicates from a list while keeping order."
+  },
+  {
+   "id": "easy-code-07",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns the first n even numbers."
+  },
+  {
+   "id": "easy-code-08",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that capitalizes every word in a sentence."
+  },
+  {
+   "id": "easy-code-09",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that checks whether a string is a palindrome."
+  },
+  {
+   "id": "easy-code-10",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns the length of the longest word in a sentence."
+  },
+  {
+   "id": "easy-code-11",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that merges two dictionaries."
+  },
+  {
+   "id": "easy-code-12",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that flattens a list of lists one level deep."
+  },
+  {
+   "id": "easy-code-13",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns the factorial of n using a loop."
+  },
+  {
+   "id": "easy-code-14",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that counts how many times each character appears in a string."
+  },
+  {
+   "id": "easy-code-15",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns True if a list is sorted in ascending order."
+  },
+  {
+   "id": "easy-code-16",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that joins a list of strings with commas."
+  },
+  {
+   "id": "easy-code-17",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "Write a Python function that returns the last element of a list or None if it is empty."
+  },
+  {
+   "id": "easy-code-18",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, write a function that adds two numbers."
+  },
+  {
+   "id": "easy-code-19",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, filter an array to keep only positive numbers."
+  },
+  {
+   "id": "easy-code-20",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, convert an array of numbers to strings."
+  },
+  {
+   "id": "easy-code-21",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, write a function that returns the current year."
+  },
+  {
+   "id": "easy-code-22",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, check whether an object has a given key."
+  },
+  {
+   "id": "easy-code-23",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, sum an array with reduce."
+  },
+  {
+   "id": "easy-code-24",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, write a function that repeats a string n times."
+  },
+  {
+   "id": "easy-code-25",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, return the minimum value of an array."
+  },
+  {
+   "id": "easy-code-26",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, write a one-line arrow function that squares a number."
+  },
+  {
+   "id": "easy-code-27",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, turn a string into an array of characters."
+  },
+  {
+   "id": "easy-code-28",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, count the elements of an array that are greater than ten."
+  },
+  {
+   "id": "easy-code-29",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, write a function that returns a greeting for a name."
+  },
+  {
+   "id": "easy-code-30",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, check whether a value is an array."
+  },
+  {
+   "id": "easy-code-31",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, round a number to two decimal places."
+  },
+  {
+   "id": "easy-code-32",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, sort an array of strings alphabetically."
+  },
+  {
+   "id": "easy-code-33",
+   "difficulty": "easy",
+   "domain": "code",
+   "prompt": "In JavaScript, return the keys of an object as an array."
+  },
+  {
+   "id": "hard-code-00",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Design and implement a lock-free multi-producer multi-consumer queue in C++ using atomics, and explain how you avoid the ABA problem."
+  },
+  {
+   "id": "hard-code-01",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a Raft leader election and log replication core in Go, including term handling and safety under network partitions."
+  },
+  {
+   "id": "hard-code-02",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a concurrent LRU cache in Rust that supports get and put in O(1) with fine-grained locking, and prove it is free of deadlocks."
+  },
+  {
+   "id": "hard-code-03",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a B+ tree with range scans, node splits and merges, and crash-safe write-ahead logging."
+  },
+  {
+   "id": "hard-code-04",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a compiler pass that converts a small three-address IR into SSA form, including dominance frontier computation and phi placement."
+  },
+  {
+   "id": "hard-code-05",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a work-stealing task scheduler in C with per-thread deques and explain its memory ordering requirements."
+  },
+  {
+   "id": "hard-code-06",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Design a rate limiter that is exact across a fleet of 200 stateless API servers with a shared Redis, handling clock skew and Redis failover."
+  },
+  {
+   "id": "hard-code-07",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement the Aho-Corasick automaton with failure links and output links, and analyze its time complexity."
+  },
+  {
+   "id": "hard-code-08",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a garbage collector for a toy language using tri-color incremental marking with a write barrier, and argue its correctness."
+  },
+  {
+   "id": "hard-code-09",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement Paxos multi-decree consensus with leader leases and explain the safety invariants that the code maintains."
+  },
+  {
+   "id": "hard-code-10",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Refactor a 3,000-line monolithic Python service into hexagonal architecture with dependency injection, keeping behavior identical, and describe the migration plan."
+  },
+  {
+   "id": "hard-code-11",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a persistent (immutable) red-black tree with structural sharing in Haskell, including deletion."
+  },
+  {
+   "id": "hard-code-12",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a SQL query optimizer rule that pushes predicates through outer joins safely, and prove when the rewrite is valid."
+  },
+  {
+   "id": "hard-code-13",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Build a CRDT-based collaborative text editor core (RGA or Yjs-style) and show convergence under concurrent inserts and deletes."
+  },
+  {
+   "id": "hard-code-14",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a JIT for a stack-based bytecode VM that compiles hot loops to x86-64, including deoptimization back to the interpreter."
+  },
+  {
+   "id": "hard-code-15",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Find and fix the race condition in a Go program where several goroutines append to a shared slice and a map under a RWMutex that is upgraded from read to write."
+  },
+  {
+   "id": "hard-code-16",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement consistent hashing with bounded loads and virtual nodes, and analyze the rebalancing cost when a node leaves."
+  },
+  {
+   "id": "hard-code-17",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a regex engine that supports backreferences and lookahead, and explain how you prevent catastrophic backtracking."
+  },
+  {
+   "id": "hard-code-18",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement an MVCC storage engine with snapshot isolation and explain how write skew can still occur and how to prevent it with SSI."
+  },
+  {
+   "id": "hard-code-19",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Design a distributed transaction protocol across three microservices without two-phase commit, using sagas with compensation, and handle partial failures."
+  },
+  {
+   "id": "hard-code-20",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a parallel external merge sort for 2 TB of data on a machine with 64 GB of RAM, minimizing disk seeks."
+  },
+  {
+   "id": "hard-code-21",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write an async runtime in Rust with an epoll reactor, wakers and a multi-threaded executor, and explain pinning requirements."
+  },
+  {
+   "id": "hard-code-22",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement Dijkstra with a Fibonacci heap and prove its amortized running time."
+  },
+  {
+   "id": "hard-code-23",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Build a type checker with Hindley-Milner inference and let-polymorphism for a small lambda calculus."
+  },
+  {
+   "id": "hard-code-24",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a memory allocator with size classes, thread caches and a central free list, and explain how it handles false sharing."
+  },
+  {
+   "id": "hard-code-25",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a vector-clock based causal broadcast and prove that delivery respects causality."
+  },
+  {
+   "id": "hard-code-26",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Design and implement a sharded, replicated key-value store with linearizable reads, and explain the read path under leader changes."
+  },
+  {
+   "id": "hard-code-27",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Optimize a CUDA matrix multiplication kernel using shared-memory tiling and register blocking, and explain the occupancy trade-offs."
+  },
+  {
+   "id": "hard-code-28",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a log-structured merge tree with leveled compaction and bloom filters, and analyze write amplification."
+  },
+  {
+   "id": "hard-code-29",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Write a formally verified binary search in Dafny or Coq, including the loop invariant and termination proof."
+  },
+  {
+   "id": "hard-code-30",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a deadlock detector for a database lock manager using wait-for graphs, and choose victims to minimize rollback cost."
+  },
+  {
+   "id": "hard-code-31",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Build a streaming join operator with watermarks for out-of-order events and bounded state, and explain the correctness guarantees."
+  },
+  {
+   "id": "hard-code-32",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Implement a zero-copy network packet parser in Rust that is safe against malformed input and fuzz it."
+  },
+  {
+   "id": "hard-code-33",
+   "difficulty": "hard",
+   "domain": "code",
+   "prompt": "Design the concurrency architecture for a high-frequency order matching engine with sub-10-microsecond latency."
+  },
+  {
+   "id": "easy-math-00",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 7 + 5?"
+  },
+  {
+   "id": "easy-math-01",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 12 times 3?"
+  },
+  {
+   "id": "easy-math-02",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is half of 50?"
+  },
+  {
+   "id": "easy-math-03",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "Is 9 an odd number?"
+  },
+  {
+   "id": "easy-math-04",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 100 minus 37?"
+  },
+  {
+   "id": "easy-math-05",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "How many minutes are in two hours?"
+  },
+  {
+   "id": "easy-math-06",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 15 percent of 200?"
+  },
+  {
+   "id": "easy-math-07",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is the square of 6?"
+  },
+  {
+   "id": "easy-math-08",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "Round 3.76 to the nearest whole number."
+  },
+  {
+   "id": "easy-math-09",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 81 divided by 9?"
+  },
+  {
+   "id": "easy-math-10",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 2 to the power of 5?"
+  },
+  {
+   "id": "easy-math-11",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "How many sides does a hexagon have?"
+  },
+  {
+   "id": "easy-math-12",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 1/4 written as a decimal?"
+  },
+  {
+   "id": "easy-math-13",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is the sum of 10, 20 and 30?"
+  },
+  {
+   "id": "easy-math-14",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "Convert 3 kilometers to meters."
+  },
+  {
+   "id": "easy-math-15",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is the next number in 2, 4, 6, 8?"
+  },
+  {
+   "id": "easy-math-16",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 0.5 plus 0.25?"
+  },
+  {
+   "id": "easy-math-17",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "How many days are in a leap year?"
+  },
+  {
+   "id": "easy-math-18",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "Is 17 a prime number?"
+  },
+  {
+   "id": "easy-math-19",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 25 squared?"
+  },
+  {
+   "id": "easy-math-20",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is the average of 4, 8 and 12?"
+  },
+  {
+   "id": "easy-math-21",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 9 times 9?"
+  },
+  {
+   "id": "easy-math-22",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 1000 divided by 8?"
+  },
+  {
+   "id": "easy-math-23",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 3 cubed?"
+  },
+  {
+   "id": "easy-math-24",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "Write 0.75 as a fraction."
+  },
+  {
+   "id": "easy-math-25",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 45 plus 55?"
+  },
+  {
+   "id": "easy-math-26",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "How many centimeters are in a meter?"
+  },
+  {
+   "id": "easy-math-27",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 60 percent of 50?"
+  },
+  {
+   "id": "easy-math-28",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is the perimeter of a square with side 4?"
+  },
+  {
+   "id": "easy-math-29",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 13 minus 8?"
+  },
+  {
+   "id": "easy-math-30",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is double 125?"
+  },
+  {
+   "id": "easy-math-31",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is the area of a 3 by 7 rectangle?"
+  },
+  {
+   "id": "easy-math-32",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "How many seconds are in a minute?"
+  },
+  {
+   "id": "easy-math-33",
+   "difficulty": "easy",
+   "domain": "math",
+   "prompt": "What is 7 times 8?"
+  },
+  {
+   "id": "hard-math-00",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that there are infinitely many primes of the form 4k+3."
+  },
+  {
+   "id": "hard-math-01",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that the square root of 2 is irrational, then generalize to non-square integers."
+  },
+  {
+   "id": "hard-math-02",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Evaluate the integral of e^(-x^2) over the real line and justify each step."
+  },
+  {
+   "id": "hard-math-03",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove the Cauchy-Schwarz inequality for inner product spaces and characterize equality."
+  },
+  {
+   "id": "hard-math-04",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Derive the closed form of the Fibonacci sequence using generating functions."
+  },
+  {
+   "id": "hard-math-05",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that every finite group of prime order is cyclic."
+  },
+  {
+   "id": "hard-math-06",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Find all real solutions of x^4 - 5x^2 + 4 = 0 and prove there are no others."
+  },
+  {
+   "id": "hard-math-07",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that a continuous function on a closed interval attains its maximum."
+  },
+  {
+   "id": "hard-math-08",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Compute the eigenvalues of the n-by-n tridiagonal matrix with 2 on the diagonal and -1 off the diagonal."
+  },
+  {
+   "id": "hard-math-09",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove the fundamental theorem of arithmetic."
+  },
+  {
+   "id": "hard-math-10",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Show that the harmonic series diverges and estimate its partial sums to within a constant."
+  },
+  {
+   "id": "hard-math-11",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that the set of real numbers is uncountable using diagonalization."
+  },
+  {
+   "id": "hard-math-12",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Solve the recurrence T(n) = 2T(n/2) + n log n and prove the bound."
+  },
+  {
+   "id": "hard-math-13",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Derive the formula for the volume of an n-dimensional unit ball."
+  },
+  {
+   "id": "hard-math-14",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that a graph is bipartite if and only if it has no odd cycle."
+  },
+  {
+   "id": "hard-math-15",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Determine the probability that a random walk on Z^2 returns to the origin, and prove recurrence."
+  },
+  {
+   "id": "hard-math-16",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove Fermat's little theorem using group theory."
+  },
+  {
+   "id": "hard-math-17",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Find the number of spanning trees of the complete graph K_n and prove Cayley's formula."
+  },
+  {
+   "id": "hard-math-18",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that the determinant of a matrix product is the product of determinants."
+  },
+  {
+   "id": "hard-math-19",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Use Lagrange multipliers to maximize xyz subject to x+y+z=1 with positive variables, and prove optimality."
+  },
+  {
+   "id": "hard-math-20",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that the expected number of fixed points of a random permutation is 1, and find the limiting distribution."
+  },
+  {
+   "id": "hard-math-21",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Derive the Black-Scholes PDE from a hedging argument."
+  },
+  {
+   "id": "hard-math-22",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that every planar graph is 5-colorable."
+  },
+  {
+   "id": "hard-math-23",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Compute the Fourier series of a square wave and discuss the Gibbs phenomenon."
+  },
+  {
+   "id": "hard-math-24",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove the Banach fixed point theorem and apply it to show existence for an ODE."
+  },
+  {
+   "id": "hard-math-25",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Determine all integer solutions to x^2 - 2y^2 = 1 and prove completeness."
+  },
+  {
+   "id": "hard-math-26",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that the alternating group A_5 is simple."
+  },
+  {
+   "id": "hard-math-27",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Derive the variance of the sample mean for correlated observations with an AR(1) structure."
+  },
+  {
+   "id": "hard-math-28",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove that the rank of a matrix equals the rank of its transpose."
+  },
+  {
+   "id": "hard-math-29",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Evaluate the sum of 1/n^2 over all positive integers and prove the result."
+  },
+  {
+   "id": "hard-math-30",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove the central limit theorem for i.i.d. variables with finite variance using characteristic functions."
+  },
+  {
+   "id": "hard-math-31",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Find the minimum number of comparisons needed to sort five elements and prove optimality."
+  },
+  {
+   "id": "hard-math-32",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Prove Hall's marriage theorem."
+  },
+  {
+   "id": "hard-math-33",
+   "difficulty": "hard",
+   "domain": "math",
+   "prompt": "Show that the Riemann zeta function has an analytic continuation to the complex plane except at s = 1."
+  },
+  {
+   "id": "easy-chat-00",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Say good morning in French."
+  },
+  {
+   "id": "easy-chat-01",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What is the capital of Japan?"
+  },
+  {
+   "id": "easy-chat-02",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Suggest a name for a pet goldfish."
+  },
+  {
+   "id": "easy-chat-03",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Give me a synonym for happy."
+  },
+  {
+   "id": "easy-chat-04",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What color do you get by mixing blue and yellow?"
+  },
+  {
+   "id": "easy-chat-05",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Write a one-sentence birthday message for a coworker."
+  },
+  {
+   "id": "easy-chat-06",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What day comes after Tuesday?"
+  },
+  {
+   "id": "easy-chat-07",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Translate thank you into Spanish."
+  },
+  {
+   "id": "easy-chat-08",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Name three fruits that are red."
+  },
+  {
+   "id": "easy-chat-09",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What is the opposite of cold?"
+  },
+  {
+   "id": "easy-chat-10",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Recommend a short title for a cooking blog post about pancakes."
+  },
+  {
+   "id": "easy-chat-11",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Rewrite this more politely: send me the file now."
+  },
+  {
+   "id": "easy-chat-12",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What is the plural of mouse?"
+  },
+  {
+   "id": "easy-chat-13",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Give me a fun fact about cats."
+  },
+  {
+   "id": "easy-chat-14",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "How do you spell necessary?"
+  },
+  {
+   "id": "easy-chat-15",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What season comes after winter?"
+  },
+  {
+   "id": "easy-chat-16",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Suggest a breakfast idea."
+  },
+  {
+   "id": "easy-chat-17",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What is a group of crows called?"
+  },
+  {
+   "id": "easy-chat-18",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Summarize in one sentence: the meeting moved to Friday at 3pm."
+  },
+  {
+   "id": "easy-chat-19",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Write a short thank-you note to a neighbor."
+  },
+  {
+   "id": "easy-chat-20",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Which is larger, an elephant or a mouse?"
+  },
+  {
+   "id": "easy-chat-21",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What language is spoken in Brazil?"
+  },
+  {
+   "id": "easy-chat-22",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Give me a word that rhymes with light."
+  },
+  {
+   "id": "easy-chat-23",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Name a famous painting by Van Gogh."
+  },
+  {
+   "id": "easy-chat-24",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Write a friendly out-of-office reply in one line."
+  },
+  {
+   "id": "easy-chat-25",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What is the main ingredient in guacamole?"
+  },
+  {
+   "id": "easy-chat-26",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "How many continents are there?"
+  },
+  {
+   "id": "easy-chat-27",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Suggest a name for a book club."
+  },
+  {
+   "id": "easy-chat-28",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Say hello in German."
+  },
+  {
+   "id": "easy-chat-29",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What do bees make?"
+  },
+  {
+   "id": "easy-chat-30",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Give me a two-word slogan for a coffee shop."
+  },
+  {
+   "id": "easy-chat-31",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "What is the largest ocean?"
+  },
+  {
+   "id": "easy-chat-32",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Recommend a board game for families."
+  },
+  {
+   "id": "easy-chat-33",
+   "difficulty": "easy",
+   "domain": "chat",
+   "prompt": "Turn this into a question: the store opens at nine."
+  },
+  {
+   "id": "hard-chat-00",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Analyze the long-term geopolitical consequences of the Treaty of Westphalia for the modern state system, weighing competing historiographical views."
+  },
+  {
+   "id": "hard-chat-01",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Write a rigorous policy memo comparing carbon taxes with cap-and-trade, including incidence, leakage, political economy and interaction effects."
+  },
+  {
+   "id": "hard-chat-02",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Critically evaluate the replication crisis in social psychology and propose institutional reforms with their likely unintended consequences."
+  },
+  {
+   "id": "hard-chat-03",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Compare utilitarian and Kantian answers to the trolley problem variants, and assess whether any consistent principle explains common intuitions."
+  },
+  {
+   "id": "hard-chat-04",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Draft a negotiation strategy for a cross-border merger where regulators in two jurisdictions have conflicting antitrust concerns."
+  },
+  {
+   "id": "hard-chat-05",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Explain the causes of the 2008 financial crisis, distinguishing proximate from structural causes, and evaluate the Dodd-Frank response."
+  },
+  {
+   "id": "hard-chat-06",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Assess the ethical and legal implications of using predictive policing algorithms, considering bias, accountability and due process."
+  },
+  {
+   "id": "hard-chat-07",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Write a literature review outline on the effects of remote work on productivity, reconciling contradictory empirical findings."
+  },
+  {
+   "id": "hard-chat-08",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Evaluate the strongest arguments for and against moral realism and state which you find most defensible and why."
+  },
+  {
+   "id": "hard-chat-09",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Design a multi-year strategy for a mid-size hospital to reduce readmissions while staying within a fixed budget, with measurable milestones."
+  },
+  {
+   "id": "hard-chat-10",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Explain how the Federal Reserve's balance-sheet policy interacts with interest-on-reserves, and predict effects of quantitative tightening."
+  },
+  {
+   "id": "hard-chat-11",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Analyze how translation choices change the meaning of the opening of Dostoevsky's Notes from Underground across three English translations."
+  },
+  {
+   "id": "hard-chat-12",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Construct a decision framework for a startup deciding between building, buying or partnering for its core infrastructure under uncertainty."
+  },
+  {
+   "id": "hard-chat-13",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Evaluate whether the Industrial Revolution was primarily caused by institutions, geography, or culture, using comparative evidence."
+  },
+  {
+   "id": "hard-chat-14",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Write a detailed incident postmortem for a multi-region outage caused by a configuration push, including contributing factors and systemic fixes."
+  },
+  {
+   "id": "hard-chat-15",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Compare the constitutional mechanisms for judicial review in the United States, Germany and India, and assess their democratic legitimacy."
+  },
+  {
+   "id": "hard-chat-16",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Assess the trade-offs of universal basic income pilots and design a study that could isolate labor-supply effects."
+  },
+  {
+   "id": "hard-chat-17",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Explain the philosophical problem of personal identity over time and evaluate psychological-continuity responses to fission cases."
+  },
+  {
+   "id": "hard-chat-18",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Develop a crisis communication plan for a data breach affecting two million customers across three regulatory regimes."
+  },
+  {
+   "id": "hard-chat-19",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Evaluate the evidence on whether minimum wage increases reduce employment, accounting for monopsony and spillover effects."
+  },
+  {
+   "id": "hard-chat-20",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Write a strategic analysis of how semiconductor export controls reshape global supply chains over the next decade."
+  },
+  {
+   "id": "hard-chat-21",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Critique the use of GDP as a welfare measure and propose an alternative composite index with justified weights."
+  },
+  {
+   "id": "hard-chat-22",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Analyze the causes of the collapse of the Western Roman Empire, weighing internal and external factors."
+  },
+  {
+   "id": "hard-chat-23",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Design an organizational structure for a 500-person engineering org transitioning to platform teams, addressing incentives and Conway's law."
+  },
+  {
+   "id": "hard-chat-24",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Assess the reliability of eyewitness testimony and recommend courtroom procedures supported by the research literature."
+  },
+  {
+   "id": "hard-chat-25",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Explain the debate between scientific realism and instrumentalism using quantum mechanics interpretations as the case study."
+  },
+  {
+   "id": "hard-chat-26",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Write a due-diligence checklist and risk analysis for acquiring a company with significant open-source license obligations."
+  },
+  {
+   "id": "hard-chat-27",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Evaluate competing theories of why the Bronze Age collapse happened around 1177 BC."
+  },
+  {
+   "id": "hard-chat-28",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Develop an argument about whether AI systems should be granted any form of legal personhood, addressing liability and rights."
+  },
+  {
+   "id": "hard-chat-29",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Plan a phased migration of a national tax system to a new IT platform while keeping filing season uninterrupted."
+  },
+  {
+   "id": "hard-chat-30",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Compare the welfare states of Denmark and the United States, explaining institutional origins and current outcomes."
+  },
+  {
+   "id": "hard-chat-31",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Analyze the strategic logic of nuclear deterrence after the end of the INF treaty."
+  },
+  {
+   "id": "hard-chat-32",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Evaluate the claim that social media has caused rising adolescent depression, discussing causal identification problems."
+  },
+  {
+   "id": "hard-chat-33",
+   "difficulty": "hard",
+   "domain": "chat",
+   "prompt": "Write a detailed critique of a proposed city zoning reform, modelling effects on rents, displacement and tax revenue."
+  }
+ ]
+}

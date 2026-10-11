@@ -246,6 +246,42 @@ models:
 
 Names such as `external-policy-demo`, `cheap`, and `heavy` are examples. Deployments can choose their own model group names and target metadata.
 
+## Decision 3.0 (d3) Policy
+
+`examples/external-routing-policy/d3_policy.py` asks a vLLM Semantic Router
+Decision 3.0 (d3) model typed questions about the redacted request text
+(difficulty, multi-step reasoning, task kind) and maps the answers to a `cheap`
+or `strong` eligible target with declarative rules. It needs
+`include_request: true`, so run it and the d3 server inside the router's trust
+boundary. The reference config includes this group:
+
+```yaml title="config.example.yaml"
+models:
+  d3-policy-demo:
+    strategy: external
+    external_policy:
+      url: http://127.0.0.1:18094/route
+      mode: shadow
+      allow_hosts:
+      - 127.0.0.1
+      timeout_ms: 300
+      max_response_bytes: 65536
+      on_error: fail_closed
+      include_request: true
+    targets:
+    - provider: baseten
+      model_ref: gpt-oss-120b
+      tier: cheap
+      weight: 1
+    - provider: openai
+      model_ref: gpt-5.5
+      tier: strong
+      weight: 1
+```
+
+See [Decision 3.0 (d3) External Policy](../routing/d3-external-policy) for the
+adapter config, serving d3, privacy guidance and tests.
+
 ## Security And Operations
 
 - Keep policy services inside trusted infrastructure because they receive request-shape context, caller metadata, pricing metadata, and target capability metadata. They receive prompt text, message content, tool schemas, image references or image data, and tool outputs only when `external_policy.include_request: true` is explicitly configured.
