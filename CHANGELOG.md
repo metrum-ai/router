@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The outcome-calibrated policy example now parses `[[outcome-calibration:…]]`
+  and `[[outcome-live-demo:…]]` markers with a linear scan instead of
+  backtracking regexes, so crafted request text cannot stall it (CodeQL
+  `py/polynomial-redos`). Valid markers parse as before.
+- `scripts/validate_production_bundle_config.py` now requires
+  `--require-trusted-proxy` to be a CIDR and prints only its canonical form.
+  `scripts/check_env_example_secrets.py` reports key names and paths, never
+  values. This clears CodeQL `py/clear-text-logging-sensitive-data`.
+
 ## [4.1.0] - 2026-10-10
 
 ### Added

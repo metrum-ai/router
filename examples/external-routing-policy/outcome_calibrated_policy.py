@@ -77,9 +77,58 @@ def request_text(request: dict[str, Any]) -> str:
     return "\n".join(part for part in pieces if part).strip()
 
 
+MARKER_ANCHOR = "[[outcome-"
+MARKER_KINDS = ("calibration", "live-demo")
+MARKER_VALUE_STOP = re.compile(r"[\]\r\n]")
+
+
+def find_markers(text: str, kinds: tuple[str, ...] = MARKER_KINDS) -> list[tuple[int, int, str]]:
+    """Return ``(start, end, value)`` for each ``[[outcome-<kind>:<value>]]`` marker.
+
+    Matches the leftmost, non-overlapping semantics of
+    ``\\[\\[outcome-(?:kind):[^\\]\\r\\n]+\\]\\]`` in linear time (Metrum AI
+    hardening against polynomial backtracking). A value runs until the first
+    ``]``, CR or LF; a failed candidate resumes scanning at that stop, because
+    every marker starting inside the same value would fail at the same stop.
+    """
+    markers: list[tuple[int, int, str]] = []
+    position = 0
+    while True:
+        start = text.find(MARKER_ANCHOR, position)
+        if start < 0:
+            return markers
+        kind_start = start + len(MARKER_ANCHOR)
+        kind = next((kind for kind in kinds if text.startswith(kind + ":", kind_start)), None)
+        if kind is None:
+            position = start + 1
+            continue
+        value_start = kind_start + len(kind) + 1
+        stop = MARKER_VALUE_STOP.search(text, value_start)
+        value_end = stop.start() if stop else len(text)
+        if value_end > value_start and text.startswith("]]", value_end):
+            markers.append((start, value_end + 2, text[value_start:value_end]))
+            position = value_end + 2
+        else:
+            position = value_end
+
+
+def strip_markers(text: str) -> str:
+    pieces: list[str] = []
+    position = 0
+    for start, end, _ in find_markers(text):
+        pieces.append(text[position:start])
+        position = end
+    pieces.append(text[position:])
+    return "".join(pieces)
+
+
+def marker_value(text: str, kind: str) -> str:
+    markers = find_markers(text, (kind,))
+    return markers[0][2].strip() if markers else ""
+
+
 def classification_text(request: dict[str, Any]) -> str:
-    text = request_text(request)
-    text = re.sub(r"\[\[outcome-(?:calibration|live-demo):[^\]\r\n]+\]\]", "", text)
+    text = strip_markers(request_text(request))
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -88,8 +137,7 @@ def calibration_case_id(request: dict[str, Any]) -> str:
     identifier = str(metadata.get("calibration_case_id", "")).strip()
     if identifier:
         return identifier
-    match = re.search(r"\[\[outcome-calibration:([^\]\r\n]+)\]\]", request_text(request))
-    return match.group(1).strip() if match else ""
+    return marker_value(request_text(request), "calibration")
 
 
 def live_demo_case_id(request: dict[str, Any]) -> str:
@@ -97,8 +145,7 @@ def live_demo_case_id(request: dict[str, Any]) -> str:
     identifier = str(metadata.get("live_demo_case_id", "")).strip()
     if identifier:
         return identifier
-    match = re.search(r"\[\[outcome-live-demo:([^\]\r\n]+)\]\]", request_text(request))
-    return match.group(1).strip() if match else ""
+    return marker_value(request_text(request), "live-demo")
 
 
 def cosine(left: list[float], right: list[float]) -> float:

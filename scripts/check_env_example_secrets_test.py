@@ -14,12 +14,12 @@ import check_env_example_secrets as checker
 class SecretKeyErrorsTest(unittest.TestCase):
     def test_identifier_keys(self) -> None:
         for name in ("ROUTER_ID_TRANSFORM_KEY", "ROUTER_ID_TRANSFORM_KEY_PREVIOUS", "ROUTER_ID_TRANSFORM_KEY_EXTRA"):
-            self.assertTrue(list(checker.secret_key_errors(checker.ROOT / "env.example.json", {name: "ab" * 64})))
-            self.assertEqual([], list(checker.secret_key_errors(checker.ROOT / "env.example.json", {name: ""})))
+            self.assertTrue(list(checker.placeholder_key_errors(checker.ROOT / "env.example.json", {name: "ab" * 64})))
+            self.assertEqual([], list(checker.placeholder_key_errors(checker.ROOT / "env.example.json", {name: ""})))
 
     def test_allows_empty_sensitive_values(self) -> None:
         errors = list(
-            checker.secret_key_errors(
+            checker.placeholder_key_errors(
                 checker.ROOT / "env.example.json",
                 {"UNKNOWN_PROVIDER_API_KEY": "", "PASSWORD": ""},
             )
@@ -29,17 +29,18 @@ class SecretKeyErrorsTest(unittest.TestCase):
 
     def test_rejects_concrete_password_value(self) -> None:
         errors = list(
-            checker.secret_key_errors(
+            checker.placeholder_key_errors(
                 checker.ROOT / "env.example.json",
                 {"PASSWORD": "super-secret-value"},
             )
         )
 
         self.assertIn("env.example.json:PASSWORD must be empty or a placeholder", errors[0])
+        self.assertNotIn("super-secret-value", "\n".join(errors))
 
     def test_rejects_unknown_provider_concrete_key_value(self) -> None:
         errors = list(
-            checker.secret_key_errors(
+            checker.placeholder_key_errors(
                 checker.ROOT / "env.example.json",
                 {"UNKNOWN_PROVIDER_API_KEY": "super-secret-value"},
             )
@@ -49,10 +50,11 @@ class SecretKeyErrorsTest(unittest.TestCase):
             "env.example.json:UNKNOWN_PROVIDER_API_KEY must be empty or a placeholder",
             errors[0],
         )
+        self.assertNotIn("super-secret-value", "\n".join(errors))
 
     def test_allows_placeholder_values(self) -> None:
         errors = list(
-            checker.secret_key_errors(
+            checker.placeholder_key_errors(
                 checker.ROOT / "env.example.json",
                 {
                     "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY",

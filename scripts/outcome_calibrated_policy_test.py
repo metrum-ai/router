@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import random
+import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -60,8 +63,74 @@ def request(text: str) -> dict:
     }
 
 
+# The pre-hardening marker regexes, kept here only as a differential oracle for
+# the linear Metrum AI marker scanner on short inputs.
+LEGACY_STRIP = re.compile(r"\[\[outcome-(?:calibration|live-demo):[^\]\r\n]+\]\]")
+LEGACY_CALIBRATION = re.compile(r"\[\[outcome-calibration:([^\]\r\n]+)\]\]")
+LEGACY_LIVE_DEMO = re.compile(r"\[\[outcome-live-demo:([^\]\r\n]+)\]\]")
+
+
+def legacy_value(pattern: re.Pattern[str], text: str) -> str:
+    match = pattern.search(text)
+    return match.group(1).strip() if match else ""
+
+
+def marker_request(text: str) -> dict:
+    return {"messages": [{"role": "system", "content": text}]}
+
+
+def check_marker_parsing(module) -> None:
+    valid = "[[outcome-calibration: case-7 ]] What is 2+2?"
+    require(module.calibration_case_id(marker_request(valid)) == "case-7", "valid calibration marker not parsed")
+    require(module.classification_text(marker_request(valid)) == "What is 2+2?", "valid calibration marker not stripped")
+    demo = "before [[outcome-live-demo:demo-1]] after [[outcome-calibration:c2]] end"
+    require(module.live_demo_case_id(marker_request(demo)) == "demo-1", "valid live-demo marker not parsed")
+    require(module.calibration_case_id(marker_request(demo)) == "c2", "second marker kind not parsed")
+    require(module.classification_text(marker_request(demo)) == "before after end", "both marker kinds not stripped")
+
+    malformed = [
+        "[[outcome-calibration:]] empty value",
+        "[[outcome-calibration:case-1] single close",
+        "[[outcome-calibration:case\n-1]] newline in value",
+        "[[outcome-calibration:case\r-1]] carriage return in value",
+        "[[outcome-other:case-1]] unknown kind",
+        "[[outcome-calibration case-1]] missing colon",
+        "[[outcome-calibration:unterminated",
+        "[[outcome-live-demo:unterminated [[outcome-live-demo:",
+    ]
+    for text in malformed:
+        require(module.calibration_case_id(marker_request(text)) == "", f"malformed marker parsed: {text!r}")
+        require(module.live_demo_case_id(marker_request(text)) == "", f"malformed marker parsed: {text!r}")
+        require(module.strip_markers(text) == text, f"malformed marker stripped: {text!r}")
+
+    # Differential check against the legacy regexes, including nested and
+    # overlapping prefixes, on inputs short enough for backtracking to be cheap.
+    rng = random.Random(20261011)
+    atoms = ["[[outcome-calibration:", "[[outcome-live-demo:", "[[outcome-", "[[", "]]", "]", "[", "a", "b", " ", "\n", "\r", ":"]
+    for _ in range(5000):
+        text = "".join(rng.choice(atoms) for _ in range(rng.randint(0, 12)))
+        require(module.strip_markers(text) == LEGACY_STRIP.sub("", text), f"strip mismatch: {text!r}")
+        require(module.marker_value(text, "calibration") == legacy_value(LEGACY_CALIBRATION, text), f"calibration mismatch: {text!r}")
+        require(module.marker_value(text, "live-demo") == legacy_value(LEGACY_LIVE_DEMO, text), f"live-demo mismatch: {text!r}")
+
+    adversarial = [
+        "[[outcome-calibration:" + "a" * 100000,
+        "[[outcome-calibration:" * 20000,
+        "[[outcome-live-demo:" * 20000,
+        "[[outcome-calibration:\\" * 20000,
+    ]
+    for text in adversarial:
+        started = time.perf_counter()
+        module.calibration_case_id(marker_request(text))
+        module.live_demo_case_id(marker_request(text))
+        module.classification_text(marker_request(text))
+        elapsed = time.perf_counter() - started
+        require(elapsed < 0.5, f"marker parsing took {elapsed:.3f}s on a {len(text)}-character adversarial input")
+
+
 def main() -> int:
     module = load_module()
+    check_marker_parsing(module)
     dataset = json.loads(DATASET.read_text(encoding="utf-8"))
     reviews = module.read_jsonl(REVIEWS)
     profile = module.reviewed_profile(dataset, reviews)
