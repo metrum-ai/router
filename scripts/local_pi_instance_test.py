@@ -215,6 +215,38 @@ def test_public_token_id_never_includes_secret_with_underscores() -> None:
         raise AssertionError("token_id leaked secret material")
 
 
+def test_d3_group_caller_uses_token_hash() -> None:
+    """--d3-policy-url (#282) and token_hash callers compose in one config."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("local_pi_instance", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    token = "rtr_metrum_local-dev_example-project_dev_k20261011_abc_def-ghi_jkl"
+    cfg = module.build_config(
+        out_dir=Path("/nonexistent"),
+        listen="127.0.0.1:18081",
+        id_key_hex="00" * 32,
+        token=token,
+        d3_policy={
+            "policy_url": "http://127.0.0.1:18302/route",
+            "mode": "shadow",
+            "on_error": "fail_closed",
+            "timeout_ms": 300,
+        },
+    )
+    if list(cfg["models"]) != ["big-coder", "d3-auto"]:
+        raise AssertionError(list(cfg["models"]))
+    caller = cfg["callers"][0]
+    if caller["allow"] != ["big-coder", "d3-auto"]:
+        raise AssertionError(caller["allow"])
+    if "token_sha256" in caller or not caller["token_hash"].startswith("pbkdf2-sha3-512:i=20000:"):
+        raise AssertionError("d3 config caller must use token_hash")
+    if caller["token_id"] != "rtr_metrum_local-dev_example-project_dev_k20261011":
+        raise AssertionError(caller["token_id"])
+
+
 def test_missing_upstream_keys_fails() -> None:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -247,5 +279,6 @@ def test_missing_upstream_keys_fails() -> None:
 if __name__ == "__main__":
     test_creates_weighted_instance_and_reuses_metrum_key()
     test_public_token_id_never_includes_secret_with_underscores()
+    test_d3_group_caller_uses_token_hash()
     test_missing_upstream_keys_fails()
     print("local_pi_instance_test: ok")
