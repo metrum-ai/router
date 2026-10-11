@@ -153,29 +153,44 @@ func (s *redisBridgeSessionStore) key(key string) string {
 	return bridgeRedisSessionKey(s.namespace, key)
 }
 
-// bridgeRedisBackendKey fingerprints a Redis backend configuration so model
-// groups that share one backend share one client. It covers only connection
-// settings and the *names* of the credential environment variables; it never
-// reads environment values, and the inline Username/Password fields are
-// deliberately excluded. The fingerprint is an in-process map key only.
-func bridgeRedisBackendKey(cfg BridgeStatefulSessionsRedisConfig) string {
+// bridgeRedisBackendFingerprint identifies a Redis backend configuration so
+// model groups that share one backend share one client. It is a comparable
+// in-process map key, never persisted, so it needs no hashing. It holds only
+// non-secret connection settings and the *names* of the credential
+// environment variables (so a credential-reference change opens a new
+// client); it never holds environment values or the inline Username and
+// Password fields.
+type bridgeRedisBackendFingerprint struct {
+	address            string
+	namespace          string
+	db                 int
+	usernameEnvName    string
+	passwordEnvName    string
+	tlsEnabled         bool
+	tlsServerName      string
+	insecureSkipVerify bool
+	connectTimeoutMS   int
+	readTimeoutMS      int
+	writeTimeoutMS     int
+	poolSize           int
+}
+
+func bridgeRedisBackendKey(cfg BridgeStatefulSessionsRedisConfig) bridgeRedisBackendFingerprint {
 	cfg = bridgeStatefulSessionRedisConfig(cfg)
-	parts := []string{
-		strings.TrimSpace(cfg.Address),
-		strings.TrimSpace(cfg.Namespace),
-		fmt.Sprintf("%d", cfg.DB),
-		strings.TrimSpace(cfg.UsernameEnv),
-		strings.TrimSpace(cfg.PasswordEnv),
-		fmt.Sprintf("%t", cfg.TLS.Enabled),
-		strings.TrimSpace(cfg.TLS.ServerName),
-		fmt.Sprintf("%t", cfg.TLS.InsecureSkipVerify),
-		fmt.Sprintf("%d", cfg.ConnectTimeoutMS),
-		fmt.Sprintf("%d", cfg.ReadTimeoutMS),
-		fmt.Sprintf("%d", cfg.WriteTimeoutMS),
-		fmt.Sprintf("%d", cfg.PoolSize),
+	return bridgeRedisBackendFingerprint{
+		address:            strings.TrimSpace(cfg.Address),
+		namespace:          strings.TrimSpace(cfg.Namespace),
+		db:                 cfg.DB,
+		usernameEnvName:    strings.TrimSpace(cfg.UsernameEnv),
+		passwordEnvName:    strings.TrimSpace(cfg.PasswordEnv),
+		tlsEnabled:         cfg.TLS.Enabled,
+		tlsServerName:      strings.TrimSpace(cfg.TLS.ServerName),
+		insecureSkipVerify: cfg.TLS.InsecureSkipVerify,
+		connectTimeoutMS:   cfg.ConnectTimeoutMS,
+		readTimeoutMS:      cfg.ReadTimeoutMS,
+		writeTimeoutMS:     cfg.WriteTimeoutMS,
+		poolSize:           cfg.PoolSize,
 	}
-	sum := sha3.Sum512([]byte(strings.Join(parts, "\x00")))
-	return hex.EncodeToString(sum[:32])
 }
 
 // bridgeRedisSessionKey is the Redis key for a bridge session. The

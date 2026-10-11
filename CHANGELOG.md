@@ -57,10 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under a per-process random key. A cached request costs about 4.7 µs against
   about 1.5–2.6 µs before. First-use verification is about 40 ms and runs in a
   bounded pool.
-- The Redis bridge-session backend fingerprint now uses SHA3-512 and is
-  documented and tested to cover only connection settings and credential
-  environment-variable *names*, never their values or inline credentials
-  (alert #10). Redis session keys move to a SHA3-512 `bridge-session-v2`
+- The Redis bridge-session backend fingerprint is no longer a hash. It is a
+  comparable in-process struct key holding only connection settings and
+  credential environment-variable *names*, never their values or inline
+  credentials (alert #10). Redis session keys move to a SHA3-512 `bridge-session-v2`
   layout. For one TTL plus one hour after startup, the router also reads,
   writes and deletes the old layout, so rolling upgrades keep in-flight
   sessions.

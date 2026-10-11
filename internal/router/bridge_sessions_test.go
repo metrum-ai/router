@@ -6,8 +6,6 @@ package router
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -209,7 +207,7 @@ func TestChatResponsesBridgeStaleStateRetryRequiresSpecificContinuationError(t *
 	}
 }
 
-func TestRedisBridgeBackendKeyIsSHA3AndNeverIncludesSecretValues(t *testing.T) {
+func TestRedisBridgeBackendKeyNeverIncludesSecretValues(t *testing.T) {
 	cfg := BridgeStatefulSessionsRedisConfig{
 		Address:     "127.0.0.1:6379",
 		Namespace:   "prod-router",
@@ -219,8 +217,8 @@ func TestRedisBridgeBackendKeyIsSHA3AndNeverIncludesSecretValues(t *testing.T) {
 	t.Setenv("ROUTER_TEST_REDIS_USERNAME", "redis-user-value")
 	t.Setenv("ROUTER_TEST_REDIS_PASSWORD", "redis-password-value-1")
 	first := bridgeRedisBackendKey(cfg)
-	if len(first) != 64 {
-		t.Fatalf("fingerprint should be SHA3-512 truncated to 32 bytes of hex, got %d chars", len(first))
+	if rendered := fmt.Sprintf("%+v", first); strings.Contains(rendered, "redis-user-value") || strings.Contains(rendered, "redis-password-value") {
+		t.Fatalf("fingerprint holds a secret value: %s", rendered)
 	}
 	t.Setenv("ROUTER_TEST_REDIS_PASSWORD", "redis-password-value-2")
 	if got := bridgeRedisBackendKey(cfg); got != first {
@@ -232,14 +230,50 @@ func TestRedisBridgeBackendKeyIsSHA3AndNeverIncludesSecretValues(t *testing.T) {
 	if got := bridgeRedisBackendKey(withInline); got != first {
 		t.Fatal("fingerprint must not include inline username/password values")
 	}
-	renamed := cfg
-	renamed.PasswordEnv = "ROUTER_TEST_REDIS_PASSWORD_OTHER"
-	if bridgeRedisBackendKey(renamed) == first {
-		t.Fatal("fingerprint must distinguish backends that use different credential references")
+	if rendered := fmt.Sprintf("%+v", bridgeRedisBackendKey(withInline)); strings.Contains(rendered, "inline-") {
+		t.Fatalf("fingerprint holds inline credentials: %s", rendered)
 	}
-	legacy := sha256.Sum256([]byte(strings.Join([]string{cfg.Address, cfg.Namespace, "0", cfg.UsernameEnv, cfg.PasswordEnv, "false", "", "false", "0", "0", "0", "0"}, "\x00")))
-	if first == hex.EncodeToString(legacy[:]) {
-		t.Fatal("fingerprint still uses SHA-256")
+	if got := bridgeRedisBackendKey(BridgeStatefulSessionsRedisConfig{Address: " 127.0.0.1:6379 ", Namespace: "prod-router ", UsernameEnv: " ROUTER_TEST_REDIS_USERNAME", PasswordEnv: "ROUTER_TEST_REDIS_PASSWORD "}); got != first {
+		t.Fatal("equivalent configuration (whitespace only) must produce the same key")
+	}
+}
+
+func TestRedisBridgeBackendKeyChangesWithEveryListedField(t *testing.T) {
+	base := BridgeStatefulSessionsRedisConfig{
+		Address:          "127.0.0.1:6379",
+		Namespace:        "prod-router",
+		DB:               1,
+		UsernameEnv:      "REDIS_USER",
+		PasswordEnv:      "REDIS_PASS",
+		TLS:              BridgeStatefulSessionsRedisTLSConfig{Enabled: false, ServerName: "redis.internal"},
+		ConnectTimeoutMS: 100,
+		ReadTimeoutMS:    200,
+		WriteTimeoutMS:   300,
+		PoolSize:         4,
+	}
+	baseKey := bridgeRedisBackendKey(base)
+	if bridgeRedisBackendKey(base) != baseKey {
+		t.Fatal("same configuration must produce the same key")
+	}
+	for name, mutate := range map[string]func(*BridgeStatefulSessionsRedisConfig){
+		"address":            func(c *BridgeStatefulSessionsRedisConfig) { c.Address = "127.0.0.1:6380" },
+		"namespace":          func(c *BridgeStatefulSessionsRedisConfig) { c.Namespace = "staging-router" },
+		"db":                 func(c *BridgeStatefulSessionsRedisConfig) { c.DB = 2 },
+		"username_env":       func(c *BridgeStatefulSessionsRedisConfig) { c.UsernameEnv = "REDIS_USER_2" },
+		"password_env":       func(c *BridgeStatefulSessionsRedisConfig) { c.PasswordEnv = "REDIS_PASS_2" },
+		"tls.enabled":        func(c *BridgeStatefulSessionsRedisConfig) { c.TLS.Enabled = true },
+		"tls.server_name":    func(c *BridgeStatefulSessionsRedisConfig) { c.TLS.ServerName = "other.internal" },
+		"tls.insecure_skip":  func(c *BridgeStatefulSessionsRedisConfig) { c.TLS.InsecureSkipVerify = true },
+		"connect_timeout_ms": func(c *BridgeStatefulSessionsRedisConfig) { c.ConnectTimeoutMS = 101 },
+		"read_timeout_ms":    func(c *BridgeStatefulSessionsRedisConfig) { c.ReadTimeoutMS = 201 },
+		"write_timeout_ms":   func(c *BridgeStatefulSessionsRedisConfig) { c.WriteTimeoutMS = 301 },
+		"pool_size":          func(c *BridgeStatefulSessionsRedisConfig) { c.PoolSize = 5 },
+	} {
+		changed := base
+		mutate(&changed)
+		if bridgeRedisBackendKey(changed) == baseKey {
+			t.Fatalf("changing %s must produce a new backend key", name)
+		}
 	}
 }
 

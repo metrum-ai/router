@@ -28,7 +28,7 @@ type bridgeSessionBackend interface {
 
 type bridgeSessionBackends struct {
 	memory *bridgeSessionStore
-	redis  map[string]bridgeSessionBackend
+	redis  map[bridgeRedisBackendFingerprint]bridgeSessionBackend
 }
 
 type bridgeSessionStore struct {
@@ -63,7 +63,7 @@ func newBridgeSessionStore() *bridgeSessionStore {
 func newBridgeSessionBackends(ctx context.Context, cfg *Config) (*bridgeSessionBackends, error) {
 	backends := &bridgeSessionBackends{
 		memory: newBridgeSessionStore(),
-		redis:  map[string]bridgeSessionBackend{},
+		redis:  map[bridgeRedisBackendFingerprint]bridgeSessionBackend{},
 	}
 	if cfg == nil {
 		return backends, nil
