@@ -134,8 +134,8 @@ def test_go_ctl_issues_caller() -> None:
         cfg = (out / "config.yaml").read_text(encoding="utf-8")
         if re.search(r"(?m)^[ \t]*license:", cfg):
             raise AssertionError("generated config must omit server.license")
-        if "token_sha256:" not in cfg or "REPLACE_WITH" in cfg:
-            raise AssertionError("caller hash was not merged")
+        if "token_hash: pbkdf2-sha3-512:i=" not in cfg or "token_sha256:" in cfg or "REPLACE_WITH" in cfg:
+            raise AssertionError("caller token_hash was not merged")
         token = (out / "router.token").read_bytes()
         if not token.startswith(b"rtr_metrum_"):
             raise AssertionError("token file missing")
