@@ -40,20 +40,34 @@ HARD_RE = re.compile(
     re.I,
 )
 CODE_RE = re.compile(r"\b(code|function|python|go|rust|bug|class|compile|refactor|test|api|sql|regex)\b", re.I)
-MATH_RE = re.compile(r"\b(integral|equation|prove|theorem|sum|probability|matrix|calculate|derivative|prime)\b|\d+\s*[-+*/^]\s*\d+", re.I)
+# The arithmetic branch anchors on the digit either side of the operator, with
+# bounded whitespace, so `search` stays linear on long digit/space runs (CodeQL
+# py/polynomial-redos). For `search` this matches exactly what
+# `\d+\s*[-+*/^]\s*\d+` did, apart from more than 8 spaces around the operator.
+MATH_RE = re.compile(
+    r"\b(integral|equation|prove|theorem|sum|probability|matrix|calculate|derivative|prime)\b|"
+    r"\d\s{0,8}[-+*/^]\s{0,8}\d",
+    re.I,
+)
 AGENT_RE = re.compile(r"\b(tool|write the file|read the file|create the file|run the command|proof\.txt)\b", re.I)
+
+
+# Keyword scans look at the tail only, matching the adapter's default
+# left-truncation (`text.max_chars`), so oversized states stay cheap.
+MAX_SCAN_CHARS = 32768
 
 
 def classify(state: str) -> dict[str, float]:
     """Return heuristic signals in [0, 1]."""
-    hard = 1.0 if HARD_RE.search(state) else 0.0
+    tail = state[-MAX_SCAN_CHARS:]
+    hard = 1.0 if HARD_RE.search(tail) else 0.0
     if len(state) > 6000:
         hard = max(hard, 0.6)
     return {
         "hard": hard,
-        "code": 1.0 if CODE_RE.search(state) else 0.0,
-        "math": 1.0 if MATH_RE.search(state) else 0.0,
-        "agentic": 1.0 if AGENT_RE.search(state) else 0.0,
+        "code": 1.0 if CODE_RE.search(tail) else 0.0,
+        "math": 1.0 if MATH_RE.search(tail) else 0.0,
+        "agentic": 1.0 if AGENT_RE.search(tail) else 0.0,
     }
 
 

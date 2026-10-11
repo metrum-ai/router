@@ -16,6 +16,7 @@ import io
 import json
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -246,6 +247,47 @@ class MappingTests(unittest.TestCase):
         merged = d3p.validate_config(d3p._merge(d3p.DEFAULT_CONFIG, loaded))
         self.assertEqual(merged["questions"], d3p.DEFAULT_CONFIG["questions"])
         self.assertEqual(merged["rules"], d3p.DEFAULT_CONFIG["rules"])
+
+
+class FakeClassifierTests(unittest.TestCase):
+    """The fake d3 keyword heuristic must stay linear on adversarial text."""
+
+    KIND = {"type": "choice", "criteria": {"code": None, "math": None, "chat": None}}
+
+    def kind_of(self, text: str) -> str:
+        return fake.answer(self.KIND, fake.classify(text))["choice"]
+
+    def test_adversarial_inputs_classify_fast(self) -> None:
+        # CodeQL py/polynomial-redos #22: unbounded `\d+\s*[-+*/^]\s*\d+` was
+        # quadratic on long digit runs (20k digits took ~13 s).
+        inputs = (
+            "0" * 200000 + "x",
+            "1 " * 100000 + "x",
+            "9" * 100000 + " " * 100000 + "+",
+            ("12" + " " * 50) * 4000,
+            "7" * 100000 + "+" + " " * 100000,
+        )
+        for text in inputs:
+            start = time.perf_counter()
+            fake.classify(text)
+            elapsed = time.perf_counter() - start
+            self.assertLess(elapsed, 0.5, f"classify len={len(text)} took {elapsed:.3f}s")
+            # classify scans only the tail; check each regex on the full text too.
+            for name in ("HARD_RE", "CODE_RE", "MATH_RE", "AGENT_RE"):
+                start = time.perf_counter()
+                getattr(fake, name).search(text)
+                elapsed = time.perf_counter() - start
+                self.assertLess(elapsed, 0.5, f"{name} len={len(text)} took {elapsed:.3f}s")
+
+    def test_arithmetic_prompts_still_math(self) -> None:
+        for text in ("What is 12 + 7?", "compute 3*4 please", "2^10 = ?", "100 - 58",
+                     "Calculate the area of a circle", "x = 4 / 2",
+                     "1" * 40 + " + 1"):
+            self.assertEqual(fake.classify(text)["math"], 1.0, text)
+            self.assertEqual(self.kind_of(text), "math", text)
+        for text in (EASY_PROMPT, "Order 3 apples and 5 pears", "Room 101"):
+            self.assertEqual(fake.classify(text)["math"], 0.0, text)
+            self.assertEqual(self.kind_of(text), "chat", text)
 
 
 class HTTPTests(unittest.TestCase):
