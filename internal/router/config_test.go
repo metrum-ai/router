@@ -2880,6 +2880,53 @@ func TestSecretRedactorScrubsConfigSecrets(t *testing.T) {
 	}
 }
 
+func TestSecretRedactorScrubsCallerTokenVerifiers(t *testing.T) {
+	tokenHash, err := HashCallerToken("rtr_metrum_alice_p_dev_k1_"+redactionSentinel, nil, callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := strings.Repeat("ab", 32)
+	cfg := minimalConfig(t)
+	cfg.Callers = []CallerConfig{
+		{ID: "alice", TokenID: "rtr_metrum_alice_p_dev_k1", TokenHash: tokenHash},
+		{ID: "bob", TokenSHA256: legacy},
+	}
+	redactor := newSecretRedactor()
+	redactor.addConfig(cfg)
+	err = redactConfigError(fmt.Errorf("callers: %s / %s / %s", tokenHash, legacy, tokenHash[:7]+"..."), redactor)
+	for _, leaked := range []string{tokenHash, legacy, tokenHash[:7] + "..."} {
+		if strings.Contains(err.Error(), leaked) {
+			t.Fatalf("redacted error still quotes a caller verifier: %v", err)
+		}
+	}
+	for _, want := range []string{"[redacted: token_hash]", "[redacted: token_sha256]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("redacted error %q missing %q", err, want)
+		}
+	}
+
+	// Validation errors for a malformed token_hash name the caller and never
+	// quote the value, before or after LoadConfig's redaction.
+	bad := strings.Replace(tokenHash, ":i=10000:", ":i=10:", 1)
+	cfg = minimalConfig(t)
+	cfg.Callers = []CallerConfig{{ID: "alice", TokenID: "rtr_metrum_alice_p_dev_k1", TokenHash: bad}}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "caller alice has invalid token_hash") {
+		t.Fatalf("LoadConfig error = %v, want invalid token_hash for alice", err)
+	}
+	if strings.Contains(err.Error(), bad) || strings.Contains(err.Error(), strings.Split(bad, ":")[3]) {
+		t.Fatalf("LoadConfig error quotes the token_hash: %v", err)
+	}
+}
+
 func TestCleanAdminReportsPrefixRejectsOffsiteRedirectTargets(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"", "/admin/reports"},
