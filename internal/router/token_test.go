@@ -148,3 +148,23 @@ func TestGenerateCallerTokenLegacySHA256Format(t *testing.T) {
 		t.Fatal("unknown hash format must be rejected")
 	}
 }
+
+func TestCallerTokenIDFromToken(t *testing.T) {
+	for _, tt := range []struct {
+		token, want string
+		ok          bool
+	}{
+		{"rtr_metrum_alice_search_dev_k1_c2VjcmV0", "rtr_metrum_alice_search_dev_k1", true},
+		{"rtr_metrum_alice_search_dev_k1_abc_def-ghi_jkl", "rtr_metrum_alice_search_dev_k1", true},
+		{"  rtr_metrum_alice_search_dev_k1_secret\n", "rtr_metrum_alice_search_dev_k1", true},
+		{"rtr_metrum_alice_search_dev_k1", "", false},
+		{"rtr_metrum_alice_search_dev_k1_", "", false},
+		{"rtr_test_token", "", false},
+		{"legacy-free-form-caller-secret-value", "", false},
+	} {
+		got, ok := CallerTokenIDFromToken(tt.token)
+		if got != tt.want || ok != tt.ok {
+			t.Fatalf("CallerTokenIDFromToken(%q) = %q, %v; want %q, %v", tt.token, got, ok, tt.want, tt.ok)
+		}
+	}
+}

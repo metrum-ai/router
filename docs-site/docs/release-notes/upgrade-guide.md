@@ -35,7 +35,10 @@ plan the conversion now. No usage-database or control-plane schema migration.
    `metrum-ai-routerctl callers hash --token-file <file>`, replacing
    `token_sha256` with the printed `token_hash` and keeping `token_id`, or
    rotate it with `metrum-ai-routerctl callers rotate`. A `token_hash`
-   caller needs `token_id`, and set exactly one of the two fields.
+   caller needs `token_id`, and set exactly one of the two fields. Only
+   tokens of the form `<token_id>_<secret>` can be converted in place
+   (`callers hash` prints the `token_id` and refuses anything else); any
+   other token must be rotated.
 3. Check with `metrum-ai-routerctl callers verify --token-file <file>
    --config <config.yaml> --id <caller-id>` and restart the router.
 4. `metrum-ai-routerctl callers generate`, `metrum-ai-router-token-gen` and

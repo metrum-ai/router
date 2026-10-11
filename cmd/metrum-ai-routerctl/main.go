@@ -317,17 +317,26 @@ func callersCommand(args []string) {
 		})
 	case "hash":
 		// Converts an existing token (for example one whose config entry still
-		// uses deprecated token_sha256) to token_hash without rotating it.
+		// uses deprecated token_sha256) to token_hash without rotating it. The
+		// router finds token_hash callers by the "<token_id>_" prefix, so only
+		// tokens with that shape can be converted; anything else would lock
+		// the caller out.
 		fs := flag.NewFlagSet("callers hash", flag.ExitOnError)
 		tokenFile := fs.String("token-file", "", "file containing the raw caller token")
 		iterations := fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations")
 		fs.Parse(args[1:])
 		token := readTokenFile(*tokenFile)
+		tokenID, ok := router.CallerTokenIDFromToken(token)
+		if !ok {
+			fmt.Fprintln(os.Stderr, "token does not have the <token_id>_<secret> shape (rtr_metrum_<user>_<project>_<env>_<key>_<secret>) that token_hash lookup requires; rotate it with `metrum-ai-routerctl callers rotate`, or keep token_sha256 until rotation (#281)")
+			os.Exit(1)
+		}
 		tokenHash, err := router.HashCallerToken(token, nil, *iterations)
 		if err != nil {
 			die("hash caller token: %v", err)
 		}
-		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-token-hash/v1", "token_hash": tokenHash})
+		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-token-hash/v1", "token_hash": tokenHash, "token_id": tokenID,
+			"note": "set both token_hash and token_id on the caller and remove token_sha256"})
 	case "verify":
 		fs := flag.NewFlagSet("callers verify", flag.ExitOnError)
 		tokenFile := fs.String("token-file", "", "file containing the raw caller token")
@@ -342,13 +351,27 @@ func callersCommand(args []string) {
 				die("verify requires --token-hash or --config with --id")
 			}
 			cfg := loadConfigRaw(*path)
+			tokenID := ""
 			for _, caller := range cfg.Callers {
 				if caller.ID == *id {
 					encoded = strings.TrimSpace(caller.TokenHash)
+					tokenID = strings.TrimSpace(caller.TokenID)
 				}
 			}
 			if encoded == "" {
 				die("caller %q has no token_hash", *id)
+			}
+			// Match the router: token_hash callers are found only by the
+			// "<token_id>_" prefix, so a token without it never authenticates.
+			reason := ""
+			if tokenID == "" {
+				reason = "caller has no token_id; token_hash callers require one"
+			} else if !strings.HasPrefix(token, tokenID+"_") {
+				reason = "token does not start with " + tokenID + "_"
+			}
+			if reason != "" {
+				writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-token-verify/v1", "match": false, "reason": reason})
+				os.Exit(1)
 			}
 		}
 		ok, err := router.VerifyCallerTokenHash(encoded, token)

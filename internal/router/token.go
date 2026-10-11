@@ -118,6 +118,22 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 	return GeneratedToken{Token: token, TokenID: tokenID, TokenHash: caller.TokenHash, TokenSHA256: caller.TokenSHA256, Caller: caller}, nil
 }
 
+// CallerTokenIDFromToken returns the public token_id of a structured
+// rtr_metrum_ caller token, using the publicTokenID rule. ok is false when
+// the token lacks the "<token_id>_<secret>" shape that token_hash lookup
+// requires; such a token cannot be converted to token_hash in place.
+func CallerTokenIDFromToken(token string) (tokenID string, ok bool) {
+	token = strings.TrimSpace(token)
+	if !strings.HasPrefix(token, tokenPrefixName+"_") {
+		return "", false
+	}
+	tokenID = publicTokenID(token)
+	if tokenID == token || len(token) <= len(tokenID)+1 || !strings.HasPrefix(token, tokenID+"_") {
+		return "", false
+	}
+	return tokenID, true
+}
+
 func publicTokenID(v string) string {
 	v = strings.TrimSpace(v)
 	if !strings.HasPrefix(v, tokenPrefixName+"_") {

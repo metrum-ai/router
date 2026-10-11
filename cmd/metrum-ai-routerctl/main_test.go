@@ -178,15 +178,53 @@ callers: []
 	}
 	var hashed struct {
 		TokenHash string `json:"token_hash"`
+		TokenID   string `json:"token_id"`
 	}
-	if err := json.Unmarshal(out, &hashed); err != nil || !strings.HasPrefix(hashed.TokenHash, "pbkdf2-sha3-512:") {
+	if err := json.Unmarshal(out, &hashed); err != nil || !strings.HasPrefix(hashed.TokenHash, "pbkdf2-sha3-512:") || hashed.TokenID != strings.Join(strings.Split(strings.TrimSpace(string(mustRead(t, tokenPath))), "_")[:6], "_") {
 		t.Fatalf("hash output: %v: %s", err, out)
+	}
+	if strings.Contains(string(out), strings.TrimSpace(string(mustRead(t, tokenPath)))) {
+		t.Fatal("hash must not echo the raw token")
+	}
+
+	// A token without the <token_id>_<secret> shape cannot be found by
+	// token_hash lookup, so hash refuses it instead of locking the caller out.
+	freeForm := filepath.Join(dir, "freeform.token")
+	if err := os.WriteFile(freeForm, []byte("legacy-free-form-caller-secret-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	refuse := exec.Command("go", "run", ".", "callers", "hash", "--token-file", freeForm)
+	out, err = refuse.CombinedOutput()
+	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(out), "callers rotate") || !strings.Contains(string(out), "#281") {
+		t.Fatalf("hash of a non-prefixed token must refuse with exit 1: %v: %s", err, out)
+	}
+	if strings.Contains(string(out), "legacy-free-form-caller-secret-value") || strings.Contains(string(out), "pbkdf2-sha3-512:") {
+		t.Fatalf("refusal must not echo the token or emit a hash: %s", out)
 	}
 	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--token-hash", hashed.TokenHash).CombinedOutput(); err != nil {
 		t.Fatalf("verify --token-hash: %v: %s", err, out)
 	}
 	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--token-hash", "pbkdf2-sha3-512:i=1:x:y").CombinedOutput(); err == nil || !strings.Contains(string(out), "invalid token_hash") {
 		t.Fatalf("malformed token_hash accepted: %v: %s", err, out)
+	}
+
+	// verify --config passes only when the router would authenticate: the
+	// configured token_id must prefix the token even if the hash matches.
+	mismatchCfg := filepath.Join(dir, "mismatch.yaml")
+	merged := string(mustRead(t, cfgPath))
+	tokenID := strings.Join(strings.Split(strings.TrimSpace(string(mustRead(t, tokenPath))), "_")[:6], "_")
+	if !strings.Contains(merged, "token_id: "+tokenID) {
+		t.Fatalf("merged config missing token_id %s", tokenID)
+	}
+	if err := os.WriteFile(mismatchCfg, []byte(strings.Replace(merged, "token_id: "+tokenID, "token_id: rtr_metrum_someone_else_dev_k1", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err = exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--config", mismatchCfg, "--id", "op-local-dev").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "token does not start with rtr_metrum_someone_else_dev_k1_") || !strings.Contains(string(out), `"match": false`) {
+		t.Fatalf("verify accepted a token the router cannot find: %v: %s", err, out)
+	}
+	if strings.Contains(string(out), strings.TrimSpace(string(mustRead(t, tokenPath)))) {
+		t.Fatal("verify must not echo the raw token")
 	}
 
 	// rotate writes a fresh token_hash; the old token no longer verifies.
