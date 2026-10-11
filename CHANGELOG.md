@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--require-trusted-proxy` to be a CIDR and prints only its canonical form.
   `scripts/check_env_example_secrets.py` reports key names and paths, never
   values. This clears CodeQL `py/clear-text-logging-sensitive-data`.
+- Config load and router startup errors no longer print secret values.
+  `LoadConfig`, `LoadActiveCanonicalConfig`, `LoadConfigForServe` and `New`
+  replace every expanded `${NAME}` or env.json value, every value resolved
+  from a `*_env` field (`password_env`, `api_key_env`, `dsn_env`, and so on),
+  literal credential fields and credential headers with a label such as
+  `[redacted: value of $NAME]`. Errors still name the field and the env var.
+  This also covers the 7-character prefix that yaml.v3 quotes in type errors,
+  DSNs that pgx echoes back when it cannot parse them, and a credential pasted
+  into a `*_env` field instead of a variable name (CodeQL
+  `go/clear-text-logging`, alerts #6 and #7).
+- `metrum-ai-routerctl providers list` and `providers upsert` print
+  `api_key_env` only when it is a valid environment variable name, and remove
+  `user:password@` userinfo from the `base_url` they print (CodeQL
+  `go/clear-text-logging`, alert #8).
+- `server.admin_reports.path_prefix` must be a plain local path. Values that
+  start with `//` or `/\`, or that contain a backslash, `%`, `?`, `#`, `:` or a
+  control character, now fail validation. The reports handler never redirects
+  to such a prefix (CodeQL `go/bad-redirect-check`, alert #12).
 
 ## [4.1.0] - 2026-10-10
 

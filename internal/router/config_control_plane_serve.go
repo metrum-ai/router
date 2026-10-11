@@ -15,10 +15,26 @@ import (
 // LoadActiveCanonicalConfig loads the active canonical YAML document for
 // runtimeScope, expands environment references into memory only, validates,
 // and returns the serving Config. The stored document is never rewritten.
+// Errors are redacted: expanded environment values and literal credentials
+// are replaced with a label naming the variable or field.
 func LoadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, identifiers ...IdentifierConfig) (*Config, error) {
+	redactor := newSecretRedactor()
+	cfg, err := loadActiveCanonicalConfig(db, runtimeScope, redactor, identifiers...)
+	if err != nil {
+		redactor.addConfig(cfg)
+		return nil, redactConfigError(err, redactor)
+	}
+	return cfg, nil
+}
+
+func loadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, redactor *secretRedactor, identifiers ...IdentifierConfig) (*Config, error) {
 	raw, err := LoadActiveCanonicalYAML(db, runtimeScope)
 	if err != nil {
 		return nil, err
+	}
+	envRefs := envReferenceNames(raw)
+	for _, name := range envRefs {
+		redactor.addEnv(name)
 	}
 	expanded := os.ExpandEnv(string(raw))
 	cleaned, hadDeprecatedLicense, err := discardDeprecatedServerLicenseYAML([]byte(expanded))
@@ -39,8 +55,9 @@ func LoadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, identifiers ...
 		cfg.Server.Identifiers = identifiers[0]
 	}
 	cfg.setDefaults()
+	cfg.secretEnvRefs = envRefs
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("validate active canonical config: %w", err)
+		return &cfg, fmt.Errorf("validate active canonical config: %w", err)
 	}
 	return &cfg, nil
 }
@@ -67,11 +84,25 @@ func ResolveConfigSourceDB(cfg ConfigSourceConfig) (UsageDBConfig, error) {
 // LoadConfigForServe loads the bootstrap YAML file, then when
 // server.config_source.mode is database replaces it with the active
 // canonical document from the control-plane database.
+//
+// LoadConfig and LoadActiveCanonicalConfig already redact their own errors;
+// the remaining bootstrap-stage errors (config_source DSN resolution and the
+// database open) are redacted here against the bootstrap config's secrets.
 func LoadConfigForServe(path string) (*Config, error) {
 	bootstrap, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := loadConfigForServeFromBootstrap(bootstrap)
+	if err != nil {
+		redactor := newSecretRedactor()
+		redactor.addConfig(bootstrap)
+		return nil, redactConfigError(err, redactor)
+	}
+	return cfg, nil
+}
+
+func loadConfigForServeFromBootstrap(bootstrap *Config) (*Config, error) {
 	mode := strings.ToLower(strings.TrimSpace(bootstrap.Server.ConfigSource.Mode))
 	if mode == "" || mode == "yaml" {
 		return bootstrap, nil

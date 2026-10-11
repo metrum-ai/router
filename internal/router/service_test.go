@@ -15286,3 +15286,53 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
+
+// TestAdminReportsPrefixRedirectStaysLocal checks that the bare admin reports
+// prefix redirects to its own trailing-slash path for valid prefixes, and
+// that an unsafe prefix that bypassed validation is never used as a redirect
+// target.
+func TestAdminReportsPrefixRedirectStaysLocal(t *testing.T) {
+	hash := mustBcryptHash(t, "redirect-check")
+	t.Setenv("SMART_ROUTER_ADMIN_PASSWORD_HASH_REDIRECT_TEST", hash)
+	newSvc := func(t *testing.T, prefix string) *Service {
+		t.Helper()
+		dir := t.TempDir()
+		cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
+		cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+		cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{
+			Enabled: true, Realm: "Unit Test Admin", AllowInsecureHTTP: true,
+			Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "SMART_ROUTER_ADMIN_PASSWORD_HASH_REDIRECT_TEST", Subject: "basic:admin", Domain: "*"}},
+		}
+		cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, *, admin:reports, read"}}
+		cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, PathPrefix: prefix, DefaultSince: "24h", MaxRange: "31d", MaxRows: 10}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { svc.Close() })
+		return svc
+	}
+	get := func(svc *Service, target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.SetBasicAuth("admin", "redirect-check")
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		return rr
+	}
+	for _, prefix := range []string{"/admin/reports", "/admin/reports/team"} {
+		rr := get(newSvc(t, prefix), prefix)
+		if rr.Code != http.StatusTemporaryRedirect || rr.Header().Get("Location") != prefix+"/" {
+			t.Fatalf("prefix %q redirect status=%d location=%q", prefix, rr.Code, rr.Header().Get("Location"))
+		}
+	}
+	svc := newSvc(t, "/admin/reports")
+	for _, bad := range []string{"//evil.com", "/\\evil.com", "/%2fevil.com"} {
+		svc.cfg.Server.AdminReports.PathPrefix = bad
+		for _, target := range []string{"/admin/reports", "/admin/reports/"} {
+			rr := get(svc, target)
+			if loc := rr.Header().Get("Location"); loc != "" || rr.Code != http.StatusNotFound {
+				t.Fatalf("unsafe prefix %q target %q status=%d location=%q", bad, target, rr.Code, loc)
+			}
+		}
+	}
+}

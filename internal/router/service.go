@@ -175,7 +175,20 @@ func (e upstreamError) Unwrap() error {
 	return e.Err
 }
 
+// New builds a Service from cfg. Initialization errors are redacted so the
+// resolved value of any *_env secret, literal credential or expanded env
+// reference in cfg never appears in the returned error text.
 func New(cfg *Config) (*Service, error) {
+	svc, err := newService(cfg)
+	if err != nil {
+		redactor := newSecretRedactor()
+		redactor.addConfig(cfg)
+		return nil, redactConfigError(err, redactor)
+	}
+	return svc, nil
+}
+
+func newService(cfg *Config) (*Service, error) {
 	cfg.setDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
