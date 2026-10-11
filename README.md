@@ -1,5 +1,9 @@
 # Metrum AI Router
 
+Metrum website: [metrum.ai](https://www.metrum.ai). See the
+[Metrum AI Router product page](https://www.metrum.ai/router) for product
+information and enterprise inquiries.
+
 Agent workloads often make dozens of model calls per task. Paying frontier
 price for each call is the default path, and token spend shows up after the
 monthly budget is gone. In one committed Harbor run, Codex on `big-coder` used

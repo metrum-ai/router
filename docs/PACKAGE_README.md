@@ -2,6 +2,8 @@
 
 This package contains a packaged Metrum AI Router runtime plus a small offline documentation set. The full external administrator documentation is embedded in the router binary and is available at `/docs/` after the service starts.
 
+For product information, visit the [Metrum AI Router website](https://www.metrum.ai/router).
+
 ## What Is Included
 
 Binary packages include:

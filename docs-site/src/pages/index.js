@@ -54,6 +54,9 @@ export default function Home() {
               <Link className={clsx("button", styles.secondary)} to="/evaluation/harbor-case-study">
                 Case Study
               </Link>
+              <Link className={clsx("button", styles.secondary)} href="https://www.metrum.ai/router">
+                Metrum Website
+              </Link>
               <Link className={clsx("button", styles.secondary)} href="mailto:contact@metrum.ai">
                 Contact Metrum
               </Link>
