@@ -1,0 +1,92 @@
+{
+ "schema": "metrum.d3-sol.prompt-probe.v1",
+ "d3_model": "vllm-sr/d3 (26B)",
+ "revision": "cbff3a3cb0b074b6585fe9f747b9f9f5557a0e75",
+ "date": "2026-10-11",
+ "method": "state 'user: <prompt>' sent straight to d3 /v1/systemone with the adapter's default questions; tier from the adapter's default rules (difficulty hard|expert or P(reasoning) >= 0.6 -> strong). Rules unchanged.",
+ "results": [
+  {
+   "id": "easy-v1",
+   "prompt": "Create pairs.py with has_pair_sum(xs, target) using simple nested loops, and test_pairs.py with 3 asserts. Run the tests.",
+   "label": "d3:trivial:agentic:r0.80",
+   "tier": "strong",
+   "used": false
+  },
+  {
+   "id": "hard-v1",
+   "prompt": "Prove formally that sort plus two pointers solves has_pair_sum correctly: state the loop invariant, prove it is maintained and that the loop terminates, derive the O(n log n) bound, then implement it in pairs.py and run the tests.",
+   "label": "d3:hard:agentic:r0.99",
+   "tier": "strong",
+   "used": true
+  },
+  {
+   "id": "real1-v1",
+   "prompt": "Rewrite has_pair_sum in pairs.py to run in O(n log n). Prove the time bound and the correctness invariant in a docstring, then run the tests.",
+   "label": "d3:moderate:agentic:r0.96",
+   "tier": "strong",
+   "used": false
+  },
+  {
+   "id": "e1",
+   "prompt": "Create pairs.py with has_pair_sum(xs, target) using simple nested loops.",
+   "label": "d3:trivial:code:r0.18",
+   "tier": "cheap",
+   "used": false
+  },
+  {
+   "id": "e2",
+   "prompt": "Create pairs.py with a function has_pair_sum(xs, target) that uses two nested loops, and test_pairs.py with 3 asserts.",
+   "label": "d3:trivial:agentic:r0.37",
+   "tier": "cheap",
+   "used": true
+  },
+  {
+   "id": "e3",
+   "prompt": "Write a small file pairs.py: has_pair_sum(xs, target) returns True if two numbers add up to target. Use nested loops. Add test_pairs.py with 3 asserts and run it.",
+   "label": "d3:trivial:agentic:r0.73",
+   "tier": "strong",
+   "used": false
+  },
+  {
+   "id": "e4",
+   "prompt": "Make pairs.py with has_pair_sum(xs, target) (nested loops) and test_pairs.py with three asserts, then run python3 test_pairs.py.",
+   "label": "d3:trivial:agentic:r0.75",
+   "tier": "strong",
+   "used": false
+  },
+  {
+   "id": "e5",
+   "prompt": "Add a file pairs.py containing has_pair_sum(xs, target) with simple nested loops, plus test_pairs.py with 3 asserts.",
+   "label": "d3:trivial:agentic:r0.34",
+   "tier": "cheap",
+   "used": false
+  },
+  {
+   "id": "e6",
+   "prompt": "Create pairs.py and test_pairs.py for a simple has_pair_sum helper.",
+   "label": "d3:trivial:agentic:r0.48",
+   "tier": "cheap",
+   "used": false
+  },
+  {
+   "id": "e7",
+   "prompt": "Create two files: pairs.py with a nested-loop has_pair_sum(xs, target), and test_pairs.py with 3 asserts.",
+   "label": "d3:trivial:agentic:r0.43",
+   "tier": "cheap",
+   "used": false
+  }
+ ],
+ "client_ms_over_tunnel": [
+  256,
+  331,
+  313,
+  243,
+  315,
+  333,
+  315,
+  313,
+  311,
+  314
+ ],
+ "note": "these are the public demo prompts (no secrets). With d3 26B, an instruction to run the tests raises P(reasoning) above 0.6, so the v1 easy prompt would route strong; the demo uses e2."
+}

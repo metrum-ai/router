@@ -1,0 +1,50 @@
+{
+ "schema": "metrum.d3-sol.tool-call-smoke.v1",
+ "group": "d3-auto-strong",
+ "upstream_model": "gpt-6.1-sol",
+ "date": "2026-10-11",
+ "turn1": {
+  "http_status": 200,
+  "finish_reason": "tool_calls",
+  "tool_calls": [
+   {
+    "name": "add",
+    "arguments": {
+     "a": 2,
+     "b": 3
+    }
+   }
+  ],
+  "usage": {
+   "completion_tokens": 21,
+   "completion_tokens_details": {
+    "reasoning_tokens": 0
+   },
+   "prompt_tokens": 55,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "total_tokens": 76
+  }
+ },
+ "turn2_after_tool_result": {
+  "http_status": 200,
+  "finish_reason": "stop",
+  "usage": {
+   "completion_tokens": 12,
+   "completion_tokens_details": {
+    "reasoning_tokens": 0
+   },
+   "prompt_tokens": 87,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "total_tokens": 99
+  }
+ },
+ "usage_db_cost_usd": [
+  0.00032,
+  0.000294
+ ],
+ "note": "one tiny add(a,b) tool call through the router (chat_to_responses bridge), then the tool result; costs from request_usage.total_cost_usd"
+}

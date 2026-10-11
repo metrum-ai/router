@@ -1,0 +1,116 @@
+{
+ "schema": "metrum.d3-live.compare.v1",
+ "runs": {
+  "enforce": {
+   "group": "d3-auto",
+   "prompts": 204,
+   "http_status": {
+    "200": 204
+   },
+   "served_models": {
+    "accounts/fireworks/models/deepseek-v4p1-flash": 102,
+    "gpt-6.1-sol": 102
+   },
+   "cost_usd": 1.855777,
+   "cost_per_request_usd": 0.00909694,
+   "output_tokens": 210568,
+   "reasoning_tokens": 62050,
+   "hit_max_tokens": {
+    "easy": 0,
+    "hard": 9
+   },
+   "e2e_ms": {
+    "n": 204,
+    "p50": 8428.4,
+    "p95": 67807.3,
+    "p99": 75187.9,
+    "mean": 19704.68,
+    "max": 79383.3
+   },
+   "policy_duration_ms": {
+    "n": 204,
+    "p50": 245.0,
+    "p95": 249.0,
+    "p99": 252.0,
+    "mean": 244.39,
+    "max": 267.0
+   }
+  },
+  "always_strong": {
+   "group": "d3-auto-strong",
+   "prompts": 204,
+   "http_status": {
+    "200": 204
+   },
+   "served_models": {
+    "gpt-6.1-sol": 204
+   },
+   "cost_usd": 1.88152,
+   "cost_per_request_usd": 0.00922314,
+   "output_tokens": 187034,
+   "reasoning_tokens": 39290,
+   "hit_max_tokens": {
+    "easy": 0,
+    "hard": 7
+   },
+   "e2e_ms": {
+    "n": 204,
+    "p50": 4325.6,
+    "p95": 66965.8,
+    "p99": 77002.4,
+    "mean": 18845.08,
+    "max": 79901.6
+   },
+   "policy_duration_ms": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "mean": null,
+    "max": null
+   }
+  },
+  "always_cheap": {
+   "group": "d3-auto-cheap",
+   "prompts": 204,
+   "http_status": {
+    "200": 204
+   },
+   "served_models": {
+    "accounts/fireworks/models/deepseek-v4p1-flash": 204
+   },
+   "cost_usd": 0.256954,
+   "cost_per_request_usd": 0.00125958,
+   "output_tokens": 385831,
+   "reasoning_tokens": 354284,
+   "hit_max_tokens": {
+    "easy": 0,
+    "hard": 73
+   },
+   "e2e_ms": {
+    "n": 204,
+    "p50": 7623.1,
+    "p95": 49533.0,
+    "p99": 53543.8,
+    "mean": 19934.52,
+    "max": 55020.1
+   },
+   "policy_duration_ms": {
+    "n": 0,
+    "p50": null,
+    "p95": null,
+    "p99": null,
+    "mean": null,
+    "max": null
+   }
+  }
+ },
+ "strong_share": 0.5,
+ "hard_prompts_to_strong": "102/102",
+ "easy_prompts_to_cheap": "102/102",
+ "saving_vs_always_strong_usd": 0.025743,
+ "saving_vs_always_strong_pct": 1.4,
+ "extra_vs_always_cheap_usd": 1.598823,
+ "extra_vs_always_cheap_x": 7.22,
+ "note": "each run is a separate live pass over the same 204 prompts; output lengths differ per run, so the comparison is measured spend, not the same tokens repriced"
+}

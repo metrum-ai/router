@@ -247,6 +247,71 @@ def test_d3_group_caller_uses_token_hash() -> None:
         raise AssertionError(caller["token_id"])
 
 
+def load_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("local_pi_instance", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_d3_tiers_are_selectable_with_prices() -> None:
+    """--d3-strong-model / --d3-tier-groups (#287): real price tiers, default unchanged."""
+    module = load_module()
+    kwargs = {
+        "out_dir": Path("/nonexistent"),
+        "listen": "127.0.0.1:18081",
+        "id_key_hex": "00" * 32,
+        "token": "rtr_metrum_local-dev_example-project_dev_k20261011_abc",
+    }
+    policy = {"policy_url": "http://127.0.0.1:18302/route", "mode": "enforce", "on_error": "fail_closed",
+              "timeout_ms": 300}
+
+    default = module.build_config(**kwargs, d3_policy=policy)
+    tiers = [(t["tier"], t["provider"], t["model_ref"]) for t in default["models"]["d3-auto"]["targets"]]
+    if tiers != [("cheap", "fireworks", "deepseek-v4p1-flash"), ("strong", "openai", "gpt-6-luna")]:
+        raise AssertionError(tiers)
+    if set(default["providers"]["openai"]["models"]) != {"gpt-6-luna"}:
+        raise AssertionError("default config must not add catalog models")
+    if set(default["models"]) != {"big-coder", "d3-auto"}:
+        raise AssertionError(list(default["models"]))
+
+    cfg = module.build_config(**kwargs, d3_policy={**policy, "strong_model": "gpt-6.1-sol", "tier_groups": True})
+    strong = cfg["models"]["d3-auto"]["targets"][1]
+    if (strong["provider"], strong["model_ref"], strong["tier"]) != ("openai", "gpt-6.1-sol", "strong"):
+        raise AssertionError(strong)
+    if not strong["bridges"]["chat_to_responses"]["tools"]:
+        raise AssertionError("OpenAI strong tier must keep the chat_to_responses tool bridge")
+    sol = cfg["providers"]["openai"]["models"]["gpt-6.1-sol"]
+    prices = (sol["input_price_per_million_usd"], sol["cached_input_price_per_million_usd"],
+              sol["output_price_per_million_usd"])
+    if prices != (2.0, 0.1, 10.0) or "gpt-6.1-sol" not in sol["pricing_source"]:
+        raise AssertionError(prices)
+    if "gpt-6-luna" not in cfg["providers"]["openai"]["models"]:
+        raise AssertionError("big-coder still needs gpt-6-luna")
+    for suffix, ref in (("cheap", "deepseek-v4p1-flash"), ("strong", "gpt-6.1-sol")):
+        group = cfg["models"][f"d3-auto-{suffix}"]
+        if group["strategy"] != "weighted" or [t["model_ref"] for t in group["targets"]] != [ref]:
+            raise AssertionError((suffix, group))
+    if cfg["callers"][0]["allow"] != ["big-coder", "d3-auto", "d3-auto-cheap", "d3-auto-strong"]:
+        raise AssertionError(cfg["callers"][0]["allow"])
+    names = [m["name"] for m in module.pi_models({**policy, "strong_model": "gpt-6.1-sol"})]
+    if "deepseek-v4p1-flash cheap / gpt-6.1-sol strong" not in names[1]:
+        raise AssertionError(names)
+
+    fallback = module.build_config(**kwargs, d3_policy={**policy, "strong_model": "gpt-5.6-sol"})
+    if fallback["providers"]["openai"]["models"]["gpt-5.6-sol"]["output_price_per_million_usd"] != 20.0:
+        raise AssertionError("gpt-5.6-sol fallback price")
+    glm = module.build_config(**kwargs, d3_policy={**policy, "strong_model": "glm-5p3"})
+    glm_entry = glm["providers"]["fireworks"]["models"]["glm-5p3"]
+    if glm_entry["model"] != "accounts/fireworks/models/glm-5p3" or glm_entry["output_price_per_million_usd"] != 4.40:
+        raise AssertionError(glm_entry)
+    if "bridges" in glm["models"]["d3-auto"]["targets"][1]:
+        raise AssertionError("Fireworks targets take chat requests directly")
+
+
 def test_missing_upstream_keys_fails() -> None:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -280,5 +345,6 @@ if __name__ == "__main__":
     test_creates_weighted_instance_and_reuses_metrum_key()
     test_public_token_id_never_includes_secret_with_underscores()
     test_d3_group_caller_uses_token_hash()
+    test_d3_tiers_are_selectable_with_prices()
     test_missing_upstream_keys_fails()
     print("local_pi_instance_test: ok")

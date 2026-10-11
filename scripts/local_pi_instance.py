@@ -18,10 +18,15 @@ The local caller token is stored as METRUM_API_KEY (file + out-dir env.json)
 and reused when already present unless --rotate-key is set.
 
 Optional d3-auto group (--d3-policy-url, issue #278): strategy external through
-examples/external-routing-policy/d3_policy.py. tier cheap -> fireworks
-deepseek-v4p1-flash, tier strong -> openai gpt-6-luna. It is added to the
-caller allow list and to the pi model list. Without the flag the generated
-config is unchanged.
+examples/external-routing-policy/d3_policy.py. By default tier cheap ->
+fireworks deepseek-v4p1-flash and tier strong -> openai gpt-6-luna.
+--d3-cheap-model / --d3-strong-model pick either tier from TIER_MODELS
+(issue #287), for example --d3-strong-model gpt-6.1-sol; the chosen models are
+added to the provider catalog with their list prices, so usage rows carry real
+costs. --d3-tier-groups also adds single-target d3-auto-cheap and
+d3-auto-strong groups for always-cheap and always-strong cost baselines. The
+d3 groups are added to the caller allow list and to the pi model list. Without
+--d3-policy-url the generated config is unchanged.
 
 Output stays under a gitignored directory (default tmp/local-pi).
 Run with: uv run --with pyyaml python scripts/local_pi_instance.py
@@ -54,7 +59,113 @@ GROUP = "big-coder"
 D3_GROUP = "d3-auto"
 D3_POLICY_MODES = ("shadow", "enforce", "baseline")
 D3_ON_ERROR = ("fail_closed", "fallback")
+D3_TIER_SUFFIXES = ("cheap", "strong")
 MODEL_IDENTITY = "requested_group"
+
+
+# Provider model catalog (Metrum AI Router local instance). Each entry is the
+# provider "models" block for one model_ref; list prices are USD per 1M tokens.
+# big-coder always uses gpt-6-luna and deepseek-v4p1-flash; the d3-auto tiers
+# can use any entry (issue #287).
+OPENAI_REASONING_OPT_IN = {"supported": True, "mode": "opt_in", "control": "effort_enum", "default_on": False}
+OPENAI_TOOL_SHAPES = {
+    "force_store_false": True,
+    "tool_support": {"openai_responses": ["function"]},
+    "request_shape_support": {
+        "supported_inbound_dialects": ["openai-responses", "openai-chat"],
+        "validation_status": "passed",
+        "validation_notes": "local-pi chat_to_responses bridge for coding agent tools",
+    },
+}
+FIREWORKS_CHAT_SHAPES = {
+    "request_shape_support": {"supported_inbound_dialects": ["openai-chat"]},
+    "tool_support": {"openai_chat": ["tools"]},
+}
+TIER_MODELS: dict[str, tuple[str, dict]] = {
+    "deepseek-v4p1-flash": ("fireworks", {
+        "model": "accounts/fireworks/models/deepseek-v4p1-flash",
+        "tier": "coding",
+        "context_tokens": 1000000,
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "input_price_per_million_usd": 0.22,
+        "output_price_per_million_usd": 0.66,
+        "pricing_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash",
+        "pricing_updated_at": "2026-10-01",
+        **FIREWORKS_CHAT_SHAPES,
+    }),
+    "glm-5p3": ("fireworks", {
+        "model": "accounts/fireworks/models/glm-5p3",
+        "tier": "coding",
+        "context_tokens": 1040000,
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "input_price_per_million_usd": 1.40,
+        "cached_input_price_per_million_usd": 0.26,
+        "output_price_per_million_usd": 4.40,
+        "pricing_source": "https://fireworks.ai/models/fireworks/glm-5p3",
+        "pricing_updated_at": "2026-10-11",
+        **FIREWORKS_CHAT_SHAPES,
+    }),
+    "gpt-6-luna": ("openai", {
+        "model": "gpt-6-luna",
+        "tier": "frontier",
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "input_price_per_million_usd": 0.10,
+        "cached_input_price_per_million_usd": 0.01,
+        "output_price_per_million_usd": 0.50,
+        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "pricing_updated_at": "2026-10-07",
+        "pricing_notes": (
+            "Standard short-context rates. Prompts over 272K input "
+            "tokens are 2x input and cache rates and 1.5x output."
+        ),
+        **OPENAI_TOOL_SHAPES,
+        "reasoning": dict(OPENAI_REASONING_OPT_IN),
+    }),
+    "gpt-6.1-sol": ("openai", {
+        "model": "gpt-6.1-sol",
+        "tier": "frontier",
+        "context_tokens": 1050000,
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "input_price_per_million_usd": 2.00,
+        "cached_input_price_per_million_usd": 0.10,
+        "output_price_per_million_usd": 10.00,
+        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+        "pricing_updated_at": "2026-10-11",
+        "pricing_notes": (
+            "Standard rates. Prompts over 272K input tokens are 2x input and "
+            "cache rates and 1.5x output for the full request; cache writes are "
+            "1.25x the uncached input rate. Default reasoning effort is medium; "
+            "tool calling needs the Responses API (chat_to_responses bridge)."
+        ),
+        **OPENAI_TOOL_SHAPES,
+        "reasoning": dict(OPENAI_REASONING_OPT_IN),
+    }),
+    "gpt-5.6-sol": ("openai", {
+        "model": "gpt-5.6-sol",
+        "tier": "frontier",
+        "context_tokens": 1050000,
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "input_price_per_million_usd": 4.00,
+        "cached_input_price_per_million_usd": 0.40,
+        "output_price_per_million_usd": 20.00,
+        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+        "pricing_updated_at": "2026-10-11",
+        "pricing_notes": (
+            "Standard rates. Prompts over 272K input tokens are 2x input and "
+            "1.5x output for the full request; cache writes are 1.25x the "
+            "uncached input rate."
+        ),
+        **OPENAI_TOOL_SHAPES,
+        "reasoning": dict(OPENAI_REASONING_OPT_IN),
+    }),
+}
+D3_DEFAULT_TIERS = {"cheap": "deepseek-v4p1-flash", "strong": "gpt-6-luna"}
+BIG_CODER_MODELS = ("deepseek-v4p1-flash", "gpt-6-luna")
 
 # Local coding-agent caller policy: 20x the original local-dev defaults.
 LOCAL_RATE_RPM = 120 * 20
@@ -215,9 +326,13 @@ def resolve_existing_token(out_dir: Path, source_env: dict[str, str]) -> str:
 
 
 def openai_luna_target(**extra: object) -> dict:
+    return openai_target("gpt-6-luna", **extra)
+
+
+def openai_target(model_ref: str, **extra: object) -> dict:
     return {
         "provider": "openai",
-        "model_ref": "gpt-6-luna",
+        "model_ref": model_ref,
         **extra,
         "bridges": {
             "chat_to_responses": {
@@ -230,8 +345,33 @@ def openai_luna_target(**extra: object) -> dict:
     }
 
 
-def d3_group(policy_url: str, mode: str, on_error: str, timeout_ms: int) -> dict:
-    """d3-auto: external policy (d3_policy.py) choosing cheap vs strong (#278)."""
+def tier_target(model_ref: str, **extra: object) -> dict:
+    """Group target for a TIER_MODELS entry; OpenAI models use the chat_to_responses bridge."""
+    provider = TIER_MODELS[model_ref][0]
+    if provider == "openai":
+        return openai_target(model_ref, **extra)
+    return {"provider": provider, "model_ref": model_ref, **extra}
+
+
+def d3_tiers(d3_policy: dict | None) -> dict[str, str]:
+    tiers = dict(D3_DEFAULT_TIERS)
+    if d3_policy:
+        tiers["cheap"] = d3_policy.get("cheap_model") or tiers["cheap"]
+        tiers["strong"] = d3_policy.get("strong_model") or tiers["strong"]
+    return tiers
+
+
+def d3_group(
+    policy_url: str,
+    mode: str,
+    on_error: str,
+    timeout_ms: int,
+    cheap_model: str = D3_DEFAULT_TIERS["cheap"],
+    strong_model: str = D3_DEFAULT_TIERS["strong"],
+    tier_groups: bool = False,
+) -> dict:
+    """d3-auto: external policy (d3_policy.py) choosing cheap vs strong (#278, #287)."""
+    del tier_groups  # handled by build_config
     host = urlparse(policy_url).hostname or ""
     return {
         "strategy": "external",
@@ -245,19 +385,31 @@ def d3_group(policy_url: str, mode: str, on_error: str, timeout_ms: int) -> dict
             "on_error": on_error,
         },
         "targets": [
-            {
-                "provider": "fireworks",
-                "model_ref": "deepseek-v4p1-flash",
-                "tier": "cheap",
-                "weight": 1,
-            },
-            openai_luna_target(tier="strong", weight=1),
+            tier_target(cheap_model, tier="cheap", weight=1),
+            tier_target(strong_model, tier="strong", weight=1),
         ],
     }
 
 
 def group_names(d3_policy: dict | None) -> list[str]:
-    return [GROUP, D3_GROUP] if d3_policy else [GROUP]
+    if not d3_policy:
+        return [GROUP]
+    names = [GROUP, D3_GROUP]
+    if d3_policy.get("tier_groups"):
+        names += [f"{D3_GROUP}-{suffix}" for suffix in D3_TIER_SUFFIXES]
+    return names
+
+
+def provider_models(d3_policy: dict | None) -> dict[str, dict]:
+    """Provider -> models block: big-coder's models plus the selected d3 tier models."""
+    refs = list(BIG_CODER_MODELS)
+    if d3_policy:
+        refs += [ref for ref in d3_tiers(d3_policy).values() if ref not in refs]
+    out: dict[str, dict] = {"fireworks": {}, "openai": {}}
+    for ref in refs:
+        provider, entry = TIER_MODELS[ref]
+        out[provider][ref] = json.loads(json.dumps(entry))
+    return out
 
 
 def build_config(
@@ -283,6 +435,14 @@ def build_config(
     }
     if d3_policy:
         models[D3_GROUP] = d3_group(**d3_policy)
+        if d3_policy.get("tier_groups"):
+            # Always-cheap / always-strong baselines for cost evaluation (#287).
+            for suffix, ref in d3_tiers(d3_policy).items():
+                models[f"{D3_GROUP}-{suffix}"] = {
+                    "strategy": "weighted",
+                    "targets": [tier_target(ref, tier=suffix, weight=1)],
+                }
+    catalog = provider_models(d3_policy)
     config = {
         "server": {
             "listen": listen,
@@ -377,25 +537,7 @@ def build_config(
                 "api_key": "${FIREWORKS_API_KEY}",
                 "api_key_env": "FIREWORKS_API_KEY",
                 "key_id": "fireworks-local",
-                "models": {
-                    "deepseek-v4p1-flash": {
-                        "model": "accounts/fireworks/models/deepseek-v4p1-flash",
-                        "tier": "coding",
-                        "context_tokens": 1000000,
-                        "input_modalities": ["text"],
-                        "output_modalities": ["text"],
-                        "input_price_per_million_usd": 0.22,
-                        "output_price_per_million_usd": 0.66,
-                        "pricing_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash",
-                        "pricing_updated_at": "2026-10-01",
-                        "request_shape_support": {
-                            "supported_inbound_dialects": ["openai-chat"],
-                        },
-                        "tool_support": {
-                            "openai_chat": ["tools"],
-                        },
-                    }
-                },
+                "models": catalog["fireworks"],
             },
             "openai": {
                 "base_url": "https://api.openai.com/v1",
@@ -403,36 +545,7 @@ def build_config(
                 "api_key": "${OPENAI_API_KEY}",
                 "api_key_env": "OPENAI_API_KEY",
                 "key_id": "openai-local",
-                "models": {
-                    "gpt-6-luna": {
-                        "model": "gpt-6-luna",
-                        "tier": "frontier",
-                        "input_modalities": ["text"],
-                        "output_modalities": ["text"],
-                        "input_price_per_million_usd": 0.10,
-                        "cached_input_price_per_million_usd": 0.01,
-                        "output_price_per_million_usd": 0.50,
-                        "pricing_source": "https://developers.openai.com/api/docs/models/gpt-6-luna",
-                        "pricing_updated_at": "2026-10-07",
-                        "pricing_notes": (
-                            "Standard short-context rates. Prompts over 272K input "
-                            "tokens are 2x input and cache rates and 1.5x output."
-                        ),
-                        "force_store_false": True,
-                        "tool_support": {"openai_responses": ["function"]},
-                        "request_shape_support": {
-                            "supported_inbound_dialects": ["openai-responses", "openai-chat"],
-                            "validation_status": "passed",
-                            "validation_notes": "local-pi chat_to_responses bridge for coding agent tools",
-                        },
-                        "reasoning": {
-                            "supported": True,
-                            "mode": "opt_in",
-                            "control": "effort_enum",
-                            "default_on": False,
-                        },
-                    }
-                },
+                "models": catalog["openai"],
             },
         },
         "models": models,
@@ -600,10 +713,11 @@ def pi_models(d3_policy: dict | None) -> list[dict]:
         }
     ]
     if d3_policy:
+        tiers = d3_tiers(d3_policy)
         models.append(
             {
                 "id": D3_GROUP,
-                "name": "Local d3-auto (d3 policy: deepseek-v4p1-flash cheap / gpt-6-luna strong)",
+                "name": f"Local d3-auto (d3 policy: {tiers['cheap']} cheap / {tiers['strong']} strong)",
                 "contextWindow": 124518,
                 "maxTokens": 8192,
                 "reasoning": False,
@@ -723,6 +837,23 @@ def parse_args() -> argparse.Namespace:
         help="external_policy.timeout_ms for d3-auto (default: 300)",
     )
     parser.add_argument(
+        "--d3-cheap-model",
+        default=D3_DEFAULT_TIERS["cheap"],
+        choices=sorted(TIER_MODELS),
+        help=f"model_ref for the d3-auto cheap tier (default: {D3_DEFAULT_TIERS['cheap']})",
+    )
+    parser.add_argument(
+        "--d3-strong-model",
+        default=D3_DEFAULT_TIERS["strong"],
+        choices=sorted(TIER_MODELS),
+        help=f"model_ref for the d3-auto strong tier (default: {D3_DEFAULT_TIERS['strong']})",
+    )
+    parser.add_argument(
+        "--d3-tier-groups",
+        action="store_true",
+        help="also add single-target d3-auto-cheap and d3-auto-strong groups (cost baselines)",
+    )
+    parser.add_argument(
         "--run",
         action="store_true",
         help="start the router in the foreground after writing files",
@@ -754,7 +885,12 @@ def main() -> None:
             "mode": args.d3_policy_mode,
             "on_error": args.d3_policy_on_error,
             "timeout_ms": args.d3_policy_timeout_ms,
+            "cheap_model": args.d3_cheap_model,
+            "strong_model": args.d3_strong_model,
+            "tier_groups": args.d3_tier_groups,
         }
+        if args.d3_cheap_model == args.d3_strong_model:
+            die("--d3-cheap-model and --d3-strong-model must differ")
 
     id_key = reuse_or_create_identifier_key(out_dir, rotate=args.rotate_identifier_key)
     ctl = resolve_cli(args.smartrouterctl, repo_root)
@@ -827,6 +963,14 @@ def main() -> None:
                 "weight": 30,
             },
         ],
+        "d3_tiers": (
+            {
+                tier: {"provider": TIER_MODELS[ref][0], "model_ref": ref}
+                for tier, ref in d3_tiers(d3_policy).items()
+            }
+            if d3_policy
+            else None
+        ),
         "token_file": str(token_path),
         "token_reused": token_reused,
         "caller_id": CALLER_ID,

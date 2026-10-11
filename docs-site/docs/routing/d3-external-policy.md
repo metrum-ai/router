@@ -153,6 +153,16 @@ models:
       - { provider: openai, model_ref: gpt-6-luna, tier: strong }
 ```
 
+Tier names describe capability, not price. A cost saving needs a strong tier
+that really costs more per token than the cheap one; in the pairing above,
+`gpt-6-luna` has the lower list price. For a local instance,
+`scripts/local_pi_instance.py --d3-policy-url ... --d3-strong-model gpt-6.1-sol`
+selects a pricier strong tier and writes its list prices into the provider
+catalog, so usage rows carry real costs. `--d3-cheap-model` does the same for
+the cheap tier, and `--d3-tier-groups` adds single-target `d3-auto-cheap` and
+`d3-auto-strong` groups for always-cheap and always-strong cost baselines
+(issue #287).
+
 Keep the router's `timeout_ms` above the adapter's d3 `timeout_ms`, and
 validation caps it at 5,000 ms. Aim for 300 ms or less, because every policy
 call, including in `shadow`, runs before the upstream call.

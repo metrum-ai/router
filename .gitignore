@@ -60,6 +60,9 @@ examples/cli-e2e-c/cli-e2e
 dist/
 logs/
 reports/
+# Python bytecode anywhere in the tree (Metrum AI Router)
+__pycache__/
+*.py[cod]
 scripts/__pycache__/
 examples/**/__pycache__/
 

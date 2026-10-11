@@ -1,0 +1,73 @@
+{
+ "schema": "metrum.ai/router-pi-tool-continuation-smoke/v1",
+ "ok": true,
+ "expect_model_identity": "requested_group",
+ "group": "d3-auto",
+ "proof_token": "PROOF-3f4d0b41e189",
+ "pi": {
+  "exit_code": 0,
+  "tools": [
+   "write",
+   "write",
+   "read"
+  ],
+  "tool_errors": [],
+  "final_text": "DONE\nPROOF-3f4d0b41e189",
+  "models": [
+   "d3-auto",
+   "d3-auto",
+   "d3-auto",
+   "d3-auto"
+  ],
+  "usage_rows": [
+   {
+    "request_id": "req_54621cbef3ae91289dadf0143abe4648",
+    "status": 200,
+    "target_provider": "fireworks",
+    "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+   },
+   {
+    "request_id": "req_32114a968cfcc32882724eb713445756",
+    "status": 200,
+    "target_provider": "fireworks",
+    "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+   },
+   {
+    "request_id": "req_2f82fae9af6278721766d2216200ecae",
+    "status": 200,
+    "target_provider": "fireworks",
+    "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+   },
+   {
+    "request_id": "req_1969b763a54296882089f5dde72fcbc1",
+    "status": 200,
+    "target_provider": "fireworks",
+    "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+   }
+  ],
+  "new_rows_during_pi": 4
+ },
+ "chat": {
+  "unary": {
+   "status": 200,
+   "request_id": "req_3fb776a7e9a8dfca03c3e59d4aa6d491",
+   "chunks": 1,
+   "models": [
+    "d3-auto"
+   ],
+   "target_provider": "fireworks",
+   "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+  },
+  "stream": {
+   "status": 200,
+   "request_id": "req_978c3dd076dcfa91dc444de382427ca3",
+   "chunks": 30,
+   "models": [
+    "d3-auto"
+   ],
+   "target_provider": "fireworks",
+   "target_model": "accounts/fireworks/models/deepseek-v4p1-flash"
+  }
+ },
+ "failures": []
+}

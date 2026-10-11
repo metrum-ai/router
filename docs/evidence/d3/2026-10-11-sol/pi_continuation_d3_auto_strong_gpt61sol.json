@@ -1,0 +1,65 @@
+{
+ "schema": "metrum.ai/router-pi-tool-continuation-smoke/v1",
+ "ok": true,
+ "expect_model_identity": "requested_group",
+ "group": "d3-auto-strong",
+ "proof_token": "PROOF-d5464929e3c1",
+ "pi": {
+  "exit_code": 0,
+  "tools": [
+   "write",
+   "read"
+  ],
+  "tool_errors": [],
+  "final_text": "DONE PROOF-d5464929e3c1",
+  "models": [
+   "d3-auto-strong",
+   "d3-auto-strong",
+   "d3-auto-strong"
+  ],
+  "usage_rows": [
+   {
+    "request_id": "req_5d52ff47591ce016c2f2470963c5a554",
+    "status": 200,
+    "target_provider": "openai",
+    "target_model": "gpt-6.1-sol"
+   },
+   {
+    "request_id": "req_da9586eea41bc732a4e55f262f03a229",
+    "status": 200,
+    "target_provider": "openai",
+    "target_model": "gpt-6.1-sol"
+   },
+   {
+    "request_id": "req_ba364672dbf56eb79527edd661332812",
+    "status": 200,
+    "target_provider": "openai",
+    "target_model": "gpt-6.1-sol"
+   }
+  ],
+  "new_rows_during_pi": 3
+ },
+ "chat": {
+  "unary": {
+   "status": 200,
+   "request_id": "req_b17e430f2b0a00e450c27c04c960ae16",
+   "chunks": 1,
+   "models": [
+    "d3-auto-strong"
+   ],
+   "target_provider": "openai",
+   "target_model": "gpt-6.1-sol"
+  },
+  "stream": {
+   "status": 200,
+   "request_id": "req_6e0c74ae70652e5bc85b20b92fdc3f93",
+   "chunks": 4,
+   "models": [
+    "d3-auto-strong"
+   ],
+   "target_provider": "openai",
+   "target_model": "gpt-6.1-sol"
+  }
+ },
+ "failures": []
+}
