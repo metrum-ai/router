@@ -12,6 +12,7 @@ import json
 import re
 import sys
 import tarfile
+import zipfile
 from pathlib import Path
 from typing import Iterable
 
@@ -47,6 +48,7 @@ DOCKER_PACKAGE_FILES = {
 PACKAGE_BINARIES = set(_PACKAGE_BINARY_PATHS)
 DOCKER_RUNTIME_BINARIES = {f"/app/bin/{name}" for name in product.PACKAGE_RUNTIME_BINARIES}
 EXPECTED_ELF_MACHINE = {"amd64": 62, "arm64": 183}
+EXPECTED_PE_MACHINE = {"amd64": 0x8664, "arm64": 0xAA64}
 DOCKER_IMAGE_RE = re.compile(
     rf"^images/{re.escape(product.IMAGE_NAME)}-.+-linux-(amd64|arm64)\.tar$"
 )
@@ -171,11 +173,15 @@ def has_appledouble_component(member_name: str) -> bool:
 
 def expected_arch(archive: Path) -> str | None:
     name = archive.name
-    if "-linux-amd64.tar" in name:
-        return "amd64"
-    if "-linux-arm64.tar" in name:
-        return "arm64"
+    for os_name in ("linux", "windows"):
+        for arch in ("amd64", "arm64"):
+            if f"-{os_name}-{arch}." in name:
+                return arch
     return None
+
+
+def is_windows_package(archive: Path) -> bool:
+    return "-windows-" in archive.name and archive.suffix == ".zip"
 
 
 def is_docker_package(archive: Path) -> bool:
@@ -187,7 +193,11 @@ def expected_package_files(archive: Path, allowed_docs: set[str]) -> tuple[set[s
     arch = expected_arch(archive)
     if is_docker_package(archive):
         return DOCKER_PACKAGE_FILES | docs, arch
-    return BINARY_PACKAGE_FILES | docs, arch
+    package_files = set(BINARY_PACKAGE_FILES)
+    if is_windows_package(archive):
+        package_files.difference_update(_PACKAGE_BINARY_PATHS)
+        package_files.update(f"{path}.exe" for path in _PACKAGE_BINARY_PATHS)
+    return package_files | docs, arch
 
 
 def validate_elf_arch(blob: bytes, arch: str) -> str | None:
@@ -202,6 +212,22 @@ def validate_elf_arch(blob: bytes, arch: str) -> str | None:
     expected_machine = EXPECTED_ELF_MACHINE[arch]
     if actual_machine != expected_machine:
         return f"has ELF machine {actual_machine}, expected {expected_machine} for linux-{arch}"
+    return None
+
+
+def validate_pe_arch(blob: bytes, arch: str) -> str | None:
+    if len(blob) < 64 or blob[:2] != b"MZ":
+        return "is not a PE binary"
+    pe_offset = int.from_bytes(blob[0x3C:0x40], "little")
+    if pe_offset + 26 > len(blob) or blob[pe_offset : pe_offset + 4] != b"PE\0\0":
+        return "has no valid PE header"
+    actual_machine = int.from_bytes(blob[pe_offset + 4 : pe_offset + 6], "little")
+    expected_machine = EXPECTED_PE_MACHINE[arch]
+    if actual_machine != expected_machine:
+        return f"has PE machine 0x{actual_machine:04x}, expected 0x{expected_machine:04x} for windows-{arch}"
+    optional_magic = int.from_bytes(blob[pe_offset + 24 : pe_offset + 26], "little")
+    if optional_magic != 0x20B:
+        return f"is not a PE32+ binary (optional-header magic 0x{optional_magic:04x})"
     return None
 
 
@@ -301,73 +327,97 @@ def validate_archive(archive: Path, allowed_docs: set[str]) -> list[str]:
     actual_files: set[str] = set()
     image_files: set[str] = set()
     expected_files, arch = expected_package_files(archive, allowed_docs)
+    windows_package = is_windows_package(archive)
+    windows_binary_paths = {f"{path}.exe" for path in _PACKAGE_BINARY_PATHS}
 
-    try:
-        package = tarfile.open(archive, "r:*")
-    except tarfile.TarError as exc:
-        return [f"{archive}: cannot read tar archive: {exc}"]
+    def validate_member(name: str, is_file: bool, size: int, read_blob) -> None:
+        parts = Path(name).parts
+        if not parts or name.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+            errors.append(f"{archive}: unsafe archive path: {name}")
+        rel = package_relative_name(name)
+        if has_appledouble_component(name):
+            errors.append(f"{archive}: AppleDouble metadata entry included: {rel}")
+        if FORBIDDEN_NAME_RE.search(name):
+            errors.append(f"{archive}: forbidden local secret/state file included: {rel}")
+        if FORBIDDEN_SOURCE_PATH_RE.search(rel):
+            errors.append(f"{archive}: forbidden source path included: {rel}")
 
-    with package:
-        members = package.getmembers()
-        member_roots = {Path(member.name).parts[0] for member in members if Path(member.name).parts}
-        expected_root = archive.name.removesuffix(".tar.gz") if arch is not None else None
-        if len(member_roots) != 1:
-            errors.append(f"{archive}: archive must contain exactly one top-level directory")
-        elif expected_root is not None and member_roots != {expected_root}:
-            errors.append(f"{archive}: top-level directory must be {expected_root}")
-        for member in members:
-            parts = Path(member.name).parts
-            if (
-                not parts
-                or member.name.startswith("/")
-                or any(part in {"", ".", ".."} for part in parts)
-            ):
-                errors.append(f"{archive}: unsafe archive path: {member.name}")
-            if not (member.isfile() or member.isdir()):
-                errors.append(f"{archive}: links and special archive entries are forbidden: {member.name}")
-            rel = package_relative_name(member.name)
-            if has_appledouble_component(member.name):
-                errors.append(f"{archive}: AppleDouble metadata entry included: {rel}")
-            if FORBIDDEN_NAME_RE.search(member.name):
-                errors.append(f"{archive}: forbidden local secret/state file included: {rel}")
-            if FORBIDDEN_SOURCE_PATH_RE.search(rel):
-                errors.append(f"{archive}: forbidden source path included: {rel}")
-
-            if member.isfile():
-                actual_files.add(rel)
-                if DOCKER_IMAGE_RE.fullmatch(rel):
-                    image_files.add(rel)
-
-            if is_docs_member(member.name) and member.isfile():
-                actual_docs.add(Path(rel).name)
-
-            if not member.isfile():
-                continue
-
-            extracted = package.extractfile(member)
-            if extracted is None:
-                continue
-
-            blob = extracted.read()
-            if rel in PACKAGE_BINARIES and arch is not None:
-                arch_error = validate_elf_arch(blob[:64], arch)
-                if arch_error:
-                    errors.append(f"{archive}: {rel} {arch_error}")
-
+        if is_file:
+            actual_files.add(rel)
             if DOCKER_IMAGE_RE.fullmatch(rel):
-                image_arch = DOCKER_IMAGE_RE.fullmatch(rel).group(1)
-                errors.extend(validate_docker_image_tar(archive, rel, blob, arch or image_arch))
+                image_files.add(rel)
+        if is_docs_member(name) and is_file:
+            actual_docs.add(Path(rel).name)
+        if not is_file:
+            return
 
-            if not should_scan_text(member.name, member.size):
-                continue
+        blob = read_blob()
+        if rel in PACKAGE_BINARIES and arch is not None:
+            arch_error = validate_elf_arch(blob[:64], arch)
+            if arch_error:
+                errors.append(f"{archive}: {rel} {arch_error}")
+        if windows_package and rel in windows_binary_paths and arch is not None:
+            arch_error = validate_pe_arch(blob, arch)
+            if arch_error:
+                errors.append(f"{archive}: {rel} {arch_error}")
+        image_match = DOCKER_IMAGE_RE.fullmatch(rel)
+        if image_match:
+            errors.extend(validate_docker_image_tar(archive, rel, blob, arch or image_match.group(1)))
+        if not should_scan_text(name, size):
+            return
+        text = decode_text(blob[: TEXT_SCAN_LIMIT + 1])
+        if text is None:
+            return
+        privacy_text = product.strip_allowed_docs_urls(text)
+        for label, pattern in FORBIDDEN_TEXT_PATTERNS:
+            if pattern.search(privacy_text):
+                errors.append(f"{archive}: {rel} contains {label}")
 
-            text = decode_text(blob[: TEXT_SCAN_LIMIT + 1])
-            if text is None:
-                continue
-            privacy_text = product.strip_allowed_docs_urls(text)
-            for label, pattern in FORBIDDEN_TEXT_PATTERNS:
-                if pattern.search(privacy_text):
-                    errors.append(f"{archive}: {rel} contains {label}")
+    if archive.suffix == ".zip":
+        try:
+            package = zipfile.ZipFile(archive)
+        except (OSError, zipfile.BadZipFile) as exc:
+            return [f"{archive}: cannot read zip archive: {exc}"]
+        with package:
+            members = package.infolist()
+            member_roots = {Path(member.filename).parts[0] for member in members if Path(member.filename).parts}
+            expected_root = archive.name.removesuffix(".zip") if arch is not None else None
+            if len(member_roots) != 1:
+                errors.append(f"{archive}: archive must contain exactly one top-level directory")
+            elif expected_root is not None and member_roots != {expected_root}:
+                errors.append(f"{archive}: top-level directory must be {expected_root}")
+            for member in members:
+                if "\\" in member.filename or re.match(r"^[A-Za-z]:", member.filename):
+                    errors.append(f"{archive}: unsafe archive path: {member.filename}")
+                mode = (member.external_attr >> 16) & 0xFFFF
+                file_type = mode & 0o170000
+                is_dir = member.is_dir()
+                is_file = not is_dir
+                if file_type not in {0, 0o100000, 0o040000}:
+                    errors.append(f"{archive}: links and special archive entries are forbidden: {member.filename}")
+                validate_member(member.filename, is_file, member.file_size, lambda member=member: package.read(member))
+    else:
+        try:
+            package = tarfile.open(archive, "r:*")
+        except (OSError, tarfile.TarError) as exc:
+            return [f"{archive}: cannot read tar archive: {exc}"]
+        with package:
+            members = package.getmembers()
+            member_roots = {Path(member.name).parts[0] for member in members if Path(member.name).parts}
+            expected_root = archive.name.removesuffix(".tar.gz") if arch is not None else None
+            if len(member_roots) != 1:
+                errors.append(f"{archive}: archive must contain exactly one top-level directory")
+            elif expected_root is not None and member_roots != {expected_root}:
+                errors.append(f"{archive}: top-level directory must be {expected_root}")
+            for member in members:
+                if not (member.isfile() or member.isdir()):
+                    errors.append(f"{archive}: links and special archive entries are forbidden: {member.name}")
+                validate_member(
+                    member.name,
+                    member.isfile(),
+                    member.size,
+                    lambda member=member: package.extractfile(member).read(),
+                )
 
     unexpected_files = actual_files - expected_files
     missing_files = expected_files - actual_files

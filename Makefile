@@ -456,6 +456,7 @@ secret-check: secret-contract
 
 	python3 scripts/launch_operational_readiness_test.py
 	python3 scripts/validate_package_contents_test.py
+	python3 scripts/make_release_zip_test.py
 	python3 scripts/release_artifact_inventory_test.py
 	python3 scripts/validate_release_clean_test.py
 	python3 scripts/compose_package_upgrade_test.py
@@ -557,12 +558,18 @@ build-go-only: capability-smoke-unit
 
 build-all: docs-build admin-build capability-smoke-unit
 	$(MAKE) validate-build-metadata
-	mkdir -p "$${DIST_DIR}/build/linux-amd64" "$${DIST_DIR}/build/linux-arm64"
+	mkdir -p "$${DIST_DIR}/build/linux-amd64" "$${DIST_DIR}/build/linux-arm64" "$${DIST_DIR}/build/windows-amd64" "$${DIST_DIR}/build/windows-arm64"
 	@set -e; \
 	for arch in amd64 arm64; do \
 		for bin in $(PACKAGE_BINARIES); do \
 			echo "building linux-$$arch/$$bin"; \
 			CGO_ENABLED=0 GOOS=linux GOARCH=$$arch go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$${DIST_DIR}/build/linux-$$arch/$$bin" "./cmd/$$bin"; \
+		done; \
+	done; \
+	for arch in amd64 arm64; do \
+		for bin in $(PACKAGE_BINARIES); do \
+			echo "building windows-$$arch/$$bin.exe"; \
+			CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$${DIST_DIR}/build/windows-$$arch/$$bin.exe" "./cmd/$$bin"; \
 		done; \
 	done
 
@@ -574,33 +581,43 @@ package-one: validate-release-clean docs-build admin-build capability-smoke-unit
 package-one-no-docs: capability-smoke-unit
 	@if [ "$${RELEASE_CLEAN_VALIDATED}" != "1" ]; then $(MAKE) validate-release-clean; fi
 	$(MAKE) validate-build-metadata
-	pkg_dir="$${DIST_DIR}/pkg/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}"; \
-	rm -rf "$${pkg_dir}"; \
-	mkdir -p "$${pkg_dir}/bin" "$${pkg_dir}/config/scripts" "$${pkg_dir}/docs" "$${pkg_dir}/caddy"; \
+	bin_suffix=; \
+	if [ "$${GOOS}" = windows ]; then bin_suffix=.exe; elif [ "$${GOOS}" != linux ]; then echo "unsupported package GOOS: $${GOOS}" >&2; exit 2; fi; \
+	pkg_name="$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}"; \
+	pkg_dir="$${DIST_DIR}/pkg/$$pkg_name"; \
+	rm -rf "$$pkg_dir"; \
+	mkdir -p "$$pkg_dir/bin" "$$pkg_dir/config/scripts" "$$pkg_dir/docs" "$$pkg_dir/caddy"; \
 	set -e; \
 	for bin in $(PACKAGE_BINARIES); do \
 		echo "packaging $$bin for $${GOOS}/$${GOARCH}"; \
-		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$${pkg_dir}/bin/$$bin" "./cmd/$$bin"; \
+		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
 	done; \
-	cp config.example.yaml "$${pkg_dir}/config/config.example.yaml"; \
-	cp env.example.json "$${pkg_dir}/config/env.example.json"; \
-	cp scripts/router.ts "$${pkg_dir}/config/scripts/router.ts"; \
-	cp deploy/Caddyfile "$${pkg_dir}/caddy/Caddyfile"; \
+	cp config.example.yaml "$$pkg_dir/config/config.example.yaml"; \
+	cp env.example.json "$$pkg_dir/config/env.example.json"; \
+	cp scripts/router.ts "$$pkg_dir/config/scripts/router.ts"; \
+	cp deploy/Caddyfile "$$pkg_dir/caddy/Caddyfile"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
-		cp "$$legal" "$${pkg_dir}/$$legal"; \
+		cp "$$legal" "$$pkg_dir/$$legal"; \
 	done; \
 	while IFS= read -r doc; do \
 		case "$$doc" in ""|\#*) continue ;; esac; \
-		cp "$$doc" "$${DIST_DIR}/pkg/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}/docs/$$(basename "$$doc")"; \
-	done < "$(PACKAGE_DOC_ALLOWLIST)"
-	find "$${DIST_DIR}/pkg/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}" -type d -exec chmod 0755 {} \;
-	find "$${DIST_DIR}/pkg/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}" -type f -exec chmod 0644 {} \;
-	chmod 0755 $${DIST_DIR}/pkg/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}/bin/*
-	$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}.tar.gz" "$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}"
-	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}.tar.gz"
+		cp "$$doc" "$$pkg_dir/docs/$$(basename "$$doc")"; \
+	done < "$(PACKAGE_DOC_ALLOWLIST)"; \
+	find "$$pkg_dir" -type d -exec chmod 0755 {} +; \
+	find "$$pkg_dir" -type f -exec chmod 0644 {} +; \
+	chmod 0755 "$$pkg_dir"/bin/*; \
+	if [ "$${GOOS}" = windows ]; then \
+		python3 scripts/make_release_zip.py "$$pkg_dir" "$${DIST_DIR}/$$pkg_name.zip"; \
+	else \
+		$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
+	fi; \
+	if [ "$${GOOS}" = windows ]; then archive="$${DIST_DIR}/$$pkg_name.zip"; else archive="$${DIST_DIR}/$$pkg_name.tar.gz"; fi; \
+	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"
 package-all: validate-release-clean docs-build admin-build capability-smoke-unit
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=amd64 $(MAKE) package-one-no-docs
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=arm64 $(MAKE) package-one-no-docs
+	RELEASE_CLEAN_VALIDATED=1 GOOS=windows GOARCH=amd64 $(MAKE) package-one-no-docs
+	RELEASE_CLEAN_VALIDATED=1 GOOS=windows GOARCH=arm64 $(MAKE) package-one-no-docs
 
 docker-image: docs-build admin-build capability-smoke-unit docker-image-no-docs
 
