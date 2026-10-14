@@ -5,7 +5,7 @@ doc_type: howto
 
 # Package Validation And Security Checks
 
-Release packages are designed to be small, inspectable, and safe for external administrators. The router-served `/docs/` site is the primary external reference; tarball Markdown is only an offline bootstrap set for starting the service.
+Release packages are designed to be small, inspectable, and safe for external administrators. The router-served `/docs/` site is the primary external reference; archive Markdown is only an offline bootstrap set for starting the router.
 
 ## What To Verify
 
@@ -24,6 +24,32 @@ metrum-ai-router-<version>-linux-<arch>/
   caddy/Caddyfile
   docs/
 ```
+
+Windows binary ZIPs use the same top-level layout and files as Linux packages,
+with `.exe` suffixes on the packaged binaries:
+
+```text
+metrum-ai-router-<version>-windows-<arch>/
+  bin/metrum-ai-router.exe
+  bin/metrum-ai-router-token-gen.exe
+  bin/metrum-ai-router-usage-report.exe
+  bin/metrum-ai-router-migrate.exe
+  bin/metrum-ai-routerctl.exe
+  config/config.example.yaml
+  config/env.example.json
+  config/scripts/router.ts
+  caddy/Caddyfile
+  docs/
+  LICENSE
+  NOTICE
+  THIRD_PARTY_NOTICES.md
+  MODEL_LICENSES.md
+```
+
+Windows ZIPs are named `metrum-ai-router-<version>-windows-amd64.zip` or
+`metrum-ai-router-<version>-windows-arm64.zip`. Windows binaries are not
+Authenticode-signed currently; the package does not install a Windows service,
+and the included Caddyfile is an example rather than a bundled Caddy service.
 
 For Docker Compose packages:
 
@@ -66,13 +92,24 @@ Run the release validation matrix before accepting or distributing artifacts. Th
 
 During artifact intake, include inspection against the package allowlist and denylist. Artifact inspection does not replace runtime smoke tests. For Docker Compose or Kubernetes deployments, still start the packaged router in the target environment and verify `/readyz`, `/docs/`, `/version`, `/v1/models`, one authenticated model request, admin reports when enabled, and metrics/admin denial for ordinary caller tokens.
 
-An accepted release set contains one binary package and one Docker package for
-each of `linux/amd64` and `linux/arm64`. Its `SHA256SUMS` and
-`release-artifacts.json` must bind every filename to its byte size, SHA-256,
-platform, release version, source commit, and UTC build date. Download all
-published assets into an empty directory and verify the checksums there; a
-checksum generated only from the builder's local copy is not publication
-evidence.
+An accepted release set contains Linux binary packages and Windows binary ZIPs
+for `amd64` and `arm64`, plus one Linux Docker package for each of
+`linux/amd64` and `linux/arm64` when Docker packages are part of the delivery.
+Its `SHA256SUMS` and `release-artifacts.json` must bind every published filename
+to its byte size, SHA-256, platform, release version, source commit, and UTC
+build date. Download all published assets into an empty directory and verify
+the checksums there; a checksum generated only from the builder's local copy is
+not publication evidence. On Windows, use PowerShell and compare the result to
+the matching line in the downloaded `SHA256SUMS`:
+
+```powershell
+Get-FileHash .\metrum-ai-router-<version>-windows-amd64.zip -Algorithm SHA256
+```
+
+Extract a Windows package and run `bin\metrum-ai-router.exe --version` to
+confirm the executable starts. The package does not configure service
+supervision; run it in a console for evaluation or configure your approved
+Windows process supervisor separately.
 
 ## What Must Not Be Present
 
