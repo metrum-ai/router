@@ -28,6 +28,8 @@ import time
 from pathlib import Path
 from typing import Callable, Sequence
 
+import canonical_product as product
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -210,12 +212,15 @@ def compose_network_name(compose_config: dict[str, object]) -> str:
 
 def router_image_tag(install_root: Path) -> str:
     env_path = install_root / upgrade.RUNTIME_ENV
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("SMART_LLMROUTER_VERSION="):
-            version = line.split("=", 1)[1].strip()
-            if version:
-                return f"metrum-ai-router:{version}"
-    raise CutoverError("compose/.env is missing SMART_LLMROUTER_VERSION")
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    for name in (product.VERSION_ENV, product.VERSION_ENV_LEGACY):
+        prefix = f"{name}="
+        for line in lines:
+            if line.startswith(prefix):
+                version = line.split("=", 1)[1].strip()
+                if version:
+                    return f"metrum-ai-router:{version}"
+    raise CutoverError(f"compose/.env is missing {product.VERSION_ENV}")
 
 
 def default_dump(install_root: Path, dump_path: Path) -> None:
