@@ -49,6 +49,7 @@ jobs:
         run: make test-fast
 
   windows-cross-compile:
+    if: github.event_name != 'merge_group'
     runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 20
     strategy:
