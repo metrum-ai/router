@@ -29,11 +29,44 @@ metrum-ai-router-<version>-linux-<arch>/
   docs/
 ```
 
-Use `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts. Release validation checks the package binaries against the selected architecture and rejects unexpected files, deployment-private notes, raw secrets, local state, and macOS archive metadata.
+Use `linux-amd64` for x86_64 Linux hosts and `linux-arm64` for ARM64 Linux hosts. Windows releases are named `metrum-ai-router-<version>-windows-amd64.zip` and `metrum-ai-router-<version>-windows-arm64.zip`; select `windows-amd64` for x86_64 Windows and `windows-arm64` for ARM64 Windows. The Windows ZIP has the same package layout and config, docs, Caddy example, and legal files as the Linux archive, with `.exe` appended to each binary under `bin/`.
 
 `metrum-ai-routerctl` provides customer-local configuration, caller-token,
 model, and usage operations. The default deployment is SQLite state with one
 Router process; it neither provisions nor binds RDS.
+
+## Windows ZIP Install
+
+Download the ZIP matching the Windows host architecture and verify its SHA-256
+against the release's `SHA256SUMS` before extracting. In PowerShell:
+
+```powershell
+Get-FileHash .\metrum-ai-router-<version>-windows-amd64.zip -Algorithm SHA256
+```
+
+Compare the displayed hash with the matching filename entry in `SHA256SUMS`.
+Extract the archive; it contains a top-level
+`metrum-ai-router-<version>-windows-<arch>\` directory with `bin\`, `config\`,
+`docs\`, `caddy\`, and the package legal files. The executables are named, for
+example, `bin\metrum-ai-router.exe` and
+`bin\metrum-ai-router-token-gen.exe`.
+
+Create and review a runtime config from the shipped templates, then run the
+router in a PowerShell console from the extracted package root:
+
+```powershell
+Copy-Item .\config\config.example.yaml .\config\config.yaml
+Copy-Item .\config\env.example.json .\config\env.json
+.\bin\metrum-ai-router.exe --config .\config\config.yaml
+```
+
+Populate provider credentials through the protected environment or the
+operator's approved secret mechanism before startup. The package does not
+install or configure a Windows service, and its Caddyfile is an example only;
+Caddy is not bundled as a service. Windows binaries are not Authenticode-signed
+currently, so Windows may display publisher/security warnings. Apply the
+organization's executable approval and service-supervision controls before
+production use.
 
 Create a dedicated service account, then create deployment-owned directories:
 

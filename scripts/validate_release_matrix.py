@@ -59,10 +59,15 @@ def run(label: str, cmd: list[str], *, optional: bool = False) -> bool:
         return False
 
 
+def list_package_archives(dist_dir: Path) -> list[Path]:
+    return sorted([*dist_dir.glob("metrum-ai-router-*.tar.gz"), *dist_dir.glob("metrum-ai-router-*.zip")])
+
+
 def check_artifacts() -> bool:
-    archives = sorted((ROOT / "dist").glob("metrum-ai-router-*.tar.gz"))
+    dist_dir = ROOT / "dist"
+    archives = list_package_archives(dist_dir)
     if not archives:
-        print("SKIP artifact content validation: no dist/metrum-ai-router-*.tar.gz archives found")
+        print("SKIP artifact content validation: no release archives found")
         return True
     return run(
         "artifact content validation",
@@ -100,7 +105,7 @@ def main() -> int:
     parser.add_argument(
         "--include-artifacts",
         action="store_true",
-        help="validate existing dist/*.tar.gz artifacts when present",
+        help="validate existing dist/*.tar.gz and dist/*.zip artifacts when present",
     )
     args = parser.parse_args()
     seed_make_defaults()
@@ -111,6 +116,7 @@ def main() -> int:
         ("package content validator self-test", [sys.executable, "scripts/validate_package_contents_test.py"]),
         ("release artifact inventory self-test", [sys.executable, "scripts/release_artifact_inventory_test.py"]),
         ("release security evidence self-test", [sys.executable, "scripts/release_security_evidence_test.py"]),
+        ("release matrix artifact selection self-test", [sys.executable, "scripts/validate_release_matrix_test.py"]),
         ("docker context validator", [sys.executable, "scripts/validate_docker_context.py"]),
         ("compose security validator", ["bash", "scripts/check_compose_security.sh"]),
     ]

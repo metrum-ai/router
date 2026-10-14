@@ -48,6 +48,37 @@ jobs:
       - name: make test-fast
         run: make test-fast
 
+  windows-cross-compile:
+    if: github.event_name != 'merge_group'
+    runs-on: [self-hosted, Linux, X64, router]
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go vet (windows/${{ matrix.arch }})
+        env:
+          CGO_ENABLED: 0
+          GOOS: windows
+          GOARCH: ${{ matrix.arch }}
+        run: go vet ./...
+      - name: cross-compile release binaries (windows/${{ matrix.arch }})
+        env:
+          CGO_ENABLED: 0
+          GOOS: windows
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          set -eu
+          for bin in $(make -s --eval='print-package-binaries:;@echo $(PACKAGE_BINARIES)' print-package-binaries); do
+            go build -buildvcs=false -o "$RUNNER_TEMP/$bin.exe" "./cmd/$bin"
+          done
+
   test-and-vet-merge-group:
     if: github.event_name == 'merge_group'
     name: test-and-vet
