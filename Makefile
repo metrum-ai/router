@@ -456,6 +456,7 @@ secret-check: secret-contract
 
 	python3 scripts/launch_operational_readiness_test.py
 	python3 scripts/validate_package_contents_test.py
+	python3 scripts/check_compose_security_test.py
 	python3 scripts/make_release_zip_test.py
 	python3 scripts/release_artifact_inventory_test.py
 	python3 scripts/validate_release_clean_test.py
