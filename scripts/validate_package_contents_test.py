@@ -11,6 +11,7 @@ import json
 import re
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 import validate_package_contents
@@ -117,6 +118,23 @@ def write_tar(path: Path, files: dict[str, str | bytes]) -> None:
             package.addfile(info, io.BytesIO(data))
 
 
+def pe(machine: int) -> bytes:
+    header = bytearray(90)
+    header[:2] = b"MZ"
+    header[0x3C:0x40] = (64).to_bytes(4, "little")
+    header[64:68] = b"PE\0\0"
+    header[68:70] = machine.to_bytes(2, "little")
+    header[88:90] = (0x20B).to_bytes(2, "little")
+    return bytes(header)
+
+
+def write_zip(path: Path, files: dict[str, str | bytes]) -> None:
+    with zipfile.ZipFile(path, "w") as package:
+        for name, content in files.items():
+            data = content if isinstance(content, bytes) else content.encode("utf-8")
+            package.writestr(name, data)
+
+
 def expect_errors(archive: Path, allowlist: Path, want: list[str]) -> None:
     errors = validate_package_contents.validate_archives([archive], allowlist)
     for expected in want:
@@ -193,6 +211,15 @@ def docker_image_tar(
     return image_data.getvalue()
 
 
+def windows_package_files(root: str = "metrum-ai-router-v1.0.0-windows-amd64") -> dict[str, str | bytes]:
+    files = binary_package_files(root)
+    for name in validate_package_contents.PACKAGE_BINARIES:
+        linux_path = f"{root}/{name}"
+        files.pop(linux_path)
+        files[f"{root}/{name}.exe"] = pe(0x8664)
+    return files
+
+
 def docker_package_files(root: str = "metrum-ai-router-v1.0.0-docker-linux-amd64") -> dict[str, str | bytes]:
     files: dict[str, str | bytes] = {
         f"{root}/compose/docker-compose.yml": "services: {}\n",
@@ -225,6 +252,20 @@ def main() -> int:
         good = root / "metrum-ai-router-v1.0.0-linux-amd64.tar.gz"
         write_tar(good, binary_package_files())
         expect_ok(good, allowlist)
+
+        good_windows = root / "metrum-ai-router-v1.0.0-windows-amd64.zip"
+        write_zip(good_windows, windows_package_files())
+        expect_ok(good_windows, allowlist)
+
+        wrong_windows_arch = root / "metrum-ai-router-v1.0.0-windows-arm64.zip"
+        write_zip(wrong_windows_arch, windows_package_files("metrum-ai-router-v1.0.0-windows-arm64"))
+        expect_errors(wrong_windows_arch, allowlist, ["expected 0xaa64 for windows-arm64"])
+
+        missing_windows_binary = root / "missing-windows-binary.zip"
+        missing_windows_files = windows_package_files()
+        del missing_windows_files["metrum-ai-router-v1.0.0-windows-amd64/bin/metrum-ai-routerctl.exe"]
+        write_zip(missing_windows_binary, missing_windows_files)
+        expect_errors(missing_windows_binary, allowlist, ["required package file is missing: bin/metrum-ai-routerctl.exe"])
 
         missing_cli = root / "missing-cli.tar.gz"
         missing_cli_files = binary_package_files()
