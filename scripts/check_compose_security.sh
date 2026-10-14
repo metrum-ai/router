@@ -10,7 +10,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 BASE_ENV="$TMP_DIR/base.env"
 cat >"$BASE_ENV" <<'ENV'
-SMART_LLMROUTER_VERSION=test-secure-linux-amd64
+METRUM_AI_ROUTER_VERSION=test-secure-linux-amd64
 ROUTER_HOSTNAME=router.example.com
 CADDY_EMAIL=ops@example.com
 CADDY_HTTP_PORT=8080
@@ -19,7 +19,7 @@ ENV
 
 OPT_IN_ENV="$TMP_DIR/postgres.env"
 cat >>"$OPT_IN_ENV" <<'ENV'
-SMART_LLMROUTER_VERSION=test-secure-linux-amd64
+METRUM_AI_ROUTER_VERSION=test-secure-linux-amd64
 POSTGRES_DB=llmrouter
 POSTGRES_USER=llmrouter
 POSTGRES_PASSWORD=test-secure-compose-password-42
@@ -27,7 +27,7 @@ ROUTER_USAGE_DB_DSN=host=postgres port=5432 user=llmrouter password=test-secure-
 POSTGRES_HOST_PORT=15432
 ENV
 
-if env -u SMART_LLMROUTER_VERSION docker compose --env-file /dev/null -f "$ROOT_DIR/deploy/docker-compose.yml" config >"$TMP_DIR/missing-image.out" 2>&1; then
+if env -u METRUM_AI_ROUTER_VERSION docker compose --env-file /dev/null -f "$ROOT_DIR/deploy/docker-compose.yml" config >"$TMP_DIR/missing-image.out" 2>&1; then
   echo "expected base docker compose config to fail without a pinned image version" >&2
   exit 1
 fi

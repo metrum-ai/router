@@ -167,8 +167,8 @@ docker load -i images/metrum-ai-router-<version>-linux-<arch>.tar
 cd compose
 cp .env .env.backup
 # Pin the image tag env var to the exact loaded tag (metrum-ai-router:<tag>).
-# Until the compose env rename lands, packages may still use SMART_LLMROUTER_VERSION;
-# the product contract name is METRUM_AI_ROUTER_VERSION.
+# Compose reads METRUM_AI_ROUTER_VERSION. Rename a legacy SMART_LLMROUTER_VERSION
+# line if your .env still has one (the package upgrade script does this for you).
 docker compose config >/dev/null
 docker compose up -d
 docker compose ps

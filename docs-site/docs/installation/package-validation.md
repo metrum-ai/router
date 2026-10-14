@@ -72,9 +72,9 @@ the other canonical runtime CLIs in the standard Docker image and Docker
 Compose package image.
 
 Confirm the architecture suffix matches the host and, for Docker packages, that
-`compose/.env` pins the packaged image tag. Until the PR3 compose env rename
-lands, existing packages may still use `SMART_LLMROUTER_VERSION`; new docs and
-the product contract use `METRUM_AI_ROUTER_VERSION`.
+`compose/.env` pins the packaged image tag in `METRUM_AI_ROUTER_VERSION`.
+Older installs may still have the legacy `SMART_LLMROUTER_VERSION` line;
+the package upgrade script rewrites it to `METRUM_AI_ROUTER_VERSION`.
 
 For Docker packages, the saved image includes `/app/bin/metrum-ai-router-migrate` and
 `/app/bin/metrum-ai-routerctl`. Version-check them before operation:

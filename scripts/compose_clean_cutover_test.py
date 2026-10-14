@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import canonical_product as product
 import compose_clean_cutover as cutover
 import compose_package_upgrade as upgrade
 
@@ -45,7 +46,7 @@ def make_package(root: Path, *, version: str = "a910827", arch: str = "amd64") -
     payload = root / f"metrum-ai-router-{version}-docker-linux-{arch}"
     write(payload / "compose" / "docker-compose.yml", "services: {}\n")
     write(payload / "compose" / "docker-compose.postgres-localhost.yml", "services:\n  postgres: {}\n")
-    write(payload / "compose" / ".env", "SMART_LLMROUTER_VERSION=placeholder\n")
+    write(payload / "compose" / ".env", f"{product.VERSION_ENV}=placeholder\n")
     write(payload / "images" / f"metrum-ai-router-{version}-linux-{arch}.tar", "image-bytes\n")
     archive = root / f"metrum-ai-router-{version}-docker-linux-{arch}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
@@ -61,7 +62,7 @@ def make_install(root: Path) -> Path:
     write(install / "compose" / "logs" / "requests.jsonl", "{}\n")
     write(
         install / "compose" / ".env",
-        "SMART_LLMROUTER_VERSION=4175bdf-linux-amd64\n"
+        f"{product.VERSION_ENV}=4175bdf-linux-amd64\n"
         "KEEP=yes\n"
         "ROUTER_USAGE_DB_DSN=host=postgres\n",
     )
@@ -135,6 +136,16 @@ class FakeRunner:
         if "pg_isready" in joined or "stop" in argv or (argv[-2:] == ["-d", "postgres"]):
             return subprocess.CompletedProcess(argv, 0, stdout="accepting connections\n", stderr="")
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+
+def test_router_image_tag_canonical_and_legacy_fallback() -> None:
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        env_path = root / "compose" / ".env"
+        write(env_path, f"{product.VERSION_ENV}=canonical-tag\n{product.VERSION_ENV_LEGACY}=legacy-tag\n")
+        require(cutover.router_image_tag(root) == "metrum-ai-router:canonical-tag", "canonical version did not take precedence")
+        write(env_path, f"{product.VERSION_ENV_LEGACY}=legacy-tag\n")
+        require(cutover.router_image_tag(root) == "metrum-ai-router:legacy-tag", "legacy version fallback failed")
 
 
 def test_missing_runtime_aborts() -> None:
@@ -309,7 +320,7 @@ def test_volume_reset_and_migrate_before_serve() -> None:
         require(container_rm_index < volume_rm_index, "volume rm ran before postgres container rm")
         require((install / "compose" / "config" / "config.yaml").read_text(encoding="utf-8") == "live: true\n", "live config was not copied")
         require((install / "compose" / "ROUTER_TOKEN.txt").exists(), "token was not copied")
-        require("SMART_LLMROUTER_VERSION=a910827-linux-amd64" in (install / "compose" / ".env").read_text(encoding="utf-8"), "version not pinned")
+        require(f"{product.VERSION_ENV}=a910827-linux-amd64" in (install / "compose" / ".env").read_text(encoding="utf-8"), "version not pinned")
         require(result["job_state"] == "validated", "migration gate did not validate")
         require(runner.verify_index is not None, "verify-serving was not run")
         require(runner.full_up_index is None, "compose up -d ran before skip_serve returned")
@@ -409,6 +420,7 @@ def test_source_has_no_star_move_or_dsn_flag() -> None:
 
 
 def main() -> int:
+    test_router_image_tag_canonical_and_legacy_fallback()
     test_missing_runtime_aborts()
     test_missing_tokens_aborts()
     test_forbidden_paths()
