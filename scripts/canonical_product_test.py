@@ -58,6 +58,11 @@ class CanonicalProductTest(unittest.TestCase):
         self.assertIsNotNone(docker)
         assert docker is not None
         self.assertEqual("-docker", docker.group("docker"))
+        windows = product.RELEASE_ARCHIVE_RE.fullmatch("metrum-ai-router-v2.0.0-windows-arm64.zip")
+        self.assertIsNotNone(windows)
+        assert windows is not None
+        self.assertEqual(("windows", "arm64", "zip"), (windows.group("os"), windows.group("arch"), windows.group("format")))
+        self.assertIsNone(product.RELEASE_ARCHIVE_RE.fullmatch("metrum-ai-router-v2.0.0-windows-amd64.tar.gz"))
         self.assertIsNone(product.RELEASE_ARCHIVE_RE.fullmatch("metrum-router-v1.4.4-linux-amd64.tar.gz"))
 
     def test_obsolete_slug_in_filename(self) -> None:

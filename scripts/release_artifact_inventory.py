@@ -26,14 +26,18 @@ CANONICAL_ARCHIVE_PREFIX = "metrum-ai-router"
 assert CANONICAL_ARCHIVE_PREFIX == product.PRODUCT_SLUG
 PACKAGE_RE = product.RELEASE_ARCHIVE_RE
 REQUIRED_FULL = {
-    ("binary", "amd64"),
-    ("binary", "arm64"),
-    ("docker", "amd64"),
-    ("docker", "arm64"),
+    ("binary", "linux", "amd64"),
+    ("binary", "linux", "arm64"),
+    ("binary", "windows", "amd64"),
+    ("binary", "windows", "arm64"),
+    ("docker", "linux", "amd64"),
+    ("docker", "linux", "arm64"),
 }
 REQUIRED_BINARY = {
-    ("binary", "amd64"),
-    ("binary", "arm64"),
+    ("binary", "linux", "amd64"),
+    ("binary", "linux", "arm64"),
+    ("binary", "windows", "amd64"),
+    ("binary", "windows", "arm64"),
 }
 REQUIRED_SETS = {
     "full": REQUIRED_FULL,
@@ -51,42 +55,55 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def parse_package(path: Path) -> tuple[str, str, str]:
+def parse_package(path: Path) -> tuple[str, str, str, str, str]:
     match = PACKAGE_RE.fullmatch(path.name)
     if not match:
         raise ValueError(f"unexpected release artifact filename: {path.name}")
+    os_name = match.group("os")
+    archive_format = match.group("format")
+    if (os_name, archive_format) not in {("linux", "tar.gz"), ("windows", "zip")}:
+        raise ValueError(f"unsupported release artifact platform/format: {path.name}")
+    if match.group("docker") and os_name != "linux":
+        raise ValueError(f"Docker release artifacts must target Linux: {path.name}")
     kind = "docker" if match.group("docker") else "binary"
-    return match.group("version"), kind, match.group("arch")
+    return match.group("version"), kind, os_name, match.group("arch"), archive_format
 
 
 def select_complete_set(
     dist_dir: Path,
     version: str,
-    required: set[tuple[str, str]] | None = None,
-) -> list[tuple[Path, str, str]]:
+    required: set[tuple[str, str, str]] | None = None,
+) -> list[tuple[Path, str, str, str, str]]:
     required_keys = required if required is not None else REQUIRED_FULL
-    selected: dict[tuple[str, str], Path] = {}
+    selected: dict[tuple[str, str, str], tuple[Path, str]] = {}
     errors: list[str] = []
-    for path in sorted(dist_dir.glob(f"{product.PKG_NAME}-*.tar.gz")):
+    for path in sorted(dist_dir.glob(f"{product.PKG_NAME}-*")):
+        if not path.is_file():
+            continue
         try:
-            found_version, kind, arch = parse_package(path)
+            found_version, kind, os_name, arch, archive_format = parse_package(path)
         except ValueError as exc:
-            errors.append(str(exc))
+            # Ignore unrelated product files, but reject malformed release-looking archives.
+            if path.name.endswith((".tar.gz", ".zip")):
+                errors.append(str(exc))
             continue
         if found_version != version:
             continue
-        key = (kind, arch)
+        key = (kind, os_name, arch)
         if key not in required_keys:
             continue
         if key in selected:
-            errors.append(f"duplicate {kind} linux-{arch} artifact for {version}")
-        selected[key] = path
+            errors.append(f"duplicate {kind} {os_name}-{arch} artifact for {version}")
+        selected[key] = (path, archive_format)
     missing = required_keys - set(selected)
     if missing:
-        errors.append("missing artifacts: " + ", ".join(f"{kind} linux-{arch}" for kind, arch in sorted(missing)))
+        errors.append("missing artifacts: " + ", ".join(f"{kind} {os_name}-{arch}" for kind, os_name, arch in sorted(missing)))
     if errors:
         raise ValueError("; ".join(errors))
-    return [(selected[key], key[0], key[1]) for key in sorted(required_keys)]
+    return [
+        (selected[key][0], key[0], key[1], key[2], selected[key][1])
+        for key in sorted(required_keys)
+    ]
 
 
 def atomic_write(path: Path, content: str) -> None:
@@ -141,10 +158,10 @@ def create_inventory(
     except KeyError as exc:
         raise ValueError(f"unknown artifact set: {artifact_set}") from exc
     selected = select_complete_set(dist_dir, version, required=required)
-    run_content_validator([path for path, _, _ in selected], allowlist)
+    run_content_validator([path for path, _, _, _, _ in selected], allowlist)
     artifacts: list[dict[str, object]] = []
     checksum_lines: list[str] = []
-    for path, kind, arch in selected:
+    for path, kind, os_name, arch, archive_format in selected:
         digest = sha256(path)
         checksum_lines.append(f"{digest}  {path.name}")
         item: dict[str, object] = {
@@ -152,7 +169,10 @@ def create_inventory(
             "size_bytes": path.stat().st_size,
             "sha256": digest,
             "kind": kind,
-            "platform": f"linux/{arch}",
+            "os": os_name,
+            "arch": arch,
+            "format": archive_format,
+            "platform": f"{os_name}/{arch}",
             "package_content_validation": "passed",
         }
         if release_url:
