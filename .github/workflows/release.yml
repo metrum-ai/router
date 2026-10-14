@@ -69,6 +69,7 @@ jobs:
           name: metrum-ai-router-${{ steps.version.outputs.tag }}
           path: |
             dist/metrum-ai-router-*.tar.gz
+            dist/metrum-ai-router-*.zip
             dist/SHA256SUMS
             dist/release-artifacts.json
           if-no-files-found: error
@@ -91,7 +92,7 @@ jobs:
           fi
           mapfile -t ASSETS < <(
             {
-              find dist -maxdepth 1 -type f -name 'metrum-ai-router-*.tar.gz'
+              find dist -maxdepth 1 -type f \( -name 'metrum-ai-router-*.tar.gz' -o -name 'metrum-ai-router-*.zip' \)
               printf '%s\n' dist/SHA256SUMS dist/release-artifacts.json
             } | sort -u
           )

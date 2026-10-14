@@ -2,7 +2,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Backup release package tarballs from DIST_DIR to an operator-configured restic repo.
+"""Backup release packages from DIST_DIR to an operator-configured restic repo.
 
 Credentials come from ignored ops.env.json (preferred), env.json (legacy mixed),
 or the process environment:
@@ -19,6 +19,8 @@ snapshots always replace the same paths:
 
   metrum-ai-router-linux-amd64.tar.gz
   metrum-ai-router-linux-arm64.tar.gz
+  metrum-ai-router-windows-amd64.zip
+  metrum-ai-router-windows-arm64.zip
   metrum-ai-router-docker-linux-amd64.tar.gz
   metrum-ai-router-docker-linux-arm64.tar.gz
 
@@ -47,24 +49,28 @@ DEFAULT_ENV_JSON = ROOT / "env.json"
 # Fixed staging path so restic snapshot paths stay identical across uploads.
 # tmp/ is gitignored; local hashed dist/ filenames are left unchanged.
 STABLE_STAGE_DIR = ROOT / "tmp" / "restic-dist-upload"
-PACKAGE_GLOB = "*.tar.gz"
+PACKAGE_GLOBS = ("*.tar.gz", "*.zip")
 DOCKER_PACKAGE_RE = re.compile(
     r"^metrum-ai-router-.+-docker-linux-(amd64|arm64)\.tar\.gz$"
 )
 BINARY_PACKAGE_RE = re.compile(
-    r"^metrum-ai-router-.+-linux-(amd64|arm64)\.tar\.gz$"
+    r"^metrum-ai-router-.+-(linux-(amd64|arm64)\.tar\.gz|windows-(amd64|arm64)\.zip)$"
 )
 REQUIRED_KINDS = (
-    ("binary", "amd64"),
-    ("binary", "arm64"),
-    ("docker", "amd64"),
-    ("docker", "arm64"),
+    ("binary", "linux", "amd64"),
+    ("binary", "linux", "arm64"),
+    ("binary", "windows", "amd64"),
+    ("binary", "windows", "arm64"),
+    ("docker", "linux", "amd64"),
+    ("docker", "linux", "arm64"),
 )
 STABLE_NAMES = {
-    ("binary", "amd64"): "metrum-ai-router-linux-amd64.tar.gz",
-    ("binary", "arm64"): "metrum-ai-router-linux-arm64.tar.gz",
-    ("docker", "amd64"): "metrum-ai-router-docker-linux-amd64.tar.gz",
-    ("docker", "arm64"): "metrum-ai-router-docker-linux-arm64.tar.gz",
+    ("binary", "linux", "amd64"): "metrum-ai-router-linux-amd64.tar.gz",
+    ("binary", "linux", "arm64"): "metrum-ai-router-linux-arm64.tar.gz",
+    ("binary", "windows", "amd64"): "metrum-ai-router-windows-amd64.zip",
+    ("binary", "windows", "arm64"): "metrum-ai-router-windows-arm64.zip",
+    ("docker", "linux", "amd64"): "metrum-ai-router-docker-linux-amd64.tar.gz",
+    ("docker", "linux", "arm64"): "metrum-ai-router-docker-linux-arm64.tar.gz",
 }
 
 
@@ -81,8 +87,16 @@ def is_release_package(name: str) -> bool:
 
 
 def package_arch(name: str) -> str | None:
-    match = re.search(r"linux-(amd64|arm64)\.tar\.gz$", name)
+    match = re.search(r"-(?:linux|windows)-(amd64|arm64)\.(?:tar\.gz|zip)$", name)
     return match.group(1) if match else None
+
+
+def package_platform(name: str) -> str | None:
+    if re.search(r"-linux-(?:amd64|arm64)\.tar\.gz$", name):
+        return "linux"
+    if re.search(r"-windows-(?:amd64|arm64)\.zip$", name):
+        return "windows"
+    return None
 
 
 def package_kind(name: str) -> str | None:
@@ -101,7 +115,7 @@ def package_version(name: str) -> str | None:
         )
     elif is_binary_package(name):
         match = re.match(
-            r"^metrum-ai-router-(.+)-linux-(?:amd64|arm64)\.tar\.gz$",
+            r"^metrum-ai-router-(.+)-(?:linux-(?:amd64|arm64)\.tar\.gz|windows-(?:amd64|arm64)\.zip)$",
             name,
         )
     else:
@@ -114,7 +128,10 @@ def stable_package_name(path: Path) -> str:
     arch = package_arch(path.name)
     if kind is None or arch is None:
         raise SystemExit(f"unable to map stable name for {path.name}")
-    return STABLE_NAMES[(kind, arch)]
+    os_name = package_platform(path.name)
+    if os_name is None:
+        raise SystemExit(f"unable to map platform for {path.name}")
+    return STABLE_NAMES[(kind, os_name, arch)]
 
 
 def list_release_packages(dist_dir: Path) -> list[Path]:
@@ -122,21 +139,22 @@ def list_release_packages(dist_dir: Path) -> list[Path]:
         raise SystemExit(f"dist directory not found: {dist_dir}")
     return sorted(
         path
-        for path in dist_dir.glob(PACKAGE_GLOB)
+        for pattern in PACKAGE_GLOBS
+        for path in dist_dir.glob(pattern)
         if path.is_file() and is_release_package(path.name)
     )
 
 
 def missing_required_packages(packages: list[Path]) -> list[str]:
     present = {
-        (package_kind(path.name), package_arch(path.name))
+        (package_kind(path.name), package_platform(path.name), package_arch(path.name))
         for path in packages
-        if package_kind(path.name) and package_arch(path.name)
+        if package_kind(path.name) and package_platform(path.name) and package_arch(path.name)
     }
     missing: list[str] = []
-    for kind, arch in REQUIRED_KINDS:
-        if (kind, arch) not in present:
-            missing.append(f"{kind} linux-{arch}")
+    for kind, os_name, arch in REQUIRED_KINDS:
+        if (kind, os_name, arch) not in present:
+            missing.append(f"{kind} {os_name}-{arch}")
     return missing
 
 
@@ -156,23 +174,24 @@ def select_release_set(
 ) -> tuple[str, list[Path]]:
     if not packages:
         raise SystemExit(
-            "no release package tarballs found; "
+            "no release package archives found; "
             "run `make package-all package-docker-all` first"
         )
     groups = group_packages_by_version(packages)
     complete: dict[str, list[Path]] = {}
     for version, members in groups.items():
-        # One artifact per kind/arch; reject duplicate kind/arch for a version.
-        keyed: dict[tuple[str, str], Path] = {}
+        # One artifact per kind/platform/arch; reject duplicate platform targets.
+        keyed: dict[tuple[str, str, str], Path] = {}
         for path in members:
             kind = package_kind(path.name)
+            os_name = package_platform(path.name)
             arch = package_arch(path.name)
-            if kind is None or arch is None:
+            if kind is None or os_name is None or arch is None:
                 continue
-            key = (kind, arch)
+            key = (kind, os_name, arch)
             if key in keyed:
                 raise SystemExit(
-                    f"duplicate {kind} linux-{arch} packages for version {version}: "
+                    f"duplicate {kind} {os_name}-{arch} packages for version {version}: "
                     f"{keyed[key].name} and {path.name}"
                 )
             keyed[key] = path
@@ -191,8 +210,8 @@ def select_release_set(
 
     if not complete:
         raise SystemExit(
-            "incomplete release set for CTO backup; need binary+docker "
-            "linux-amd64 and linux-arm64 for one VERSION. "
+            "incomplete release set for CTO backup; need binary linux/windows "
+            "amd64 and arm64 plus docker linux amd64 and arm64 for one VERSION. "
             "Build with `make package-all package-docker-all`."
         )
 
@@ -411,27 +430,39 @@ def self_test() -> None:
     names = [
         Path("metrum-ai-router-v1-linux-amd64.tar.gz"),
         Path("metrum-ai-router-v1-linux-arm64.tar.gz"),
+        Path("metrum-ai-router-v1-windows-amd64.zip"),
+        Path("metrum-ai-router-v1-windows-arm64.zip"),
         Path("metrum-ai-router-v1-docker-linux-amd64.tar.gz"),
         Path("metrum-ai-router-v1-docker-linux-arm64.tar.gz"),
     ]
     if missing_required_packages(names):
         raise AssertionError("complete set reported missing packages")
-    if not missing_required_packages(names[:2]):
-        raise AssertionError("incomplete set should report missing docker packages")
-    if missing_required_packages(names[2:]) != ["binary linux-amd64", "binary linux-arm64"]:
+    if not missing_required_packages(names[:4]):
+        raise AssertionError("binary-only set should report missing Docker packages")
+    if missing_required_packages(names[4:]) != [
+        "binary linux-amd64", "binary linux-arm64", "binary windows-amd64", "binary windows-arm64"
+    ]:
         raise AssertionError("docker-only set should report missing binary packages")
     if is_binary_package("metrum-ai-router-v1-docker-linux-amd64.tar.gz"):
         raise AssertionError("docker package must not classify as binary")
+    if not is_binary_package("metrum-ai-router-v1-windows-arm64.zip"):
+        raise AssertionError("Windows zip must classify as a release binary")
+    if package_version("metrum-ai-router-v1-windows-arm64.zip") != "v1":
+        raise AssertionError("Windows package version parse failed")
+    if package_platform("metrum-ai-router-v1-windows-arm64.zip") != "windows":
+        raise AssertionError("Windows package platform parse failed")
     if package_version("metrum-ai-router-v1-docker-linux-amd64.tar.gz") != "v1":
         raise AssertionError("docker package version parse failed")
 
     if stable_package_name(names[0]) != "metrum-ai-router-linux-amd64.tar.gz":
-        raise AssertionError("binary stable name mismatch")
-    if stable_package_name(names[2]) != "metrum-ai-router-docker-linux-amd64.tar.gz":
-        raise AssertionError("docker stable name mismatch")
+        raise AssertionError("Linux binary stable name mismatch")
+    if stable_package_name(names[2]) != "metrum-ai-router-windows-amd64.zip":
+        raise AssertionError("Windows binary stable name mismatch")
+    if stable_package_name(names[4]) != "metrum-ai-router-docker-linux-amd64.tar.gz":
+        raise AssertionError("Docker stable name mismatch")
 
     version, selected = select_release_set(names, requested_version="v1")
-    if version != "v1" or len(selected) != 4:
+    if version != "v1" or len(selected) != 6:
         raise AssertionError("select_release_set failed for explicit version")
 
     mixed = names + [
@@ -439,7 +470,7 @@ def self_test() -> None:
         Path("metrum-ai-router-old-linux-arm64.tar.gz"),
     ]
     version, selected = select_release_set(mixed)
-    if version != "v1" or len(selected) != 4:
+    if version != "v1" or len(selected) != 6:
         raise AssertionError("select_release_set should prefer the only complete set")
 
     tags = version_tags("v1", names)
@@ -470,6 +501,9 @@ def self_test() -> None:
         expected_names = sorted(STABLE_NAMES.values())
         if got != expected_names:
             raise AssertionError(f"staged names mismatch: {got} != {expected_names}")
+        discovered = list_release_packages(source_dir)
+        if len(discovered) != 6 or not any(path.suffix == ".zip" for path in discovered):
+            raise AssertionError(f"release package discovery omitted Windows zips: {discovered}")
 
     print("backup_dist_restic self-test passed")
 

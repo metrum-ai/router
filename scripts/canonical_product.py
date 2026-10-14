@@ -95,7 +95,9 @@ OBSOLETE_PRODUCT_SLUGS = (
 )
 
 RELEASE_ARCHIVE_RE = re.compile(
-    rf"^{re.escape(PRODUCT_SLUG)}-(?P<version>.+?)(?P<docker>-docker)?-linux-(?P<arch>amd64|arm64)\.tar\.gz$"
+    rf"^{re.escape(PRODUCT_SLUG)}-(?P<version>.+?)(?P<docker>-docker)?-"
+    r"(?!(?:linux-(?:amd64|arm64)\.zip|windows-(?:amd64|arm64)\.tar\.gz)$)"
+    r"(?P<os>linux|windows)-(?P<arch>amd64|arm64)\.(?P<format>tar\.gz|zip)$"
 )
 
 # Host used by the temporary docs origin; only docs URLs are public-safe.

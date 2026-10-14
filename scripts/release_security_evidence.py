@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from collections import Counter
 from pathlib import Path
 
@@ -32,6 +33,14 @@ def run_output(command: list[str]) -> str:
 
 
 def safe_extract(archive: Path, destination: Path) -> None:
+    if archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as package:
+            for member in package.infolist():
+                member_path = Path(member.filename)
+                if member_path.is_absolute() or ".." in member_path.parts or "\\" in member.filename:
+                    raise ValueError(f"unsafe path in release archive: {member.filename}")
+            package.extractall(destination)
+        return
     with tarfile.open(archive, "r:gz") as package:
         package.extractall(destination, filter="data")
 
@@ -71,8 +80,8 @@ def main() -> int:
 
     records: list[dict[str, object]] = []
     threshold_failures = 0
-    for archive, kind, arch in selected:
-        stem = archive.name.removesuffix(".tar.gz")
+    for archive, kind, os_name, arch, archive_format in selected:
+        stem = archive.name.removesuffix(f".{archive_format}")
         sbom = output_dir / f"{stem}.sbom.cdx.json"
         report = output_dir / f"{stem}.vulnerabilities.json"
         with tempfile.TemporaryDirectory(prefix="release-security-") as temporary:
@@ -101,7 +110,10 @@ def main() -> int:
             "artifact": archive.name,
             "artifact_sha256": sha256(archive),
             "kind": kind,
-            "platform": f"linux/{arch}",
+            "os": os_name,
+            "arch": arch,
+            "format": archive_format,
+            "platform": f"{os_name}/{arch}",
             "sbom": sbom.name,
             "sbom_sha256": sha256(sbom),
             "vulnerability_report": report.name,
