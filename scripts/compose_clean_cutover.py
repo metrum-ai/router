@@ -28,11 +28,10 @@ import time
 from pathlib import Path
 from typing import Callable, Sequence
 
-import canonical_product as product
-
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
+import canonical_product as product
 import compose_package_upgrade as upgrade
 
 ROOT = Path(__file__).resolve().parents[1]

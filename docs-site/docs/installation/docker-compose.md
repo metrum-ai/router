@@ -48,7 +48,7 @@ cp ../config/env.example.json config/env.json
 cp -R ../config/scripts config/scripts
 ```
 
-Review `.env` or copy `.env.example` to `.env` if needed. New SQLite installs require only `SMART_LLMROUTER_VERSION`, pinned to the exact package image tag; never use `latest`. The base profile has no database credential or TCP database egress.
+Review `.env` or copy `.env.example` to `.env` if needed. New SQLite installs require only `METRUM_AI_ROUTER_VERSION`, pinned to the exact package image tag; never use `latest`. The base profile has no database credential or TCP database egress.
 
 Generate at least one caller token and replace the placeholder caller hashes in `config/config.yaml` before first startup:
 
@@ -159,7 +159,7 @@ curl -fsS "$ROUTER_BASE_URL/v1/chat/completions" \
 
 ## Upgrade And Rollback
 
-Before an upgrade, back up `compose/.env`, `compose/config/`, `compose/state/`, Postgres data, logs needed by the retention policy, and the previous package artifact. Load the new image tar, update `SMART_LLMROUTER_VERSION` to the packaged image tag, review config template changes, run `docker compose config`, then recreate the router service.
+Before an upgrade, back up `compose/.env`, `compose/config/`, `compose/state/`, Postgres data, logs needed by the retention policy, and the previous package artifact. Load the new image tar, update `METRUM_AI_ROUTER_VERSION` to the packaged image tag (the package upgrade script migrates a legacy `SMART_LLMROUTER_VERSION` line automatically), review config template changes, run `docker compose config`, then recreate the router service.
 
 After restart, repeat `/readyz`, `/docs/`, `/v1/models`, one caller smoke, and an admin report smoke when reports are enabled.
 
