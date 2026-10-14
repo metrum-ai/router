@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import canonical_product as product
 import compose_package_upgrade as upgrade
 
 
@@ -28,7 +29,7 @@ def write(path: Path, text: str = "x\n") -> None:
 def make_package(root: Path, *, version: str = "a910827", arch: str = "amd64") -> Path:
     payload = root / f"metrum-ai-router-{version}-docker-linux-{arch}"
     write(payload / "compose" / "docker-compose.yml", "services: {}\n")
-    write(payload / "compose" / ".env", "SMART_LLMROUTER_VERSION=placeholder\nOTHER=keep\n")
+    write(payload / "compose" / ".env", f"{product.VERSION_ENV}=placeholder\nOTHER=keep\n")
     write(payload / "images" / f"metrum-ai-router-{version}-linux-{arch}.tar", "image-bytes\n")
     write(payload / "config" / "config.example.yaml", "example: true\n")
     archive = root / f"metrum-ai-router-{version}-docker-linux-{arch}.tar.gz"
@@ -43,7 +44,7 @@ def make_install(root: Path) -> Path:
     write(install / "compose" / "config" / "env.json", '{"k":"secret"}\n')
     write(install / "compose" / "state" / "usage.sqlite", "db\n")
     write(install / "compose" / "logs" / "requests.jsonl", "{}\n")
-    write(install / "compose" / ".env", "SMART_LLMROUTER_VERSION=4175bdf-linux-amd64\nKEEP=yes\n")
+    write(install / "compose" / ".env", f"{product.VERSION_ENV}=4175bdf-linux-amd64\nKEEP=yes\n")
     write(install / "compose" / "ROUTER_TOKEN.txt", "token-redacted\n")
     write(install / "compose" / "ROUTER_TOKEN_HARBOR.txt", "harbor-redacted\n")
     write(install / "compose" / "docker-compose.yml", "old: true\n")
@@ -70,14 +71,46 @@ def test_strip_unpack_and_runtime_copy() -> None:
         require((install / "compose" / "ROUTER_TOKEN.txt").exists(), "ROUTER_TOKEN.txt was not copied")
         require((install / "compose" / "ROUTER_TOKEN_HARBOR.txt").exists(), "ROUTER_TOKEN_HARBOR.txt was not copied")
         env_text = (install / "compose" / ".env").read_text(encoding="utf-8")
-        require("SMART_LLMROUTER_VERSION=a910827-linux-amd64" in env_text, f"version not pinned: {env_text}")
-        require("KEEP=yes" in env_text, "non-version .env keys were dropped")
+        require(f"{product.VERSION_ENV}=a910827-linux-amd64" in env_text, f"version not pinned: {env_text}")
+        require(f"{product.VERSION_ENV_LEGACY}=" not in env_text, "legacy version key was retained")
+        require(env_text.splitlines() == [f"{product.VERSION_ENV}=a910827-linux-amd64", "KEEP=yes"], f".env lines/order changed: {env_text}")
         require(not (install / "config" / "config.example.yaml").exists() or True, "example config copy is allowed in package tree")
         backup = Path(str(result["backup"]))
         require(backup.is_dir(), "backup missing")
         require((backup / "compose" / "config" / "config.yaml").exists(), "backup lost live config")
         require("compose/config" in result["copied"], "copy list missing compose/config")
         require("compose/ROUTER_TOKEN.txt" in result["copied"], "copy list missing token")
+
+
+def test_pin_version_env_migrates_legacy_and_collapses_duplicates() -> None:
+    cases = (
+        (
+            "legacy-only",
+            f"FIRST=keep\n{product.VERSION_ENV_LEGACY}=old\nLAST=keep\n",
+        ),
+        (
+            "canonical-only",
+            f"FIRST=keep\n{product.VERSION_ENV}=old\nLAST=keep\n",
+        ),
+        (
+            "both",
+            f"FIRST=keep\n{product.VERSION_ENV_LEGACY}=old\nMIDDLE=keep\n{product.VERSION_ENV}=older\nLAST=keep\n",
+        ),
+    )
+    for label, original in cases:
+        with tempfile.TemporaryDirectory() as temp:
+            env_path = Path(temp) / ".env"
+            write(env_path, original)
+            upgrade.pin_version_env(env_path, "new-tag")
+            result = env_path.read_text(encoding="utf-8").splitlines()
+            expected = [
+                line for line in original.splitlines()
+                if not line.startswith((f"{product.VERSION_ENV}=", f"{product.VERSION_ENV_LEGACY}="))
+            ]
+            expected.insert(1, f"{product.VERSION_ENV}=new-tag")
+            require(result == expected, f"{label} migration changed .env semantics/order: {result}")
+            require(sum(line.startswith(f"{product.VERSION_ENV}=") for line in result) == 1, f"{label} did not leave one canonical key: {result}")
+            require(not any(line.startswith(f"{product.VERSION_ENV_LEGACY}=") for line in result), f"{label} retained legacy key: {result}")
 
 
 def test_missing_runtime_aborts() -> None:
@@ -159,7 +192,7 @@ def test_rollback_restores_backup() -> None:
 def test_postgres_override_compose_files() -> None:
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp) / "metrum-ai-router"
-        write(root / "compose" / ".env", "SMART_LLMROUTER_VERSION=x\nROUTER_USAGE_DB_DSN=host=postgres\n")
+        write(root / "compose" / ".env", f"{product.VERSION_ENV}=x\nROUTER_USAGE_DB_DSN=host=postgres\n")
         write(root / "compose" / "docker-compose.yml", "services: {}\n")
         write(root / "compose" / "docker-compose.postgres-localhost.yml", "services: {}\n")
         require(upgrade.postgres_override_enabled(root / "compose" / ".env"), "DSN not detected")
@@ -167,13 +200,14 @@ def test_postgres_override_compose_files() -> None:
             upgrade.compose_file_args(root) == ["-f", "docker-compose.yml", "-f", "docker-compose.postgres-localhost.yml"],
             f"unexpected compose files: {upgrade.compose_file_args(root)}",
         )
-        write(root / "compose" / ".env", "SMART_LLMROUTER_VERSION=x\n# ROUTER_USAGE_DB_DSN=host=postgres\n")
+        write(root / "compose" / ".env", f"{product.VERSION_ENV}=x\n# ROUTER_USAGE_DB_DSN=host=postgres\n")
         require(not upgrade.postgres_override_enabled(root / "compose" / ".env"), "commented DSN treated as enabled")
         require(upgrade.compose_file_args(root) == ["-f", "docker-compose.yml"], "override used without DSN")
 
 
 def main() -> int:
     test_strip_unpack_and_runtime_copy()
+    test_pin_version_env_migrates_legacy_and_collapses_duplicates()
     test_missing_runtime_aborts()
     test_token_listing_stays_in_compose_dir()
     test_forbidden_paths()

@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
+import canonical_product as product
+
 
 PACKAGE_FILE_RE = re.compile(
     r"^metrum-ai-router-(?P<version>.+)-docker-linux-(?P<arch>amd64|arm64)\.tar\.gz$"
@@ -192,16 +194,18 @@ def pin_version_env(env_path: Path, version_env: str) -> None:
     if not env_path.is_file():
         raise UpgradeError(f"{env_path} is missing")
     lines = env_path.read_text(encoding="utf-8").splitlines()
-    replaced = False
+    version_prefixes = (f"{product.VERSION_ENV}=", f"{product.VERSION_ENV_LEGACY}=")
+    pinned = False
     out: list[str] = []
     for line in lines:
-        if line.startswith("SMART_LLMROUTER_VERSION="):
-            out.append(f"SMART_LLMROUTER_VERSION={version_env}")
-            replaced = True
+        if line.startswith(version_prefixes):
+            if not pinned:
+                out.append(f"{product.VERSION_ENV}={version_env}")
+                pinned = True
         else:
             out.append(line)
-    if not replaced:
-        out.append(f"SMART_LLMROUTER_VERSION={version_env}")
+    if not pinned:
+        out.append(f"{product.VERSION_ENV}={version_env}")
     env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
