@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -266,8 +265,7 @@ func TestUsageJSONLImportSkipsOperationalEventRecords(t *testing.T) {
 }
 
 func TestSQLiteUsageDBUsesPrivateFileMode(t *testing.T) {
-	oldUmask := syscall.Umask(0)
-	defer syscall.Umask(oldUmask)
+	clearUmaskForTest(t)
 	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
 	store, err := OpenUsageStorePath(dbPath)
 	if err != nil {
