@@ -80,7 +80,7 @@ Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 
 ### Local coding-agent router (example config)
 
-For a weighted `big-coder` mix (OpenAI gpt-6-luna 70 / Fireworks deepseek-v4p1-flash 30)
+For a weighted `big-coder` mix (Fireworks deepseek-v4p1-flash-1017 70 / OpenAI gpt-6-luna 30)
 listening on `0.0.0.0:18081`, with upstream keys from repo `env.json` and a
 reusable `METRUM_API_KEY` (requires [uv](https://github.com/astral-sh/uv)):
 
@@ -97,6 +97,10 @@ The local instance sets `server.responses.model_identity: requested_group`, so
 responses report `model: big-coder`. The serving upstream is in
 `request_usage.target_model` and the admin reports. `make local-router-pi-smoke`
 runs a pi write/read tool continuation against it.
+The 70/30 weights apply when both targets are eligible for Chat requests;
+Responses requests use Luna because the Fireworks target is configured for Chat.
+The reference `default` group in `config.example.yaml` uses the same two
+targets and weights.
 
 The local demo and `config.example.yaml` enable the admin reports dashboard by
 default at `http://127.0.0.1:18081/admin/reports/`, with `admin` / `admin`.

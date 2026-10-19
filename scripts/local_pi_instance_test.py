@@ -124,12 +124,15 @@ def test_creates_weighted_instance_and_reuses_metrum_key() -> None:
             raise AssertionError(list(cfg["models"]))
         if set(cfg["providers"]) != {"fireworks", "openai"}:
             raise AssertionError(set(cfg["providers"]))
-        flash = cfg["providers"]["fireworks"]["models"]["deepseek-v4p1-flash"]
-        if flash["model"] != "accounts/fireworks/models/deepseek-v4p1-flash":
+        flash = cfg["providers"]["fireworks"]["models"]["deepseek-v4p1-flash-1017"]
+        if flash["model"] != "accounts/fireworks/models/deepseek-v4p1-flash-1017":
             raise AssertionError(flash["model"])
+        if (flash["input_price_per_million_usd"], flash["cached_input_price_per_million_usd"],
+                flash["output_price_per_million_usd"]) != (0.30, 0.006, 1.20):
+            raise AssertionError("deepseek-v4p1-flash-1017 pricing metadata")
         targets = cfg["models"]["big-coder"]["targets"]
         weights = [(t["provider"], t["model_ref"], t["weight"]) for t in targets]
-        if weights != [("openai", "gpt-6-luna", 70), ("fireworks", "deepseek-v4p1-flash", 30)]:
+        if weights != [("fireworks", "deepseek-v4p1-flash-1017", 70), ("openai", "gpt-6-luna", 30)]:
             raise AssertionError(weights)
         if cfg["providers"]["openai"]["dialect"] != "openai-responses":
             raise AssertionError(cfg["providers"]["openai"]["dialect"])

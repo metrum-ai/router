@@ -7,8 +7,8 @@
 Default shape matches the local pi setup:
   listen 0.0.0.0:18081
   group big-coder only (weighted)
-    70% openai / gpt-6-luna (Responses via chat_to_responses)
-    30% fireworks / accounts/fireworks/models/deepseek-v4p1-flash
+    70% fireworks / accounts/fireworks/models/deepseek-v4p1-flash-1017
+    30% openai / gpt-6-luna (Responses via chat_to_responses)
   server.responses.model_identity: requested_group
     caller-facing responses report model "big-coder"; usage rows, attempt
     rows and admin reports keep the serving upstream model
@@ -65,7 +65,7 @@ MODEL_IDENTITY = "requested_group"
 
 # Provider model catalog (Metrum AI Router local instance). Each entry is the
 # provider "models" block for one model_ref; list prices are USD per 1M tokens.
-# big-coder always uses gpt-6-luna and deepseek-v4p1-flash; the d3-auto tiers
+# big-coder always uses gpt-6-luna and deepseek-v4p1-flash-1017; the d3-auto tiers
 # can use any entry (issue #287).
 OPENAI_REASONING_OPT_IN = {"supported": True, "mode": "opt_in", "control": "effort_enum", "default_on": False}
 OPENAI_TOOL_SHAPES = {
@@ -82,6 +82,19 @@ FIREWORKS_CHAT_SHAPES = {
     "tool_support": {"openai_chat": ["tools"]},
 }
 TIER_MODELS: dict[str, tuple[str, dict]] = {
+    "deepseek-v4p1-flash-1017": ("fireworks", {
+        "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+        "tier": "coding",
+        "context_tokens": 1048576,
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "input_price_per_million_usd": 0.30,
+        "cached_input_price_per_million_usd": 0.006,
+        "output_price_per_million_usd": 1.20,
+        "pricing_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
+        "pricing_updated_at": "2026-10-19",
+        **FIREWORKS_CHAT_SHAPES,
+    }),
     "deepseek-v4p1-flash": ("fireworks", {
         "model": "accounts/fireworks/models/deepseek-v4p1-flash",
         "tier": "coding",
@@ -165,7 +178,7 @@ TIER_MODELS: dict[str, tuple[str, dict]] = {
     }),
 }
 D3_DEFAULT_TIERS = {"cheap": "deepseek-v4p1-flash", "strong": "gpt-6-luna"}
-BIG_CODER_MODELS = ("deepseek-v4p1-flash", "gpt-6-luna")
+BIG_CODER_MODELS = ("deepseek-v4p1-flash-1017", "gpt-6-luna")
 
 # Local coding-agent caller policy: 20x the original local-dev defaults.
 LOCAL_RATE_RPM = 120 * 20
@@ -424,12 +437,12 @@ def build_config(
         GROUP: {
             "strategy": "weighted",
             "targets": [
-                openai_luna_target(weight=70),
                 {
                     "provider": "fireworks",
-                    "model_ref": "deepseek-v4p1-flash",
-                    "weight": 30,
+                    "model_ref": "deepseek-v4p1-flash-1017",
+                    "weight": 70,
                 },
+                openai_luna_target(weight=30),
             ],
         }
     }
@@ -670,8 +683,8 @@ def write_readme(out_dir: Path, listen: str) -> None:
                 f"Listen: {listen}",
                 f"Client base: {base}",
                 "Group: big-coder (weighted; only group)",
-                "  70% openai / gpt-6-luna (chat_to_responses)",
-                "  30% fireworks / accounts/fireworks/models/deepseek-v4p1-flash",
+                "  70% fireworks / accounts/fireworks/models/deepseek-v4p1-flash-1017",
+                "  30% openai / gpt-6-luna (chat_to_responses)",
                 f"Model identity: {MODEL_IDENTITY} (responses report model: big-coder;",
                 "  usage.sqlite request_usage.target_model keeps the serving upstream)",
                 "",
@@ -705,7 +718,7 @@ def pi_models(d3_policy: dict | None) -> list[dict]:
     models = [
         {
             "id": GROUP,
-            "name": "Local big-coder (gpt-6-luna 70 / deepseek-v4p1-flash 30)",
+            "name": "Local big-coder (deepseek-v4p1-flash-1017 70 / gpt-6-luna 30)",
             "contextWindow": 124518,
             "maxTokens": 8192,
             "reasoning": False,
@@ -956,12 +969,12 @@ def main() -> None:
         "groups": group_names(d3_policy),
         "model_identity": MODEL_IDENTITY,
         "targets": [
-            {"provider": "openai", "model": "gpt-6-luna", "weight": 70},
             {
                 "provider": "fireworks",
-                "model": "accounts/fireworks/models/deepseek-v4p1-flash",
-                "weight": 30,
+                "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+                "weight": 70,
             },
+            {"provider": "openai", "model": "gpt-6-luna", "weight": 30},
         ],
         "d3_tiers": (
             {

@@ -642,6 +642,25 @@ providers:
     api_key_env: FIREWORKS_API_KEY
     key_id: fireworks-default
     models:
+      deepseek-v4p1-flash-1017:
+        model: accounts/fireworks/models/deepseek-v4p1-flash-1017
+        tier: coding
+        context_tokens: 1048576
+        input_modalities: [text]
+        output_modalities: [text]
+        input_price_per_million_usd: 0.30
+        cached_input_price_per_million_usd: 0.006
+        output_price_per_million_usd: 1.20
+        pricing_source: https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017
+        pricing_updated_at: '2026-10-19'
+        request_shape_support:
+          supported_inbound_dialects: [openai-chat]
+          validation_status: passed
+          validation_notes: Local router Chat unary, SSE, and pi write/read tool
+            continuation passed on 2026-10-19. Responses requests use the OpenAI
+            target because this Fireworks target has no Responses bridge.
+        tool_support:
+          openai_chat: [tools]
       gpt-oss-20b:
         model: accounts/fireworks/models/gpt-oss-20b
         tier: coding
@@ -1066,6 +1085,33 @@ providers:
     api_key_env: OPENAI_API_KEY
     key_id: openai-default
     models:
+      gpt-6-luna:
+        model: gpt-6-luna
+        tier: frontier
+        input_modalities: [text]
+        output_modalities: [text]
+        input_price_per_million_usd: 0.10
+        cached_input_price_per_million_usd: 0.01
+        output_price_per_million_usd: 0.50
+        pricing_source: https://developers.openai.com/api/docs/models/gpt-6-luna
+        pricing_updated_at: '2026-10-07'
+        pricing_notes: Standard short-context rates. Prompts over 272K input
+          tokens use 2x input and cache rates and 1.5x output rates.
+        force_store_false: true
+        request_shape_support:
+          supported_inbound_dialects: [openai-responses, openai-chat, anthropic]
+          validation_status: passed
+          validation_notes: Local router Responses unary/SSE and Chat-to-Responses
+            tool continuation passed on 2026-10-19. Anthropic text translation
+            was validated on v4.1.0; Anthropic tool calls need an Anthropic-capable
+            route (see issue #295).
+        tool_support:
+          openai_responses: [function]
+        reasoning:
+          supported: true
+          mode: opt_in
+          control: effort_enum
+          default_on: false
       gpt-5.4-nano:
         model: gpt-5.4-nano
         tier: small
@@ -1854,89 +1900,18 @@ models:
   default:
     strategy: weighted
     targets:
-    - provider: baseten
-      model_ref: gpt-oss-120b
-      weight: 51
-    - provider: minimax
-      model_ref: m3
-      weight: 24
-    - provider: baseten
-      model_ref: nemotron-120b-a12b
-      weight: 3
-    - provider: baseten
-      model_ref: glm-5-2
-      weight: 5
-    - provider: openrouter
-      model_ref: gemma-4-26b-a4b-it-nitro
-      weight: 2
-      # Optional target-level cap for low-weight exploratory traffic. Cache
-      # hits bypass provider shaping; cache misses skip this target at upstream
-      # admission time if it is temporarily throttled.
-      traffic_shape:
-        request_start_per_sec: 1
-        request_burst: 2
-    - provider: crusoe
-      model_ref: glm-5-2
-      weight: 5
-    - provider: kimi
-      model_ref: kimi-k2.7-code
-      weight: 6
+    - provider: fireworks
+      model_ref: deepseek-v4p1-flash-1017
+      weight: 70
     - provider: openai
-      model_ref: gpt-5.4-nano
-      weight: 1
-    - provider: minimax_responses
-      model_ref: m3
-      weight: 5
-      tool_only: true
-    - provider: kimi_anthropic
-      model_ref: kimi-k2.7-code
-      weight: 4
-      tool_only: true
-      default_thinking:
-        type: enabled
-        budget_tokens: 512
-    - provider: minimax_anthropic
-      model_ref: m3
-      weight: 3
-      tool_only: true
-    # Plain-text Anthropic Messages (no tools) is not served by tool_only
-    # skins. Keep this validated MiniMax M3 target eligible for text so a
-    # Claude-compatible client can send an ordinary turn without 502.
-    - provider: minimax_anthropic
-      model_ref: m3
-      weight: 3
-    - provider: openrouter_anthropic
-      model_ref: gemma-4-26b-a4b-it-nitro
-      weight: 2
-      tool_only: true
-    - provider: openrouter_responses
-      model_ref: openrouter-claude-sonnet-4-6
-      weight: 13
-      tool_only: true
-    - provider: openrouter_responses
-      model_ref: openrouter-xai-grok-4-3
-      weight: 3
-      tool_only: true
-    - provider: openrouter_responses
-      model_ref: openrouter-minimax-m3
-      weight: 1
-      tool_only: true
-    - provider: baseten_anthropic
-      model_ref: gpt-oss-120b
-      weight: 8
-      tool_only: true
-    - provider: openrouter_anthropic
-      model_ref: openrouter-claude-sonnet-4-6
-      weight: 4
-      tool_only: true
-    - provider: openrouter_anthropic
-      model_ref: openrouter-xai-grok-4-3
-      weight: 3
-      tool_only: true
-    - provider: openrouter_anthropic
-      model_ref: openrouter-minimax-m3
-      weight: 1
-      tool_only: true
+      model_ref: gpt-6-luna
+      weight: 30
+      bridges:
+        chat_to_responses:
+          enabled: true
+          text: true
+          tools: true
+          tool_choice: true
   external-policy-demo:
     strategy: external
     external_policy:
