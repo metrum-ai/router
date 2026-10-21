@@ -320,6 +320,7 @@ type usageRow struct {
 	ImageCostUSD                       float64
 	OutputCostUSD                      float64
 	TotalCostUSD                       float64
+	CostListUSD                        float64
 	UpstreamReportedInputCostUSD       float64
 	UpstreamReportedOutputCostUSD      float64
 	UpstreamReportedTotalCostUSD       float64
@@ -468,6 +469,8 @@ type usageRecord struct {
 	ImageCostUSD                       float64                            `gorm:"column:image_cost_usd;not null;default:0"`
 	OutputCostUSD                      float64                            `gorm:"column:output_cost_usd;not null;default:0"`
 	TotalCostUSD                       float64                            `gorm:"column:total_cost_usd;not null;default:0"`
+	CostListUSD                        float64                            `gorm:"column:cost_list_usd;not null;default:0"`
+	CostBilledUSD                      float64                            `gorm:"column:cost_billed_usd;not null;default:0"`
 	UpstreamReportedInputCostUSD       float64                            `gorm:"column:upstream_reported_input_cost_usd;not null;default:0"`
 	UpstreamReportedOutputCostUSD      float64                            `gorm:"column:upstream_reported_output_cost_usd;not null;default:0"`
 	UpstreamReportedTotalCostUSD       float64                            `gorm:"column:upstream_reported_total_cost_usd;not null;default:0"`
@@ -1396,6 +1399,7 @@ type agg struct {
 	ImageCostUSD             float64
 	OutputCostUSD            float64
 	TotalCostUSD             float64
+	CostListUSD              float64
 	LatencyMS                int64
 	MaxLatencyMS             int64
 	TTFBMS                   int64
@@ -1589,6 +1593,12 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if !db.Migrator().HasColumn(&usageRecord{}, "CostBilledUSD") {
+		if err := applyUsageCacheBillingMigration(db); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
+	}
 	return store, nil
 }
 
@@ -1766,6 +1776,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageReasoningTelemetryColumns,
 		usageTargetRegionDiagnosticsColumns,
 		usageCachedInputPricingColumns,
+		usageCacheBillingColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2550,6 +2561,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
 	merged := map[string]map[string]struct{}{}
+	groups = append(groups, usageCacheBillingColumns)
 	for _, group := range groups {
 		for table, columns := range group {
 			if merged[table] == nil {
@@ -2638,7 +2650,7 @@ func applyUsageTargetRegionDiagnosticsMigration(db *gorm.DB) error {
 }
 
 func verifyUsageTargetRegionDiagnosticsMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchemaExcept(db, usageCachedInputPricingColumns)
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns(usageCachedInputPricingColumns))
 }
 
 func applyUsageCachedInputPricingMigration(db *gorm.DB) error {
@@ -2659,7 +2671,7 @@ func applyUsageCachedInputPricingMigration(db *gorm.DB) error {
 }
 
 func verifyUsageCachedInputPricingMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchema(db)
+	return ensureUsageRelationalSchemaExcept(db, usageCacheBillingColumns)
 }
 
 func (s *usageStore) Emit(rec logRecord) {
@@ -3292,6 +3304,14 @@ func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted,
 }
 
 func recordFromRow(row usageRow) *usageRecord {
+	listCost := row.TotalCostUSD
+	if row.CostListUSD > 0 {
+		listCost = row.CostListUSD
+	}
+	billedCost := listCost
+	if row.Cache == "hit" {
+		billedCost = 0
+	}
 	return &usageRecord{
 		RequestID:                          row.RequestID,
 		TS:                                 formatUsageTime(row.TS),
@@ -3353,7 +3373,9 @@ func recordFromRow(row usageRow) *usageRecord {
 		InputCostUSD:                       row.InputCostUSD,
 		ImageCostUSD:                       row.ImageCostUSD,
 		OutputCostUSD:                      row.OutputCostUSD,
-		TotalCostUSD:                       row.TotalCostUSD,
+		TotalCostUSD:                       billedCost,
+		CostListUSD:                        listCost,
+		CostBilledUSD:                      billedCost,
 		UpstreamReportedInputCostUSD:       row.UpstreamReportedInputCostUSD,
 		UpstreamReportedOutputCostUSD:      row.UpstreamReportedOutputCostUSD,
 		UpstreamReportedTotalCostUSD:       row.UpstreamReportedTotalCostUSD,
@@ -3452,6 +3474,7 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		ImageCostUSD:                       record.ImageCostUSD,
 		OutputCostUSD:                      record.OutputCostUSD,
 		TotalCostUSD:                       record.TotalCostUSD,
+		CostListUSD:                        record.CostListUSD,
 		UpstreamReportedInputCostUSD:       record.UpstreamReportedInputCostUSD,
 		UpstreamReportedOutputCostUSD:      record.UpstreamReportedOutputCostUSD,
 		UpstreamReportedTotalCostUSD:       record.UpstreamReportedTotalCostUSD,
@@ -5389,6 +5412,7 @@ type tokenScalarAggRecord struct {
 	ImageCostUSD             float64
 	OutputCostUSD            float64
 	TotalCostUSD             float64
+	CostListUSD              float64
 	UpstreamReportedCostUSD  float64
 	BaselineCostUSD          float64
 	LatencyMS                int64
@@ -5647,7 +5671,7 @@ func adminSavingsAggSQLSelectExpr(baseline adminSavingsBaselineDTO) string {
 		SUM(total_cost_usd) AS actual_cost_usd,
 		` + adminBaselineCostSQLExpr(baseline) + ` AS baseline_cost_usd,
 		SUM(CASE WHEN input_tokens = 0 AND output_tokens = 0 AND total_tokens = 0 THEN 1 ELSE 0 END) AS missing_tokens,
-		SUM(CASE WHEN total_cost_usd = 0 AND (input_tokens > 0 OR output_tokens > 0 OR total_tokens > 0) THEN 1 ELSE 0 END) AS missing_actual_cost`
+		SUM(CASE WHEN cache <> 'hit' AND total_cost_usd = 0 AND (input_tokens > 0 OR output_tokens > 0 OR total_tokens > 0) THEN 1 ELSE 0 END) AS missing_actual_cost`
 }
 
 func savingsRowsFromSQLRecords(records []savingsAggRecord) []adminSavingsRow {
@@ -5825,6 +5849,7 @@ func (s *usageStore) adminScalarMultiBucketAggsSQL(opts UsageReportOptions, spec
 				existing.Agg.ImageCostUSD += scalar.Agg.ImageCostUSD
 				existing.Agg.OutputCostUSD += scalar.Agg.OutputCostUSD
 				existing.Agg.TotalCostUSD += scalar.Agg.TotalCostUSD
+				existing.Agg.CostListUSD += scalar.Agg.CostListUSD
 				existing.Agg.LatencyMS += scalar.Agg.LatencyMS
 				existing.Agg.MaxLatencyMS = adminMaxInt64(existing.Agg.MaxLatencyMS, scalar.Agg.MaxLatencyMS)
 				continue
@@ -6065,7 +6090,8 @@ func adminScalarAggSQLSelectExpr(baseline adminSavingsBaselineDTO) string {
 		SUM(input_cost_usd) AS input_cost_usd,
 		SUM(image_cost_usd) AS image_cost_usd,
 		SUM(output_cost_usd) AS output_cost_usd,
-		SUM(total_cost_usd) AS total_cost_usd,
+		SUM(cost_billed_usd) AS total_cost_usd,
+ SUM(cost_list_usd) AS cost_list_usd,
 		SUM(upstream_reported_total_cost_usd) AS upstream_reported_cost_usd,
 		` + adminBaselineCostSQLExpr(baseline) + ` AS baseline_cost_usd,
 		SUM(latency_ms) AS latency_ms,
@@ -6584,6 +6610,7 @@ func aggFromTokenScalarAggRecord(rec tokenScalarAggRecord) agg {
 		ImageCostUSD:             rec.ImageCostUSD,
 		OutputCostUSD:            rec.OutputCostUSD,
 		TotalCostUSD:             rec.TotalCostUSD,
+		CostListUSD:              rec.CostListUSD,
 		LatencyMS:                rec.LatencyMS,
 		MaxLatencyMS:             rec.MaxLatencyMS,
 		TTFBMS:                   rec.TTFBMS,
@@ -7825,6 +7852,7 @@ func (a *agg) add(row usageRow) {
 	a.ImageCostUSD += row.ImageCostUSD
 	a.OutputCostUSD += row.OutputCostUSD
 	a.TotalCostUSD += row.TotalCostUSD
+	a.CostListUSD += row.CostListUSD
 	total := row.TotalTokens
 	if total == 0 {
 		total = row.InputTokens + row.OutputTokens
@@ -7895,6 +7923,7 @@ func (a *agg) addAgg(other agg) {
 	a.ImageCostUSD += other.ImageCostUSD
 	a.OutputCostUSD += other.OutputCostUSD
 	a.TotalCostUSD += other.TotalCostUSD
+	a.CostListUSD += other.CostListUSD
 	a.LatencyMS += other.LatencyMS
 	if other.MaxLatencyMS > a.MaxLatencyMS {
 		a.MaxLatencyMS = other.MaxLatencyMS

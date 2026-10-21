@@ -177,6 +177,15 @@ For cache hits, upstream duration and upstream TPS are absent because no provide
 
 Cost columns are stored as scalar values on each row. Reports must sum stored cost values; they must not recalculate historical cost from current provider catalog pricing.
 
+`request_usage.cost_list_usd` retains the estimated list cost and
+`cost_billed_usd` is zero on router response-cache hits, otherwise list cost.
+`total_cost_usd` remains a compatibility alias for billed cost. The admin overview
+summary exposes `cost_list_usd`, `cost_billed_usd`, and `cache_savings_usd` (list
+minus billed); baseline savings reports subtract billed cost from the configured
+baseline. Migration 2026102101 backfills list from the old total and zeroes known
+hit charges; unknown cache states keep the old charge. See [cost accounting and
+fuzz checks](ops-fuzz.md) for historical-rollup and rollback semantics.
+
 ## Report Pagination Queries
 
 Admin request and security-event APIs page directly from relational tables rather than loading every matching row into memory. Request pages apply the same safe filters and Casbin domain scope as aggregate reports, count the filtered rows, then order by a deterministic key. The default request order is `request_usage.ts DESC, request_usage.request_id DESC`; supported request sorts add a stable tie-breaker, for example `total_cost_usd DESC, ts DESC, request_id DESC` for expensive requests. Security-event pages use `security_access_events.ts DESC, security_access_events.id DESC` by default and can sort by status, outcome, surface, or reason with the same timestamp/id tie-breaker.

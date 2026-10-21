@@ -82,7 +82,8 @@ cases:
     evidence_paths:
       - tests/api_compat/tests/test_ops_profile.py
     test_id: test_ops04_cache_and_reasoning_details_attribute_to_serving_target
-    rationale: Cache-hit rows currently carry the cached response's token counts and list-price cost (attempts=0); whether hit rows should report zero actual spend is an open product question, not asserted here.
+    # Additional localhost Go evidence: TestCacheBillingLocalhostE2E.
+    rationale: Response-cache hits retain list cost and token counts but bill at zero; overview exposes list, billed and cache savings. Provider prompt-cache pricing remains separate.
 
   - id: OPS-05
     priority: P1
@@ -203,9 +204,15 @@ cases:
     owner: api-compat
     component: fuzz
     source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-10-10"
+    reviewed_date: "2026-10-21"
     transport: mixed
-    disposition: blocked
+    disposition: native_supported
     assertions:
       - fuzz seeds do not panic or corrupt semantics
-    rationale: No Go fuzz targets (func Fuzz*) or seed corpora exist under internal/ for decoders, SSE framing or tool-argument accumulation; adding them is new P2 work, not a CI-wiring change.
+    evidence_paths:
+      - internal/stream/framer_fuzz_test.go
+      - internal/router/ops_fuzz_test.go
+      - .github/workflows/nightly-fuzz.yml
+      - docs/ops-fuzz.md
+    test_id: FuzzSSEFrame,FuzzIRRoundTrip,FuzzConfigLoader
+    rationale: Three nightly 60s targets with testdata seeds; IR identity is tested for canonical user text, with arbitrary-Chat non-identity reported in docs/ops-fuzz.md.
