@@ -56,6 +56,32 @@ infer the running version from a date written in documentation.
 - With `requested_group`, callers see the group name in `model` and redacted
   upstream error details.
 
+### Known limitation: Claude Code tools on translated targets
+
+In v4.1.0, Anthropic Messages text can be translated to a validated OpenAI
+Chat or Responses target, but Anthropic client-tool requests cannot use those
+translated targets. If a group has no eligible native Anthropic Messages tool
+target, a Claude Code tool request returns `502 no-eligible-target` before an
+upstream attempt. A successful Claude text request does not prove that Claude
+Code can call a tool and continue after its result. Adding
+`tool_support.anthropic_messages` metadata to an OpenAI target does not enable
+the missing tool round trip.
+
+This was confirmed on the v4.1.0 Linux AMD64 release binary in a `big-coder`
+deployment with OpenAI `gpt-6-luna` (Responses, also serving Chat through the
+Chat-to-Responses bridge) and Fireworks
+`accounts/fireworks/models/deepseek-v4p1-flash` (Chat only). Direct upstream
+text, router Chat text and tools, router Responses and Anthropic text, and a
+Codex CLI Responses file write/read continuation passed. The Anthropic tool
+request returned `502 no-eligible-target`. This is an API-surface limitation,
+not evidence of a provider credential failure or a general lack of model tool
+support.
+
+For Claude Code tool workflows, choose a separately validated Anthropic
+Messages tool-capable route. Cross-dialect tool support requires its own
+implementation and Claude Code continuation validation; track that work in
+[#295](https://github.com/metrum-ai/router/issues/295).
+
 ### Upgrade
 
 1. Download `metrum-ai-router-v4.1.0-linux-<arch>.tar.gz` from the GitHub
