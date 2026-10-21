@@ -405,6 +405,7 @@ func TestOpenAIChatTerminalFinishReasonWithoutDonePersistsAccounting(t *testing.
 		t.Fatalf("terminal stream status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}

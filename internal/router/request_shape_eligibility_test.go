@@ -327,10 +327,12 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
 	var estimate requestTokenEstimateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&estimate).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -338,6 +340,7 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 		t.Fatalf("estimate=%#v", estimate)
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -351,6 +354,7 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 		t.Fatalf("large candidate=%#v", candidates[1])
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
