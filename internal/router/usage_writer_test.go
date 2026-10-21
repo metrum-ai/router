@@ -181,6 +181,24 @@ func TestUsageWriterSQLitePragmas(t *testing.T) {
 	}
 }
 
+func TestUsageWriterFullChannelFlushDoesNotBlockShutdown(t *testing.T) {
+	w := &usageWriter{
+		ch: make(chan any, 1), done: make(chan struct{}),
+		cancel: func() {}, drainTimeout: 10 * time.Millisecond,
+	}
+	w.record(logRecord{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	// The old blocking admission retained RLock until this deadline, which
+	// could prevent close from ever starting its drain timeout.
+	if err := w.flush(ctx); err == nil || err.Error() != "usage queue full" {
+		t.Fatalf("full-queue consistency barrier must fail without waiting: %v", err)
+	}
+	if err := w.close(); err == nil || !strings.Contains(err.Error(), "drain timeout") {
+		t.Fatalf("shutdown must reach its bounded drain: %v", err)
+	}
+}
+
 func TestUsageWriterFullChannel(t *testing.T) {
 	w := &usageWriter{ch: make(chan any, usageQueueCapacity)}
 	for i := 0; i < usageQueueCapacity+1; i++ {

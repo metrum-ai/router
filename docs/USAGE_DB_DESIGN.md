@@ -18,8 +18,10 @@ writer owns a bounded 10,000-entry in-memory channel and flushes batches at 256
 requests or every 250 ms, including diagnostic child rows in the transaction.
 Security telemetry, its retention purge, and optional encrypted content-capture
 records/headers use the same queue; content is encrypted before enqueueing.
-Content-capture reads can also lag the inference response. Offline reporting
-and migration stores are synchronous; they do not start background writers.
+Content-capture reads can also lag the inference response. Administrative capture
+reads/deletions wait for accepted writes before authorization or deletion; a full
+queue fails the consistency check safely instead of blocking bounded shutdown.
+Offline reporting and migration stores are synchronous; they do not start background writers.
 
 A full channel drops the new entry without delaying the response. Persistence is
 best effort, not a durable billing queue: process crashes can lose buffered rows;

@@ -132,6 +132,11 @@ func (w *usageWriter) flush(ctx context.Context) error {
 	case <-ctx.Done():
 		w.mu.RUnlock()
 		return ctx.Err()
+	default:
+		// Never hold admission open while waiting for a saturated queue: close
+		// needs this lock to begin its bounded drain. Maintenance fails safely.
+		w.mu.RUnlock()
+		return errors.New("usage queue full")
 	}
 	select {
 	case <-barrier.done:
