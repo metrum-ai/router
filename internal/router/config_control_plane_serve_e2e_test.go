@@ -259,8 +259,8 @@ func TestServeE2ERevokeWithoutRestart(t *testing.T) {
 	if authErr == nil {
 		t.Fatalf("post-revoke authenticate must fail closed; got caller=%+v tokenID=%q", caller, tokenID)
 	}
-	if caller != nil {
-		t.Fatalf("post-revoke authenticate must not return a caller: %+v", caller)
+	if caller == nil || caller.cfg.ID != "alice" || tokenID != "rtr_serve_e2e_harness" {
+		t.Fatal("post-revoke authentication must retain safe identity for denial attribution")
 	}
 	if !strings.Contains(authErr.Error(), "disabled") && !strings.Contains(authErr.Error(), "key-") {
 		t.Fatalf("post-revoke authenticate error = %v, want disabled-style failure", authErr)
