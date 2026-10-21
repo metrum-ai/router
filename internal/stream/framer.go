@@ -24,7 +24,9 @@ func NewFramer(r io.Reader, limit int64) *Framer {
 	if limit > 0 {
 		r = io.LimitReader(r, limit+1)
 	}
-	return &Framer{reader: bufio.NewReaderSize(r, 64<<10), Limit: limit}
+	// Hide an existing *bufio.Reader: NewReaderSize otherwise reuses a larger
+	// supplied buffer, allowing oversized lines when the total limit is zero.
+	return &Framer{reader: bufio.NewReaderSize(struct{ io.Reader }{r}, 64<<10), Limit: limit}
 }
 func (f *Framer) Next() (Event, error) {
 	var e Event
