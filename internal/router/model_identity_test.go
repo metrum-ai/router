@@ -439,6 +439,7 @@ type miRows struct {
 
 func miRequestRows(t *testing.T, svc *Service, requestID string) miRows {
 	t.Helper()
+	flushUsageForTest(t, svc)
 	var rows miRows
 	if err := svc.usage.db.Where("request_id = ?", requestID).Order("attempt_index asc").Find(&rows.attempts).Error; err != nil {
 		t.Fatal(err)

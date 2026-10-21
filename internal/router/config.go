@@ -250,6 +250,7 @@ type LoggingConfig struct {
 }
 
 type UsageDBConfig struct {
+	DrainTimeoutMS  int    `yaml:"drain_timeout_ms"`
 	Driver          string `yaml:"driver"`
 	Path            string `yaml:"path"`
 	DSN             string `yaml:"dsn"`

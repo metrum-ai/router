@@ -261,6 +261,7 @@ func TestTrafficShapeInputTokensRejectsBeforeUpstreamAndPersistsTelemetry(t *tes
 	assertTrafficShapeError(t, rr.Body.Bytes(), "caller.input_tokens_per_sec")
 
 	var rows []usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -274,6 +275,7 @@ func TestTrafficShapeInputTokensRejectsBeforeUpstreamAndPersistsTelemetry(t *tes
 		t.Fatalf("traffic shape telemetry missing: %#v", row)
 	}
 	var events []requestTrafficShapeEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}

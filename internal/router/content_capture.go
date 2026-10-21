@@ -4,6 +4,7 @@
 package router
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -332,18 +333,16 @@ func (s *Service) captureContent(rc *requestContext, decision contentCaptureDeci
 		SourceStatus:         sourceStatus,
 		RetentionUntil:       formatUsageTime(retentionUntil),
 	}
-	if err := s.usage.db.Create(rec).Error; err != nil {
+	job := usageContentCaptureJob{record: rec, headers: s.contentCaptureHeaders(rc.id, scope, header, decision.cfg)}
+	if s.usage.writer != nil {
+		s.usage.writer.record(job)
 		return
 	}
-	if header != nil && len(decision.cfg.CaptureHeadersAllowlist) > 0 {
-		s.captureAllowedHeaders(rec.ID, rc.id, scope, header, decision.cfg)
-	}
+	_ = s.usage.writeUsageJobs(context.Background(), []any{job})
 }
 
-func (s *Service) captureAllowedHeaders(captureID uint, requestID, scope string, header http.Header, cfg ContentCaptureConfig) {
-	if s == nil || s.usage == nil {
-		return
-	}
+func (s *Service) contentCaptureHeaders(requestID, scope string, header http.Header, cfg ContentCaptureConfig) []*contentCaptureHeaderRecord {
+	var records []*contentCaptureHeaderRecord
 	for _, name := range cfg.CaptureHeadersAllowlist {
 		canonical := http.CanonicalHeaderKey(name)
 		for _, value := range header.Values(canonical) {
@@ -352,8 +351,7 @@ func (s *Service) captureAllowedHeaders(captureID uint, requestID, scope string,
 			if err != nil {
 				continue
 			}
-			_ = s.usage.db.Create(&contentCaptureHeaderRecord{
-				CaptureID:            captureID,
+			records = append(records, &contentCaptureHeaderRecord{
 				RequestID:            requestID,
 				Scope:                scope,
 				Name:                 canonical,
@@ -362,9 +360,10 @@ func (s *Service) captureAllowedHeaders(captureID uint, requestID, scope string,
 				EncryptionLocalKeyID: cfg.Encryption.LocalKeyID,
 				Encrypted:            true,
 				Redacted:             count > 0,
-			}).Error
+			})
 		}
 	}
+	return records
 }
 
 func contentCaptureRequestPayload(req *IRRequest, cfg ContentCaptureConfig) map[string]any {

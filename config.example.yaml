@@ -41,6 +41,8 @@ server:
     # Serving binaries do not apply application DDL. Run router-migrate as the
     # reviewed deployment job, then keep startup in deployment-job validation.
     migration_policy: deployment-job
+    # Best-effort async writer shutdown budget; zero selects 10000 ms.
+    drain_timeout_ms: 10000
   # Optional offline signed JSON license enforcement. Disabled by default so a
   # normal go build / run needs no license file. Operators may set enabled: true
   # and point path at a signed license.json when they want runtime policy gates.

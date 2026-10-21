@@ -603,6 +603,7 @@ func assertReasoningTelemetryProof(t *testing.T, svc *Service, requestID, provid
 		t.Fatal("missing X-Request-Id")
 	}
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -610,6 +611,7 @@ func assertReasoningTelemetryProof(t *testing.T, svc *Service, requestID, provid
 		t.Fatalf("usage row=%#v", usage)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -617,6 +619,7 @@ func assertReasoningTelemetryProof(t *testing.T, svc *Service, requestID, provid
 		t.Fatalf("request shape did not persist reasoning: %#v", shape)
 	}
 	var translated requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ? AND attempt_index = ?", requestID, 1).First(&translated).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -624,6 +627,7 @@ func assertReasoningTelemetryProof(t *testing.T, svc *Service, requestID, provid
 		t.Fatalf("translation proof=%#v", translated)
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -637,6 +641,7 @@ func assertReasoningTelemetryProof(t *testing.T, svc *Service, requestID, provid
 		t.Fatalf("reasoning candidate should be selected: %#v", candidates[1])
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}

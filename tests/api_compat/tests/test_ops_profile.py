@@ -1043,7 +1043,7 @@ def _count_rows(usage_db: Path) -> int:
 
 
 def test_ops09_restart_and_locked_usage_db_do_not_duplicate_settlement(router, ops_upstream, tmp_path_factory):
-    """OPS-09 (partial): restart keeps rows/quota exactly once; a locked usage DB never double-settles."""
+    """OPS-09: restart keeps rows/quota once; a usage DB lock never delays inference."""
     with fast_workdir(tmp_path_factory, "api-compat-ops-restart") as work:
         _ops09_restart_and_lock(router, ops_upstream, work)
         assert_generated_artifacts_redacted({"work": work})
@@ -1090,12 +1090,16 @@ def _ops09_restart_and_lock(router, ops_upstream, work: Path) -> None:
         timer = threading.Timer(1.0, release)
         timer.start()
         try:
-            code, headers, raw = call(handle["base"], "/v1/chat/completions", chat_body(), token=QUOTA_CALLER, timeout=120)
+            started = time.monotonic()
+            code, headers, raw = call(handle["base"], "/v1/chat/completions", chat_body(), token=QUOTA_CALLER, timeout=3)
+            elapsed = time.monotonic() - started
         finally:
             timer.join()
         assert code == 200, raw
+        print(f"OPS09 locked-usage-DB unary response: {elapsed * 1000:.3f} ms")
+        assert elapsed < 0.8, f"usage DB lock delayed inference response: {elapsed:.3f}s"
         locked_rid = headers["X-Request-Id"]
-        assert len(usage_rows(usage_db, locked_rid, timeout_s=2)) <= 1
+        assert len(usage_rows(usage_db, locked_rid, timeout_s=2)) == 1
         after = caller_usage(handle["base"], QUOTA_CALLER)["day"]
         assert after["tokens"] - before["tokens"] == 5
         assert jsonl_record(work, locked_rid)["usage"]["total_tokens"] == 5

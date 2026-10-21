@@ -11,6 +11,45 @@ This document is for maintainers. The external solution brief should describe ca
 - SQLite usage database files are created/chmodded `0600`; keep the containing state directory private and do not loosen permissions on WAL or SHM sidecars.
 - PostgreSQL is an explicit multi-replica or externally managed deployment choice via `server.usage_db.driver: postgres` and deployment-owned DSN. Compose provides it only through the localhost-only override.
 
+## Asynchronous serving writes (OPS-09)
+
+Metrum AI Router inference request logging never executes usage SQL. A single
+writer owns a bounded 10,000-entry in-memory channel and flushes batches at 256
+requests or every 250 ms, including diagnostic child rows in the transaction.
+Security telemetry and its retention purge use the same queue. Offline reporting
+and migration stores are synchronous; they do not start background writers.
+
+A full channel drops the new entry without delaying the response. Persistence is
+best effort, not a durable billing queue: process crashes can lose buffered rows;
+failed transactions are dropped rather than retried indefinitely. Quota settlement
+is independent of usage persistence. Reports/admin queries are eventually consistent.
+
+SQLite opens with `_journal_mode=WAL&_busy_timeout=5000`; the glebarez driver
+also receives equivalent `_pragma=journal_mode(WAL)` and
+`_pragma=busy_timeout(5000)` options on every connection. PostgreSQL uses the same
+asynchronous writer. Use the existing `deploy/docker-compose.postgres-localhost.yml`
+override or the configuration fragment `config/usage-postgres.example.yaml` with
+a deployment-owned `ROUTER_USAGE_POSTGRES_DSN`. Redis/queue profiles are not shipped.
+
+Shutdown stops admission to the writer and drains accepted entries before closing
+SQL. `server.usage_db.drain_timeout_ms` defaults to 10000 (zero selects the default);
+positive values override it and negative values are rejected. Allow the HTTP server
+to finish active requests before closing the service, and allow a termination grace
+period longer than this timeout. At timeout the writer cancels in-flight SQL and
+logs a shutdown warning; remaining in-memory telemetry can be lost.
+
+Prometheus `/metrics` exposes unlabelled `usage_queue_depth` (queued entries,
+excluding the current batch), `usage_write_dropped_total` (queue-full/closed or
+failed-batch entries), and `usage_write_latency_seconds` (summary sum/count of
+batch SQL duration, in seconds). Alert on increasing drops or a persistently
+near-full queue; no request IDs or credentials are used as labels.
+
+Validation: `go test ./internal/router -run '^TestUsageWriter' -count=1 -v` covers
+batch/timer triggers, saturation, lock isolation, shutdown, localhost tool-result
+continuation and 16 simultaneous streams. Set `OPS09_POSTGRES_TEST_DSN` to a
+**disposable** PostgreSQL database to include the live PostgreSQL batch/drain test.
+The quiet-host latency regression is `make lrp-e2e` (E09).
+
 ## Relational Schema Rule
 
 The entire usage DB schema must remain relational-only:

@@ -115,7 +115,17 @@ At minimum, alert on:
 - fallback rate above the deployment baseline;
 - request latency above the deployment service target;
 - metrics scrape failures;
-- usage database write failures.
+- increasing `usage_write_dropped_total` (queue saturation, closed writer or failed SQL batches),
+- sustained `usage_queue_depth` near the 10,000-entry capacity,
+- rising `usage_write_latency_seconds_sum / usage_write_latency_seconds_count`
+  (mean batch SQL duration in seconds).
+
+Usage telemetry is asynchronous (256 requests or 250 ms per batch), so reports
+can lag responses. SQLite uses WAL and a 5000 ms busy timeout; a usage DB write
+lock does not block inference logging. Graceful shutdown drains within
+`server.usage_db.drain_timeout_ms` (default 10000 ms); a timeout logs a warning
+and may lose buffered telemetry. PostgreSQL uses the same bounded writer.
+Redis/queue profiles are deferred.
 
 Tune thresholds by workload. Developer tools and agentic clients can produce large-context bursts that look different from chat or extraction workloads.
 

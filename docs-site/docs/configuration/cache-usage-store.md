@@ -55,7 +55,24 @@ server:
 
 `server.cache` covers eligible deterministic unary responses. Tool-bearing agent requests and image-bearing requests bypass response caching.
 
-`usage_db` enables relational usage persistence. Usage rows store request-time cost inputs, calculated costs, upstream-reported billed costs where available, latency, throughput, cache status, attempts, fallbacks, caller/project dimensions, and provider/model/dialect dimensions.
+`usage_db` enables relational usage persistence. Inference logging only enqueues
+telemetry; a single background SQL writer flushes up to 256 requests every 250 ms
+from a bounded 10,000-entry queue. Full queues drop new telemetry rather than
+block inference. Reports are eventually consistent, and crashes can lose queued
+entries. SQLite uses WAL and a 5-second busy timeout; PostgreSQL uses the same
+writer. Redis/queue profiles are not shipped.
+
+`server.usage_db.drain_timeout_ms` defaults to `10000` (`0` selects the default;
+negative values are rejected). Shutdown drains accepted entries within this
+budget, then cancels writes and warns if draining fails. Configure a termination
+grace period longer than this budget after in-flight HTTP requests finish.
+Monitor `usage_queue_depth`, `usage_write_dropped_total`, and
+`usage_write_latency_seconds` (batch duration summary, seconds). Drops include
+failed transactions; telemetry is best effort and independent of quota settlement.
+The PostgreSQL fragment is `config/usage-postgres.example.yaml`; use a protected
+environment variable for its DSN and run deployment migrations before serving.
+
+ Usage rows store request-time cost inputs, calculated costs, upstream-reported billed costs where available, latency, throughput, cache status, attempts, fallbacks, caller/project dimensions, and provider/model/dialect dimensions.
 
 Use the non-serving `router-migrate` command to inspect a durable migration ledger before an upgrade. It reports only scope/version/compatibility and safe migration state; it never returns database connection values, SQL values, request content, or credentials. The shared migration contract binds each checked-in migration’s reviewed metadata and handler identity, and stores only normalized scalar audit, job, and checkpoint records. Data conversions are checkpointed non-serving jobs: they can be cancelled only at a checkpoint, require an explicit recovery-evidence reference before retry, and advance a data version only after their checked-in validation succeeds. Repeating an already-recorded checkpoint ordinal returns its existing result without rerunning the conversion or changing durable progress counters. On PostgreSQL, each checkpoint uses the same physical session as its scoped advisory lock through execution and cleanup; SQLite remains a single-connection maintenance option. Router startup and request paths never start them. Follow the release-specific upgrade instructions before applying later migration definitions.
 

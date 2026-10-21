@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- OPS-09: nonblocking usage telemetry with a bounded 10,000-entry queue, a single
+  batched SQL writer (256 requests / 250 ms), queue/drop/write-latency metrics,
+  SQLite WAL and 5-second busy timeout, and bounded graceful draining (default
+  10 seconds). PostgreSQL shares the writer and has a documented config profile
+  and live integration test. Reports are eventually consistent; saturation drops
+  telemetry instead of delaying inference requests. Refs #271.
+
 - Decision 3.0 (d3) external routing policy reference (#278):
   `examples/external-routing-policy/d3_policy.py` asks a vLLM Semantic Router
   d3 System One server typed questions about the redacted request text and

@@ -96,6 +96,7 @@ func TestFallbackOrdering429RetryAfterTelemetryAndSecretRedaction(t *testing.T) 
 	}
 
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("attempt_index ASC").Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +116,7 @@ func TestFallbackOrdering429RetryAfterTelemetryAndSecretRedaction(t *testing.T) 
 	}
 
 	var transitions []fallbackTransitionRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("seq ASC").Find(&transitions).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +131,7 @@ func TestFallbackOrdering429RetryAfterTelemetryAndSecretRedaction(t *testing.T) 
 	}
 
 	var cooldown requestUpstreamShapeEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("decision = ?", shapeDecisionCooldownStarted).First(&cooldown).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +184,7 @@ func TestFallbackDoesNotCrossToolEligibility(t *testing.T) {
 		t.Fatalf("plain fallback target received %d tool request(s)", plainCalls.Load())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +192,7 @@ func TestFallbackDoesNotCrossToolEligibility(t *testing.T) {
 		t.Fatalf("unexpected attempts: %#v", attempts)
 	}
 	var transitions []fallbackTransitionRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&transitions).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -232,6 +237,7 @@ func TestCallerRPMErrorIsSafeAndSkipsUpstream(t *testing.T) {
 		t.Fatalf("caller rate-limit response leaked secret material: %s", second.Body.String())
 	}
 	var errors []requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("error_type = ?", "rpm-exceeded").Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -252,6 +258,7 @@ func assertNoSecretInRobustnessArtifacts(t *testing.T, svc *Service, dir string,
 		}
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}

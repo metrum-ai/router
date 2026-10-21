@@ -3608,6 +3608,7 @@ func newAdminReportPaginationTestService(t *testing.T, security bool) *Service {
 
 func adminReportJSON(t *testing.T, svc *Service, path string) map[string]any {
 	t.Helper()
+	flushUsageForTest(t, svc)
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	req.SetBasicAuth("admin", "yell-yell-yum")
 	rr := httptest.NewRecorder()
@@ -3886,6 +3887,7 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 	if formulaRow[17] != "ordinary, quoted" {
 		t.Fatalf("ordinary quoted CSV value changed: %#v", formulaRow)
 	}
+	flushUsageForTest(t, svc)
 	allEvents, err := svc.usage.securityAccessEvents(SecurityReportOptions{From: time.Now().UTC().Add(-365 * 24 * time.Hour), To: time.Now().UTC().Add(time.Hour), Limit: 200})
 	if err != nil {
 		t.Fatal(err)
@@ -4973,10 +4975,12 @@ func TestCursorOpenAIChatToolsAndImageRequiresSingleCombinedTarget(t *testing.T)
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -4984,6 +4988,7 @@ func TestCursorOpenAIChatToolsAndImageRequiresSingleCombinedTarget(t *testing.T)
 		t.Fatalf("unexpected request shape: %#v", shape)
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -4999,6 +5004,7 @@ func TestCursorOpenAIChatToolsAndImageRequiresSingleCombinedTarget(t *testing.T)
 		}
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5037,6 +5043,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 		t.Fatalf("upstream calls=%d, want 0", calls.Load())
 	}
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5044,6 +5051,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 		t.Fatalf("usage row=%#v", usage)
 	}
 	var requestError requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&requestError).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5051,6 +5059,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 		t.Fatalf("request error=%#v", requestError)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5058,6 +5067,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 		t.Fatalf("unexpected request shape: %#v", shape)
 	}
 	var features int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&decisionShapeFeatureRecord{}).Where("request_id = ?", usage.RequestID).Count(&features).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5065,6 +5075,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 		t.Fatal("decision shape features were not persisted")
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5077,6 +5088,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 		}
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5169,6 +5181,7 @@ func TestAnthropicMessagesSkipsOpenAITargetsWithoutInboundValidation(t *testing.
 		t.Fatalf("upstream calls=%d, want none", upstreamCalls)
 	}
 	var count int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&decisionTargetFilterReasonRecord{}).Where("reason = ?", "request-shape-dialect-unsupported").Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -5280,6 +5293,7 @@ func TestAnthropicMessagesCanUseValidatedTranslatedOpenAITarget(t *testing.T) {
 		t.Fatalf("path/model=%s/%s, want /v1/chat/completions chat-translated", gotPath, gotModel)
 	}
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -6973,6 +6987,7 @@ func TestCountTokensRejectsUnauthorizedModelsBeforeUsage(t *testing.T) {
 	}
 
 	var count int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&usageRecord{}).Where("requested_model IN ?", []string{"default", "fake-model-with-secret-like-name"}).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -9317,6 +9332,7 @@ func TestModelGroupContractFiltersWeightedTargetsAndRecordsUsage(t *testing.T) {
 		t.Fatalf("selected model %q, want validated", selectedModel)
 	}
 	var records []usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&records).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -9696,6 +9712,7 @@ func TestContentCaptureResponseStoresRedactedPIIPlaceholders(t *testing.T) {
 		t.Fatalf("response did not preserve PII placeholders: %s", rr.Body.String())
 	}
 	var row contentCaptureRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ? AND scope = ?", rr.Header().Get("X-Request-Id"), contentCaptureScopeResponse).First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -9721,6 +9738,7 @@ func TestContentCaptureResponseStoresRedactedPIIPlaceholders(t *testing.T) {
 		t.Fatalf("cached response did not preserve PII placeholders: %s", cacheRR.Body.String())
 	}
 	var cachedRow contentCaptureRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ? AND scope = ?", cacheRR.Header().Get("X-Request-Id"), contentCaptureScopeResponse).First(&cachedRow).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -10694,6 +10712,7 @@ func TestResponsesToChatBridgeTextAndFunctionToolsHandler(t *testing.T) {
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -10701,6 +10720,7 @@ func TestResponsesToChatBridgeTextAndFunctionToolsHandler(t *testing.T) {
 		t.Fatalf("usage dialect/provider/model mismatch: %#v", usage)
 	}
 	var shape requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11132,6 +11152,7 @@ func TestChatInboundCanUseOptInResponsesBridgeText(t *testing.T) {
 		t.Fatalf("chat response=%s", rr.Body.String())
 	}
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11139,6 +11160,7 @@ func TestChatInboundCanUseOptInResponsesBridgeText(t *testing.T) {
 		t.Fatalf("usage=%#v", usage)
 	}
 	var translated requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ? AND attempt_index = ?", usage.RequestID, 1).First(&translated).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11146,6 +11168,7 @@ func TestChatInboundCanUseOptInResponsesBridgeText(t *testing.T) {
 		t.Fatalf("translated=%#v", translated)
 	}
 	var events []requestTranslationFieldEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11356,6 +11379,7 @@ func TestChatInboundResponsesBridgeSharedBackendStaleRetryPurgesMapping(t *testi
 		t.Fatalf("shared session was not refreshed after stale purge: entry=%#v ok=%v err=%v", entry, ok, err)
 	}
 	var traces []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("seq ASC").Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11398,6 +11422,7 @@ func TestChatInboundResponsesBridgeSharedBackendGetOutageContinuesStateless(t *t
 		t.Fatalf("outage request should continue stateless: %#v", upstreamBody)
 	}
 	var traces []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("seq ASC").Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11576,6 +11601,7 @@ func TestChatInboundResponsesBridgeReasoningTelemetry(t *testing.T) {
 		t.Fatalf("upstream body=%#v", upstreamBody)
 	}
 	var translated requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).First(&translated).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11665,6 +11691,7 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 		t.Fatalf("session was not refreshed after stale purge: entry=%#v ok=%v", entry, ok)
 	}
 	var traces []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("seq ASC").Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11672,6 +11699,7 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 		t.Fatalf("missing stale retry trace events: %#v", traces)
 	}
 	var translations []requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("ts ASC, attempt_index ASC").Find(&translations).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -11679,6 +11707,7 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 		t.Fatalf("translation rows=%d %#v", len(translations), translations)
 	}
 	var events []requestTranslationFieldEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12188,6 +12217,7 @@ func TestNonRetryableUpstream4xxStopsFallback(t *testing.T) {
 		t.Fatalf("fallback calls=%d, want 0", fallbackCalls.Load())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12341,6 +12371,7 @@ func TestUpstream403EntitlementFailureFallsBackWithoutCallerRetryability(t *test
 		t.Fatalf("fallback calls=%d, want 1", fallbackCalls.Load())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("attempt_index ASC").Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12354,6 +12385,7 @@ func TestUpstream403EntitlementFailureFallsBackWithoutCallerRetryability(t *test
 		t.Fatalf("fallback attempt not selected: %#v", attempts[1])
 	}
 	var transitions []fallbackTransitionRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&transitions).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12408,6 +12440,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 		t.Fatalf("fallback calls=%d, want 0", fallbackCalls.Load())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12415,6 +12448,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 		t.Fatalf("unexpected attempts: %#v", attempts)
 	}
 	var errors []requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12525,6 +12559,7 @@ func TestDecodeErrorStillFallsBack(t *testing.T) {
 		t.Fatalf("fallback calls=%d, want 1", fallbackCalls.Load())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("attempt_index ASC").Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12561,6 +12596,7 @@ func TestSuccessfulUpstreamResponseSizeIsBounded(t *testing.T) {
 		t.Fatalf("body=%s, want size limit error", rr.Body.String())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12792,6 +12828,7 @@ func TestMultipleInlineImagesPersistOnlySafeScalarUsageMetadata(t *testing.T) {
 	}
 
 	var rows []usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -12803,6 +12840,7 @@ func TestMultipleInlineImagesPersistOnlySafeScalarUsageMetadata(t *testing.T) {
 		t.Fatalf("image usage metadata=%#v, want has_image count=2 tokens=32", row)
 	}
 	var shapeRows []requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&shapeRows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13020,6 +13058,7 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 			}
 
 			var attempts []requestAttemptRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Find(&attempts).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -13032,6 +13071,7 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 				}
 			}
 			var errors []requestErrorRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Find(&errors).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -13097,6 +13137,7 @@ func TestUpstreamQuotaExhaustionFallsBackAndRecordsAttempt(t *testing.T) {
 	}
 
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("attempt_index ASC").Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13113,6 +13154,7 @@ func TestUpstreamQuotaExhaustionFallsBackAndRecordsAttempt(t *testing.T) {
 		t.Fatalf("unexpected fallback attempt: %#v", attempts[1])
 	}
 	var rows []usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13123,6 +13165,7 @@ func TestUpstreamQuotaExhaustionFallsBackAndRecordsAttempt(t *testing.T) {
 		t.Fatalf("usage terminal target=%s/%s, want mock/healthy-model after fallback", rows[0].TargetProvider, rows[0].TargetModel)
 	}
 	var errors []requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13130,6 +13173,7 @@ func TestUpstreamQuotaExhaustionFallsBackAndRecordsAttempt(t *testing.T) {
 		t.Fatalf("unexpected error rows for fallback success: %#v", errors)
 	}
 	var transitions []fallbackTransitionRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&transitions).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13217,6 +13261,7 @@ func TestFallbackAttributesServingTargetPricingCostsCacheAndObservations(t *test
 			}
 
 			var rows []usageRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Find(&rows).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -13325,14 +13370,17 @@ func TestDiagnosticsSanitizeUpstreamErrorBeforePersistence(t *testing.T) {
 	}
 
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
 	var traces []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
 	var errors []requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13419,14 +13467,17 @@ func TestDiagnosticsSanitizeTruncatedUpstreamErrorBeforePersistence(t *testing.T
 	}
 
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
 	var traces []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
 	var errors []requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13709,6 +13760,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 			}
 
 			var attempts []requestAttemptRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Find(&attempts).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -13716,6 +13768,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 				t.Fatalf("unexpected attempt: %#v", attempts)
 			}
 			var details []requestUpstreamErrorDetailRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Order("field_name").Find(&details).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -13778,6 +13831,7 @@ func TestSanitizedUpstreamErrorDetailsExplicitOptOut(t *testing.T) {
 	}
 
 	var count int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&requestUpstreamErrorDetailRecord{}).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13899,6 +13953,7 @@ func TestContentCaptureDisabledByDefault(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var count int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&contentCaptureRecord{}).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -13986,6 +14041,7 @@ func TestContentCaptureStoresRedactedRequestResponseAndAllowedHeaders(t *testing
 	}
 
 	var rows []contentCaptureRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("scope").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14017,6 +14073,7 @@ func TestContentCaptureStoresRedactedRequestResponseAndAllowedHeaders(t *testing
 		}
 	}
 	var headers []contentCaptureHeaderRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("name").Find(&headers).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14067,6 +14124,7 @@ func TestContentCaptureStoresSanitizedUpstreamError(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var row contentCaptureRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("scope = ?", contentCaptureScopeUpstreamError).First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14144,6 +14202,7 @@ func TestContentCaptureAdminDeleteRequiresContentAdminAndAudits(t *testing.T) {
 		t.Fatalf("admin delete status=%d body=%s", adminRR.Code, adminRR.Body.String())
 	}
 	var remaining int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&contentCaptureRecord{}).Where("request_id = ?", requestID).Count(&remaining).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14151,6 +14210,7 @@ func TestContentCaptureAdminDeleteRequiresContentAdminAndAudits(t *testing.T) {
 		t.Fatalf("remaining captures=%d, want 0", remaining)
 	}
 	var audit contentCaptureAuditRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("action = ? AND request_id = ?", "request_delete", requestID).First(&audit).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14229,6 +14289,7 @@ func TestContentCaptureAdminDeleteRequiresTargetDomainAuthorization(t *testing.T
 		t.Fatalf("cross-domain delete status=%d body=%s", deleteRR.Code, deleteRR.Body.String())
 	}
 	var remaining int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&contentCaptureRecord{}).Where("request_id = ?", requestID).Count(&remaining).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14546,6 +14607,7 @@ func TestUpstreamAttemptTimeoutReturnsGatewayTimeoutAndDiagnostics(t *testing.T)
 		t.Fatalf("unexpected body=%s", rr.Body.String())
 	}
 	var attempts []requestAttemptRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14556,6 +14618,7 @@ func TestUpstreamAttemptTimeoutReturnsGatewayTimeoutAndDiagnostics(t *testing.T)
 		t.Fatalf("unexpected attempt row: %#v", attempts[0])
 	}
 	var errors []requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14619,6 +14682,7 @@ func TestDecisionTelemetryEnabledRecordsTextCandidateAndDecision(t *testing.T) {
 	assertDecisionTelemetryCounts(t, svc, 18, 1, 0, 1, 1)
 	assertDecisionShapeBool(t, svc, "reasoning_requested", false)
 	var selected int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&decisionTargetCandidateRecord{}).Where("selected = ?", true).Count(&selected).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14626,6 +14690,7 @@ func TestDecisionTelemetryEnabledRecordsTextCandidateAndDecision(t *testing.T) {
 		t.Fatalf("selected candidate rows=%d, want 1", selected)
 	}
 	var decision routingDecisionRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&decision).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14633,6 +14698,7 @@ func TestDecisionTelemetryEnabledRecordsTextCandidateAndDecision(t *testing.T) {
 		t.Fatalf("unexpected routing decision: %#v", decision)
 	}
 	var term dynamicScoreTermRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("term_name = ? AND score_name = ?", "configured_order", "configured_order").First(&term).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14684,6 +14750,7 @@ func TestDecisionTelemetryRecordsExternalPolicyFailureBeforeDecision(t *testing.
 	}
 
 	var executions []policyExecutionRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&executions).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14700,6 +14767,7 @@ func TestDecisionTelemetryRecordsExternalPolicyFailureBeforeDecision(t *testing.
 		}
 	}
 	var decisions int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&routingDecisionRecord{}).Count(&decisions).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14814,6 +14882,7 @@ func TestDecisionTelemetryRecordsCacheBypassReason(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var reason decisionCacheReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&reason).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14837,6 +14906,7 @@ func assertDecisionTelemetryCounts(t *testing.T, svc *Service, shape, candidates
 	}
 	for _, item := range got {
 		var count int64
+		flushUsageForTest(t, svc)
 		if err := svc.usage.db.Model(item.model).Count(&count).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -14849,6 +14919,7 @@ func assertDecisionTelemetryCounts(t *testing.T, svc *Service, shape, candidates
 func assertDecisionShapeBool(t *testing.T, svc *Service, name string, want bool) {
 	t.Helper()
 	var feature decisionShapeFeatureRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("feature_name = ?", name).First(&feature).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14860,6 +14931,7 @@ func assertDecisionShapeBool(t *testing.T, svc *Service, name string, want bool)
 func assertDecisionFilterReason(t *testing.T, svc *Service, want string) {
 	t.Helper()
 	var count int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&decisionTargetFilterReasonRecord{}).Where("reason = ?", want).Count(&count).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -14977,18 +15049,22 @@ func cursorMixedToolsImagePayload(t *testing.T, marker string) string {
 func assertCursorMixedTelemetryDoesNotContain(t *testing.T, svc *Service, requestID string, forbidden ...string) {
 	t.Helper()
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
 	var features []decisionShapeFeatureRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).Find(&features).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -15061,10 +15137,12 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 			}
 
 			var usage usageRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.First(&usage).Error; err != nil {
 				t.Fatal(err)
 			}
 			var shape requestShapeRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -15072,6 +15150,7 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 				t.Fatalf("shape=%#v", shape)
 			}
 			var translated requestTranslationShapeRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Where("request_id = ? AND attempt_index = ?", usage.RequestID, 1).First(&translated).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -15079,6 +15158,7 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 				t.Fatalf("translated=%#v", translated)
 			}
 			var events []requestTranslationFieldEventRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&events).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -15482,6 +15562,7 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var rows []usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}

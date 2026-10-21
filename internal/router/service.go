@@ -335,7 +335,9 @@ func (s *Service) Close() {
 	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
-	_ = s.usage.Close()
+	if err := s.usage.Close(); err != nil {
+		log.Printf("usage writer shutdown did not complete cleanly (see usage_write_dropped_total)")
+	}
 	s.bridgeSessions.Close()
 	for _, policy := range s.externalPolicies {
 		policy.Close()
@@ -852,6 +854,9 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
+	if s.usage != nil {
+		_, _ = io.WriteString(w, s.usage.writer.prometheus())
+	}
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
