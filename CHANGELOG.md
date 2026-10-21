@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- The reference `default` group and local `big-coder` example now weight
-  Fireworks `accounts/fireworks/models/deepseek-v4p1-flash-1017` at 70% and
-  OpenAI `gpt-6-luna` at 30%. The separate `d3-auto` cheap tier retains its
-  historical `deepseek-v4p1-flash` default.
-
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
