@@ -150,6 +150,9 @@ func decodeAnthropicToolsBridge(out string, raw []byte, model string, ids Identi
 				return nil, err
 			}
 			id := stringValue(call["id"])
+			if id == "" || stringValue(fn["name"]) == "" || input == nil {
+				return nil, fmt.Errorf("invalid upstream tool call")
+			}
 			if ids != nil {
 				id = ids.Encode(id)
 			}

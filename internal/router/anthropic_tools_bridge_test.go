@@ -115,6 +115,10 @@ func TestAnthropicToolTranslationEvidence(t *testing.T) {
 			t.Fatal("missing evidence")
 		}
 		target.ToolSupport.AnthropicMessages = nil
+		history := &IRRequest{Raw: map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": "call_1", "content": "ok"}}}}}}
+		if got := requestShapeFilterReason(target, history, "anthropic", out, requestTokenEstimateLogRecord{}, targetRequestShapeFit{}); got != "tool-support" {
+			t.Fatalf("ungated tool history: %s", got)
+		}
 		if targetSupportsToolsForCallerDialect(target, "anthropic", out) {
 			t.Fatal("upstream tool metadata authorized Anthropic tools")
 		}

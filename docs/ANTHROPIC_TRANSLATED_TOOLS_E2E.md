@@ -57,7 +57,17 @@ After rebuilding the final bridge, repeated isolated CLI runs also asked a
 read-only subagent to independently verify the file. Both exited 0 with exact
 bytes and final confirmation of the subagent check. This additionally exercises
 the real coding-agent tool schema rather than a single minimal function schema.
-This evidence does not claim arbitrary long-context or multimodal promotion.
+A further isolated run per target supplied approximately 95 KB of inert reference
+text through CLI stdin, then performed another exact file write/readback. Both
+exited 0 with exact bytes. This bounded check does not claim arbitrary context
+length or multimodal promotion.
+
+Direct provider function-tool probes for the same environment accounts, exact
+models and API skins both returned 200 with one function call. Local isolated
+text probes returned 200 for both. With an output cap of one token, Fireworks
+returned 200 with `max_tokens`; OpenAI rejected the below-minimum output cap
+(router 502). Deployments should set that target's minimum requested output
+shape accordingly; this validation does not promise unsupported provider caps.
 
 ## Regression checks
 
@@ -72,7 +82,12 @@ This evidence does not claim arbitrary long-context or multimodal promotion.
   isolated OpenAI `/v1`, using the existing Compose smoke's provider settings
   and environment-only `METRUM_ROUTER_KEY`: exit 0, exact `codex-tool-ok` newline
   file and readback. Disposable fixture only.
-- `make api-compat-mock`: 212 passed.
+- `make api-compat-mock`: initially 212 passed; rerun with the new ANTH-13/14
+  independent Chat/Responses continuation regression cases (214 tests).
+- `make test-fast`: passed.
+- `make docs-qa`: passed.
+- `make test`: host Python lacked PyYAML; rerun using
+  `uv run --with pyyaml make test` so the documented dependency is available.
 
 The router and CLI logs, SQLite and generated configuration remain ignored under
 `tmp/a295`; raw payloads and credentials are not part of this evidence.
