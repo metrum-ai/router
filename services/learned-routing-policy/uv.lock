@@ -899,7 +899,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.20,<2" },
     { name = "pandas", specifier = ">=2.2,<4" },
     { name = "prometheus-client", specifier = ">=0.21,<1" },
-    { name = "pyarrow", specifier = ">=19,<24" },
+    { name = "pyarrow", specifier = ">=19,<27" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "scikit-learn", specifier = ">=1.6,<2" },
