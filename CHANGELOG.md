@@ -7,13 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-21
+
 ### Fixed
 
+- Native same-dialect Chat preserves sampling controls, user, all choices,
+  refusals and logprobs, including text-only requests. Multiple-choice,
+  refusal, tool and logprob responses bypass the normalized text cache.
+  Present Chat `max_tokens` must be an integer >= 1 or returns HTTP 400
+  before upstream, on text and tools paths (#321).
+- Streams disable proxy buffering, reject non-SSE replies with
+  `502 upstream_protocol_error`, and cap SSE lines at 64 KiB
+  (`upstream_frame_too_large`). Post-commit errors terminate the stream (#323).
+- Local pi setup preserves manual edits and routerctl callers; configure-pi
+  no longer regenerates config. Explicit regeneration uses collision-proof
+  backups; fresh configs enable scoped security reports (#316).
+- Pi smoke reports escaped proof comparisons and serving upstreams without
+  hiding substantive failures behind retries (#317); local-router test
+  instructions clarified (#277).
+- Shadow external-policy telemetry records catalog-backed recommendations,
+  including candidate zero, separately from the baseline served (#314).
+- Recognized revoked keys retain safe caller/public-token attribution in scoped
+  security and usage reports; unknown tokens remain unattributed (#319).
+- Compose validator, upgrade and cutover use `METRUM_AI_ROUTER_VERSION` (#294).
 - Local router initial builds, supervisor rebuilds, and generated start scripts
   now embed the same version, commit, and UTC build date as release builds (#307).
 
 ### Added
 
+- Windows amd64 and arm64 binary ZIP packages alongside Linux tarballs (#291).
+- W2b MEDIA-07 / ANTH-12 / ANTH-09 are in scope for v4.2.0: file/document
+  handling, Anthropic block/server-tool policy and output-format capability
+  gates. Draft placeholder pending the implementation PR after #315; release
+  finalization requires its merge and precise release note.
+- Claude Code client-tool calls and tool-result continuations on explicitly
+  validated OpenAI Chat and Responses targets, including streaming and identifier
+  rewriting. Distinct Anthropic tool evidence is required; native routes are
+  unchanged (#315).
+- Asynchronous usage writer for SQLite and PostgreSQL: bounded 10,000-entry
+  queue, 256-entry/250 ms batches, configurable graceful drain, queue/drop/write
+  latency metrics and a PostgreSQL profile. Saturation drops telemetry rather
+  than delaying inference; reports and encrypted captures are eventually
+  consistent (#325).
+- Nightly SSE, canonical Chat IR and config-loader fuzz checks with seed corpus
+  and crash artifacts (#324).
 - Decision 3.0 (d3) external routing policy reference (#278):
   `examples/external-routing-policy/d3_policy.py` asks a vLLM Semantic Router
   d3 System One server typed questions about the redacted request text and
@@ -26,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Routerctl raw-config parse errors redact literal credentials and truncated
+  YAML quotes; atomic-write docs clarify non-expanding validation (#313).
+- Grype exceptions added 2026-10-21 are narrowly pinned to TypeScript native
+  `tsc` build dependencies; compiler binaries are not shipped (#318).
 - The outcome-calibrated policy example now parses `[[outcome-calibration:…]]`
   and `[[outcome-live-demo:…]]` markers with a linear scan instead of
   backtracking regexes, so crafted request text cannot stall it (CodeQL
@@ -72,6 +113,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reference default and local `big-coder` groups route eligible Chat requests
+  70% to Fireworks DeepSeek Flash 1017 and 30% to OpenAI Luna; Responses use
+  Luna (#306). Existing local configs are preserved, not silently regenerated.
+- Explicit `eligibility.implicit_openai_to_anthropic` migration flag (default
+  true now, false next minor), startup warnings and dry-run/diff
+  `config patch-eligibility` command. Adaptive thinking requires reasoning
+  support; target/provider-model `allowed_betas` constrain forwarded betas and
+  known beta-gated body fields (#322).
+- Continuations exclude `force_store_false` targets and return HTTP 400
+  `continuation_unsupported` when none qualify. Chat-to-Responses is stateless
+  (`store:false`, no `previous_response_id`) even with legacy sessions (#323).
+- Usage schema v6 separates `cost_list_usd` and `cost_billed_usd`. Router-cache
+  hits bill zero while retaining list estimates; reports expose billed spend
+  and cache savings (#324).
+- Docs/admin dependencies and CA bundles refreshed; CI uses setup-uv 10.3,
+  upload-artifact 7.0.2 and setup-node 7.1; lucide-react 1.55 and Go crypto
+  0.58 updated. LRP sandbox prerequisites are conditional and pyarrow lock
+  metadata synchronized (#297, #298, #299, #301, #302, #311, #318).
+- Public docs link to Metrum AI; d3 reference evidence includes GPU measurements,
+  selectable price tiers, measured baselines, and qualified small-run and
+  30-day savings (#279, #288, #289, #310).
 - `metrum-ai-routerctl callers generate|rotate`, `metrum-ai-router-token-gen`
   and the database-mode caller admin API issue `token_hash` by default.
   `--hash-format legacy-sha256` keeps the old output for older routers. New
@@ -386,7 +448,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/metrum-ai/router/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/metrum-ai/router/compare/v4.0.2...v4.1.0
 [4.0.2]: https://github.com/metrum-ai/router/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/metrum-ai/router/compare/v4.0.0...v4.0.1

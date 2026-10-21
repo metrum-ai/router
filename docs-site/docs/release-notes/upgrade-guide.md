@@ -20,7 +20,107 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
-## Caller token_hash and deprecated token_sha256 (Unreleased)
+## Compatibility and operations (v4.2.0)
+
+### Translation eligibility and beta policy
+
+`eligibility.implicit_openai_to_anthropic` defaults to `true` for this
+release and flips to `false` next minor. Inventory startup warnings for each
+target relying on implicit translation. Preview the migration with
+`metrum-ai-routerctl config patch-eligibility --config config.yaml --dry-run --diff`;
+review the explicit inbound dialects and validation status before applying
+with `--output reviewed.yaml`. The patcher preserves existing behavior, not
+new validation evidence: smoke each exact target before deployment. Nonempty
+inbound lists remain restrictive. Disable the legacy flag after review.
+
+Set target/provider-model `allowed_betas` explicitly (default empty). Only the
+intersection with caller `anthropic-beta` values is forwarded; provider headers
+cannot bypass the list. Known gated fields without their matching permitted
+beta return HTTP 400 `unsupported_parameter` naming the field. Beta requests
+bypass normalized caching. Adaptive thinking now requires reasoning support.
+
+Claude Code tools can use OpenAI Chat/Responses only with explicit, passed
+Anthropic inbound validation and distinct `anthropic_messages: [client_tools]`
+evidence, plus upstream tool support. Explicit tool choice needs separate
+choice capability on both surfaces. Text success alone does not prove tools.
+
+### Caller-visible validation and continuation
+
+CHAT-09 now rejects present `max_tokens` values that are not integers >= 1
+with HTTP 400 `invalid-request` before upstream, on text and tools paths:
+`0`, negative numbers, strings and fractional numbers are invalid. There is
+no silent truncation or model-specific validation cap.
+
+Native same-dialect Chat preserves `seed`, `n`, sampling controls, user,
+all choices (`n>1`), refusal and logprobs. Multiple-choice, refusal, tool-call
+and logprob responses bypass the normalized text cache rather than losing
+information on replay. This does not promise lossless cross-dialect mapping.
+
+Continuation requests exclude `force_store_false` targets; if none qualify,
+the router returns HTTP 400 `continuation_unsupported` before upstream.
+Chat-to-Responses always sends full history with `store:false`, never
+`previous_response_id`; legacy session config cannot re-enable upstream state.
+Streams now disable proxy buffering, reject non-SSE upstream responses with
+`502 upstream_protocol_error` and cap SSE lines at 64 KiB
+(`upstream_frame_too_large`). After commitment an error terminates the stream.
+
+### Usage writer, database and billing
+
+Back up the usage database and follow the required migration gate below for
+schema v6. `cost_list_usd` retains estimated list cost; `cost_billed_usd` is
+zero for router-cache hits. Legacy total cost aliases billed cost. Cache
+savings are list minus billed; routing savings remain baseline minus billed.
+Retained request rows are backfilled, not previously audited rollup snapshots;
+unknown cache states retain their historical charge.
+
+OPS-09 queues telemetry without waiting for SQL. The bounded queue holds
+10,000 entries and batches up to 256 entries every 250 ms. Configure
+`server.usage_db.drain_timeout_ms` (default 10000; zero selects default) and
+allow sufficient service shutdown grace. Full/closed queues and failed
+transactions drop telemetry rather than delaying inference or retrying forever.
+Reports, security telemetry and optional encrypted content captures are now
+eventually consistent; poll with a bound rather than reading immediately
+after the response. Capture encryption occurs before enqueueing.
+
+Monitor `usage_queue_depth`, `usage_write_dropped_total` and
+`usage_write_latency_seconds` (batch SQL duration summary sum/count). SQLite
+uses WAL and a 5000 ms busy timeout. The PostgreSQL profile supplies a config
+fragment and disposable-database integration test; production PostgreSQL still
+requires the non-serving migration job. Redis/queue profiles remain deferred.
+Test a held database lock locally and verify inference does not wait for it.
+
+### Packages, local setup and security exceptions
+
+Windows amd64/arm64 ZIP packages join Linux tarballs. Compose upgrades use
+`METRUM_AI_ROUTER_VERSION`, not the old `SMART_LLMROUTER_VERSION` variable.
+Fresh default/local groups use Fireworks DeepSeek Flash 1017 70% / Luna 30%
+for eligible Chat, with Responses on Luna. Existing local config and callers
+are preserved; explicit regeneration requires `--force` and creates a backup.
+
+Grype exceptions added 2026-10-21 cover the upstream-blocked TypeScript 7 native
+`tsc` compiler only, pinned by vulnerability, module version and
+`**/node_modules/@typescript/typescript-*/lib/tsc` path. These build-time Go
+compiler dependencies are not shipped in the router binary or image; the
+exceptions do not waive router runtime findings. Reassess when upstream ships
+a compiler built with patched dependencies.
+
+### W2b release gate (draft; implementation pending)
+
+Per maintainer scope update, #271 MEDIA-07 (file/document parts), ANTH-12
+(document/unknown blocks and hosted server-tool policy), and ANTH-09
+(`output_config.format` capability gates) are **in v4.2.0**, not deferred to
+the next minor. Final field/error/migration guidance must follow the W2b PR
+opened after #315 merges; do not deploy this draft as a compatibility promise.
+The release cannot finalize until that PR merges and is validated. #281 (v5),
+#287 follow-up work and #326 remain out of scope; already-merged #289 evidence
+is included, not a claim that all #287 work is complete.
+
+For rollback, keep the pre-upgrade config and database backup. Older routers
+do not understand `token_hash`; restore compatible caller verifiers before
+rolling back. Rehearse schema rollback/restore rather than assuming old
+binaries can consume the migrated usage database.
+
+## Caller token_hash and deprecated token_sha256 (v4.2.0)
 
 Caller tokens now use `callers[].token_hash`, a salted PBKDF2-HMAC-SHA3-512
 verifier (`pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`). Existing

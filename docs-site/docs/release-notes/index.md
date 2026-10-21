@@ -14,6 +14,69 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.2.0 - 2026-10-21
+
+### Highlights
+
+- Claude Code client tools and continuations can translate to explicitly
+  validated OpenAI Chat and Responses targets, including streaming and
+  identifier rewriting. Unvalidated targets remain ineligible.
+- Native Chat preserves sampling controls, all choices, refusals and logprobs;
+  invalid `max_tokens` values return HTTP 400 before upstream.
+- Asynchronous batched usage writes keep database locks off inference paths;
+  SQLite and PostgreSQL are supported. Cache-hit billing is zero, with list
+  estimates retained separately.
+- Windows amd64/arm64 packages, d3 policy examples and measured evidence,
+  dependency/security refreshes and nightly Go fuzz checks.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Eligibility | `eligibility.implicit_openai_to_anthropic` defaults true now, false next minor; startup warnings and config patcher support migration |
+| Anthropic | `allowed_betas` defaults empty; adaptive thinking requires reasoning support; translated tools need distinct validation evidence |
+| Database | Usage schema v6 adds `cost_list_usd` / `cost_billed_usd`; follow migration runbook and back up first |
+| Telemetry | Eventually consistent queued writes; monitor queue depth, drops and SQL latency; default shutdown drain 10 seconds |
+| Local setup | Existing configs/callers preserved; fresh defaults use Flash 1017 70% / Luna 30% |
+| Security | Salted caller verifiers, secret-safe diagnostics, scoped revoked-key attribution and dependency refresh |
+
+### Caller Impact
+
+- Native Chat retains `seed`, `n>1`, refusal and logprobs instead of silently
+  normalizing them away. Present `max_tokens` must be an integer >= 1.
+- Ineligible stored continuations return `400 continuation_unsupported`.
+  Chat-to-Responses is stateless regardless of legacy session settings.
+- Non-SSE upstream stream replies return `502 upstream_protocol_error`;
+  SSE lines are bounded at 64 KiB and responses disable proxy buffering.
+- W2b MEDIA-07, ANTH-12 and ANTH-09 are in scope for this release. Their
+  file/document, hosted-tool and structured-output guidance is pending the
+  implementation PR after #315; this section is a draft release gate, not
+  evidence those changes have shipped.
+
+### Upgrade
+
+Verify package checksums, back up config and usage data, and follow the
+[Upgrade Guide](/docs/release-notes/upgrade-guide), including schema migration,
+caller verifier conversion, eligibility review and beta allow-lists. Existing
+local configuration is not regenerated automatically. Windows packages use ZIP;
+Linux packages remain tarballs.
+
+### Validation
+
+Before tagging, validate the exact merged main SHA with `make test-fast`,
+`make test`, `make docs-qa`, `make lrp-test` and release `make build`. Check
+`/version`, five pi tool continuations, a Codex file write/read, three real
+Claude Code tool round trips, native Chat seed/n passthrough and held-DB-lock
+latency. These are release gates, not claims of completed validation in this
+draft. Finalization also requires all in-scope PRs, including W2b, merged.
+
+### Rollback
+
+Keep the previous package, reviewed config and restorable database backup.
+Older routers reject the new caller verifier field; use compatible verifiers
+when rolling back.
+Rehearse restore against the usage migration contract before the rollout.
+
 ## v4.1.0 - 2026-10-10
 
 ### Highlights
