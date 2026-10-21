@@ -221,6 +221,15 @@ func (r *secretRedactor) redact(text string) string {
 	return text
 }
 
+// RedactConfigError scrubs secrets in a partially decoded configuration from an
+// error, including truncated YAML scalar quotes. The returned error does not
+// unwrap to the original, potentially secret-bearing error.
+func RedactConfigError(err error, cfg *Config) error {
+	r := newSecretRedactor()
+	r.addConfig(cfg)
+	return redactConfigError(err, r)
+}
+
 // redactConfigError scrubs registered secret values from err. A nil error
 // stays nil; any other error becomes a redactedConfigError so the original,
 // possibly secret-bearing message cannot be recovered with errors.Unwrap.

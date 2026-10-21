@@ -80,7 +80,12 @@ def load_fake() -> Any:
 
 def free_port() -> int:
     with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
+        for port in range(18100, 19000):
+            try:
+                sock.bind(("127.0.0.1", port))
+                break
+            except OSError:
+                continue
         return sock.getsockname()[1]
 
 
@@ -149,6 +154,18 @@ class UpstreamHandler(BaseHTTPRequestHandler):
             raw = b"".join(b"data: " + json.dumps(c).encode() + b"\n\n" for c in chunks) + b"data: [DONE]\n\n"
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if body.get("tools") and not any(m.get("role") == "tool" for m in body.get("messages", [])):
+            raw = json.dumps({"id": "mock-tool", "object": "chat.completion", "model": model,
+                              "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
+                                  "role": "assistant", "content": None, "tool_calls": [{
+                                      "id": "call_smoke", "type": "function", "function": {
+                                          "name": "create_file", "arguments": '{"content":"smoke"}'}}]}}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
             self.wfile.write(raw)
@@ -265,6 +282,10 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
             {"provider": "strongco", "model": STRONG_MODEL, "tier": "strong",
              "input_price_per_million_usd": 2.0, "output_price_per_million_usd": 8.0},
         ]
+        for target in targets:
+            provider = providers[target["provider"]]
+            provider["models"] = {"catalog": {"model": target.pop("model"), "tool_support": {"openai_chat": ["tools", "tool_choice"]}}}
+            target["model_ref"] = "catalog"
         models = {}
         for group, spec in GROUPS.items():
             models[group] = {"strategy": "external", "targets": targets, "external_policy": {
@@ -319,8 +340,16 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
                        "ON c.request_id = s.request_id AND c.candidate_index = s.candidate_index "
                        "WHERE s.request_id = ? AND s.signal_name = 'shadow_recommended_candidate'", (rid,))
         record("D03-shadow-serves-target0-records-d3", status == 200 and served_model(db, rid) == CHEAP_MODEL
-               and row["outcome"] == "shadow_recommended" and len(rec) == 1 and rec[0]["model"] == STRONG_MODEL,
+               and row["outcome"] == "shadow_recommended" and row["selected_candidate_index"] == 1
+               and len(rec) == 1 and rec[0]["model"] == STRONG_MODEL,
                http_status=status, policy_outcome=row["outcome"], class_label=row["class_label"])
+
+        status, _, rid = chat("d3-shadow", EASY)
+        row = policy_row(db, rid)
+        signals = rows(db, "SELECT candidate_index FROM request_routing_signals WHERE request_id = ? "
+                       "AND signal_name = 'shadow_recommended_candidate'", (rid,))
+        record("D03b-shadow-model-ref-target0", status == 200 and signals[0]["candidate_index"] == 0
+               and row["selected_candidate_index"] == 0, signals=signals, selected=row["selected_candidate_index"], label=row["class_label"])
 
         for case, group in (("D04-d3-down-fail-closed", "d3-down-closed"), ("D06-d3-422-fail-closed", "d3-422-closed")):
             before = len(upstream.calls)
@@ -346,6 +375,21 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
         record("D08-stream-hard-strong", status == 200 and b"[DONE]" in body
                and served_model(db, rid) == STRONG_MODEL and str(row["class_label"]).startswith("d3:hard:"),
                http_status=status, class_label=row["class_label"])
+
+        messages = [{"role": "user", "content": EASY}]
+        tool_payload = {"model": "d3-shadow", "messages": messages, "tools": [{"type": "function", "function": {
+            "name": "create_file", "parameters": {"type": "object", "properties": {"content": {"type": "string"}}}}}]}
+        status, body, _ = http(base + "/v1/chat/completions", tool_payload, {"Authorization": "Bearer " + token})
+        if status != 200:
+            raise HarnessError("tool_request_status_" + str(status) + "_" + str(json.loads(body).get("error", {})))
+        message = json.loads(body)["choices"][0]["message"]
+        call = message["tool_calls"][0]
+        smoke = temp / "tool-created.txt"
+        smoke.write_text(json.loads(call["function"]["arguments"])["content"])
+        messages.extend([message, {"role": "tool", "tool_call_id": call["id"], "content": "created"}])
+        status2, body2, _ = http(base + "/v1/chat/completions", tool_payload, {"Authorization": "Bearer " + token})
+        record("D10-tool-client-continuation", status == 200 and status2 == 200 and smoke.read_text() == "smoke"
+               and json.loads(body2)["choices"][0]["message"]["content"] == "ok")
 
         durations = [float(r["duration_ms"]) for r in rows(
             db, "SELECT duration_ms FROM request_policy_executions WHERE outcome IN ('selected','shadow_recommended')")]
@@ -374,7 +418,7 @@ def main() -> int:
         report["error_class"] = str(exc)
     except Exception as exc:  # noqa: BLE001 - emit a fixed class, never protected input
         report["error_class"] = "harness_internal_error:" + type(exc).__name__
-    passed = len(checks) == 9 and all(c["passed"] for c in checks) and "error_class" not in report
+    passed = len(checks) == 11 and all(c["passed"] for c in checks) and "error_class" not in report
     report["result"] = "passed" if passed else "failed"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

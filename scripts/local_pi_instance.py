@@ -659,7 +659,8 @@ def write_start_script(out_dir: Path, repo_root: Path) -> None:
                 f'ROOT="{repo_root}"',
                 'cd "$ROOT"',
                 f'mkdir -p "{out_dir / "logs"}"',
-                f'exec go run ./cmd/metrum-ai-router --config "{out_dir / "config.yaml"}"',
+                f'make local-router-build LOCAL_ROUTER_OUT="{out_dir}"',
+                f'exec "{out_dir / "metrum-ai-router"}" --config "{out_dir / "config.yaml"}"',
                 "",
             ]
         ),
