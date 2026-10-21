@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SSE translation recognizes bare CR, LF and CRLF consistently, including
   line endings split across reads; tool streams no longer retain literal CR
-  field values or lose them on serialization (#331, fixes #327; pending merge).
+  field values or lose them on serialization (#331, fixes #327).
 - Native same-dialect Chat preserves sampling controls, user, all choices,
   refusals and logprobs, including text-only requests. Multiple-choice,
   refusal, tool and logprob responses bypass the normalized text cache.

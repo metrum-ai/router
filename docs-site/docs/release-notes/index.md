@@ -49,8 +49,7 @@ infer the running version from a date written in documentation.
 - Non-SSE upstream stream replies return `502 upstream_protocol_error`;
   SSE lines are bounded at 64 KiB and responses disable proxy buffering.
 - SSE translation recognizes bare CR, LF and CRLF, including endings split
-  across reads, without retaining or losing CR field values (#331, pending
-  merge; fixes #327).
+  across reads, without retaining or losing CR field values (#331, fixes #327).
 - W2b (#329): explicit `modalities` and `structured_output`
   metadata gate media and Anthropic output formats; supported document/image
   parts survive streaming/tool bridges and JSON schemas translate to OpenAI.
@@ -68,12 +67,14 @@ Linux packages remain tarballs.
 
 ### Validation
 
-Before tagging, validate the exact merged main SHA with `make test-fast`,
-`make test`, `make docs-qa`, `make lrp-test` and release `make build`. Check
-`/version`, five pi tool continuations, a Codex file write/read, three real
-Claude Code tool round trips, native Chat seed/n passthrough and held-DB-lock
-latency. These are release gates, not claims of completed validation in this
-draft. Finalization also requires all in-scope PRs, including W2b, merged.
+For deployment validation, check `/readyz`, `/version` and authenticated
+`/v1/models`. Exercise client-tool continuations on each enabled API skin,
+native Chat sampling/multiple choices, media and output-format admission,
+streaming first-event delivery and usage persistence after a bounded wait.
+Monitor usage queue/drop metrics and verify inference remains responsive
+under a usage-database write lock. The exact build metadata in `/version`
+identifies the deployed artifact; CI and dated release evidence identify the
+source SHA tested, not this documentation's date.
 
 ### Rollback
 

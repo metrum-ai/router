@@ -135,10 +135,10 @@ reasoning route. Do not infer arbitrary opaque-item or system-role translation
 fidelity from document/tool success.
 
 SSE framing now recognizes bare CR, LF and CRLF consistently, even across
-reads (#331, fixes #327; pending merge). Completed bare-CR events do not wait
+reads (#331, fixes #327). Completed bare-CR events do not wait
 for another upstream byte; byte limits and incomplete-frame errors remain
 in force. Recheck translated tool streams if an upstream emits non-LF endings.
-The release also requires #331 merged and validated. #281 (v5),
+#281 (v5),
 #287 follow-up work and #326 remain out of scope; already-merged #289 evidence
 is included, not a claim that all #287 work is complete.
 
