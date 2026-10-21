@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Local router initial builds, supervisor rebuilds, and generated start scripts
+  now embed the same version, commit, and UTC build date as release builds (#307).
+
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
