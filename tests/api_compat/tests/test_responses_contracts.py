@@ -565,8 +565,8 @@ CUSTOM_TOOL = {"type": "custom", "name": "apply_patch", "description": "freeform
 NAMESPACE_TOOL = {"type": "namespace", "name": "multi_tool_use", "tools": []}
 
 
-def test_resp_10_client_tools_forwarded_and_generic_hosted_stripped(capi, contracts_router):
-    """RESP-10: client tools pass through verbatim; generic hosted descriptors are stripped."""
+def test_resp_10_client_tools_forwarded(capi, contracts_router):
+    """RESP-10: client tools pass through verbatim without silent stripping."""
 
     def validate(call):
         body = call["body"]
@@ -600,9 +600,7 @@ def test_resp_10_client_tools_forwarded_and_generic_hosted_stripped(capi, contra
             "input": "patch it",
             "tools": [
                 LOOKUP_TOOL,
-                {"type": "web_search", "external_web_access": False},
                 CUSTOM_TOOL,
-                {"type": "image_generation", "output_format": "png"},
                 NAMESPACE_TOOL,
             ],
         },
@@ -618,6 +616,8 @@ def test_resp_10_client_tools_forwarded_and_generic_hosted_stripped(capi, contra
 @pytest.mark.parametrize(
     "tool",
     [
+        {"type": "web_search"},
+        {"type": "image_generation"},
         {"type": "mcp", "server_label": "x", "server_url": "https://mcp.invalid/sse"},
         {"type": "sse", "url": "https://mcp.invalid/sse"},
         {"type": "file_search", "vector_store_ids": ["vs_synthetic"]},
@@ -637,7 +637,7 @@ def test_resp_10_provider_hosted_tools_reject_before_upstream(capi, contracts_ro
     assert FakeUpstream.calls == []
 
 
-@pytest.mark.parametrize("tool", [CUSTOM_TOOL, NAMESPACE_TOOL, {"type": "web_search"}], ids=lambda t: t["type"])
+@pytest.mark.parametrize("tool", [CUSTOM_TOOL, NAMESPACE_TOOL], ids=lambda t: t["type"])
 def test_resp_10_non_function_tools_skip_stateless_bridge(capi, contracts_router, tool):
     """RESP-10: the Responses-to-Chat bridge only carries function tools; others reject pre-upstream."""
     status, _, raw = capi(

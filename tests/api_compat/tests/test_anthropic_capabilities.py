@@ -42,7 +42,7 @@ models:
   anth-plain:
     strategy: static
     targets:
-      - {{provider: messages, model: synthetic-plain, tool_support: {{anthropic_messages: [client_tools]}}}}
+      - {{provider: messages, model: synthetic-plain, structured_output: true, modalities: [text, document], tool_support: {{anthropic_messages: [client_tools]}}}}
   anth-think:
     strategy: static
     targets:
@@ -111,7 +111,11 @@ def _send(anth_router, payload, *, scenario=None, headers=None):
 
 
 def _assert_no_eligible(status, raw, calls):
-    """Router-owned rejection: 502 no-eligible-target and zero upstream calls."""
+    """Router-owned rejection with zero upstream calls."""
+    if status == 400:
+        assert json.loads(raw)["error"]["type"] == "unsupported_modality"
+        assert not calls
+        return
     assert status == 502, raw[:300]
     assert json.loads(raw)["error"]["type"] == "no-eligible-target"
     assert calls == []
@@ -527,16 +531,17 @@ def test_anth_12_native_server_tools_documents_and_unknown_blocks(anth_router):
             {"model": "anth-plain", "max_tokens": 64, "tools": tools, "messages": _user(user_content)},
             scenario=scenario,
         )
-        assert status == 200, raw[:300]
-        scenario.assert_complete()
-        assert calls[0]["body"]["tools"] == tools
-        assert calls[0]["body"]["messages"][0]["content"] == user_content
-        assert json.loads(raw)["content"] == response_content
+        assert status == 400, raw[:300]
+        assert json.loads(raw)["error"]["type"] == "provider-hosted-tools-forbidden"
+        assert not calls
 
-    # Translated (non-native) target: a server tool is never flattened into a client tool.
-    _assert_no_eligible(
-        *_send(
-            anth_router,
-            {"model": "anth-bridge", "max_tokens": 64, "tools": [server_tool], "messages": _user()},
-        )
-    )
+    for content, error in (([future_block], "unsupported_block"), ([document], "unsupported_modality")):
+        status, raw, calls = _send(anth_router, {"model": "anth-bridge", "max_tokens": 64, "messages": _user(content)})
+        assert status == 400 and json.loads(raw)["error"]["type"] == error
+        assert not calls
+    status, raw, calls = _send(anth_router, {"model": "anth-bridge", "max_tokens": 64, "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}, "messages": _user()})
+    assert status == 400 and json.loads(raw)["error"]["type"] == "unsupported_parameter"
+    assert not calls
+    status, raw, calls = _send(anth_router, {"model": "anth-plain", "max_tokens": 64, "messages": _user(user_content)})
+    assert status == 200, raw[:300]
+    assert calls[0]["body"]["messages"][0]["content"] == user_content

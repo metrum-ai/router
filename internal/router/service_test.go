@@ -9379,7 +9379,7 @@ func TestModelGroupContractNoEligibleTargetStaysGroupLocal(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if calls != 0 {
@@ -10756,6 +10756,12 @@ func TestResponsesToChatBridgeSkipsUnsupportedBeforeUpstream(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+testToken)
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
+			if tc.name == "hosted tool" {
+				if rr.Code != http.StatusBadRequest {
+					t.Fatalf("status=%d", rr.Code)
+				}
+				return
+			}
 			wantStatus, wantCode := http.StatusBadGateway, "no-eligible-target"
 			if tc.name == "previous response" {
 				wantStatus, wantCode = http.StatusBadRequest, "continuation_unsupported"
@@ -10941,7 +10947,7 @@ func TestOpenAIResponsesRejectsUnadvertisedBackgroundAndWebSocket(t *testing.T) 
 	})
 }
 
-func TestOpenAIResponsesStripsGenericHostedToolsBeforeUpstream(t *testing.T) {
+func TestOpenAIResponsesRejectsGenericHostedToolsBeforeUpstream(t *testing.T) {
 	var gotTools []any
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -10978,19 +10984,11 @@ func TestOpenAIResponsesStripsGenericHostedToolsBeforeUpstream(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if len(gotTools) != 2 {
-		t.Fatalf("upstream tools=%#v, want function and namespace only", gotTools)
-	}
-	gotTypes := []string{}
-	for _, rawTool := range gotTools {
-		tool, _ := rawTool.(map[string]any)
-		gotTypes = append(gotTypes, stringValue(tool["type"]))
-	}
-	if !stringSliceEqual(gotTypes, []string{"function", "namespace"}) {
-		t.Fatalf("upstream tool types=%#v", gotTypes)
+	if gotTools != nil {
+		t.Fatalf("forbidden tools reached upstream: %#v", gotTools)
 	}
 }
 

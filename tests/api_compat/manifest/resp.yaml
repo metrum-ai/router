@@ -182,13 +182,13 @@ cases:
     disposition: documented_normalization
     assertions:
       - function, custom and namespace tools pass through verbatim on native Responses targets and custom_tool_call output is returned as-is
-      - generic hosted web_search and image_generation descriptors are stripped before upstream
+      - generic hosted web_search and image_generation descriptors return 400 provider-hosted-tools-forbidden before upstream
       - mcp, sse, file_search, code_interpreter and computer_use_preview reject with 400 provider-hosted-tools-forbidden and zero upstream calls
       - custom, namespace and hosted tools skip the function-only Responses-to-Chat bridge with 502 no-eligible-target and zero upstream calls
     evidence_paths:
       - tests/api_compat/tests/test_responses_contracts.py
       - tests/api_compat/manifest/resp.yaml
-    test_id: test_resp_10_client_tools_forwarded_and_generic_hosted_stripped
+    test_id: test_resp_10_client_tools_forwarded
 
   - id: RESP-11
     priority: P1

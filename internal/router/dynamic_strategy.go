@@ -391,6 +391,9 @@ func requestHasStructuredOutput(req *IRRequest) bool {
 	if req == nil || req.Raw == nil {
 		return false
 	}
+	if anthropicFormat(req) != nil {
+		return true
+	}
 	if rf, ok := req.Raw["response_format"]; ok && rf != nil {
 		return structuredOutputFormatRequiresSupport(rf)
 	}

@@ -193,18 +193,18 @@ cases:
     priority: P1
     owner: api-compat
     component: anthropic-structured-output
-    source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-10-10"
+    source_url: https://github.com/metrum-ai/router/issues/271
+    reviewed_date: "2026-10-21"
     inbound_route: /anthropic/v1/messages
-    outbound_dialect: anthropic
+    outbound_dialect: anthropic|openai-chat|openai-responses
     transport: unary
-    disposition: blocked
+    disposition: supported_translation
     assertions:
       - native output_config.format and strict tools are capability-gated, not inferred from OpenAI fields
     evidence_paths:
       - tests/api_compat/tests/test_anthropic_capabilities.py
     test_id: test_anth_09_native_output_config_and_strict_tools_forwarded
-    rationale: Partial evidence only. Native Anthropic targets receive output_config.format and strict tools verbatim (test above), but no router capability gate exists (requestHasStructuredOutput ignores output_config) and an Anthropic caller routed to a translated openai-chat target (supported_inbound_dialects [anthropic]) gets 200 with output_config silently dropped. Gating or rejecting needs a product decision.
+    rationale: output_config.format requires structured_output; translated Chat maps to response_format json_schema. Unsupported targets return 400 unsupported_parameter.
 
   - id: ANTH-10
     priority: P1
@@ -248,15 +248,15 @@ cases:
     priority: P1
     owner: api-compat
     component: anthropic-server-tools
-    source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-10-10"
+    source_url: https://github.com/metrum-ai/router/issues/271
+    reviewed_date: "2026-10-21"
     inbound_route: /anthropic/v1/messages
-    outbound_dialect: anthropic
-    transport: unary
-    disposition: blocked
+    outbound_dialect: anthropic|openai-chat|openai-responses
+    transport: mixed
+    disposition: policy_rejection
     assertions:
       - versioned server tools, citations, and unknown future blocks have explicit preserve-or-reject dispositions
     evidence_paths:
       - tests/api_compat/tests/test_anthropic_capabilities.py
     test_id: test_anth_12_native_server_tools_documents_and_unknown_blocks
-    rationale: Partial evidence only. Native targets preserve server tools, document/search_result/unknown blocks and server_tool_use/citation response blocks verbatim, and translated targets reject server tools before upstream (test above). Still open - translated openai-chat targets silently drop document and unknown content blocks (200, flattened text), and Anthropic server tools (e.g. web_search) bypass the provider-hosted tool policy that rejects Responses hosted tools. Both need a product decision.
+    rationale: Native opaque blocks survive; translated unknown blocks return 400 unsupported_block. Documents use modalities; versioned web_search tools share Responses hosted-tool rejection before upstream.

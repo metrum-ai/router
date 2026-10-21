@@ -168,6 +168,9 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
+		return reason
+	}
 	if callerDialect == "anthropic" && outDialect != "anthropic" {
 		for _, tool := range req.Tools {
 			if typ := stringValue(tool["type"]); typ != "" && typ != "custom" {

@@ -52,11 +52,18 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 			case "text":
 				content = append(content, map[string]any{"type": "text", "text": block["text"]})
 			case "image":
-				url := imageURLForOpenAI(decodeContentPart(block))
+				part := decodeContentPart(block)
+				if part.FileID != "" && out == "openai-responses" {
+					content = append(content, map[string]any{"type": "input_image", "file_id": part.FileID})
+					continue
+				}
+				url := imageURLForOpenAI(part)
 				if url == "" {
 					return nil, fmt.Errorf("unsupported Anthropic image source")
 				}
 				content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": url}})
+			case "document":
+				content = append(content, mediaPart(decodeContentPart(block), "openai-chat"))
 			case "tool_use":
 				args, err := json.Marshal(block["input"])
 				if err != nil {
@@ -65,7 +72,7 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 				calls = append(calls, map[string]any{"id": block["id"], "type": "function", "function": map[string]any{"name": block["name"], "arguments": string(args)}})
 			case "tool_result":
 				flush()
-				messages = append(messages, map[string]any{"role": "tool", "tool_call_id": block["tool_use_id"], "content": contentToText(block["content"])})
+				messages = append(messages, map[string]any{"role": "tool", "tool_call_id": block["tool_use_id"], "content": encodeOpenAIChatContent(IRMessage{Content: contentToText(block["content"]), Parts: decodeContentParts(block["content"])})})
 			case "thinking", "redacted_thinking": // Provider-private thinking is not portable.
 			default:
 				return nil, fmt.Errorf("unsupported Anthropic tool bridge content type")
@@ -74,6 +81,7 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 		flush()
 	}
 	chat.Raw["messages"] = messages
+	applyAnthropicFormat(chat.Raw, req, "openai-chat")
 	chat.Tools = nil
 	for _, tool := range req.Tools {
 		chat.Tools = append(chat.Tools, map[string]any{"type": "function", "function": map[string]any{"name": tool["name"], "description": tool["description"], "parameters": tool["input_schema"]}})
@@ -99,10 +107,12 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 		bridgeTarget.Bridges.ChatToResponses.Tools = true
 		bridgeTarget.Bridges.ChatToResponses.ToolChoice = true
 		bridgeTarget.Bridges.ChatToResponses.ParallelToolCalls = true
+		bridgeTarget.Bridges.ChatToResponses.StructuredOutputs = target.StructuredOutput
 		bridgeTarget.Bridges.ChatToResponses.Images = targetSupportsInputModalities(target, []string{"image"})
 		return encodeChatToResponsesBridge(model, &chat, bridgeTarget, "")
 	}
 	body := map[string]any{"model": model, "messages": messages, "stream": req.Stream, "tools": chat.Tools}
+	applyAnthropicFormat(body, req, out)
 	if req.System != "" {
 		body["messages"] = append([]any{map[string]any{"role": "system", "content": req.System}}, messages...)
 	}

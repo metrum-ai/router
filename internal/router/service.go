@@ -1115,7 +1115,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
-	if dialect == "openai-responses" && requestHasForbiddenProviderHostedTools(req) {
+	if (dialect == "openai-responses" || dialect == "anthropic") && requestHasForbiddenProviderHostedTools(req) {
 		s.writeError(w, rc, http.StatusBadRequest, "provider-hosted-tools-forbidden")
 		return
 	}
@@ -1138,6 +1138,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	group, ok := s.cfg.Models[req.Model]
 	if !ok {
 		s.writeError(w, rc, http.StatusForbidden, "model-not-found")
+		return
+	}
+	if reason := s.mediaAdmission(group, req, dialect); reason != "" {
+		s.writeError(w, rc, http.StatusBadRequest, reason)
 		return
 	}
 	if responsesBodyOnChatEndpoint && rawValuePresent(req.Raw, "previous_response_id") && !modelGroupHasNativeResponsesTarget(s.cfg, group) {
@@ -3184,6 +3188,9 @@ func targetSupportsToolsForCallerDialect(target Target, callerDialect, outDialec
 
 func targetSupportsInputModalities(target Target, required []string) bool {
 	targetModalities := defaultModalities(target.InputModalities)
+	if target.Modalities != nil {
+		targetModalities = target.Modalities
+	}
 	for _, req := range required {
 		if !stringSliceContains(targetModalities, req) {
 			return false
@@ -3233,7 +3240,7 @@ func requestHasForbiddenProviderHostedTools(req *IRRequest) bool {
 		return false
 	}
 	for _, tool := range req.Tools {
-		if forbiddenProviderHostedResponsesToolType(stringValue(tool["type"])) {
+		if forbiddenProviderHostedResponsesToolType(stringValue(tool["type"])) || strings.HasPrefix(stringValue(tool["type"]), "web_search_") || genericHostedResponsesToolType(stringValue(tool["type"])) {
 			return true
 		}
 	}
@@ -3260,28 +3267,6 @@ func forbiddenProviderHostedResponsesToolType(value string) bool {
 	}
 }
 
-func filterResponsesToolsForUpstream(tools any) any {
-	rawTools, ok := tools.([]any)
-	if !ok {
-		return tools
-	}
-	out := make([]any, 0, len(rawTools))
-	for _, rawTool := range rawTools {
-		tool, ok := rawTool.(map[string]any)
-		if !ok {
-			out = append(out, rawTool)
-			continue
-		}
-		switch strings.ToLower(strings.TrimSpace(stringValue(tool["type"]))) {
-		case "web_search", "web_search_preview", "image_generation":
-			continue
-		default:
-			out = append(out, rawTool)
-		}
-	}
-	return out
-}
-
 func supportsAnyCapability(values []string, capabilities ...string) bool {
 	for _, value := range values {
 		value = strings.ToLower(strings.TrimSpace(value))
@@ -3303,6 +3288,9 @@ func targetSupportsStructuredOutput(target Target, callerDialect, outDialect str
 	}
 	if isChatToResponsesBridge(callerDialect, outDialect, target) {
 		return target.Bridges.ChatToResponses.StructuredOutputs && supportsAnyCapability(targetCapabilityValues(target, outDialect), "structured_outputs", "json_schema")
+	}
+	if target.StructuredOutput {
+		return true
 	}
 	if callerDialect != outDialect {
 		return false
