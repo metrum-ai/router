@@ -182,19 +182,20 @@ cases:
     source_url: https://github.com/metrum-ai/router/issues/94
     reviewed_date: "2026-10-10"
     transport: sse
-    disposition: blocked
+    disposition: native_supported
     assertions:
       - HTTP/1.1 vs HTTP/2 and reverse-proxy buffering keep first-event incremental
     evidence_paths:
+      - internal/router/stream_policy_e2e_test.go
       - tests/api_compat/tests/test_stream_limits.py
       - tests/api_compat/tests/test_stream_faults.py
       - cmd/metrum-ai-router/main.go
     rationale: >-
-      Router side covered offline: the binary listens with plain net/http ListenAndServe (HTTP/1.1, no TLS, no h2c);
-      test_stream_10_router_listener_is_http11_without_h2c pins chunked SSE without Content-Length plus Cache-Control no-cache
-      and that an h2c prior-knowledge preface gets no HTTP/2 SETTINGS, and STREAM-03/RESP-02 prove gated first-event delivery over HTTP/1.1.
-      HTTP/2 and reverse-proxy compression/buffering exist only at the deployment ingress, so the end-to-end first-event and cancel
-      check needs a deployed ingress profile (live). Note: the router does not send X-Accel-Buffering no, so nginx-style proxies need proxy_buffering off.
+      The localhost router emits anti-buffering headers. TestStreamPolicyE2E in
+      internal/router/stream_policy_e2e_test.go verifies HTTP/1.1 headers and bounded
+      frames. make lrp-e2e enables its Docker nginx TLS HTTP/2 ingress case, asserting
+      the first event arrives before upstream completion with default proxy buffering.
+      Docker absence skips the ingress case cleanly.
     test_id: test_stream_10_router_listener_is_http11_without_h2c
 
   - id: STREAM-11

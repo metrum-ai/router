@@ -171,7 +171,7 @@ bridges:
 
 `chat_to_responses.enabled: true` allows OpenAI Chat Completions callers to consider an `openai-responses` target after normal request-shape filtering. The default bridge is stateless: it translates the full Chat request into one Responses request.
 
-`stateful_sessions.enabled: true` adds an opt-in session map for callers that send the configured header. After a successful upstream Responses call, the router stores only the upstream response `id` under a hashed caller/group/target/bridge/session scope and injects it as `previous_response_id` on the next request in that same scope. The default `memory` backend preserves the existing single-process behavior. The `redis` backend is an explicit shared backend for multi-replica deployments; it applies the configured TTL in Redis and requires deployment-owned Redis connectivity, auth, and TLS settings. If the upstream reports that the injected continuation is stale, expired, invalid, or missing, the router purges that hashed mapping and retries once stateless for the same selected target. Requests without the header remain stateless. Stateful bridge requests bypass response caching because the session header is part of conversation state.
+Chat-to-Responses requests always set `store:false` and never send `previous_response_id`: Chat callers already supply full history. Legacy `stateful_sessions` settings remain accepted for configuration compatibility, but cannot enable upstream continuation. Disable them in new deployments to avoid unnecessary session backend operations. Native Responses requests with `previous_response_id` exclude `force_store_false` targets; no eligible target returns `400 continuation_unsupported`.
 
 Enable only the shapes that passed direct upstream and router-level bridge smokes:
 
@@ -185,7 +185,7 @@ Enable only the shapes that passed direct upstream and router-level bridge smoke
 | `images` | Chat image content blocks can translate to Responses image input and passed direct plus router image smokes. |
 | `reasoning` | Chat reasoning controls can translate to Responses reasoning controls for this target. |
 | `streaming` | Reserved for a future streaming bridge. Current bridge streaming is skipped before upstream even if this field is set. |
-| `stateful_sessions.enabled` | Enables header-driven `previous_response_id` mapping for this target. Use only after direct and router-level session smokes pass. |
+| `stateful_sessions.enabled` | Legacy session bookkeeping only; does not enable upstream continuation. Keep disabled. |
 | `stateful_sessions.backend` | `memory` for local, single-process, or sticky-routed deployments; `redis` for explicitly configured shared state. |
 | `stateful_sessions.session_header` | Caller-supplied HTTP header used as the opaque session key. Raw values are not persisted. |
 | `stateful_sessions.ttl_seconds` | Session expiry. Memory expires entries during lookup/prune; Redis writes the TTL into the backend. |
@@ -196,7 +196,7 @@ Enable only the shapes that passed direct upstream and router-level bridge smoke
 | `stateful_sessions.redis.tls` | TLS enablement and server name for Redis. Use TLS for cross-host or managed Redis deployments. |
 | `stateful_sessions.redis.*_timeout_ms` | Connect/read/write timeout caps so backend stalls do not block the proxy indefinitely. |
 
-Successful Chat-to-Responses bridge attempts write `request_translation_shapes.bridge_direction = chat_to_responses`; Responses-to-Chat attempts write `responses_to_chat`. Reasoning bridge attempts use safe scalar `translated_reasoning_control` values such as `reasoning` or `reasoning_effort`. Stateful-session backend activity emits bounded trace event names such as `bridge_session_lookup_hit`, `bridge_session_lookup_miss`, `bridge_session_set`, `bridge_session_delete`, `bridge_session_backend_error`, `bridge_session_previous_response_stale_purged`, and `bridge_session_stateless_retry`; these events do not include raw prompts, raw session headers, provider keys, Redis credentials, token hashes, or raw upstream error bodies.
+Successful Chat-to-Responses bridge attempts write `request_translation_shapes.bridge_direction = chat_to_responses`; Responses-to-Chat attempts write `responses_to_chat`. Reasoning bridge attempts use safe scalar `translated_reasoning_control` values such as `reasoning` or `reasoning_effort`. Stateful-session backend activity emits bounded trace event names such as `bridge_session_lookup_hit`, `bridge_session_lookup_miss`, `bridge_session_set`, `bridge_session_delete`, `bridge_session_backend_error`; these events do not include raw prompts, raw session headers, provider keys, Redis credentials, token hashes, or raw upstream error bodies.
 
 The `responses_to_chat` block is the inverse opt-in bridge for Responses callers using validated Chat-only targets. Configure it separately from `chat_to_responses`; each direction has its own supported request shapes, validation evidence, and failure modes.
 
