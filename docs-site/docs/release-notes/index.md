@@ -151,7 +151,7 @@ implementation and Claude Code continuation validation; track that work in
 [#295](https://github.com/metrum-ai/router/issues/295).
 
 **After v4.1.0:** the client-tool bridge is implemented for explicitly validated
-Chat and Responses targets. See [Claude Code translated client tools](../getting-started/claude-code-cli)
+Chat and Responses targets. See [Claude Code translated client tools](/docs/getting-started/claude-code-cli)
 for the distinct per-target capability requirements and continuation validation.
 The limitation above remains applicable to the v4.1.0 release binary.
 
