@@ -11,7 +11,9 @@ Router response-cache hits bill at zero. Provider prompt-cache discounts are
 separate: those requests still bill using the configured cached-input price.
 The legacy `total_cost_usd` column remains an alias for billed cost, so existing
 reports, exports and cost sorting use billed cost. Token counts on cache hits
-remain informational and are not erased.
+remain informational and are not erased. Input/image/output component costs
+also retain their estimated breakdown; on a free hit their sum describes list
+cost, not billed cost. Use `cost_billed_usd` (or the legacy total alias) for spend.
 
 Migration 2026102101 adds the two non-null columns and backfills existing rows:
 list cost is the old total; billed cost is zero for `cache = 'hit'`, otherwise
