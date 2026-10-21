@@ -158,6 +158,15 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	if callerDialect == "anthropic" && outDialect != "anthropic" && rawKeyPresent(req.Raw, "tool_choice") {
+		choice, ok := req.Raw["tool_choice"].(map[string]any)
+		if !ok || !supportsAnyCapability([]string{"auto", "any", "tool", "none"}, stringValue(choice["type"])) {
+			return "anthropic-bridge-tool-choice-unsupported"
+		}
+		if !targetSupportsClientTools(target, "anthropic", true) || !targetSupportsClientTools(target, outDialect, true) {
+			return "anthropic-bridge-tool-choice-unsupported"
+		}
+	}
 	if anthropicStreamBridge(callerDialect, outDialect) && (requestRequiresReasoning(req) || target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target)) {
 		return "anthropic-bridge-reasoning-unsupported"
 	}

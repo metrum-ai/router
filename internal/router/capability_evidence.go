@@ -277,10 +277,16 @@ func advertisedCapabilities(target Target, dialect string) []string {
 }
 
 func anthropicTranslationEvidenceCapabilities(target Target, dialect string) []string {
-	if target.ToolOnly {
-		return nil
+	var capabilities []string
+	if !target.ToolOnly {
+		capabilities = append(capabilities, "text")
 	}
-	capabilities := []string{"text"}
+	if anthropicToolsBridgeEnabled(target, dialect) {
+		capabilities = append(capabilities, "tools-omitted")
+		if targetSupportsClientTools(target, "anthropic", true) && targetSupportsClientTools(target, dialect, true) {
+			capabilities = append(capabilities, "tools-auto", "tools-forced")
+		}
+	}
 	if !supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "image") &&
 		targetSupportsInputModalities(target, []string{"image"}) {
 		capabilities = append(capabilities, "image-input")
