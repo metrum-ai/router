@@ -158,6 +158,13 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	if callerDialect == "anthropic" && outDialect != "anthropic" {
+		for _, tool := range req.Tools {
+			if typ := stringValue(tool["type"]); typ != "" && typ != "custom" {
+				return "anthropic-bridge-server-tool-unsupported"
+			}
+		}
+	}
 	if callerDialect == "anthropic" && outDialect != "anthropic" && !anthropicToolsBridgeEnabled(target, outDialect) {
 		// Continuation history still needs a tool bridge even when this turn
 		// omits tool definitions (for example after tool_choice:none).

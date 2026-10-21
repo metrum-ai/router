@@ -108,6 +108,10 @@ func TestAnthropicTranslatedToolStreamingAdmission(t *testing.T) {
 func TestAnthropicToolTranslationEvidence(t *testing.T) {
 	for _, out := range []string{"openai-chat", "openai-responses"} {
 		target := anthropicToolTarget()
+		serverTool := &IRRequest{Tools: []map[string]any{{"type": "web_search_20250305", "name": "web_search"}}}
+		if got := requestShapeFilterReason(target, serverTool, "anthropic", out, requestTokenEstimateLogRecord{}, targetRequestShapeFit{}); got != "anthropic-bridge-server-tool-unsupported" {
+			t.Fatalf("server tool authorized: %s", got)
+		}
 		if !targetSupportsToolsForCallerDialect(target, "anthropic", out) {
 			t.Fatal("validated bridge rejected")
 		}
