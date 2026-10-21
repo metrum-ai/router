@@ -242,13 +242,15 @@ func (s *Service) recordRoutingDecisionTelemetry(rc *requestContext, dec decisio
 		ClassLabel:             dec.ClassLabel,
 	})
 	rc.rec.RoutingSignals = append(rc.rec.RoutingSignals, dec.RoutingSignals...)
+	policySelected := selected
 	if dec.ShadowRecommended != nil {
+		policySelected = candidateIndexForTarget(rc.rec.DecisionCandidates, *dec.ShadowRecommended)
 		rc.rec.RoutingSignals = append(rc.rec.RoutingSignals, routingSignalLogRecord{
 			Seq:            len(rc.rec.RoutingSignals) + 1,
 			Strategy:       dec.Strategy,
 			SignalName:     "shadow_recommended_candidate",
 			Source:         "external_policy",
-			CandidateIndex: candidateIndexForTarget(rc.rec.DecisionCandidates, *dec.ShadowRecommended),
+			CandidateIndex: policySelected,
 			BoolValue:      true,
 		})
 	}
@@ -259,7 +261,7 @@ func (s *Service) recordRoutingDecisionTelemetry(rc *requestContext, dec decisio
 	}
 	rc.rec.DynamicScoreTerms = append(rc.rec.DynamicScoreTerms, dec.DynamicScoreTerms...)
 	for i := range dec.PolicyExecutions {
-		dec.PolicyExecutions[i].SelectedCandidateIndex = selected
+		dec.PolicyExecutions[i].SelectedCandidateIndex = policySelected
 	}
 	rc.rec.PolicyExecutions = append(rc.rec.PolicyExecutions, dec.PolicyExecutions...)
 }
@@ -499,7 +501,9 @@ func candidateIndexForTarget(candidates []decisionCandidateLogRecord, target Tar
 			return candidate.CandidateIndex
 		}
 	}
-	return -1
+	// Policy selectors can return the resolved identity without its catalog ref.
+	// Prefer the exact match above when multiple refs share a provider/model.
+	return candidateIndexForProviderModel(candidates, target.Provider, target.Model)
 }
 
 func candidateIndexForProviderModel(candidates []decisionCandidateLogRecord, provider, model string) int {

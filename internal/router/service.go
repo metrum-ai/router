@@ -1509,9 +1509,17 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Warnings:             []string{},
 		},
 	}
+	// Recognized inactive credentials retain safe attribution, never authorization.
+	// Unknown credentials have no caller and cannot acquire a report domain.
+	rc.rec.TokenID = tokenID
+	if caller != nil {
+		rc.rec.CallerID = caller.cfg.ID
+		rc.rec.CallerUser = callerUser(caller.cfg)
+		rc.rec.CallerProject = callerProject(caller.cfg)
+		rc.rec.CallerEnvironment = callerEnvironment(caller.cfg)
+	}
 	rc.trace("router_receive", "router request receive", Target{}, 0, 0, "", false, 0)
 	if err != nil {
-		rc.rec.TokenID = tokenID
 		status := http.StatusUnauthorized
 		code := "unauthorized"
 		var policyErr authPolicyError
@@ -1523,11 +1531,6 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 		s.writeError(w, rc, status, code)
 		return nil, false
 	}
-	rc.rec.CallerID = caller.cfg.ID
-	rc.rec.CallerUser = callerUser(caller.cfg)
-	rc.rec.CallerProject = callerProject(caller.cfg)
-	rc.rec.CallerEnvironment = callerEnvironment(caller.cfg)
-	rc.rec.TokenID = tokenID
 	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
 	return rc, true
 }
@@ -1714,7 +1717,7 @@ func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, e
 		return nil, "invalid-token", errors.New("unknown token")
 	}
 	if err := caller.authPolicyError(); err != nil {
-		return nil, tokenID, err
+		return caller, tokenID, err
 	}
 	return caller, tokenID, nil
 }

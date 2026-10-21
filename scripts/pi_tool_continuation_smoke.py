@@ -55,7 +55,8 @@ def make_token() -> str:
 
 def build_prompt(token: str) -> str:
     return (
-        f"Use the write tool to create the file {PROOF_FILE} containing exactly: {token} . "
+        f"Use the write tool to create {PROOF_FILE}. Its entire contents must be the following token, "
+        f"without quotes, prefix, suffix, punctuation, or Markdown: {token}\n"
         f"Then use the read tool to read {PROOF_FILE} back. "
         "Finally reply with DONE followed by the file contents."
     )
@@ -117,6 +118,7 @@ def parse_pi_events(lines: list[str]) -> dict:
     final_text = ""
     models: list[str] = []
     bad_lines = 0
+    steps: list[dict] = []
     for line in lines:
         line = line.strip()
         if not line:
@@ -139,6 +141,9 @@ def parse_pi_events(lines: list[str]) -> dict:
             message = event.get("message")
             if not isinstance(message, dict) or message.get("role") != "assistant":
                 continue
+            content = message.get("content", [])
+            calls = [str(p.get("name", "")) for p in content if isinstance(p, dict) and p.get("type") == "toolCall"] if isinstance(content, list) else []
+            steps.append({"step": len(steps) + 1, "tool_calls": calls})
             effective = message.get("responseModel") or message.get("model")
             if effective:
                 models.append(str(effective))
@@ -151,6 +156,19 @@ def parse_pi_events(lines: list[str]) -> dict:
         "final_text": final_text,
         "models": models,
         "bad_lines": bad_lines,
+        "steps": steps,
+    }
+
+
+def proof_diagnostic(token: str, contents: str | None) -> dict:
+    return {
+        "expected": token,
+        "actual_prefix": contents[:200] if contents is not None else None,
+        "length": len(contents) if contents is not None else None,
+        "contains_token": token in contents if contents is not None else False,
+        "comparison": "exact" if contents == token else (
+            "whitespace-only (accepted)" if contents is not None and contents.strip() == token else "mismatch"),
+        "policy": "ignore leading/trailing whitespace only; prefixes/suffixes remain failures; no retries",
     }
 
 
@@ -164,7 +182,10 @@ def check_pi_result(exit_code: int, parsed: dict, token: str, file_contents: str
     if file_contents is None:
         failures.append(f"{PROOF_FILE} was not created")
     elif file_contents.strip() != token:
-        failures.append(f"{PROOF_FILE} contents do not match the token")
+        diagnostic = proof_diagnostic(token, file_contents)
+        failures.append(f"{PROOF_FILE} contents do not match the token: {json.dumps(diagnostic, ensure_ascii=True)}")
+    if parsed.get("tool_errors"):
+        failures.append(f"pi tool errors: {parsed['tool_errors']}")
     if f"DONE {token}" not in " ".join(parsed["final_text"].split()):
         failures.append("final assistant text does not contain DONE <token>")
     return failures
@@ -370,15 +391,26 @@ def main(argv: list[str] | None = None) -> int:
         hop["target_model"] = target
         failures += check_models(args.expect_model_identity, args.group, hop["models"], [target], name)
 
+    pi_rows = [r for r in rows if r["request_id"] not in curl_ids]
+    steps = []
+    for i, step in enumerate(parsed["steps"]):
+        steps.append({**step, "upstream": pi_rows[i] if len(pi_rows) == len(parsed["steps"]) else None})
+    attribution = "ordered usage rows (isolated smoke; no concurrent traffic)" if len(pi_rows) == len(steps) else "ambiguous: assistant/usage counts differ; inspect usage_rows"
+    if any("contents do not match" in failure for failure in failures):
+        failures.append("proof mismatch upstream steps: " + json.dumps(steps))
+
     summary = {
         "schema": "metrum.ai/router-pi-tool-continuation-smoke/v1",
         "ok": not failures,
         "expect_model_identity": args.expect_model_identity,
         "group": args.group,
         "proof_token": proof_token,
+        "proof": proof_diagnostic(proof_token, contents),
         "pi": {
             "exit_code": code,
             "tools": parsed["tools"],
+            "steps": steps,
+            "upstream_attribution": attribution,
             "tool_errors": parsed["tool_errors"],
             "final_text": parsed["final_text"][:200],
             "models": parsed["models"],
