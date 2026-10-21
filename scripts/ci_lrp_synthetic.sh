@@ -15,14 +15,22 @@ uv sync --project services/learned-routing-policy --locked
 
 # Only Ubuntu supplies these prerequisites. Unrelated preinstalled
 # browser/package feeds must not break verifier setup during updates.
-test -f /etc/apt/sources.list.d/ubuntu.sources
-sudo mkdir -p /var/tmp/lrp-ci-apt-sources
-sudo cp /etc/apt/sources.list.d/ubuntu.sources /var/tmp/lrp-ci-apt-sources/ubuntu.sources
-apt_sources=(-o Dir::Etc::sourcelist=- -o Dir::Etc::sourceparts=/var/tmp/lrp-ci-apt-sources)
-sudo apt-get "${apt_sources[@]}" update
-# Bubblewrap namespaces are the isolation boundary. AppArmor profiles are not
-# required for this credential-free preflight.
-sudo apt-get "${apt_sources[@]}" install -y bubblewrap
+if ! command -v bwrap >/dev/null 2>&1; then
+  test -f /etc/apt/sources.list.d/ubuntu.sources
+  # Container runners may be root without sudo; unprivileged runners may have
+  # neither. Downloading and extracting the real binary needs no privilege.
+  apt_work="$(mktemp -d /var/tmp/lrp-ci-apt.XXXXXX)"
+  mkdir -p "$apt_work/sources" "$apt_work/lists/partial" "$apt_work/cache/archives/partial"
+  cp /etc/apt/sources.list.d/ubuntu.sources "$apt_work/sources/ubuntu.sources"
+  apt_sources=(-o Dir::Etc::sourcelist=- -o "Dir::Etc::sourceparts=$apt_work/sources"
+    -o "Dir::State::lists=$apt_work/lists" -o "Dir::Cache=$apt_work/cache")
+  apt-get "${apt_sources[@]}" update
+  (cd "$apt_work" && apt-get "${apt_sources[@]}" download bubblewrap)
+  dpkg-deb -x "$apt_work"/bubblewrap_*.deb "$apt_work/root"
+  export PATH="$apt_work/root/usr/bin:$PATH"
+fi
+# Bubblewrap namespaces remain the isolation boundary; never substitute a stub.
+bwrap --version
 umask 077
 mkdir -p /var/tmp/lrp-ci
 # Bare-metal runners may reuse /var/tmp across jobs. Prior rootfs trees are
