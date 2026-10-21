@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Anthropic Messages client-tool continuations can translate to explicitly validated OpenAI Chat and Responses targets, including streaming and identifier rewriting. Upstream tool support alone does not enable this route; unvalidated targets still fail closed (#295).
-
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
