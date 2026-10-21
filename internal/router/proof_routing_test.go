@@ -161,6 +161,7 @@ func TestProofRoutingSameGroupDifferentUpstream(t *testing.T) {
 			t.Fatalf("%s missing X-Request-Id", name)
 		}
 
+		flushUsageForTest(t, svc)
 		evidenceReq := httptest.NewRequest(http.MethodGet, "/admin/reports/api/request-evidence?request_id="+requestID, nil)
 		evidenceReq.SetBasicAuth("admin", "yell-yell-yum")
 		evidenceRR := httptest.NewRecorder()
