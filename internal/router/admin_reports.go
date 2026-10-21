@@ -3539,7 +3539,7 @@ func buildAdminSavingsResponse(filters adminReportFilters, rows []usageRow, base
 		if row.InputTokens == 0 && row.OutputTokens == 0 && row.TotalTokens == 0 {
 			missingTokens++
 		}
-		if row.TotalCostUSD == 0 && (row.InputTokens > 0 || row.OutputTokens > 0 || row.TotalTokens > 0) {
+		if row.Cache != "hit" && row.TotalCostUSD == 0 && (row.InputTokens > 0 || row.OutputTokens > 0 || row.TotalTokens > 0) {
 			missingActualCost++
 		}
 		total.add(row, baseline)

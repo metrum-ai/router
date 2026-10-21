@@ -3273,6 +3273,9 @@ func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted,
 
 func recordFromRow(row usageRow) *usageRecord {
 	listCost := row.TotalCostUSD
+	if row.CostListUSD > 0 {
+		listCost = row.CostListUSD
+	}
 	billedCost := listCost
 	if row.Cache == "hit" {
 		billedCost = 0
@@ -5636,7 +5639,7 @@ func adminSavingsAggSQLSelectExpr(baseline adminSavingsBaselineDTO) string {
 		SUM(total_cost_usd) AS actual_cost_usd,
 		` + adminBaselineCostSQLExpr(baseline) + ` AS baseline_cost_usd,
 		SUM(CASE WHEN input_tokens = 0 AND output_tokens = 0 AND total_tokens = 0 THEN 1 ELSE 0 END) AS missing_tokens,
-		SUM(CASE WHEN total_cost_usd = 0 AND (input_tokens > 0 OR output_tokens > 0 OR total_tokens > 0) THEN 1 ELSE 0 END) AS missing_actual_cost`
+		SUM(CASE WHEN cache <> 'hit' AND total_cost_usd = 0 AND (input_tokens > 0 OR output_tokens > 0 OR total_tokens > 0) THEN 1 ELSE 0 END) AS missing_actual_cost`
 }
 
 func savingsRowsFromSQLRecords(records []savingsAggRecord) []adminSavingsRow {
@@ -5814,6 +5817,7 @@ func (s *usageStore) adminScalarMultiBucketAggsSQL(opts UsageReportOptions, spec
 				existing.Agg.ImageCostUSD += scalar.Agg.ImageCostUSD
 				existing.Agg.OutputCostUSD += scalar.Agg.OutputCostUSD
 				existing.Agg.TotalCostUSD += scalar.Agg.TotalCostUSD
+				existing.Agg.CostListUSD += scalar.Agg.CostListUSD
 				existing.Agg.LatencyMS += scalar.Agg.LatencyMS
 				existing.Agg.MaxLatencyMS = adminMaxInt64(existing.Agg.MaxLatencyMS, scalar.Agg.MaxLatencyMS)
 				continue

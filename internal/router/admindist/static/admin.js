@@ -651,9 +651,7 @@ function requestColumns() {
     { key: "totalTokens", label: "Total Tokens" },
     { key: "inputTokens", label: "Input Tokens" },
     { key: "outputTokens", label: "Output Tokens" },
-    { key: "cost_list_usd", label: "List cost", format: v => usd.format(v || 0) },
-    { key: "cost_billed_usd", label: "Billed cost", format: v => usd.format(v || 0) },
-    { key: "cache_savings_usd", label: "Cache savings", format: v => usd.format(v || 0) }
+    { key: "totalCostUsd", label: "Total cost", format: v => usd.format(v || 0) }
   ];
 }
 
