@@ -1130,7 +1130,7 @@ func TestUsageHistoricalValidationRequiresMultipleCheckpointsBeforeDeploymentJob
 	}
 	for i := 0; i < 101; i++ {
 		row := usageRecord{RequestID: fmt.Sprintf("historical-row-%03d", i), TS: "2026-08-05T00:00:00Z"}
-		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD").Create(&row).Error; err != nil {
+		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD").Create(&row).Error; err != nil {
 			_ = store.Close()
 			t.Fatalf("create synthetic historical usage row %d: %v", i, err)
 		}
@@ -1376,7 +1376,7 @@ func TestUsageStoreAutoSafeRejectsExistingSQLiteUsageRowsBeforeValidation(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Create(&usageRecord{RequestID: "existing-row", TS: "2026-08-05T00:00:00Z"}).Error; err != nil {
+	if err := store.db.Omit("CostListUSD", "CostBilledUSD").Create(&usageRecord{RequestID: "existing-row", TS: "2026-08-05T00:00:00Z"}).Error; err != nil {
 		_ = store.Close()
 		t.Fatal(err)
 	}
@@ -1682,8 +1682,8 @@ func TestUsageReasoningTelemetryMigrationAddsColumnsToAdoptedSchema(t *testing.T
 		t.Fatalf("cached-input pricing migration postcondition: %v", err)
 	}
 	status, err := runner.Verify()
-	if err != nil || !status.Compatible || status.SchemaVersion != 5 || status.DataVersion != 0 || status.State != "pending" || len(status.Jobs) != 1 || status.Jobs[0].Key != "historical-usage-validation-v1" || status.Jobs[0].State != migrationDataJobPending {
-		t.Fatalf("schema migrations must reach v5 while the later non-serving data job remains pending: status=%+v err=%v", status, err)
+	if err != nil || !status.Compatible || status.SchemaVersion != usageMigrationCompatibility.MaxSchema || status.DataVersion != 0 || status.State != "pending" || len(status.Jobs) != 1 || status.Jobs[0].Key != "historical-usage-validation-v1" || status.Jobs[0].State != migrationDataJobPending {
+		t.Fatalf("schema migrations must reach the latest version while the later non-serving data job remains pending: status=%+v err=%v", status, err)
 	}
 	previousBinary, err := NewMigrationRunner(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 1, MinData: 0, MaxData: 0}, usageMigrationDefinitions[:1])
 	if err != nil {

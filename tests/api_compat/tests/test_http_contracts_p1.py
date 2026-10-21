@@ -73,7 +73,7 @@ providers:
 models:
   chat: {{strategy: static, targets: [{{provider: chat, model: synthetic-chat}}]}}
   limited: {{strategy: static, targets: [{{provider: chat, model: synthetic-limited, request_shape_support: {{max_request_bytes: {LIMIT_BYTES}}}}}]}}
-  messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
+  messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, allowed_betas: [context-management-2025-06-27], request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
   messages-bearer: {{strategy: static, targets: [{{provider: messages_bearer, model: synthetic-messages-bearer, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: synthetic-allowed
@@ -128,8 +128,25 @@ def _anthropic_post(base, headers, payload):
 # --- HTTP-06 -----------------------------------------------------------------
 
 
+def test_http_06_beta_allowlist_and_gated_field(http_router, upstream):
+    payload = {"model": "messages", "max_tokens": 16,
+               "messages": [{"role": "user", "content": "hi"}],
+               "context_management": {"edits": []}}
+    auth = [("Authorization", f"Bearer {CALLER}")]
+    status, raw = _anthropic_post(http_router["base"], auth, payload)
+    assert status == 400, raw
+    assert b"context_management" in raw
+    assert not upstream.calls
+    status, raw = _anthropic_post(http_router["base"], auth + [
+        ("anthropic-beta", "unpermitted,context-management-2025-06-27")], payload)
+    assert status == 200, raw
+    sent = {k.lower(): v for k, v in upstream.calls[0]["headers"].items()}
+    assert sent["anthropic-beta"] == "context-management-2025-06-27"
+
+
+
 def test_http_06_anthropic_version_and_beta_header_policy(http_router, upstream):
-    """HTTP-06: caller anthropic-version/beta never leak upstream; router pins its own policy."""
+    """HTTP-06: version is pinned; betas require per-target opt-in."""
     base = http_router["base"]
     payload = {
         "model": "messages",
@@ -157,7 +174,7 @@ def test_http_06_anthropic_version_and_beta_header_policy(http_router, upstream)
         sent = {k.lower(): v for k, v in upstream.calls[0]["headers"].items()}
         # Router-owned version pin and configured provider beta, never caller values.
         assert sent["anthropic-version"] == "2023-06-01"
-        assert sent["anthropic-beta"] == CONFIGURED_BETA
+        assert "anthropic-beta" not in sent
         assert "caller-beta" not in json.dumps(sent)
         # Provider skin is x-api-key; the caller's router token is never forwarded.
         assert sent["x-api-key"] == UPSTREAM_KEY

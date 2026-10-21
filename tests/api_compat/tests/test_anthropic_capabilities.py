@@ -256,6 +256,12 @@ def test_anth_06_thinking_controls_follow_capability_profile(anth_router):
     assert status == 200, raw[:300]
     assert calls[0]["body"]["thinking"] == {"type": "adaptive"}
     assert calls[0]["body"]["output_config"] == {"effort": "low"}
+    status, raw, calls = _send(anth_router, {
+        "model": "anth-plain", "max_tokens": 2000,
+        "thinking": {"type": "adaptive"}, "messages": _user(),
+    })
+    assert status == 502, raw
+    assert calls == []
 
 
 def test_anth_07_eager_input_streaming_fragments_passthrough(anth_router):

@@ -143,7 +143,17 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 	if fit.MaxToolSchemaBytes > 0 && fit.ToolSchemaBytes > fit.MaxToolSchemaBytes {
 		fit.ToolSchemaFit = false
 	}
-	reason := requestShapeFilterReason(target, req, callerDialect, outDialect, estimate, fit)
+	reason := ""
+	if s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
+		if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) {
+			reason = "request-shape-dialect-unsupported"
+		} else if !strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed") {
+			reason = "request-shape-validation-unpassed"
+		}
+	}
+	if reason == "" {
+		reason = requestShapeFilterReason(target, req, callerDialect, outDialect, estimate, fit)
+	}
 	if reason != "" {
 		fit.EligibilityDecision = "skipped"
 		fit.EligibilityReason = reason
@@ -158,6 +168,35 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	if callerDialect == "anthropic" && outDialect != "anthropic" {
+		for _, tool := range req.Tools {
+			if typ := stringValue(tool["type"]); typ != "" && typ != "custom" {
+				return "anthropic-bridge-server-tool-unsupported"
+			}
+		}
+	}
+	if callerDialect == "anthropic" && outDialect != "anthropic" && !anthropicToolsBridgeEnabled(target, outDialect) {
+		// Continuation history still needs a tool bridge even when this turn
+		// omits tool definitions (for example after tool_choice:none).
+		for _, raw := range valueAsSlice(req.Raw["messages"]) {
+			message, _ := raw.(map[string]any)
+			for _, rawBlock := range valueAsSlice(message["content"]) {
+				block, _ := rawBlock.(map[string]any)
+				if typ := stringValue(block["type"]); typ == "tool_use" || typ == "tool_result" {
+					return "tool-support"
+				}
+			}
+		}
+	}
+	if callerDialect == "anthropic" && outDialect != "anthropic" && rawKeyPresent(req.Raw, "tool_choice") {
+		choice, ok := req.Raw["tool_choice"].(map[string]any)
+		if !ok || !supportsAnyCapability([]string{"auto", "any", "tool", "none"}, stringValue(choice["type"])) {
+			return "anthropic-bridge-tool-choice-unsupported"
+		}
+		if !targetSupportsClientTools(target, "anthropic", true) || !targetSupportsClientTools(target, outDialect, true) {
+			return "anthropic-bridge-tool-choice-unsupported"
+		}
+	}
 	if anthropicStreamBridge(callerDialect, outDialect) && (requestRequiresReasoning(req) || target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target)) {
 		return "anthropic-bridge-reasoning-unsupported"
 	}

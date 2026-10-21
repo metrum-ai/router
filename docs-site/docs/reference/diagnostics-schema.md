@@ -123,6 +123,8 @@ This section is generated from the router usage and content-capture schema used 
 | `image_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `output_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `total_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
+| `cost_list_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
+| `cost_billed_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `upstream_reported_input_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `upstream_reported_output_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `upstream_reported_total_cost_usd` | decimal | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |

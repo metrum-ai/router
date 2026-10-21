@@ -6,6 +6,7 @@ package router
 import "encoding/json"
 
 type IRRequest struct {
+	CallerBetas    string            `json:"caller_betas,omitempty"`
 	Model          string            `json:"model"`
 	System         string            `json:"system,omitempty"`
 	Messages       []IRMessage       `json:"messages,omitempty"`
