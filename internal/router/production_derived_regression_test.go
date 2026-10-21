@@ -654,7 +654,7 @@ func TestProductionDerivedLargeOpenAIChatToolPayloadSkipsShapeLimitedTarget(t *t
 		if selectedModel == fixture.MustNotSelect[0].Model {
 			t.Fatalf("unsafe production-derived target was selected: %s", selectedModel)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeChatTestSSE(w, map[string]any{
 			"id": "chatcmpl_production_derived",
 			"choices": []map[string]any{{
 				"message":       map[string]any{"role": "assistant", "content": "ok"},
@@ -831,7 +831,7 @@ func TestProductionDerivedHighGt1MBOpenAIChatToolPayloadRoutesToMiniMax(t *testi
 			t.Fatalf("decode upstream body: %v", err)
 		}
 		selectedModel = stringValue(decoded["model"])
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeChatTestSSE(w, map[string]any{
 			"id": "chatcmpl_high_gt1mb",
 			"choices": []map[string]any{{
 				"message":       map[string]any{"role": "assistant", "content": "ok"},

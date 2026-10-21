@@ -5607,7 +5607,7 @@ func TestOpenAIChatToolPassthroughMaxCompletionTokensFiltersCapUnsafeTargets(t *
 		if err := json.NewDecoder(r.Body).Decode(&upstreamBody); err != nil {
 			t.Fatal(err)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeChatTestSSE(w, map[string]any{
 			"id":      "chatcmpl_tool_cap",
 			"object":  "chat.completion",
 			"created": 1710000000,
@@ -15013,7 +15013,7 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 					writeJSON(w, tc.statusCode, map[string]any{"error": map[string]any{"message": "provider rejected shape"}})
 					return
 				}
-				writeJSON(w, http.StatusOK, map[string]any{
+				writeChatTestSSE(w, map[string]any{
 					"id": "chatcmpl_shape",
 					"choices": []map[string]any{{
 						"message":       map[string]any{"role": "assistant", "content": "ok"},

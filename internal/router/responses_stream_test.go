@@ -127,6 +127,7 @@ func TestResponsesFallbackCommit(t *testing.T) {
 			var calls atomic.Int64
 			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
+				w.Header().Set("Content-Type", "text/event-stream")
 				var b map[string]any
 				json.NewDecoder(r.Body).Decode(&b)
 				if b["model"] == "primary" {
