@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from pathlib import Path
 
 
 RULES: dict[str, re.Pattern[str]] = {
@@ -26,6 +27,11 @@ RULES: dict[str, re.Pattern[str]] = {
 
 def main() -> int:
     errors: list[str] = []
+    makefile = Path(__file__).resolve().parents[1] / "Makefile"
+    for line in makefile.read_text().splitlines():
+        if "go build" in line and ("./cmd/" in line):
+            if '$(BUILD_LDFLAGS)' not in line or '-buildvcs=false' not in line:
+                errors.append("Makefile go build must use BUILD_LDFLAGS and -buildvcs=false")
     for name, pattern in RULES.items():
         value = os.environ.get(name, "")
         if not value:
