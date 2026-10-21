@@ -42,13 +42,14 @@ type IRMessage struct {
 }
 
 type IRContentPart struct {
-	Type      string `json:"type"`
-	Text      string `json:"text,omitempty"`
-	ImageURL  string `json:"image_url,omitempty"`
-	Detail    string `json:"detail,omitempty"`
-	MediaType string `json:"media_type,omitempty"`
-	Data      string `json:"data,omitempty"`
-	FileID    string `json:"file_id,omitempty"`
+	Raw       map[string]any `json:"raw,omitempty"`
+	Type      string         `json:"type"`
+	Text      string         `json:"text,omitempty"`
+	ImageURL  string         `json:"image_url,omitempty"`
+	Detail    string         `json:"detail,omitempty"`
+	MediaType string         `json:"media_type,omitempty"`
+	Data      string         `json:"data,omitempty"`
+	FileID    string         `json:"file_id,omitempty"`
 }
 
 type IRResponse struct {

@@ -1,0 +1,11 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Fragment: merge into your router config; never commit the expanded DSN.
+# Run deployment migrations before serving with deployment-job.
+server:
+  usage_db:
+    enabled: true
+    driver: postgres
+    dsn: ${ROUTER_USAGE_POSTGRES_DSN}
+    migration_policy: deployment-job
+    drain_timeout_ms: 10000

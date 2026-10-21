@@ -119,25 +119,19 @@ cases:
     priority: P1
     owner: api-compat
     component: media
-    source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-10-10"
+    source_url: https://github.com/metrum-ai/router/issues/271
+    reviewed_date: "2026-10-21"
     inbound_route: /v1/chat/completions|/v1/responses|/anthropic/v1/messages
-    transport: unary
-    disposition: blocked
+    transport: mixed
+    disposition: supported_translation
     assertions:
-      - provider file_id and document blocks need explicit supported-route coverage
-    rationale: >-
-      Blocked on a router product decision (found 2026-10-10). File/document parts are
-      handled inconsistently: tool-bearing same-dialect requests forward Chat
-      {"type":"file"}, Responses {"type":"input_file"} and Anthropic {"type":"document"}
-      blocks raw (with no file/pdf modality check on the target), while text-only
-      same-dialect requests, streaming requests and both Chat/Responses bridges re-encode
-      through the IR and silently drop those blocks with HTTP 200. The contract
-      (preserve only on explicitly supported routes, otherwise reject before upstream) needs
-      a decision between rejecting file parts or adding file/pdf eligibility plus
-      preservation; neither is a small contained fix. Repro on the session router -
-      POST /v1/chat/completions {"model":"chat","messages":[{"role":"user","content":[{"type":"text","text":"hi"},{"type":"file","file":{"file_id":"file-abc"}}]}]}
-      returns 200 and the upstream body is {"messages":[{"role":"user","content":"hi"}]}.
+      - document and image parts survive unary and native stream translation to Chat and Responses with and without tools
+      - unsupported modalities return 400 unsupported_modality before upstream
+    evidence_paths:
+      - tests/api_compat/tests/test_media_capabilities.py
+      - internal/router/media_capabilities_test.go
+    test_id: test_media_07_translated_document_and_image
+    rationale: Explicit target modalities admit media; document file identifiers are retained, never flattened.
 
   - id: MEDIA-08
     priority: P1

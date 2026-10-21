@@ -128,6 +128,7 @@ func TestProviderTrafficShapeRoutesAroundThrottledTarget(t *testing.T) {
 		t.Fatalf("fallback calls=%d, want 1", fallbackCalls.Load())
 	}
 	var events []requestUpstreamShapeEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("decision = ?", shapeDecisionSkipped).Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -179,6 +180,7 @@ func TestProviderTrafficShapeAllTargetsThrottled(t *testing.T) {
 		t.Fatalf("upstream calls=%d, want no second upstream call", calls.Load())
 	}
 	var reqErr requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("error_type = ?", "upstream-capacity-throttled").First(&reqErr).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -226,6 +228,7 @@ func TestProviderTrafficShapeCacheHitBypassesCapacity(t *testing.T) {
 		t.Fatalf("upstream calls=%d, want second request served from cache", calls.Load())
 	}
 	var skipped int64
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Model(&requestUpstreamShapeEventRecord{}).Where("decision = ?", shapeDecisionSkipped).Count(&skipped).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -233,6 +236,7 @@ func TestProviderTrafficShapeCacheHitBypassesCapacity(t *testing.T) {
 		t.Fatalf("shape skipped events=%d, want cache hit to bypass capacity shaping", skipped)
 	}
 	var rows []usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Order("ts asc").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +297,7 @@ func TestAdaptiveBackoffHonorsBoundedRetryAfter(t *testing.T) {
 		t.Fatalf("upstream calls=%d, want second request skipped by adaptive backoff", calls.Load())
 	}
 	var cooldown requestUpstreamShapeEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("decision = ?", shapeDecisionCooldownStarted).First(&cooldown).Error; err != nil {
 		t.Fatal(err)
 	}

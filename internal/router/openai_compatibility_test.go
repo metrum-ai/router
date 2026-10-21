@@ -122,6 +122,7 @@ func TestResponsesBodyOnChatEndpointEnabledNativeResponsesStructuredOutput(t *te
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +130,7 @@ func TestResponsesBodyOnChatEndpointEnabledNativeResponsesStructuredOutput(t *te
 		t.Fatalf("usage dialect/model mismatch: %#v", usage)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -200,10 +202,12 @@ func TestResponsesBodyOnChatEndpointEnabledResponsesToChatReasoningTools(t *test
 		t.Fatalf("downstream response=%#v", downstream)
 	}
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
 	var translated requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&translated).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -398,6 +402,7 @@ func responsesCompatUpstreamResponse(model, text string) map[string]any {
 func assertCompatibilityTrace(t *testing.T, svc *Service, requestID, want string) {
 	t.Helper()
 	var events []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ? AND event = ?", requestID, "openai_compatibility_shape").Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}

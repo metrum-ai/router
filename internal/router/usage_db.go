@@ -26,13 +26,13 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
 )
 
 type usageStore struct {
-	db *gorm.DB
+	db     *gorm.DB
+	writer *usageWriter
 }
 
 // migrationStatus is a safe, read-only view of the checked-in usage migration
@@ -1456,6 +1456,9 @@ type decisionTelemetrySummary struct {
 }
 
 func newUsageStore(cfg UsageDBConfig) (*usageStore, error) {
+	if cfg.DrainTimeoutMS < 0 {
+		return nil, errors.New("usage_db.drain_timeout_ms must not be negative")
+	}
 	if cfg.Enable != nil && !*cfg.Enable {
 		return nil, nil
 	}
@@ -1469,6 +1472,10 @@ func newUsageStore(cfg UsageDBConfig) (*usageStore, error) {
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
 		return nil, err
+	}
+	store.writer = newUsageWriter(store)
+	if cfg.DrainTimeoutMS > 0 {
+		store.writer.drainTimeout = time.Duration(cfg.DrainTimeoutMS) * time.Millisecond
 	}
 	return store, nil
 }
@@ -1641,7 +1648,8 @@ func sqliteDSNWithForeignKeys(path string) string {
 	if strings.Contains(path, "?") {
 		separator = "&"
 	}
-	return path + separator + "_pragma=foreign_keys(1)"
+	// glebarez/modernc uses _pragma rather than mattn's DSN aliases.
+	return path + separator + "_journal_mode=WAL&_busy_timeout=5000&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
 }
 
 func ensureSQLitePrivateMode(path string) error {
@@ -1672,9 +1680,19 @@ func (s *usageStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
+	var drainErr error
+	if s.writer != nil {
+		drainErr = s.writer.close()
+	}
 	sqlDB, err := s.db.DB()
 	if err != nil {
 		return err
+	}
+	if drainErr != nil {
+		// Closing a driver with an in-flight write can itself block. Cleanup runs
+		// after the canceled writer exits, without extending the drain deadline.
+		go func() { <-s.writer.done; _ = sqlDB.Close() }()
+		return drainErr
 	}
 	return sqlDB.Close()
 }
@@ -2660,65 +2678,73 @@ func (s *usageStore) Emit(rec logRecord) {
 	if s == nil || s.db == nil || rec.RequestID == "" {
 		return
 	}
-	row := rowFromRecord(rec)
-	_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(recordFromRow(row)).Error
+	if s.writer != nil {
+		s.writer.record(rec)
+		return
+	}
+	_ = s.writeUsageBatch(context.Background(), []logRecord{rec})
+}
+
+func usageModels(rec logRecord) []any {
+	models := []any{recordFromRow(rowFromRecord(rec))}
 	for _, attempt := range rec.AttemptsDetail {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(attemptRecordFromLog(rec.RequestID, attempt)).Error
+		models = append(models, attemptRecordFromLog(rec.RequestID, attempt))
 		for _, detail := range attempt.ErrorDetails {
-			_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(upstreamErrorDetailRecordFromLog(rec.RequestID, detail)).Error
+			models = append(models, upstreamErrorDetailRecordFromLog(rec.RequestID, detail))
 		}
 	}
 	for _, event := range rec.TraceEvents {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(traceRecordFromLog(rec.RequestID, event)).Error
+		models = append(models, traceRecordFromLog(rec.RequestID, event))
 	}
 	for _, event := range rec.TrafficShapeEvents {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(trafficShapeEventRecordFromLog(rec.RequestID, event)).Error
+		models = append(models, trafficShapeEventRecordFromLog(rec.RequestID, event))
 	}
 	for _, event := range rec.UpstreamShapeEvents {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(upstreamShapeEventRecordFromLog(rec.RequestID, event)).Error
+		models = append(models, upstreamShapeEventRecordFromLog(rec.RequestID, event))
 	}
 	if rec.RequestShape != nil {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(requestShapeRecordFromLog(rec.RequestID, *rec.RequestShape)).Error
+		models = append(models, requestShapeRecordFromLog(rec.RequestID, *rec.RequestShape))
 	}
 	if rec.TokenEstimate != nil {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(requestTokenEstimateRecordFromLog(rec.RequestID, *rec.TokenEstimate)).Error
+		models = append(models, requestTokenEstimateRecordFromLog(rec.RequestID, *rec.TokenEstimate))
 	}
 	for _, shape := range rec.TranslationShapes {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(requestTranslationShapeRecordFromLog(rec.RequestID, shape)).Error
+		models = append(models, requestTranslationShapeRecordFromLog(rec.RequestID, shape))
 	}
 	for _, event := range rec.TranslationFieldEvents {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(requestTranslationFieldEventRecordFromLog(rec.RequestID, event)).Error
+		models = append(models, requestTranslationFieldEventRecordFromLog(rec.RequestID, event))
 	}
 	for _, feature := range rec.DecisionShapeFeatures {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(decisionShapeFeatureRecordFromLog(rec.RequestID, feature)).Error
+		models = append(models, decisionShapeFeatureRecordFromLog(rec.RequestID, feature))
 	}
 	for _, candidate := range rec.DecisionCandidates {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(decisionCandidateRecordFromLog(rec.RequestID, candidate)).Error
+		models = append(models, decisionCandidateRecordFromLog(rec.RequestID, candidate))
 	}
 	for _, reason := range rec.DecisionFilterReasons {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(decisionFilterReasonRecordFromLog(rec.RequestID, reason)).Error
+		models = append(models, decisionFilterReasonRecordFromLog(rec.RequestID, reason))
 	}
 	for _, decision := range rec.RoutingDecisions {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(routingDecisionRecordFromLog(rec.RequestID, decision)).Error
+		models = append(models, routingDecisionRecordFromLog(rec.RequestID, decision))
 	}
 	for _, signal := range rec.RoutingSignals {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(routingSignalRecordFromLog(rec.RequestID, signal)).Error
+		models = append(models, routingSignalRecordFromLog(rec.RequestID, signal))
 	}
 	for _, term := range rec.DynamicScoreTerms {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(dynamicScoreTermRecordFromLog(rec.RequestID, term)).Error
+		models = append(models, dynamicScoreTermRecordFromLog(rec.RequestID, term))
 	}
 	for _, execution := range rec.PolicyExecutions {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(policyExecutionRecordFromLog(rec.RequestID, execution)).Error
+		models = append(models, policyExecutionRecordFromLog(rec.RequestID, execution))
 	}
 	for _, transition := range rec.FallbackTransitions {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(fallbackTransitionRecordFromLog(rec.RequestID, transition)).Error
+		models = append(models, fallbackTransitionRecordFromLog(rec.RequestID, transition))
 	}
 	for _, reason := range rec.CacheReasons {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(decisionCacheReasonRecordFromLog(rec.RequestID, reason)).Error
+		models = append(models, decisionCacheReasonRecordFromLog(rec.RequestID, reason))
 	}
 	if rec.Error != nil {
-		_ = s.db.Clauses(clause.OnConflict{DoNothing: true}).Create(errorRecordFromLog(rec)).Error
+		models = append(models, errorRecordFromLog(rec))
 	}
+	return models
 }
 
 func attemptRecordFromLog(requestID string, rec attemptLogRecord) *requestAttemptRecord {
@@ -7519,11 +7545,19 @@ func (s *usageStore) EmitSecurityAccessEvent(event securityAccessEvent) {
 	if event.TS.IsZero() {
 		event.TS = time.Now().UTC()
 	}
+	if s.writer != nil {
+		s.writer.record(event)
+		return
+	}
 	_ = s.db.Create(securityAccessRecordFromEvent(event)).Error
 }
 
 func (s *usageStore) PurgeSecurityAccessEventsBefore(cutoff time.Time) {
 	if s == nil || s.db == nil || cutoff.IsZero() {
+		return
+	}
+	if s.writer != nil {
+		s.writer.record(cutoff)
 		return
 	}
 	_ = s.db.Where("ts < ?", formatUsageTime(cutoff.UTC())).Delete(&securityAccessEventRecord{}).Error

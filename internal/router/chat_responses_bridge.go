@@ -163,6 +163,9 @@ func chatMessagesToResponsesInput(req *IRRequest) []map[string]any {
 				"call_id": defaultString(stringValue(msg["tool_call_id"]), stringValue(msg["id"])),
 				"output":  contentToText(msg["content"]),
 			}
+			if hasMediaParts(decodeContentParts(msg["content"])) {
+				item["output"] = chatContentToResponsesContent(msg["content"], true)
+			}
 			out = append(out, item)
 		case "assistant":
 			if calls := valueAsSlice(msg["tool_calls"]); len(calls) > 0 {
@@ -202,11 +205,19 @@ func chatContentToResponsesContent(v any, input bool) []map[string]any {
 			continue
 		}
 		switch strings.ToLower(strings.TrimSpace(stringValue(part["type"]))) {
+		case "file", "input_file":
+			out = append(out, mediaPart(decodeContentPart(part), "openai-responses"))
+		case "input_audio", "audio":
+			out = append(out, part)
 		case "text", "input_text", "output_text":
 			if text := stringValue(part["text"]); text != "" {
 				out = append(out, map[string]any{"type": partType, "text": text})
 			}
 		case "image_url", "input_image":
+			if id := stringValue(part["file_id"]); id != "" {
+				out = append(out, map[string]any{"type": "input_image", "file_id": id})
+				continue
+			}
 			image := map[string]any{"type": "input_image"}
 			switch url := part["image_url"].(type) {
 			case string:
