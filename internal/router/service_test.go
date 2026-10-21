@@ -15442,6 +15442,58 @@ func TestExternalRoutingPolicyCannotSelectContractFilteredTarget(t *testing.T) {
 	}
 }
 
+func TestExternalRoutingPolicyShadowModelRefTelemetry(t *testing.T) {
+	for _, index := range []int{0, 1} {
+		t.Run(fmt.Sprint(index), func(t *testing.T) {
+			policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{"targetIndex": index})
+			}))
+			defer policy.Close()
+			dir := t.TempDir()
+			cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
+			enabled := true
+			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"), &enabled)
+			cfg.Server.DecisionTelemetry.Enabled = true
+			provider := cfg.Provider["mock"]
+			provider.Models = map[string]ProviderModel{"first": {Model: "first-model"}, "second": {Model: "second-model"}}
+			cfg.Provider["mock"] = provider
+			cfg.Models["adaptive"] = ModelGroup{Strategy: "external", ExternalPolicy: ExternalPolicyConfig{
+				URL: policy.URL, AllowHosts: []string{"127.0.0.1"}, Mode: "shadow",
+			}, Targets: []Target{{Provider: "mock", ModelRef: "first"}, {Provider: "mock", ModelRef: "second"}}}
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+			rc := &requestContext{}
+			group := svc.cfg.Models["adaptive"]
+			svc.recordEligibilityTelemetry(rc, "adaptive", group, &IRRequest{}, "openai-chat")
+			dec, err := svc.pick(rc, "adaptive", group, &IRRequest{}, "openai-chat", nil, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc.recordRoutingDecisionTelemetry(rc, dec)
+			if err := svc.usage.db.Create(&usageRecord{RequestID: "shadow-regression"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			stored := routingSignalRecordFromLog("shadow-regression", rc.rec.RoutingSignals[0])
+			if err := svc.usage.db.Create(stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			var persisted routingSignalRecord
+			if err := svc.usage.db.Where("request_id = ?", "shadow-regression").First(&persisted).Error; err != nil {
+				t.Fatal(err)
+			}
+			if persisted.CandidateIndex != index {
+				t.Fatalf("persisted index=%d want=%d", persisted.CandidateIndex, index)
+			}
+			if rc.rec.RoutingSignals[0].CandidateIndex != index || rc.rec.PolicyExecutions[0].SelectedCandidateIndex != index || rc.rec.RoutingDecisions[0].SelectedCandidateIndex != 0 {
+				t.Fatalf("inconsistent shadow evidence: signals=%+v policies=%+v decisions=%+v", rc.rec.RoutingSignals, rc.rec.PolicyExecutions, rc.rec.RoutingDecisions)
+			}
+		})
+	}
+}
+
 func TestExternalRoutingPolicyShadowPromotionAndRollbackModes(t *testing.T) {
 	policyCalls := 0
 	policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

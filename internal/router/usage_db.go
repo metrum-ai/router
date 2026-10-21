@@ -1251,7 +1251,7 @@ type routingSignalRecord struct {
 	Strategy       string  `gorm:"column:strategy;type:text;not null;index:idx_routing_signal_strategy" json:"strategy"`
 	SignalName     string  `gorm:"column:signal_name;type:text;not null;index:idx_routing_signal_name" json:"signalName"`
 	Source         string  `gorm:"column:source;type:text;not null;default:''" json:"source"`
-	CandidateIndex int     `gorm:"column:candidate_index;not null;default:-1;index:idx_routing_signal_candidate" json:"candidateIndex"`
+	CandidateIndex int     `gorm:"column:candidate_index;not null;index:idx_routing_signal_candidate" json:"candidateIndex"`
 	BoolValue      bool    `gorm:"column:bool_value;not null;default:false" json:"boolValue"`
 	IntValue       int     `gorm:"column:int_value;not null;default:0" json:"intValue"`
 	FloatValue     float64 `gorm:"column:float_value;not null;default:0" json:"floatValue"`
