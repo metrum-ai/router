@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte(": Copyright 2026 Metrum AI\n: SPDX-License-Identifier: Apache-2.0\nevent: message\ndata: first\ndata: second\n\n")

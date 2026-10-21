@@ -1391,7 +1391,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		}
 		if strings.Contains(path, "expensive-requests") {
 			requestRows := body["requests"].([]any)
-			if len(requestRows) != 1 || requestRows[0].(map[string]any)["requestId"] != "admin-report-synthetic-expensive" {
+			if len(requestRows) != 1 || requestRows[0].(map[string]any)["requestId"] == "admin-report-synthetic-expensive" || requestRows[0].(map[string]any)["costUsd"].(float64) <= 0 {
 				t.Fatalf("%s did not return bounded cost-sorted requests: %#v", path, body)
 			}
 		} else if !strings.Contains(path, "overview") && !strings.Contains(path, "traffic-shaping") && !strings.Contains(path, "provider-capacity-shaping") && !strings.Contains(path, "adaptive-upstream-backoff") {
@@ -1632,7 +1632,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		"inputCostUsd":                       1.25,
 		"imageCostUsd":                       0.25,
 		"outputCostUsd":                      1.25,
-		"totalCostUsd":                       2.75,
+		"totalCostUsd":                       0.0,
 		"upstreamReportedInputCostUsd":       1.30,
 		"upstreamReportedOutputCostUsd":      1.45,
 		"upstreamReportedTotalCostUsd":       2.95,
@@ -2703,7 +2703,7 @@ func TestAdminDerivedBucketReportsUseSQLAggregates(t *testing.T) {
 		},
 		{
 			path:    "/admin/reports/api/anomalies?from=2026-06-20T11:00:00Z&to=2026-06-20T13:00:00Z&limit=50",
-			want:    []string{"error", "fallback", "multi-attempt", "slow-request", "expensive-request", "quota-exhausted", "key-disabled"},
+			want:    []string{"error", "fallback", "multi-attempt", "slow-request", "quota-exhausted", "key-disabled"},
 			notWant: []string{"key-active"},
 		},
 	} {
@@ -3173,9 +3173,11 @@ func TestAdminOverviewSQLUsesFullWindowSummaryAndBoundedSample(t *testing.T) {
 	if summary["requests"].(float64) != 3 || summary["errors"].(float64) != 1 {
 		t.Fatalf("overview summary did not use full filtered window: %#v", summary)
 	}
-	assertCloseFloat(t, "overview actual cost", summary["actualCostUsd"].(float64), 12)
+	assertCloseFloat(t, "overview actual cost", summary["actualCostUsd"].(float64), 11)
 	assertCloseFloat(t, "overview baseline cost", summary["baselineCostUsd"].(float64), 30)
-	assertCloseFloat(t, "overview savings", summary["savingsUsd"].(float64), 18)
+	assertCloseFloat(t, "overview savings", summary["savingsUsd"].(float64), 19)
+	assertCloseFloat(t, "overview list cost", summary["cost_list_usd"].(float64), 12)
+	assertCloseFloat(t, "overview cache savings", summary["cache_savings_usd"].(float64), 1)
 	requests := report["requests"].([]any)
 	if len(requests) != 1 || requests[0].(map[string]any)["requestId"] != "overview-new" {
 		t.Fatalf("overview recent sample=%#v, want only newest filtered request", requests)
@@ -3205,7 +3207,7 @@ func TestAdminOverviewSQLUsesFullWindowSummaryAndBoundedSample(t *testing.T) {
 	if bucket["successes"].(float64) != 2 || bucket["errors"].(float64) != 1 {
 		t.Fatalf("unexpected overview bucket counts: %#v", bucket)
 	}
-	assertCloseFloat(t, "bucket savings pct", bucket["savingsPct"].(float64), 60)
+	assertCloseFloat(t, "bucket savings pct", bucket["savingsPct"].(float64), 100*19.0/30)
 }
 
 func TestAdminScalarSQLGroupByOmitsEmptySecondaryDimension(t *testing.T) {

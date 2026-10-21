@@ -638,6 +638,9 @@ type adminReportSummary struct {
 	ImageCostUSD                float64  `json:"imageCostUsd"`
 	OutputCostUSD               float64  `json:"outputCostUsd"`
 	TotalCostUSD                float64  `json:"totalCostUsd"`
+	CostListUSD                 float64  `json:"cost_list_usd"`
+	CostBilledUSD               float64  `json:"cost_billed_usd"`
+	CacheSavingsUSD             float64  `json:"cache_savings_usd"`
 	BaselineCostUSD             *float64 `json:"baselineCostUsd,omitempty"`
 	SavingsUSD                  *float64 `json:"savingsUsd,omitempty"`
 	SavingsPct                  *float64 `json:"savingsPct,omitempty"`
@@ -796,6 +799,9 @@ type adminReportRequest struct {
 	ReasoningReportedAttemptCount   int     `json:"reasoningReportedAttemptCount"`
 	CostUSD                         float64 `json:"costUsd"`
 	TotalCostUSD                    float64 `json:"totalCostUsd"`
+	CostListUSD                     float64 `json:"cost_list_usd"`
+	CostBilledUSD                   float64 `json:"cost_billed_usd"`
+	CacheSavingsUSD                 float64 `json:"cache_savings_usd"`
 }
 
 type adminReportAttempt struct {
@@ -3533,7 +3539,7 @@ func buildAdminSavingsResponse(filters adminReportFilters, rows []usageRow, base
 		if row.InputTokens == 0 && row.OutputTokens == 0 && row.TotalTokens == 0 {
 			missingTokens++
 		}
-		if row.TotalCostUSD == 0 && (row.InputTokens > 0 || row.OutputTokens > 0 || row.TotalTokens > 0) {
+		if row.Cache != "hit" && row.TotalCostUSD == 0 && (row.InputTokens > 0 || row.OutputTokens > 0 || row.TotalTokens > 0) {
 			missingActualCost++
 		}
 		total.add(row, baseline)
@@ -5241,6 +5247,9 @@ func adminSummaryFromAgg(a *agg) adminReportSummary {
 		OutputTokens:                a.OutputTokens,
 		CostUSD:                     a.TotalCostUSD,
 		TotalCostUSD:                a.TotalCostUSD,
+		CostListUSD:                 a.CostListUSD,
+		CostBilledUSD:               a.TotalCostUSD,
+		CacheSavingsUSD:             a.CostListUSD - a.TotalCostUSD,
 		ImageCostUSD:                a.ImageCostUSD,
 		Attempts:                    a.Attempts,
 		Fallbacks:                   a.Fallbacks,
@@ -5513,6 +5522,9 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 		ReasoningReportedAttemptCount:   row.ReasoningReportedAttemptCount,
 		CostUSD:                         row.TotalCostUSD,
 		TotalCostUSD:                    row.TotalCostUSD,
+		CostListUSD:                     row.CostListUSD,
+		CostBilledUSD:                   row.TotalCostUSD,
+		CacheSavingsUSD:                 row.CostListUSD - row.TotalCostUSD,
 	}
 }
 

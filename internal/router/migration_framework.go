@@ -33,7 +33,7 @@ const usageContentCaptureEncryptionMigrationID = 2026081901
 const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 5, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 6, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -164,6 +164,14 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	TimeoutClass:     "bounded",
 	Apply:            applyUsageCachedInputPricingMigration,
 	Verify:           verifyUsageCachedInputPricingMigration,
+}, {
+	ID: 2026102101, Scope: usageMigrationScope, Name: "separate list and billed cache costs", Release: "2026.10",
+	Checksum:      "9d6c55ea18ddc9c878b92182391c229a0a36ba0142f908077cda7a55c923813a",
+	SchemaVersion: 6, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey:       "usage.cache-billing.apply.v1@applyUsageCacheBillingMigration",
+	PostconditionKey: "usage.cache-billing.schema.v1@verifyUsageCacheBillingMigration",
+	Dependencies:     []int{usageCachedInputPricingMigrationID}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyUsageCacheBillingMigration, Verify: verifyUsageCacheBillingMigration,
 }}
 
 func init() {
