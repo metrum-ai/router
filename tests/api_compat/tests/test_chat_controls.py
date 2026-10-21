@@ -484,6 +484,7 @@ SAMPLING_CONTROLS = {
     "temperature": 0.3,
     "top_p": 0.9,
     "seed": 7,
+    "user": "compat-caller",
     "n": 2,
     "presence_penalty": 0.1,
     "frequency_penalty": 0.2,
@@ -494,13 +495,14 @@ SAMPLING_CONTROLS = {
 }
 
 
-def test_chat_10_sampling_controls_forwarded_and_persistence_fields_stripped(api, router):
+@pytest.mark.parametrize("with_tools", [False, True])
+def test_chat_10_sampling_controls_forwarded_and_persistence_fields_stripped(api, router, with_tools):
     """CHAT-10: native Chat passthrough keeps sampling controls; store/metadata are stripped."""
     status, _, raw = api(
         "/v1/chat/completions",
         _chat(
             "chat",
-            tools=[LOOKUP_TOOL],
+            tools=[LOOKUP_TOOL] if with_tools else OMIT,
             store=True,
             metadata={"trace": PROMPT_CANARY},
             **SAMPLING_CONTROLS,
@@ -541,3 +543,30 @@ def test_chat_10_multiple_choices_keep_indexes_and_finish_reasons(api, router):
     assert choices[0]["message"]["tool_calls"][0]["id"] == "call_a"
     assert choices[0]["message"]["tool_calls"][0]["function"]["arguments"] == '{"q":"a"}'
     assert choices[1]["message"]["content"] == "second"
+
+
+@pytest.mark.parametrize("with_tools", [False, True])
+@pytest.mark.parametrize("cap", [0, -5, 1.5, "10", None, True, [], {}])
+def test_chat_09_invalid_caps_rejected(api, router, with_tools, cap):
+    status, _, raw = api("/v1/chat/completions", _chat("chat", max_tokens=cap, tools=[LOOKUP_TOOL] if with_tools else OMIT))
+    assert status == 400, raw
+    assert router["upstream"].calls == []
+
+
+@pytest.mark.parametrize("with_tools", [False, True])
+@pytest.mark.parametrize("cap", [1, 10000000])
+def test_chat_09_valid_caps_not_clamped(api, router, with_tools, cap):
+    status, _, raw = api("/v1/chat/completions", _chat("chat", max_tokens=cap, tools=[LOOKUP_TOOL] if with_tools else OMIT))
+    assert status == 200, raw
+    assert _only_call(router)["max_tokens"] == cap
+
+
+def test_chat_10_text_choices_and_refusal_preserved(api, router):
+    choices = [
+        {"index": 0, "message": {"role": "assistant", "content": None, "refusal": "Cannot comply"}, "finish_reason": "stop"},
+        {"index": 1, "message": {"role": "assistant", "content": "second"}, "finish_reason": "length", "logprobs": {"content": []}},
+    ]
+    _scripted(router, _completion(choices))
+    status, _, raw = api("/v1/chat/completions", _chat("chat", n=2))
+    assert status == 200, raw
+    assert json.loads(raw)["choices"] == choices

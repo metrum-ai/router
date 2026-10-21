@@ -371,12 +371,17 @@ def test_ops02_settlement_exactly_once_across_failure_classes(ops_router):
         assert status == 200, raw
         rid = headers["X-Request-Id"]
         request_ids.append(rid)
-        caller_visible = json.loads(raw)["usage"]
+        # Native Chat preserves missing/null/zero provider usage verbatim;
+        # accounting estimates remain internal, not invented protocol fields.
+        caller_visible = json.loads(raw)
+        if usage is _OMIT:
+            assert "usage" not in caller_visible
+        else:
+            assert caller_visible["usage"] == usage
         estimate = estimate_row(db, rid) or {}
         rows = usage_rows(db, rid)
         assert len(rows) == 1
         assert rows[0]["total_tokens"] > 0, "unknown usage must not settle as silent zero"
-        assert rows[0]["input_tokens"] == caller_visible["prompt_tokens"]
         if estimate:
             assert rows[0]["input_tokens"] == estimate["estimated_total_input_tokens"]
         assert "usage-estimated" in (jsonl_record(work, rid).get("warnings") or [])

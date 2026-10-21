@@ -187,6 +187,20 @@ func (c *responseCache) Put(key string, resp *IRResponse) {
 	if c == nil || !c.enabled || resp == nil {
 		return
 	}
+	// The text cache stores IR, not native Chat objects. Never cache a
+	// response whose choices, refusal or logprobs would be lost on replay.
+	if resp.RawResponse {
+		if choices, ok := resp.Raw["choices"].([]any); ok {
+			if len(choices) != 1 {
+				return
+			}
+			choice, _ := choices[0].(map[string]any)
+			message, _ := choice["message"].(map[string]any)
+			if choice["logprobs"] != nil || message["refusal"] != nil || message["tool_calls"] != nil {
+				return
+			}
+		}
+	}
 	cached := sanitizeCachedResponse(resp)
 	raw, _ := json.Marshal(cached)
 	size := int64(len(raw))
