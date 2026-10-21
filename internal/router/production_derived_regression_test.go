@@ -374,10 +374,12 @@ func TestProductionDerivedAnthropicMessagesImageEligibility(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusBadGateway {
+		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 		}
-		decodeProductionDerivedErrorDetails(t, rr.Body.Bytes(), fixture.ExpectedErrorWithoutEligibleTarget)
+		if !strings.Contains(rr.Body.String(), "unsupported_modality") {
+			t.Fatalf("body=%s", rr.Body.String())
+		}
 		assertProductionDerivedArtifactsDoNotContain(t, svc, dir, "Read the synthetic receipt", "https://example.com/synthetic-receipt.png", "provider-key", testToken)
 	})
 

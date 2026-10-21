@@ -137,6 +137,7 @@ func encodeUpstreamForTarget(dialect, model string, req *IRRequest, target Targe
 		return json.Marshal(body)
 	case "openai-responses":
 		body := map[string]any{"model": model, "input": encodeResponsesInput(req), "stream": false}
+		applyAnthropicFormat(body, req, dialect)
 		if req.System != "" {
 			body["instructions"] = req.System
 		}
@@ -194,6 +195,7 @@ func encodeUpstreamForTarget(dialect, model string, req *IRRequest, target Targe
 			msgs = append(msgs, map[string]any{"role": "user", "content": req.Input})
 		}
 		body := map[string]any{"model": model, "messages": msgs, "stream": false}
+		applyAnthropicFormat(body, req, dialect)
 		applyOpenAIChatMaxTokens(body, req, false)
 		applyTargetOpenAIChatEncoding(body, target)
 		applyDefaultOpenAIChatThinking(body, target)
@@ -283,8 +285,8 @@ func geminiGenerateContentTextEligible(req *IRRequest) bool {
 func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]byte, error) {
 	body := providerPassthroughBody(req)
 	body["model"] = model
-	if tools, ok := body["tools"]; ok {
-		body["tools"] = filterResponsesToolsForUpstream(tools)
+	if requestHasForbiddenProviderHostedTools(req) {
+		return nil, fmt.Errorf("provider-hosted-tools-forbidden")
 	}
 	// Encode a unary upstream call. The native streaming path flips stream=true
 	// via enableNativeUpstreamStream; the synthesized translator needs unary.
@@ -917,7 +919,7 @@ func decodeContentPart(v any) IRContentPart {
 	case "text", "input_text", "output_text":
 		return IRContentPart{Type: "text", Text: stringValue(m["text"])}
 	case "image_url", "input_image":
-		part := IRContentPart{Type: "image", Detail: stringValue(m["detail"])}
+		part := IRContentPart{Type: "image", Detail: stringValue(m["detail"]), FileID: stringValue(m["file_id"])}
 		switch img := m["image_url"].(type) {
 		case string:
 			part.ImageURL = img
@@ -942,27 +944,48 @@ func decodeContentPart(v any) IRContentPart {
 			}
 		}
 		return part
-	default:
-		txt := contentToText(m)
-		if txt != "" {
-			return IRContentPart{Type: "text", Text: txt}
+	case "document", "file", "input_file":
+		p := IRContentPart{Type: "document", Raw: m}
+		src := m
+		if f, ok := m["file"].(map[string]any); ok {
+			src = f
 		}
-		return IRContentPart{}
+		if f, ok := m["source"].(map[string]any); ok {
+			src = f
+		}
+		p.FileID = stringValue(src["file_id"])
+		p.ImageURL = defaultString(stringValue(src["url"]), stringValue(src["file_url"]))
+		p.Data = stringValue(src["data"])
+		p.MediaType = stringValue(src["media_type"])
+		if data := stringValue(src["file_data"]); data != "" {
+			p.MediaType, p.Data, _ = parseDataURL(data)
+		}
+		return p
+	case "input_audio", "audio":
+		return IRContentPart{Type: "audio", Raw: m}
+	default:
+		return IRContentPart{Type: "unknown", Raw: m}
 	}
 }
 
 func encodeOpenAIChatContent(m IRMessage) any {
-	if !hasImageParts(m.Parts) {
+	if !hasMediaParts(m.Parts) {
 		return m.Content
 	}
 	parts := []map[string]any{}
 	for _, p := range ensureTextPart(m.Content, m.Parts) {
 		switch p.Type {
+		case "document", "audio":
+			parts = append(parts, mediaPart(p, "openai-chat"))
 		case "text":
 			if p.Text != "" {
 				parts = append(parts, map[string]any{"type": "text", "text": p.Text})
 			}
 		case "image":
+			if p.FileID != "" {
+				parts = append(parts, map[string]any{"type": "input_image", "file_id": p.FileID})
+				continue
+			}
 			if u := imageURLForOpenAI(p); u != "" {
 				img := map[string]any{"url": u}
 				if p.Detail != "" {
@@ -976,7 +999,7 @@ func encodeOpenAIChatContent(m IRMessage) any {
 }
 
 func encodeResponsesInput(req *IRRequest) any {
-	if !requestHasImages(req) {
+	if !requestHasMedia(req) {
 		return requestText(req)
 	}
 	msgs := []map[string]any{}
@@ -987,11 +1010,17 @@ func encodeResponsesInput(req *IRRequest) any {
 		content := []map[string]any{}
 		for _, p := range ensureTextPart(m.Content, m.Parts) {
 			switch p.Type {
+			case "document", "audio":
+				content = append(content, mediaPart(p, "openai-responses"))
 			case "text":
 				if p.Text != "" {
 					content = append(content, map[string]any{"type": "input_text", "text": p.Text})
 				}
 			case "image":
+				if p.FileID != "" {
+					content = append(content, map[string]any{"type": "input_image", "file_id": p.FileID})
+					continue
+				}
 				if u := imageURLForOpenAI(p); u != "" {
 					part := map[string]any{"type": "input_image", "image_url": u}
 					if p.Detail != "" {
@@ -1011,7 +1040,14 @@ func encodeResponsesInput(req *IRRequest) any {
 			if p.Type == "text" && p.Text != "" {
 				content = append(content, map[string]any{"type": "input_text", "text": p.Text})
 			}
+			if p.Type == "document" || p.Type == "audio" {
+				content = append(content, mediaPart(p, "openai-responses"))
+			}
 			if p.Type == "image" {
+				if p.FileID != "" {
+					content = append(content, map[string]any{"type": "input_image", "file_id": p.FileID})
+					continue
+				}
 				if u := imageURLForOpenAI(p); u != "" {
 					content = append(content, map[string]any{"type": "input_image", "image_url": u})
 				}
@@ -1023,12 +1059,14 @@ func encodeResponsesInput(req *IRRequest) any {
 }
 
 func encodeAnthropicContent(m IRMessage) any {
-	if !hasImageParts(m.Parts) {
+	if !hasMediaParts(m.Parts) {
 		return m.Content
 	}
 	parts := []map[string]any{}
 	for _, p := range ensureTextPart(m.Content, m.Parts) {
 		switch p.Type {
+		case "document", "audio":
+			parts = append(parts, mediaPart(p, "anthropic"))
 		case "text":
 			if p.Text != "" {
 				parts = append(parts, map[string]any{"type": "text", "text": p.Text})
@@ -1095,10 +1133,20 @@ func countImageParts(parts []IRContentPart) int {
 }
 
 func requestInputModalities(req *IRRequest) []string {
-	if requestHasImages(req) {
-		return []string{"text", "image"}
+	out := []string{"text"}
+	if req == nil {
+		return out
 	}
-	return []string{"text"}
+	parts := append([]IRContentPart(nil), req.InputParts...)
+	for _, m := range req.Messages {
+		parts = append(parts, m.Parts...)
+	}
+	for _, p := range parts {
+		if p.Type != "text" && p.Type != "unknown" && !stringSliceContains(out, p.Type) {
+			out = append(out, p.Type)
+		}
+	}
+	return out
 }
 
 func imageURLForOpenAI(p IRContentPart) string {
