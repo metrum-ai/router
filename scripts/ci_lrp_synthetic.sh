@@ -13,16 +13,6 @@ cd "$ROOT"
 
 uv sync --project services/learned-routing-policy --locked
 
-# Only Ubuntu supplies these prerequisites. Unrelated preinstalled
-# browser/package feeds must not break verifier setup during updates.
-test -f /etc/apt/sources.list.d/ubuntu.sources
-sudo mkdir -p /var/tmp/lrp-ci-apt-sources
-sudo cp /etc/apt/sources.list.d/ubuntu.sources /var/tmp/lrp-ci-apt-sources/ubuntu.sources
-apt_sources=(-o Dir::Etc::sourcelist=- -o Dir::Etc::sourceparts=/var/tmp/lrp-ci-apt-sources)
-sudo apt-get "${apt_sources[@]}" update
-# Bubblewrap namespaces are the isolation boundary. AppArmor profiles are not
-# required for this credential-free preflight.
-sudo apt-get "${apt_sources[@]}" install -y bubblewrap
 umask 077
 mkdir -p /var/tmp/lrp-ci
 # Bare-metal runners may reuse /var/tmp across jobs. Prior rootfs trees are
@@ -38,6 +28,22 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 fi
 
 if (( docker_ok )); then
+  if ! command -v bwrap >/dev/null 2>&1; then
+    if ! command -v sudo >/dev/null 2>&1; then
+      echo "LRP Docker sandbox requires bubblewrap: install bwrap or provide sudo for prerequisite setup" >&2
+      exit 1
+    fi
+    # Only Ubuntu supplies these prerequisites. Unrelated preinstalled
+    # browser/package feeds must not break verifier setup during updates.
+    test -f /etc/apt/sources.list.d/ubuntu.sources
+    sudo mkdir -p /var/tmp/lrp-ci-apt-sources
+    sudo cp /etc/apt/sources.list.d/ubuntu.sources /var/tmp/lrp-ci-apt-sources/ubuntu.sources
+    apt_sources=(-o Dir::Etc::sourcelist=- -o Dir::Etc::sourceparts=/var/tmp/lrp-ci-apt-sources)
+    sudo apt-get "${apt_sources[@]}" update
+    # Bubblewrap namespaces are the isolation boundary. AppArmor profiles are
+    # not required for this credential-free preflight.
+    sudo apt-get "${apt_sources[@]}" install -y bubblewrap
+  fi
   cp services/learned-routing-policy/verifier-requirements.lock /var/tmp/lrp-ci/requirements.lock
   bash services/learned-routing-policy/lrp/judge/build_rootfs.sh \
     --base-image python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea \

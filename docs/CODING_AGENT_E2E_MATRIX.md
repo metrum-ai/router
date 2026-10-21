@@ -100,6 +100,18 @@ The same model group can have different effective upstream pools for different c
 - For Kimi-style Anthropic-compatible targets, include thinking/default-thinking smoke coverage when that behavior changes.
 - Do not infer Claude Code compatibility from OpenAI Chat or OpenAI Responses smokes. A target is eligible for Claude Code only when its active skin is Anthropic Messages or an explicitly documented bridge has passed Claude Code text, client-tool, subagent, output-cap, and large-context validation.
 
+v4.1.0 known limitation ([#295](https://github.com/metrum-ai/router/issues/295)):
+Anthropic Messages text can reach a validated OpenAI Chat or Responses target,
+but translated Anthropic client-tool requests are ineligible. A group with only
+those targets returns `502 no-eligible-target` for Claude Code tools before an
+upstream attempt. `tool_support.anthropic_messages` metadata on an OpenAI
+target does not enable the tool round trip. Use a separately validated native
+Anthropic Messages tool route for Claude Code, and keep text, Chat-tool, and
+Codex Responses-tool smoke results distinct. In the October 2026 v4.1.0
+two-target deployment, Chat tool probes and an actual Codex CLI Responses file
+write/read continuation passed while the Anthropic tool probe failed with that
+eligibility error. Do not diagnose this result as a provider credential error.
+
 Minimum Claude Code support matrix:
 
 | Smoke | Acceptance evidence |
