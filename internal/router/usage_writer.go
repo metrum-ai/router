@@ -141,6 +141,8 @@ func (w *usageWriter) flush(ctx context.Context) error {
 	select {
 	case <-barrier.done:
 		return nil
+	case <-w.done:
+		return errors.New("usage writer stopped before flush")
 	case <-ctx.Done():
 		return ctx.Err()
 	}

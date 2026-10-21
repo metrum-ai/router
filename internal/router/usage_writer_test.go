@@ -181,6 +181,23 @@ func TestUsageWriterSQLitePragmas(t *testing.T) {
 	}
 }
 
+func TestUsageWriterFlushStopsWithWriter(t *testing.T) {
+	w := &usageWriter{ch: make(chan any, 1), done: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- w.flush(ctx) }()
+	select {
+	case <-w.ch: // Barrier accepted but not completed before writer cancellation.
+	case <-ctx.Done():
+		t.Fatal("barrier was not admitted")
+	}
+	close(w.done)
+	if err := <-result; err == nil || err.Error() != "usage writer stopped before flush" {
+		t.Fatalf("stopped writer must release its consistency waiter: %v", err)
+	}
+}
+
 func TestUsageWriterFullChannelFlushDoesNotBlockShutdown(t *testing.T) {
 	w := &usageWriter{
 		ch: make(chan any, 1), done: make(chan struct{}),
