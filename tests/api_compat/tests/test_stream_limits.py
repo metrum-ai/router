@@ -350,7 +350,8 @@ def test_stream_08_size_line_heartbeat_and_idle_bounds(limits_router):
     status, headers, raw = _post(base, "/v1/chat/completions", _chat())
     assert status == 502, raw[:300]
     error = json.loads(raw)["error"]
-    assert error["details"]["error_class"] == "upstream_response_too_large"
+    assert error["type"] == "upstream_frame_too_large"
+    assert error["details"]["error_class"] == "upstream_frame_too_large"
     assert huge.encode()[:64] not in raw
     assert len(raw) < 4096
     assert len(Upstream.calls) == 1

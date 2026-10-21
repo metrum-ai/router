@@ -59,6 +59,7 @@ func TestStreamPolicyE2E(t *testing.T) {
 	}))
 	defer up.Close()
 	cfg := testConfig(t, up.URL, "key", t.TempDir())
+	cfg.Server.Responses.ModelIdentity = "requested_group"
 	cfg.Provider = map[string]ProviderConfig{"chat": {BaseURL: up.URL + "/v1", Dialect: "openai-chat"}, "responses": {BaseURL: up.URL + "/v1", Dialect: "openai-responses"}}
 	cfg.Models = map[string]ModelGroup{}
 	for _, name := range []string{"stream", "json", "large", "tools", "continuation", "bridge"} {

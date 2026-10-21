@@ -104,6 +104,13 @@ models:
     targets:
       - provider: responses
         model: synthetic-responses
+        tool_support: {{openai_responses: [function, tool_choice, structured_outputs]}}
+        reasoning: {{supported: true, mode: opt_in, control: effort_enum, supports_summaries: true}}
+  responses-force-store:
+    strategy: static
+    targets:
+      - provider: responses
+        model: synthetic-responses
         force_store_false: true
         tool_support: {{openai_responses: [function, tool_choice, structured_outputs]}}
         reasoning: {{supported: true, mode: opt_in, control: effort_enum, supports_summaries: true}}
@@ -119,7 +126,7 @@ models:
 callers:
   - id: synthetic-allowed
     token_sha256: {CALLER_DIGEST}
-    allow: [responses-native, responses-basic, responses-to-chat, chat]
+    allow: [responses-native, responses-force-store, responses-basic, responses-to-chat, chat]
   - id: synthetic-denied
     token_sha256: {DENIED_CALLER_DIGEST}
     allow: [chat]
@@ -285,6 +292,16 @@ def test_resp_07_stale_previous_response_id_is_not_replayed(capi, contracts_rout
     scenario.assert_complete()
 
 
+def test_resp_07_force_store_false_rejects_continuation(capi, contracts_router):
+    status, _, raw = capi(
+        "/v1/responses",
+        {"model": "responses-force-store", "previous_response_id": "resp_prior", "input": "x"},
+    )
+    assert status == 400, raw
+    assert _error_type(raw) == "continuation_unsupported"
+    assert FakeUpstream.calls == []
+
+
 def test_resp_07_native_only_state_rejects_on_stateless_bridge(capi, contracts_router):
     """RESP-07: previous_response_id on a Chat-bridged group rejects before upstream."""
     status, _, raw = capi(
@@ -343,7 +360,7 @@ def test_resp_08_encrypted_reasoning_replay_unary(capi, contracts_router, includ
     """RESP-08: opaque reasoning items survive request and response; nothing fabricated."""
     history = _replay_history(include_tools)
     caller_body = {
-        "model": "responses-native",
+        "model": "responses-force-store",
         "input": copy.deepcopy(history),
         "include": ["reasoning.encrypted_content"],
         "store": False,
@@ -506,7 +523,7 @@ def test_resp_09_text_format_reasoning_and_store_overrides(capi, contracts_route
     status, _, raw = capi(
         "/v1/responses",
         {
-            "model": "responses-native",
+            "model": "responses-force-store",
             "input": "Extract INC-1234 high",
             "text": copy.deepcopy(text_format),
             "max_output_tokens": 321,
