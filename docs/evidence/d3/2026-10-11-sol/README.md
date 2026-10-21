@@ -13,6 +13,7 @@ Copyright 2026 Metrum AI.
   - enforce $1.856, always-strong $1.882, always-cheap $0.257;
   - the saving against always-strong is $0.026 (**1.4%**);
   - the extra cost against always-cheap is $1.599 (**7.2×**).
+- **These are small-test-run figures, not typical savings.** The seed set and the 8-turn take are short, single-pass checks of the d3 policy path, and their "always-strong" reference (gpt-6.1-sol) is itself a mid-priced model. Measured against a top-tier baseline (GPT-6 Astra) on sustained coding-agent traffic, savings are typically 80–90% or more; see [Savings on sustained coding-agent traffic](#savings-on-sustained-coding-agent-traffic).
 - **Why the saving is small here.** 97% of always-strong's spend is on the hard half, which enforce also sends to the strong tier.
   - The seed prompts are short one-liners: 27–51 input tokens per prompt on average, depending on the tokenizer.
   - gpt-6.1-sol answered the easy half with 4,571 output tokens in total. deepseek-v4p1-flash used 27,529, most of them reasoning tokens.
@@ -30,6 +31,23 @@ Copyright 2026 Metrum AI.
   - over the SSH tunnel, the router's `duration_ms` was p50 245 / p95 249 ms;
   - co-located (router, adapter and d3 on the GPU host, mock upstream), it was **p50 104 / p95 107 ms**, of which d3 itself was p50 103 ms.
 - **pi continuation through `d3-auto`** with real d3 26B and gpt-6.1-sol as the strong tier: pass. Also through `d3-auto-strong` (pure gpt-6.1-sol): pass.
+
+## Savings on sustained coding-agent traffic
+
+The seed-set and take figures above measure one small run against gpt-6.1-sol. They do not show what the Metrum AI Router saves on real coding-agent traffic against a top-tier model, which is what the admin savings report computes.
+
+A local coding-agent instance (`make local-router`) recorded the following over the 30 days to 2026-10-17. Its weighted groups changed over the window, so the 1,379 requests were served by deepseek-v4p1-flash (595), gpt-5.6-sol (360), kimi-k3 (188), MiniMax-M3 (183) and gpt-6-luna (14); 39 more failed before reaching a priced upstream. Figures are from `/admin/reports/api/savings?since=720h&baseline=<id>`, which sums stored `request_usage.total_cost_usd` and prices the same input and output tokens at the baseline list price. The GPT-6 Astra and Claude Opus 5.5 baselines were added under `server.admin_reports.baselines`; GPT-5.5 is a built-in default.
+
+| Baseline (standard list price per 1M tokens) | Requests | Input / output tokens | Actual cost | Baseline cost | Saving |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GPT-6 Astra ($10 in / $50 out) | 1,379 | 73.6M / 0.72M | $58.06 | $772.18 | $714.12 (**92.5%**) |
+| GPT-5.5 ($5 in / $30 out) | 1,379 | 73.6M / 0.72M | $58.06 | $389.69 | $331.64 (**85.1%**) |
+| Claude Opus 5.5 ($4 in / $20 out) | 1,379 | 73.6M / 0.72M | $58.06 | $308.87 | $250.81 (**81.2%**) |
+
+- **Pricing correction.** 359 gpt-5.6-sol rows were stored with a $0 price because the model's catalog entry had no price when they were served. For this table those rows were repriced at gpt-5.6-sol list price ($4.00 in / $0.40 cached in / $20.00 out), adding $17.62 to actual cost. Without the correction the report shows 94.8% against GPT-6 Astra, which overstates the saving.
+- Coding-agent turns are dominated by input context (about 99% of tokens here), so the per-token price gap between the routed models and a top-tier model carries through almost unchanged.
+- The baseline prices every input token at the full list rate, while actual cost uses each provider's cached-input rate where the provider reported cache hits. 66.5M of the 73.6M input tokens (90%) were cached. If GPT-6 Astra were also billed its $1.00 cached-input rate on those tokens, its cost would be about $174 and the saving about 67%, so the table figures are an upper bound for callers that cache prompts on the baseline too.
+- One developer's traffic on one instance. Treat 80–90%+ as the typical range against top-tier list prices for this kind of workload, not a forecast for every workload.
 
 ## Pricing sources
 
@@ -168,7 +186,7 @@ python colocated_policy_latency.py --repo ~/colo --router-binary ~/metrum-ai-rou
 ## Limits
 
 - **Synthetic seed set.** The 204 seed prompts are synthetic and deliberately separable, and they are short. Agreement with their labels is not a quality benchmark.
-- **Cost depends on the workload.** It depends on input size and answer length: the seed set shows a 1.4% saving, while the coding-agent take shows 25%. Neither is a forecast for real traffic.
+- **Cost depends on the workload.** It depends on input size and answer length: the short seed set shows a 1.4% saving and the 8-turn take 25%, both against a mid-priced strong tier. Sustained coding-agent traffic shows 92.5% against GPT-6 Astra list prices (see above).
 - **Output-cap hits are a coarse signal.** They are not a measure of answer correctness.
 - **One GPU, one pass per mode.** We used one GPU type and `d3_server.py`, which serves one request at a time, and ran one pass per mode.
 - **Vendor figures.** The d3 model-card benchmarks are vendor-reported.
