@@ -120,8 +120,8 @@ def test_route_streaming_and_stateful_bridges_remain_rejected(api, router):
             "previous_response_id": "resp_synthetic",
         },
     )
-    assert status == 502
-    assert _body(raw)["error"]["type"] == "no-eligible-target"
+    assert status == 400
+    assert _body(raw)["error"]["type"] == "continuation_unsupported"
     assert len(router["upstream"].calls) == before
 
     # chat-to-responses incremental streaming is supported (P3).

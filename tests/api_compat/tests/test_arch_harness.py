@@ -21,7 +21,7 @@ def test_manifest_loads_arch_cases():
     assert "RESP-01" in by_id
     assert "RESP-02" in by_id
     assert "RESP-06" in by_id
-    assert by_id["STREAM-10"]["disposition"] == "blocked"
+    assert by_id["STREAM-10"]["disposition"] == "native_supported"
     assert all(c["disposition"] for c in cases)
 
 
