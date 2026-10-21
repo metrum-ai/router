@@ -43,6 +43,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -507,7 +508,8 @@ def build_config(
                     "enabled": True,
                     "source": "static",
                     "policy": [
-                        "p, basic:admin, example-project/dev, admin:reports, read|export|drilldown"
+                        "p, basic:admin, example-project/dev, admin:reports, read|export|drilldown",
+                        "p, basic:admin, example-project/dev, admin:security_reports, read|export"
                     ],
                 },
             },
@@ -516,6 +518,7 @@ def build_config(
                 "default_since": "24h",
                 "max_range": "31d",
                 "max_rows": 500,
+                "security": {"enabled": True},
             },
         },
         "state_path": str(out_dir / "router-state.json"),
@@ -603,6 +606,11 @@ def write_yaml(path: Path, data: dict) -> None:
         import yaml  # type: ignore
     except ImportError:
         die("PyYAML is required (uv run --with pyyaml python scripts/local_pi_instance.py)")
+    if path.exists():
+        # Exclusive creation prevents same-second or concurrent backup collisions.
+        fd, backup = tempfile.mkstemp(prefix=path.name + ".bak.", dir=path.parent)
+        with os.fdopen(fd, "wb") as dest:
+            dest.write(path.read_bytes())
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
@@ -872,6 +880,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="start the router in the foreground after writing files",
     )
+    parser.add_argument("--force", action="store_true", help="regenerate config (backs up existing file); discards manual edits")
     return parser.parse_args()
 
 
@@ -881,6 +890,24 @@ def main() -> None:
     out_dir = args.out_dir.expanduser().resolve()
     env_json = (args.env_json or (repo_root / "env.json")).expanduser().resolve()
     out_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+
+    config_path = out_dir / "config.yaml"
+    if config_path.exists() and not args.force:
+        if args.rotate_key or args.rotate_identifier_key:
+            die("rotation regenerates config; pass --force after reviewing existing edits")
+        import yaml
+        current = yaml.safe_load(config_path.read_text())
+        listen = current["server"]["listen"]
+        if args.configure_pi:
+            configure_pi(out_dir, listen)
+        print(json.dumps({"config": str(config_path), "listen": listen, "token_reused": True}))
+        print("Preserved existing local config (use --force to regenerate).", file=sys.stderr)
+        if args.run:
+            start = out_dir / "start.sh"
+            os.execv(start, [str(start)])
+        return
+    if args.configure_pi:
+        die("no existing config; run local-router-setup before configure-pi")
 
     source_env = load_json_object(env_json)
     missing = [k for k in UPSTREAM_KEYS if not (source_env.get(k) or os.environ.get(k))]
@@ -997,9 +1024,6 @@ def main() -> None:
         "under the out-dir (and env.json).",
         file=sys.stderr,
     )
-
-    if args.configure_pi:
-        configure_pi(out_dir, args.listen, d3_policy)
 
     if args.run:
         start = out_dir / "start.sh"
