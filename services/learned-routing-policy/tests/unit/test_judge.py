@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import httpx
@@ -233,6 +234,7 @@ def test_cache_identity_includes_model_settings_content_verifier():
     )
 
 
+@pytest.mark.skipif(not shutil.which("bwrap"), reason="requires optional bubblewrap executable")
 def test_sandbox_command_is_real_namespace_isolation_and_missing_root_fails_closed(
     tmp_path,
 ):
