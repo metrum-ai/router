@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SSE translation recognizes bare CR, LF and CRLF consistently, including
+  line endings split across reads; tool streams no longer retain literal CR
+  field values or lose them on serialization (#331, fixes #327; pending merge).
 - Native same-dialect Chat preserves sampling controls, user, all choices,
   refusals and logprobs, including text-only requests. Multiple-choice,
   refusal, tool and logprob responses bypass the normalized text cache.
@@ -41,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   losing content. Supported documents/images survive streaming and tool
   bridges; Anthropic JSON-schema formats translate to OpenAI. Anthropic server
   search and Responses hosted tools consistently reject before upstream rather
-  than silently stripping descriptors (W2b #329; pending merge).
+  than silently stripping descriptors (W2b #329).
 - Claude Code client-tool calls and tool-result continuations on explicitly
   validated OpenAI Chat and Responses targets, including streaming and identifier
   rewriting. Distinct Anthropic tool evidence is required; native routes are

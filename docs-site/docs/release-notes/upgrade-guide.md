@@ -105,7 +105,7 @@ compiler dependencies are not shipped in the router binary or image; the
 exceptions do not waive router runtime findings. Reassess when upstream ships
 a compiler built with patched dependencies.
 
-### Media, output formats and hosted tools (W2b #329; pending merge)
+### Media, output formats and hosted tools (W2b #329)
 
 #271 MEDIA-07, ANTH-12 and ANTH-09 are **in v4.2.0**, not deferred.
 Targets may declare `modalities: [text, image, document, audio]`; an explicit
@@ -134,7 +134,11 @@ adaptive thinking explicitly (`MAX_THINKING_TOKENS=0` and
 reasoning route. Do not infer arbitrary opaque-item or system-role translation
 fidelity from document/tool success.
 
-The release cannot finalize until #329 merges and is validated. #281 (v5),
+SSE framing now recognizes bare CR, LF and CRLF consistently, even across
+reads (#331, fixes #327; pending merge). Completed bare-CR events do not wait
+for another upstream byte; byte limits and incomplete-frame errors remain
+in force. Recheck translated tool streams if an upstream emits non-LF endings.
+The release also requires #331 merged and validated. #281 (v5),
 #287 follow-up work and #326 remain out of scope; already-merged #289 evidence
 is included, not a claim that all #287 work is complete.
 

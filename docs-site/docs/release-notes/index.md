@@ -48,7 +48,10 @@ infer the running version from a date written in documentation.
   Chat-to-Responses is stateless regardless of legacy session settings.
 - Non-SSE upstream stream replies return `502 upstream_protocol_error`;
   SSE lines are bounded at 64 KiB and responses disable proxy buffering.
-- W2b (#329, pending merge): explicit `modalities` and `structured_output`
+- SSE translation recognizes bare CR, LF and CRLF, including endings split
+  across reads, without retaining or losing CR field values (#331, pending
+  merge; fixes #327).
+- W2b (#329): explicit `modalities` and `structured_output`
   metadata gate media and Anthropic output formats; supported document/image
   parts survive streaming/tool bridges and JSON schemas translate to OpenAI.
   Unsupported media, translated unknown blocks and unsupported formats return
