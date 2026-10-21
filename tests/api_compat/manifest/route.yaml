@@ -94,9 +94,8 @@ cases:
     transport: unary
     disposition: supported_translation
     assertions:
-      - two router processes sharing a Redis backend continue one Chat→Responses session (turn 2 on process B carries turn 1's previous_response_id)
-      - restarting a router process between turns continues from the latest stored response id
-      - requests without the session header stay stateless; only the latest id is stored, under a hashed key without the raw header value
+      - Chat→Responses requests across two processes and restarts omit previous_response_id and set store false even with legacy Redis sessions
+      - legacy bookkeeping uses hashed keys without the raw header value
     evidence_paths:
       - tests/api_compat/tests/test_route_state.py
       - internal/router/bridge_sessions.go
@@ -111,8 +110,7 @@ cases:
     transport: unary
     disposition: supported_translation
     assertions:
-      - designated stale-state 4xx purges the mapping and retries the same request once without previous_response_id
-      - a second stale error after the stateless retry is terminal (bounded to one retry)
+      - provider stale-state errors are terminal without replay because the bridge never sends previous_response_id
       - unrelated 400s and upstream 401 never replay history statelessly (exactly one upstream attempt)
       - the configured TTL is written with each Redis mapping; an expired mapping or a Redis outage continues stateless
     evidence_paths:
@@ -130,7 +128,7 @@ cases:
     disposition: supported_translation
     assertions:
       - identical session labels from two callers, or in two model groups, never share a stored previous_response_id
-      - concurrent turns in one session settle on a single stored id issued in that session (last writer wins)
+      - concurrent and subsequent turns never send stored response ids upstream
     evidence_paths:
       - tests/api_compat/tests/test_route_state.py
       - internal/router/bridge_sessions.go
@@ -146,7 +144,7 @@ cases:
     disposition: supported_translation
     assertions:
       - reconfiguring a group's target between turns resets continuation instead of forwarding the old target's response id
-      - the new target starts a fresh continuation chain under the same session label
+      - the new target remains stateless under the same session label
     evidence_paths:
       - tests/api_compat/tests/test_route_state.py
       - internal/router/bridge_sessions.go

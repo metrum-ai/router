@@ -49,6 +49,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			if !result.Committed {
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("X-Accel-Buffering", "no")
 			}
 			// A failed/partial Write can still put bytes on the wire: forbid fallback.
 			result.Committed = true
@@ -125,6 +126,9 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		var up stream.Event
 		up, err = f.Next()
 		if err != nil {
+			if errors.Is(err, stream.ErrFrameTooLarge) {
+				return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds 64 KiB", Committed: result.Committed}
+			}
 			if errors.Is(err, stream.ErrLimit) {
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit"}
 			}

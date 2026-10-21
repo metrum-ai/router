@@ -157,6 +157,9 @@ func (s *Service) requestFilterReasons(target Target, req *IRRequest, callerDial
 	requiredModalities := requestInputModalities(req)
 	requiresStructuredOutput := requestHasStructuredOutput(req)
 	var reasons []string
+	if target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id") {
+		reasons = append(reasons, "continuation_unsupported")
+	}
 	bridge := isChatToResponsesBridge(callerDialect, outDialect, target) || isResponsesToChatBridge(callerDialect, outDialect, target)
 	bridgeDialectPair := isChatToResponsesDialectPair(callerDialect, outDialect) ||
 		(normalizeDialect(callerDialect) == "openai-responses" && normalizeDialect(outDialect) == "openai-chat")

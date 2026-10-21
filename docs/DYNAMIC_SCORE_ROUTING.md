@@ -119,7 +119,7 @@ matches an eligible target for the current request shape. Different callers
 never share pins. Disable the behavior for a group with
 `affinity.enabled: false`.
 
-Chat-to-Responses stateful sessions remain a separate explicit bridge feature. Their caller-supplied session header, `previous_response_id`, backend, and TTL behavior are unchanged.
+Chat-to-Responses is stateless: callers replay full history. Bridged requests always set `store:false` and never send `previous_response_id`, including when legacy session configuration is enabled. Responses requests with `previous_response_id` exclude `force_store_false` targets; zero eligible targets returns `400 continuation_unsupported`.
 
 ## Streaming Behavior
 

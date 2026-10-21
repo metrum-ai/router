@@ -1,14 +1,11 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""ROUTE-06..10: stateful Chat→Responses continuation and bridge encoder fidelity.
+"""ROUTE-06..10: legacy session configuration and stateless bridge fidelity.
 
-Stateful bridge expectations come from the documented contract in
-docs-site/docs/reference/api-compatibility.md ("Chat To Responses Bridge"): the
-router stores only the upstream Responses ``id`` under a hashed caller, model
-group, target, bridge and session scope, injects it as ``previous_response_id``
-on the next request in that scope, and retries once without it only after a
-compatible stale-state 4xx. Backend misses and errors continue stateless.
+Chat callers send complete history. Bridged requests always set store:false and
+never previous_response_id, including across processes with legacy session state.
+Provider errors are terminal rather than triggering a stale-state replay.
 
 Shared-state profiles use a loopback-only RESP2 fake Redis defined here so the
 offline suite never needs a Redis binary, Docker, or network. Metrum AI.
@@ -301,12 +298,9 @@ def _expect_turn(scenario, response_id, *, previous=None, status=200, body=None,
 
     def _validate(call):
         sent = call["body"]
-        if previous is None:
-            assert "previous_response_id" not in sent, sent.get("previous_response_id")
-        else:
-            assert sent.get("previous_response_id") == previous
-        # The router injects only the stored id; the caller's messages are not merged
-        # with any stored history (no doubled or lost turns at the router layer).
+        # Even a legacy mapping from a previous turn must never reach upstream.
+        assert "previous_response_id" not in sent, sent.get("previous_response_id")
+        assert sent["store"] is False
         assert sent["input"] == [{"role": "user", "content": [{"type": "input_text", "text": text}]}]
 
     scenario.expect(
@@ -386,13 +380,12 @@ def test_route_07_stale_continuation_retries_once_stateless(router, memory_route
     scenario = _install(router)
     _expect_turn(scenario, "resp_a1")
     _expect_turn(scenario, "unused", previous="resp_a1", status=400, body=stale)
-    _expect_turn(scenario, "resp_a2", previous=None)
-    _expect_turn(scenario, "resp_a3", previous="resp_a2")
+    _expect_turn(scenario, "resp_a3", previous=None)
 
     assert _chat(base, PROMPT_CANARY, session="route-07-stale")[0] == 200
     status, _, raw = _chat(base, PROMPT_CANARY, session="route-07-stale")
-    assert status == 200, raw
-    # Stale mapping was replaced by the retry's new id.
+    assert status == 502, raw
+    # No stale-state replay: the caller decides whether to retry.
     assert _chat(base, PROMPT_CANARY, session="route-07-stale")[0] == 200
     scenario.assert_complete()
 
@@ -403,7 +396,6 @@ def test_route_07_stale_retry_is_bounded_to_one(router, memory_router):
     stale = {"error": {"message": "previous_response_id was not found"}}
     scenario = _install(router)
     _expect_turn(scenario, "resp_b1")
-    _expect_turn(scenario, "unused", previous="resp_b1", status=400, body=stale)
     _expect_turn(scenario, "unused", previous=None, status=400, body=stale)
 
     assert _chat(base, PROMPT_CANARY, session="route-07-bounded")[0] == 200
@@ -411,7 +403,7 @@ def test_route_07_stale_retry_is_bounded_to_one(router, memory_router):
     assert 400 <= status < 600 and status != 200
     assert "error" in json.loads(raw)
     scenario.assert_complete()
-    assert len(router["upstream"].calls) == 3
+    assert len(router["upstream"].calls) == 2
 
 
 @pytest.mark.parametrize(
@@ -514,7 +506,7 @@ def test_route_08_simultaneous_turns_are_last_writer_wins(router, memory_router)
     issued = {f"resp_parallel_{i}" for i in range(1, 5)}
     for call in upstream.calls:
         previous = call["body"].get("previous_response_id")
-        assert previous is None or previous in issued
+        assert previous is None
 
     follow = ScriptedScenario()
     seen = {}
@@ -524,7 +516,7 @@ def test_route_08_simultaneous_turns_are_last_writer_wins(router, memory_router)
     upstream.scenario = follow
     assert _chat(base, PROMPT_CANARY, session="parallel")[0] == 200
     follow.assert_complete()
-    assert seen["prev"] in issued
+    assert seen["prev"] is None
 
 
 def test_route_09_target_reconfiguration_never_forwards_foreign_ids(router, tmp_path, fake_redis):
@@ -617,8 +609,9 @@ def test_route_10_bridge_encoders_preserve_null_false_zero_distinctions(router, 
         )
         assert status == 200, raw
         sent = upstream.calls[-1]["body"]
-        for key in ("temperature", "top_p", "max_output_tokens", "parallel_tool_calls", "tool_choice", "tools", "text", "previous_response_id", "store"):
+        for key in ("temperature", "top_p", "max_output_tokens", "parallel_tool_calls", "tool_choice", "tools", "text", "previous_response_id"):
             assert key not in sent, key
+        assert sent["store"] is False
         scenario.assert_complete()
 
         # Chat→Responses: explicit zero/false are forwarded, not dropped as falsy.

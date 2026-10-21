@@ -131,7 +131,11 @@ func TestResponsesToChatStreamingUsageAndFaults(t *testing.T) {
 }
 func TestResponsesToChatStreamingNoFallbackAfterCreated(t *testing.T) {
 	var calls atomic.Int64
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); fmt.Fprint(w, "data: {\n\n") }))
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\n\n")
+	}))
 	defer up.Close()
 	target := chatBridgeTarget()
 	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target, target})
