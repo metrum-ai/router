@@ -85,7 +85,8 @@ after the response. Capture encryption occurs before enqueueing.
 Monitor `usage_queue_depth`, `usage_write_dropped_total` and
 `usage_write_latency_seconds` (batch SQL duration summary sum/count). SQLite
 uses WAL and a 5000 ms busy timeout. The PostgreSQL profile supplies a config
-fragment and disposable-database integration test; production PostgreSQL still
+fragment (`config/usage-postgres.example.yaml`) and disposable-database
+integration test (`OPS09_POSTGRES_TEST_DSN`); production PostgreSQL still
 requires the non-serving migration job. Redis/queue profiles remain deferred.
 Test a held database lock locally and verify inference does not wait for it.
 
@@ -104,14 +105,36 @@ compiler dependencies are not shipped in the router binary or image; the
 exceptions do not waive router runtime findings. Reassess when upstream ships
 a compiler built with patched dependencies.
 
-### W2b release gate (draft; implementation pending)
+### Media, output formats and hosted tools (W2b #329; pending merge)
 
-Per maintainer scope update, #271 MEDIA-07 (file/document parts), ANTH-12
-(document/unknown blocks and hosted server-tool policy), and ANTH-09
-(`output_config.format` capability gates) are **in v4.2.0**, not deferred to
-the next minor. Final field/error/migration guidance must follow the W2b PR
-opened after #315 merges; do not deploy this draft as a compatibility promise.
-The release cannot finalize until that PR merges and is validated. #281 (v5),
+#271 MEDIA-07, ANTH-12 and ANTH-09 are **in v4.2.0**, not deferred.
+Targets may declare `modalities: [text, image, document, audio]`; an explicit
+list overrides `input_modalities`, while absence retains existing metadata
+(default text). Declare only capabilities validated on the exact provider.
+Unsupported media returns `400 unsupported_modality`; translated unknown
+Anthropic blocks return `400 unsupported_block`, rather than a successful
+response with content silently dropped. Native opaque blocks remain native.
+Supported document/image parts survive unary, streaming and tool bridges.
+Provider file IDs remain provider-owned: capability declarations do not
+migrate files between providers.
+
+`structured_output` defaults false and gates Anthropic `output_config.format`
+on native as well as translated targets. Set it only after validating the
+provider/skin; unsupported formats return `400 unsupported_parameter`.
+Anthropic JSON-schema formats map to OpenAI Chat/Responses; existing OpenAI
+capability declarations remain supported.
+
+Anthropic server search tools and Responses hosted tools both reject before
+upstream with `provider-hosted-tools-forbidden`. Generic search/image descriptors
+now reject too instead of being silently stripped; clients must remove them
+or use supported client tools. This is not a hosted-tool enablement feature.
+For Claude tool-only smokes on non-reasoning translated routes, disable CLI
+adaptive thinking explicitly (`MAX_THINKING_TOKENS=0` and
+`CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1`) or choose a separately validated
+reasoning route. Do not infer arbitrary opaque-item or system-role translation
+fidelity from document/tool success.
+
+The release cannot finalize until #329 merges and is validated. #281 (v5),
 #287 follow-up work and #326 remain out of scope; already-merged #289 evidence
 is included, not a claim that all #287 work is complete.
 

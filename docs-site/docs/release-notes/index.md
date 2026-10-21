@@ -48,10 +48,12 @@ infer the running version from a date written in documentation.
   Chat-to-Responses is stateless regardless of legacy session settings.
 - Non-SSE upstream stream replies return `502 upstream_protocol_error`;
   SSE lines are bounded at 64 KiB and responses disable proxy buffering.
-- W2b MEDIA-07, ANTH-12 and ANTH-09 are in scope for this release. Their
-  file/document, hosted-tool and structured-output guidance is pending the
-  implementation PR after #315; this section is a draft release gate, not
-  evidence those changes have shipped.
+- W2b (#329, pending merge): explicit `modalities` and `structured_output`
+  metadata gate media and Anthropic output formats; supported document/image
+  parts survive streaming/tool bridges and JSON schemas translate to OpenAI.
+  Unsupported media, translated unknown blocks and unsupported formats return
+  explicit 400s. Anthropic server search and Responses hosted tools reject
+  before upstream rather than silently dropping descriptors.
 
 ### Upgrade
 

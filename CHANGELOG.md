@@ -36,10 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Windows amd64 and arm64 binary ZIP packages alongside Linux tarballs (#291).
-- W2b MEDIA-07 / ANTH-12 / ANTH-09 are in scope for v4.2.0: file/document
-  handling, Anthropic block/server-tool policy and output-format capability
-  gates. Draft placeholder pending the implementation PR after #315; release
-  finalization requires its merge and precise release note.
+- Targets can declare `modalities` and `structured_output`. Unsupported media
+  and translated unknown Anthropic blocks return explicit 400s instead of
+  losing content. Supported documents/images survive streaming and tool
+  bridges; Anthropic JSON-schema formats translate to OpenAI. Anthropic server
+  search and Responses hosted tools consistently reject before upstream rather
+  than silently stripping descriptors (W2b #329; pending merge).
 - Claude Code client-tool calls and tool-result continuations on explicitly
   validated OpenAI Chat and Responses targets, including streaming and identifier
   rewriting. Distinct Anthropic tool evidence is required; native routes are
