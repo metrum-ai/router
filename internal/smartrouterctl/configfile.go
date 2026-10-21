@@ -26,7 +26,7 @@ func LoadConfigRaw(path string) (*router.Config, error) {
 	}
 	var cfg router.Config
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
+		return nil, fmt.Errorf("parse config: %w", router.RedactConfigError(err, &cfg))
 	}
 	if cfg.Provider == nil {
 		cfg.Provider = map[string]router.ProviderConfig{}
@@ -38,7 +38,7 @@ func LoadConfigRaw(path string) (*router.Config, error) {
 }
 
 // WriteConfigAtomic writes cfg to path after a timestamped sibling backup, then
-// validates the written file with router.LoadConfig.
+// validates YAML types with LoadConfigRaw, without expanding environment expressions.
 func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("config is required")

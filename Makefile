@@ -132,21 +132,26 @@ local-router-setup:
 		--listen "$(LOCAL_ROUTER_LISTEN)" \
 		$(LOCAL_ROUTER_EXTRA_ARGS)
 
+.PHONY: local-router-build
+local-router-build: validate-build-metadata
+	@mkdir -p "$(LOCAL_ROUTER_OUT)"
+	go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$(LOCAL_ROUTER_OUT)/metrum-ai-router" ./cmd/metrum-ai-router
+
 local-router: local-router-setup
 	@mkdir -p "$(LOCAL_ROUTER_OUT)/logs"
 	@echo "local-router supervised on $(LOCAL_ROUTER_LISTEN); log $(LOCAL_ROUTER_OUT)/logs/router.supervised.log"
-	@go build -o "$(LOCAL_ROUTER_OUT)/metrum-ai-router" ./cmd/metrum-ai-router
+	@$(MAKE) local-router-build
 	@while true; do \
 		echo "$$(date -u +%Y-%m-%dT%H:%M:%SZ) starting local-router" | tee -a "$(LOCAL_ROUTER_OUT)/logs/router.supervised.log"; \
 		"$(LOCAL_ROUTER_OUT)/metrum-ai-router" --config "$(LOCAL_ROUTER_OUT)/config.yaml" >>"$(LOCAL_ROUTER_OUT)/logs/router.supervised.log" 2>&1; \
 		code=$$?; \
 		echo "$$(date -u +%Y-%m-%dT%H:%M:%SZ) local-router exited $$code; rebuilding and restarting in 2s" | tee -a "$(LOCAL_ROUTER_OUT)/logs/router.supervised.log"; \
-		go build -o "$(LOCAL_ROUTER_OUT)/metrum-ai-router" ./cmd/metrum-ai-router || true; \
+		$(MAKE) local-router-build || true; \
 		sleep 2; \
 	done
 
-local-router-once: local-router-setup
-	"$(LOCAL_ROUTER_OUT)/start.sh"
+local-router-once: local-router-setup local-router-build
+	"$(LOCAL_ROUTER_OUT)/metrum-ai-router" --config "$(LOCAL_ROUTER_OUT)/config.yaml"
 
 local-router-configure-pi: local-router-setup
 	uv run --with pyyaml python scripts/local_pi_instance.py \
