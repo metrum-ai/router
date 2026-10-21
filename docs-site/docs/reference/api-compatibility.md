@@ -222,6 +222,10 @@ Unsupported Responses features are rejected or skipped before upstream for Chat-
 
 Usage and diagnostics show both sides: `inbound_dialect = openai-responses`, `target_dialect = openai-chat`, and `request_translation_shapes.bridge_direction = responses_to_chat`. Reasoning-preserving attempts also record a safe `translated_reasoning_control` value such as `reasoning_effort`.
 
+Same-dialect OpenAI Chat uses native passthrough, including tool-less text and streaming requests. Sampling controls (`seed`, `n`, `top_p`, penalties, `logprobs`, `top_logprobs`, `logit_bias`, and `user`) survive forwarding; every response choice, refusal, and finish reason is preserved. Routing model identity, persistence policy, and configured target encoding still apply. The IR is used for translation, not native upstream encoding. The optional deterministic text cache retains its normalized replay behavior; native multiple-choice, refusal, tool-call and logprob responses bypass that IR-only cache so replay cannot erase them.
+
+For OpenAI Chat Completions, a present `max_tokens` must be an integer >= 1; otherwise the router returns HTTP 400 `invalid-request` before upstream, on both text and tools paths. There are no model-specific validation caps or silent truncation.
+
 For OpenAI Chat Completions requests, both `max_tokens` and `max_completion_tokens` are treated as explicit output caps. If a Chat request sends both fields, `max_tokens` takes precedence for router eligibility and normalized upstream forwarding.
 
 The same model group can therefore expose different effective upstream pools to different API surfaces. A Chat client can use only active Chat-compatible targets, a Responses client can use only active Responses-compatible targets, and a Messages client can use only active Anthropic-compatible targets unless the deployment has configured and documented an explicit bridge. Provider catalog metadata for another skin is not enough by itself; the active target's resolved skin controls eligibility.
