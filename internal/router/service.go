@@ -1255,7 +1255,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	req.CallerBetas = strings.Join(r.Header.Values("Anthropic-Beta"), ",")
 	for _, target := range append([]Target{dec.Target}, dec.Fallbacks...) {
 		if field := unpermittedBetaField(req, target); field != "" {
-			s.writeError(w, rc, http.StatusBadRequest, "unsupported_parameter: "+field+" requires a permitted anthropic-beta")
+			s.writeBetaFieldError(w, rc, field)
 			return
 		}
 	}

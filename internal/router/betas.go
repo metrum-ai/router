@@ -3,7 +3,25 @@
 
 package router
 
-import "strings"
+import (
+	"net/http"
+	"strings"
+)
+
+func (s *Service) writeBetaFieldError(w http.ResponseWriter, rc *requestContext, field string) {
+	const code = "unsupported_parameter"
+	message := field + " requires a permitted anthropic-beta"
+	if rc != nil {
+		rc.trace("request_error", message, Target{}, 0, http.StatusBadRequest, code, false, 0)
+		rc.rec.Status = http.StatusBadRequest
+		c := code
+		rc.rec.Error = &c
+		rc.rec.ErrorClass = code
+		rc.rec.ErrorMessage = message
+		s.finish(rc, http.StatusBadRequest, &c)
+	}
+	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"type": code, "message": message, "param": field}})
+}
 
 func permittedBetas(caller string, allowed []string) string {
 	var result []string
