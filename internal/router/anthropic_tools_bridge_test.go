@@ -118,6 +118,13 @@ func TestAnthropicToolTranslationEvidence(t *testing.T) {
 		if !supportsAnyCapability(anthropicTranslationEvidenceCapabilities(target, out), "tools-omitted", "tools-auto", "tools-forced") {
 			t.Fatal("missing evidence")
 		}
+		target.ToolOnly = true
+		target.InputModalities = []string{"text", "image"}
+		caps := anthropicTranslationEvidenceCapabilities(target, out)
+		if supportsAnyCapability(caps, "text", "image-input") || !supportsAnyCapability(caps, "tools-omitted") {
+			t.Fatalf("invalid tool-only evidence: %v", caps)
+		}
+		target.ToolOnly = false
 		target.ToolSupport.AnthropicMessages = nil
 		history := &IRRequest{Raw: map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": "call_1", "content": "ok"}}}}}}
 		if got := requestShapeFilterReason(target, history, "anthropic", out, requestTokenEstimateLogRecord{}, targetRequestShapeFit{}); got != "tool-support" {

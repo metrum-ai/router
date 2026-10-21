@@ -287,7 +287,7 @@ func anthropicTranslationEvidenceCapabilities(target Target, dialect string) []s
 			capabilities = append(capabilities, "tools-auto", "tools-forced")
 		}
 	}
-	if !supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "image") &&
+	if !target.ToolOnly && !supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "image") &&
 		targetSupportsInputModalities(target, []string{"image"}) {
 		capabilities = append(capabilities, "image-input")
 	}
