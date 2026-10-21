@@ -9,15 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Symmetric Anthropic/OpenAI translation eligibility behind
-  `eligibility.implicit_openai_to_anthropic` (default `true`, flips to `false`
-  next minor), per-target startup migration warnings, and
-  `metrum-ai-routerctl config patch-eligibility` with dry-run/diff output (#271).
-- Per-target `allowed_betas` (default empty): intersect caller `anthropic-beta`
-  values and reject known beta-gated fields without their permitted beta with
-  HTTP 400 naming the field. Adaptive Anthropic thinking now requires a
-  reasoning-capable target (#271).
-
 - Decision 3.0 (d3) external routing policy reference (#278):
   `examples/external-routing-policy/d3_policy.py` asks a vLLM Semantic Router
   d3 System One server typed questions about the redacted request text and
