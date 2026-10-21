@@ -1438,7 +1438,7 @@ func TestWeightedOrderTreatsOmittedTargetWeightAsOne(t *testing.T) {
 	}
 }
 
-func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
+func TestExampleConfigDefaultUsesRequestedMix(t *testing.T) {
 	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", mustBcryptHash(t, "admin"))
 	raw, err := os.ReadFile("../../config.example.yaml")
 	if err != nil {
@@ -1769,6 +1769,10 @@ func TestExampleConfigDefaultIncludesLatestCodingTargets(t *testing.T) {
 		if group.Strategy != "weighted" {
 			t.Fatalf("example config group %s strategy=%q want weighted", name, group.Strategy)
 		}
+		if name == "default" {
+			assertDefaultGroupTargets(t, group)
+			continue
+		}
 		if name == "temp-coder" {
 			assertTempCoderGroup(t, group)
 			continue
@@ -2005,29 +2009,21 @@ func TestExampleConfigLargeOpenAIChatToolsSmokeHasShapeGate(t *testing.T) {
 
 func assertDefaultGroupTargets(t *testing.T, defaultGroup ModelGroup) {
 	t.Helper()
-	want := map[string]string{
-		"baseten:nvidia/Nemotron-120B-A12B":          "nvidia/Nemotron-120B-A12B",
-		"baseten:openai/gpt-oss-120b":                "openai/gpt-oss-120b",
-		"baseten:zai-org/GLM-5.2":                    "zai-org/GLM-5.2",
-		"minimax:MiniMax-M3":                         "MiniMax-M3",
-		"kimi:kimi-k2.7-code":                        "kimi-k2.7-code",
-		"openrouter:google/gemma-4-26b-a4b-it:nitro": "google/gemma-4-26b-a4b-it:nitro",
-		"openai:gpt-5.4-nano":                        "gpt-5.4-nano",
+	if defaultGroup.Strategy != "weighted" || len(defaultGroup.Targets) != 2 {
+		t.Fatalf("default group=%#v, want two weighted targets", defaultGroup)
 	}
-	for name, model := range want {
-		found := false
-		for _, target := range defaultGroup.Targets {
-			if target.Provider+":"+target.Model == name && target.Model == model {
-				found = true
-				if !target.ToolOnly && target.Weight <= 0 {
-					t.Fatalf("%s target resolved with non-positive weight: %#v", name, target)
-				}
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("default group missing resolved target %s; targets=%#v", name, defaultGroup.Targets)
-		}
+	fireworks, luna := defaultGroup.Targets[0], defaultGroup.Targets[1]
+	if fireworks.Provider != "fireworks" || fireworks.ModelRef != "deepseek-v4p1-flash-1017" ||
+		fireworks.Model != "accounts/fireworks/models/deepseek-v4p1-flash-1017" || fireworks.Weight != 70 || fireworks.ToolOnly ||
+		!stringSliceContains(fireworks.ToolSupport.OpenAIChat, "tools") ||
+		!stringSliceContains(fireworks.RequestShapeSupport.SupportedInboundDialects, "openai-chat") {
+		t.Fatalf("default Fireworks target=%#v, want DeepSeek Flash 1017 at weight 70 with Chat tools", fireworks)
+	}
+	if luna.Provider != "openai" || luna.ModelRef != "gpt-6-luna" || luna.Model != "gpt-6-luna" ||
+		luna.Weight != 30 || luna.ToolOnly || !luna.Bridges.ChatToResponses.Enabled ||
+		!luna.Bridges.ChatToResponses.Tools || !luna.Bridges.ChatToResponses.ToolChoice ||
+		!stringSliceContains(luna.ToolSupport.OpenAIResponses, "function") {
+		t.Fatalf("default OpenAI target=%#v, want Luna at weight 30 with Chat-to-Responses tools", luna)
 	}
 }
 
@@ -2418,7 +2414,6 @@ func assertActiveGroupPolicy(t *testing.T, name string, group ModelGroup) {
 	want := map[string]struct {
 		gptOSS, m3, gemma, kimi, openAI, basetenNemotron, basetenGLM, crusoeGemma, crusoeGLM, crusoeNemotron, fireworksGPTOSS20B, fireworksGLM52, fireworksKimi, fireworksDeepSeek, fireworksQwen, xaiGrok45, targets int
 	}{
-		"default":   {51, 24, 2, 6, 1, 3, 5, 0, 5, 0, 0, 0, 0, 0, 0, 0, 9},
 		"fast":      {56, 23, 2, 5, 1, 3, 5, 0, 2, 0, 0, 0, 0, 0, 0, 0, 9},
 		"small":     {58, 25, 2, 4, 1, 3, 2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 9},
 		"medium":    {51, 22, 2, 8, 1, 3, 5, 0, 5, 0, 0, 0, 0, 0, 0, 0, 9},

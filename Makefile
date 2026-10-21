@@ -125,7 +125,7 @@ help:
 
 # Weighted local coding-agent instance: upstream keys from repo env.json,
 # reusable METRUM_API_KEY, listen 0.0.0.0:18081, only group big-coder
-# (gpt-6-luna 70 / deepseek-v4p1-flash 30).
+# (deepseek-v4p1-flash-1017 70 / gpt-6-luna 30).
 local-router-setup:
 	uv run --with pyyaml python scripts/local_pi_instance.py \
 		--out-dir "$(LOCAL_ROUTER_OUT)" \
