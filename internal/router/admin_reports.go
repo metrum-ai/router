@@ -799,6 +799,9 @@ type adminReportRequest struct {
 	ReasoningReportedAttemptCount   int     `json:"reasoningReportedAttemptCount"`
 	CostUSD                         float64 `json:"costUsd"`
 	TotalCostUSD                    float64 `json:"totalCostUsd"`
+	CostListUSD                     float64 `json:"cost_list_usd"`
+	CostBilledUSD                   float64 `json:"cost_billed_usd"`
+	CacheSavingsUSD                 float64 `json:"cache_savings_usd"`
 }
 
 type adminReportAttempt struct {
@@ -5519,6 +5522,9 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 		ReasoningReportedAttemptCount:   row.ReasoningReportedAttemptCount,
 		CostUSD:                         row.TotalCostUSD,
 		TotalCostUSD:                    row.TotalCostUSD,
+		CostListUSD:                     row.CostListUSD,
+		CostBilledUSD:                   row.TotalCostUSD,
+		CacheSavingsUSD:                 row.CostListUSD - row.TotalCostUSD,
 	}
 }
 

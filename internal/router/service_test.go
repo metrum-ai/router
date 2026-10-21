@@ -3173,9 +3173,11 @@ func TestAdminOverviewSQLUsesFullWindowSummaryAndBoundedSample(t *testing.T) {
 	if summary["requests"].(float64) != 3 || summary["errors"].(float64) != 1 {
 		t.Fatalf("overview summary did not use full filtered window: %#v", summary)
 	}
-	assertCloseFloat(t, "overview actual cost", summary["actualCostUsd"].(float64), 12)
+	assertCloseFloat(t, "overview actual cost", summary["actualCostUsd"].(float64), 11)
 	assertCloseFloat(t, "overview baseline cost", summary["baselineCostUsd"].(float64), 30)
-	assertCloseFloat(t, "overview savings", summary["savingsUsd"].(float64), 18)
+	assertCloseFloat(t, "overview savings", summary["savingsUsd"].(float64), 19)
+	assertCloseFloat(t, "overview list cost", summary["cost_list_usd"].(float64), 12)
+	assertCloseFloat(t, "overview cache savings", summary["cache_savings_usd"].(float64), 1)
 	requests := report["requests"].([]any)
 	if len(requests) != 1 || requests[0].(map[string]any)["requestId"] != "overview-new" {
 		t.Fatalf("overview recent sample=%#v, want only newest filtered request", requests)
