@@ -1682,8 +1682,8 @@ func TestUsageReasoningTelemetryMigrationAddsColumnsToAdoptedSchema(t *testing.T
 		t.Fatalf("cached-input pricing migration postcondition: %v", err)
 	}
 	status, err := runner.Verify()
-	if err != nil || !status.Compatible || status.SchemaVersion != 5 || status.DataVersion != 0 || status.State != "pending" || len(status.Jobs) != 1 || status.Jobs[0].Key != "historical-usage-validation-v1" || status.Jobs[0].State != migrationDataJobPending {
-		t.Fatalf("schema migrations must reach v5 while the later non-serving data job remains pending: status=%+v err=%v", status, err)
+	if err != nil || !status.Compatible || status.SchemaVersion != usageMigrationCompatibility.MaxSchema || status.DataVersion != 0 || status.State != "pending" || len(status.Jobs) != 1 || status.Jobs[0].Key != "historical-usage-validation-v1" || status.Jobs[0].State != migrationDataJobPending {
+		t.Fatalf("schema migrations must reach the latest version while the later non-serving data job remains pending: status=%+v err=%v", status, err)
 	}
 	previousBinary, err := NewMigrationRunner(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 1, MinData: 0, MaxData: 0}, usageMigrationDefinitions[:1])
 	if err != nil {

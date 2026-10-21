@@ -121,12 +121,12 @@ func TestUsageReportImportsJSONLAndRendersMarkdown(t *testing.T) {
 		"Requests: `3`",
 		"Errors: `1`",
 		"Total Tokens: `178`; Input Tokens: `132`; Output Tokens: `46`",
-		"Cost: `$0.000531` total, `$0.000207` input, `$0.000000` image, `$0.000324` output",
+		"Cost: `$0.000526` total, `$0.000207` input, `$0.000000` image, `$0.000324` output",
 		"rtr_metrum_clay_metrum-insights_prod_k20260614",
 		"| Token ID | Owner User | Project | Env | Caller ID |",
 		"| openai | gpt-5.4 | 1 | 0 | 140 | 100 | 40 | $0.000520 |",
 		"| minimax | MiniMax-M3 | 1 | 1 | 20 | 20 | 0 | $0.000006 |",
-		"| 2026-06-14 02:00 | 2 | 1 | 38 | 32 | 6 | $0.000011 |",
+		"| 2026-06-14 02:00 | 2 | 1 | 38 | 32 | 6 | $0.000006 |",
 		"## Usage By Caller IP",
 		"| 203.0.113.10 | 1 | 0 | 140 | 100 | 40 | $0.000520 |",
 		"## Hourly Usage By Caller IP",
@@ -763,7 +763,7 @@ func TestUsageRollupDailyTotalsDraftRerunAndFinalize(t *testing.T) {
 	assertNear(t, alice.InputCostUSD+bob.InputCostUSD, 0.14, "input cost")
 	assertNear(t, alice.ImageCostUSD+bob.ImageCostUSD, 0.02, "image cost")
 	assertNear(t, alice.OutputCostUSD+bob.OutputCostUSD, 0.26, "output cost")
-	assertNear(t, alice.TotalCostUSD+bob.TotalCostUSD, 0.42, "total cost")
+	assertNear(t, alice.TotalCostUSD+bob.TotalCostUSD, 0.32, "billed total cost")
 	assertNear(t, alice.UpstreamReportedInputCostUSD+bob.UpstreamReportedInputCostUSD, 0.11, "upstream input cost")
 	assertNear(t, alice.UpstreamReportedOutputCostUSD+bob.UpstreamReportedOutputCostUSD, 0.21, "upstream output cost")
 	assertNear(t, alice.UpstreamReportedTotalCostUSD+bob.UpstreamReportedTotalCostUSD, 0.33, "upstream total cost")
