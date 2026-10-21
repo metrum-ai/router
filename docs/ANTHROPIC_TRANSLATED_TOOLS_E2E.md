@@ -83,11 +83,11 @@ shape accordingly; this validation does not promise unsupported provider caps.
   and environment-only `METRUM_ROUTER_KEY`: exit 0, exact `codex-tool-ok` newline
   file and readback. Disposable fixture only.
 - `make api-compat-mock`: initially 212 passed; rerun with the new ANTH-13/14
-  independent Chat/Responses continuation regression cases (214 tests).
+  independent Chat/Responses continuation regression cases: 214 passed.
 - `make test-fast`: passed.
 - `make docs-qa`: passed.
 - `make test`: host Python lacked PyYAML; rerun using
-  `uv run --with pyyaml make test` so the documented dependency is available.
+  `uv run --with pyyaml make test` passed with the documented dependency available.
 
 The router and CLI logs, SQLite and generated configuration remain ignored under
 `tmp/a295`; raw payloads and credentials are not part of this evidence.

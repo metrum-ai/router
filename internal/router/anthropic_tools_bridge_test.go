@@ -118,6 +118,12 @@ func TestAnthropicToolTranslationEvidence(t *testing.T) {
 		if !supportsAnyCapability(anthropicTranslationEvidenceCapabilities(target, out), "tools-omitted", "tools-auto", "tools-forced") {
 			t.Fatal("missing evidence")
 		}
+		forced := &IRRequest{Raw: map[string]any{"tool_choice": map[string]any{"type": "tool", "name": "write"}}}
+		target.ToolSupport.AnthropicMessages = []string{"client_tools"}
+		if got := requestShapeFilterReason(target, forced, "anthropic", out, requestTokenEstimateLogRecord{}, targetRequestShapeFit{}); got != "anthropic-bridge-tool-choice-unsupported" {
+			t.Fatalf("forced choice without distinct evidence authorized: %s", got)
+		}
+		target = anthropicToolTarget()
 		target.ToolOnly = true
 		target.InputModalities = []string{"text", "image"}
 		caps := anthropicTranslationEvidenceCapabilities(target, out)
@@ -209,6 +215,10 @@ func TestAnthropicToolsTranslatedContinuation(t *testing.T) {
 					return result
 				}
 				first := send(`[{"role":"user","content":"write"}]`)
+				usage := first["usage"].(map[string]any)
+				if usage["input_tokens"] != float64(10) || usage["output_tokens"] != float64(4) {
+					t.Fatalf("usage lost: %v", usage)
+				}
 				blocks := valueAsSlice(first["content"])
 				if first["stop_reason"] != "tool_use" || len(blocks) != 2 {
 					t.Fatalf("bad tool reply: %#v", first)
