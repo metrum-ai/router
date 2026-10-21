@@ -29,6 +29,11 @@ func TestCacheBillingMigrationBackfill(t *testing.T) {
 	if err := applyUsageCacheBillingMigration(db); err != nil {
 		t.Fatal(err)
 	}
+	// A bare-path non-serving tool can initialize the physical schema before
+	// the ledger adopts it. Re-applying must not erase an already-free hit's list.
+	if err := applyUsageCacheBillingMigration(db); err != nil {
+		t.Fatal(err)
+	}
 	var rows []usageRecord
 	if err := db.Find(&rows).Error; err != nil {
 		t.Fatal(err)

@@ -19,7 +19,9 @@ func applyUsageCacheBillingMigration(db *gorm.DB) error {
 	}
 	// Historical total is the best available list-price estimate. Only known
 	// response-cache hits are free; unknown cache states retain their old charge.
-	if err := db.Exec(`UPDATE request_usage SET cost_list_usd = total_cost_usd,
+	// Preserve existing list estimates when adopting a non-serving tool's schema,
+	// or when this step is retried: total may already be the zero billed alias.
+	if err := db.Exec(`UPDATE request_usage SET cost_list_usd = CASE WHEN cost_list_usd = 0 THEN total_cost_usd ELSE cost_list_usd END,
  cost_billed_usd = CASE WHEN cache = 'hit' THEN 0 ELSE total_cost_usd END,
  total_cost_usd = CASE WHEN cache = 'hit' THEN 0 ELSE total_cost_usd END`).Error; err != nil {
 		return err
