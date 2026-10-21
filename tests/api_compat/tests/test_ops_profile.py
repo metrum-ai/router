@@ -932,6 +932,9 @@ def test_ops04_cache_and_reasoning_details_attribute_to_serving_target(ops_route
     assert code == 200 and len(OpsUpstream.calls) == 1
     row = usage_rows(db, headers["X-Request-Id"])[0]
     assert row["cache"] == "hit"
+    assert row["cost_list_usd"] > 0
+    assert row["cost_billed_usd"] == 0
+    assert row["total_cost_usd"] == row["cost_billed_usd"]
     assert caller_usage(base, CALLER)["day"]["tokens"] == before["day"]["tokens"]
     # No upstream attempt, and the cached response's provider prompt-cache count
     # is not replayed as prompt-cache evidence for this request.
