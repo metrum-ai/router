@@ -165,7 +165,7 @@ cases:
     test_id: test_ops08_retry_after_redirect_and_unreachable_fallback_bounded
 
   - id: OPS-09
-    priority: P1
+    priority: P0
     owner: api-compat
     component: usage
     source_url: https://github.com/metrum-ai/router/issues/94
@@ -173,14 +173,17 @@ cases:
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
     transport: mixed
-    disposition: blocked
+    disposition: native_supported
     assertions:
       - router restart on the same state and SQLite usage DB keeps rows and quota counters exactly once
       - a briefly locked usage DB still serves the request, settles quota once and never duplicates the row
     evidence_paths:
       - tests/api_compat/tests/test_ops_profile.py
+      - internal/router/usage_writer_test.go
+      - internal/router/usage_writer_e2e_test.go
+      - internal/router/usage_writer_postgres_test.go
     test_id: test_ops09_restart_and_locked_usage_db_do_not_duplicate_settlement
-    rationale: "Partial: restart and short SQLite lock are tested. Still blocked because usage rows are written synchronously before the handler returns (a held SQLite lock delayed a unary response ~53s and silently dropped the row) and write failures have no metric although observability docs tell operators to alert on them; Postgres, Redis and queue-saturation profiles need non-offline services."
+    rationale: "OPS-09 uses a bounded 10000-entry asynchronous writer (256 requests / 250 ms), SQLite WAL/busy timeout, queue/drop/latency metrics and bounded shutdown drain. Go TestUsageWriter tests saturation, shutdown, held-lock isolation and a localhost tool-result continuation with 16 concurrent streams; TestUsageWriterPostgres exercises a disposable local PostgreSQL database. Redis/queue profiles are deferred by the issue #271 Decisions."
 
   - id: OPS-10
     priority: P0

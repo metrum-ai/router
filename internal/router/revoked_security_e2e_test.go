@@ -126,6 +126,7 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 		if status != 403 || !strings.Contains(string(raw), "key-disabled") {
 			t.Fatalf("revoked status=%d", status)
 		}
+		flushUsageForTest(t, svc)
 		var usage usageRecord
 		if err := svc.usage.db.Where("request_id = ?", rid).First(&usage).Error; err != nil {
 			t.Fatal(err)
@@ -155,6 +156,7 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 	if status != 401 {
 		t.Fatalf("unknown=%d", status)
 	}
+	flushUsageForTest(t, svc)
 	var usage usageRecord
 	if err := svc.usage.db.Where("request_id = ?", rid).First(&usage).Error; err != nil {
 		t.Fatal(err)

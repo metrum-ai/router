@@ -688,10 +688,12 @@ func TestProductionDerivedLargeOpenAIChatToolPayloadSkipsShapeLimitedTarget(t *t
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -702,6 +704,7 @@ func TestProductionDerivedLargeOpenAIChatToolPayloadSkipsShapeLimitedTarget(t *t
 		t.Fatalf("unexpected request shape buckets: %#v", shape)
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -715,6 +718,7 @@ func TestProductionDerivedLargeOpenAIChatToolPayloadSkipsShapeLimitedTarget(t *t
 		t.Fatalf("safe target was not selected: %#v", candidates[1])
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -722,6 +726,7 @@ func TestProductionDerivedLargeOpenAIChatToolPayloadSkipsShapeLimitedTarget(t *t
 		t.Fatalf("missing request-shape filter reason: %#v", reasons)
 	}
 	var translation requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&translation).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -782,10 +787,12 @@ func TestProductionDerivedOpenCodeAIStreamingOptionsSkipIncompatibleTargets(t *t
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -796,6 +803,7 @@ func TestProductionDerivedOpenCodeAIStreamingOptionsSkipIncompatibleTargets(t *t
 		t.Fatalf("unexpected request shape buckets: %#v", shape)
 	}
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -813,6 +821,7 @@ func TestProductionDerivedOpenCodeAIStreamingOptionsSkipIncompatibleTargets(t *t
 		t.Fatalf("fallback selected candidate=%#v", selected)
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -865,10 +874,12 @@ func TestProductionDerivedHighGt1MBOpenAIChatToolPayloadRoutesToMiniMax(t *testi
 	}
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
 	var shape requestShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&shape).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -880,6 +891,7 @@ func TestProductionDerivedHighGt1MBOpenAIChatToolPayloadRoutesToMiniMax(t *testi
 	}
 
 	var candidates []decisionTargetCandidateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Order("candidate_index ASC").Find(&candidates).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -912,6 +924,7 @@ func TestProductionDerivedHighGt1MBOpenAIChatToolPayloadRoutesToMiniMax(t *testi
 		}
 	}
 	var reasons []decisionTargetFilterReasonRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&reasons).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -919,6 +932,7 @@ func TestProductionDerivedHighGt1MBOpenAIChatToolPayloadRoutesToMiniMax(t *testi
 		t.Fatalf("missing request-shape filter reason: %#v", reasons)
 	}
 	var translation requestTranslationShapeRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&translation).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -978,6 +992,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 			}
 
 			var usage usageRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.First(&usage).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -985,6 +1000,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 				t.Fatalf("unexpected usage error state: %#v", usage)
 			}
 			var requestErr requestErrorRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&requestErr).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -992,6 +1008,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 				t.Fatalf("unexpected request error: %#v", requestErr)
 			}
 			var upstreamDetails []requestUpstreamErrorDetailRecord
+			flushUsageForTest(t, svc)
 			if err := svc.usage.db.Where("request_id = ?", usage.RequestID).Find(&upstreamDetails).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -1037,6 +1054,7 @@ func TestProductionDerivedRouterTrafficShapeRejectionSkipsUpstream(t *testing.T)
 	assertTrafficShapeError(t, second.Body.Bytes(), "caller.request_start_per_sec")
 
 	var usage usageRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("status = ?", http.StatusTooManyRequests).First(&usage).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -1044,6 +1062,7 @@ func TestProductionDerivedRouterTrafficShapeRejectionSkipsUpstream(t *testing.T)
 		t.Fatalf("unexpected router-side traffic shape telemetry: %#v", usage)
 	}
 	var requestErr requestErrorRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&requestErr).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -1392,6 +1411,7 @@ func assertProductionDerivedArtifactsDoNotContain(t *testing.T, svc *Service, di
 		}
 	}
 	var estimates []requestTokenEstimateRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Find(&estimates).Error; err != nil {
 		t.Fatal(err)
 	}

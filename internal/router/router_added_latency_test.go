@@ -167,6 +167,7 @@ func findTrace(t *testing.T, events []traceLogRecord, name string) traceLogRecor
 func traceEventsContainDB(t *testing.T, svc *Service, requestID, name string) bool {
 	t.Helper()
 	var rows []requestTraceEventRecord
+	flushUsageForTest(t, svc)
 	if err := svc.usage.db.Where("request_id = ?", requestID).Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
