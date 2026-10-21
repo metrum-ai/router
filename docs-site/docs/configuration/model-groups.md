@@ -7,20 +7,33 @@ doc_type: reference
 
 Model groups are caller-facing routing contracts. A caller sends one deployment-defined model value, and the router chooses from that group's eligible targets according to the configured strategy and request shape.
 
-This example is a partial subset of `config.example.yaml`; the shipped sample config is the source of truth.
+This is the `default` group from `config.example.yaml`; the shipped sample config is the source of truth.
 
 ```yaml title="config.example.yaml"
 models:
   default:
     strategy: weighted
     targets:
-      - provider: baseten
-        model_ref: gpt-oss-120b
-        weight: 51
-      - provider: minimax
-        model_ref: m3
-        weight: 24
+      - provider: fireworks
+        model_ref: deepseek-v4p1-flash-1017
+        weight: 70
+      - provider: openai
+        model_ref: gpt-6-luna
+        weight: 30
+        bridges:
+          chat_to_responses:
+            enabled: true
+            text: true
+            tools: true
+            tool_choice: true
 ```
+
+This 70/30 mix applies when both targets are eligible for the request. The
+Fireworks target serves OpenAI Chat, including tools. Responses requests use
+Luna through its native Responses API. Both targets are configured for text
+input. Anthropic Messages text can use Luna; Anthropic tool calls need a
+separately validated Anthropic-capable route (see
+[issue #295](https://github.com/metrum-ai/router/issues/295)).
 
 ## Schema
 
