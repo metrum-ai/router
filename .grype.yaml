@@ -2,8 +2,10 @@
 # dependency (docs-site and internal/router/admindist/web), which has no
 # patched release. Owner: release/compliance. Expiry: when
 # https://github.com/metrum-ai/router/issues/253 is closed or braces publishes
-# a fixed release. Reviewed 2026-10-10; revisit on every docs/admin dependency
-# refresh.
+# a fixed release. Reviewed 2026-10-21: braces is still 3.0.3; Docusaurus
+# 3.10.2 requires both chokidar 3.6.0 and micromatch 4.0.8, which require
+# braces 3. Overriding those to incompatible major versions is not safe.
+# Revisit on every docs/admin dependency refresh (Refs #276).
 ignore:
   - vulnerability: GHSA-vfj7-8cjw-p6xm
     package:
@@ -19,8 +21,9 @@ ignore:
 # nightlies use a newer toolchain. Owner: release/compliance. Expiry: when a
 # stable typescript release ships a tsc built with go >= 1.26.9 (or >= 1.27.2)
 # and golang.org/x/text >= 0.41.0, or when
-# https://github.com/metrum-ai/router/issues/253 is closed. Reviewed 2026-10-10;
-# revisit on every admin dependency refresh.
+# https://github.com/metrum-ai/router/issues/253 is closed. Reviewed 2026-10-21:
+# stable is still 7.0.2; go version -m confirms go1.26.4 and x/text v0.38.0.
+# Revisit on every admin dependency refresh (Refs #276).
 # GO-2026-6603..6613 (fixed in go1.26.9/go1.27.2) gained High/Critical grype
 # severities on 2026-10-10; no typescript release, stable or nightly (go1.27.1),
 # is built with a fixed toolchain yet. They cover net/http, HTTP/2, multipart,
