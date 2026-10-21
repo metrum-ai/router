@@ -68,13 +68,26 @@ func TestCacheBillingLocalhostE2E(t *testing.T) {
 		}
 	}
 	var row usageRecord
-	if err := svc.usage.db.Where("cache = ?", "hit").First(&row).Error; err != nil {
-		t.Fatal(err)
+	// Usage persistence may be asynchronous (OPS-09); the HTTP response must not
+	// have to wait for the writer. Observe its eventual result without flushing
+	// or otherwise coupling this request-path proof to a synchronous writer.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		result := svc.usage.db.Where("cache = ?", "hit").Limit(1).Find(&row)
+		if result.Error != nil {
+			t.Fatal(result.Error)
+		}
+		if result.RowsAffected > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for cache-hit usage row")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if row.CostBilledUSD != 0 || row.CostListUSD <= 0 {
 		t.Fatalf("cache row list=%g billed=%g", row.CostListUSD, row.CostBilledUSD)
 	}
-	time.Sleep(time.Second) // reports use a second-resolution upper bound
 	req, _ := http.NewRequest("GET", "http://127.0.0.1:18155/admin/reports/api/overview?since=24h", nil)
 	req.SetBasicAuth("admin", "w5-password")
 	resp, err := client.Do(req)
