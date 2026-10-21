@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Shadow external-policy telemetry resolves catalog-backed recommendations and
-  preserves candidate zero in SQLite. Policy execution evidence identifies the
-  recommendation while routing decision evidence identifies the baseline served (#286).
-
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
