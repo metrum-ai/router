@@ -245,7 +245,19 @@ provider, model, skin, and router path pass direct and router-level smokes.
 
 `tool_choice` applies to every explicit choice, including `"auto"` and a JSON `null`: it removes both automatic and forced tool-choice evidence from the target. Omitted-choice client tools remain a distinct callable shape only when the key is absent and the target has separate passing omitted-choice capability evidence. Explicit null can stay on a same-skin request with explicit tool-choice eligibility, but Chat-to-Responses and Responses-to-Chat bridges reject it because they do not have a lossless null mapping. Use `forced_tool_choice` when only an explicit forced choice is unsupported.
 
-`supported_inbound_dialects` is the explicit opt-in for translated inbound API shapes. Use it when an active target's provider skin is not the same as the caller surface but the translated path has been validated. For the Anthropic endpoint split, plain `/anthropic/v1/messages` text can use a non-native OpenAI Chat or Responses target only when that target declares Anthropic inbound support, for example:
+`allowed_betas` is a per-target list (default `[]`, inheritable from provider
+model metadata). Only caller `anthropic-beta` values present in this list are
+forwarded. Known beta-gated fields without their matching permitted caller beta
+return 400 naming the field. See [API compatibility](api-compatibility.md#translation-eligibility-migration-and-beta-headers)
+for the gates and eligibility migration CLI.
+
+`thinking.type: adaptive` requires reasoning-capable target metadata; it does
+not become a manual token budget on native Anthropic paths.
+
+`supported_inbound_dialects` is the explicit opt-in for translated inbound API shapes. Use it when an active target's provider skin is not the same as the caller surface but the translated path has been validated. Both Anthropic/OpenAI translation directions also require `validation_status: passed`.
+For this release, `eligibility.implicit_openai_to_anthropic: true` preserves the
+legacy OpenAI-to-Anthropic exception with per-target startup warnings; the
+default flips to `false` next minor. For the Anthropic endpoint split, plain `/anthropic/v1/messages` text can use a non-native OpenAI Chat or Responses target only when that target declares Anthropic inbound support, for example:
 
 ```yaml
 request_shape_support:

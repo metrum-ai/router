@@ -481,6 +481,10 @@ func applyReasoningToAnthropic(body map[string]any, req *IRRequest, target Targe
 	if !targetCanSatisfyReasoning(target, "anthropic", req) {
 		return fmt.Errorf("target does not support requested reasoning")
 	}
+	if req.Reasoning.Kind == "adaptive" {
+		body["thinking"] = map[string]any{"type": "adaptive"}
+		return nil
+	}
 	budget := reasoningBudgetForTarget(req.Reasoning, target)
 	maxTokens := effectiveMaxTokens(req, 1024)
 	if target.Reasoning.BudgetMustBeLessThanMaxTokens && budget >= maxTokens {
