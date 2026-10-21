@@ -54,6 +54,16 @@ curl "{{origin}}/v1/models" \
 
 Use one of the model group IDs returned by `/v1/models` for `--model` or `ANTHROPIC_MODEL`. See [Available Models And Access](./available-models) if you need to check which groups your token can request.
 
+The text check below proves only Anthropic Messages text routing. On v4.1.0,
+Claude Code tool requests cannot use a group whose only eligible targets are
+Anthropic-to-OpenAI Chat or Responses text translations. In that setup, the
+tool request returns `502 no-eligible-target` before an upstream call. Use a
+separately validated Anthropic Messages tool-capable route for Claude Code
+file and shell tasks. OpenAI Chat or Codex Responses tool success does not
+validate the Claude Code tool path. See the [v4.1.0 known
+limitation](/docs/release-notes/#known-limitation-claude-code-tools-on-translated-targets)
+and [tracking issue #295](https://github.com/metrum-ai/router/issues/295).
+
 ```bash
 claude --bare --print --model "<allowed-model-group>" \
   "Reply with exactly: router claude ok"
@@ -118,6 +128,8 @@ docker run --rm --network host --cap-drop ALL --security-opt no-new-privileges \
 ```
 
 The requested model must be allowed by the caller token. Deployment admins decide which model groups each key may use.
+For v4.1.0, the group must also contain a separately validated Anthropic
+Messages tool target; Anthropic text translation alone will not run this smoke.
 
 ## Image Input
 
