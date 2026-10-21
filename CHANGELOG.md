@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Preserve same-dialect Chat text requests and responses through the native codec, including sampling controls, multiple choices, logprobs and refusals. Reject invalid Chat `max_tokens` (non-integer or below 1) with HTTP 400 before upstream on text and tools paths (Refs #271).
-
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
