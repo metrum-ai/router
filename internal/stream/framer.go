@@ -11,8 +11,10 @@ import (
 )
 
 var ErrLimit = errors.New("stream: size limit exceeded")
+var ErrFrameTooLarge = errors.New("stream: line exceeds 64 KiB")
 
 // Framer retains at most one event. Limit bounds total upstream bytes; zero is unlimited.
+// Individual SSE lines are always bounded to 64 KiB before reading.
 type Framer struct {
 	reader       *bufio.Reader
 	Limit, Bytes int64
@@ -22,13 +24,16 @@ func NewFramer(r io.Reader, limit int64) *Framer {
 	if limit > 0 {
 		r = io.LimitReader(r, limit+1)
 	}
-	return &Framer{reader: bufio.NewReader(r), Limit: limit}
+	return &Framer{reader: bufio.NewReaderSize(r, 64<<10), Limit: limit}
 }
 func (f *Framer) Next() (Event, error) {
 	var e Event
 	var data [][]byte
 	for {
-		line, err := f.reader.ReadBytes('\n')
+		line, err := f.reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			return Event{}, ErrFrameTooLarge
+		}
 		f.Bytes += int64(len(line))
 		if f.Limit > 0 && f.Bytes > f.Limit {
 			return Event{}, ErrLimit

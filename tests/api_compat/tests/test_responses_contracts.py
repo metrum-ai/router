@@ -291,8 +291,8 @@ def test_resp_07_native_only_state_rejects_on_stateless_bridge(capi, contracts_r
         "/v1/responses",
         {"model": "responses-to-chat", "previous_response_id": "resp_upstream_turn1", "input": "x"},
     )
-    assert status == 502, raw
-    assert _error_type(raw) == "no-eligible-target"
+    assert status == 400, raw
+    assert _error_type(raw) == "continuation_unsupported"
     assert FakeUpstream.calls == []
 
 

@@ -108,12 +108,8 @@ func encodeChatToResponsesBridge(model string, req *IRRequest, target Target, pr
 			body["text"] = map[string]any{"format": format}
 		}
 	}
-	if target.ForceStoreFalse {
-		body["store"] = false
-	}
-	if previousResponseID != "" {
-		body["previous_response_id"] = previousResponseID
-	}
+	// Chat callers supply full history; never depend on stored Responses state.
+	body["store"] = false
 	if err := applyReasoningToOpenAIResponses(body, req, target); err != nil {
 		return nil, err
 	}

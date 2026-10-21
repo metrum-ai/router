@@ -176,8 +176,8 @@ func TestEncodeChatToResponsesBridgePreservesJSONSchemaFormatType(t *testing.T) 
 	if _, ok := format["schema"].(map[string]any); !ok {
 		t.Fatalf("format schema missing: %#v", format)
 	}
-	if body["previous_response_id"] != "resp_prior" {
-		t.Fatalf("previous_response_id not injected: %#v", body)
+	if _, ok := body["previous_response_id"]; ok || body["store"] != false {
+		t.Fatalf("bridge must be stateless: %#v", body)
 	}
 }
 

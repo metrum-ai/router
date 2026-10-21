@@ -10749,7 +10749,11 @@ func TestResponsesToChatBridgeSkipsUnsupportedBeforeUpstream(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+testToken)
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
-			if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
+			wantStatus, wantCode := http.StatusBadGateway, "no-eligible-target"
+			if tc.name == "previous response" {
+				wantStatus, wantCode = http.StatusBadRequest, "continuation_unsupported"
+			}
+			if rr.Code != wantStatus || !strings.Contains(rr.Body.String(), `"type":"`+wantCode+`"`) {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 			assertDecisionFilterReason(t, svc, tc.want)
@@ -11245,7 +11249,7 @@ func TestChatInboundResponsesBridgeStatefulSessionInjectsPreviousResponseID(t *t
 	if _, ok := upstreamBodies[0]["previous_response_id"]; ok {
 		t.Fatalf("first request had previous_response_id: %#v", upstreamBodies[0])
 	}
-	if got := upstreamBodies[1]["previous_response_id"]; got != "resp_bridge_stateful_1" {
+	if got := upstreamBodies[1]["previous_response_id"]; got != nil || upstreamBodies[1]["store"] != false {
 		t.Fatalf("second previous_response_id=%#v body=%#v", got, upstreamBodies[1])
 	}
 }
@@ -11291,7 +11295,7 @@ func TestChatInboundResponsesBridgeSharedBackendContinuesAcrossServices(t *testi
 	if _, ok := upstreamBodies[0]["previous_response_id"]; ok {
 		t.Fatalf("first request had previous_response_id: %#v", upstreamBodies[0])
 	}
-	if got := upstreamBodies[1]["previous_response_id"]; got != "resp_shared_1" {
+	if got := upstreamBodies[1]["previous_response_id"]; got != nil || upstreamBodies[1]["store"] != false {
 		t.Fatalf("second previous_response_id=%#v body=%#v", got, upstreamBodies[1])
 	}
 	for _, key := range store.keys() {
@@ -11343,14 +11347,8 @@ func TestChatInboundResponsesBridgeSharedBackendStaleRetryPurgesMapping(t *testi
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if len(upstreamBodies) != 2 {
-		t.Fatalf("upstream calls=%d bodies=%#v", len(upstreamBodies), upstreamBodies)
-	}
-	if upstreamBodies[0]["previous_response_id"] != "resp_stale_shared" {
-		t.Fatalf("first upstream body=%#v", upstreamBodies[0])
-	}
-	if _, ok := upstreamBodies[1]["previous_response_id"]; ok {
-		t.Fatalf("stateless retry still had previous_response_id: %#v", upstreamBodies[1])
+	if len(upstreamBodies) != 1 || upstreamBodies[0]["previous_response_id"] != nil || upstreamBodies[0]["store"] != false {
+		t.Fatalf("expected one stateless request: %#v", upstreamBodies)
 	}
 	if entry, ok, err := store.Get(context.Background(), key); err != nil || !ok || entry.PreviousResponseID == "resp_stale_shared" {
 		t.Fatalf("shared session was not refreshed after stale purge: entry=%#v ok=%v err=%v", entry, ok, err)
@@ -11359,8 +11357,8 @@ func TestChatInboundResponsesBridgeSharedBackendStaleRetryPurgesMapping(t *testi
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("seq ASC").Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !traceEventsContain(traces, "bridge_session_delete") || !traceEventsContain(traces, "bridge_session_previous_response_stale_purged") || !traceEventsContain(traces, "bridge_session_stateless_retry") {
-		t.Fatalf("missing shared stale retry trace events: %#v", traces)
+	if traceEventsContain(traces, "bridge_session_stateless_retry") {
+		t.Fatal("stateless bridge must not retry stale state")
 	}
 }
 
@@ -11652,14 +11650,8 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if len(upstreamBodies) != 2 {
-		t.Fatalf("upstream calls=%d bodies=%#v", len(upstreamBodies), upstreamBodies)
-	}
-	if upstreamBodies[0]["previous_response_id"] != "resp_stale" {
-		t.Fatalf("first upstream body=%#v", upstreamBodies[0])
-	}
-	if _, ok := upstreamBodies[1]["previous_response_id"]; ok {
-		t.Fatalf("stateless retry still had previous_response_id: %#v", upstreamBodies[1])
+	if len(upstreamBodies) != 1 || upstreamBodies[0]["previous_response_id"] != nil || upstreamBodies[0]["store"] != false {
+		t.Fatalf("expected one stateless request: %#v", upstreamBodies)
 	}
 	if entry, ok, err := svc.bridgeSessions.memory.Get(context.Background(), key); err != nil || !ok || entry.PreviousResponseID == "resp_stale" {
 		t.Fatalf("session was not refreshed after stale purge: entry=%#v ok=%v", entry, ok)
@@ -11668,8 +11660,8 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("seq ASC").Find(&traces).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !traceEventsContain(traces, "bridge_session_previous_response_stale_purged") || !traceEventsContain(traces, "bridge_session_stateless_retry") {
-		t.Fatalf("missing stale retry trace events: %#v", traces)
+	if traceEventsContain(traces, "bridge_session_stateless_retry") {
+		t.Fatal("stateless bridge must not retry stale state")
 	}
 	var translations []requestTranslationShapeRecord
 	if err := svc.usage.db.Where("request_id = ?", rr.Header().Get("X-Request-Id")).Order("ts ASC, attempt_index ASC").Find(&translations).Error; err != nil {

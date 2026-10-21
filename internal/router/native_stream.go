@@ -63,7 +63,10 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			rc.rec.DownstreamMS = &duration
 		}
 	}()
-	reader := bufio.NewReader(body)
+	if maxBytes > 0 {
+		body = io.LimitReader(body, maxBytes+1)
+	}
+	reader := bufio.NewReaderSize(body, 64<<10)
 	var frame bytes.Buffer
 	for {
 		if err := ctx.Err(); err != nil {
@@ -71,7 +74,10 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			upErr.Committed = result.Committed
 			return result, upErr
 		}
-		line, err := reader.ReadBytes('\n')
+		line, err := reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds 64 KiB", Committed: result.Committed}
+		}
 		if len(line) > 0 {
 			result.Bytes += int64(len(line))
 			if maxBytes > 0 && result.Bytes > maxBytes {
@@ -93,6 +99,7 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if !result.Committed {
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("X-Accel-Buffering", "no")
 				w.Header().Set("Connection", "keep-alive")
 				w.WriteHeader(http.StatusOK)
 				result.Committed = true

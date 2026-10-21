@@ -513,11 +513,7 @@ def test_stream_09_duplicate_terminals_trailing_data_and_additive_fields(usage_l
 
 
 def test_stream_10_router_listener_is_http11_without_h2c(limits_router):
-    """STREAM-10 (partial): router serves SSE over HTTP/1.1 chunked; h2c is not spoken.
-
-    HTTP/2 and reverse-proxy buffering exist only at a deployment ingress, so this
-    test pins the router side of that contract and the row stays blocked.
-    """
+    """STREAM-10: HTTP/1.1 headers; make lrp-e2e covers nginx TLS HTTP/2 ingress."""
     base = limits_router["base"]
     Upstream = limits_router["upstream"]
     port = limits_router["port"]
@@ -548,6 +544,7 @@ def test_stream_10_router_listener_is_http11_without_h2c(limits_router):
     assert hdrs.get("transfer-encoding") == "chunked"
     assert "content-length" not in hdrs
     assert hdrs.get("cache-control") == "no-cache"
+    assert hdrs.get("x-accel-buffering") == "no"
     assert b"h1-ok" in raw
 
     # HTTP/2 prior-knowledge (h2c) preface is not upgraded to an HTTP/2 session.

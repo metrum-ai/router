@@ -2288,9 +2288,6 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		upReqBody, err = encodeToolPassthrough(outDialect, target.Model, req, target)
 	} else if chatResponsesBridge {
 		chatResponsesSession = s.chatToResponsesBridgeSession(ctx, rc, groupName, target, attemptIndex)
-		if chatResponsesSession.PreviousResponseID != "" {
-			rc.trace("bridge_session_previous_response_applied", "chat-to-responses previous_response_id applied", target, attemptIndex, 0, "", false, 0)
-		}
 		bridgeReq := *req
 		bridgeReq.Stream = bridgeStream
 		upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, chatResponsesSession.PreviousResponseID)
@@ -2329,8 +2326,6 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "endpoint_error", Message: err.Error(), Err: err}
 	}
 	s.recordTranslationShapeTelemetry(rc, req, target, provider, outDialect, endpoint, attemptIndex, upReqBody)
-	retriedStateless := false
-sendUpstream:
 	attemptCtx := ctx
 	var cancel context.CancelFunc
 	if attempt.AttemptTimeoutMS > 0 {
@@ -2431,26 +2426,6 @@ sendUpstream:
 		if cancel != nil {
 			cancel()
 		}
-		if chatResponsesBridgeStaleStateRetryAllowed(chatResponsesBridge, chatResponsesSession, httpResp.StatusCode, raw, retriedStateless) {
-			if err := s.deleteChatToResponsesBridgeSession(ctx, rc, chatResponsesSession, target, attemptIndex); err != nil {
-				rc.trace("bridge_session_previous_response_stale_purge_failed", "chat-to-responses previous_response_id purge failed after stale upstream state", target, attemptIndex, httpResp.StatusCode, "bridge_session_stale_state", false, durationMillis(time.Since(start)))
-			} else {
-				rc.trace("bridge_session_previous_response_stale_purged", "chat-to-responses previous_response_id purged after stale upstream state", target, attemptIndex, httpResp.StatusCode, "bridge_session_stale_state", false, durationMillis(time.Since(start)))
-			}
-			bridgeReq := *req
-			bridgeReq.Stream = bridgeStream
-			upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, "")
-			attempt.RequestBytes = int64(len(upReqBody))
-			if err != nil {
-				attempt.ErrorClass = "encode_error"
-				attempt.ErrorMessage = err.Error()
-				return nil, attempt, upstreamError{Class: "encode_error", Message: err.Error(), Err: err}
-			}
-			retriedStateless = true
-			s.recordTranslationShapeTelemetry(rc, req, target, provider, outDialect, endpoint, attemptIndex, upReqBody)
-			rc.trace("bridge_session_stateless_retry", "chat-to-responses retry without previous_response_id", target, attemptIndex, 0, "", false, 0)
-			goto sendUpstream
-		}
 		upErr := classifyUpstreamStatus(httpResp.StatusCode, raw)
 		upErr.RetryAfter = parseRetryAfterHeader(httpResp.Header.Get("Retry-After"), time.Now().UTC())
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
@@ -2465,6 +2440,15 @@ sendUpstream:
 		return nil, attempt, upErr
 	}
 	if nativeStream || bridgeStream {
+		if !contentTypeIsSSE(httpResp.Header) {
+			_ = httpResp.Body.Close()
+			if cancel != nil {
+				cancel()
+			}
+			attempt.ErrorClass = "upstream_protocol_error"
+			attempt.ErrorMessage = "upstream returned a non-SSE body for a stream request"
+			return nil, attempt, upstreamError{Class: attempt.ErrorClass, Message: attempt.ErrorMessage}
+		}
 		maxResponseBytes := int64(s.cfg.Server.Upstream.MaxResponseBytes)
 		if maxResponseBytes <= 0 {
 			maxResponseBytes = 32 << 20
@@ -3062,7 +3046,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 			provider := s.cfg.Provider[target.Provider]
 			outDialect := targetDialect(provider, target)
 			fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
-			if !target.ToolOnly &&
+			if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && !target.ToolOnly &&
 				targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 				targetSupportsInputModalities(target, requiredModalities) &&
 				targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
@@ -3079,7 +3063,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 		provider := s.cfg.Provider[target.Provider]
 		outDialect := targetDialect(provider, target)
 		fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
-		if targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
+		if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 			targetSupportsToolsForCallerDialect(target, callerDialect, outDialect) &&
 			targetSupportsInputModalities(target, requiredModalities) &&
 			targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
@@ -3098,6 +3082,9 @@ func isChatToResponsesDialectPair(callerDialect, outDialect string) bool {
 
 func routingRequirements(req *IRRequest, callerDialect string) []string {
 	requirements := requestInputModalities(req)
+	if rawValuePresent(req.Raw, "previous_response_id") {
+		requirements = append(requirements, "continuation")
+	}
 	if len(req.Tools) > 0 {
 		requirements = append(requirements, "tools", callerDialect+"_tool_passthrough")
 	}
@@ -3414,6 +3401,7 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	ttfb := time.Since(rc.start).Milliseconds()
@@ -3875,11 +3863,18 @@ func (s *Service) writeTrafficShapeError(w http.ResponseWriter, rc *requestConte
 
 func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *requestContext, err routingEligibilityError) {
 	code := "no-eligible-target"
+	status := http.StatusBadGateway
+	for _, requirement := range err.Requirements {
+		if requirement == "continuation" {
+			code = "continuation_unsupported"
+			status = http.StatusBadRequest
+		}
+	}
 	requestID := ""
 	if rc != nil {
 		requestID = rc.id
-		rc.trace("routing_no_eligible_target", strings.Join(err.Requirements, ","), Target{}, 0, http.StatusBadGateway, code, false, 0)
-		rc.rec.Status = http.StatusBadGateway
+		rc.trace("routing_no_eligible_target", strings.Join(err.Requirements, ","), Target{}, 0, status, code, false, 0)
+		rc.rec.Status = status
 		rc.rec.Error = &code
 		rc.rec.ErrorClass = code
 		rc.rec.ErrorMessage = fmt.Sprintf("no eligible upstream target for %s", err.Model)
@@ -3888,10 +3883,10 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 			rc.rec.ContractBucket = "failed"
 			rc.rec.ContractFailureReason = err.ContractReason
 		}
-		s.finish(rc, http.StatusBadGateway, &code)
+		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
-	writeJSON(w, http.StatusBadGateway, map[string]any{
+	writeJSON(w, status, map[string]any{
 		"error": map[string]any{
 			"type":    code,
 			"message": message,
@@ -4102,6 +4097,8 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 
 func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int) {
 	switch {
+	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large":
+		return err.Class, http.StatusBadGateway
 	case err.Canceled:
 		return "client-canceled", 499
 	case err.TimedOut || err.Class == "upstream_timeout":

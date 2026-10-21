@@ -121,7 +121,7 @@ cases:
       - continuation turns forward the exact previous_response_id, only the new input items, and the new instructions (no history replay)
       - function_call_output continuation keeps call_id distinct from the output item id
       - provider-owned stale previous_response_id error surfaces after exactly one upstream attempt (no stateless replay)
-      - previous_response_id on a stateless Responses-to-Chat bridge group rejects with 502 no-eligible-target and zero upstream calls
+      - previous_response_id on a stateless Responses-to-Chat bridge group rejects with 400 continuation_unsupported and zero upstream calls
     evidence_paths:
       - tests/api_compat/tests/test_responses_contracts.py
       - tests/api_compat/manifest/resp.yaml

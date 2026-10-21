@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Continuations exclude `force_store_false` targets; no eligible target returns
+  `400 continuation_unsupported`. Chat-to-Responses bridges always send `store:false`
+  and never `previous_response_id`, even with legacy session configuration.
+- Stream responses send `X-Accel-Buffering: no` and `Cache-Control: no-cache`.
+  Native streams reject non-SSE upstreams with `502 upstream_protocol_error`;
+  SSE lines exceeding 64 KiB fail with `upstream_frame_too_large` (502 before commit).
+  `make lrp-e2e` now includes optional Docker nginx HTTP/2 ingress coverage.
+
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
