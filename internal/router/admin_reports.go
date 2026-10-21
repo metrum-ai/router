@@ -638,6 +638,9 @@ type adminReportSummary struct {
 	ImageCostUSD                float64  `json:"imageCostUsd"`
 	OutputCostUSD               float64  `json:"outputCostUsd"`
 	TotalCostUSD                float64  `json:"totalCostUsd"`
+	CostListUSD                 float64  `json:"cost_list_usd"`
+	CostBilledUSD               float64  `json:"cost_billed_usd"`
+	CacheSavingsUSD             float64  `json:"cache_savings_usd"`
 	BaselineCostUSD             *float64 `json:"baselineCostUsd,omitempty"`
 	SavingsUSD                  *float64 `json:"savingsUsd,omitempty"`
 	SavingsPct                  *float64 `json:"savingsPct,omitempty"`
@@ -5241,6 +5244,9 @@ func adminSummaryFromAgg(a *agg) adminReportSummary {
 		OutputTokens:                a.OutputTokens,
 		CostUSD:                     a.TotalCostUSD,
 		TotalCostUSD:                a.TotalCostUSD,
+		CostListUSD:                 a.CostListUSD,
+		CostBilledUSD:               a.TotalCostUSD,
+		CacheSavingsUSD:             a.CostListUSD - a.TotalCostUSD,
 		ImageCostUSD:                a.ImageCostUSD,
 		Attempts:                    a.Attempts,
 		Fallbacks:                   a.Fallbacks,

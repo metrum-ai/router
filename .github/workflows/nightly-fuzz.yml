@@ -1,0 +1,35 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+name: Nightly Go fuzz
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fuzz:
+    runs-on: [self-hosted, Linux, X64, router]
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: ./internal/stream
+            target: FuzzSSEFrame
+          - package: ./internal/router
+            target: FuzzIRRoundTrip
+          - package: ./internal/router
+            target: FuzzConfigLoader
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test '${{ matrix.package }}' -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime=60s -parallel=2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: crashers-${{ matrix.target }}
+          path: internal/**/testdata/fuzz/${{ matrix.target }}/**
+          if-no-files-found: ignore

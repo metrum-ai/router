@@ -234,7 +234,9 @@ function render(report) {
     ["Requests", fmt.format(s.requests)],
     ["Errors", fmt.format(s.errors)],
     ["Total Tokens", fmt.format(s.totalTokens || s.tokens)],
-    ["Total cost", usd.format(s.totalCostUsd || s.costUsd)],
+    ["Billed cost", usd.format(s.cost_billed_usd ?? s.totalCostUsd ?? s.costUsd ?? 0)],
+    ["List cost", usd.format(s.cost_list_usd || 0)],
+    ["Cache savings", usd.format(s.cache_savings_usd || 0)],
     ["Avg latency", `${fmt.format(s.avgLatencyMs)} ms`],
     ["Fallbacks", fmt.format(s.fallbacks)]
   ].map(([label, value]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join("");
