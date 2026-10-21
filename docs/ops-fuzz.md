@@ -42,6 +42,13 @@ go test ./internal/router -run '^$' -fuzz '^FuzzConfigLoader$' -fuzztime=60s -pa
 Seeds are under each package's `testdata/fuzz`. Their first line is Go's required
 `go test fuzz v1` marker; copyright and SPDX notices are in the seed payload.
 The SSE target checks parser progress and accepted-event serialization identity.
+The parser recognizes CR, LF, and CRLF as line endings (including CRLF split
+across upstream reads); field values never retain a literal CR. Bare-CR event
+termination does not wait for another upstream byte. Lines remain bounded to
+64 KiB including one normalized line ending; both bytes of CRLF still count
+against the total stream budget. Serialization omits optional field spacing
+only when needed to keep accepted boundary-size lines within that cap.
+Regression seeds cover `data: x\r\r\n\n` (#327) and maximal data/event fields.
 The config target invokes the real loader (including defaults and validation)
 with bounded arbitrary YAML in an isolated temporary directory.
 
