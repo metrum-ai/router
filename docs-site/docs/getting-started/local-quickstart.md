@@ -88,8 +88,8 @@ curl -fsS -H "Authorization: Bearer $ROUTER_TOKEN" \
 
 ## Local coding-agent instance
 
-For a weighted local coding group (`big-coder` only: OpenAI `gpt-6-luna` 70 /
-Fireworks `accounts/fireworks/models/deepseek-v4p1-flash` 30) on
+For a weighted local coding group (`big-coder` only: Fireworks
+`accounts/fireworks/models/deepseek-v4p1-flash-1017` 70 / OpenAI `gpt-6-luna` 30) on
 `0.0.0.0:18081`, with upstream keys from repo `env.json` and a reusable
 caller token stored as `METRUM_API_KEY`:
 
@@ -116,6 +116,8 @@ so every response from this instance reports `"model": "big-coder"`, whichever
 upstream served it. To see which upstream served a request, use the admin
 reports or `request_usage.target_model` in `tmp/local-pi/usage.sqlite`. Restart
 the router after regenerating the config.
+The 70/30 weights apply to Chat requests eligible for both targets. Responses
+requests use Luna; the Fireworks target has no configured Responses bridge.
 
 To prove a tool-using continuation against a running instance, run
 `make local-router-pi-smoke`. It needs the `pi` CLI on `PATH`, uses a temporary
