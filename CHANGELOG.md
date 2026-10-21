@@ -9,12 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Separate list and billed usage costs: router response-cache hits bill at zero;
-  admin overview reports expose billed cost and cache savings (Refs #271).
-- Nightly 60-second SSE, canonical Chat IR and config-loader fuzz checks, with
-  checked-in seeds and failure artifacts. See `docs/ops-fuzz.md` for the reported
-  full-Chat IR identity limitation (Refs #271).
-
 - Decision 3.0 (d3) external routing policy reference (#278):
   `examples/external-routing-policy/d3_policy.py` asks a vLLM Semantic Router
   d3 System One server typed questions about the redacted request text and
