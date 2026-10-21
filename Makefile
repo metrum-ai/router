@@ -266,8 +266,11 @@ test-k8s-nvidia-llmd-compat:
 
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.
+# SQLite contract/serving fixtures can exceed Go's implicit 10m package deadline
+# on shared hosts. Keep every check, with an explicit overridable safety budget.
+GO_TEST_TIMEOUT ?= 30m
 test-fast: secret-contract capability-smoke-contracts
-	go test ./...
+	go test ./... -timeout=$(GO_TEST_TIMEOUT)
 	python3 scripts/outcome_calibrated_policy_test.py
 	"$${MAKE:-make}" d3-policy-test
 	python3 scripts/api_compat_bootstrap_test.py
