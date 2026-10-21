@@ -2297,6 +2297,8 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		bridgeReq := *req
 		bridgeReq.Stream = bridgeStream
 		upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, chatResponsesSession.PreviousResponseID)
+	} else if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
+		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect)
 	} else {
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, req, target)
 	}
@@ -2568,7 +2570,12 @@ sendUpstream:
 		attempt.ReasoningTokens = resp.Usage.ReasoningTokens
 		return resp, attempt, nil
 	}
-	resp, err := decodeUpstreamResponse(outDialect, raw, target.Model)
+	var resp *IRResponse
+	if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
+		resp, err = decodeAnthropicToolsBridge(outDialect, raw, target.Model, s.identifiers)
+	} else {
+		resp, err = decodeUpstreamResponse(outDialect, raw, target.Model)
+	}
 	if err != nil {
 		attempt.ErrorClass = "decode_error"
 		attempt.ErrorMessage = err.Error()
@@ -3145,6 +3152,9 @@ func targetSupportsCallerDialect(target Target, req *IRRequest, callerDialect, o
 }
 
 func targetSupportsToolsForCallerDialect(target Target, callerDialect, outDialect string) bool {
+	if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
+		return true
+	}
 	if isChatToResponsesBridge(callerDialect, outDialect, target) {
 		return targetSupportsTools(target, "openai-responses")
 	}

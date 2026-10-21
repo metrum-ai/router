@@ -2,6 +2,42 @@
 # SPDX-License-Identifier: Apache-2.0
 # Anthropic Messages catalog (issue #94 Wave 1).
 cases:
+  - id: ANTH-13
+    priority: P0
+    owner: api-compat
+    component: anthropic
+    source_url: https://github.com/metrum-ai/router/issues/295
+    reviewed_date: "2026-10-21"
+    inbound_route: /anthropic/v1/messages
+    outbound_dialect: openai-chat
+    transport: unary
+    disposition: supported_translation
+    assertions:
+      - explicitly validated Messages client tools translate to Chat tool calls
+      - matching tool_result continues to a final answer
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_translated_tools.py
+      - internal/router/anthropic_tools_bridge_test.go
+    test_id: test_anthropic_translated_tools_roundtrip
+
+  - id: ANTH-14
+    priority: P0
+    owner: api-compat
+    component: anthropic
+    source_url: https://github.com/metrum-ai/router/issues/295
+    reviewed_date: "2026-10-21"
+    inbound_route: /anthropic/v1/messages
+    outbound_dialect: openai-responses
+    transport: unary
+    disposition: supported_translation
+    assertions:
+      - explicitly validated Messages client tools translate to Responses function items
+      - matching tool_result uses function_call_output with the call ID
+    evidence_paths:
+      - tests/api_compat/tests/test_anthropic_translated_tools.py
+      - internal/router/anthropic_tools_bridge_test.go
+    test_id: test_anthropic_translated_tools_roundtrip
+
   - id: ANTH-01
     priority: P0
     owner: api-compat
