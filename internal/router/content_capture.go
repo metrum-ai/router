@@ -499,6 +499,15 @@ func (s *usageStore) DeleteContentCapturesByRequestID(requestID, actorCallerID, 
 	if s == nil || s.db == nil || strings.TrimSpace(requestID) == "" {
 		return 0, nil
 	}
+	// Maintenance deletion must not race captures already accepted by the
+	// asynchronous serving writer and resurrect them after acknowledging delete.
+	if s.writer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), s.writer.drainTimeout)
+		defer cancel()
+		if err := s.writer.flush(ctx); err != nil {
+			return 0, err
+		}
+	}
 	var rows []contentCaptureRecord
 	if err := s.db.Where("request_id = ?", requestID).Find(&rows).Error; err != nil {
 		return 0, err
@@ -523,6 +532,15 @@ func (s *usageStore) DeleteContentCapturesByRequestID(requestID, actorCallerID, 
 func (s *usageStore) ContentCaptureTargetDomainsByRequestID(requestID string) ([]string, error) {
 	if s == nil || s.db == nil || strings.TrimSpace(requestID) == "" {
 		return nil, nil
+	}
+	// Authorization must see capture-time domains for already queued captures,
+	// never fall back to a caller's current domain because telemetry is pending.
+	if s.writer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), s.writer.drainTimeout)
+		defer cancel()
+		if err := s.writer.flush(ctx); err != nil {
+			return nil, err
+		}
 	}
 	var captureCount int64
 	if err := s.db.Model(&contentCaptureRecord{}).Where("request_id = ?", requestID).Count(&captureCount).Error; err != nil {

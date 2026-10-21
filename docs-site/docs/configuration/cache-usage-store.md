@@ -59,7 +59,8 @@ server:
 telemetry; a single background SQL writer flushes up to 256 requests every 250 ms
 from a bounded 10,000-entry queue. Full queues drop new telemetry rather than
 block inference. Reports are eventually consistent, and crashes can lose queued
-entries. SQLite uses WAL and a 5-second busy timeout; PostgreSQL uses the same
+entries. Optional encrypted content-capture records/headers share this queue;
+capture reads can also lag responses, and encryption happens before enqueueing. SQLite uses WAL and a 5-second busy timeout; PostgreSQL uses the same
 writer. Redis/queue profiles are not shipped.
 
 `server.usage_db.drain_timeout_ms` defaults to `10000` (`0` selects the default;

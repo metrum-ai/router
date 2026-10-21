@@ -1075,7 +1075,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 	downstreamMS := int64(250)
 	upstreamTPS := 42.5
 	downstreamTPS := 39.25
-	svc.usage.Emit(logRecord{
+	emitUsageForTest(t, svc, logRecord{
 		TS:                                 time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
 		RequestID:                          "admin-report-synthetic-expensive",
 		CallerID:                           "alice",
@@ -1169,7 +1169,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		PolicyExecutions:      []policyExecutionLogRecord{{Seq: 1, Strategy: "script", PolicyKind: "typescript", Outcome: "selected", DurationMS: 12, EligibleTargetCount: 1, SelectedCandidateIndex: 0}},
 		CacheReasons:          []cacheReasonLogRecord{{Seq: 1, Status: "bypass", Reason: "cache-tool-request", CandidateIndex: 0, Provider: "mock", Model: "mock-model", Dialect: "openai"}},
 	})
-	svc.usage.Emit(logRecord{
+	emitUsageForTest(t, svc, logRecord{
 		TS:                time.Now().UTC().Add(-time.Minute).Format(time.RFC3339),
 		RequestID:         "admin-report-cross-domain",
 		CallerID:          "mallory",
@@ -2683,7 +2683,7 @@ func TestAdminDerivedBucketReportsUseSQLAggregates(t *testing.T) {
 			KeyState:          "ok",
 		},
 	} {
-		svc.usage.Emit(rec)
+		emitUsageForTest(t, svc, rec)
 	}
 
 	for _, tc := range []struct {
@@ -2744,7 +2744,7 @@ func TestAdminReportRequestCursorPagination(t *testing.T) {
 	defer svc.Close()
 	base := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	for i, id := range []string{"req-a", "req-b", "req-c", "req-d", "req-e"} {
-		svc.usage.Emit(logRecord{
+		emitUsageForTest(t, svc, logRecord{
 			TS:                base.Add(time.Duration(i/2) * time.Minute).Format(time.RFC3339),
 			RequestID:         id,
 			CallerID:          "alice",
@@ -2768,7 +2768,7 @@ func TestAdminReportRequestCursorPagination(t *testing.T) {
 			KeyState:          "ok",
 		})
 	}
-	svc.usage.Emit(logRecord{
+	emitUsageForTest(t, svc, logRecord{
 		TS:                base.Add(3 * time.Minute).Format(time.RFC3339),
 		RequestID:         "req-other-domain",
 		CallerID:          "mallory",
@@ -2829,7 +2829,7 @@ func TestAdminReportExpensiveRequestsAndTopNMetadata(t *testing.T) {
 	defer svc.Close()
 	base := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	for i, cost := range []float64{1, 4, 9} {
-		svc.usage.Emit(logRecord{
+		emitUsageForTest(t, svc, logRecord{
 			TS:                base.Add(time.Duration(i) * time.Second).Format(time.RFC3339),
 			RequestID:         fmt.Sprintf("cost-req-%d", i),
 			CallerID:          "alice",
@@ -2887,7 +2887,7 @@ func TestAdminMarkdownExportUsesBoundedRecentRows(t *testing.T) {
 	base := time.Date(2026, 6, 20, 12, 0, 0, 987654321, time.UTC)
 	costs := []float64{999, 2, 3}
 	for i, tokenID := range []string{"rtr_export_old", "rtr_export_mid", "rtr_export_new"} {
-		svc.usage.Emit(logRecord{
+		emitUsageForTest(t, svc, logRecord{
 			TS:                base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339Nano),
 			RequestID:         fmt.Sprintf("export-req-%d", i),
 			CallerID:          "export-user",
@@ -2966,7 +2966,7 @@ func TestAdminMarkdownSummaryExportUsesSQLTotalsAndTopN(t *testing.T) {
 			v := "upstream-failed"
 			errorText = &v
 		}
-		svc.usage.Emit(logRecord{
+		emitUsageForTest(t, svc, logRecord{
 			TS:                base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
 			RequestID:         fixture.id,
 			CallerID:          fixture.caller,
@@ -3057,7 +3057,7 @@ func TestAdminSavingsAggregateSQLTopNUsesFullWindowSummary(t *testing.T) {
 		{user: "bob@example.com", cost: 2},
 		{user: "carol@example.com", cost: 3},
 	} {
-		svc.usage.Emit(logRecord{
+		emitUsageForTest(t, svc, logRecord{
 			TS:                base.Add(time.Duration(i) * time.Second).Format(time.RFC3339),
 			RequestID:         fmt.Sprintf("savings-sql-%d", i),
 			CallerID:          rec.user,
@@ -3129,7 +3129,7 @@ func TestAdminOverviewSQLUsesFullWindowSummaryAndBoundedSample(t *testing.T) {
 		{id: "overview-new", caller: "alice", cost: 9, status: 200, cache: "bypass"},
 		{id: "overview-other", caller: "bob", cost: 100, status: 200, cache: "hit"},
 	} {
-		svc.usage.Emit(logRecord{
+		emitUsageForTest(t, svc, logRecord{
 			TS:                  base.Add(time.Duration(i) * time.Minute).Format(time.RFC3339),
 			RequestID:           rec.id,
 			CallerID:            rec.caller,
@@ -3393,7 +3393,7 @@ func TestAdminTroubleshootingReportsUseSafeDiagnosticTelemetry(t *testing.T) {
 		},
 	} {
 		rec.TS = base.Add(time.Duration(i) * time.Second).Format(time.RFC3339)
-		svc.usage.Emit(rec)
+		emitUsageForTest(t, svc, rec)
 	}
 
 	for _, path := range []string{
@@ -3445,7 +3445,7 @@ func TestAdminSecurityReportCursorPagination(t *testing.T) {
 	defer svc.Close()
 	base := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
 	for i, id := range []string{"sec-a", "sec-b", "sec-c"} {
-		svc.usage.EmitSecurityAccessEvent(securityAccessEvent{
+		emitSecurityForTest(t, svc, securityAccessEvent{
 			TS:                base.Add(time.Duration(i) * time.Second),
 			RequestID:         id,
 			EventType:         "api_auth_failed",
@@ -3521,7 +3521,7 @@ func TestAdminOverviewIncludesAuthorizedSecurityTrendCharts(t *testing.T) {
 			CallerEnvironment: "prod",
 		},
 	} {
-		svc.usage.EmitSecurityAccessEvent(event)
+		emitSecurityForTest(t, svc, event)
 	}
 
 	resp := adminReportJSON(t, svc, "/admin/reports/api/overview?from=2026-06-20T12:00:00Z&to=2026-06-20T14:00:00Z&limit=50")
@@ -3547,7 +3547,7 @@ func TestAdminOverviewIncludesAuthorizedSecurityTrendCharts(t *testing.T) {
 func TestAdminOverviewOmitsSecurityTrendChartsWithoutSecurityPermission(t *testing.T) {
 	svc := newAdminReportPaginationTestService(t, false)
 	defer svc.Close()
-	svc.usage.EmitSecurityAccessEvent(securityAccessEvent{
+	emitSecurityForTest(t, svc, securityAccessEvent{
 		TS:                time.Date(2026, 6, 20, 12, 15, 0, 0, time.UTC),
 		RequestID:         "sec-denied",
 		EventType:         "api_auth_failed",
@@ -3741,7 +3741,7 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	svc.usage.EmitSecurityAccessEvent(securityAccessEvent{
+	emitSecurityForTest(t, svc, securityAccessEvent{
 		TS:         time.Now().UTC().Add(-60 * 24 * time.Hour),
 		RequestID:  "req_old_security",
 		EventType:  "api_auth_failed",
@@ -3751,7 +3751,7 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		ReasonCode: "invalid-token",
 		IPAddress:  "198.51.100.1",
 	})
-	svc.usage.EmitSecurityAccessEvent(securityAccessEvent{
+	emitSecurityForTest(t, svc, securityAccessEvent{
 		TS:              time.Now().UTC().Add(-time.Minute),
 		RequestID:       "=req_formula",
 		EventType:       "+event_formula",
@@ -3809,6 +3809,7 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		t.Fatalf("ordinary security status=%d body=%s", ordinaryRR.Code, ordinaryRR.Body.String())
 	}
 
+	flushUsageForTest(t, svc)
 	report := httptest.NewRequest(http.MethodGet, "/admin/reports/api/security/events?since=24h&limit=50", nil)
 	report.SetBasicAuth("admin", "yell-yell-yum")
 	reportRR := httptest.NewRecorder()

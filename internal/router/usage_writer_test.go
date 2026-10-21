@@ -14,6 +14,18 @@ import (
 	"time"
 )
 
+func emitUsageForTest(t testing.TB, svc *Service, rec logRecord) {
+	t.Helper()
+	svc.usage.Emit(rec)
+	flushUsageForTest(t, svc)
+}
+
+func emitSecurityForTest(t testing.TB, svc *Service, event securityAccessEvent) {
+	t.Helper()
+	svc.usage.EmitSecurityAccessEvent(event)
+	flushUsageForTest(t, svc)
+}
+
 func flushUsageForTest(t testing.TB, svc *Service) {
 	t.Helper()
 	if svc.usage == nil || svc.usage.writer == nil {
@@ -132,6 +144,25 @@ func TestUsageWriterDrainTimeout(t *testing.T) {
 	w.record(logRecord{})
 	if w.dropped.Load() != 1 {
 		t.Fatal("closed writer must drop")
+	}
+}
+
+func TestUsageWriterCaptureDeletionDrainsAcceptedEntries(t *testing.T) {
+	s := asyncUsageTestStore(t)
+	s.writer.record(usageContentCaptureJob{record: &contentCaptureRecord{RequestID: "capture-drain", TS: formatUsageTime(time.Now().UTC()), Scope: contentCaptureScopeRequest, Encrypted: true}})
+	n, err := s.DeleteContentCapturesByRequestID("capture-drain", "operator", "public-test-token", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("deleted %d queued captures want 1", n)
+	}
+	var remaining int64
+	if err = s.db.Model(&contentCaptureRecord{}).Where("request_id = ?", "capture-drain").Count(&remaining).Error; err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Fatal("queued capture resurrected after deletion")
 	}
 }
 

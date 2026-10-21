@@ -43,6 +43,7 @@ func TestUsageWriterLocalhostToolContinuation(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Cache.Enabled = false
+	cfg.Server.ContentCapture = ContentCaptureConfig{Enabled: true, RetentionDays: 7, CaptureRequest: true, CaptureResponse: true, CaptureHeadersAllowlist: []string{"Content-Type"}, Encryption: testContentCaptureEncryption(t)}
 	cfg.Callers[0].Rate.Concurrent = 32
 	cfg.Provider["openai_chat"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["tool-e2e"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "openai_chat", Model: "tool-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}}}}
@@ -152,5 +153,12 @@ func TestUsageWriterLocalhostToolContinuation(t *testing.T) {
 	if got := usageCount(t, svc.usage); got != 18 {
 		t.Fatalf("rows=%d want 18", got)
 	}
-	t.Log("localhost :18109: tool created file, tool-result continuation succeeded, 16 concurrent streams completed; 18 usage rows persisted")
+	var captures int64
+	if err := svc.usage.db.Model(&contentCaptureRecord{}).Where("encrypted = ?", true).Count(&captures).Error; err != nil {
+		t.Fatal(err)
+	}
+	if captures < 18 {
+		t.Fatalf("encrypted captures=%d want at least 18", captures)
+	}
+	t.Log("localhost :18109: tool created file, tool-result continuation succeeded, 16 concurrent streams completed; 18 usage rows and encrypted content captures persisted")
 }

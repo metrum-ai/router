@@ -16,7 +16,9 @@ This document is for maintainers. The external solution brief should describe ca
 Metrum AI Router inference request logging never executes usage SQL. A single
 writer owns a bounded 10,000-entry in-memory channel and flushes batches at 256
 requests or every 250 ms, including diagnostic child rows in the transaction.
-Security telemetry and its retention purge use the same queue. Offline reporting
+Security telemetry, its retention purge, and optional encrypted content-capture
+records/headers use the same queue; content is encrypted before enqueueing.
+Content-capture reads can also lag the inference response. Offline reporting
 and migration stores are synchronous; they do not start background writers.
 
 A full channel drops the new entry without delaying the response. Persistence is
