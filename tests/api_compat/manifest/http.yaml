@@ -104,10 +104,11 @@ cases:
     inbound_route: /anthropic/v1/messages
     outbound_dialect: anthropic
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
       - caller anthropic-version (newer or omitted) never reaches upstream; router pins 2023-06-01
-      - caller anthropic-beta values (comma list and repeated header lines) are not forwarded; only provider-configured beta headers are sent
+      - caller anthropic-beta values are intersected with target allowed_betas (default empty); provider headers cannot bypass the allow-list
+      - context_management without its permitted beta returns 400 naming the field
       - x-api-key provider skin receives the provider key in x-api-key and no Authorization; caller token never forwarded
       - bearer provider skin receives Authorization Bearer plus anthropic-version, no x-api-key
     evidence_paths:
@@ -115,12 +116,8 @@ cases:
       - internal/router/service.go
     test_id: test_http_06_anthropic_version_and_beta_header_policy
     rationale: >-
-      Header policy above is implemented and tested (also test_http_06_provider_skin_bearer_vs_api_key),
-      but the row's "accepted fields are not stripped while their required headers disappear" clause is
-      not met: same-dialect Anthropic passthrough forwards unknown beta-gated body fields (for example
-      context_management) while dropping the caller's anthropic-beta header, so a real provider would
-      reject the request. Needs a product decision (forward an allow-list of caller betas, or strip
-      beta-gated fields with an explicit disposition) before this row can be certified.
+      Per-target allow-list and gated-field rejection are tested by
+      test_http_06_beta_allowlist_and_gated_field and the W3 localhost continuation smoke.
 
   - id: HTTP-07
     priority: P1

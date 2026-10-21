@@ -192,6 +192,17 @@ func newService(cfg *Config) (*Service, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if cfg.Eligibility.implicitEnabled() {
+		for group, model := range cfg.Models {
+			for _, target := range model.Targets {
+				dialects := target.RequestShapeSupport.SupportedInboundDialects
+				relies := len(dialects) == 0 || ((!strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed")) && (stringSliceContainsNormalizedDialect(dialects, "openai-chat") || stringSliceContainsNormalizedDialect(dialects, "openai-responses")))
+				if normalizeDialect(targetDialect(cfg.Provider[target.Provider], target)) == "anthropic" && relies {
+					log.Printf("WARNING: target %s/%s/%s relies on eligibility.implicit_openai_to_anthropic; default flips to false next minor", group, target.Provider, target.Model)
+				}
+			}
+		}
+	}
 	identifiers, err := newIdentifierTransform(cfg.Server.Identifiers)
 	if err != nil {
 		return nil, err
@@ -1245,6 +1256,17 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 		s.writeError(w, rc, http.StatusBadGateway, "routing-failed")
 		return
+	}
+	req.CallerBetas = strings.Join(r.Header.Values("Anthropic-Beta"), ",")
+	// Beta features can change provider semantics outside the normalized cache key.
+	if strings.TrimSpace(req.CallerBetas) != "" {
+		req.NoCache = true
+	}
+	for _, target := range append([]Target{dec.Target}, dec.Fallbacks...) {
+		if field := unpermittedBetaField(req, target); field != "" {
+			s.writeBetaFieldError(w, rc, field)
+			return
+		}
 	}
 	s.recordRoutingDecisionTelemetry(rc, dec)
 	rc.rec.ResolvedGroup = req.Model
@@ -2362,6 +2384,12 @@ sendUpstream:
 	httpReq.Header.Set("User-Agent", "metrum-ai-router/"+buildinfo.Version)
 	for name, value := range provider.Headers {
 		httpReq.Header.Set(name, value)
+	}
+	httpReq.Header.Del("Anthropic-Beta")
+	if outDialect == "anthropic" {
+		if beta := permittedBetas(req.CallerBetas, target.AllowedBetas); beta != "" {
+			httpReq.Header.Set("Anthropic-Beta", beta)
+		}
 	}
 	if provider.APIKey != "" {
 		switch upstreamAuthScheme(provider, outDialect) {

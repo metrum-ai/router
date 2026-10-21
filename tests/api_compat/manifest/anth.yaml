@@ -137,6 +137,7 @@ cases:
     disposition: native_supported
     assertions:
       - omitted thinking is not synthesized; disabled thinking is forwarded verbatim
+      - adaptive thinking counts as reasoning and excludes targets without reasoning support
       - manual thinking on a target without reasoning metadata (native or translated) returns 502 no-eligible-target with zero upstream calls
       - caller budget inside the target range is preserved; budgets outside are clamped to target min/max (documented normalization)
       - budget >= max_tokens on a budget_must_be_less_than_max_tokens target rejects before upstream (502 encode_error, zero calls)
@@ -162,7 +163,7 @@ cases:
       - per-tool eager_input_streaming true/false/omitted reaches the native upstream unchanged
       - input_json_delta fragments (escapes, unicode, truncated final JSON) are forwarded byte-exact and in order, never repaired
       - truncated tool input keeps stop_reason max_tokens so the executor can refuse it
-      - caller anthropic-beta headers are not forwarded; upstream headers are router-controlled (see HTTP-06)
+      - caller anthropic-beta headers are forwarded only when target allowed_betas permits them (see HTTP-06)
     evidence_paths:
       - tests/api_compat/tests/test_anthropic_capabilities.py
       - internal/router/service.go
