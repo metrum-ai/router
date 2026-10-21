@@ -21,6 +21,7 @@ def translated_tools_router(request, router, tmp_path):
     port = unused_port()
     target = {
         "provider": "translated", "model": "synthetic-tools",
+        "modalities": ["text", "image", "document"], "structured_output": True,
         "tool_support": {
             "anthropic_messages": ["client_tools", "tool_choice"],
             "openai_chat": ["tools", "tool_choice"],

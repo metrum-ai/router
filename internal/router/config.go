@@ -665,6 +665,8 @@ type IntelligentDecisionModel struct {
 
 type Target struct {
 	AllowedBetas              []string       `yaml:"allowed_betas" json:"allowedBetas,omitempty"`
+	Modalities                []string       `yaml:"modalities" json:"modalities,omitempty"`
+	StructuredOutput          bool           `yaml:"structured_output" json:"structuredOutput,omitempty"`
 	Provider                  string         `yaml:"provider" json:"provider"`
 	Model                     string         `yaml:"model" json:"model"`
 	ModelRef                  string         `yaml:"model_ref" json:"modelRef,omitempty"`
@@ -1525,6 +1527,11 @@ func (c *Config) Validate() error {
 			}
 			if err := validateReasoningSupport(resolved.Reasoning); err != nil {
 				return fmt.Errorf("model group %s target %s has invalid reasoning: %w", name, resolved.Model, err)
+			}
+			for _, modality := range resolved.Modalities {
+				if !stringSliceContains([]string{"text", "image", "document", "audio"}, modality) {
+					return fmt.Errorf("target modalities contains unsupported modality %q", modality)
+				}
 			}
 			if err := validateModalities(resolved.InputModalities); err != nil {
 				return fmt.Errorf("model group %s target %s has invalid input_modalities: %w", name, resolved.Model, err)

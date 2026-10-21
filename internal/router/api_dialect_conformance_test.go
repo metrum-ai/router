@@ -167,7 +167,7 @@ func TestNativeToolPassthroughPreservesExplicitNullToolChoice(t *testing.T) {
 	}
 }
 
-func TestResponsesConformancePassthroughStripsLocalHostedToolDescriptors(t *testing.T) {
+func TestResponsesConformancePassthroughRejectsHostedToolDescriptors(t *testing.T) {
 	req, err := decodeRequest("openai-responses", []byte(`{
 		"model":"default",
 		"input":"Use local tools only.",
@@ -184,31 +184,8 @@ func TestResponsesConformancePassthroughStripsLocalHostedToolDescriptors(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := encodeResponsesPassthrough("upstream-model", req, Target{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(raw, &body); err != nil {
-		t.Fatal(err)
-	}
-	assertConformanceValue(t, body, "tool_choice", "auto")
-	assertConformanceValue(t, body, "max_output_tokens", float64(37))
-	if _, ok := body["text"].(map[string]any); !ok {
-		t.Fatalf("missing text.format passthrough: %#v", body)
-	}
-	tools, ok := body["tools"].([]any)
-	if !ok {
-		t.Fatalf("tools missing: %#v", body)
-	}
-	if len(tools) != 2 {
-		t.Fatalf("tools len=%d, want function+namespace after stripping generic hosted descriptors: %#v", len(tools), tools)
-	}
-	for _, tool := range tools {
-		kind := tool.(map[string]any)["type"]
-		if kind == "web_search" || kind == "image_generation" {
-			t.Fatalf("generic hosted descriptor was forwarded: %#v", tools)
-		}
+	if _, err := encodeResponsesPassthrough("upstream-model", req, Target{}); err == nil {
+		t.Fatal("hosted tools must reject, never silently strip")
 	}
 }
 
