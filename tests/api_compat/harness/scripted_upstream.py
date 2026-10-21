@@ -270,6 +270,7 @@ class FakeUpstream(BaseHTTPRequestHandler):
             response = {
                 "id": "chatcmpl_synthetic",
                 "object": "chat.completion",
+                "model": body.get("model", "synthetic-chat"),
                 "choices": [
                     {
                         "index": 0,

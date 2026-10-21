@@ -166,7 +166,7 @@ cases:
     assertions:
       - when both max_tokens and max_completion_tokens are sent, max_tokens wins and exactly one cap field reaches upstream (text and tool paths)
       - default targets receive max_tokens; output_token_field max_completion_tokens targets receive only max_completion_tokens
-      - stop lists reach upstream unchanged; the text path normalizes a stop string to a one-element list, the tool passthrough keeps the string
+      - stop strings and lists reach upstream unchanged on text and tool paths
       - zero/negative/non-integer caps are tracked separately in CHAT-09-INVALID-CAPS
     evidence_paths:
       - tests/api_compat/tests/test_chat_controls.py
@@ -182,14 +182,14 @@ cases:
     reviewed_date: "2026-10-10"
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
-    capability_profile: same-dialect passthrough (tools or structured output present)
+    capability_profile: same-dialect passthrough (text and tools)
     transport: unary
     disposition: native_supported
     assertions:
       - on the same-dialect passthrough path temperature, top_p, seed, n, presence/frequency penalties, logprobs, top_logprobs, logit_bias and stop reach upstream unchanged
       - store and metadata are stripped on passthrough; force_store_false targets receive store false
       - n>1 responses keep independent choice indexes, tool calls, content and finish reasons
-      - the plain-text (non-passthrough) path is tracked separately in CHAT-10-TEXT-PATH
+      - plain-text passthrough is additionally tested in CHAT-10-TEXT-PATH
     evidence_paths:
       - tests/api_compat/tests/test_chat_controls.py
       - internal/router/dialect.go
@@ -204,16 +204,12 @@ cases:
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
-      - zero, negative and non-integer output caps have one documented disposition (router 400 before upstream, or provider-owned forwarding) that admission and forwarding agree on
-    rationale: >-
-      Needs a product decision. Today the router does not validate caps: on the plain-text path
-      max_tokens 0, -5 or "10" is silently dropped (admission reserves the default, upstream gets no
-      cap); on the tool/structured passthrough path the raw invalid value is forwarded upstream while
-      admission still reserves the default; 1.5 is truncated to 1 on both. Repro: POST
-      /v1/chat/completions {"model":"chat","messages":[...],"max_tokens":-5} -> 200 and upstream body
-      has no max_tokens; same body plus "tools":[...] -> upstream body has "max_tokens":-5.
+      - zero, negative, null, boolean and non-integer max_tokens return router 400 before upstream on text and tool paths
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+    test_id: test_chat_09_invalid_caps_rejected
 
   - id: CHAT-10-TEXT-PATH
     priority: P1
@@ -224,16 +220,10 @@ cases:
     inbound_route: /v1/chat/completions
     outbound_dialect: openai-chat
     transport: unary
-    disposition: blocked
+    disposition: native_supported
     assertions:
       - plain-text same-dialect Chat requests preserve or explicitly reject top_p, seed, n, penalties, logprobs, logit_bias and user
       - n>1 plain-text responses keep every choice, refusal and finish reason
-    rationale: >-
-      Real gap needing a product decision; the fix is not small. Plain-text same-dialect Chat
-      (no tools, no structured output) is re-encoded from the IR (encodeUpstreamForTarget openai-chat),
-      which forwards only model/messages/max-token/temperature/stop and silently drops top_p, seed, n,
-      presence/frequency_penalty, logprobs, top_logprobs, logit_bias and user; the IR response decode
-      also collapses n>1 to a single choice and turns a refusal (content null + refusal) into content "".
-      Repro: POST /v1/chat/completions {"model":"chat","messages":[...],"seed":7,"n":2,"top_p":0.9}
-      -> 200 and upstream body is {"model","messages","stream"} only. The tool/structured passthrough
-      path preserves all of these (CHAT-10).
+    evidence_paths:
+      - tests/api_compat/tests/test_chat_controls.py
+    test_id: test_chat_10_text_choices_and_refusal_preserved

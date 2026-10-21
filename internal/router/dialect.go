@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,14 @@ func decodeRequest(dialect string, body []byte, h http.Header) (*IRRequest, erro
 	// json.Unmarshal accepts top-level null into a nil map; treat it as invalid.
 	if raw == nil {
 		return nil, fmt.Errorf("request body must be a JSON object")
+	}
+	if dialect == "openai-chat" {
+		if value, present := raw["max_tokens"]; present {
+			n, ok := value.(float64)
+			if !ok || n < 1 || math.Trunc(n) != n {
+				return nil, fmt.Errorf("max_tokens must be an integer >= 1")
+			}
+		}
 	}
 	req := &IRRequest{Raw: raw}
 	if v, _ := raw["model"].(string); v != "" {

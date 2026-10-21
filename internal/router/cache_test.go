@@ -12,6 +12,24 @@ import (
 	"time"
 )
 
+func TestNativeChatComplexResponsesBypassIRCache(t *testing.T) {
+	for _, raw := range []string{
+		`{"choices":[{"index":0,"message":{"content":null,"refusal":"no"}}]}`,
+		`{"choices":[{"index":0,"message":{"content":"a"}},{"index":1,"message":{"content":"b"}}]}`,
+		`{"choices":[{"index":0,"message":{"content":"a"},"logprobs":{"content":[]}}]}`,
+	} {
+		resp, err := decodeChatPassthrough([]byte(raw), "model")
+		if err != nil {
+			t.Fatal(err)
+		}
+		cache := newCache(CacheConfig{Enabled: true, MaxBytes: 4096, DefaultTTL: time.Minute})
+		cache.Put("key", resp)
+		if _, hit := cache.Get("key"); hit {
+			t.Fatalf("lossy IR cache accepted native response: %s", raw)
+		}
+	}
+}
+
 func TestCacheStats(t *testing.T) {
 	cache := newCache(CacheConfig{Enabled: true, MaxBytes: 4096, DefaultTTL: time.Minute})
 	stats := cache.Stats()
