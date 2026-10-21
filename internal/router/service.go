@@ -1253,6 +1253,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	req.CallerBetas = strings.Join(r.Header.Values("Anthropic-Beta"), ",")
+	// Beta features can change provider semantics outside the normalized cache key.
+	if strings.TrimSpace(req.CallerBetas) != "" {
+		req.NoCache = true
+	}
 	for _, target := range append([]Target{dec.Target}, dec.Fallbacks...) {
 		if field := unpermittedBetaField(req, target); field != "" {
 			s.writeBetaFieldError(w, rc, field)
