@@ -1550,6 +1550,15 @@ The key used in `ROUTER_TOKEN` must allow the selected `ROUTER_MODEL`. The group
 
 Claude Code uses Anthropic-style requests. For this router, set `ANTHROPIC_BASE_URL` to the Anthropic-compatible namespace and set `ANTHROPIC_AUTH_TOKEN`. Do not set `ANTHROPIC_API_KEY` for router traffic; Claude Code uses that variable for direct Anthropic Console API keys via `X-Api-Key`, while this router expects a bearer token.
 
+**v4.1.0 tool limitation:** A validated Anthropic-to-OpenAI Chat or Responses
+route can serve Claude text, but cannot serve Claude client-tool requests. If
+the group has no Anthropic Messages tool-capable target, a tool request returns
+`502 no-eligible-target` before upstream. Use a separately validated Anthropic
+Messages route for Claude Code tool workflows; Chat and Codex Responses tool
+success do not establish Claude tool compatibility. See [issue
+#295](https://github.com/metrum-ai/router/issues/295) and the [v4.1.0 release
+notes](docs-site/docs/release-notes/index.md#known-limitation-claude-code-tools-on-translated-targets).
+
 ```bash
 unset ANTHROPIC_API_KEY
 export ANTHROPIC_BASE_URL="http://127.0.0.1:18081/anthropic"
