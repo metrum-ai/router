@@ -27,6 +27,9 @@ func detectReasoningIntent(dialect string, raw map[string]any) ReasoningIntent {
 		if typ == "disabled" {
 			return ReasoningIntent{Disabled: true, Source: "anthropic_thinking", Kind: "disabled"}
 		}
+		if typ == "adaptive" {
+			return ReasoningIntent{Requested: true, Source: "anthropic_thinking", Kind: "adaptive"}
+		}
 		if typ == "enabled" {
 			budget, _ := numberAsInt(thinking["budget_tokens"])
 			return ReasoningIntent{Requested: true, Source: "anthropic_thinking", Kind: "token_budget", BudgetTokens: budget}

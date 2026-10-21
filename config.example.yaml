@@ -1,3 +1,8 @@
+# Compatibility default for this release; flips to false next minor.
+# Use routerctl config patch-eligibility before disabling on existing deployments.
+eligibility:
+  implicit_openai_to_anthropic: true
+
 server:
   streaming:
     translator: incremental # Or synthesized for unary upstream + caller SSE.

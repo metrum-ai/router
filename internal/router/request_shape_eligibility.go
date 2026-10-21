@@ -143,7 +143,17 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 	if fit.MaxToolSchemaBytes > 0 && fit.ToolSchemaBytes > fit.MaxToolSchemaBytes {
 		fit.ToolSchemaFit = false
 	}
-	reason := requestShapeFilterReason(target, req, callerDialect, outDialect, estimate, fit)
+	reason := ""
+	if s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
+		if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) {
+			reason = "request-shape-dialect-unsupported"
+		} else if !strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed") {
+			reason = "request-shape-validation-unpassed"
+		}
+	}
+	if reason == "" {
+		reason = requestShapeFilterReason(target, req, callerDialect, outDialect, estimate, fit)
+	}
 	if reason != "" {
 		fit.EligibilityDecision = "skipped"
 		fit.EligibilityReason = reason

@@ -230,6 +230,44 @@ The same model group can therefore expose different effective upstream pools to 
 
 Anthropic-compatible inbound requests are filtered independently from OpenAI Chat and Responses requests. Native Anthropic Messages targets are eligible for `/anthropic/v1/messages` when their provider skin is configured as Anthropic-compatible and any requested tools, images, reasoning, and output-cap behavior have matching metadata.
 
+### Translation eligibility migration and beta headers
+
+Both Anthropic/OpenAI translation directions require explicit
+`request_shape_support.supported_inbound_dialects` opt-in and
+`validation_status: passed`. For this release only, the top-level
+`eligibility.implicit_openai_to_anthropic: true` default preserves implicit
+OpenAI-to-Anthropic routing. Each target relying on that exception emits a
+startup warning. **The default flips to false in the next minor release.** Set
+it to `false` now to enforce symmetric eligibility. Same-dialect routing does
+not require translation validation.
+
+Migrate existing file-owned configs with:
+
+```bash
+metrum-ai-routerctl config patch-eligibility --config config.yaml --dry-run --diff
+metrum-ai-routerctl config patch-eligibility --config config.yaml --output migrated.yaml
+metrum-ai-routerctl config validate --config migrated.yaml
+```
+
+The patcher retains unrelated YAML, emits explicit inbound dialects and `passed`
+for Anthropic targets, and disables the legacy exception. This is a migration of
+existing behavior, **not new validation evidence**: review and smoke-test each
+translated provider/model/skin before applying. Existing nonempty inbound lists
+remain restrictive. Dry-run never writes; `--diff` prints before/after lines.
+Keep output secure if the original config embeds credentials.
+
+Targets may declare `allowed_betas: [context-management-2025-06-27]` (also
+inheritable from provider model metadata); omission or `[]` allows none. The
+router forwards only the intersection of caller `anthropic-beta` values with
+that list, including comma-separated and repeated headers. Provider headers
+cannot bypass it. Known beta-gated body fields are not silently stripped:
+`context_management` requires `context-management-2025-06-27`, `container`
+requires `code-execution-2025-08-25`, and `mcp_servers` requires
+`mcp-client-2025-04-04`. Presence without the matching permitted caller beta
+returns HTTP 400 naming the field before upstream. Unknown provider fields
+retain native passthrough semantics. Anthropic `thinking.type: adaptive` is a
+reasoning request, just like `enabled`, and excludes non-reasoning targets.
+
 When a deployment intentionally lets plain Anthropic Messages text use a non-native OpenAI Chat or Responses target, that active target must explicitly opt in with `request_shape_support.supported_inbound_dialects` including `anthropic`. This metadata is a validation claim for that provider/model/skin and model group; it should be based on direct upstream and router-level smoke evidence for the translated text path.
 
 Tool-bearing Claude Code traffic has a stricter requirement. Use Anthropic Messages-compatible targets with `tool_support.anthropic_messages`, or a separately documented bridge that has passed the exact client-tool workflow. OpenAI Chat or Responses tool metadata does not make a target eligible for Anthropic client tools.
