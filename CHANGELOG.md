@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Recognized inactive caller keys retain safe caller and public-token attribution
+  in usage and security denials, making them visible only to authorized report
+  domains. Unknown tokens remain unattributed (#292).
+
 - The outcome-calibrated policy example now parses `[[outcome-calibration:…]]`
   and `[[outcome-live-demo:…]]` markers with a linear scan instead of
   backtracking regexes, so crafted request text cannot stall it (CodeQL
