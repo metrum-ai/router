@@ -288,6 +288,8 @@ def usage_rows(usage_db: Path, request_id: str, *, timeout_s: float = 5.0, expec
 
 
 def attempt_rows(usage_db: Path, request_id: str) -> list[sqlite3.Row]:
+    # Parent and diagnostic children commit atomically in the async writer.
+    usage_rows(usage_db, request_id)
     conn = sqlite3.connect(usage_db)
     conn.row_factory = sqlite3.Row
     try:
@@ -299,6 +301,7 @@ def attempt_rows(usage_db: Path, request_id: str) -> list[sqlite3.Row]:
 
 
 def estimate_row(usage_db: Path, request_id: str) -> sqlite3.Row | None:
+    usage_rows(usage_db, request_id)
     conn = sqlite3.connect(usage_db)
     conn.row_factory = sqlite3.Row
     try:
