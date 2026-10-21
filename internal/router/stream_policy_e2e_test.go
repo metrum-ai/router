@@ -83,7 +83,7 @@ func TestStreamPolicyE2E(t *testing.T) {
 	}
 	defer svc.Close()
 	var listener net.Listener
-	for port := 18174; port < 18900; port++ {
+	for port := 18174; port < 18500; port++ {
 		listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 		if err == nil {
 			break
@@ -161,11 +161,11 @@ func TestStreamPolicyE2E(t *testing.T) {
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skip("Docker unavailable: optional nginx h2 ingress")
 	}
-	dir, err := os.MkdirTemp("/workspace", "router-nginx-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	// Derive a distinct ingress port from the router listener held by this test,
+	// so concurrent jobs sharing a Docker network do not collide.
+	ingressPort := listener.Addr().(*net.TCPAddr).Port + 500
+	ingressURL := fmt.Sprintf("https://localhost:%d/v1/chat/completions", ingressPort)
 	run := func(args ...string) string {
 		t.Helper()
 		out, e := exec.Command(args[0], args[1:]...).CombinedOutput()
@@ -175,8 +175,7 @@ func TestStreamPolicyE2E(t *testing.T) {
 		return string(out)
 	}
 	run("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", dir+"/key.pem", "-out", dir+"/cert.pem", "-subj", "/CN=localhost", "-days", "1")
-	conf := `events {} http { server { listen 18774 ssl; http2 on; ssl_certificate /test/cert.pem; ssl_certificate_key /test/key.pem; location / { proxy_pass UPSTREAM; } } }`
-	conf = strings.ReplaceAll(conf, "UPSTREAM", server.URL)
+	conf := fmt.Sprintf(`events {} http { server { listen %d ssl; http2 on; ssl_certificate /test/cert.pem; ssl_certificate_key /test/key.pem; location / { proxy_pass %s; } } }`, ingressPort, server.URL)
 	if err := os.WriteFile(dir+"/nginx.conf", []byte(conf), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -187,15 +186,19 @@ func TestStreamPolicyE2E(t *testing.T) {
 			network = "container:" + hostname
 		}
 	}
-	run("docker", "run", "--rm", "-d", "--name", name, "--network", network, "-v", dir+":/test:ro", "nginx:1.28-alpine", "nginx", "-c", "/test/nginx.conf", "-g", "daemon off;")
+	run("docker", "create", "--rm", "--name", name, "--network", network, "nginx:1.28-alpine", "nginx", "-c", "/test/nginx.conf", "-g", "daemon off;")
 	defer exec.Command("docker", "rm", "-f", name).Run()
+	// Copy through the Docker API, without bind mounts: runner paths need not
+	// exist on the Docker daemon host (including remote mounted sockets).
+	run("docker", "cp", dir+"/.", name+":/test")
+	run("docker", "start", name)
 	time.Sleep(time.Second)
-	out := run("curl", "-ksS", "--http2", "--max-time", "10", "-D", "-", "-w", "\nHTTP_VERSION=%{http_version}\n", "https://localhost:18774/v1/chat/completions", "-H", "Authorization: Bearer "+testToken, "-H", "Content-Type: application/json", "-d", `{"model":"stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	out := run("curl", "-ksS", "--http2", "--max-time", "10", "-D", "-", "-w", "\nHTTP_VERSION=%{http_version}\n", ingressURL, "-H", "Authorization: Bearer "+testToken, "-H", "Content-Type: application/json", "-d", `{"model":"stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
 	if !strings.Contains(out, "HTTP_VERSION=2") || !strings.Contains(out, "[DONE]") || !strings.Contains(strings.ToLower(out), "cache-control: no-cache") {
 		t.Fatal(out)
 	}
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, ForceAttemptHTTP2: true}, Timeout: 5 * time.Second}
-	req, _ := http.NewRequest("POST", "https://localhost:18774/v1/chat/completions", strings.NewReader(`{"model":"stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req, _ := http.NewRequest("POST", ingressURL, strings.NewReader(`{"model":"stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	start := time.Now()
 	response, err := client.Do(req)
