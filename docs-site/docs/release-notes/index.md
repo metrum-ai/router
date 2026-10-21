@@ -14,6 +14,75 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.2.0 - 2026-10-21
+
+### Highlights
+
+- Claude Code client tools and continuations can translate to explicitly
+  validated OpenAI Chat and Responses targets, including streaming and
+  identifier rewriting. Unvalidated targets remain ineligible.
+- Native Chat preserves sampling controls, all choices, refusals and logprobs;
+  invalid `max_tokens` values return HTTP 400 before upstream.
+- Asynchronous batched usage writes keep database locks off inference paths;
+  SQLite and PostgreSQL are supported. Cache-hit billing is zero, with list
+  estimates retained separately.
+- Windows amd64/arm64 packages, d3 policy examples and measured evidence,
+  dependency/security refreshes and nightly Go fuzz checks.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Eligibility | `eligibility.implicit_openai_to_anthropic` defaults true now, false next minor; startup warnings and config patcher support migration |
+| Anthropic | `allowed_betas` defaults empty; adaptive thinking requires reasoning support; translated tools need distinct validation evidence |
+| Database | Usage schema v6 adds `cost_list_usd` / `cost_billed_usd`; follow migration runbook and back up first |
+| Telemetry | Eventually consistent queued writes; monitor queue depth, drops and SQL latency; default shutdown drain 10 seconds |
+| Local setup | Existing configs/callers preserved; fresh defaults use Flash 1017 70% / Luna 30% |
+| Security | Salted caller verifiers, secret-safe diagnostics, scoped revoked-key attribution and dependency refresh |
+
+### Caller Impact
+
+- Native Chat retains `seed`, `n>1`, refusal and logprobs instead of silently
+  normalizing them away. Present `max_tokens` must be an integer >= 1.
+- Ineligible stored continuations return `400 continuation_unsupported`.
+  Chat-to-Responses is stateless regardless of legacy session settings.
+- Non-SSE upstream stream replies return `502 upstream_protocol_error`;
+  SSE lines are bounded at 64 KiB and responses disable proxy buffering.
+- SSE translation recognizes bare CR, LF and CRLF, including endings split
+  across reads, without retaining or losing CR field values (#331, fixes #327).
+- W2b (#329): explicit `modalities` and `structured_output`
+  metadata gate media and Anthropic output formats; supported document/image
+  parts survive streaming/tool bridges and JSON schemas translate to OpenAI.
+  Unsupported media, translated unknown blocks and unsupported formats return
+  explicit 400s. Anthropic server search and Responses hosted tools reject
+  before upstream rather than silently dropping descriptors.
+
+### Upgrade
+
+Verify package checksums, back up config and usage data, and follow the
+[Upgrade Guide](/docs/release-notes/upgrade-guide), including schema migration,
+caller verifier conversion, eligibility review and beta allow-lists. Existing
+local configuration is not regenerated automatically. Windows packages use ZIP;
+Linux packages remain tarballs.
+
+### Validation
+
+For deployment validation, check `/readyz`, `/version` and authenticated
+`/v1/models`. Exercise client-tool continuations on each enabled API skin,
+native Chat sampling/multiple choices, media and output-format admission,
+streaming first-event delivery and usage persistence after a bounded wait.
+Monitor usage queue/drop metrics and verify inference remains responsive
+under a usage-database write lock. The exact build metadata in `/version`
+identifies the deployed artifact; CI and dated release evidence identify the
+source SHA tested, not this documentation's date.
+
+### Rollback
+
+Keep the previous package, reviewed config and restorable database backup.
+Older routers reject the new caller verifier field; use compatible verifiers
+when rolling back.
+Rehearse restore against the usage migration contract before the rollout.
+
 ## v4.1.0 - 2026-10-10
 
 ### Highlights
@@ -83,7 +152,7 @@ implementation and Claude Code continuation validation; track that work in
 [#295](https://github.com/metrum-ai/router/issues/295).
 
 **After v4.1.0:** the client-tool bridge is implemented for explicitly validated
-Chat and Responses targets. See [Claude Code translated client tools](../getting-started/claude-code-cli)
+Chat and Responses targets. See [Claude Code translated client tools](/docs/getting-started/claude-code-cli)
 for the distinct per-target capability requirements and continuation validation.
 The limitation above remains applicable to the v4.1.0 release binary.
 
