@@ -62,7 +62,14 @@ def test_parse_pi_events() -> None:
 def test_check_pi_result() -> None:
     token = "PROOF-abc"
     ok = smoke.parse_pi_events(pi_lines(token, GROUP))
+    assert smoke.check_pi_result(0, ok, token, token) == []
     assert smoke.check_pi_result(0, ok, token, token + "\n") == []
+    assert smoke.check_pi_result(0, ok, token, " \t" + token + "\n ") == []
+    assert smoke.proof_diagnostic(token, token + "\n")["comparison"] == "whitespace-only (accepted)"
+    for contents in ("Token: " + token, token + " explanation", '"' + token + '"'):
+        failures = smoke.check_pi_result(0, ok, token, contents)
+        assert failures and '"contains_token": true' in failures[0]
+        assert '"expected"' in failures[0] and '"actual_prefix"' in failures[0]
     split = smoke.parse_pi_events([json.dumps({"type": "message_end", "message": {"role": "assistant", "content": f"DONE\n{token}"}})])
     assert "final assistant text" not in "\n".join(smoke.check_pi_result(0, split, token, token)), split
     failures = smoke.check_pi_result(1, smoke.parse_pi_events(pi_lines(token, GROUP, done=False, tools=("write",))), token, "other")
@@ -174,7 +181,7 @@ def write_fake_pi(path: Path, db: Path, response_model: str) -> None:
             cfg = json.loads((agent / "models.json").read_text())
             assert cfg["providers"]["metrum"]["apiKey"].startswith("!cat ")
             assert str(pathlib.Path.home() / ".pi") not in str(agent)
-            token = re.search(r"exactly: (\\S+) ", sys.argv[-1]).group(1)
+            token = re.search(r"PROOF-[a-f0-9]+", sys.argv[-1]).group(0)
             pathlib.Path("proof.txt").write_text(token)
             with sqlite3.connect({str(db)!r}) as conn:
                 for i in range(3):
@@ -232,6 +239,9 @@ def test_main_requested_group_passes() -> None:
     assert summary["chat"]["stream"]["chunks"] == 3 and summary["chat"]["stream"]["models"] == [GROUP], summary
     assert summary["chat"]["unary"]["target_model"] == UPSTREAM, summary
     assert len(summary["pi"]["usage_rows"]) == 3, summary
+    assert summary["pi"]["steps"][0]["tool_calls"] == ["write"]
+    assert summary["pi"]["steps"][0]["upstream"]["target_model"] == UPSTREAM
+    assert summary["proof"]["comparison"] == "exact"
     assert "req_before_start" not in text, "rows before start must be ignored"
     assert "caller-secret" not in text, "caller token must never be printed"
 

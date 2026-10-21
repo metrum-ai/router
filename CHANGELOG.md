@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Local pi continuation smoke reports bounded escaped actual/expected proof
+  diagnostics and ordered per-step upstream attribution. Whitespace-only proof
+  variations are explicitly accepted; prefixes/suffixes, tool errors, and router
+  identity/status failures remain failures without retries (#309).
+
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):
