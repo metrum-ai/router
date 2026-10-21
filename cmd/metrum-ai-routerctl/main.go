@@ -56,9 +56,42 @@ func main() {
 
 func configCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl config <validate|diff|import|export|activate|rollback> [flags]")
+		die("usage: metrum-ai-routerctl config <validate|diff|patch-eligibility|import|export|activate|rollback> [flags]")
 	}
 	switch args[0] {
+	case "patch-eligibility":
+		fs := flag.NewFlagSet("config patch-eligibility", flag.ExitOnError)
+		path := fs.String("config", "", "router configuration path")
+		out := fs.String("output", "", "write patched config here (default stdout)")
+		dry := fs.Bool("dry-run", false, "preview without writing")
+		diff := fs.Bool("diff", false, "show before/after diff")
+		fs.Parse(args[1:])
+		cfg := loadConfig(*path)
+		before, err := os.ReadFile(*path)
+		if err != nil {
+			die("%v", err)
+		}
+		after, err := router.PatchEligibility(before, cfg)
+		if err != nil {
+			die("%v", err)
+		}
+		if *diff {
+			fmt.Println("--- original\n+++ patched")
+			fmt.Printf("@@ -1,%d +1,%d @@\n", len(strings.Split(strings.TrimSuffix(string(before), "\n"), "\n")), len(strings.Split(strings.TrimSuffix(string(after), "\n"), "\n")))
+			for _, line := range strings.Split(strings.TrimSuffix(string(before), "\n"), "\n") {
+				fmt.Println("-" + line)
+			}
+			for _, line := range strings.Split(strings.TrimSuffix(string(after), "\n"), "\n") {
+				fmt.Println("+" + line)
+			}
+		} else if *dry || *out == "" {
+			fmt.Print(string(after))
+		}
+		if !*dry && *out != "" {
+			if err := os.WriteFile(*out, after, 0600); err != nil {
+				die("%v", err)
+			}
+		}
 	case "validate":
 		fs := flag.NewFlagSet("config validate", flag.ExitOnError)
 		path := fs.String("config", "", "router configuration path")

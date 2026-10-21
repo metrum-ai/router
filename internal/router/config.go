@@ -23,7 +23,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type EligibilityConfig struct {
+	// Nil preserves legacy behavior until the next minor release.
+	ImplicitOpenAIToAnthropic *bool `yaml:"implicit_openai_to_anthropic"`
+}
+
+func (c EligibilityConfig) implicitEnabled() bool {
+	return c.ImplicitOpenAIToAnthropic == nil || *c.ImplicitOpenAIToAnthropic
+}
+
 type Config struct {
+	Eligibility        EligibilityConfig         `yaml:"eligibility"`
 	Server             ServerConfig              `yaml:"server"`
 	Users              []UserConfig              `yaml:"users"`
 	Projects           []ProjectConfig           `yaml:"projects"`
@@ -291,12 +301,13 @@ type ProviderConfig struct {
 }
 
 type ProviderModel struct {
-	Model                    string  `yaml:"model" json:"model"`
-	Dialect                  string  `yaml:"dialect" json:"dialect,omitempty"`
-	DisplayName              string  `yaml:"display_name" json:"displayName,omitempty"`
-	ContextTokens            int     `yaml:"context_tokens" json:"contextTokens,omitempty"`
-	InputPricePerMillionUSD  float64 `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
-	OutputPricePerMillionUSD float64 `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
+	AllowedBetas             []string `yaml:"allowed_betas" json:"allowedBetas,omitempty"`
+	Model                    string   `yaml:"model" json:"model"`
+	Dialect                  string   `yaml:"dialect" json:"dialect,omitempty"`
+	DisplayName              string   `yaml:"display_name" json:"displayName,omitempty"`
+	ContextTokens            int      `yaml:"context_tokens" json:"contextTokens,omitempty"`
+	InputPricePerMillionUSD  float64  `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
+	OutputPricePerMillionUSD float64  `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
 	// CachedInputPricePerMillionUSD is nil when unknown; a non-nil zero means known free cache reads.
 	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
 	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
@@ -653,6 +664,7 @@ type IntelligentDecisionModel struct {
 }
 
 type Target struct {
+	AllowedBetas              []string       `yaml:"allowed_betas" json:"allowedBetas,omitempty"`
 	Provider                  string         `yaml:"provider" json:"provider"`
 	Model                     string         `yaml:"model" json:"model"`
 	ModelRef                  string         `yaml:"model_ref" json:"modelRef,omitempty"`
@@ -2780,6 +2792,9 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	}
 	if activationEvidenceEmpty(target.ActivationEvidence) {
 		target.ActivationEvidence = catalog.ActivationEvidence
+	}
+	if target.AllowedBetas == nil {
+		target.AllowedBetas = catalog.AllowedBetas
 	}
 	target.Bridges = mergeBridgeSupport(catalog.Bridges, target.Bridges)
 	target.RequestShapeSupport = mergeRequestShapeSupport(catalog.RequestShapeSupport, target.RequestShapeSupport)
