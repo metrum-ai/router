@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Local pi setup preserves existing config and routerctl callers by default;
+  `--force` explicitly regenerates with collision-proof private backups.
+  Configure-pi only reads existing config and writes pi settings. Fresh local
+  configs enable domain-scoped security reporting (#308).
+
 ### Added
 
 - Decision 3.0 (d3) external routing policy reference (#278):

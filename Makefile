@@ -116,6 +116,7 @@ help:
 	@echo "  test-fast              pull-request checks without uv suites"
 	@echo "  test-full              same contract as test, for the merge queue"
 	@echo "  local-router           create/start weighted local coding router (0.0.0.0:18081)"
+	@echo "  local-router-setup     create local config; preserve existing edits (regenerate with --force)"
 	@echo "  local-router-pi-smoke  pi write/read tool continuation against a running local router"
 	@echo "  proof-routing          same-group different-upstream dynamic_score proof"
 	@echo "  harbor-adapter-test    offline Harbor agent-adapter contracts (AGENT-01..06)"
@@ -148,7 +149,7 @@ local-router: local-router-setup
 local-router-once: local-router-setup
 	"$(LOCAL_ROUTER_OUT)/start.sh"
 
-local-router-configure-pi: local-router-setup
+local-router-configure-pi:
 	uv run --with pyyaml python scripts/local_pi_instance.py \
 		--out-dir "$(LOCAL_ROUTER_OUT)" \
 		--listen "$(LOCAL_ROUTER_LISTEN)" \

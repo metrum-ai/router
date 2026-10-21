@@ -341,7 +341,32 @@ def test_missing_upstream_keys_fails() -> None:
             raise AssertionError(result.stderr)
 
 
+def test_preserves_config_and_unique_backups() -> None:
+    import local_pi_instance as instance
+    import yaml
+    with tempfile.TemporaryDirectory() as temp:
+        out = Path(temp)
+        config = out / "config.yaml"
+        config.write_text("# manual edit\nserver:\n  listen: 127.0.0.1:18998\ncallers:\n- id: routerctl-caller\n")
+        (out / "METRUM_API_KEY").write_text("synthetic-test-key")
+        before = config.read_bytes()
+        home = out / "home"
+        env = {**os.environ, "HOME": str(home)}
+        for extra in ([], ["--configure-pi"]):
+            subprocess.run(uv_python(str(SCRIPT), "--out-dir", str(out), *extra), env=env, check=True, capture_output=True)
+            assert config.read_bytes() == before
+        instance.write_yaml(config, {"first": True})
+        instance.write_yaml(config, {"second": True})
+        backups = list(out.glob("config.yaml.bak.*"))
+        assert len(backups) == 2
+        assert before in [p.read_bytes() for p in backups]
+        assert any(yaml.safe_load(p.read_text()) == {"first": True} for p in backups)
+        makefile = (ROOT / "Makefile").read_text()
+        assert "local-router-configure-pi:\n" in makefile
+
+
 if __name__ == "__main__":
+    test_preserves_config_and_unique_backups()
     test_creates_weighted_instance_and_reuses_metrum_key()
     test_public_token_id_never_includes_secret_with_underscores()
     test_d3_group_caller_uses_token_hash()
