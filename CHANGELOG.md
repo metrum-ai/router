@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Redact literal credentials, including truncated YAML scalar quotes, from
+  routerctl raw configuration parse errors (#284).
+
 - The outcome-calibrated policy example now parses `[[outcome-calibration:…]]`
   and `[[outcome-live-demo:…]]` markers with a linear scan instead of
   backtracking regexes, so crafted request text cannot stall it (CodeQL

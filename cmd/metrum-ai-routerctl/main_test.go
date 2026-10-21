@@ -368,6 +368,22 @@ func TestRouterctlNeverPrintsSecretValues(t *testing.T) {
 	if err != nil || !strings.Contains(stdout, "https://redacted@upstream.example.test/v1") {
 		t.Fatalf("providers upsert: %v stdout=%s stderr=%s", err, stdout, stderr)
 	}
+	// A literal credential can also be quoted (truncated) by a YAML type
+	// error elsewhere in the document. Raw read commands must scrub it too.
+	literal := "FAKE-SECRET-literal-routerctl-credential"
+	bad := "providers:\n  mock:\n    api_key_env: " + literal + "\nserver:\n  admin_reports:\n    max_rows: " + literal + "\n"
+	if err := os.WriteFile(configPath, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err = run("providers", "list", "--config", configPath)
+	if err == nil || !strings.Contains(stderr, "parse config") || !strings.Contains(stderr, "[redacted:") {
+		t.Fatalf("literal type error: %v stdout=%s stderr=%s", err, stdout, stderr)
+	}
+	for _, text := range []string{stdout, stderr} {
+		if strings.Contains(text, literal) || strings.Contains(text, literal[:7]) {
+			t.Fatalf("literal type error leaked credential bytes: %s", text)
+		}
+	}
 }
 
 func TestRedactURLCredentialsAndEnvReference(t *testing.T) {
