@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -114,16 +116,58 @@ def assert_deterministic_gate() -> None:
     require("merge_group:" in text and "workflow_dispatch:" in text, "deterministic gate triggers are incomplete")
     require("schedule:" not in text, "deterministic gate must not be scheduled")
     parsed = jobs(text)
-    body = parsed["test-full"]
-    for marker in ("run: make test", "make docs-qa", "scripts/ci_lrp_synthetic.sh", "anchore/sbom-action"):
-        matched = [step for step in steps(body) if marker in step]
-        require(matched, f"deterministic gate missing {marker}")
-        for step in matched:
-            require(
-                "github.event_name != 'pull_request'" in step,
-                f"{marker} can run on pull_request",
-            )
-    require("Defer full gate until merge queue" in body, "pull requests have no explicit full-gate deferral")
+    coverage = {
+        "go": ("gofmt -l .", "go vet ./...", "go test ./..."),
+        "contracts": ("make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test",
+                      "scripts/outcome_calibrated_policy_test.py", "scripts/api_compat_bootstrap_test.py",
+                      "scripts/ci_topology_test.py", "scripts/harbor_promotion_test.py",
+                      "make docs-qa", "tsc --noEmit"),
+        "api-compat": ("make api-compat-mock",),
+        "harbor": ("make harbor-local",),
+        "d3": ("make d3-policy-e2e",),
+        "lrp": ("scripts/ci_lrp_synthetic.sh",),
+        "sbom": ("anchore/sbom-action", "anchore/scan-action", "actions/upload-artifact"),
+    }
+    require(set(parsed) == set(coverage) | {"changes", "test-full"}, "gate lane inventory drifted")
+    for lane, markers in coverage.items():
+        for marker in markers:
+            matched = [step for step in steps(parsed[lane]) if marker in step]
+            require(len(matched) == 1, f"{lane} must run {marker} exactly once")
+            require("github.event_name != 'pull_request'" in matched[0], f"{marker} can run on pull_request")
+    for lane, body in parsed.items():
+        require("Defer full gate until merge queue" in body, f"{lane} has no PR deferral")
+    aggregate = parsed["test-full"]
+    require("name: test-full" in aggregate and "always()" in aggregate, "required aggregate context drifted")
+    for lane in coverage.keys() | {"changes"}:
+        require(f"- {lane}" in aggregate, f"aggregate does not need {lane}")
+    require("name == 'lrp' and job['result'] == 'skipped'" in aggregate,
+            "only a filtered LRP skip may pass the aggregate")
+    shell = aggregate.split("        run: |-\n", 1)[1]
+    shell = "\n".join(line[10:] for line in shell.splitlines())
+    for lane in coverage.keys() | {"changes"}:
+        for result in ("success", "skipped", "failure", "cancelled"):
+            results = {name: {"result": "success"} for name in coverage.keys() | {"changes"}}
+            results[lane]["result"] = result
+            check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True,
+                                   env={**os.environ, "RESULTS": json.dumps(results)}, check=False)
+            expected = 0 if result == "success" or (lane == "lrp" and result == "skipped") else 1
+            require(check.returncode == expected, f"aggregate accepted {lane}={result}: {check.stderr}")
+    versions = {"actions/checkout": "v7.0.1", "actions/setup-go": "v7.0.0",
+                "actions/setup-python": "v7.0.0", "actions/setup-node": "v7.1.0",
+                "astral-sh/setup-uv": "v10.3.0", "dorny/paths-filter": "v4.0.3"}
+    for line in text.splitlines():
+        for action, version in versions.items():
+            if f"uses: {action}@" in line:
+                require(re.search(rf"@\w{{40}} # {re.escape(version)}$", line) is not None,
+                        f"missing pinned version comment: {line}")
+    require(text.count("runs-on: [self-hosted, Linux, X64, router]") == len(parsed),
+            "gate runner labels must retain repository flow style")
+    require("needs.changes.outputs.lrp" in parsed["lrp"], "LRP is not path-filtered")
+    changes = parsed["changes"]
+    for marker in ("dorny/paths-filter@", "github.event.merge_group.base_sha",
+                   "github.event.merge_group.head_sha", "workflow_dispatch",
+                   "services/learned-routing-policy/**", "scripts/ci_lrp_synthetic.sh"):
+        require(marker in changes, f"LRP filter missing {marker}")
 
 
 def assert_provider_workflows() -> None:
