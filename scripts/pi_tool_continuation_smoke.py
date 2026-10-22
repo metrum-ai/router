@@ -57,8 +57,12 @@ def build_prompt(token: str) -> str:
     return (
         f"Use the write tool to create {PROOF_FILE}. Its entire contents must be the following token, "
         f"without quotes, prefix, suffix, punctuation, or Markdown: {token}\n"
-        f"Then use the read tool to read {PROOF_FILE} back. "
-        "Finally reply with DONE followed by the file contents."
+        "This is a strictly sequential tool-continuation test. In your first turn call ONLY the write tool. "
+        "Do not call read in the same turn or in parallel with write. "
+        "Wait for the successful write tool result before making any other tool call. "
+        f"In your next turn call ONLY the read tool to read {PROOF_FILE} back, then wait for its result. "
+        "After the successful read, reply with exactly DONE, one space, and the file contents. "
+        "Do not combine tool calls or anticipate a tool result."
     )
 
 
