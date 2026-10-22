@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -138,7 +140,28 @@ def assert_deterministic_gate() -> None:
     require("name: test-full" in aggregate and "always()" in aggregate, "required aggregate context drifted")
     for lane in coverage.keys() | {"changes"}:
         require(f"- {lane}" in aggregate, f"aggregate does not need {lane}")
-    require("'failure', 'cancelled'" in aggregate, "aggregate must reject failed/cancelled dependencies")
+    require("name == 'lrp' and job['result'] == 'skipped'" in aggregate,
+            "only a filtered LRP skip may pass the aggregate")
+    shell = aggregate.split("        run: |-\n", 1)[1]
+    shell = "\n".join(line[10:] for line in shell.splitlines())
+    for lane in coverage.keys() | {"changes"}:
+        for result in ("success", "skipped", "failure", "cancelled"):
+            results = {name: {"result": "success"} for name in coverage.keys() | {"changes"}}
+            results[lane]["result"] = result
+            check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True,
+                                   env={**os.environ, "RESULTS": json.dumps(results)}, check=False)
+            expected = 0 if result == "success" or (lane == "lrp" and result == "skipped") else 1
+            require(check.returncode == expected, f"aggregate accepted {lane}={result}: {check.stderr}")
+    versions = {"actions/checkout": "v7.0.1", "actions/setup-go": "v7.0.0",
+                "actions/setup-python": "v7.0.0", "actions/setup-node": "v7.1.0",
+                "astral-sh/setup-uv": "v10.3.0", "dorny/paths-filter": "v4.0.3"}
+    for line in text.splitlines():
+        for action, version in versions.items():
+            if f"uses: {action}@" in line:
+                require(re.search(rf"@\w{{40}} # {re.escape(version)}$", line) is not None,
+                        f"missing pinned version comment: {line}")
+    require(text.count("runs-on: [self-hosted, Linux, X64, router]") == len(parsed),
+            "gate runner labels must retain repository flow style")
     require("needs.changes.outputs.lrp" in parsed["lrp"], "LRP is not path-filtered")
     changes = parsed["changes"]
     for marker in ("dorny/paths-filter@", "github.event.merge_group.base_sha",
