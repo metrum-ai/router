@@ -96,7 +96,17 @@ Clients use `http://127.0.0.1:18081/v1` and
 The local instance sets `server.responses.model_identity: requested_group`, so
 responses report `model: big-coder`. The serving upstream is in
 `request_usage.target_model` and the admin reports. `make local-router-pi-smoke`
-runs a pi write/read tool continuation against it.
+runs a pi write/read tool continuation against it. The smoke explicitly asks
+for one tool per assistant turn: write, wait for its successful result, then
+read and wait again. This avoids a model/client parallel write/read race (read
+before file creation), not a router failure. Tool errors remain fatal even if
+the model later recovers; there are no retries or recovered-race exemptions.
+The smoke retains proof-content, model-identity, and usage-status checks and
+reports the serving upstream for each step. It does not inject
+`parallel_tool_calls`: native Chat and Responses forwarding preserve that
+field, but Chat-to-Responses routing requires the target's explicit parallel-tool
+bridge capability. Prompt sequencing keeps the normal client request and
+weighted target eligibility unchanged.
 The 70/30 weights apply when both targets are eligible for Chat requests;
 Responses requests use Luna because the Fireworks target is configured for Chat.
 The reference `default` group in `config.example.yaml` uses the same two

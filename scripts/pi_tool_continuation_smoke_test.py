@@ -117,6 +117,21 @@ def test_check_usage_rows() -> None:
     assert smoke.check_usage_rows(rows[:1], GROUP, 1) == []
 
 
+def test_prompt_requires_separate_tool_turns() -> None:
+    token = "PROOF-abcdef"
+    prompt = smoke.build_prompt(token)
+    assert token in prompt
+    assert "first turn call ONLY the write tool" in prompt
+    assert "Wait for the successful write tool result" in prompt
+    assert "next turn call ONLY the read tool" in prompt
+    assert "then wait for its result" in prompt
+    assert "one space" in prompt
+    # Sequencing is a prompt constraint, never an exemption for tool errors.
+    parsed = smoke.parse_pi_events(pi_lines(token, GROUP))
+    parsed["tool_errors"] = ["read"]
+    assert "pi tool errors" in " ".join(smoke.check_pi_result(0, parsed, token, token))
+
+
 def test_build_pi_models_uses_token_file_not_token() -> None:
     cfg = smoke.build_pi_models("http://127.0.0.1:1/v1/", Path("/tmp/tok"), GROUP)
     provider = cfg["providers"]["metrum"]
@@ -263,6 +278,7 @@ if __name__ == "__main__":
     test_parse_sse_models()
     test_model_matches()
     test_check_usage_rows()
+    test_prompt_requires_separate_tool_turns()
     test_build_pi_models_uses_token_file_not_token()
     test_main_requested_group_passes()
     test_main_upstream_passes_and_mismatch_fails()

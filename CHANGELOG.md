@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pi smoke explicitly sequences write/result/read/result to avoid model-side parallel tool races while retaining strict tool-error and router checks (#333).
+
 - SSE translation recognizes bare CR, LF and CRLF consistently, including
   line endings split across reads; tool streams no longer retain literal CR
   field values or lose them on serialization (#331, fixes #327).
