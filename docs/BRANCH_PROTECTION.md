@@ -5,11 +5,11 @@ Protect `main` so the normal contributor path cannot merge with failing required
 Required status checks (names must match workflow job names):
 
 - `test-and-vet` from `.github/workflows/go.yml`. Pull requests run `make test-fast`. On a merge group this job reports success immediately because `test-full` includes the same fast checks.
-- `test-full` from `.github/workflows/deterministic-gate.yml`. On a pull request this job only records that the full suite is deferred. On a merge group, or a manual dispatch, it runs `make test`, docs QA, admin typecheck, the credential-free LRP sandbox, and the source SBOM/vulnerability scan once.
+- `test-full` from `.github/workflows/deterministic-gate.yml`. On a pull request this job only records that the full suite is deferred. On a merge group, or a manual dispatch, parallel `go`, `contracts`, `api-compat`, `harbor`, `d3`, `lrp`, and `sbom` lanes run the existing `make test` sub-targets, docs QA, admin typecheck, the credential-free LRP sandbox, and the source SBOM/vulnerability scan. The final `test-full` aggregate rejects any failed or cancelled dependency. LRP runs only for changes to `services/learned-routing-policy/**` or `scripts/ci_lrp_synthetic.sh` (base-to-head comparison on the merge group); manual dispatch always runs it. A path-filtered LRP skip is accepted.
 - `signed-off-commits` from `.github/workflows/dco.yml`.
 - `validate` from `.github/workflows/source-headers.yml`.
 
-Do not require path-filtered jobs such as `docs-qa`, `admin-typecheck`, `synthetic`, or `live-unit`. GitHub treats a skipped required check as pending and blocks the pull request. Those jobs still run when their paths match, and the merge-group `test-full` job covers docs, admin typecheck, and LRP for the combined SHA.
+Do not require path-filtered jobs such as `docs-qa`, `admin-typecheck`, `synthetic`, or `live-unit`. GitHub treats a skipped required check as pending and blocks the pull request. Those jobs still run when their paths match, and the merge-group `test-full` aggregate covers docs and admin typecheck for the combined SHA, plus LRP when its paths change.
 
 Provider-backed workflows are not required checks. Dispatch them manually in the protected `evaluation` environment:
 

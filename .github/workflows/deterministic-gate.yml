@@ -20,84 +20,290 @@ permissions:
   contents: read
 
 jobs:
-  test-full:
-    runs-on: [self-hosted, Linux, X64, router]
+  changes:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 5
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      name: Filter LRP changes (paths-filter v4.0.3)
+      id: filter
+      if: github.event_name == 'merge_group'
+      with:
+        base: ${{ github.event.merge_group.base_sha }}
+        ref: ${{ github.event.merge_group.head_sha }}
+        filters: |
+          lrp:
+            - 'services/learned-routing-policy/**'
+            - 'scripts/ci_lrp_synthetic.sh'
+    outputs:
+      lrp: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.lrp == 'true' }}
+  go:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
     timeout-minutes: 90
     steps:
-      - name: Defer full gate until merge queue
-        if: github.event_name == 'pull_request'
-        run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: github.event_name != 'pull_request'
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: github.event_name != 'pull_request'
-        with:
-          go-version-file: go.mod
-          cache: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        if: github.event_name != 'pull_request'
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: github.event_name != 'pull_request'
-        with:
-          node-version: "22"
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: github.event_name != 'pull_request'
-      - name: Install Python test deps
-        if: github.event_name != 'pull_request'
-        run: python3 -m pip install --user 'PyYAML==6.0.3'
-      - name: gofmt
-        if: github.event_name != 'pull_request'
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "gofmt needed on:" >&2
-            echo "$unformatted" >&2
-            exit 1
-          fi
-      - name: go vet
-        if: github.event_name != 'pull_request'
-        run: go vet ./...
-      - name: Run full offline suite
-        if: github.event_name != 'pull_request'
-        run: make test
-      - name: Docs QA
-        if: github.event_name != 'pull_request'
-        run: make docs-qa
-      - name: Admin typecheck
-        if: github.event_name != 'pull_request'
-        run: |
-          npm ci --prefix internal/router/admindist/web --no-audit --no-fund
-          npx --prefix internal/router/admindist/web tsc --noEmit -p internal/router/admindist/web
-      - name: Learned routing policy sandbox
-        if: github.event_name != 'pull_request'
-        run: bash scripts/ci_lrp_synthetic.sh
-        env:
-          OMP_NUM_THREADS: "1"
-          OPENBLAS_NUM_THREADS: "1"
-          MKL_NUM_THREADS: "1"
-      - name: Generate CycloneDX source SBOM
-        if: github.event_name != 'pull_request'
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c
-        with:
-          path: .
-          format: cyclonedx-json
-          output-file: source-sbom.cdx.json
-          upload-artifact: true
-      - name: Scan source dependencies
-        if: github.event_name != 'pull_request'
-        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e
-        with:
-          path: .
-          fail-build: true
-          severity-cutoff: high
-          output-format: sarif
-          output-file: source-vulnerabilities.sarif
-      - name: Upload vulnerability report
-        if: always() && github.event_name != 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: source-vulnerabilities-sarif
-          path: source-vulnerabilities.sarif
-          if-no-files-found: error
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      if: github.event_name != 'pull_request'
+      with:
+        go-version-file: go.mod
+        cache: false
+    - name: gofmt
+      if: github.event_name != 'pull_request'
+      run: |
+        unformatted="$(gofmt -l .)"
+        if [ -n "$unformatted" ]; then
+          echo "gofmt needed on:" >&2
+          echo "$unformatted" >&2
+          exit 1
+        fi
+    - name: go vet
+      if: github.event_name != 'pull_request'
+      run: go vet ./...
+    - name: Go tests
+      if: github.event_name != 'pull_request'
+      run: go test ./...
+  contracts:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 90
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      if: github.event_name != 'pull_request'
+      with:
+        go-version-file: go.mod
+        cache: false
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      if: github.event_name != 'pull_request'
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+      if: github.event_name != 'pull_request'
+      with:
+        node-version: '22'
+    - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      if: github.event_name != 'pull_request'
+    - name: Install Python test deps
+      if: github.event_name != 'pull_request'
+      run: python3 -m pip install --user 'PyYAML==6.0.3'
+    - name: Fast and secret contracts
+      if: github.event_name != 'pull_request'
+      run: |-
+        make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test
+        python3 scripts/outcome_calibrated_policy_test.py
+        python3 scripts/api_compat_bootstrap_test.py
+        python3 scripts/ci_topology_test.py
+        python3 scripts/harbor_promotion_test.py
+    - name: Docs QA
+      if: github.event_name != 'pull_request'
+      run: make docs-qa
+    - name: Admin typecheck
+      if: github.event_name != 'pull_request'
+      run: |
+        npm ci --prefix internal/router/admindist/web --no-audit --no-fund
+        npx --prefix internal/router/admindist/web tsc --noEmit -p internal/router/admindist/web
+  api-compat:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 90
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      if: github.event_name != 'pull_request'
+      with:
+        go-version-file: go.mod
+        cache: false
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      if: github.event_name != 'pull_request'
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      if: github.event_name != 'pull_request'
+    - name: Offline API compatibility
+      if: github.event_name != 'pull_request'
+      run: make api-compat-mock
+  harbor:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 90
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      if: github.event_name != 'pull_request'
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      if: github.event_name != 'pull_request'
+    - name: Offline Harbor
+      if: github.event_name != 'pull_request'
+      run: make harbor-local
+  d3:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 90
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      if: github.event_name != 'pull_request'
+      with:
+        go-version-file: go.mod
+        cache: false
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      if: github.event_name != 'pull_request'
+      with:
+        python-version: '3.12'
+    - name: D3 policy end-to-end
+      if: github.event_name != 'pull_request'
+      run: make d3-policy-e2e
+  lrp:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 90
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      if: github.event_name != 'pull_request'
+      with:
+        go-version-file: go.mod
+        cache: false
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+      if: github.event_name != 'pull_request'
+      with:
+        python-version: '3.12'
+    - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      if: github.event_name != 'pull_request'
+    - name: Learned routing policy sandbox
+      if: github.event_name != 'pull_request'
+      run: bash scripts/ci_lrp_synthetic.sh
+      env:
+        OMP_NUM_THREADS: '1'
+        OPENBLAS_NUM_THREADS: '1'
+        MKL_NUM_THREADS: '1'
+    needs:
+    - changes
+    if: github.event_name == 'pull_request' || needs.changes.outputs.lrp == 'true'
+  sbom:
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 90
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      if: github.event_name != 'pull_request'
+    - name: Generate CycloneDX source SBOM
+      if: github.event_name != 'pull_request'
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c
+      with:
+        path: .
+        format: cyclonedx-json
+        output-file: source-sbom.cdx.json
+        upload-artifact: true
+    - name: Scan source dependencies
+      if: github.event_name != 'pull_request'
+      uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e
+      with:
+        path: .
+        fail-build: true
+        severity-cutoff: high
+        output-format: sarif
+        output-file: source-vulnerabilities.sarif
+    - name: Upload vulnerability report
+      if: always() && github.event_name != 'pull_request'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: source-vulnerabilities-sarif
+        path: source-vulnerabilities.sarif
+        if-no-files-found: error
+  test-full:
+    name: test-full
+    runs-on:
+    - self-hosted
+    - Linux
+    - X64
+    - router
+    timeout-minutes: 5
+    needs:
+    - changes
+    - go
+    - contracts
+    - api-compat
+    - harbor
+    - d3
+    - lrp
+    - sbom
+    if: ${{ always() }}
+    steps:
+    - name: Defer full gate until merge queue
+      if: github.event_name == 'pull_request'
+      run: echo "Full offline suite, docs, LRP, and SBOM run once on the merge-group SHA."
+    - name: Require successful deterministic lanes
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |-
+        python3 - <<'PY'
+        import json, os, sys
+        results = json.loads(os.environ['RESULTS'])
+        bad = {name: job['result'] for name, job in results.items()
+               if job['result'] in ('failure', 'cancelled')}
+        print(json.dumps({name: job['result'] for name, job in results.items()}, sort_keys=True))
+        if bad:
+            print(f'Gate dependencies failed: {bad}', file=sys.stderr)
+            sys.exit(1)
+        PY
