@@ -1,0 +1,45 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Runner cache trim
+on:
+  schedule:
+    - cron: '23 4 * * 0'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trim:
+    strategy:
+      fail-fast: false
+      matrix:
+        label: ${{ fromJSON(vars.RUNNER_CACHE_TRIM_LABELS || '["router"]') }}
+    runs-on: [self-hosted, Linux, X64, router, '${{ matrix.label }}']
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Trim local Go build cache above 4 GiB
+        shell: bash
+        run: |
+          cache_dir="$(go env GOCACHE)"
+          mkdir -p "$cache_dir"
+          echo "Module and npm caches (report only):"
+          for dir in "$(go env GOMODCACHE)" "$HOME/.npm"; do
+            if [ -d "$dir" ]; then
+              du -sh "$dir"
+            else
+              printf '%s (absent)\n' "$dir"
+            fi
+          done
+          echo "Before:"
+          du -sh "$cache_dir"
+          size_kib="$(du -sk "$cache_dir" | cut -f1)"
+          if (( size_kib > 4 * 1024 * 1024 )); then
+            go clean -cache
+          fi
+          echo "After:"
+          du -sh "$cache_dir"
