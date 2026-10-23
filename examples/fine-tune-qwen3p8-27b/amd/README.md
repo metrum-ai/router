@@ -3,8 +3,12 @@
 
 # AMD Instinct preparation (#359)
 
-Metrum AI's AMD path is **not hardware validated**. These are offline preparation
-utilities, not a successful training recipe. No AMD quality/parity claim is made.
+Metrum AI's MI325X path has passed actual official-ROCm base/template/native and
+PEFT two-step/fixed-full-training checks. Pinned Axolotl dependency resolution
+failed, and unmerged ROCm vLLM LoRA loading failed; the documented alternatives
+are PEFT training and safe BF16-merged serving. Merged smoke/load checks pass;
+frozen held-out quality/parity and API-verified teardown are still pending.
+See `docs/evidence/finetune-amd/2026-10-23/` from the repository root.
 Only #358's governed router export may supply training/validation/held-out rows;
 never run the direct-download preparation instructions for this track.
 

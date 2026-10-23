@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import unittest
 import json
+import hashlib
 from pathlib import Path
 import yaml
 import plan
@@ -49,6 +50,17 @@ class AMDTests(unittest.TestCase):
         self.assertIn('--network=none', args)
         self.assertEqual(args[-1], '/data/smoke.yaml')
         self.assertNotIn('-p', args)
+
+    def test_current_qualification_envelope_is_not_training_parent(self):
+        root = Path(__file__).resolve().parents[3]/'docs/evidence/finetune-amd/2026-10-23'
+        raw = (root/'qualification-preregistration.json').read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), 'e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea')
+        reg = json.loads(raw)
+        frozen = json.loads((root/'shared-freeze.json').read_text())
+        self.assertEqual(reg['datasets']['dataset_hash'], frozen['dataset']['dataset_hash'])
+        self.assertEqual(reg['datasets']['export_sha256'], frozen['dataset']['export_sha256'])
+        self.assertEqual(reg['promotion_rules']['tool_exact_gain_pp_at_least'], 10)
+        self.assertEqual(reg['promotion_rules']['required_tool_denominator'], 200)
 
     def test_final_freeze_keeps_endpoints_and_failure_denominators(self):
         root = Path(__file__).resolve().parents[3]

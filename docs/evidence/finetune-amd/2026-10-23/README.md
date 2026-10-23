@@ -1,15 +1,20 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# AMD Instinct #359 — preparation only
+# AMD Instinct #359 — training/merged serving measured, qualification pending
 
-No GPU was requested, no AMD training or serving took place, and spend is $0.
+Initial preparation was free. The orchestrator subsequently created an MI325X
+for a bounded paid run. Actual training and merged serving measurements are now
+recorded in `training-summary.json`, `peft-train-runtime.json`,
+`load-amd-merged.json` and `bootstrap-amendment.md`. Qualification is running and
+API-verified destruction is pending; live spend/status is in the track report.
 The #358 seven-row mixed engineering export and trusted replay backend have
 been delivered and the engineering export passes the unmodified FT consumer;
 the useful-sized final cohort is now delivered and verified (1186/221/300).
 The exact shared protocol/data/recipe freeze is `shared-freeze.json`; AMD has
 ACKed the NVIDIA shared plan and is requesting orchestrator-owned hardware.
-No student training/qualification has run yet. Direct-download training data is not an acceptable fallback.
+The fixed one-epoch training has completed; frozen qualification is now running.
+No positive quality or promotion result is claimed. Direct-download training data is not an acceptable fallback.
 
 ## Teacher decision cleared; shared freeze coordination
 
@@ -40,8 +45,9 @@ NVIDIA results from a different cohort cannot establish AMD parity.
 Prepared tooling: `examples/fine-tune-qwen3p8-27b/amd/` contains an official-image
 command planner, provisional BF16 Axolotl renderer, first-boot security script,
 hardware/image evidence capture, tests and router/tunnel evaluation runbook.
-Commands are planning aids, not automatic permission to train. Hardware-specific
-install/dependency lock, successful two-step smoke and real replay remain pending.
+Commands are planning aids, not automatic permission to train. Hardware/runtime inventory, documented Axolotl bootstrap failure, permitted PEFT
+alternative and actual two-step/full training evidence are recorded below and
+in the bootstrap amendment. Frozen held-out replay/gates remain pending.
 
 ## Research (2026-10-23, unauthenticated registry / GitHub API)
 
@@ -71,13 +77,13 @@ install/dependency lock, successful two-step smoke and real replay remain pendin
 
 | Measurement | AMD | NVIDIA parity |
 | --- | --- | --- |
-| Driver/ROCm/gfx942/image/package inventory | Not run | Not comparable |
-| Axolotl two-step smoke / alternative reason | Not run | Not comparable |
-| Export hash / native tool-supervision parity | Await #358 | Must match |
-| Train tok/s, wall time, peak memory, cost | Not measured | Not comparable |
-| Serve concurrency 1/8/32 and cost/M output tokens | Not measured | Not comparable |
+| Driver/ROCm/gfx942/image/package inventory | Captured; official image BF16 PASS | Different CUDA/ROCm stacks |
+| Axolotl two-step smoke / alternative reason | Dependency conflict; PEFT two-step PASS | Explicit toolkit/kernel confound |
+| Export hash / native tool-supervision parity | Exact bytes and supervised counts match | Same frozen cohort |
+| Train tok/s, wall time, peak memory, cost | 652.448inputtok/s;1214.947s;63.34GB allocated | NVIDIA892.894s; different timer/engine caveats |
+| Serve concurrency 1/8/32 and cost/M output tokens | 0errors;70.533/395.608/1400.613tok/s | Matched NVIDIA merged arm pending |
 | Held-out success / general regressions / cost per success | Not measured | Not comparable |
-| Droplet teardown API receipt | Not applicable: none created | N/A |
+| Droplet teardown API receipt | Pending orchestrator destruction | No completion claim |
 
 ## Local validation actually run
 
@@ -100,6 +106,6 @@ install/dependency lock, successful two-step smoke and real replay remain pendin
   explicitly synthetic 64-character data identity. No dataset validation claim.
 
 Full command outcomes/logs are recorded in the track report; no mock result will
-be relabeled as a trained-model result. Remaining gate: deliver the
-orchestrator-created MI325X after verified freeze publication. No SSH key is generated until
-an actual per-droplet request, avoiding stale key reuse.
+be relabeled as a trained-model result. Current work: frozen qualification, routed controls, full cost reconciliation,
+NVIDIA matched-merge comparison and orchestrator destruction/API verification.
+Fresh per-droplet SSH key was generated only at the actual request gate.

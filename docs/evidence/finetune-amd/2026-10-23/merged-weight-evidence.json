@@ -1,0 +1,61 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "shards": [
+    {
+      "file": "model-00001-of-00012.safetensors",
+      "sha256": "54d83c1d36631de231876217a8e0c2483eccee8746369a482b79442bdfc5d958"
+    },
+    {
+      "file": "model-00002-of-00012.safetensors",
+      "sha256": "368112ff1b6003d276805deae0ec9b63d5b2519d3cc8d798ee1bbdb1049c0dc6"
+    },
+    {
+      "file": "model-00003-of-00012.safetensors",
+      "sha256": "e2ee6fd91dc32e62f1c7476652564dab2471e5a43a603f614bc305a60a1f6ecb"
+    },
+    {
+      "file": "model-00004-of-00012.safetensors",
+      "sha256": "9b4afa37bdddf2ef9d12574c4ba61a0544e6a43fcd2d679a973ce67f3e6e1ee8"
+    },
+    {
+      "file": "model-00005-of-00012.safetensors",
+      "sha256": "8d826a939ee1b0da3683d240cbe9b0320bcb5ea77632765c2cc5bcd1cbc015b0"
+    },
+    {
+      "file": "model-00006-of-00012.safetensors",
+      "sha256": "994a86a154e065a6bc3b02e0f41be659b40141b7f6a1e8f4c94feaa8ad18ab47"
+    },
+    {
+      "file": "model-00007-of-00012.safetensors",
+      "sha256": "839080ed1428c8d735adf77065c9a9c49bf28cd613bfd47e833302646352a465"
+    },
+    {
+      "file": "model-00008-of-00012.safetensors",
+      "sha256": "a724d97d012f0b386d7574307d889f20153935a9c2704aedf566757b8b9412d0"
+    },
+    {
+      "file": "model-00009-of-00012.safetensors",
+      "sha256": "0b509472c591f5858d0411ab3315231bd5294ee356585d180f6c724f8435a558"
+    },
+    {
+      "file": "model-00010-of-00012.safetensors",
+      "sha256": "0ec1bd59c81b791d6736117f132f8376271bf5595e32bedd99033b93707e1720"
+    },
+    {
+      "file": "model-00011-of-00012.safetensors",
+      "sha256": "eadf8355100175e428e0bd4d526f9e76320cea3e059bce192cccd56f3a748f09"
+    },
+    {
+      "file": "model-00012-of-00012.safetensors",
+      "sha256": "80d309a66edeeef2f9b08bb1b30820719126722f055a07a7c6a13dd0326ad9da"
+    }
+  ],
+  "canonical_shard_manifest_sha256": "e38db84e1e2a1afa28236330e9f23fab467808d1d4ea7dcaa3cd3f4308daec6f",
+  "canonicalization": "JSON array shards sorted by file; json.dumps(sort_keys=True,separators=(comma,colon)); UTF8/no newline",
+  "merge_source_sha256": "5167c1686db9aa42f037d9b38a737d84cf849641aa488f70e169ec814f9ba9aa",
+  "dtype": "BF16",
+  "device_map": "cpu",
+  "safe_merge": true,
+  "maximum_shard_size": "5GB",
+  "adapter_sha256": "9d78ff96de0c0ee9a8c00f894689de78824d090b9aa3d6134f4cba2bef6f8b85"
+}

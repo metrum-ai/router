@@ -71,13 +71,17 @@ not permission to bypass router capture for the router-centric run.
 
 The example's [AMD runbook](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b/amd)
 prepares MI325X training with official `rocm/pytorch` and serving with official
-`rocm/vllm`. It is **preparation only**, not hardware-validated support or an AMD
-parity result. Require a two-step model/toolkit smoke on the actual GPU, a pinned
+`rocm/vllm`. MI325X training and merged-serving smoke/load checks have run;
+quality qualification and a matched NVIDIA parity result are still pending.
+Pinned Axolotl bootstrap failed on the tested ROCm torch version; the documented
+Transformers/PEFT fallback passed its two-step and fixed full training run. Require a two-step model/toolkit smoke on the actual GPU, a pinned
 host-compatible stack and the governed router-exported dataset from #358.
 Serve on host loopback over SSH through a localhost router; replay newly executed
 tool continuations and keep failures in evaluation denominators. The AMD evidence
 and VIDEO-FACTS under `docs/evidence/finetune-amd/2026-10-23/` explicitly leave
-quality, throughput and economics unmeasured until those runs occur.
+measured training/load evidence separate from still-pending held-out quality,
+full lifecycle economics and verified teardown. Unmerged LoRA serving failed;
+the measured AMD serving path is BF16 merged, not unmerged.
 
 The maintainer authorized a Fireworks-hosted open-weight teacher specifically for
 this synthetic Acme/mock-tool technical test, not general customer outputs. The
