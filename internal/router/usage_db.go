@@ -69,6 +69,8 @@ func validUsageDBMigrationPolicy(policy string) bool {
 
 type UsageReportOptions struct {
 	IncludeRequestEvents bool
+	RollupHistory        bool
+	CachePresent         *bool
 	UsageSource          string
 	Driver               string
 	DBPath               string
@@ -596,6 +598,7 @@ func (usageRollupRunRecord) TableName() string {
 }
 
 type usageRollupDailyRecord struct {
+	UsageTokenBreakdown               `gorm:"embedded"`
 	EstimatedRequestCount             int64   `gorm:"not null;default:0"`
 	EstimatedInputTokens              int64   `gorm:"not null;default:0"`
 	EstimatedOutputTokens             int64   `gorm:"not null;default:0"`
@@ -701,6 +704,7 @@ func (usageRollupDailyRecord) TableName() string {
 }
 
 type usageRollupAggregateRecord struct {
+	UsageTokenBreakdown               `gorm:"embedded"`
 	EstimatedRequestCount             int64   `gorm:"not null;default:0"`
 	EstimatedInputTokens              int64   `gorm:"not null;default:0"`
 	EstimatedOutputTokens             int64   `gorm:"not null;default:0"`
@@ -1400,6 +1404,7 @@ func (requestUpstreamErrorDetailRecord) TableName() string {
 }
 
 type agg struct {
+	UsageTokenBreakdown      `gorm:"embedded"`
 	EstimatedRequestCount    int64
 	EstimatedInputTokens     int64
 	EstimatedOutputTokens    int64
@@ -1630,6 +1635,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyUsageTokenBreakdownMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1811,6 +1820,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageProvenanceColumns,
 		usageCacheWriteColumns,
 		usageRequestKindColumns,
+		usageTokenBreakdownColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2594,7 +2604,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -5167,6 +5177,7 @@ func aggregateRollupRecordsFromDaily(rows []usageRollupDailyRecord, rollupType s
 			CacheBypassCount:                  row.CacheBypassCount,
 			FallbackCount:                     row.FallbackCount,
 			AttemptCount:                      row.AttemptCount,
+			UsageTokenBreakdown:               row.UsageTokenBreakdown,
 			EstimatedRequestCount:             row.EstimatedRequestCount,
 			EstimatedInputTokens:              row.EstimatedInputTokens,
 			EstimatedOutputTokens:             row.EstimatedOutputTokens,
@@ -5234,6 +5245,7 @@ func aggregateRollupRecordsFromDaily(rows []usageRollupDailyRecord, rollupType s
 }
 
 func addUsageRowToDailyRollup(rec *usageRollupDailyRecord, row usageRow, baseline usageRollupBaseline) {
+	rec.UsageTokenBreakdown.addUsage(row)
 	if row.UsageSource == "estimated" {
 		rec.EstimatedRequestCount++
 		rec.EstimatedInputTokens += int64(row.InputTokens)
@@ -5460,6 +5472,7 @@ func (s *usageStore) rowsWithBuckets(opts UsageReportOptions, includeBuckets boo
 }
 
 type tokenScalarAggRecord struct {
+	UsageTokenBreakdown      `gorm:"embedded"`
 	EstimatedRequestCount    int64
 	EstimatedInputTokens     int64
 	EstimatedOutputTokens    int64
@@ -5574,18 +5587,21 @@ type shapeAggSQLRecord struct {
 }
 
 type savingsAggRecord struct {
-	EstimatedRequests     int64
-	EstimatedInputTokens  int64
-	EstimatedOutputTokens int64
-	Key                   string
-	Requests              int64
-	InputTokens           int64
-	OutputTokens          int64
-	TotalTokens           int64
-	ActualCostUSD         float64
-	BaselineCostUSD       float64
-	MissingTokens         int64
-	MissingActualCost     int64
+	UndiscountedListCostUSD float64
+	CostListUSD             float64
+	UsageTokenBreakdown     `gorm:"embedded"`
+	EstimatedRequests       int64
+	EstimatedInputTokens    int64
+	EstimatedOutputTokens   int64
+	Key                     string
+	Requests                int64
+	InputTokens             int64
+	OutputTokens            int64
+	TotalTokens             int64
+	ActualCostUSD           float64
+	BaselineCostUSD         float64
+	MissingTokens           int64
+	MissingActualCost       int64
 }
 
 type adminOverviewSQLResult struct {
@@ -5601,6 +5617,9 @@ type adminOverviewSQLResult struct {
 }
 
 func (s *usageStore) adminOverviewSQL(opts UsageReportOptions, baseline adminSavingsBaselineDTO, limit int) (adminOverviewSQLResult, error) {
+	if opts.RollupHistory {
+		return s.rollupOverview(opts, baseline, limit)
+	}
 	limitN := limit
 	if limitN <= 0 {
 		limitN = 50
@@ -5739,7 +5758,7 @@ func (s *usageStore) adminSavingsAggsSQL(opts UsageReportOptions, baseline admin
 }
 
 func adminSavingsAggSQLSelectExpr(baseline adminSavingsBaselineDTO) string {
-	return `COUNT(*) AS requests,
+	return usageTokenBreakdownSQL + `COUNT(*) AS requests,
  SUM(CASE WHEN usage_source = 'estimated' THEN 1 ELSE 0 END) AS estimated_requests,
  SUM(CASE WHEN usage_source = 'estimated' THEN input_tokens ELSE 0 END) AS estimated_input_tokens,
  SUM(CASE WHEN usage_source = 'estimated' THEN output_tokens ELSE 0 END) AS estimated_output_tokens,
@@ -5747,6 +5766,8 @@ func adminSavingsAggSQLSelectExpr(baseline adminSavingsBaselineDTO) string {
 		SUM(output_tokens) AS output_tokens,
 		SUM(CASE WHEN total_tokens = 0 THEN input_tokens + output_tokens ELSE total_tokens END) AS total_tokens,
 		SUM(total_cost_usd) AS actual_cost_usd,
+ SUM(` + providerUsageListCostSQL + `) AS cost_list_usd,
+ SUM(` + undiscountedUsageListCostSQL + `) AS undiscounted_list_cost_usd,
 		` + adminBaselineCostSQLExpr(baseline) + ` AS baseline_cost_usd,
 		SUM(CASE WHEN input_tokens = 0 AND output_tokens = 0 AND total_tokens = 0 THEN 1 ELSE 0 END) AS missing_tokens,
 		SUM(CASE WHEN cache <> 'hit' AND total_cost_usd = 0 AND (input_tokens > 0 OR output_tokens > 0 OR total_tokens > 0) THEN 1 ELSE 0 END) AS missing_actual_cost`
@@ -5766,6 +5787,8 @@ func savingsRowFromSQLRecord(key string, rec savingsAggRecord) adminSavingsRow {
 	}
 	savings := rec.BaselineCostUSD - rec.ActualCostUSD
 	return adminSavingsRow{
+		UsageTokenBreakdown:   rec.UsageTokenBreakdown,
+		SavingsAttribution:    savingsAttributionForUsage(rec.UsageTokenBreakdown, rec.Requests, rec.BaselineCostUSD, rec.ActualCostUSD),
 		EstimatedRequests:     rec.EstimatedRequests,
 		EstimatedInputTokens:  rec.EstimatedInputTokens,
 		EstimatedOutputTokens: rec.EstimatedOutputTokens,
@@ -5783,6 +5806,9 @@ func savingsRowFromSQLRecord(key string, rec savingsAggRecord) adminSavingsRow {
 }
 
 func (s *usageStore) adminScalarAggsSQL(opts UsageReportOptions, spec adminScalarEndpointSpec, baseline adminSavingsBaselineDTO, sortKey string, limit int) (map[string]*adminScalarAgg, *agg, float64, bool, error) {
+	if opts.RollupHistory {
+		return s.rollupScalarAggs(opts, spec, baseline, sortKey, limit)
+	}
 	keyExpr, ok := adminScalarDimensionSQLExpr(spec.Dimension)
 	if !ok {
 		return nil, nil, 0, false, fmt.Errorf("unsupported SQL scalar dimension %q", spec.Dimension)
@@ -5919,6 +5945,7 @@ func (s *usageStore) adminScalarMultiBucketAggsSQL(opts UsageReportOptions, spec
 				existing.Agg.CacheBypass += scalar.Agg.CacheBypass
 				existing.Agg.Fallbacks += scalar.Agg.Fallbacks
 				existing.Agg.Attempts += scalar.Agg.Attempts
+				existing.Agg.UsageTokenBreakdown.add(scalar.Agg.UsageTokenBreakdown)
 				existing.Agg.InputTokens += scalar.Agg.InputTokens
 				existing.Agg.OutputTokens += scalar.Agg.OutputTokens
 				existing.Agg.TotalTokens += scalar.Agg.TotalTokens
@@ -6153,7 +6180,7 @@ func adminScalarAggSQLGroupBy(spec adminScalarEndpointSpec, keyExpr, secondaryEx
 }
 
 func adminScalarAggSQLSelectExpr(baseline adminSavingsBaselineDTO) string {
-	return `
+	return usageTokenBreakdownSQL + `
  SUM(CASE WHEN usage_source = 'estimated' THEN 1 ELSE 0 END) AS estimated_request_count,
  SUM(CASE WHEN usage_source = 'estimated' THEN input_tokens ELSE 0 END) AS estimated_input_tokens,
  SUM(CASE WHEN usage_source = 'estimated' THEN output_tokens ELSE 0 END) AS estimated_output_tokens,
@@ -6680,6 +6707,7 @@ func adminSQLDefault(column, fallback string) string {
 
 func aggFromTokenScalarAggRecord(rec tokenScalarAggRecord) agg {
 	return agg{
+		UsageTokenBreakdown:      rec.UsageTokenBreakdown,
 		EstimatedRequestCount:    rec.EstimatedRequestCount,
 		EstimatedInputTokens:     rec.EstimatedInputTokens,
 		EstimatedOutputTokens:    rec.EstimatedOutputTokens,
@@ -7261,6 +7289,13 @@ func (s *usageStore) usageRowsQuery(opts UsageReportOptions) *gorm.DB {
 	}
 	if opts.UsageSource != "" {
 		q = q.Where("usage_source = ?", opts.UsageSource)
+	}
+	if opts.CachePresent != nil {
+		if *opts.CachePresent {
+			q = q.Where("(cached_input_tokens IS NOT NULL OR cache_write_input_tokens IS NOT NULL)")
+		} else {
+			q = q.Where("cached_input_tokens IS NULL AND cache_write_input_tokens IS NULL")
+		}
 	}
 	if opts.ReasoningPresent != nil {
 		if *opts.ReasoningPresent {
@@ -7902,6 +7937,8 @@ func renderUsageMarkdownWithTimeFormatter(from, to time.Time, rows []usageRow, d
 	fmt.Fprintf(&b, "- Cache occupancy: latest `%s`, avg `%s`, max `%s`\n\n",
 		fmtPct(total.CacheOccupancyLatest), fmtPct(avgFloat(total.CacheOccupancySum, total.CacheSnapshotCount)), fmtPct(total.CacheOccupancyMax))
 
+	writeTokenBreakdownTable(&b, "Reasoning and Cache Coverage by Model Group", byGroup)
+	writeTokenBreakdownTable(&b, "Reasoning and Cache Coverage by Provider / Model", byModel)
 	writeCacheSummary(&b, total)
 	writeDecisionTelemetrySummary(&b, decisionSummary)
 	writeTrafficShapingSummary(&b, rows, upstreamShapeEvents)
@@ -7924,6 +7961,7 @@ func (a *agg) add(row usageRow) {
 	if row.RequestKind == "count_tokens" {
 		return
 	}
+	a.UsageTokenBreakdown.addUsage(row)
 	if row.UsageSource == "estimated" {
 		a.EstimatedRequestCount++
 		a.EstimatedInputTokens += int64(row.InputTokens)
@@ -8010,6 +8048,7 @@ func (a *agg) add(row usageRow) {
 }
 
 func (a *agg) addAgg(other agg) {
+	a.UsageTokenBreakdown.add(other.UsageTokenBreakdown)
 	a.EstimatedRequestCount += other.EstimatedRequestCount
 	a.EstimatedInputTokens += other.EstimatedInputTokens
 	a.EstimatedOutputTokens += other.EstimatedOutputTokens

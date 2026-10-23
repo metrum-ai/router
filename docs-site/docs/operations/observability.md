@@ -61,6 +61,27 @@ curl -i -H "Authorization: Bearer $ROUTER_TOKEN" \
 
 Response: `403 metrics-forbidden`.
 
+### Usage Breakdown Metrics (v4.3.0)
+
+Inference token counters include a bounded `usage_source` label (`reported`,
+`partial`, `estimated`, `none`; historical unknowns may remain empty). Sum
+across provenance when comparing aggregate dashboards. The subset counters are:
+
+- `metrum_ai_router_reasoning_tokens_total` (already included in output);
+- `metrum_ai_router_cached_input_tokens_total` (provider cache reads);
+- `metrum_ai_router_cache_write_input_tokens_total` (provider cache writes).
+
+`metrum_ai_router_cost_usd_total` has component values `input`, `cached_input`,
+`cache_write`, `output`, and `image`. Each series has one component value:
+`input` excludes cache-read/write costs; `output` includes reasoning. There is
+no extra reasoning charge. Free router response-cache hits contribute no billed
+cost; unbilled count-token events are excluded from inference counters. These
+are router-computed costs, not provider invoice reconciliation.
+
+Metrics do not replace nullable request-level reporting evidence. Use
+[Usage, Cost, And Reports](../usage-cost-reports/overview) for coverage and
+historical attribution limits before interpreting zero subset counts.
+
 ## Logs
 
 Router logs should be collected by the deployment logging system and retained under the customer's operational policy. Logs are for metadata and diagnostics; they must not contain raw bearer tokens, provider API keys, token hashes, raw prompts, raw images, raw tool outputs, full upstream headers, or full config files.

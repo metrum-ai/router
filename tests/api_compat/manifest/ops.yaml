@@ -75,15 +75,18 @@ cases:
     disposition: native_supported
     assertions:
       - after fallback, usage rows attribute provider/model, prices and cost to the serving backup target
-      - provider cached_tokens and reasoning_tokens map to canonical columns for Chat and Responses; omitted details stay NULL
+      - provider cached_tokens and reasoning_tokens map to canonical columns for Chat and Responses; omitted details stay NULL while reported zero stays zero
       - cached-input pricing applies only to provider cache reads
       - request_attempts keep the failed primary and selected backup distinct
       - router response-cache hits are labelled hit with zero attempts, no quota, and no replayed provider prompt-cache count
     evidence_paths:
       - tests/api_compat/tests/test_ops_profile.py
     test_id: test_ops04_cache_and_reasoning_details_attribute_to_serving_target
+    # v4.3.0 #339 aggregate/CLI/metrics/retention evidence:
+    # internal/router/usage_token_breakdown_e2e_test.go: TestTokenBreakdownLocalhostE2E
+    # internal/router/usage_token_breakdown_retention_test.go: TestTokenBreakdownRollupRetentionParity
     # Additional localhost Go evidence: TestCacheBillingLocalhostE2E.
-    rationale: Response-cache hits retain list cost and token counts but bill at zero; overview exposes list, billed and cache savings. Provider prompt-cache pricing remains separate.
+    rationale: Response-cache hits retain list cost and token counts but bill at zero; overview exposes list, billed and cache savings. Provider prompt-cache pricing remains separate. Reasoning/cache subsets and NULL-versus-zero coverage survive rollups and retained aggregate reports (#339).
 
   - id: OPS-05
     priority: P1

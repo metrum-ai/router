@@ -32,6 +32,14 @@ pricing, and unbilled count-event identity respectively. The configuration
 control plane has its own `2026102301` cache-write pricing migration (v7);
 identical IDs in separate scopes are not the same migration.
 
+Usage migration `2026102303` (schema v10, dependent on v9) adds reasoning,
+cache-read/write coverage, attempt counters and cost allocation to daily, hourly
+and monthly aggregate tables. Existing aggregates retain their ordinary totals
+but start with zero **known evidence**, not proof that no reasoning/cache usage
+occurred. Regenerate draft windows only while raw rows remain; finalized windows
+are immutable through the generator. Recomputing finalized history requires a
+separately reviewed maintenance/restore workflow, not an automatic backfill.
+
 Historical provenance remains empty/unknown. New estimated rollup counters
 start at zero, not a reconstruction of historical estimates. Historical nullable
 cache-write counts/prices remain unknown. Historical count calls cannot be
@@ -60,6 +68,23 @@ Native Anthropic `count_tokens` now proxies the provider count and errors;
 other transports return marked estimates. Both paths are unbilled and excluded
 from inference quotas/aggregates. Request reports still show count events.
 Clients must not assume counts are always local or tokenizer-exact.
+
+Reporting now preserves reasoning/cache token subsets and known reporting
+coverage through rollups, API tables and CLI Markdown output. Cost/savings
+composition distinguishes routing, provider prompt caching and free router
+response caching; cache-write premiums can make prompt-cache savings negative.
+Additional counters are `metrum_ai_router_reasoning_tokens_total`,
+`metrum_ai_router_cached_input_tokens_total`, and
+`metrum_ai_router_cache_write_input_tokens_total`. Cost metric components now
+include `cached_input` and `cache_write`; `input` excludes these, while `output`
+already includes reasoning. Review dashboards that selected only old component
+values. No separate reasoning cost counter should be added.
+
+The admin history selector is opt-in: `history_source=rollup` reads finalized
+daily aggregates rather than raw rows. Use complete closed UTC-day windows;
+unsupported predicates and report types return HTTP 400 rather than silently
+mixing sources. Keep raw retention long enough for request-level investigation
+and Markdown exports, which cannot be reconstructed from aggregates.
 
 ### Optional upstreams and fine-tuning
 

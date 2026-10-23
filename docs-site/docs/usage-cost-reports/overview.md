@@ -55,10 +55,48 @@ reports as `requestKind=count_tokens`, with `usage_source=none` and zero tokens
 and costs. They are excluded from inference aggregates, quotas and metrics.
 Historical count charges cannot be identified reliably and are not rewritten.
 
+## Reasoning, cache coverage and retained history
+
+Aggregate APIs expose `reasoningTokens`, `cachedInputTokens` (provider reads),
+and `cacheWriteInputTokens`, plus `reasoningReportedRequests`,
+`cachedInputReportedRequests`, and `cacheWriteReportedRequests`. Reported zero
+contributes to coverage; missing evidence does not. Shares use all output or
+input tokens as the denominator, so partial coverage is not a complete breakdown.
+The attempt counters `reasoningAttemptCount`, `reasoningSuccessfulAttemptCount`
+and `reasoningReportedAttemptCount` preserve per-request attempt evidence.
+
+The browser shows reasoning and cached-input shares with reporting coverage,
+token/cost composition, and token/coverage columns in aggregate tables.
+`reasoning_present` filters request shape (requested or translated reasoning),
+not upstream reporting completeness. `cache_present` filters reported reads or
+writes, including zero. These row-level filters require raw history.
+
+Billed token cost is partitioned as `uncachedInputCostUsd`, `cachedInputCostUsd`,
+`cacheWriteCostUsd`, `visibleOutputCostUsd`, and `reasoningOutputCostUsd`.
+Images are outside this token-cost composition. The visible/unattributed output
+portion may include undisclosed reasoning. `costComponentReportedRequests`
+measures allocation coverage; historical missing coverage is not measured zero.
+Savings fields distinguish routing (`routingSavingsUsd`), provider prompt-cache
+(`promptCacheSavingsUsd`, potentially negative for write premiums), and router
+response-cache (`responseCacheSavingsUsd`). With complete attribution they sum
+to baseline minus billed cost. Check `savingsAttributionComplete` before
+interpreting the split, and select a baseline for routing comparisons.
+
+Raw retained request rows remain the default. Supported overview and dimensional
+aggregate endpoints accept `history_source=rollup` to read only finalized daily
+rollups, with `summary.historySource=finalized_daily_rollups`; raw and rolled
+rows are never mixed. Relative ranges align to UTC days, and explicit `from`/`to`
+require UTC-midnight boundaries. Generate and finalize only complete, closed
+UTC-day windows after review. Retained charts have daily resolution. Unsupported
+row-level predicates return HTTP 400. Request drilldown, the primary savings
+endpoint and server-side Markdown export remain raw-only. See
+[Usage Reporting](../operations/usage-reporting) for retention operations.
+
 For migration contracts, see [Upgrade Guide](../release-notes/upgrade-guide).
 Implementation details and reproducible local checks are maintained in the
 repository's [usage provenance](https://github.com/metrum-ai/router/blob/main/docs/usage-provenance.md),
 [count-token guide](https://github.com/metrum-ai/router/blob/main/docs/count-tokens.md),
+[token-breakdown reference](https://github.com/metrum-ai/router/blob/main/docs/usage-token-breakdown.md),
 and [usage database design](https://github.com/metrum-ai/router/blob/main/docs/USAGE_DB_DESIGN.md).
 
 ## Report Questions

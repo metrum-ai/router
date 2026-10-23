@@ -1,6 +1,7 @@
 // Copyright 2026 Metrum AI
 // SPDX-License-Identifier: Apache-2.0
 
+import { TokenUsageBreakdown } from "./TokenUsageBreakdown";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatValue, titleize } from "@/lib/utils";
 import type { ReportSummary } from "@/lib/reports";
@@ -24,7 +25,7 @@ export type MetricEntry = {
 export function buildMetricEntries(summary?: ReportSummary, config: MetricGridConfig = {}): MetricEntry[] {
   if (!summary) return [];
   const priority = config.priority ?? defaultPriority;
-  const hiddenKeys = new Set(config.hiddenKeys ?? []);
+  const hiddenKeys = new Set(["costComponentReportedRequests", "historySource", "savingsAttributionComplete", ...(config.hiddenKeys ?? [])]);
   const hideZeroKeys = new Set(config.hideZeroKeys ?? []);
   const entries = Object.entries(summary)
     .flatMap(([key, value]) => {
@@ -58,6 +59,7 @@ export function MetricGrid({ summary, config }: { summary?: ReportSummary; confi
           <div className="text-xs text-white/58">Share of tokens estimated, not upstream-reported</div>
         </CardContent></Card>
       )}
+      <TokenUsageBreakdown summary={summary} />
       {entries.map(({ key, label, value }) => (
         <Card key={key} className="panel-gradient">
           <CardContent className="p-4">

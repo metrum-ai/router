@@ -7,7 +7,7 @@ doc_type: howto
 
 Metrum AI Router records durable usage data for cost management, auditability, request troubleshooting, and model-group validation.
 
-`router-usage-report` is an administrative CLI shipped in the release package. It is intended for platform administrators and is run from a secure server console, deployment host shell, or controlled admin workstation with access to the usage database. Deployments may also enable the authenticated browser reporting surface at `/admin/reports/`; it is separate from public `/docs/` and requires browser-admin authentication plus policy-based authorization.
+`metrum-ai-router-usage-report` is the administrative CLI shipped in the release package (the removed `router-usage-report` name is not a packaged alias). It is intended for platform administrators and is run from a secure server console, deployment host shell, or controlled admin workstation with access to the usage database. Deployments may also enable the authenticated browser reporting surface at `/admin/reports/`; it is separate from public `/docs/` and requires browser-admin authentication plus policy-based authorization.
 
 For the broader health, metrics, logs, and request-ID workflow, see [Observability](./observability). For request triage, see [Troubleshooting](../troubleshooting/).
 
@@ -25,16 +25,49 @@ For the broader health, metrics, logs, and request-ID workflow, see [Observabili
 ## Generate A Markdown Report
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --driver sqlite \
   --db /app/state/usage.sqlite \
   --since 24h \
   --out usage-24h.md
 ```
 
-For an explicitly configured PostgreSQL deployment, substitute `--driver postgres --dsn "$ROUTER_USAGE_DB_DSN"`; do not use that connection mode as the generic default.
+For PostgreSQL, use the reviewed deployment configuration with `--usage-db-config`
+instead of putting the DSN in command arguments. Keep database credentials in
+the deployment's environment/secret mechanism; do not copy them into shell
+history, tickets or reports.
 
 CLI-generated reports are Markdown files with structured tables for usage, cost, latency, throughput, downstream caller performance, and upstream endpoint performance. Instant values in the `Period UTC` bounds and `Per-Request Throughput` time column use fixed UTC RFC3339 milliseconds (`YYYY-MM-DDTHH:mm:ss.SSSZ`). Hour and day summary labels remain reporting buckets; browser Markdown exports, browser JSON APIs, and CSV exports retain their existing precision. The public docs include graphical Chart.js examples built from the same report dimensions.
+
+## Token Breakdown And Retained History (v4.3.0)
+
+CLI Markdown reports add token sums, reported-request coverage and reasoning
+attempt counts by model group and provider/model. Reasoning is included in
+output; provider cache reads/writes are included in input. Missing upstream
+fields are not estimated by the reporting layer. A reported zero counts toward
+coverage, while an omitted field does not. See
+[Usage, Cost, And Reports](../usage-cost-reports/overview) for field names and
+cost/savings attribution caveats.
+
+The browser and compatible aggregate APIs can explicitly read finalized daily
+history using `history_source=rollup`. This is not a new CLI Markdown input
+flag: CLI/server Markdown exports still read retained raw requests. Daily
+history never mixes raw rows with aggregates, uses UTC-day-aligned windows,
+and rejects unsupported predicates with HTTP 400. For example, authorized admin
+clients can request:
+
+```text
+/admin/reports/api/summary?since=48h&history_source=rollup
+/admin/reports/api/requested-models?since=48h&history_source=rollup
+/admin/reports/api/provider-model-mix?since=48h&history_source=rollup
+```
+
+Finalize only reviewed complete UTC days after their window closes. Schema-10
+migration `2026102303` adds token/cost attribution to hourly/daily/monthly
+aggregates, preserving old totals but not inventing historical reporting
+coverage. Draft windows can be regenerated while raw rows remain; finalized
+windows remain immutable through the generator. Retain raw detail for drilldown,
+diagnostics, primary savings reports and Markdown exports.
 
 ## Investigate Traffic Shaping
 
@@ -63,14 +96,14 @@ Traffic-shaping report sections appear when the selected window contains caller 
 Example filters:
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --driver sqlite \
   --db /app/state/usage.sqlite \
   --since 24h \
   --traffic-shaped-only \
   --caller-user <owner-user>
 
-router-usage-report \
+metrum-ai-router-usage-report \
   --driver sqlite \
   --db /app/state/usage.sqlite \
   --since 24h \
@@ -83,7 +116,7 @@ Use `--traffic-shape-scope caller` for caller/server shaping, or scopes such as 
 Traffic tuning advisor output is available from the same CLI with usage database credentials only; it does not require provider keys or caller tokens:
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --driver sqlite \
   --db /app/state/usage.sqlite \
   --since 24h \
@@ -105,7 +138,7 @@ Interpretation examples:
 Administrators can generate bounded hourly, daily, or monthly rollups from stored request-time usage rows:
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --driver sqlite \
   --db /app/state/usage.sqlite \
   --from 2026-06-14 \
@@ -128,7 +161,7 @@ Draft reruns replace the same draft run for that exact type/window. Use `--rollu
 `server.retention` is disabled by default and defaults to `dry_run: true`. Use status mode first from reviewed router config:
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --retention-status \
   --config /app/config/config.yaml
 ```
@@ -138,7 +171,7 @@ The command initializes scalar `retention_policy_versions` and `retention_policy
 After operators review counts, legal holds, database backups, and finalized rollup coverage, they can run one batch from the same reviewed config:
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --retention-run \
   --config /app/config/config.yaml
 ```
@@ -336,7 +369,7 @@ Governed content capture is separate from diagnostics. It is disabled by default
 ## Filtering
 
 ```bash
-router-usage-report \
+metrum-ai-router-usage-report \
   --driver sqlite \
   --db /app/state/usage.sqlite \
   --caller-user <owner-user> \

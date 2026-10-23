@@ -905,6 +905,18 @@ def test_ops04_cache_and_reasoning_details_attribute_to_serving_target(ops_route
     assert (row["cached_input_tokens"], row["reasoning_tokens"]) == (None, None)
     assert (row["target_model"], row["attempts"], row["fallback_used"]) == ("ops-p-primary", 1, 0)
 
+    # Reported zero is known evidence, unlike omitted fields above. The public
+    # reporting contract relies on this distinction when calculating coverage.
+    zero_usage = usage | {
+        "prompt_tokens_details": {"cached_tokens": 0},
+        "completion_tokens_details": {"reasoning_tokens": 0},
+    }
+    OpsUpstream.reset(lambda h, b: h.send_json(200, chat_ok(usage=zero_usage)))
+    code, headers, raw = call(base, "/v1/chat/completions", chat_body("chat-priced-fallback"))
+    assert code == 200, raw
+    row = usage_rows(db, headers["X-Request-Id"])[0]
+    assert (row["cached_input_tokens"], row["reasoning_tokens"]) == (0, 0)
+
     # Responses details map onto the same canonical columns.
     OpsUpstream.reset(
         lambda h, b: h.send_json(
