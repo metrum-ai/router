@@ -1,0 +1,46 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "Native task success, not original JSON-text/semantic gates; quoted serving-window allocation, not invoice or quality-equivalent ROI. Full300task denominators/failures retained.",
+  "arms": {
+    "amd": {
+      "n": 300,
+      "successes": 262,
+      "rate": 0.8733333333333333,
+      "ci95": [
+        0.8333333333333334,
+        0.91
+      ],
+      "p95_task_ms": 31808.206854970194,
+      "joined_requests": 496,
+      "http200": 496,
+      "serving_window_seconds": 321.80583214759827,
+      "serving_window_gpu_quote_usd": 0.33968393393357593,
+      "quote_per_native_success_usd": 0.0012965035646319693,
+      "router_recorded_cost_complete": false
+    },
+    "base": {
+      "n": 300,
+      "successes": 259,
+      "rate": 0.8633333333333333,
+      "ci95": [
+        0.8233333333333334,
+        0.9
+      ],
+      "p95_task_ms": 32189.666436985135,
+      "joined_requests": 496,
+      "http200": 496,
+      "serving_window_seconds": 336.4592213630676,
+      "serving_window_gpu_quote_usd": 0.3551514003276825,
+      "quote_per_native_success_usd": 0.00137124092790611,
+      "router_recorded_cost_complete": false
+    }
+  },
+  "paired_amd_minus_base": {
+    "n": 300,
+    "mean": 0.01,
+    "ci95": [
+      -0.006666666666666667,
+      0.02666666666666667
+    ]
+  }
+}

@@ -6,6 +6,32 @@
 Work in progress for #326. Do not infer training completion or promotion from
 this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 
+## AMD Instinct
+
+The [AMD runbook](amd/README.md) records one epoch on the governed router-exported
+1186/221/300 split via Transformers/PEFT: pinned Axolotl dependency resolution
+failed against the official ROCm Torch build. Serving used a safe **BF16 merge**
+because ROCm vLLM unmerged-LoRA loading failed. Primary JSON-text exact was
+**3.5% vs base4.5% (−1.0pp; paired95%CI[−2.5,0]pp): gate FAIL, not promoted**.
+The droplet was destroyed and deletion API-verified by the orchestrator at19:23Z.
+See the [final AMD evidence](../../docs/evidence/finetune-amd/2026-10-23/README.md).
+This is not evidence of NVIDIA parity or healthy-teacher savings. It uses #358's
+router export, not the direct-download dataset below.
+
+The initial26local concurrency429s were **self-inflicted infrastructure
+throttling**, not model failures. The entire initial load attempt is excluded
+from all reported benchmark denominators; all three load profiles were rerun
+whole at high capacity before qualification. Historical failures/costs remain
+in the lifecycle ledger only. Per #370, all local/test caller limits are now
+high (including grader keys and effective project/group profiles); only clearly
+labelled intentional limit tests may throttle.
+
+The maintainer authorized the Fireworks-hosted open-weight teacher for the
+synthetic Acme/mock-tool technical test (#358), not general customer traffic.
+Record `teacher_terms_decision` in the export manifest and evidence. Users must
+choose a teacher whose model license and provider terms permit training on
+outputs, and verify those rights before enabling export for training.
+
 ## 1. Industry problem: training is not safe production
 
 Fine-tunes rarely reach production safely: a public training corpus is not the
@@ -41,9 +67,15 @@ confidence intervals, weak judge calibration and hardware/cost limitations.
 Lesson: successful training, faster serving and one improved metric do not
 justify promotion; data/task mismatch and general regressions matter.
 
-## 4. What is accomplished, and what remains unmeasured
+## 4. Historical engineering snapshot — before the final governed run
 
-The new router-loop engineering sample used a real Fireworks open-weight teacher
+This 2026-10-23 small-sample snapshot and its pending-work list are historical,
+not the current AMD status. The AMD outcome and verified teardown are above;
+its final governed split is1186/221/300, not this seven-row engineering sample.
+The historical caller-budget429 below is an infrastructure denial, not a model
+failure or part of any reported AMD benchmark denominator.
+
+The router-loop engineering sample used a real Fireworks open-weight teacher
 under two keys: nine public task seeds per key, eight tool-result continuations
 and seven deterministic task successes per key. Capture enabled only for support;
 audited success-only export produced 2 train / 2 validation / 3 test rows, no IT
@@ -231,7 +263,10 @@ Any unexpected pre-route429 invalidates the entire run: document an infra-only
 amendment and rerun the whole run, never selected cases. Upstream provider429s
 must be reported separately and never silently retried or reclassified.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
-not an hourly GPU spending cap. Zero list-token prices in this template cannot
+not an hourly GPU spending cap. It is a dynamic-strategy eligibility control;
+weighted/external strategies do not enforce it. The actual AMD external-policy
+control returned200 under a tiny ceiling: do not claim global budget enforcement.
+Zero list-token prices in this template cannot
 protect a rental budget; use the separate hard GPU lease watchdog and track real
 hourly charges. Replace placeholder amortized prices before cost-based routing.
 

@@ -1,0 +1,21 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "train": {
+    "rows": 1186,
+    "file_sha256": "556bb4eaf575fc18dfdedd0bf530659233165df077212ba961e02e049ee1879c",
+    "max_tokens": 2180,
+    "supervised_tokens": 581388,
+    "input_tokens": 792690,
+    "all_template_prefixes_equal": true,
+    "native_rows": 405
+  },
+  "val": {
+    "rows": 221,
+    "file_sha256": "f8815d0604f189ed0d91a9a8da83d196179020578663b16dddb4ea2cddce7864",
+    "max_tokens": 2544,
+    "supervised_tokens": 114102,
+    "input_tokens": 154901,
+    "all_template_prefixes_equal": true,
+    "native_rows": 74
+  }
+}

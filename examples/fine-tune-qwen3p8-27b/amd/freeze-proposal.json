@@ -1,0 +1,73 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "coordination_proposal_not_training_authorization",
+  "issues": [355, 358, 359],
+  "teacher_terms_decision": {
+    "reference": "https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842",
+    "teacher": "accounts/fireworks/models/gpt-oss-120b",
+    "scope": "Maintainer authorized synthetic Acme technical test with deterministic mock tools only; not general permission for customer outputs.",
+    "terms_sha256": "78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30",
+    "model_license": "Apache-2.0",
+    "model_license_sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+  },
+  "shared_recipe": {
+    "base_model": "Qwen/Qwen3.8-27B",
+    "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+    "nvidia_recipe_sha256_observed": "5f2ab3ce34264c30262d1123f7596d5fe3bbac9a469d9a6d52c064ec085ddcc6",
+    "chat_template": "tokenizer_default",
+    "chat_template_kwargs": {"enable_thinking": false},
+    "sequence_len": 8192,
+    "sample_packing": false,
+    "load_in_4bit": false,
+    "load_in_8bit": false,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.0,
+    "lora_target_modules": ["q_proj", "v_proj", "linear_attn.in_proj_qkv", "linear_attn.out_proj"],
+    "micro_batch_size": 1,
+    "gradient_accumulation_steps": 16,
+    "num_epochs": 1,
+    "optimizer": "adamw_torch",
+    "lr_scheduler": "cosine",
+    "learning_rate": 0.00001,
+    "bf16": true,
+    "gradient_checkpointing": true,
+    "attn_implementation": "sdpa",
+    "warmup_ratio": 0.03,
+    "seed": 355
+  },
+  "amd_only_difference": {"tf32": false},
+  "cohort_proposal_awaiting_ft_traces_confirmation": {
+    "train": {"native_tool": 1000, "general": 1500, "letter_anchor": 500},
+    "val": {"native_tool": 167, "general": 250, "letter_anchor": 83},
+    "test": {"native_tool": 200, "general": 75, "letter_anchor": 25},
+    "all_answers_from_router_capture": true,
+    "success_filter_train_val_only": true,
+    "exclude_consumed_engineering_probes": true,
+    "allow_source_task_group_overlap": false,
+    "note": "Successful train/val counts are targets, not permission to select test by success or silently top up after inference. FT may counter-propose before collection/freeze. General text checker measures completion, not semantic correctness."
+  },
+  "shared_replay": {
+    "group": "support-agent",
+    "arms": ["teacher", "base", "nvidia_candidate", "amd_candidate"],
+    "backend_sha256_observed": "0006956e414a35111d14e0dbc561cc6cea19844e3ea659e260cc76534c24f9ad",
+    "initial_messages_only": true,
+    "execute_new_tool_results": true,
+    "max_turns_proposed": 8,
+    "temperature": 0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "chat_template_kwargs": {"enable_thinking": false},
+    "replay_concurrency_proposed": 8,
+    "serving_load_concurrency": [1, 8, 32],
+    "no_retry_best_of_selection": true,
+    "failures_in_denominator": true
+  },
+  "required_before_final_signed_registration": [
+    "FT/traces agreement on cohort/mix and explicit native-checker vs original JSON-text gate mapping without threshold relaxation",
+    "Full useful-sized export counts/hashes/time/source-group isolation and capture/audit/teacher_terms_decision attestations",
+    "Freeze shared consumer/training view/backend/scorers/runtime/regression cohorts/prompt hashes and exact generation limits",
+    "Keep original >=10pp exact gain, <=2pp general regression, no-pass/error and p95 <=1.25 limits as separate unchanged qualification criteria; native completion-only scores cannot replace semantic or exact scores",
+    "Matched actual hardware/toolkit two-step smoke and template/cache/native supervision checks before full training"
+  ]
+}

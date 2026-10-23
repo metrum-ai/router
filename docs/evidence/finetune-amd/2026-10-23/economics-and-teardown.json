@@ -1,0 +1,99 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "Entire AMD router ledger snapshot, including aborted96, invalid load and engineering failures/intentional limit tests; NOT just successful qualification. Quoted GPU cost is not an invoice. Teacher reference/FT replacement costs belong to FT, not duplicated here.",
+  "deletion_receipt": {
+    "source": "orchestrator message, 2026-10-23T19:23Z; operator API verification, AMD has no DigitalOcean API credentials",
+    "droplet_id": 611994722,
+    "droplet_api_status": 404,
+    "tag_amd359_droplets_remaining": 0,
+    "firewall_amd359_ssh_only_absent": true,
+    "cloud_ssh_key_amd359_20261023_absent": true,
+    "gpu_work_ended": "2026-10-23T19:21Z",
+    "remote_containers_and_tunnels_stopped": true
+  },
+  "gpu": {
+    "rate_usd_hour": 3.8,
+    "orchestrator_billing_start_approx": "2026-10-23T17:47:00Z",
+    "api_deleted_at_approx": "2026-10-23T19:23:00Z",
+    "approx_hours": 1.6,
+    "approx_quote_usd": 6.08,
+    "conservative_start": "2026-10-23T17:45:00Z",
+    "conservative_hours": 1.6333333333333333,
+    "conservative_quote_usd": 6.206666666666666,
+    "training_wrapper_seconds": 1214.9466,
+    "training_wrapper_quote_usd": 1.2824436333333333
+  },
+  "router_ledger": [
+    {
+      "target_provider": "",
+      "status": 403,
+      "requests": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "token_metadata_usd": 0.0
+    },
+    {
+      "target_provider": "",
+      "status": 429,
+      "requests": 27,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "token_metadata_usd": 0.0
+    },
+    {
+      "target_provider": "base",
+      "status": 200,
+      "requests": 1498,
+      "input_tokens": 283597,
+      "output_tokens": 515095,
+      "token_metadata_usd": 0.0
+    },
+    {
+      "target_provider": "frontier_judge",
+      "status": 200,
+      "requests": 800,
+      "input_tokens": 897991,
+      "output_tokens": 62892,
+      "token_metadata_usd": 2.8738975
+    },
+    {
+      "target_provider": "ft_onprem",
+      "status": 200,
+      "requests": 2160,
+      "input_tokens": 454013,
+      "output_tokens": 632083,
+      "token_metadata_usd": 0.0
+    },
+    {
+      "target_provider": "ft_onprem",
+      "status": 499,
+      "requests": 6,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "token_metadata_usd": 0.0
+    },
+    {
+      "target_provider": "teacher",
+      "status": 200,
+      "requests": 11,
+      "input_tokens": 1450,
+      "output_tokens": 457,
+      "token_metadata_usd": 0.0004917
+    },
+    {
+      "target_provider": "teacher",
+      "status": 502,
+      "requests": 1,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "token_metadata_usd": 0.0
+    }
+  ],
+  "notes": [
+    "Zero selfhost token metadata is NOT free inference.",
+    "Unknown upstream-failure charges remain null, not zero.",
+    "Judge token estimates separate; no provider invoice available.",
+    "Degraded teacher comparison and teacher cost/success unavailable pending FT whole-arm replacement.",
+    "Initial26 concurrency-exceeded load calls and aborted294native are excluded from qualification but lifecycle spend retained."
+  ]
+}

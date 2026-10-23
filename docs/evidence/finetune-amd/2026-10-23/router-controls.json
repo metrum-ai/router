@@ -1,0 +1,40 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "Engineering controls, not held-out quality; deliberate quota/revocation tests are labelled intentional-limit exceptions.",
+  "file_new_receipt_arms": [
+    {
+      "arm": "base",
+      "pass": true,
+      "requests": 2
+    },
+    {
+      "arm": "amd_onprem",
+      "pass": true,
+      "requests": 2
+    },
+    {
+      "arm": "teacher",
+      "pass": true,
+      "requests": 2
+    },
+    {
+      "arm": "other",
+      "pass": true,
+      "requests": 2
+    }
+  ],
+  "native_receipt_sha256": "c39b00320b5cc8caa70651a5c32f80e14bd69b1494047ecedaeec1ee62e564ca",
+  "provider_agnostic_rollback_statuses": [
+    200,
+    200
+  ],
+  "rollback_targets": [
+    "teacher",
+    "teacher"
+  ],
+  "initial_gpu_specific_rollback_failure_retained": "upstream400/redacted mapped502, teacher selected; engineering only",
+  "quota_and_revocation": "Initial intentional quota429/quota-exhausted and revoke403/model-not-allowed observed before upstream; receipts retained in private authenticated usage DB.",
+  "priced_external_strategy_spend_ceiling_enforced": false,
+  "limitation": "Observed HTTP200: external strategy does not enforce dynamic-strategy spend_ceiling (config.go documents scope). NOT a cumulative/rental spend guard. Do not claim this control passed.",
+  "rental_control": "Independent deadline and orchestrator API-verified destruction, not per-request ceiling or zero-priced selfhost token metadata."
+}
