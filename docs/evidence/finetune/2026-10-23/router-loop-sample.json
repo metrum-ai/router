@@ -1,0 +1,67 @@
+{
+  "copyright": "Copyright 2026 Metrum AI",
+  "spdx": "Apache-2.0",
+  "scope": "Small engineering sample, not training adequacy or promotion evidence",
+  "teacher": "accounts/fireworks/models/gpt-oss-120b",
+  "teacher_model_license": "Apache-2.0",
+  "teacher_terms_decision": {
+    "reference": "https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842",
+    "decision": "Maintainer authorized synthetic Acme technical-loop test, not customer outputs",
+    "terms_sha256": "78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30",
+    "customer_permission": false
+  },
+  "source": "Glaive function-calling-v2 task seeds, Apache-2.0, e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac",
+  "dataset_hash": "4649d65bb0c5e996b45c77a5a6a108b21808f9c05a9ca321584e14dcda32ec33",
+  "export_counts": {"train": 2, "val": 2, "test": 3},
+  "support": {
+    "tasks": 9, "successes": 7, "schema_valid_episodes": 9,
+    "actual_tool_result_continuations": 8, "captured": true,
+    "estimated_list_token_cost_usd_all_tasks": 0.00210315,
+    "estimated_list_token_cost_per_success_usd": 0.00030045,
+    "sum_router_call_latency_per_episode_median_ms": 1020,
+    "sum_router_call_latency_per_episode_max_ms": 2849
+  },
+  "it": {
+    "tasks": 9, "successes": 7, "schema_valid_episodes": 9,
+    "actual_tool_result_continuations": 8, "captured": false,
+    "estimated_list_token_cost_usd_all_tasks": 0.00210315,
+    "estimated_list_token_cost_per_success_usd": 0.00030045,
+    "sum_router_call_latency_per_episode_median_ms": 880,
+    "sum_router_call_latency_per_episode_max_ms": 3648
+  },
+  "cost_basis": {
+    "source": "https://fireworks.ai/models/fireworks/gpt-oss-120b",
+    "observed_date": "2026-10-23",
+    "input_usd_per_million": 0.15, "output_usd_per_million": 0.60,
+    "cached_discount_ignored": true,
+    "invoiced_cost": false,
+    "includes_failed_task_tokens": true,
+    "all_debugging_and_collection_estimate_usd": 0.03170595
+  },
+  "consumer_contract_validation": {
+    "format": "metrum-router-ft-export-v1",
+    "dataset_hash": "4c558344e6da5e2edab5ef52a40f7807b0dd186d449d14f800a63992002cb14b",
+    "unchanged_ft_run2_consumer_validated": true,
+    "counts": {"train": 2, "val": 2, "test": 3},
+    "training_authorized": false
+  },
+  "mixed_consumer_contract_validation": {
+    "dataset_hash": "e7ef76753b30f7030b4b4db6963cfacaf85c5ff5ee10ba1250d9d333fa62674d",
+    "unchanged_ft_run2_consumer_validated": true,
+    "counts": {"train": 1, "val": 3, "test": 3},
+    "native_tool_rows": 2,
+    "general_or_letter_rows": 5,
+    "exact_letter_anchors": 2,
+    "heldout_teacher_failures_retained": 2,
+    "training_authorized": false,
+    "scope": "Engineering sample only; expanded cohort size/mix/gate mapping requires FT freeze"
+  },
+  "checker": "expected-tool-calls-v1: public ordered name/argument equality plus nonempty final completion; not semantic answer quality",
+  "canary": {
+    "same_group": "support-agent", "binding": "public key ID AND project",
+    "support": "synthetic-ft-standin", "it": "real teacher",
+    "caller_budget_second_request_status": 429,
+    "actual_trained_candidate": false
+  },
+  "pending": ["useful-sized governed cohort", "actual trained-target canary", "frozen teacher/candidate/base held-out comparison", "production economics"]
+}

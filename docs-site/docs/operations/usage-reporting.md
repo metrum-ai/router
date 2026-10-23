@@ -149,7 +149,7 @@ Use retention language carefully in operational reviews:
 
 - raw operational rows are request, attempt, trace, error, decision, security event, and optional governed content-capture records;
 - immutable billing/usage rollups are finalized daily aggregate rows generated from stored request-time facts;
-- archived exports are customer-controlled artifacts and are not created by the current dry-run foundation;
+- archived retention exports are not created by the dry-run foundation; the separate privileged training export below creates customer-controlled JSONL/manifest copies from eligible opt-in captures;
 - legal holds are scalar rows that block dry-run candidate counts by data class and timestamp range;
 - purge jobs execute only the explicitly supported bounded classes after dry-run review;
 - report and cost-allocation calculations should use stored request-time usage and cost fields, not current provider config repricing.
@@ -332,6 +332,47 @@ ORDER BY requests DESC;
 When operators generate rollups, `usage_rollup_decision_buckets` preserves report-critical bucket counts after raw request or decision detail retention. Browser admin scalar APIs include `/admin/reports/api/dynamic-signals`, `/admin/reports/api/dynamic-score-buckets`, `/admin/reports/api/dynamic-thresholds`, `/admin/reports/api/max-token-buckets`, `/admin/reports/api/input-token-buckets`, and `/admin/reports/api/admission-reasons`.
 
 Governed content capture is separate from diagnostics. It is disabled by default and, when enabled by the deployment operator, writes redacted request/response/upstream-error content to dedicated relational tables keyed by `request_id`. Maintenance operations require policy-based authorization for `content:capture`: `DELETE /v1/content-captures/<request_id>` uses action `delete` in the captured row's caller project/environment domain, and `POST /v1/content-captures/purge-expired` uses action `purge`. Existing `content_admin: true` caller entries remain compatible for their own domain. Both operations write audit rows. Usage reports remain metadata-oriented and do not print captured content.
+
+### Governed training export
+
+`POST /admin/training/outcomes/{request_id}` attaches versioned harness feedback
+only to an existing complete encrypted/unexpired captured request. It requires
+deployment-wide admin `content:training` action `label`; ordinary callers cannot
+assert training success. `router-outcome-v1` records deterministic task success,
+tool-call schema validity, quality [0,1], task hash and allowlisted mock-backend
+checker fixture. HTTP 200 alone is never a success label.
+
+`POST /admin/training/export` requires deployment-wide admin `content:training`
+action `export`, JSON content type, same-origin browser access and enabled
+security reporting. A security-event row must commit before content leaves;
+audit failure refuses access. Filter by public `token_id`, `project`, `client`,
+`group`, half-open UTC `from`/`to`, `success_only`, and `min_quality`. Supply
+explicit frozen `validation_from` and `test_from` boundaries, a reviewed
+`teacher_terms_decision.decision`, its explicit string
+`training_outputs_allowed: "true"` attestation, and `task_source.license`. Success/quality filters apply to train/val only; eligible labeled teacher
+failures remain in the frozen test population. Source tasks cannot cross splits. Narrow filters if selection exceeds 10,000 usage rows or 64 MiB.
+
+The ZIP contains `train.jsonl`, `val.jsonl`, `test.jsonl`, `manifest.json` with
+counts, effective filters, hashes, capture provenance, audit-event reference and
+teacher/task attribution. Rows retain canonical chat/tool continuations with
+JSON-string function arguments and paired call/result IDs, outcome labels and
+allowlisted replay initial fixtures. Deduplicate transcript hashes; reject
+ambiguous labels. Historical text-IR-only or unsupported multimodal captures
+are skipped, not reconstructed from metadata or uncaptured requests.
+
+Storage redaction is preserved; additional email/phone/diagnostic-secret
+filtering applies to parsed content, never PII restoration. Headers/raw vendor
+extensions are excluded. Filters are not a guarantee against every sensitive
+value: review tool schemas, backend results, consent and downstream policies.
+Verify teacher license/provider output-training permission. Deletion/expiry
+prevents later export but cannot recall downloaded copies; secure and expire
+those independently. Legal holds preserve records, not training consent.
+
+See the source example `examples/fine-tune-qwen3p8-27b/router-loop/README.md` for
+two-key collection and same-group key-scoped canary routing. Replay **new** model
+calls from initial fixtures, not recorded teacher answers, and freeze evaluation
+scorers/gates before held-out inference. A synthetic stand-in proves routing
+controls only; it is not a fine-tuned-model quality or promotion result.
 
 ## Filtering
 
