@@ -609,15 +609,19 @@ func optionalRequestTokenEstimateRecord(rec requestTokenEstimateRecord, ok bool)
 }
 
 type adminSavingsRow struct {
-	Key             string  `json:"key"`
-	Requests        int64   `json:"requests"`
-	InputTokens     int64   `json:"input_tokens"`
-	OutputTokens    int64   `json:"output_tokens"`
-	TotalTokens     int64   `json:"total_tokens"`
-	ActualCostUSD   float64 `json:"actual_cost_usd"`
-	BaselineCostUSD float64 `json:"baseline_cost_usd"`
-	SavingsUSD      float64 `json:"savings_usd"`
-	SavingsPct      float64 `json:"savings_pct"`
+	EstimatedRequests     int64   `json:"estimatedRequests"`
+	EstimatedInputTokens  int64   `json:"estimatedInputTokens"`
+	EstimatedOutputTokens int64   `json:"estimatedOutputTokens"`
+	EstimatedTokenShare   float64 `json:"estimatedTokenShare"`
+	Key                   string  `json:"key"`
+	Requests              int64   `json:"requests"`
+	InputTokens           int64   `json:"input_tokens"`
+	OutputTokens          int64   `json:"output_tokens"`
+	TotalTokens           int64   `json:"total_tokens"`
+	ActualCostUSD         float64 `json:"actual_cost_usd"`
+	BaselineCostUSD       float64 `json:"baseline_cost_usd"`
+	SavingsUSD            float64 `json:"savings_usd"`
+	SavingsPct            float64 `json:"savings_pct"`
 }
 
 type adminReportPeriod struct {
@@ -626,6 +630,10 @@ type adminReportPeriod struct {
 }
 
 type adminReportSummary struct {
+	EstimatedRequests           int64    `json:"estimatedRequests"`
+	EstimatedInputTokens        int64    `json:"estimatedInputTokens"`
+	EstimatedOutputTokens       int64    `json:"estimatedOutputTokens"`
+	EstimatedTokenShare         float64  `json:"estimatedTokenShare"`
 	Requests                    int64    `json:"requests"`
 	Errors                      int64    `json:"errors"`
 	Tokens                      int64    `json:"tokens"`
@@ -766,6 +774,7 @@ type adminReportTableRow struct {
 }
 
 type adminReportRequest struct {
+	UsageSource                     string  `json:"usageSource"`
 	TimeUTC                         string  `json:"timeUtc"`
 	RequestID                       string  `json:"requestId"`
 	CallerID                        string  `json:"callerId"`
@@ -2512,6 +2521,7 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 		RequestBytesBucket: strings.TrimSpace(q.Get("request_bytes_bucket")),
 		InputTokensBucket:  strings.TrimSpace(q.Get("estimated_input_tokens_bucket")),
 		OutputCapBucket:    strings.TrimSpace(q.Get("output_cap_bucket")),
+		UsageSource:        strings.TrimSpace(q.Get("usage_source")),
 		ReasoningPresent:   reasoningPresent,
 		MultimodalOnly:     parseTruthy(q.Get("multimodal")),
 		RequestShapeFP:     strings.TrimSpace(q.Get("request_shape_fingerprint")),
@@ -5115,12 +5125,15 @@ func adminChartSeriesFromRequestRows(name, unit, colorKey string, rows []adminRe
 }
 
 type adminSavingsAgg struct {
-	Requests        int64
-	InputTokens     int64
-	OutputTokens    int64
-	TotalTokens     int64
-	ActualCostUSD   float64
-	BaselineCostUSD float64
+	EstimatedRequests     int64
+	EstimatedInputTokens  int64
+	EstimatedOutputTokens int64
+	Requests              int64
+	InputTokens           int64
+	OutputTokens          int64
+	TotalTokens           int64
+	ActualCostUSD         float64
+	BaselineCostUSD       float64
 }
 
 func adminSavingsAggFor(data map[string]*adminSavingsAgg, key string) *adminSavingsAgg {
@@ -5131,6 +5144,11 @@ func adminSavingsAggFor(data map[string]*adminSavingsAgg, key string) *adminSavi
 }
 
 func (a *adminSavingsAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
+	if row.UsageSource == "estimated" {
+		a.EstimatedRequests++
+		a.EstimatedInputTokens += int64(row.InputTokens)
+		a.EstimatedOutputTokens += int64(row.OutputTokens)
+	}
 	a.Requests++
 	a.InputTokens += int64(row.InputTokens)
 	a.OutputTokens += int64(row.OutputTokens)
@@ -5142,15 +5160,19 @@ func (a *adminSavingsAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
 func (a *adminSavingsAgg) row(key string) adminSavingsRow {
 	savings := a.BaselineCostUSD - a.ActualCostUSD
 	return adminSavingsRow{
-		Key:             key,
-		Requests:        a.Requests,
-		InputTokens:     a.InputTokens,
-		OutputTokens:    a.OutputTokens,
-		TotalTokens:     a.TotalTokens,
-		ActualCostUSD:   a.ActualCostUSD,
-		BaselineCostUSD: a.BaselineCostUSD,
-		SavingsUSD:      savings,
-		SavingsPct:      ratioPctFloat(savings, a.BaselineCostUSD),
+		EstimatedRequests:     a.EstimatedRequests,
+		EstimatedInputTokens:  a.EstimatedInputTokens,
+		EstimatedOutputTokens: a.EstimatedOutputTokens,
+		EstimatedTokenShare:   ratioPctFloat(float64(a.EstimatedInputTokens+a.EstimatedOutputTokens), float64(a.TotalTokens)),
+		Key:                   key,
+		Requests:              a.Requests,
+		InputTokens:           a.InputTokens,
+		OutputTokens:          a.OutputTokens,
+		TotalTokens:           a.TotalTokens,
+		ActualCostUSD:         a.ActualCostUSD,
+		BaselineCostUSD:       a.BaselineCostUSD,
+		SavingsUSD:            savings,
+		SavingsPct:            ratioPctFloat(savings, a.BaselineCostUSD),
 	}
 }
 
@@ -5239,6 +5261,10 @@ func addAdminAgg(m map[string]*agg, key string, row usageRow) {
 
 func adminSummaryFromAgg(a *agg) adminReportSummary {
 	return adminReportSummary{
+		EstimatedRequests:           a.EstimatedRequestCount,
+		EstimatedInputTokens:        a.EstimatedInputTokens,
+		EstimatedOutputTokens:       a.EstimatedOutputTokens,
+		EstimatedTokenShare:         estimatedTokenShare(*a),
 		Requests:                    a.Calls,
 		Errors:                      a.Errors,
 		Tokens:                      a.TotalTokens,
@@ -5489,6 +5515,7 @@ func adminFilterDTO(filters adminReportFilters) adminReportFilterDTO {
 
 func adminRequestFromRow(row usageRow) adminReportRequest {
 	return adminReportRequest{
+		UsageSource:                     row.UsageSource,
 		TimeUTC:                         formatUsageTime(row.TS),
 		RequestID:                       row.RequestID,
 		CallerID:                        row.CallerID,

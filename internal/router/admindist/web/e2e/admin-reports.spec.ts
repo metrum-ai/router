@@ -24,6 +24,17 @@ test.beforeEach(async ({ page }) => {
   await installAdminApiMocks(page, apiRequests);
 });
 
+test("overview distinguishes estimated usage and preserves the source filter", async ({ page }) => {
+  await page.route("**/api/summary*", (route) => route.fulfill({ json: {
+    summary: { requests: 4, totalTokens: 200, estimatedTokenShare: 25, estimatedInputTokens: 10, estimatedOutputTokens: 40 },
+    charts: [], requests: [],
+  } }));
+  await page.goto("/?tab=overview&usage_source=estimated");
+  await expect(page.getByText("Estimated usage", { exact: true })).toBeVisible();
+  await expect(page.getByText("25.0%", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/usage-provenance-overview.png", fullPage: true });
+});
+
 function globalFiltersButton(page: Page) {
   return page.getByRole("button", { name: "Filters", exact: true }).first();
 }
