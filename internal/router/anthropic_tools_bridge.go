@@ -178,6 +178,6 @@ func decodeAnthropicToolsBridge(out string, raw []byte, model string, ids Identi
 	if ids != nil {
 		resp.ID = ids.Encode(resp.ID)
 	}
-	resp.Raw = map[string]any{"id": resp.ID, "type": "message", "role": "assistant", "model": model, "content": content, "stop_reason": stop, "stop_sequence": nil, "usage": map[string]any{"input_tokens": resp.Usage.InputTokens, "output_tokens": resp.Usage.OutputTokens}}
+	resp.Raw = map[string]any{"id": resp.ID, "type": "message", "role": "assistant", "model": model, "content": content, "stop_reason": stop, "stop_sequence": nil, "usage": anthropicUsageMap(resp.Usage)}
 	return resp, nil
 }

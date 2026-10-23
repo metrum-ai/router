@@ -295,6 +295,8 @@ type usageRow struct {
 	OutputTokens                       int
 	TotalTokens                        int
 	ReasoningTokens                    *int
+	CacheWriteInputTokens              *int
+	CacheWritePricePerMillionUSD       *float64
 	CachedInputTokens                  *int
 	ReasoningAttemptCount              int
 	ReasoningSuccessfulAttemptCount    int
@@ -445,6 +447,8 @@ type usageRecord struct {
 	OutputTokens                       int                                `gorm:"column:output_tokens;not null"`
 	TotalTokens                        int                                `gorm:"column:total_tokens;not null"`
 	ReasoningTokens                    *int                               `gorm:"column:reasoning_tokens"`
+	CacheWriteInputTokens              *int                               `gorm:"column:cache_write_input_tokens"`
+	CacheWritePricePerMillionUSD       *float64                           `gorm:"column:cache_write_price_per_million_usd"`
 	CachedInputTokens                  *int                               `gorm:"column:cached_input_tokens"`
 	ReasoningAttemptCount              int                                `gorm:"column:reasoning_attempt_count;not null;default:0"`
 	ReasoningSuccessfulAttemptCount    int                                `gorm:"column:reasoning_successful_attempt_count;not null;default:0"`
@@ -1615,6 +1619,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyUsageCacheWriteMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1794,6 +1802,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageCachedInputPricingColumns,
 		usageCacheBillingColumns,
 		usageProvenanceColumns,
+		usageCacheWriteColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2578,7 +2587,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
 	merged := map[string]map[string]struct{}{}
-	groups = append(groups, usageCacheBillingColumns, usageProvenanceColumns)
+	groups = append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns)
 	for _, group := range groups {
 		for table, columns := range group {
 			if merged[table] == nil {
@@ -3240,6 +3249,8 @@ func rowFromRecord(rec logRecord) usageRow {
 		OutputTokens:                       rec.Usage.OutputTokens,
 		TotalTokens:                        rec.Usage.TotalTokens,
 		ReasoningTokens:                    reasoningTokens,
+		CacheWriteInputTokens:              rec.Usage.CacheWriteInputTokens,
+		CacheWritePricePerMillionUSD:       rec.CacheWritePricePerMillionUSD,
 		CachedInputTokens:                  rec.Usage.CachedInputTokens,
 		ReasoningAttemptCount:              reasoningAttempts,
 		ReasoningSuccessfulAttemptCount:    reasoningSuccesses,
@@ -3365,6 +3376,8 @@ func recordFromRow(row usageRow) *usageRecord {
 		OutputTokens:                       row.OutputTokens,
 		TotalTokens:                        row.TotalTokens,
 		ReasoningTokens:                    row.ReasoningTokens,
+		CacheWriteInputTokens:              row.CacheWriteInputTokens,
+		CacheWritePricePerMillionUSD:       row.CacheWritePricePerMillionUSD,
 		CachedInputTokens:                  row.CachedInputTokens,
 		ReasoningAttemptCount:              row.ReasoningAttemptCount,
 		ReasoningSuccessfulAttemptCount:    row.ReasoningSuccessfulAttemptCount,
@@ -3466,6 +3479,8 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		OutputTokens:                       record.OutputTokens,
 		TotalTokens:                        record.TotalTokens,
 		ReasoningTokens:                    record.ReasoningTokens,
+		CacheWriteInputTokens:              record.CacheWriteInputTokens,
+		CacheWritePricePerMillionUSD:       record.CacheWritePricePerMillionUSD,
 		CachedInputTokens:                  record.CachedInputTokens,
 		ReasoningAttemptCount:              record.ReasoningAttemptCount,
 		ReasoningSuccessfulAttemptCount:    record.ReasoningSuccessfulAttemptCount,

@@ -362,7 +362,7 @@ Cost fields are captured when each request finishes. Reports do not look up curr
 
 For image requests, `input_price_per_million_usd` remains the fallback input-token rate. If a VLM has separate image pricing, configure `image_input_price_per_million_tokens_usd` for upstream-reported image tokens or `image_input_price_per_image_usd` for fixed per-image cost allocation. When an upstream returns billed cost, the router stores those values as upstream-reported cost fields in addition to router-calculated cost fields.
 
-For prompt-cache accounting, configure optional `cached_input_price_per_million_usd` on the catalog or target. The router persists upstream `cached_input_tokens` when reported and applies the cached price only when both the count and price are known for that request. Missing evidence keeps ordinary input pricing.
+For prompt-cache accounting, configure optional `cached_input_price_per_million_usd` on the catalog or target. The router persists upstream `cached_input_tokens` when reported and applies the cached price only when both the count and price are known for that request. Missing evidence keeps ordinary input pricing. Anthropic usage includes cache reads and writes in the router's input total; client-visible Anthropic usage partitions them back into disjoint fields. Optional `cache_write_price_per_million_usd` prices `cache_write_input_tokens` separately; missing write pricing uses the base input price with `missing-cache-write-pricing-metadata`. Both 5-minute and 1-hour creation counts are recognized, but one target write price applies to both.
 
 For a buyer-facing explanation of cost policy and cost allocation, see [Cost Governance](/docs/evaluation/cost-governance).
 

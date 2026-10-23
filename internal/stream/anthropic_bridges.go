@@ -29,6 +29,7 @@ type AnthropicUpstreamToChatCaller struct {
 	started, terminal, finished bool
 	stop                        string
 	usage                       Usage
+	uncached                    int
 }
 
 func (t *AnthropicUpstreamToChatCaller) Begin(TokenEstimate) ([]Event, error) { return nil, nil }
@@ -41,12 +42,8 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		Type    string `json:"type"`
 		Index   int    `json:"index"`
 		Message struct {
-			ID    string `json:"id"`
-			Usage struct {
-				Input  int  `json:"input_tokens"`
-				Output int  `json:"output_tokens"`
-				Cached *int `json:"cache_read_input_tokens"`
-			} `json:"usage"`
+			ID    string               `json:"id"`
+			Usage anthropicUsageFields `json:"usage"`
 		} `json:"message"`
 		Block struct {
 			Type, ID, Name, Text string
@@ -57,9 +54,7 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 			JSON       string `json:"partial_json"`
 			Stop       string `json:"stop_reason"`
 		} `json:"delta"`
-		Usage struct {
-			Output int `json:"output_tokens"`
-		} `json:"usage"`
+		Usage anthropicUsageFields `json:"usage"`
 	}
 	if err := json.Unmarshal(up.Data, &p); err != nil {
 		return nil, err
@@ -82,8 +77,7 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		t.tools = map[int]int{}
 		t.argumentsSeen = map[int]bool{}
 		t.chat = ResponsesUpstreamToChatCaller{IDs: t.IDs, ResponseID: p.Message.ID, Model: t.Model, PublicModel: t.PublicModel, CreatedAt: t.CreatedAt}
-		t.usage = Usage{InputTokens: p.Message.Usage.Input, OutputTokens: p.Message.Usage.Output, CachedInputTokens: p.Message.Usage.Cached}
-		t.usage.TotalTokens = t.usage.InputTokens + t.usage.OutputTokens
+		p.Message.Usage.apply(&t.usage, &t.uncached)
 		return []Event{t.chat.chunk(map[string]any{"role": "assistant"}, nil)}, nil
 	}
 	if !t.started {
@@ -167,16 +161,22 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		default:
 			return nil, errors.New("stream: unsupported Anthropic stop reason")
 		}
-		t.usage.OutputTokens = p.Usage.Output
-		t.usage.TotalTokens = t.usage.InputTokens + t.usage.OutputTokens
+		p.Usage.apply(&t.usage, &t.uncached)
 	case "message_stop":
 		if t.stop == "" {
 			return nil, errors.New("stream: message_stop without stop reason")
 		}
 		t.terminal = true
 		t.chat.usage = map[string]any{"prompt_tokens": t.usage.InputTokens, "completion_tokens": t.usage.OutputTokens, "total_tokens": t.usage.TotalTokens}
+		details := map[string]any{}
 		if t.usage.CachedInputTokens != nil {
-			t.chat.usage["prompt_tokens_details"] = map[string]any{"cached_tokens": *t.usage.CachedInputTokens}
+			details["cached_tokens"] = *t.usage.CachedInputTokens
+		}
+		if t.usage.CacheWriteInputTokens != nil {
+			details["cache_write_tokens"] = *t.usage.CacheWriteInputTokens
+		}
+		if len(details) > 0 {
+			t.chat.usage["prompt_tokens_details"] = details
 		}
 		return []Event{t.chat.chunk(map[string]any{}, t.stop)}, ErrTerminal
 	default:
@@ -337,10 +337,7 @@ func (t *ChatUpstreamToAnthropicCaller) Finish(reason StopReason, _ Usage) ([]Ev
 		stop = "max_tokens"
 	}
 	u := t.UsageSnapshot()
-	usage := map[string]any{"input_tokens": u.InputTokens, "output_tokens": u.OutputTokens}
-	if u.CachedInputTokens != nil {
-		usage["cache_read_input_tokens"] = *u.CachedInputTokens
-	}
+	usage := AnthropicUsageMap(u)
 	return []Event{typedEvent("message_delta", map[string]any{"delta": map[string]any{"stop_reason": stop, "stop_sequence": nil}, "usage": usage}), typedEvent("message_stop", map[string]any{})}, nil
 }
 

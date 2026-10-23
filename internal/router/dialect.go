@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/metrum-ai/router/internal/stream"
 )
 
 func decodeRequest(dialect string, body []byte, h http.Header) (*IRRequest, error) {
@@ -738,10 +740,7 @@ func encodeAnthropicResponse(resp *IRResponse, publicModel string) map[string]an
 		"content":       []map[string]any{{"type": "text", "text": resp.Text}},
 		"stop_reason":   defaultString(resp.StopReason, "end_turn"),
 		"stop_sequence": nil,
-		"usage": map[string]any{
-			"input_tokens":  resp.Usage.InputTokens,
-			"output_tokens": resp.Usage.OutputTokens,
-		},
+		"usage":         anthropicUsageMap(resp.Usage),
 	}
 }
 
@@ -794,6 +793,9 @@ func chatUsageMap(usage Usage) map[string]any {
 	if usage.ReasoningTokens != nil {
 		out["completion_tokens_details"] = map[string]any{"reasoning_tokens": *usage.ReasoningTokens}
 	}
+	if usage.CacheWriteInputTokens != nil {
+		details["cache_write_tokens"] = *usage.CacheWriteInputTokens
+	}
 	if usage.CachedInputTokens != nil {
 		details["cached_tokens"] = *usage.CachedInputTokens
 	}
@@ -808,8 +810,15 @@ func responsesUsageMap(usage Usage) map[string]any {
 	if usage.ReasoningTokens != nil {
 		out["output_tokens_details"] = map[string]any{"reasoning_tokens": *usage.ReasoningTokens}
 	}
+	details := map[string]any{}
 	if usage.CachedInputTokens != nil {
-		out["input_tokens_details"] = map[string]any{"cached_tokens": *usage.CachedInputTokens}
+		details["cached_tokens"] = *usage.CachedInputTokens
+	}
+	if usage.CacheWriteInputTokens != nil {
+		details["cache_write_tokens"] = *usage.CacheWriteInputTokens
+	}
+	if len(details) > 0 {
+		out["input_tokens_details"] = details
 	}
 	return out
 }
@@ -1346,8 +1355,30 @@ func usageFromMap(v any) Usage {
 		cachedTokens = &n
 		in += n
 	}
+	var cacheWrite *int
 	if n, present := numberAsInt(m["cache_creation_input_tokens"]); present {
-		in += n
+		cacheWrite = &n
+	} else if creation, ok := m["cache_creation"].(map[string]any); ok {
+		five, p5 := numberAsInt(creation["ephemeral_5m_input_tokens"])
+		hour, p1 := numberAsInt(creation["ephemeral_1h_input_tokens"])
+		if p5 || p1 {
+			n := five + hour
+			cacheWrite = &n
+		}
+	}
+	if cacheWrite != nil {
+		in += *cacheWrite
+	}
+	// The Chat bridge preserves cache-write evidence in prompt details.
+	if cacheWrite == nil {
+		for _, key := range []string{"prompt_tokens_details", "input_tokens_details"} {
+			if details, ok := m[key].(map[string]any); ok {
+				if n, present := numberAsInt(details["cache_write_tokens"]); present {
+					cacheWrite = &n
+					break
+				}
+			}
+		}
 	}
 	var warnings []string
 	for _, n := range []*int{&in, &out, &total, &imageTokens, reasoningTokens} {
@@ -1374,6 +1405,7 @@ func usageFromMap(v any) Usage {
 		TotalTokens:                   total,
 		ReasoningTokens:               reasoningTokens,
 		CachedInputTokens:             cachedTokens,
+		CacheWriteInputTokens:         cacheWrite,
 		InputImageTokens:              imageTokens,
 		UpstreamReportedInputCostUSD:  upstreamInputCost,
 		UpstreamReportedOutputCostUSD: upstreamOutputCost,
@@ -1432,6 +1464,10 @@ func stringValue(v any) string {
 		return s
 	}
 	return ""
+}
+
+func anthropicUsageMap(u Usage) map[string]any {
+	return stream.AnthropicUsageMap(stream.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
 }
 
 func numberAsInt(v any) (int, bool) {

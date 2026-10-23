@@ -38,11 +38,13 @@ type TokenEstimate struct {
 
 // Usage is reconciled token usage passed to Finish.
 type Usage struct {
-	InputTokens       int  `json:"input_tokens"`
-	OutputTokens      int  `json:"output_tokens"`
-	TotalTokens       int  `json:"total_tokens"`
-	ReasoningTokens   *int `json:"reasoning_tokens,omitempty"`
-	CachedInputTokens *int `json:"cached_input_tokens,omitempty"`
+	// InputTokens includes uncached, cache-read and cache-write input.
+	CacheWriteInputTokens *int `json:"cache_write_input_tokens,omitempty"`
+	InputTokens           int  `json:"input_tokens"`
+	OutputTokens          int  `json:"output_tokens"`
+	TotalTokens           int  `json:"total_tokens"`
+	ReasoningTokens       *int `json:"reasoning_tokens,omitempty"`
+	CachedInputTokens     *int `json:"cached_input_tokens,omitempty"`
 }
 
 // StopReason classifies why Finish was invoked and/or the dialect terminal

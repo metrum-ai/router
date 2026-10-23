@@ -214,7 +214,7 @@ func accumulateNativeSSE(resp *IRResponse, dialect string, frame []byte) (done, 
 				if upstreamModel := stringValue(message["model"]); upstreamModel != "" {
 					resp.Model = upstreamModel
 				}
-				mergeStreamUsage(&resp.Usage, usageFromMap(message["usage"]))
+				mergeAnthropicStreamUsage(resp, message["usage"])
 			}
 		case "content_block_delta":
 			if delta, ok := payload["delta"].(map[string]any); ok && stringValue(delta["type"]) == "text_delta" {
@@ -224,9 +224,7 @@ func accumulateNativeSSE(resp *IRResponse, dialect string, frame []byte) (done, 
 			if delta, ok := payload["delta"].(map[string]any); ok {
 				resp.StopReason = stringValue(delta["stop_reason"])
 			}
-			mergeStreamUsage(&resp.Usage, usageFromMap(payload["usage"]))
-			// Anthropic has no reported total; message_delta is output-only.
-			resp.Usage.TotalTokens = resp.Usage.InputTokens + resp.Usage.OutputTokens
+			mergeAnthropicStreamUsage(resp, payload["usage"])
 		case "message_stop":
 			return true, true
 		}
@@ -245,6 +243,23 @@ func sseFrameData(frame []byte) []byte {
 	return []byte(strings.Join(lines, "\n"))
 }
 
+func mergeAnthropicStreamUsage(resp *IRResponse, v any) {
+	if resp.anthropicStreamUsage == nil {
+		resp.anthropicStreamUsage = map[string]any{}
+	}
+	if m, ok := v.(map[string]any); ok {
+		if _, breakdown := m["cache_creation"]; breakdown {
+			if _, aggregate := m["cache_creation_input_tokens"]; !aggregate {
+				delete(resp.anthropicStreamUsage, "cache_creation_input_tokens")
+			}
+		}
+		for key, value := range m {
+			resp.anthropicStreamUsage[key] = value
+		}
+	}
+	resp.Usage = usageFromMap(resp.anthropicStreamUsage)
+}
+
 func mergeStreamUsage(dst *Usage, src Usage) {
 	if dst == nil {
 		return
@@ -260,6 +275,9 @@ func mergeStreamUsage(dst *Usage, src Usage) {
 	}
 	if src.ReasoningTokens != nil {
 		dst.ReasoningTokens = src.ReasoningTokens
+	}
+	if src.CacheWriteInputTokens != nil {
+		dst.CacheWriteInputTokens = src.CacheWriteInputTokens
 	}
 	if src.CachedInputTokens != nil {
 		dst.CachedInputTokens = src.CachedInputTokens

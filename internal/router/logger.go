@@ -37,6 +37,7 @@ type adminReportQueryFailureLogRecord struct {
 }
 
 type logRecord struct {
+	CacheWritePricePerMillionUSD       *float64                         `json:"cache_write_price_per_million_usd,omitempty"`
 	UsageSource                        string                           `json:"usage_source"`
 	TS                                 string                           `json:"ts"`
 	RequestID                          string                           `json:"request_id"`
