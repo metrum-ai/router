@@ -6,9 +6,29 @@ from pathlib import Path
 import yaml
 import plan
 import render
+import train_peft
 
 
 class AMDTests(unittest.TestCase):
+    def test_fallback_supervises_all_assistant_turns(self):
+        class Tokenizer:
+            def apply_chat_template(self, messages, **kwargs):
+                values = []
+                for message in messages:
+                    values += [1 if message['role'] == 'user' else 2, 10, 11]
+                if kwargs['add_generation_prompt']:
+                    values += [2]
+                return {'input_ids': values}
+        row = {'messages': [{'role': 'user'}, {'role': 'assistant'}, {'role': 'user'}, {'role': 'assistant'}], 'tools': '[]'}
+        encoded = train_peft.encode(row, Tokenizer())
+        self.assertEqual(encoded['labels'], [-100]*4+[10]+[-100]*5+[10,-100])
+        self.assertEqual(train_peft.token_ids({'input_ids': [3,4]}), [3,4])
+        class Broken(Tokenizer):
+            def apply_chat_template(self, messages, **kwargs):
+                return [99] if kwargs['add_generation_prompt'] else [1,2]
+        with self.assertRaises(ValueError):
+            train_peft.encode(row, Broken())
+
     def test_official_digest_only(self):
         for image in ['rocm/vllm:latest', 'vllm/vllm-openai@sha256:'+'a'*64,
                       'rocm/vllm@sha256:'+'A'*64, 'rocm/vllm@sha256:bad']:
