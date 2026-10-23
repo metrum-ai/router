@@ -26,7 +26,15 @@ Low limits are retained **only** in labelled quota/rate negative tests.
 1186train/221val/300test; same export bytes/views on both accelerators. NVIDIA
 fixed75-step RTX PRO6000 training and the supplemental BF16 safe merge completed;
 see the metadata-only training/merge receipts. GPUcap$150/stop$120/max4h and the
-existing21:19Z lease deadline remain unchanged. Valid student qualification and
+initial21:19Z lease deadline have an explicit one-lease extension authorization:
+`lease-extension-authorization.json` permits the existing NVIDIA lease until at
+most **2026-10-24T00:19Z**, with00:10Z cleanup buffer and the same120USD stop.
+No new rental; keep both lease watchdogs and the budget/phase-end guard active.
+Finish the registered base+LoRA gate/controls FIRST, then descriptive merged
+parity. No new/recreated Fireworks dedicated deployment without asking the
+orchestrator. The previously running vendor reference is being API-deleted;
+retain its attempted/startup/idle costs. Teacher-native and CPU merge are already
+done, not pending GPU work. Valid student qualification and
 promotion results remain pending.
 The direct-download preparation at`2bfd8de018` is **superseded**, not training data.
 Current`preregistration.json` authorizes only its hash-bound governed cohort;
