@@ -65,6 +65,12 @@ func TestTrainingAdminAuthorizationAuditAndMissingCapture(t *testing.T) {
 			if got := call("/admin/training/outcomes/uncaptured", label, true); got != 404 {
 				t.Fatalf("uncaptured label=%d", got)
 			}
+			if got := call("/admin/training/outcomes/uncaptured", strings.TrimSuffix(label, "}")+`,"expected_final":"J"}`, true); got != 404 {
+				t.Fatalf("A-J anchor rejected: %d", got)
+			}
+			if got := call("/admin/training/outcomes/uncaptured", strings.TrimSuffix(label, "}")+`,"expected_final":"Z"}`, true); got != 400 {
+				t.Fatalf("unknown anchor accepted: %d", got)
+			}
 			svc.cfg.Server.AdminReports.Security.Enabled = false
 			if got := call("/admin/training/export", string(body), true); got != 503 {
 				t.Fatalf("disabled audit export=%d", got)

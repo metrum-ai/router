@@ -80,7 +80,7 @@ def episode(base, key, row, seed):
     expected = [{'name': c['function']['name'], 'arguments': json.loads(c['function']['arguments'])}
                 for m in row['messages'] for c in m.get('tool_calls', [])]
     gold = row['messages'][-1].get('content')
-    expected_final = gold.strip() if isinstance(gold, str) and gold.strip() in ('A','B','C','D') and not expected else ''
+    expected_final = gold.strip() if isinstance(gold, str) and gold.strip() in tuple('ABCDEFGHIJ') and not expected else ''
     messages = json.loads(json.dumps(initial))
     actual, schema_valid, tokens = [], True, 0
     request_ids = []
