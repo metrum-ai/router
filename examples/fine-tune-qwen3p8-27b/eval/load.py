@@ -24,7 +24,7 @@ def main():
     p.add_argument('--requests', type=int, default=64)
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
-    if a.requests < 32 or a.hourly_usd < 0:
+    if a.requests < 32 or not math.isfinite(a.hourly_usd) or a.hourly_usd < 0:
         p.error('at least 32 requests and nonnegative hourly cost required')
     token = a.token_file.read_text().strip()
     results = []
@@ -73,6 +73,10 @@ def main():
         a.out.write_text(json.dumps({'copyright':'Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0',
             'model':a.model,'measurements':results,'caveat':'End-to-end router timings; TPOT requires streamed usage. Hourly economics assume fully utilized measured throughput; not invoices.'},indent=2))
         print('concurrency',concurrency,'errors',result['errors'],flush=True)
+    if any(row['errors'] for row in results):
+        raise SystemExit(1)
+    if any(row['output_tokens'] is None for row in results):
+        raise SystemExit(2)
 
 if __name__ == '__main__':
     main()

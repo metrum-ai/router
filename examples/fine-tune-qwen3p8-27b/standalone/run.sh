@@ -19,12 +19,13 @@ if [[ "$MODE" == train ]]; then
 fi
 # Canonical tiny smoke subset remains outside Git; both full arms use train.jsonl.
 head -n 16 /workspace/canonical/train.jsonl > /workspace/canonical/smoke.jsonl
+DATA_ID=$(sha256sum /workspace/canonical/train.jsonl /workspace/canonical/val.jsonl | sha256sum | cut -c1-64)
 EXTRA=''
 [[ "$MODE" != smoke ]] || EXTRA='--smoke'
 sudo docker run --rm --gpus all --ipc=host --shm-size=32g \
   -v /workspace:/data --entrypoint bash "$IMAGE" -lc "
     set -euo pipefail
-    python /data/standalone/render.py --gpus $GPUS $EXTRA --out /data/$MODE.yaml
+    python /data/standalone/render.py --gpus $GPUS $EXTRA --data-id '$MODE-$DATA_ID' --out /data/$MODE.yaml
     python /data/standalone/inventory.py > /data/axolotl-package-versions.txt
     axolotl train /data/$MODE.yaml
   "

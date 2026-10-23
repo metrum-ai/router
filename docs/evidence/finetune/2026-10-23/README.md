@@ -8,6 +8,28 @@ No promotion claim is supported by this evidence.**
 
 ## Progress after maintainer decisions
 
+**05:01 UTC pre-outcome amendment:** dataset QA found the initial JSON-only
+converter rejected Glaive's mixed Python-literal quoting. Its random held-out
+split had **zero tool targets** (training had only 2/2000), so the first adapter
+is superseded and not promotable. No held-out FT outcome inference was run.
+Fixed with safe literal parsing, regression tests and seeded 2:1 tool/text
+stratification; corrected counts are train1333/2000, val333/500, test200/300.
+Current `dataset-manifest.json` and the amended protocol identify the corrected
+hashes; the original signed commit below preserves the flawed preflight.
+The first full training and vLLM native/tool/schema smoke completed, but are
+**not corrected-data model evidence**. Fireworks first upload validated with
+zero warnings; its 2×B300 default deployment was still CREATING when stopped
+immediately on discovery. Deployment deletion was API-verified04:56:23Z and
+uploaded model deletion GET404 verified05:00:52Z. Official vLLM was stopped to
+release VRAM; corrected hardware smoke + full retraining are now running.
+
+Preregistration and original scorer were published **before any FT outcome
+inference** in verified GitHub commit
+[`a5a60109d20e3eaa5c4275efc4905cd4a7d2c920`](https://github.com/metrum-ai/router/commit/a5a60109d20e3eaa5c4275efc4905cd4a7d2c920).
+The held-out test hash is in `dataset-manifest.json`; the scalar gate contract
+and full threshold companion are under the example's `eval/`. Hardware smoke
+and public human-judge calibration did not consume held-out FT test cases.
+
 The human-label gate below was resolved: use a licensed PUBLIC human-labeled
 corpus, not in-house labeling. `judge-calibration.json` records 50 distinct
 MT-Bench human judgments from revision

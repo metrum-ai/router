@@ -25,6 +25,9 @@ def call(args, name='lookup'):
 class DataTests(unittest.TestCase):
     def test_determinism_dedup(self):
         rows = [row(str(i)) for i in range(20)] + [row('  1 ')]
+        for i in range(20):
+            rows.append(data.convert({'system':'tools {"name":"lookup"}',
+                'chat':f'USER: tool-{i} ASSISTANT: <functioncall> {{"name":"lookup","arguments":{{"id":{i}}}}}<|endoftext|>'}))
         a, _ = data.split(rows, 10, 3, 2)
         b, _ = data.split(reversed(rows), 10, 3, 2)
         # Representative byte choice is deterministic for the same input ordering.
@@ -33,6 +36,16 @@ class DataTests(unittest.TestCase):
         self.assertEqual({data.normalized(data.prompt(r)) for r in a['train']},
                          {data.normalized(data.prompt(r)) for r in b['train']})
         data.assert_no_leakage(a['train'] + a['val'], a['test'])
+
+    def test_literal_calls_and_stratification(self):
+        result = data.convert({'system':'tools {"name":"lookup"}',
+            'chat':'''USER: Find it ASSISTANT: <functioncall> {"name": "lookup", "arguments": '{"id": 1, "enabled": true}'}<|endoftext|>'''})
+        args = json.loads(result['messages'][-1]['tool_calls'][0]['function']['arguments'])
+        self.assertEqual(args, {'id':1,'enabled':True})
+        with self.assertRaises(ValueError):
+            data.parse_call("__import__('os').system('false')")
+        with self.assertRaises(ValueError):
+            data.split([row(str(i)) for i in range(20)],10,3,2)
 
     def test_leak(self):
         with self.assertRaises(ValueError):
@@ -55,6 +68,35 @@ class RuntimeTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
+
+    def test_fireworks_signed_upload_headers_and_validation(self):
+        import tempfile
+        from unittest.mock import patch
+        fw = self.load('fw_upload_test', 'fireworks/run.py')
+        calls = []
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self,*args): return False
+            def read(self): return b''
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = Path(directory)
+            (adapter/'adapter_config.json').write_text(json.dumps({'r':16,'target_modules':['q_proj']}))
+            (adapter/'adapter_model.safetensors').write_bytes(b'synthetic-unit-fixture')
+            def api(path,payload=None,method='POST'):
+                calls.append((path,method))
+                if path.endswith(':getUploadEndpoint'):
+                    return {'filenameToSignedUrls':{name:'https://example.invalid/'+name for name in payload['filenameToSize']}}
+                return {}
+            def put(request,**kwargs):
+                headers = {k.lower():v for k,v in request.header_items()}
+                self.assertEqual(headers['content-type'],'application/octet-stream')
+                size = len(request.data)
+                self.assertEqual(headers['x-goog-content-length-range'],f'{size},{size}')
+                self.assertEqual(request.method,'PUT')
+                return Response()
+            with patch.object(fw,'api',api),patch.object(fw.urllib.request,'urlopen',put):
+                fw.upload('synthetic-account','synthetic-model',adapter)
+            self.assertEqual(calls[-1],('accounts/synthetic-account/models/synthetic-model:validateUpload','GET'))
 
     def test_redaction_and_dryrun(self):
         cloud = self.load('cloud', 'standalone/cloud.py')

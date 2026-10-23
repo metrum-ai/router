@@ -274,6 +274,7 @@ test-k8s-nvidia-llmd-compat:
 .PHONY: ft-example-test
 ft-example-test:
 	cd examples/fine-tune-qwen3p8-27b && uv run --with jsonschema --with pyyaml python -m unittest -v
+	node --test examples/fine-tune-qwen3p8-27b/eval/telemetry.test.cjs
 	mkdir -p examples/fine-tune-qwen3p8-27b/.cache/promptfoo
 	cp examples/fine-tune-qwen3p8-27b/eval/package*.json examples/fine-tune-qwen3p8-27b/.cache/promptfoo/
 	npm ci --prefix examples/fine-tune-qwen3p8-27b/.cache/promptfoo --ignore-scripts --no-audit --no-fund

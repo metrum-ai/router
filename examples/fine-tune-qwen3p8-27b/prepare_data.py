@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Prepare pinned Apache-2.0 Glaive data; real data must stay outside Git."""
 import argparse
+import ast
 import hashlib
 import json
 import random
@@ -43,6 +44,20 @@ def validate(row):
         raise ValueError('missing user prompt')
     return row
 
+def parse_call(text):
+    """Glaive mixes JSON with Python-literal quoting; never execute source text."""
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            value = ast.literal_eval(text)
+        except (ValueError, SyntaxError) as exc:
+            raise ValueError('invalid literal function call') from exc
+    if not isinstance(value, dict):
+        raise ValueError('function call must be an object')
+    return value
+
+
 def convert(row):
     if 'messages' in row:
         return validate(row)
@@ -62,7 +77,7 @@ def convert(row):
     messages = [{'role': 'user', 'content': user.strip()}]
     marker = '<functioncall>'
     if marker in answer:
-        call = json.loads(answer.split(marker, 1)[1].strip())
+        call = parse_call(answer.split(marker, 1)[1].strip())
         args = call['arguments']
         if isinstance(args, str):
             args = json.loads(args)
@@ -88,12 +103,24 @@ def split(rows, train_size=20000, val_size=500, test_size=300, seed=326):
         except (ValueError, KeyError, TypeError):
             rejected += 1
     rows = [unique[k] for k in sorted(unique)]
-    random.Random(seed).shuffle(rows)
-    if len(rows) < train_size + val_size + test_size:
-        raise ValueError(f'insufficient unique valid rows: {len(rows)}')
-    test = rows[:test_size]
-    val = rows[test_size:test_size + val_size]
-    train = rows[test_size + val_size:test_size + val_size + train_size]
+    rng = random.Random(seed)
+    # Stratify before any model outcome is observed: two thirds tool targets.
+    # A random split of a broken parser's output previously had zero tool tests.
+    buckets = {True: [], False: []}
+    for row in rows:
+        buckets[bool(row['messages'][-1].get('tool_calls'))].append(row)
+    for bucket in buckets.values():
+        rng.shuffle(bucket)
+    def take(size):
+        counts = {True: round(size * 2 / 3), False: size - round(size * 2 / 3)}
+        selected = []
+        for kind, count in counts.items():
+            if len(buckets[kind]) < count:
+                raise ValueError('insufficient unique cases for declared tool/text stratification')
+            selected.extend(buckets[kind][:count]);del buckets[kind][:count]
+        rng.shuffle(selected)
+        return selected
+    test, val, train = take(test_size), take(val_size), take(train_size)
     assert_no_leakage(train + val, test)
     return {'train': train, 'val': val, 'test': test}, rejected
 
@@ -113,7 +140,7 @@ def main():
         content = ''.join(json.dumps(r, sort_keys=True, ensure_ascii=False) + '\n' for r in rows).encode()
         (a.out / (name + '.jsonl')).write_bytes(content)
         hashes[name] = hashlib.sha256(content).hexdigest()
-    (a.out / 'manifest.json').write_text(json.dumps({'copyright': 'Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0', 'dataset_revision': REVISION, 'model_revision': MODEL_REVISION, 'sha256': hashes, 'counts': {k: len(v) for k, v in data.items()}, 'rejected': rejected}, indent=2))
+    (a.out / 'manifest.json').write_text(json.dumps({'copyright': 'Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0', 'dataset_revision': REVISION, 'model_revision': MODEL_REVISION, 'sha256': hashes, 'counts': {k: len(v) for k, v in data.items()}, 'rejected': rejected, 'sampling': 'seed 326; 2:1 tool/text stratified; test then validation then training', 'tool_targets': {k:sum(bool(r['messages'][-1].get('tool_calls')) for r in v) for k,v in data.items()}}, indent=2))
 
 if __name__ == '__main__':
     main()

@@ -19,7 +19,7 @@ def main():
     p.add_argument('--tests', type=Path, required=True)
     p.add_argument('--token-file', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True, help='PRIVATE output, never public evidence')
-    p.add_argument('--groups', nargs='+', default=['qwen3p8-27b-base','qwen3p8-27b-ft-onprem','qwen3p8-27b-ft-fireworks'])
+    p.add_argument('--groups', nargs='+', default=['qwen3p8-27b-base','qwen3p8-27b-ft','qwen3p8-27b-ft-onprem','qwen3p8-27b-ft-fireworks'])
     p.add_argument('--temperature', type=float, default=0)
     p.add_argument('--seed', type=int, default=326)
     p.add_argument('--non-tool-only', action='store_true')
@@ -38,9 +38,11 @@ def main():
             if isinstance(assertion.get('value'),str) and assertion['value'].startswith('file://scorers/'):
                 assertion['value'] = 'file://' + str((HERE/assertion['value'][7:]).resolve())
     config['tests'] = tests
+    config['extensions'] = ['file://' + str((HERE/'telemetry.cjs').resolve())]
     prototype = config['providers'][0]['config']
     config['providers'] = [{'id':'openai:chat:'+group,'config':{**prototype,'temperature':a.temperature,
-        'seed':a.seed,'max_tokens':2048}} for group in a.groups]
+        'seed':a.seed,'max_tokens':2048,'top_p':.95,
+        **({'passthrough':{'top_k':20}} if group.startswith('qwen3p8-27b-') else {})}} for group in a.groups]
     out.parent.mkdir(parents=True,exist_ok=True)
     cfg = out.with_suffix('.private-config.yaml')
     cfg.write_text(yaml.safe_dump(config,sort_keys=False));cfg.chmod(0o600)
@@ -48,8 +50,15 @@ def main():
     env['ROUTER_CALLER_KEY'] = a.token_file.read_text().strip()
     env['PROMPTFOO_PYTHON'] = sys.executable
     env['PROMPTFOO_DISABLE_TELEMETRY'] = '1'
+    journal = out.with_suffix('.router-ids.jsonl')
+    journal.write_text('');journal.chmod(0o600)
+    env['FT_ROUTER_JOURNAL'] = str(journal)
     binary = HERE.parent/'.cache/promptfoo/node_modules/.bin/promptfoo'
     process = subprocess.run([str(binary),'eval','-c',str(cfg),'--no-cache','--max-concurrency','8','-o',str(out)],env=env,umask=0o077)
+    if out.exists() and out.stat().st_size:
+        rows = json.loads(out.read_text())['results']['results']
+        if len(journal.read_text().splitlines()) != len(rows):
+            p.error('telemetry journal incomplete; do not claim router join')
     # promptfoo nonzero may represent genuine failed quality assertions, not an infrastructure fault.
     return process.returncode
 

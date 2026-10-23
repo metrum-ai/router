@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Render Axolotl's single/multi-GPU config; --smoke is two tiny hardware steps."""
 import argparse
+import re
 from pathlib import Path
 import yaml
 
@@ -29,8 +30,14 @@ def main():
     p.add_argument('--gpus', type=int, default=1)
     p.add_argument('--smoke', action='store_true')
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--data-id', help='launcher-computed mode plus dataset digest; prevents stale prepared-cache reuse')
     a = p.parse_args()
-    a.out.write_text(yaml.safe_dump(render(a.gpus, a.smoke), sort_keys=False))
+    config = render(a.gpus, a.smoke)
+    if a.data_id:
+        if not re.fullmatch(r'(smoke|train)-[a-f0-9]{64}',a.data_id):
+            p.error('invalid dataset cache identity')
+        config['dataset_prepared_path'] = '/data/prepared/' + a.data_id
+    a.out.write_text(yaml.safe_dump(config, sort_keys=False))
 
 if __name__ == '__main__':
     main()

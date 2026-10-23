@@ -72,8 +72,29 @@ def main():
     p.add_argument('--input', required=True, type=Path)
     p.add_argument('--out', required=True, type=Path)
     p.add_argument('--usage-db', type=Path)
+    p.add_argument('--journal', type=Path, help='run_eval safe request-ID journal; no headers/secrets')
+    p.add_argument('--case-prefix', choices=['ifeval','mmlu-pro'])
     a = p.parse_args()
-    result, groups = summarize(json.loads(a.input.read_text()))
+    document = json.loads(a.input.read_text())
+    if a.case_prefix:
+        document['results']['results'] = [r for r in document['results']['results']
+            if r.get('testCase', {}).get('description', '').startswith(a.case_prefix + '-')]
+    result, groups = summarize(document)
+    if a.journal:
+        joins = [json.loads(line) for line in a.journal.read_text().splitlines()]
+        seen = set()
+        filtered = []
+        for join in joins:
+            key = (join['provider'],join['case_index'])
+            if a.case_prefix and (join['provider'] not in groups or join['case_index'] not in groups[join['provider']]):
+                continue
+            if key in seen or join['provider'] not in groups or join['case_index'] not in groups[join['provider']]:
+                p.error('duplicate or unknown telemetry journal case')
+            if not re.fullmatch(r'req_[A-Za-z0-9_-]{1,100}', join['router_request_id']):
+                p.error('invalid router request ID')
+            seen.add(key)
+            filtered.append(join)
+        result['router_joins'] = [{k:join[k] for k in ('provider','case_index','router_request_id')} for join in filtered]
     if a.usage_db:
         if len(result['router_joins']) != sum(len(v) for v in groups.values()):
             p.error('missing router request IDs; cannot claim complete telemetry join')

@@ -18,7 +18,7 @@ providers:
     api_key_env: FIREWORKS_API_KEY
     models:
       adapter:
-        model: accounts/REPLACE_ACCOUNT/models/qwen3p8-27b-metrum-ft
+        model: accounts/REPLACE_ACCOUNT/models/qwen3p8-27b-metrum-ft#accounts/REPLACE_ACCOUNT/deployments/metrum-ft-qwen3p8
         input_price_per_million_usd: 0
         output_price_per_million_usd: 0
         pricing_source: operator-dedicated-deployment-meter
@@ -26,7 +26,7 @@ providers:
         pricing_notes: Dedicated hourly billing; zero token price is NOT free service. Add measured hourly economics separately.
         input_modalities: [text]
         output_modalities: [text]
-        tool_support: {openai_chat: [tools, tool_choice]}
+        tool_support: {openai_chat: [tools, tool_choice, structured_outputs]}
   vllm_b200_ft:
     dialect: openai-chat
     base_url: http://127.0.0.1:18526/v1
@@ -40,7 +40,7 @@ providers:
         pricing_notes: GPU hourly billing; replace with measured amortized token prices before enforcing dollar budgets.
         input_modalities: [text]
         output_modalities: [text]
-        tool_support: {openai_chat: [tools, tool_choice]}
+        tool_support: {openai_chat: [tools, tool_choice, structured_outputs]}
       base:
         model: qwen3p8-27b-base
         input_price_per_million_usd: 0
@@ -50,7 +50,7 @@ providers:
         pricing_notes: Control shares GPU rental; zero token price is not a cost claim.
         input_modalities: [text]
         output_modalities: [text]
-        tool_support: {openai_chat: [tools, tool_choice]}
+        tool_support: {openai_chat: [tools, tool_choice, structured_outputs]}
   openai:
     dialect: openai-chat
     base_url: https://api.openai.com/v1

@@ -1,6 +1,6 @@
 {
   "schema_version": "fixed-model-outcome-gate/v1",
-  "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v1",
+  "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v2",
   "workload_style": "tool",
   "case_count": 300,
   "fixed_model_id": "qwen3p8-27b-base",

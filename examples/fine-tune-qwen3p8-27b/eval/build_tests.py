@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 import yaml
 
-TEST_HASH = 'b46d1c6cd90b67e212fe9c2ec55d46a49201a37892f221f5ac087b795f2ef0d2'
+TEST_HASH = 'ade8207dd44c41942c965333ddb8b503f2bf210640904f78a29cbea4ca941361'
 
 
 def build(rows):
@@ -46,8 +46,8 @@ def main():
     if hashlib.sha256(content).hexdigest() != TEST_HASH:
         p.error('held-out hash differs from preregistration')
     rows = [json.loads(line) for line in content.splitlines()]
-    if len(rows) != 300:
-        p.error('expected 300 held-out cases')
+    if len(rows) != 300 or sum(bool(r['messages'][-1].get('tool_calls')) for r in rows) != 200:
+        p.error('expected frozen 300-case cohort with 200 tool targets and 100 text targets')
     a.out.write_text(yaml.safe_dump(build(rows), sort_keys=False))
 
 if __name__ == '__main__':

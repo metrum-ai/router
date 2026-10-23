@@ -25,27 +25,36 @@ def api(path, payload=None, method='POST'):
         return json.loads(body) if body else {}
 
 
-def upload(account, model, adapter):
+def upload(account, model, adapter, resume=False):
     config = json.loads((adapter / 'adapter_config.json').read_text())
     if config['r'] != 16:
         raise ValueError('expected rank 16')
     files = {p.name: p for p in adapter.iterdir() if p.name in ('adapter_config.json', 'adapter_model.safetensors')}
     if len(files) != 2:
         raise ValueError('missing adapter artifacts')
-    api(f'accounts/{account}/models', {'modelId': model, 'model': {'kind': 'HF_PEFT_ADDON',
-        'peftDetails': {'baseModel': 'accounts/fireworks/models/qwen3p8-27b', 'r': 16,
-                        'targetModules': config['target_modules']}}})
     path = f'accounts/{account}/models/{model}'
+    if not resume:
+        api(f'accounts/{account}/models', {'modelId': model, 'model': {'kind': 'HF_PEFT_ADDON',
+            'peftDetails': {'baseModel': 'accounts/fireworks/models/qwen3p8-27b', 'r': 16,
+                            'targetModules': config['target_modules']}}})
+    else:
+        current = api(path, method='GET')
+        if current.get('peftDetails', {}).get('baseModel') != 'accounts/fireworks/models/qwen3p8-27b':
+            raise ValueError('refusing to resume an adapter with a different base model')
     endpoints = api(path + ':getUploadEndpoint', {'filenameToSize': {n: p.stat().st_size for n, p in files.items()}})
     for name, url in endpoints['filenameToSignedUrls'].items():
         # Signed URL remains in memory only. Never include it in error logs.
         try:
-            req = urllib.request.Request(url, data=files[name].read_bytes(), method='PUT')
+            size = files[name].stat().st_size
+            req = urllib.request.Request(url, data=files[name].read_bytes(), method='PUT',
+                headers={'Content-Type': 'application/octet-stream',
+                         'x-goog-content-length-range': f'{size},{size}'})
             with urllib.request.urlopen(req, timeout=300) as response:
                 response.read()
-        except Exception:
-            raise RuntimeError('adapter upload failed (signed URL omitted)') from None
-    api(path + ':validateUpload', {})
+        except Exception as exc:
+            raise RuntimeError(f'adapter upload failed ({type(exc).__name__}, HTTP {getattr(exc, "code", "n/a")}; signed URL omitted)') from None
+    validation = api(path + ':validateUpload', method='GET')
+    print('upload validation warnings:', len(validation.get('warnings', [])))
     print('adapter uploaded; poll model state until READY before deploying')
 
 
@@ -57,6 +66,7 @@ def main():
     p.add_argument('--adapter', type=Path)
     p.add_argument('--deployment', default='metrum-ft-qwen3p8')
     p.add_argument('--execute', action='store_true')
+    p.add_argument('--resume-upload', action='store_true', help='explicitly resume an existing same-base adapter owned by this operator')
     a = p.parse_args()
     if not a.execute:
         print(json.dumps({'dry_run': True, 'action': a.action, 'model': a.model, 'deployment': a.deployment}))
@@ -67,7 +77,7 @@ def main():
     if a.action == 'upload':
         if a.adapter is None:
             p.error('--adapter required')
-        upload(a.account, a.model, a.adapter)
+        upload(a.account, a.model, a.adapter, a.resume_upload)
     elif a.action == 'deploy':
         result = api(path + '?' + urllib.parse.urlencode({'deploymentId': a.deployment}),
             {'baseModel': f'accounts/{a.account}/models/{a.model}', 'deploymentShape': 'default',

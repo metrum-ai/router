@@ -3,6 +3,19 @@
 
 # Video facts — work in progress
 
+## Current caveat — read before using any headline
+
+**05:01 UTC:** the first complete two-epoch run is **superseded**. Pre-outcome
+dataset QA found Python-literal function arguments were being rejected, leaving
+zero tool targets in the original test cohort. No held-out model outcomes had
+been collected. Safe parsing + mandatory 2:1 stratification now produces
+1333/2000 train,333/500 validation,200/300 test tool targets; see corrected
+`dataset-manifest.json` and the protocol amendment. Fresh smoke/retraining is
+running. First-adapter live native/tool/schema smoke proves plumbing only; it
+must not be sold as corrected-task quality improvement. Fireworks first upload
+validated, but its still-CREATING 2×B300 deployment was deleted and API-verified;
+no successful Fireworks inference yet.
+
 ## Measured
 
 - **Axolotl BF16 LoRA hardware smoke passed on 1× RTX PRO 6000 Blackwell 96GB.**
@@ -33,8 +46,9 @@
 - **Shadeform 1× RTX PRO 6000 Blackwell quote: $2.19/hour**, 96GB VRAM,
   750GB disk. Source: `/workspace/router-v430/ft-step0/shade-current.json`
   (massedcompute RTXPro6000), recorded in track report at 03:52 UTC.
-  Caveat: tiny BF16 smoke now passed; full 2,000-row/two-epoch training is
-  running, not yet complete. This hourly quote is not cost per output token.
+  Caveat: tiny BF16 smoke passed. First full training completed but is
+  superseded due to the dataset bug above; corrected training is running.
+  This hourly quote is not cost per output token.
 - **Vast failed-rental estimate: $0.124168 total.** Source:
   `/workspace/router-v430/ft-step0/instance-57316233-deleted.json` and
   `/workspace/router-v430/ft-step0/instance-57316282-deleted.json`, sum of
@@ -43,6 +57,7 @@
 
 **FT quality deltas, production routing split, model latency, cost per 1M output
 and break-even volume: not yet measured.** Synthetic mock routing counts must
-not be presented as a real FT traffic split. Do not claim promotion, completed
-training, Fireworks deployment, or on-prem serving until corresponding live
-numbers are added here with exact sources.
+not be presented as a real FT traffic split. Do not claim corrected-model
+completion, Fireworks serving or promotion until the corresponding live numbers
+are added here with exact sources. First-adapter native serving is historical
+plumbing evidence only, not evidence for the corrected training cohort.
