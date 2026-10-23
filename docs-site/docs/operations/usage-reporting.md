@@ -39,6 +39,23 @@ history, tickets or reports.
 
 CLI-generated reports are Markdown files with structured tables for usage, cost, latency, throughput, downstream caller performance, and upstream endpoint performance. Instant values in the `Period UTC` bounds and `Per-Request Throughput` time column use fixed UTC RFC3339 milliseconds (`YYYY-MM-DDTHH:mm:ss.SSSZ`). Hour and day summary labels remain reporting buckets; browser Markdown exports, browser JSON APIs, and CSV exports retain their existing precision. The public docs include graphical Chart.js examples built from the same report dimensions.
 
+## Local Validation Capacity
+
+Local documentation proofs and API-compatibility profiles use explicit caller
+allowances of 2,400 RPM, 4,000,000 TPM and 160 concurrent requests, with high
+request/token quotas and lifetime budgets. The local bootstrap also raises its
+generated key instead of inheriting production-oriented key-generator defaults.
+These are infrastructure allowances, not recommended production budgets or a
+provider capacity guarantee. Projects/groups do not have independent rate/quota
+fields in this schema; caller allowances cover their authorized traffic.
+
+Only explicitly labelled admission-limit tests use small budgets (for example,
+count-token non-admission and OPS-03's quota boundary). If an ordinary replay or
+evaluation gets pre-route 429s from router limits, treat the run as an
+infrastructure failure. Document an infrastructure-only capacity amendment and
+rerun the entire workload; do not selectively retry failed cases or change the
+outcome gate. Provider-generated 429 fixtures are separate failover tests.
+
 ## Token Breakdown And Retained History (v4.3.0)
 
 CLI Markdown reports add token sums, reported-request coverage and reasoning

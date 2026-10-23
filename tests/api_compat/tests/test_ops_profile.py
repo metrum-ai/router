@@ -195,13 +195,23 @@ callers:
   - id: ops-main
     token_sha256: {CALLER_DIGEST}
     allow: [chat, chat-fallback, chat-priced-fallback, chat-dead-first, chat-timeout, responses-fallback, messages-fallback, messages]
+    # Infrastructure-only local capacity shared across allowed groups.
+    rate: &local_rate {{rpm: 2400, tpm: 4000000, concurrent: 160}}
+    quota: &local_quota {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
+    key: &local_key {{lifetime_tokens: 40000000000}}
   - id: ops-other
     token_sha256: {OTHER_DIGEST}
     allow: [chat]
+    rate: *local_rate
+    quota: *local_quota
+    key: *local_key
   - id: ops-quota
     token_sha256: {QUOTA_DIGEST}
     allow: [chat, chat-timeout]
-    quota: {{day: {{tokens: {QUOTA_DAY_TOKENS}}}}}
+    rate: *local_rate
+    key: *local_key
+    # ADMISSION-LIMIT TEST EXCEPTION: only OPS-03 uses this boundary key.
+    quota: {{day: {{requests: 100000, tokens: {QUOTA_DAY_TOKENS}}}, month: {{tokens: 8000000000}}}}
 '''
 
 

@@ -46,6 +46,7 @@ func TestUsageProvenanceLocalhostE2E(t *testing.T) {
 	defer upstream.Close()
 	dir := t.TempDir()
 	cfg := testConfig(t, "http://127.0.0.1:18438", "mock-key", dir)
+	configureDocsSmokeCapacity(cfg)
 	cfg.Callers[0].Project = "local"
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	t.Setenv("USAGE_B_ADMIN_HASH", mustBcryptHash(t, "usage-b-password"))
