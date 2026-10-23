@@ -31,4 +31,4 @@ jobs:
       - name: Synthetic router tool continuation
         run: |
           go build -o "$RUNNER_TEMP/ft-example-router" ./cmd/metrum-ai-router
-          uv run --with pyyaml python examples/fine-tune-qwen3p8-27b/eval/router_e2e.py --router-bin "$RUNNER_TEMP/ft-example-router"
+          uv run --with pyyaml --with jsonschema==4.26.0 python examples/fine-tune-qwen3p8-27b/eval/router_e2e.py --router-bin "$RUNNER_TEMP/ft-example-router"
