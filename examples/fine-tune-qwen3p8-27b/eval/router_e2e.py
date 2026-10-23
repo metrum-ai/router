@@ -16,6 +16,9 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import yaml
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -121,7 +124,12 @@ def main():
                            {'provider':'vllm_b200_ft','model_ref':'adapter'}]}
             assert all(c['rate']['concurrent'] >= 256 and c['rate']['rpm'] >= 100000
                        and c['quota']['month']['tokens'] >= 20000000000 for c in x['callers']), 'bootstrap must emit high test limits'
-            x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
+            aliases={'qwen3p8-27b-ft-onprem':('vllm_b200_ft','adapter'),
+                     'qwen3p8-27b-ft-fireworks':('fireworks_ft','adapter'),
+                     'qwen3p8-27b-base':('vllm_b200_ft','base')}
+            for alias,(provider,ref) in aliases.items():
+                x['models'][alias]={'strategy':'static','targets':[{'provider':provider,'model_ref':ref}]}
+            x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow',*aliases]
             for caller in x['callers']:
                 caller['rate'] = {'rpm':100000,'tpm':100000000,'concurrent':256}
                 caller['quota'] = {'day':{'requests':10000000,'tokens':2000000000},
@@ -135,6 +143,13 @@ def main():
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             wait_ready(process, 'http://127.0.0.1:18530/readyz', opener=opener)
             token = (run / 'router.token').read_text().strip()
+            admission=[]
+            if not a.test_rate_limiting:
+                admission=preflight('http://127.0.0.1:18530/v1',token,['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow'])
+                # Preflight is a separate synthetic phase, not measured traffic.
+                for key in seen:seen[key]=0
+                for key in seen_models:seen_models[key]=0
+                policy_calls.clear()
             marker = 'FT_PRIVATE_PROMPT_MUST_NOT_BE_LOGGED_326'
             tool = {'type':'function','function':{'name':'create_file','parameters':{'type':'object','properties':{'name':{'type':'string'},'content':{'type':'string'}},'required':['name','content']}}}
             def chat(messages, model='qwen3p8-27b-ft'):
@@ -173,7 +188,7 @@ def main():
                     shadow_recorded |= b'shadow_recommended_candidate' in content
             assert shadow_recorded, 'shadow recommendation not recorded'
             print(json.dumps({'tool_continuation':'pass','created_file':True,'weighted_targets':seen,
-                'purpose':'rate-limiting-test' if a.test_rate_limiting else 'tool-continuation-routing',
+                'preflight_requests':len(admission),'purpose':'rate-limiting-test' if a.test_rate_limiting else 'tool-continuation-routing',
                 'request_budget':'pass' if a.test_rate_limiting else 'not-tested-high-limits','prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
     finally:
         if process is not None:

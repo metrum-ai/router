@@ -104,6 +104,13 @@ def demonstrate_canary(binary, out, cfg, env, test_rate_limiting=False):
                     urllib.request.urlopen('http://127.0.0.1:18410/healthz', timeout=1).close(); break
                 except Exception:
                     time.sleep(.25)
+            if not test_rate_limiting:
+                admission=[]
+                for variable in ('TRACE_SUPPORT_KEY','TRACE_IT_KEY'):
+                    key=env[variable]
+                    admission.extend(collect.preflight('http://127.0.0.1:18410/v1',key,['support-agent'],caller=variable,
+                        request=lambda payload,key=key:collect.request('http://127.0.0.1:18410','/v1/chat/completions',payload,key)))
+                (out/'canary-preflight.json').write_text(json.dumps(admission,indent=2))
             for variable in ('TRACE_SUPPORT_KEY', 'TRACE_IT_KEY'):
                 _, headers, raw = collect.request('http://127.0.0.1:18410', '/v1/chat/completions', {
                     'model': 'support-agent', 'messages': [{'role': 'user', 'content': 'Reply only ROUTE_PROBE.'}], 'max_tokens': 64}, env[variable])

@@ -7,16 +7,21 @@ import json
 import tempfile
 import urllib.request
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--api-base', default='http://127.0.0.1:18525/v1')
-    p.add_argument('--token-file', type=Path)
+    p.add_argument('--token-file', type=Path, required=True)
     p.add_argument('--model', required=True)
+    p.add_argument('--preflight-targets', nargs='*', default=[], help='static target aliases for custom weighted routes')
     p.add_argument('--out', type=Path, required=True)
     a = p.parse_args()
     token = a.token_file.read_text().strip() if a.token_file else None
+    preflight(a.api_base,token,[a.model,*a.preflight_targets])
     ids = []
     def call(body):
         headers = {'Content-Type':'application/json'}

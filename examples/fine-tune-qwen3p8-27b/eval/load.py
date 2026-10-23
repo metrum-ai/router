@@ -9,6 +9,9 @@ import math
 import time
 import urllib.request
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 
 def percentile(values, fraction):
@@ -20,6 +23,7 @@ def main():
     p.add_argument('--token-file', type=Path, required=True)
     p.add_argument('--api-base', default='http://127.0.0.1:18525/v1')
     p.add_argument('--model', required=True)
+    p.add_argument('--preflight-targets', nargs='*', default=[], help='static target aliases for custom weighted routes')
     p.add_argument('--hourly-usd', type=float, required=True)
     p.add_argument('--requests', type=int, default=64)
     p.add_argument('--out', type=Path, required=True)
@@ -27,6 +31,7 @@ def main():
     if a.requests < 32 or not math.isfinite(a.hourly_usd) or a.hourly_usd < 0:
         p.error('at least 32 requests and nonnegative hourly cost required')
     token = a.token_file.read_text().strip()
+    preflight(a.api_base,token,[a.model,*a.preflight_targets])
     results = []
     def one(_):
         body = {'model':a.model,'messages':[{'role':'user','content':'List the integers from one through one hundred, separated by spaces.'}],

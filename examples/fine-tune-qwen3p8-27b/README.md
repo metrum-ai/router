@@ -6,6 +6,34 @@
 Work in progress for #326. Do not infer training completion or promotion from
 this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 
+## Mandatory authenticated preflight
+
+Before each batch, launchers probe every configured caller/route using only a
+synthetic `PREFLIGHT_ONLY` prompt. The example's weighted/shadow profiles also
+probe each static target alias; semantic runs probe the rubric grader **before**
+starting promptfoo. Any non-2xx, including pre-route400/401/403/429, aborts the
+whole run immediately. No retries, dataset prompts, gold or answer text enter
+preflight receipts. Probes are charged/warm-up traffic, not scored cases or
+latency samples; full collection includes them in its dollar reservation ledger.
+
+For custom weighted profiles pass **every** static target alias through the
+launcher's `--preflight-targets` option. Grant those aliases to the same caller
+key, with high rpm/tpm/quotas/concurrency. Unreachable/unauthorized aliases are
+not replaced with privileged keys. External replay launchers can use the same
+standalone gate once per caller/token file before starting any batch:
+
+```sh
+python examples/fine-tune-qwen3p8-27b/preflight.py \
+  --api-base http://127.0.0.1:18525/v1 --token-file /secure/router.token \
+  --models qwen3p8-27b-base qwen3p8-27b-ft frontier-ref \
+  --out /secure/preflight.json
+```
+
+Only separately labelled `--test-rate-limiting` smoke bypasses normal preflight
+because its purpose is deliberate denial. An unexpected pre-route4xx requires
+a documented infra-only amendment and a fresh **whole-run** attempt, never
+selectively repaired cases. Frozen #358 dataset files remain immutable.
+
 ## AMD Instinct
 
 The [AMD runbook](amd/README.md) records one epoch on the governed router-exported

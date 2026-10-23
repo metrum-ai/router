@@ -33,6 +33,17 @@ class FullProducerTests(unittest.TestCase):
         self.assertIn('tokens: 20000000000',result)
         self.assertIn('users: []',result)
 
+    def test_admission_probes_use_collection_spend_ledger(self):
+        ledger=full.Ledger();before=ledger.spent
+        response={'usage':{'prompt_tokens':20,'completion_tokens':32}}
+        with patch.object(full.collect,'request',return_value=(200,{},json.dumps(response).encode())):
+            for caller in ('support','it'):
+                full.preflight('http://localhost/v1','fixture-key',['support-agent'],caller=caller,
+                    request=lambda payload:full.routed('http://localhost','fixture-key',payload,ledger))
+        self.assertEqual(ledger.calls,2)
+        self.assertGreater(ledger.spent,before)
+        self.assertEqual(ledger.reserved,0)
+
     def test_budget_reservations_fail_before_dispatch(self):
         ledger=full.Ledger()
         ledger.spent=19.4999

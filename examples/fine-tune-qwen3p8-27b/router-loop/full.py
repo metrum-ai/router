@@ -10,6 +10,9 @@ import io
 import json
 import os
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 import random
 import re
 import sqlite3
@@ -94,6 +97,7 @@ def prepare(pool, out):
         'teacher_thinking':'gpt-oss disable-thinking unsupported; native final content only in training, no reasoning_content labels',
         'no_model_retries_or_score_refills':True,'time_split_schedule':'fixed train -> barrier -> val -> barrier -> test; freeze actual UTC phase boundaries, no outcome-dependent reassignment',
         'budget_usd':20,'previous_collection_estimate_usd':.03170595,
+        'preflight_sha256':sha(Path(__file__).resolve().parents[1]/'preflight.py'),
         'code_sha256':{p.name:sha(p) for p in Path(__file__).parent.glob('*.py')}})
     return selected
 
@@ -168,7 +172,14 @@ def episode(base,key,task,ledger):
 
 def run(args,env,selected):
     os.environ.update({k:v for k,v in env.items() if k.startswith('TRACE_')})
-    ledger=Ledger();boundaries=[collect.now()];all_results=[];base='http://127.0.0.1:18410'
+    ledger=Ledger();all_results=[];base='http://127.0.0.1:18410'
+    admission=[]
+    for key_name in ('TRACE_SUPPORT_KEY','TRACE_IT_KEY'):
+        key=env[key_name]
+        admission.extend(preflight(base+'/v1',key,['support-agent'],caller=key_name,
+            request=lambda payload,key=key:routed(base,key,payload,ledger)))
+    private_json(args.out/'preflight.json',admission)
+    boundaries=[collect.now()]
     with (args.out/'episode-ledger.jsonl').open('a') as log:
         for split,tasks in selected.items():
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
