@@ -64,8 +64,9 @@ def main():
     p.add_argument('--token-file',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
     p.add_argument('--arm',choices=LABELS,required=True);p.add_argument('--mode',choices=['primary','regressions','sampling'],required=True)
     p.add_argument('--seed',type=int,choices=[326,327,328],default=326)
-    p.add_argument('--api-base',default='http://127.0.0.1:18625/v1');p.add_argument('--execute',action='store_true')
+    p.add_argument('--api-base',default='http://127.0.0.1:18629/v1');p.add_argument('--execute',action='store_true')
     a=p.parse_args();r=json.loads(a.preregistration.read_text())
+    if a.api_base!='http://127.0.0.1:18629/v1':p.error('use fixed no-redirect localhost_proxy.py relay')
     if r['status']!='frozen' or not r['router_export_contract_confirmed']:p.error('frozen governed cohort required')
     expected=r['fresh_regressions']['sha256'] if a.mode=='regressions' else r['heldout_projection_sha256']
     if hashlib.sha256(a.tests.read_bytes()).hexdigest()!=expected:p.error('frozen probe hash differs')

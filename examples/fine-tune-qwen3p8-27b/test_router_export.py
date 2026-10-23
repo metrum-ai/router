@@ -187,6 +187,27 @@ class ReplayCostTests(unittest.TestCase):
                 return {'role':'assistant','content':'ok','finish_reason':reason},'request'
             self.assertEqual(replay.run_case(row,call,Backend())['task_success'],expected)
 
+    def test_duplicate_or_invalid_declaration_is_retained_failure_not_batch_abort(self):
+        row={'tools':[{'type':'function','function':{'name':'echo','parameters':{'type':'object'}}}]*2,
+             'provenance':{'task_sha256':'0'*64},'replay':{'initial_messages':[{'role':'user','content':'fixture'}]}}
+        def forbidden(*args):raise AssertionError('invalid declarations must never dispatch')
+        result=replay.run_case(row,forbidden,None)
+        self.assertFalse(result['task_success']);self.assertFalse(result['tool_schema_valid'])
+        self.assertEqual(result['input_schema_failure'],'duplicate_tool_definition')
+        self.assertEqual(replay.attach_cost(result,{})['router_cost_usd'],0)
+        row['tools']=[{'type':'function','function':{'name':'echo','parameters':{'type':'invalid'}}}]
+        self.assertEqual(replay.run_case(row,forbidden,None)['input_schema_failure'],'invalid_declared_tool_schema')
+
+    def test_failed_http_attempt_retains_router_request_id_and_unknown_cost(self):
+        import urllib.error
+        class Backend:
+            def initialize(self,descriptor):return {}
+        row={'tools':[],'provenance':{'task_sha256':'0'*64},'replay':{'initial_messages':[{'role':'user','content':'fixture'}]}}
+        def failed(*args):raise urllib.error.HTTPError('http://127.0.0.1',503,'unavailable',{'X-Request-Id':'req_failed'},None)
+        result=replay.run_case(row,failed,Backend())
+        self.assertEqual(result['request_ids'],['req_failed']);self.assertTrue(result['transport_error'])
+        self.assertIsNone(replay.attach_cost(result,{})['router_cost_usd'])
+
     def test_teacher_continuations_never_initial_inputs(self):
         with self.assertRaises(ValueError):replay.run_case({'replay':{'initial_messages':[
             {'role':'assistant','content':'teacher oracle'}]}},None,None)

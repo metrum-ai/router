@@ -23,7 +23,13 @@ def run_case(row, call_router, backend, max_turns=8):
         raise ValueError('replay must start from initial task, never teacher continuations')
     tools = copy.deepcopy(row.get('tools',[]))
     schemas = {t['function']['name']:t['function'].get('parameters',{}) for t in tools}
-    if len(schemas)!=len(tools):raise ValueError('duplicate tool definition')
+    request_ids = []
+    result = {'task_sha256':row['provenance']['task_sha256'],'task_success':False,
+              'tool_schema_valid':True,'request_ids':request_ids,'transport_error':False}
+    if len(schemas)!=len(tools):
+        # Keep the frozen task in EVERY arm's denominator, unchanged. A source
+        # declaration failure must not terminate the whole concurrent cohort.
+        return {**result,'tool_schema_valid':False,'input_schema_failure':'duplicate_tool_definition'}
     def no_references(value):
         if isinstance(value,dict):
             if any(k in value for k in ('$ref','$dynamicRef','$recursiveRef')):
@@ -32,15 +38,22 @@ def run_case(row, call_router, backend, max_turns=8):
         elif isinstance(value,list):
             for child in value:no_references(child)
     for schema in schemas.values():no_references(schema)
+    try:
+        for schema in schemas.values():jsonschema.Draft202012Validator.check_schema(schema)
+    except jsonschema.SchemaError:
+        return {**result,'tool_schema_valid':False,'input_schema_failure':'invalid_declared_tool_schema'}
     state = backend.initialize(copy.deepcopy(row['replay']))
-    request_ids = []
-    result = {'task_sha256':row['provenance']['task_sha256'],'task_success':False,
-              'tool_schema_valid':True,'request_ids':request_ids,'transport_error':False}
     for _ in range(max_turns):
         # No retry/arm failover: failures remain in the task denominator.
         try:
             message, identifier = call_router(copy.deepcopy(messages),tools)
         except Exception as exc:
+            # urllib HTTP errors still carry the authenticated router ID. Keep
+            # failed routed attempts joinable; missing headers stay unknown.
+            identifier=(getattr(exc,'headers',None) or {}).get('X-Request-Id')
+            if identifier:
+                if identifier in request_ids:raise ValueError('duplicate failed router request ID')
+                request_ids.append(identifier)
             if getattr(exc,'code',None) in (401,403):
                 raise PermissionError('authenticate first, then retry') from None
             result['transport_error'] = True
@@ -81,6 +94,9 @@ def attach_cost(record, ledger):
     """
     ids = record['request_ids']
     if len(ids)!=len(set(ids)):raise ValueError('duplicate request within task')
+    if not ids and record.get('input_schema_failure') and not record['transport_error']:
+        # Proven no model dispatch, not an unknown/failed billed request.
+        return {**record,'cost_complete':True,'router_cost_usd':0.0}
     known = not record['transport_error'] and bool(ids) and all(
         i in ledger and ledger[i].get('cost_known') is True for i in ids)
     costs = [ledger[i]['router_cost_usd'] for i in ids] if known else []

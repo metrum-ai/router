@@ -5,6 +5,13 @@
   "frozen_at_utc": "2026-10-23T17:15:06.086578+00:00",
   "before_gpu_rental_training_and_new_heldout_inference": true,
   "selection": "one fixed recipe; final adapter after one epoch; no checkpoint/hyperparameter selection on old or new heldout outcomes",
+  "qualification_infrastructure_amendment": {
+    "parent_registration_sha256": "96f851a75b967b54a3ff0a942ab9e7707a211a9863e964db33172c714c4e5326",
+    "reason": "Base replay aborted on existing duplicate tool declaration before any score/comparison review; 74 persisted episodes and all attempted costs retained privately, excluded from qualification summaries. No candidate/teacher qualification ran.",
+    "scope": "Complete frozen 300-case cohorts restarted after metadata-only case-failure handling. Duplicate/invalid declarations fail ALL arms unchanged, no dispatch, no task replacement/filtering/schema normalization. HTTP error request IDs retained; unknown cost remains null. SDK no-redirect relay added before any SDK qualification.",
+    "source_schema_audit": {"train_duplicate_declarations": 2, "val_duplicate_declarations": 0, "test_duplicate_declarations": 1, "other_invalid_schemas": 0},
+    "training_registration_unchanged": "Final fixed 75-step adapter already trained under parent96f851a7; no retraining/selection/data/recipe/model/scorer/numeric gate changes. Initial registration timing remains historical; this amendment is before restart and score review."
+  },
   "model": "Qwen/Qwen3.8-27B",
   "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
   "chat_template": {
@@ -163,7 +170,7 @@
     "run2/project_eval.py": "923b897e0b4c48ac0e78af7af16ccf0940abfccc86a76bf75f180618950a587e",
     "run2/readiness.py": "2858d21d5d8800d782ee33965b250747932802415c3eec347da1489770da6a19",
     "run2/reconcile_replay.py": "cb46c57d8b61bbedbbcde6feeb81cd9497e15a469186af11710aff4490ea0c71",
-    "run2/replay.py": "f488fd3f35fe40554d04e26f6e266917d84ff73f6991ebb0e475741fd311fe44",
+    "run2/replay.py": "37c24ae79b946fba7d56114bef8fe24a667e353fe58160545ad924fe96a4d0f6",
     "run2/router_export.py": "aeb98d0cd409e281aa84833b674545690f0ce6f090d5b260cd29118a4490ba41",
     "run2/run_replay.py": "459b8e67b2b0d13f82ea6b6ab5b2b8254bd4ddedda76ecdc42e37a8713697dde",
     "run2/scalar-preregistration.json": "6c31182a8b95ff09aa7db85947a2d9452538dcd249f2ca5db8529c71863674b1",

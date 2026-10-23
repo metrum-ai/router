@@ -52,6 +52,19 @@ class RoutedTransportTests(unittest.TestCase):
         self.assertEqual(set(safe)&{'AWS_ACCESS_KEY_ID','HTTP_PROXY','OPENAI_API_KEY'},set())
         with self.assertRaises(ValueError):runner.config_for(tests,'base','primary',326,'https://external.invalid/v1')
 
+    def test_sdk_relay_rejects_redirect_without_following(self):
+        import io
+        from unittest.mock import MagicMock,patch
+        proxy=load('localhost_transport','run2/localhost_proxy.py')
+        handler=object.__new__(proxy.Handler);handler.path='/v1/chat/completions';handler.command='POST'
+        handler.headers={'Content-Length':'2'};handler.rfile=io.BytesIO(b'{}')
+        errors=[];handler.send_error=lambda status,*args:errors.append(status)
+        connection=MagicMock();connection.getresponse.return_value.status=302
+        with patch.object(proxy.http.client,'HTTPConnection',return_value=connection) as factory:
+            handler.forward()
+        factory.assert_called_once_with('127.0.0.1',18625,timeout=180)
+        self.assertEqual(errors,[502]);connection.getresponse.assert_called_once();connection.close.assert_called_once()
+
     def test_policy_binds_authenticated_id_and_project_no_fallback(self):
         policy=load('frozen_arm_policy','run2/arm_policy.py')
         bindings={'key':{'project':'acme-support','providers':['ft_onprem']}}
