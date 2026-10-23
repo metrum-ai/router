@@ -102,6 +102,8 @@ def main():
                 'targets':[{'provider':'vllm_onprem_ft','model_ref':'base'},
                            {'provider':'vllm_onprem_ft','model_ref':'adapter'}]}
             x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
+            x['callers'][0]['rate'] = {'rpm':10000,'tpm':1000000000,'concurrent':128}
+            # LABELLED QUOTA NEGATIVE TEST: this test deliberately exhausts45.
             x['callers'][0]['quota']['day']['requests'] = 45
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
             log = (run / 'process.log').open('w')

@@ -32,8 +32,8 @@ def config(out, env):
         memberships.append({'user_id': project, 'project': project, 'role': 'developer', 'status': 'active'})
         caller = {'id': project + '-prod', 'owner_user': project, 'project': project, 'environment': 'test',
                   'token_id': 'rtr_' + project, 'token_sha256': hashlib.sha256(env[variable].encode()).hexdigest(),
-                  'allow': ['support-agent'], 'rate': {'rpm': 120, 'tpm': 100000, 'concurrent': 2},
-                  'quota': {'day': {'requests': 200, 'tokens': 200000}, 'month': {'requests': 1000, 'tokens': 1000000}}}
+                  'allow': ['support-agent'], 'rate': {'rpm': 10000, 'tpm': 1000000000, 'concurrent': 128},
+                  'quota': {'day': {'requests': 1000000, 'tokens': 1000000000}, 'month': {'requests': 1000000, 'tokens': 1000000000}}}
         if team == 'support':
             caller['content_capture'] = {'enabled': True, 'retention_days': 7, 'capture_request': True,
                                          'capture_response': True, 'capture_tool_calls': True,
@@ -77,6 +77,7 @@ def demonstrate_canary(binary, out, cfg, env):
     env['TRACE_MOCK_KEY'] = secrets.token_urlsafe(24)
     cfg['providers']['ft-canary'] = {'dialect': 'openai-chat', 'base_url': 'http://127.0.0.1:18411/v1', 'api_key_env': 'TRACE_MOCK_KEY', 'api_key': '${TRACE_MOCK_KEY}'}
     cfg['state_path'] = str(out / 'canary-state.json')
+    # LABELLED QUOTA NEGATIVE TEST ONLY: ordinary collection uses high limits.
     cfg['callers'][0]['quota']['day']['requests'] = 1
     group = cfg['models']['support-agent']
     group['strategy'] = 'script'; group['script'] = str(Path(__file__).with_name('canary.ts').resolve())

@@ -37,6 +37,23 @@ def root_pair():
             dict(common, message_id='reply', role='assistant', text='Synthetic answer', parent_id='root', rank=0)]
 
 
+class HighTestLimitTests(unittest.TestCase):
+    def test_all_callers_and_script_group_are_high_without_mutating_routing(self):
+        limits = load('run2_test_limits', 'run2/test_limits.py')
+        config = {'server': {}, 'callers': [{'rate': {'concurrent': 8}}, {}],
+                  'projects': [{'id': 'test'}],
+                  'models': {'support-agent': {'strategy': 'script', 'script_max_concurrent': 1},
+                             'teacher': {'strategy': 'static'}}}
+        limits.configure(config)
+        for caller in config['callers']:
+            self.assertEqual(caller['rate'], limits.RATE)
+            self.assertGreaterEqual(caller['rate']['concurrent'], 32)
+            self.assertGreater(caller['quota']['day']['requests'], 2400)
+        self.assertEqual(config['models']['support-agent']['script_max_concurrent'], 128)
+        self.assertEqual(config['models']['teacher'], {'strategy': 'static'})
+        self.assertEqual(config['projects'], [{'id': 'test'}])
+
+
 class RoutedTransportTests(unittest.TestCase):
     def test_same_group_unique_labels_no_retries_or_reasoning_rewrite(self):
         runner=load('auxiliary_transport','run2/run_auxiliary.py')

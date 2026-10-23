@@ -214,8 +214,8 @@ def main():
     assert args.binary and os.environ.get('FIREWORKS_API_KEY')
     env=dict(os.environ);cfg=local.config(args.out,env)
     for caller in cfg['callers']:
-        caller['rate']={'rpm':2000,'tpm':2000000,'concurrent':8}
-        caller['quota']={'day':{'requests':10000,'tokens':30000000},'month':{'requests':10000,'tokens':30000000}}
+        caller['rate']={'rpm':10000,'tpm':1000000000,'concurrent':128}
+        caller['quota']={'day':{'requests':1000000,'tokens':1000000000},'month':{'requests':1000000,'tokens':1000000000}}
     private_json(args.out/'runtime-local-env.json',{k:v for k,v in env.items() if k.startswith('TRACE_') or k=='CONTENT_CAPTURE_LOCAL_KEY'})
     private_json(args.out/'config.json',cfg)
     with (args.out/'router.log').open('w') as log:
