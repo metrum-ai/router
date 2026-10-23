@@ -25,17 +25,21 @@ Low limits are retained **only** in labelled quota/rate negative tests.
 **Full export and signed NVIDIA/AMD registration are frozen.** Dataset counts:
 1186train/221val/300test; same export bytes/views on both accelerators. NVIDIA
 fixed75-step RTX PRO6000 training and the supplemental BF16 safe merge completed;
-see the metadata-only training/merge receipts. GPUcap$150/stop$120/max4h and the
-initial21:19Z lease deadline have an explicit one-lease extension authorization:
-`lease-extension-authorization.json` permits the existing NVIDIA lease until at
-most **2026-10-24T00:19Z**, with00:10Z cleanup buffer and the same120USD stop.
-No new rental; keep both lease watchdogs and the budget/phase-end guard active.
-Finish the registered base+LoRA gate/controls FIRST, then descriptive merged
-parity. No new/recreated Fireworks dedicated deployment without asking the
-orchestrator. The previously running vendor reference is being API-deleted;
-retain its attempted/startup/idle costs. Teacher-native and CPU merge are already
-done, not pending GPU work. Valid student qualification and
-promotion results remain pending.
+see the metadata-only training/merge receipts. **Original NVIDIA LoRA gate FAIL**:
+exact4→5/200 (+0.5pp <required+10pp), no promotion. Supplemental merged comparison
+is measured but its400semantic grader calls failed pre-route400unsupported_modality:
+semantic parity UNUSABLE, no offline regrade/score borrowing or unauthorized rerent.
+See the [NVIDIA/AMD comparison](../../../docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md)
+and its per-endpoint caveats. Native/objective/load measurements are distinct from
+semantic accuracy and cannot rescue either original NVIDIA or AMD FAIL.
+
+NVIDIA instance AND fresh key API-deleted**2026-10-23T21:25:13Z**, after4.10355h.
+The explicit one-lease extension allowed00:19Z maximum, but cleanup occurred at
+step end, not after idling. Earlier vendor deployment/model API-deleted19:44:53Z;
+all attempted/startup/idle costs retained, no create/recreate without permission.
+Shared teacher-native CPU rerun and actual merged real-file/NEW-result continuation
+passed independently; strictJSON/rollback502 controls remain failed/incomplete.
+Quotes are not invoices or semantic ROI; complete costs stay null where unknown.
 The direct-download preparation at`2bfd8de018` is **superseded**, not training data.
 Current`preregistration.json` authorizes only its hash-bound governed cohort;
 never activate`preregistration-direct-download-superseded.json` to train.

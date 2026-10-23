@@ -1,43 +1,44 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Run 2 (#355) — re-scoped to router trace export #358; BLOCKED
+# Run 2 (#355) — original gate FAIL; limited merged comparison; resources deleted
 
-**No GPU rental until #358 produces the governed captured-trace export.**
-No FT GPU rented, student training or qualification-heldout inference; FT spend$0.
-The traces track has a real-teacher engineering sample, not a training cohort.
-Cap remains$150, operational stop$120. No promotion claim. Run2 non-canary
-`support-agent` callers stay on the teacher; Run1's rejected/base-default decision
-is unchanged and does not authorize routing this teacher group to Qwen base.
+**Do not promote.** The governed export was trained and served, but original
+NVIDIA base→LoRA JSON-text exact4→5/200 (+0.5pp) fails the required+10pp.
+Native tool success is a separate endpoint and cannot rescue that gate.
+AMD original FAIL also stands. Non-canary `support-agent` callers remain teacher;
+Run1's historical base-default rollback does not authorize changing this group.
 
-The maintainer superseded the direct-download preparation at signed commit
-`2bfd8de018f527781074b68f58f30da3fc625bf4`. Its dataset manifest, licence/offer
-preflights, old5667/500/300 cohort, reproducibility checks and original registration
-are archival preparation, NOT current run2 training input or evaluation results.
-Current`run2/preregistration.json` fails closed. Do not resurrect the archived
-`preregistration-direct-download-superseded.json` to rent/train.
+- [RESULTS](RESULTS.md): four-part workflow, measured results and limitations.
+- [NVIDIA vs AMD merged](NVIDIA-AMD-COMPARISON.md): quality endpoints, training
+  wall/throughput, c1/8/32 serving, output-token unit costs and native-harness CPS;
+  consumes PR#369 evidence on pinned main. Refs #359, not a closure claim.
+- [Machine-readable comparison](nvidia-vs-amd-merged-comparison.json): exact
+  source hashes and per-metric caveats. Independently trained BF16 safe merges,
+  different CUDA/Axolotl vs ROCm/PEFT stacks: not pure hardware causality.
+- [Original gate](nvidia-original-gate.json): full300/200/200 denominators and
+  authenticated join audits; frozen SDK grades retained, no new scoring.
+- [Merged grader infrastructure audit](nvidia-merged-grader-infrastructure-audit.json):
+  **all400 semantic rubric calls rejected pre-route400unsupported_modality**.
+  Semantic primary/repeat comparison is UNUSABLE, not model degradation; no
+  offline regrade, score borrowing, selective redo or unauthorized rerental.
+- [Healthy shared teacher whole-arm rerun](shared-teacher-native-high-rerun.json):
+ 300episodes once,488authenticated requests,0transport errors; general completion
+  is not semantic correctness. Prior227/300RPM429 teacher run remains archived
+  as unusable infrastructure evidence. All earlier attempted costs retained.
+- [Economics and teardown](economics-and-teardown.json): NVIDIA instance/key
+  API-deleted21:25:13Z, earlier vendor deployment/model API-deleted19:44:53Z.
+  Known quote/API estimates plus collection upper≈$51.04095, **plus unknown
+  upstream charges**; complete total/invoice null. Quotes are not ROI.
 
-Retain conservative recipe/format-parity checks and the hardware-neutral provider
-rename. All new training, including general/letter-format mix, must come through
-the router export. Teacher rights are CLEARED for this synthetic technical test:
-see`teacher-terms-decision.json`, maintainer comment6366186842. Users must choose a
-teacher whose model license/provider terms permit output training and verify this
-before enabling export; the decision is not general customer-data permission.
-PR361's real-teacher engineering export validates with the FT consumer (1/3/3),
-but is too small/consumed for training. Full mix/cohort and shared NVIDIA/AMD
-replay/gate/source/data freeze remain pending useful-sized governed export.
-
-[Consumer/replay plan](../../../../examples/fine-tune-qwen3p8-27b/run2/README.md).
-Coordination: https://github.com/metrum-ai/router/issues/358#issuecomment-6365813193.
-The provisional consumer validates canonical chat/tool JSONL+manifest and preserves
-complete continuations/provenance. Replay starts from task inputs and executes new
-candidate/teacher/base calls through router, not recorded teacher answers. All
-attempted routed cost / successful tasks includes failed attempts; unknown cost
-and zero successes must be explicit. Native-task success is not the old JSON-text
-exact endpoint; the new protocol must preserve the unchanged gates explicitly.
-
-`provider-alias-publication-audit.json` remains valid: eight historical run1 JSON
-files change only labels, not numerical data or original receipt/join hashes.
-Actual run1 training hardware was RTX PRO6000 Blackwell Server Edition, not B200.
-PR354 merged the rejected workflow, not the candidate. See`VIDEO-FACTS.md` for
-current filming boundaries; the actual router-centric model loop is NOT done.
+Data: full governed1186train/221val/300test, shared pinned base and recipe;
+[training receipt](nvidia-fixed-training.json), [safe merge preparation](nvidia-merged-parity-preparation.json),
+[workflow/freeze/amendments](../../../../examples/fine-tune-qwen3p8-27b/run2/README.md).
+Direct-download preparation remains superseded, never training labels. All labels
+are NEW scoped captured teacher outputs; source answers are hidden checker gold.
+Teacher-output rights are cleared only for synthetic Acme/mock-tool technical
+work, not general customer traffic. Preserve `teacher_terms_decision`; users must
+verify both model license and provider output-training rights. Consumer hashes
+and attestations are not independent privacy/consent proof. Raw prompts/answers,
+request joins, weights, credentials, signed URLs and infrastructure stay outside
+Git. [VIDEO-FACTS](VIDEO-FACTS.md) states what may and may not be claimed.

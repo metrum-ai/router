@@ -1,70 +1,75 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Run 2 video facts — RE-SCOPED, blocked on router trace export #358
+# Run 2 video facts — original gate FAIL, comparison limited, resources deleted
 
-## Current facts (not model results)
+## 1. Industry problem and router solution
 
-- Maintainer requires run2 (#355) to train on **governed router-captured agent
-  traces exported by #358**, not directly downloaded training data.
-- **No FT GPU rented/student trained or qualification-heldout replay; FT paid
-  spend$0.** Producer has real-teacher engineering traffic, not a trained-model
-  result. Do not show a completed run2 demo yet.
-- Direct-download preparation/preregistration at`2bfd8de018` is **superseded**.
-  Its5667/500/300 counts, hashes, CPU replay and Arrow checks are historical
-  preparation ONLY, not the new run2 training/evaluation cohort.
-- Current `run2/preregistration.json` explicitly BLOCKS training. No rental until
-  useful-sized #358 export and new shared NVIDIA/AMD signed freeze. Teacher
-  rights are CLEARED, not a remaining blocker.
-- Keep recipe plan: one epoch, LR1e-5, rank8/alpha16, text-attention projections
-  only; BF16 base/template unchanged. General/letter-format anchors must also
-  be router-captured/exported. Actual mix/counts await the export.
-- Five synthetic template/token fixtures, twelve disjoint letter probes and
-  full actual Axolotl-cache parity remain required remote pre-training checks;
-  these have NOT run against a real run2 model/export.
-- GPU cap$150, operational stop$120. Quotes are not rentals/invoices.
+Training completion is not safe deployment evidence. The demonstrated workflow
+covers scoped teacher-output rights, opted-in capture, outcome labels, audited
+export, fixed training, caller/project-scoped return to SAME `support-agent`, new
+native tool execution, unchanged gates, economics scope and teardown. Do not
+claim that this experiment measures an industry-wide failure rate or production
+customer resolution. Non-canary callers stay teacher.
 
-## Router-centric story to prove (pending)
+## 2. What actually ran
 
-1. Licensed task seeds → teacher agent → real deterministic mock tool execution
-   → tool-result continuation **through router**, under several callers.
-2. Capture only opted-in support caller/project, with redaction/PII policy and
-   retention. Prove other callers are not captured/exported.
-3. Audited admin export: filters, dedupe/provenance hashes, canonical chat/tool
-   JSONL + manifest, frozen temporal/source-group heldout split.
-4. Train the export, route back to the SAME`support-agent` group, canary only
-   the selected support caller/project; others stay teacher.
-5. Replay captured heldout TASKS through router for candidate vs teacher vs base.
-   Execute NEW calls/results; never feed recorded teacher answers to candidate.
-6. Report deterministic task success, quality/general gates, latency and all
-   attempted routed cost / successful tasks (including failures). Unknown cost
-   or zero successes is not a fake free-cost/savings claim. Native success is
-   not strict JSON-text exact accuracy; freeze endpoints before inference.
-7. Accept/reject honestly; API-verify instance/key/vendor teardown.
+- Full NEW governed teacher-label cohort1186/221/300, pinned base/recipe and same
+  derived bytes for NVIDIA/AMD. Licensed source answers are checker gold, never
+  training fallback. Direct-download preparation remains superseded.
+- RTX PRO6000 Blackwell96GB fixed75steps/oneepoch, rank8/alpha16/LR1e-5/BF16;
+  adapter31c622a1…, wrapper892.894s. Actual template/cache/input/supervised-tool
+  audits passed. Val NLL.65505→.61666 is label likelihood, not task accuracy.
+- Additional exact-AMD-script BF16 CPU safe merge85.2s,12shards/1184BF16tensors,
+  aggregate01c32fb9…. Same base/template, not a replacement for registered LoRA.
+- Original low-limit qualifications are archived infrastructure failures. Whole
+  affected runs restarted under signed high-limit amendment, no selective redo.
+  Actual dispatch remains native8/SDK16/load1/8/32. Low limits only in labelled
+  limiter negative tests; hashes/attestations are not independent privacy proof.
 
-Teacher: Fireworks`accounts/fireworks/models/gpt-oss-120b`, Apache-2.0. Maintainer
-approved this synthetic Acme/mock-tools technical test at comment6366186842;
-`teacher_terms_decision` and pinned model/provider-terms hashes are recorded in
-manifest/evidence. NOT general customer-data permission; users must independently
-choose/check a teacher whose terms permit output training. Collection cap~$20.
-PR361 engineering export1train/3val/3test is consumer-compatible, includes historical
-teacher failures, and is NOT a useful training cohort. Shared NVIDIA/AMD recipe
-now uses TF32=false, same BF16/SDPA/rank8/LR1e-5/one epoch. Full cohort/freeze and
-student measurements are still pending; do not imply the full loop is done.
+## 3. Measured rejection and comparison boundaries
 
-## Provider-name correction / Run 1 facts that must remain true
+- Original NVIDIA gate **FAIL**: strict JSON-text exact base4→LoRA5/200, +0.5pp
+  below required+10pp. IFEval164→161/200, MMLU123→123/200; native258→265/300
+  cannot rescue the original endpoint. AMD FAIL stands independently.
+- Additional NVIDIA merged vs AMD merged: exact5 vs7/200; IFEval170 vs164/200;
+  MMLU124 vs124/200; native tools180/200both, all native264 vs262/300. General
+  completion is NOT semantic correctness. No paired cross-hardware CI is invented
+  from AMD's aggregates; different independently trained adapters/stacks confound
+  any pure hardware causal claim.
+- **Merged semantic comparison is UNUSABLE**:400rubric requests failed in our
+  harness pre-route400unsupported_modality. Preserve observed assertions/costs,
+  but never call them semantic degradation, a merge effect, or valid savings.
+  No offline regrade, borrowed grades, selective redo or unauthorized rerental.
+- c1/8/32 outputtok/s NVIDIA merged25.874/194.144/658.473 vs AMD70.533/395.608/
+  1400.613. Quoted USD/Moutput23.51155/3.13341/.92385 vs14.96542/2.66819/.75364.
+  Same32request128cap synthetic SSE profiles,0errors, not sustained capacity.
+- Whole300native-window quote/harness success$.00142097 vs$.00129650, failures
+  and idle included. NOT semantic customer success, full lifecycle, invoice or
+  quality-equivalent ROI. Unknown selfhosted router costs remain null, not free.
+- StrictJSON/rollback502 controls remain failed/incomplete. A separate actual
+  merged client created a file and continued with a NEW unpredictable receipt,
+  with authenticated merged targets: PASS, not rescue of other failed controls.
 
-- Current provider ID **`vllm_onprem_ft`** is hardware-neutral throughout example
-  and referenced public evidence. Eight historical JSON publications changed
-  provider labels only; numerical results and original receipt/join hashes stay
-  unchanged (`provider-alias-publication-audit.json`). Not a rerun.
-- Run1 trained on **1×RTX PRO6000 Blackwell Server Edition,96GB**, not B200.
-  Two failed Vast startup rentals on B200 offers were deleted without training;
-  later availability recheck created no rental. Actual run2 hardware UNKNOWN.
-- PR354 merged as`0ea1e6f38826bd3a4961ccb1b5045e3394ea42c2`, retaining Fixes#326:
-  acceptance of reproducible REJECTED workflow, not promotion/production rollout.
-- Run1 exact-text tool gain passed, standard regressions failed; **base remains
-  default, DO NOT PROMOTE**. Do not present run1 metrics as run2 metrics.
-- Historical public judge agreement60%(CI46–74%) is weak, not domain validation.
-  Provider base-byte equivalence remains unverified. No retained-knowledge,
-  production-safety, quality-equivalent ROI or invoice-total claims.
+## 4. Teardown, rights and claims that must not change
+
+NVIDIA instance AND fresh cloud key API-deleted21:25:13Z, lifecycle4.10355h/$8.98677
+quote. Authorized extension permitted00:19Z maximum, but did not justify idling.
+Earlier vendor deployment/model API-deleted19:44:53Z/$32.39026lifecycle quote;
+no new/recreated dedicated deployment without permission. Known quote/API estimates
+plus collection upper≈$51.04095 **plus unknown upstream charges**; no complete
+invoice total. GPU was remote, loopback served/tunneled, neural weights never on
+the coding-agent machine. Raw answers/joins/weights/secrets/infrastructure outsideGit.
+
+Shared teacher CPU-only whole300 replacement:488authenticated requests/0transport,
+API estimate$.11001480 including real-file/new-receipt proof. Degraded227/300RPM429
+teacher run remains unusable comparison/CPS, not teacher capability evidence.
+Teacher permission is limited to synthetic Acme/mock tools; users must verify
+model license AND provider output-training rights. Do not show customer capture
+permission, production rollout, full API parity, pure hardware superiority or
+model promotion. Run1 PR354 accepted a reproducible negative workflow, not a
+promoted model; it actually trained on RTX PRO6000, not B200.
+
+Sources: [RESULTS](RESULTS.md), [comparison](NVIDIA-AMD-COMPARISON.md), machine-readable
+receipts in this directory. Refs #359; semantic-grading decision/review remains
+explicit, no automatic issue-completion or current CI-green claim.
