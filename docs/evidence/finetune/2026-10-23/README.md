@@ -67,7 +67,7 @@ synthetic native/governance request IDs are opaque router IDs, not credentials.
   train example3929tokens;8192 is a configured cap, not an observed example.
 - Two epochs/250steps,2211s wrapper;66.17GiB peak allocated, driver72091MiB.
   BF16 compute, F32 adapter storage;800 tensors/108,789,760 parameters, text
-  decoder only. Validation likelihood0.383500→0.155748 is not tool accuracy.
+  decoder only. Validation loss (negative log-likelihood)0.383500→0.155748 is not tool accuracy.
 - Adapter SHA256 local+remote:
   `1f1ce60dac65f01ba54601c557d821c490ff954a969fbb563425c7728d86bb2e`.
 - Official digest-pinned vLLM, host-loopback through SSH tunnel. Fireworks base is

@@ -22,7 +22,7 @@ Source:`training-runtime-v2.json`, `dataset-manifest.json`, `prepared-tokenizati
   prepared-cache inspection proves supervised tool tokens were retained.
   Longest observed train example3929 tokens;8192 is the configured cap only.
 - **250steps/two epochs,2211s wrapper**,66.17GiB peak torch allocated,
- 68.43GiB reserved,72091MiB1Hz driver peak. Validation likelihood
+ 68.43GiB reserved,72091MiB1Hz driver peak. Validation loss (negative log-likelihood)
   **0.383500→0.155748**, NOT held-out accuracy.
 - **108,789,760 parameters/800 tensors**, text decoder only, no vision/lm_head.
   Same adapter local/remote SHA256:
