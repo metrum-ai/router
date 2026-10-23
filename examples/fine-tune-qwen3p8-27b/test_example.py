@@ -162,11 +162,56 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             summarize({'results': {'results': rows + rows[:1]}})
 
+    def test_fireworks_delete_recent_inference_requires_explicit_flag(self):
+        from unittest import mock
+        module=self.load('fireworks','fireworks/run.py')
+        for force in (False,True):
+            argv=['ft','delete','--execute','--account','test','--deployment','owned']
+            if force:argv.append('--ignore-recent-inference')
+            with mock.patch('sys.argv',argv),mock.patch.object(module,'api',side_effect=[{'state':'READY'},{},{'state':'DELETED'}]) as api:
+                module.main()
+            self.assertEqual(api.call_args_list[1].args[0],
+                'accounts/test/deployments/owned'+('?ignore_checks=true' if force else ''))
+            self.assertEqual(api.call_args_list[0].kwargs['method'],'GET')
+            self.assertEqual(api.call_args_list[2].kwargs['method'],'GET')
+        with mock.patch('sys.argv',argv),mock.patch.object(module,'api',return_value={'state':'DELETED'}) as api:
+            module.main()
+        self.assertTrue(all(c.kwargs['method']=='GET' for c in api.call_args_list))
+
+    def test_public_join_aggregation(self):
+        aggregate=self.load('summarize','eval/summarize.py').aggregate_joins
+        joins=[{'provider':'ft','router_request_id':'req_private_test',
+            'telemetry':{'target_provider':'fireworks_ft','target_model':'accounts/private-account/models/adapter',
+                'status':200,'input_tokens':10,'output_tokens':20}}]
+        result=aggregate(joins)
+        self.assertEqual(result['complete_responses'],1)
+        self.assertNotIn('req_private_test',json.dumps(result))
+        self.assertNotIn('private-account',json.dumps(result))
+        self.assertEqual(result['by_eval_provider']['ft']['output_tokens'],20)
+        with self.assertRaises(ValueError):aggregate(joins+joins)
+
+    def test_summary_scores_empty_objective_responses_zero(self):
+        summarize = self.load('summarize', 'eval/summarize.py').summarize
+        call = {'function':{'name':'lookup','arguments':{'id':1}}}
+        rows = [{'provider':{'id':'ft'},'testIdx':i,'success':i==0,
+            'vars':{'expected':[call],'declared':['lookup']},
+            'response':{'output':{'tool_calls':[call]} if i==0 else None}}
+            for i in range(2)]
+        rows[0]['gradingResult']={'componentResults':[{'reason':json.dumps({'exact':1,
+            'valid':1,'argument_f1':1,'tool_name_exact':1,'no_hallucination':1,
+            'over_call':0,'refusal':0})}]}
+        report,_ = summarize({'results':{'results':rows}})
+        self.assertEqual(report['providers']['ft']['metrics']['exact']['n'],2)
+        self.assertEqual(report['providers']['ft']['metrics']['exact']['mean'],.5)
+        self.assertEqual(report['objective_audit']['sdk_skipped_callbacks'],1)
+        rows[0]['vars']['declared']='lookup'
+        with self.assertRaises(ValueError):summarize({'results':{'results':rows}})
+
     def test_promotion_gate_thresholds(self):
         gate = self.load('outcome', 'eval/outcome.py').additional_failures
-        quality = {'providers':{'base':{'count':300,'metrics':{'exact':{'n':100,'mean':.5}}},
-            'ft':{'count':300,'metrics':{'exact':{'n':100,'mean':.6}}}},
-            'paired':{'base -> ft':{'passed':{'n':300},'exact':{'n':100}}}}
+        quality = {'providers':{'base':{'count':300,'metrics':{'exact':{'n':200,'mean':.5}}},
+            'ft':{'count':300,'metrics':{'exact':{'n':200,'mean':.6}}}},
+            'paired':{'base -> ft':{'passed':{'n':300},'exact':{'n':200}}}}
         regression = {'providers':{'base':{'count':200,'metrics':{'passed':{'mean':.8}}},
             'ft':{'count':200,'metrics':{'passed':{'mean':.78}}}},
             'paired':{'base -> ft':{'passed':{'n':200}}}}

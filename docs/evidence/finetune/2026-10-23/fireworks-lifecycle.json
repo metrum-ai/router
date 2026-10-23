@@ -1,0 +1,18 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "account": "OPERATOR",
+  "model": "qwen3p8-27b-metrum-ft-20261023-v2",
+  "deployment": "metrum-ft-qwen3p8-20261023-v2",
+  "created_at": "2026-10-23T05:41:18.514118+00:00",
+  "deployment_deleted_observed_at": "2026-10-23T07:03:39.189929+00:00",
+  "deployment_get_state": "DELETED",
+  "model_deleted_observed_at": "2026-10-23T07:04:57.935382+00:00",
+  "model_get_http_status": 404,
+  "lifetime_upper_bound_seconds": 4940.675811,
+  "public_hourly_quote_usd": 30,
+  "creation_to_deleted_upper_quote_usd": 41.172298425,
+  "prior_superseded_upper_quote_usd": 4.5,
+  "cleanup_quirk": "Recent inference guard requires explicit ignore_checks=true on this owned disposable deployment. Tombstone GET DELETED is verification; do not repeatedly DELETE. Helper now exposes an explicit flag and polls GET.",
+  "invoice": false,
+  "caveat": "Creation-to-observed-deletion quote upper estimate includes advertised unbilled startup; not actual billed READY time or invoice. Watchdogs stopped only after verified deletion."
+}

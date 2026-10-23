@@ -1,0 +1,347 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "providers": {
+    "openai:chat:qwen3p8-27b-ft-fireworks": {
+      "count": 200,
+      "metrics": {
+        "error": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 200,
+          "mean": 1021.11,
+          "ci95": [
+            917.345,
+            1136.77
+          ]
+        },
+        "passed": {
+          "n": 200,
+          "mean": 0.63,
+          "ci95": [
+            0.56,
+            0.695
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 2298
+    },
+    "openai:chat:qwen3p8-27b-ft": {
+      "count": 200,
+      "metrics": {
+        "error": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 200,
+          "mean": 6278.8,
+          "ci95": [
+            5194.64,
+            7449.9
+          ]
+        },
+        "passed": {
+          "n": 200,
+          "mean": 0.635,
+          "ci95": [
+            0.565,
+            0.7
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 24070
+    },
+    "openai:chat:qwen3p8-27b-ft-onprem": {
+      "count": 200,
+      "metrics": {
+        "error": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 200,
+          "mean": 10682.165,
+          "ci95": [
+            9367.095,
+            12203.54
+          ]
+        },
+        "passed": {
+          "n": 200,
+          "mean": 0.625,
+          "ci95": [
+            0.555,
+            0.69
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 25915
+    },
+    "openai:chat:qwen3p8-27b-base": {
+      "count": 200,
+      "metrics": {
+        "error": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 200,
+          "mean": 15368.515,
+          "ci95": [
+            13071.81,
+            17856.02
+          ]
+        },
+        "passed": {
+          "n": 200,
+          "mean": 0.815,
+          "ci95": [
+            0.76,
+            0.865
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 48364
+    }
+  },
+  "paired": {
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": -9089.715,
+        "ci95": [
+          -11398.165,
+          -6970.375
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.18,
+        "ci95": [
+          -0.25,
+          -0.11
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-fireworks": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": -14347.405,
+        "ci95": [
+          -16776.715,
+          -12096.845
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.185,
+        "ci95": [
+          -0.255,
+          -0.115
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": -4686.35,
+        "ci95": [
+          -6792.48,
+          -2588.65
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.19,
+        "ci95": [
+          -0.255,
+          -0.125
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft -> openai:chat:qwen3p8-27b-ft-fireworks": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": -5257.69,
+        "ci95": [
+          -6366.505,
+          -4226.57
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.005,
+        "ci95": [
+          -0.03,
+          0.02
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": 4403.365,
+        "ci95": [
+          3268.245,
+          5781.52
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.01,
+        "ci95": [
+          -0.04,
+          0.015
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft-fireworks -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": 9661.055,
+        "ci95": [
+          8439.96,
+          11098.35
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.005,
+        "ci95": [
+          -0.035,
+          0.025
+        ]
+      }
+    }
+  },
+  "objective_audit": {
+    "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+    "sdk_skipped_callbacks": 0,
+    "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+  },
+  "cost_scope": "Model-request token estimates only; excludes grader calls and hourly GPU/deployment charges. Zero token price is not free serving.",
+  "router_join_audit": {
+    "complete_responses": 800,
+    "unique_request_ids": 800,
+    "joined_records_sha256": "a0e7a6a9ad5f40aa09ac242c3d3f6e3716f7c4ade15209322f6139018d31ec4a",
+    "by_eval_provider": {
+      "openai:chat:qwen3p8-27b-ft-fireworks": {
+        "responses": 200,
+        "observed_targets": {
+          "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 200
+        },
+        "status_counts": {
+          "200": 200
+        },
+        "input_tokens": 11725,
+        "output_tokens": 51070
+      },
+      "openai:chat:qwen3p8-27b-ft": {
+        "responses": 200,
+        "observed_targets": {
+          "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 95,
+          "vllm_b200_ft/metrum-ft": 105
+        },
+        "status_counts": {
+          "200": 200
+        },
+        "input_tokens": 11725,
+        "output_tokens": 46691
+      },
+      "openai:chat:qwen3p8-27b-ft-onprem": {
+        "responses": 200,
+        "observed_targets": {
+          "vllm_b200_ft/metrum-ft": 200
+        },
+        "status_counts": {
+          "200": 200
+        },
+        "input_tokens": 11725,
+        "output_tokens": 46209
+      },
+      "openai:chat:qwen3p8-27b-base": {
+        "responses": 200,
+        "observed_targets": {
+          "vllm_b200_ft/qwen3p8-27b-base": 200
+        },
+        "status_counts": {
+          "200": 200
+        },
+        "input_tokens": 11725,
+        "output_tokens": 66614
+      }
+    },
+    "journal_sha256": "a36e9f702123b7371c1257cd7101b372153b7a4f52c0768fe8ae7720665db2ee",
+    "privacy": "Full per-request rows private; provider account IDs redacted. Hashes commit to original joined rows and journal."
+  }
+}

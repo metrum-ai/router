@@ -1,0 +1,19 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "model": "qwen3p8-27b-ft-fireworks",
+  "api_base": "http://127.0.0.1:18525/v1",
+  "reasoning_mode": "explicitly disabled; no greeting reasoning trace",
+  "chat": "pass",
+  "stream": "pass",
+  "stream_frames": 12,
+  "tool_file_creation": "pass",
+  "tool_result_continuation": "pass",
+  "json_schema": "pass",
+  "router_request_ids": [
+    "req_5bd1ba9177286c4eccf853cebffb3713",
+    "req_6d418642ef7b51f8ff56b8425daf90b3",
+    "req_1db84f4585ec0549deb9a14e5ce32232",
+    "req_ac0b6e36dc74c7e9d0f723d0cee954d9",
+    "req_c9db16486456835fc643d296b08cbe79"
+  ]
+}

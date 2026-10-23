@@ -1,86 +1,170 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Video facts — work in progress
+# Video facts — measured experiment, rejected candidate
 
-## Read before using any headline
+**Do not promote. Base remains default.** Draft [PR354](https://github.com/metrum-ai/router/pull/354)
+is a reproducible workflow/negative-result example, pending product acceptance.
+All paid resources and the owned provider SSH key are API-verified deleted.
+No production traffic, in-house human labeling, quality-equivalent ROI or invoice claim.
 
-The first adapter is **superseded**: pre-outcome dataset QA found Python-literal
-arguments rejected, leaving zero original test tool targets. Corrected parsing
-and2:1 stratification now gives1333/2000train,333/500val,200/300test tool targets.
-Corrected full training and real native serving on both stacks have passed.
-**No valid held-out quality result or promotion claim yet.**
+## Training: what actually happened
 
-The first held-out attempt06:02→06:06UTC was aborted before reviewing any case
-outputs/scores after a separate synthetic fixture exposed SDK array-variable
-expansion. Canonical inputs, prompts, scorer/hash and thresholds are unchanged;
-a runtime guard corrects transport. Raw partial files remain outside Git and
-are excluded. See `eval/PREREGISTRATION.md` in the example.
+Source:`training-runtime-v2.json`, `dataset-manifest.json`, `prepared-tokenization-v2.json`.
 
-## Measured: corrected training
-
-- **Two-epoch BF16 LoRA on one96GB RTX PRO6000 completed.** Source:
-  `training-runtime-v2.json`:2000train/500val,1333/333 native-tool targets,
-  250steps, **2211s (36.85min)** wrapper, **66.17GiB** peak torch allocation;
-  1Hz driver peak**72091MiB**. All800 adapter tensors /108,789,760 parameters
-  are text-decoder-only; computeBF16, adapter fileF32. Actual prepared-cache QA:
-  `prepared-tokenization-v2.json`. Max observed example3929tokens;8192 is a cap.
-- **Wrapper-only GPU quote estimate$1.345025** at$2.19/h. NOT all-in spend:
-  excludes failed first run, smoke/setup/idle/serve/storage/network, not invoice.
-  Validation likelihood0.383500→0.155748 is not held-out tool accuracy or
-  evidence of improvement.
-- Adapter SHA256 local+remote:
+- Pinned Apache-2.0 Qwen3.8-27B + Glaive function-calling-v2. Axolotl immutable
+  image, BF16 compute, F32 adapter storage; no Unsloth fallback or managed Fireworks SFT.
+- Cheapest qualifying advertised approved Shadeform candidate in the recorded
+  search: **1×RTX PRO6000 Blackwell Server Edition,96GB, $2.19/h**,192GB RAM,
+  750GB disk, driver580.126.09. Provider alias `vllm_b200_ft` is historical,
+  **not** a B200 hardware claim. Vast B200 availability was checked, not rented.
+- Corrected **2000/500/300** train/val/test; **1333/333/200** tool targets. Actual
+  prepared-cache inspection proves supervised tool tokens were retained.
+  Longest observed train example3929 tokens;8192 is the configured cap only.
+- **250steps/two epochs,2211s wrapper**,66.17GiB peak torch allocated,
+ 68.43GiB reserved,72091MiB1Hz driver peak. Validation likelihood
+  **0.383500→0.155748**, NOT held-out accuracy.
+- **108,789,760 parameters/800 tensors**, text decoder only, no vision/lm_head.
+  Same adapter local/remote SHA256:
   `1f1ce60dac65f01ba54601c557d821c490ff954a969fbb563425c7728d86bb2e`.
-  Axolotl0.21.1.dev0 immutable official image; no Unsloth fallback needed.
-- Historical initial512-token2-step smoke: `hardware-smoke-runtime.json`,
-  53.11GiB peak,47.31s trainer/88.746s wrapper. Do not confuse with full-run peak.
+- Wrapper-only training quote **$1.345025**, NOT all-in training/experiment cost.
+  The original flawed-data adapter/training is superseded, not usable evidence.
 
-## Measured: corrected live plumbing and synthetic serving
+## Serving and real router controls
 
-- Sources:`live-smoke-onprem.json`, `live-smoke-fireworks.json`,
-  `live-smoke-base.json`:actual worktree-router chat, SSE, strict JSON schema,
-  **real file creation and native tool-result continuation PASS**. Explicitly
-  non-thinking. Same adapter artifact transferred to Fireworks. Fireworks uses
-  vendor live merge on2×B300 BF16, not an independently trained adapter. Provider
-  base packaging/implementation is not independently byte-verified against HF.
-- Source:`live-governance.json`:configured90/5/5 canary; actual finite100-request
-  sample **96base/1onpremFT/3FireworksFT**, NOT exactly10% FT. Shadow records FT
-  recommendation while base serves. Synthetic prompt marker absent in logs/DB.
-  This is controlled synthetic local-dev traffic, not production traffic.
-- Source:`load-onprem-lora.json`:32 requests/profile atconcurrency1/8/32,
-  **0errors**, **23.83/181.13/599.42 outputtokens/s**. At32:p95TTFT647ms,
-  p95latency6.83s; peak1Hz driver memory84591MiB. Fully utilized quote estimate
-  **$1.015/M outputtokens at32**, versus$25.53/M at1. Caveats: short synthetic
-  prompt,128-token cap, finite sample, not productionSLO, invoice or quality ROI.
-- Synthetic evaluator integration:4/8 assertions passed,0HTTP/provider errors,
-  8/8 response request IDs joined usage DB. This verifies real grading/telemetry
-  plumbing; NOT a held-out improvement result. Raw output remains outside Git.
+Sources:`live-smoke-*-final-source.json`, `live-smoke-*-id-rewrite.json`,
+`live-smoke-merged.json`, `live-governance.json`, `live-rollback-budget.json`.
 
-## Measured: judge calibration (not domain validation)
+- Actual worktree-built router, official vLLM, SSH tunnel/host loopback; no public
+  model port. Corrected base/onpremFT/FireworksFT **chat, SSE, strict JSON,
+  real temporary file creation and native tool-result continuation PASS**.
+- Main integrated through verified GitHub merge `ef6c974a`; all three live smokes
+  repeated against its worktree-built binary. Initial local/dev starter used ID
+  passthrough; restored base +onpremFT additionally passed with **ID rewrite and
+  a fresh private64byte key**. Do not imply a Fireworks ID-rewrite test was run.
+- Fireworks base READY but `tunable=false`: standalone Axolotl +same adapter
+  upload,0validation warnings. Dedicated **vendor live merge,2×B300 BF16,
+  $30/h** default shape independently matched. Not independent Fireworks SFT;
+  vendor base packaging is not independently byte-verified against HF.
+- Real synthetic100-request canary configured **90base/5onpremFT/5FireworksFT**,
+  observed **96/1/3**. NOT an exact observed10% promise or production traffic.
+  Recommendation-only shadow served base and logged FT recommendation. The
+  synthetic marker was absent from router logs/DB/WAL; not a universal privacy proof.
+- Actual rollback removed FT targets from canary: **10/10 canary +1 omitted-model
+  request served base**. Base default unchanged; both FT caller permissions then
+  revoked and rejected403 before dispatch. Fireworks was already deleted at this
+  final authorization check; earlier live inference is independently recorded.
+- Actual daily request quota1 denied before upstream; original quota restored and
+  base still served. Actual **dynamic_score dollar spend ceiling** rejected with
+  HTTP502/no-eligible-target, candidate filter stage`spend_ceiling`, no upstream
+  selected. Illustrative configured$1/$1 per-million rates and$1e-9 ceiling;
+  NOT an hourly rental budget. **Weighted ignores spend_ceiling**; lease watchdogs
+  separately bound real GPU/deployment charges.
+- Remote-host BF16 safe merge **110s**, no new training. Merged native smoke PASS;
+  local merged quality was **not** re-evaluated (`merged-runtime.json`).
 
-- Source:`judge-calibration.json`:**60% agreement,95% bootstrapCI46–74%,n50**,
-  one public MT-Bench human preference per distinct question; pinned
-  `gpt-4o-2024-11-20`, temperature0, through local router. Weak agreement, not
-  domain-specific validation or fine-tuning gain. No in-house human labeling.
-- Same source:57,166input/98output tokens, estimated$0.143895 at$2.50/$10 per1M.
-  Not invoice; excludes availability/synthetic smokes and subsequent grading.
+## Frozen results — show the failure beside the narrow gain
 
-## Quotes, safeguards and incomplete economics
+Sources:`quality-summary.json`, `ifeval-summary.json`, `mmlu-summary.json`,
+`outcome-*.json`, full interpretation in `RESULTS.md`.
 
-- Shadeform quote$2.19/h,1×RTX PRO6000 Blackwell96GB,750GB disk. Source:track
-  report and private `shade-current.json`. Full run fits; no independent network
-  speed measurement. Serving cost is still accruing, not included in train quote.
-- Vast failed rentals estimated$0.124168 total, both deleted/API-verified;
-  private `instance-57316233-deleted.json`, `instance-57316282-deleted.json`.
-  No training on Vast. Later B200 availability check did not create a rental.
-- GPU serving-phase watchdog deadline07:41UTC, conservative total reservation
-  including Vast$8.53. Fireworks corrected2×B300 quote$30/h,2h cleanup watchdog;
-  new reservation$60 plus first superseded deployment≤$4.50 lifetime upper bound.
-  These are quote-based bounds, not invoices. Delete immediately at check end.
+| Measure | Base | WeightedFT | OnpremFT | FireworksFT |
+|---|---:|---:|---:|---:|
+| Strict JSON-text exact,200 tool cases |4.5%|32.0%|29.0%|32.5%|
+| Paired exact gain,95% bootstrapCI |—|+27.5pp [20,35]|+24.5pp [17.5,32]|+28pp [20.5,35.5]|
+| Outer-wrapper containment validity |99.5%|42.5%|39.0%|44.0%|
+| Non-tool rubric pass,100 cases,temp0 |73%|56%|54%|59%|
+| IFEval,200 fixed cases |81.5%|63.5%|62.5%|63.0%|
+| MMLU-Pro,200 fixed cases |60.5%|13.0%|12.0%|12.0%|
 
-## Still pending — do not claim
+- Strict JSON-text exact is **format-sensitive, low absolute accuracy, NOT native
+  API tool-selection accuracy**. Fenced JSON can pass containment but fail raw
+  JSON parsing. Wrapper containment is not per-function argument-schema validity.
+  Frozen `refusal` means parsed empty tool-call lists; malformed outputs have
+  refusal0/valid0 separately, not human-coded safety refusals.
+- The≥10pp narrow-gain criterion passes, but≤2pp IFEval/MMLU regression limits
+  emphatically fail. **All full promotion wrappers FAIL**; a nested scalar pass
+  is NOT approval. Onprem also fails client error-rate increase:1/300 versus0base.
+- Primary weighted serving **151Fireworks/149onprem**, distinct from the canary.
+  Complete1200primary +1600regression +1200sampling responses, **4000 unique
+  joined router IDs** verified. Public aggregates/hashes only; full per-request
+  rows/raw outputs private (`join-publication-audit.json`).
+- SDK skipped25 absent-output objective callbacks:7weighted/18onprem. Frozen
+  scorer assigns these zero, all tool denominators200. Nonempty original SDK
+  scores retained: exported references may be redacted. No new inference or
+  changed prompt/model/threshold; scorer hash unchanged.
+- Primary p95 client latency **94.720s base /12.769s weightedFT /18.027s onpremFT
+  /1.242s FireworksFT**. Mixed/interleaved16-concurrency, variable completions
+  capped2048; NOT intrinsic decode speed, productionSLO or training-caused speedup.
 
-Held-out quality deltas/CI, full regression and sampling outcomes, promotion,
-Fireworks/merged load profiles, measured break-even scenario and final teardown/
-spend verification. Zero router token prices are placeholders, not free serving.
-No reduced-retry savings, positive ROI or production deployment claim is justified.
+## Rubric calibration and sampling are weak evidence, not domain validation
+
+Sources:`judge-calibration.json`, `sampling-spread.json`, `sampling-*-summary.json`.
+
+- Licensed public MT-Bench human judgments,50 distinct questions: **60% agreement,
+  bootstrap95%CI46–74%**. CC-BY-4.0, Zheng et al., *Judging LLM-as-a-Judge with
+  MT-Bench and Chatbot Arena* (2023), arXiv:2306.05685. Pinned source, not GPT labels.
+  Judge`gpt-4o-2024-11-20`,temperature0. No in-house labeling.
+- Same100 non-tool cases repeated at generation temp.7, nominal seeds326/327/328:
+  rubric passes **base74/76/69%, weighted54/53/53%, onprem58/58/57%,
+  Fireworks51/52/54%**. Spans7/1/1/3pp. NOT300 independent cases or a promotion pass;
+  spread includes generation/routing/judge variability.
+
+## Load and economics — scenarios only
+
+Sources:`load-onprem-lora-final-source.json`, `load-onprem-merged.json`,
+`load-fireworks.json`, `economics-final-*-c*.json`.
+
+| Actual serving lane |Outputtokens/s,c1 /c8 /c32|Hourly quote|Fully-utilized c32$/M output tokens|
+|---|---:|---:|---:|
+|1×RTX PRO6000,unmerged LoRA |23.89 /181.77 /616.09|$2.19|$0.98741|
+|Same GPU,local BF16 merged |25.93 /194.81 /660.44|$2.19|$0.92111|
+|Fireworks vendor live merge,2×B300 |248.12 /1302.66 /3190.34|$30|$2.61205|
+
+- 32requests/profile,0errors, short synthetic prompt/128-token cap, end-to-end SSE.
+  Different hardware/engine/merge modes; no production workload/SLO or statistical
+  significance claim. These direct-lane loads do not measure combined50/50 capacity.
+- 720h, reference$2.50/$10 input/output, assumed1:1 token mix, one-off **full known
+  experiment estimate$58.408663**: theoretical c32 break-even capacity fractions
+  **8.192% onpremLoRA /7.642% merged /20.953% Fireworks**. At c1 all exceed100%
+  (infeasible). Assumes measured batching efficiency while scaling average load;
+  not validated for continuous low concurrency or a changed input/output mix.
+  Reference is NOT quality-equivalent; no retry reduction/business payback.
+- Older `economics-onprem-lora-c*.json` uses the initial load and only$1.345025
+  corrected wrapper upfront; do not confuse it with the final full-lifecycle scenario.
+- Zero router token prices are placeholders, NOT free hosting. Candidate fails
+  quality gates, so these price scenarios do NOT justify promoting it.
+
+## Final spend, network and teardown
+
+Sources:`cleanup-spend.json`, `fireworks-lifecycle.json`, `network-benchmark.json`.
+
+- Whole GPU lifetime quote including startup/idle/both trainings/serving/controls
+  plus both failed Vast rentals: **$7.894820**. GPU hard stop$800.
+- Both Fireworks dedicated lifetimes, conservative creation-to-observed-deletion
+  upper quotes including advertised unbilled startup: **$45.672298**. Stop$240.
+  Recent-traffic guard required explicit`ignore_checks=true` for our disposable
+  deployment; GET DELETED verified, uploaded model GET404 verified. Helper now
+  exposes an explicit flag and polls GET rather than repeating DELETE on tombstones.
+- Recorded router OpenAI usage estimate **$4.841545** including calibration/grading.
+  Combined known-lifecycle estimate **$58.408663**, **NOT invoices** or a guarantee
+  that aborted/missing API usage was billed zero; excludes unobserved fees/labor.
+- Shade deletion API-verified **07:23:47UTC**; owned provider SSH key absent,
+  local private key removed. Fireworks deployment GET DELETED/model GET404;
+  watchdogs stopped only after verified deletion. Local router/policy stop sent.
+- Actual remote public pinned HF100MB Range transfer: **0.483s,1.656Gbps**.
+  Cloudflare probe403, so HF fallback used. Not a sustained/upload/link SLA.
+
+## Chronology and prohibited claims
+
+Data parsing/stratification corrected before any held-out FT calls. Initial
+06:02→06:06 transport attempt did make held-out calls, then aborted before any
+result review after synthetic integration exposed SDK array expansion; excluded
+partials retained privately. Canonical corrected cohort/prompt/scorer/thresholds
+unchanged in the complete run. Verified freezes and disclosures in evidence README.
+
+**Never claim** promotion, general tool-quality improvement, native API accuracy
+from JSON-text scores, strong domain-calibrated judge, quality-equivalent ROI,
+invoice totals, independent provider base-byte equivalence, full8192-token training
+examples, actual B200 training, or independent managed Fireworks SFT. Further model
+research requires fresh held-out data, not tuning to these consumed results.

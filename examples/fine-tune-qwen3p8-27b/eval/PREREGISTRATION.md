@@ -72,8 +72,11 @@ permit copyright or arbitrary metadata keys); this companion supplies provenance
 - Pin judge `gpt-4o-2024-11-20`, temperature 0; calibrate against 50 distinct
   public MT-Bench human-labeled questions. Report agreement and 95% bootstrap CI;
   do not represent this as in-domain validation or in-house labeling.
-- `refusal` is a no-tool-response proxy on expected-tool cases (including
-  malformed output), not a human-coded policy-refusal judgment. Glaive's
+- Clarification of the unchanged frozen scorer: `refusal` marks parsed empty
+  tool-call lists on expected-tool cases. Malformed output scores0 there and is
+  exposed by `valid=0` separately, not counted as refusal. It is not a human-coded
+  policy-refusal judgment. `json_schema` checks the outer wrapper, not each
+  function's parameter schema. Glaive's
   synthetic references can contain label noise; JSON schema validation here
   checks canonical structure, not independent real-world tool correctness.
 - The fallback shares one adapter across Fireworks and on-prem: comparisons measure

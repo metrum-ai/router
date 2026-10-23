@@ -37,7 +37,7 @@ def scenario(profile, reference_input, reference_output, input_output_ratio,
         'measured_capacity_output_tokens_in_period':capacity,
         'break_even_capacity_fraction':break_even/capacity,
         'within_measured_capacity':break_even<=capacity,
-        'caveat':'Hypothetical constant-load price comparison only. Reference model is not proven quality-equivalent; excludes operator labor, network, storage, downtime and taxes. No retry reduction or business payback measured.',
+        'caveat':'Hypothetical capacity/duty-cycle price comparison only. Assumes measured batching efficiency at scaled average load; not validated for continuous low-concurrency traffic or a changed input/output mix. Reference model is not proven quality-equivalent; excludes operator labor, network, storage, downtime and taxes. No retry reduction or business payback measured.',
     }
 
 

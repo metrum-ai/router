@@ -1,0 +1,347 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "providers": {
+    "openai:chat:qwen3p8-27b-ft-fireworks": {
+      "count": 100,
+      "metrics": {
+        "error": {
+          "n": 100,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 100,
+          "mean": 721.64,
+          "ci95": [
+            616.49,
+            834.65
+          ]
+        },
+        "passed": {
+          "n": 100,
+          "mean": 0.51,
+          "ci95": [
+            0.41,
+            0.61
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 1848
+    },
+    "openai:chat:qwen3p8-27b-base": {
+      "count": 100,
+      "metrics": {
+        "error": {
+          "n": 100,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 100,
+          "mean": 38955.78,
+          "ci95": [
+            32401.37,
+            45549.97
+          ]
+        },
+        "passed": {
+          "n": 100,
+          "mean": 0.74,
+          "ci95": [
+            0.65,
+            0.82
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 93426
+    },
+    "openai:chat:qwen3p8-27b-ft": {
+      "count": 100,
+      "metrics": {
+        "error": {
+          "n": 100,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 100,
+          "mean": 5188.57,
+          "ci95": [
+            3796.13,
+            6787.9
+          ]
+        },
+        "passed": {
+          "n": 100,
+          "mean": 0.54,
+          "ci95": [
+            0.44,
+            0.64
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 19220
+    },
+    "openai:chat:qwen3p8-27b-ft-onprem": {
+      "count": 100,
+      "metrics": {
+        "error": {
+          "n": 100,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 100,
+          "mean": 9973.92,
+          "ci95": [
+            7716.42,
+            12505.15
+          ]
+        },
+        "passed": {
+          "n": 100,
+          "mean": 0.58,
+          "ci95": [
+            0.48,
+            0.68
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 31033
+    }
+  },
+  "paired": {
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft": {
+      "error": {
+        "n": 100,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 100,
+        "right_minus_left": -33767.21,
+        "ci95": [
+          -39920.8,
+          -27614.35
+        ]
+      },
+      "passed": {
+        "n": 100,
+        "right_minus_left": -0.2,
+        "ci95": [
+          -0.3,
+          -0.1
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-fireworks": {
+      "error": {
+        "n": 100,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 100,
+        "right_minus_left": -38234.14,
+        "ci95": [
+          -44751.79,
+          -31750.2
+        ]
+      },
+      "passed": {
+        "n": 100,
+        "right_minus_left": -0.23,
+        "ci95": [
+          -0.34,
+          -0.12
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 100,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 100,
+        "right_minus_left": -28981.86,
+        "ci95": [
+          -34302.41,
+          -23712.05
+        ]
+      },
+      "passed": {
+        "n": 100,
+        "right_minus_left": -0.16,
+        "ci95": [
+          -0.27,
+          -0.05
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft -> openai:chat:qwen3p8-27b-ft-fireworks": {
+      "error": {
+        "n": 100,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 100,
+        "right_minus_left": -4466.93,
+        "ci95": [
+          -5996.62,
+          -3122.1
+        ]
+      },
+      "passed": {
+        "n": 100,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.12,
+          0.06
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 100,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 100,
+        "right_minus_left": 4785.35,
+        "ci95": [
+          3007.7,
+          6758.74
+        ]
+      },
+      "passed": {
+        "n": 100,
+        "right_minus_left": 0.04,
+        "ci95": [
+          -0.05,
+          0.13
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft-fireworks -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 100,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 100,
+        "right_minus_left": 9252.28,
+        "ci95": [
+          7086.92,
+          11682.02
+        ]
+      },
+      "passed": {
+        "n": 100,
+        "right_minus_left": 0.07,
+        "ci95": [
+          -0.02,
+          0.16
+        ]
+      }
+    }
+  },
+  "objective_audit": {
+    "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+    "sdk_skipped_callbacks": 0,
+    "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+  },
+  "cost_scope": "Model-request token estimates only; excludes grader calls and hourly GPU/deployment charges. Zero token price is not free serving.",
+  "router_join_audit": {
+    "complete_responses": 400,
+    "unique_request_ids": 400,
+    "joined_records_sha256": "d7493fe12d7f7f400669da6321b8019142027962741b90b4efea22a7b1ccdcad",
+    "by_eval_provider": {
+      "openai:chat:qwen3p8-27b-ft-fireworks": {
+        "responses": 100,
+        "observed_targets": {
+          "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 100
+        },
+        "status_counts": {
+          "200": 100
+        },
+        "input_tokens": 9495,
+        "output_tokens": 19097
+      },
+      "openai:chat:qwen3p8-27b-ft": {
+        "responses": 100,
+        "observed_targets": {
+          "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 42,
+          "vllm_b200_ft/metrum-ft": 58
+        },
+        "status_counts": {
+          "200": 100
+        },
+        "input_tokens": 9495,
+        "output_tokens": 19061
+      },
+      "openai:chat:qwen3p8-27b-ft-onprem": {
+        "responses": 100,
+        "observed_targets": {
+          "vllm_b200_ft/metrum-ft": 100
+        },
+        "status_counts": {
+          "200": 100
+        },
+        "input_tokens": 9495,
+        "output_tokens": 20905
+      },
+      "openai:chat:qwen3p8-27b-base": {
+        "responses": 100,
+        "observed_targets": {
+          "vllm_b200_ft/qwen3p8-27b-base": 100
+        },
+        "status_counts": {
+          "200": 100
+        },
+        "input_tokens": 9495,
+        "output_tokens": 85082
+      }
+    },
+    "journal_sha256": "7fb3c608a78b52275746f61ff2db73c0ae3a0e704186fd009cc296104d536e54",
+    "privacy": "Full per-request rows private; provider account IDs redacted. Hashes commit to original joined rows and journal."
+  }
+}

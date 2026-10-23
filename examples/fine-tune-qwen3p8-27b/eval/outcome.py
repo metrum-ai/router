@@ -26,8 +26,8 @@ def additional_failures(quality, ifeval, mmlu, base, candidate):
         raise ValueError('quality arms must contain 300 paired cases')
     exact_base = arms[base]['metrics']['exact']
     exact_candidate = arms[candidate]['metrics']['exact']
-    if exact_base['n'] != exact_candidate['n'] or exact_base['n'] < 1:
-        raise ValueError('tool case counts differ or are empty')
+    if exact_base['n'] != 200 or exact_candidate['n'] != 200:
+        raise ValueError('frozen cohort requires exactly 200 tool cases in each arm')
     require_pairs(quality, base, candidate, 'exact', exact_base['n'])
     if exact_candidate['mean'] - exact_base['mean'] < .10 - 1e-12:
         failures.append('tool_exact_improvement_below_10pt')

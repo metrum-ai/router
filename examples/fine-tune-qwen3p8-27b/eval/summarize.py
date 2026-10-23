@@ -3,18 +3,21 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reduce PRIVATE promptfoo output to scalar bootstrap/paired/gate evidence."""
 import argparse
+import hashlib
 import json
 import math
 import re
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from calibrate import bootstrap
+from scorers.tools import score as frozen_tool_score
 
 
 def summarize(document):
     groups = defaultdict(dict)
     joins = []
+    skipped_objective_callbacks = 0
     for result in document['results']['results']:
         metrics = {}
         for component in (result.get('gradingResult') or {}).get('componentResults', []):
@@ -27,6 +30,19 @@ def summarize(document):
                     metrics.update(value)
             except (ValueError, TypeError):
                 pass
+        variables = result.get('vars') or {}
+        if variables.get('expected') and 'declared' in variables:
+            if not isinstance(variables['expected'],list) or not isinstance(variables['declared'],list):
+                raise ValueError('objective scorer variables must remain atomic arrays')
+            # Keep original SDK scores: exported reference values can be redacted.
+            # Only absent outputs need reconciliation, and the frozen scorer
+            # unconditionally assigns those zero, independent of reference values.
+            if 'exact' not in metrics:
+                if (result.get('response') or {}).get('output') is not None:
+                    raise ValueError('nonempty objective response missing frozen SDK callback')
+                metrics.update(frozen_tool_score(None,variables['expected'],variables['declared']))
+                metrics.update(json_validity=0,json_schema=0)
+                skipped_objective_callbacks += 1
         record = {'passed': int(result.get('success', False)),
                   'error': int(bool((result.get('response') or {}).get('error'))),
                   'latency_ms': result.get('latencyMs', 0), 'cost_usd': result.get('cost', 0) or 0,
@@ -42,6 +58,9 @@ def summarize(document):
         if isinstance(request_id,str) and re.fullmatch(r'req_[A-Za-z0-9_-]{1,100}',request_id):
             joins.append({'provider':provider,'case_index':key,'router_request_id':request_id})
     summary = {'copyright': 'Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0', 'providers': {}, 'paired': {}, 'router_joins': joins}
+    summary['objective_audit'] = {'method':'Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference',
+        'sdk_skipped_callbacks':skipped_objective_callbacks,
+        'scorer_sha256':hashlib.sha256(Path(__file__).with_name('scorers').joinpath('tools.py').read_bytes()).hexdigest()}
     for provider, cases in groups.items():
         result = {'count': len(cases), 'metrics': {}, 'total_cost_usd': sum(r['cost_usd'] for r in cases.values())}
         latency = sorted(r['latency_ms'] for r in cases.values())
@@ -67,6 +86,25 @@ def summarize(document):
     return summary, groups
 
 
+def aggregate_joins(joins):
+    ids = [j['router_request_id'] for j in joins]
+    if len(set(ids)) != len(ids):
+        raise ValueError('duplicate joined router request IDs')
+    groups = defaultdict(list)
+    for j in joins:groups[j['provider']].append(j['telemetry'])
+    result = {'complete_responses':len(joins),'unique_request_ids':len(set(ids)),
+        'joined_records_sha256':hashlib.sha256(json.dumps(joins,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+        'by_eval_provider':{}}
+    for name,rows in groups.items():
+        targets = Counter(re.sub(r'accounts/(?!fireworks/)[^/]+/','accounts/OPERATOR/',
+            str(r['target_provider'] or 'unselected')+'/'+str(r['target_model'] or 'unselected')) for r in rows)
+        result['by_eval_provider'][name] = {'responses':len(rows),'observed_targets':dict(targets),
+            'status_counts':dict(Counter(str(r['status']) for r in rows)),
+            'input_tokens':sum(r['input_tokens'] or 0 for r in rows),
+            'output_tokens':sum(r['output_tokens'] or 0 for r in rows)}
+    return result
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--input', required=True, type=Path)
@@ -74,6 +112,7 @@ def main():
     p.add_argument('--usage-db', type=Path)
     p.add_argument('--journal', type=Path, help='run_eval safe request-ID journal; no headers/secrets')
     p.add_argument('--case-prefix', choices=['ifeval','mmlu-pro'])
+    p.add_argument('--aggregate-joins',action='store_true',help='public scalar join proof; keep full per-request rows private')
     a = p.parse_args()
     document = json.loads(a.input.read_text())
     if a.case_prefix:
@@ -111,6 +150,11 @@ def main():
             summary['total_cost_usd'] = sum(float(j['telemetry']['total_cost_usd'] or 0)
                 for j in result['router_joins'] if j['provider']==provider)
     result['cost_scope'] = 'Model-request token estimates only; excludes grader calls and hourly GPU/deployment charges. Zero token price is not free serving.'
+    if a.aggregate_joins:
+        if not a.usage_db or not a.journal:p.error('aggregate proof requires complete journal and DB join')
+        result['router_join_audit'] = aggregate_joins(result.pop('router_joins'))
+        result['router_join_audit']['journal_sha256'] = hashlib.sha256(a.journal.read_bytes()).hexdigest()
+        result['router_join_audit']['privacy'] = 'Full per-request rows private; provider account IDs redacted. Hashes commit to original joined rows and journal.'
     a.out.write_text(json.dumps(result, indent=2))
 
 if __name__ == '__main__':

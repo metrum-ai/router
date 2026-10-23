@@ -1,0 +1,224 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "synthetic_only": true,
+  "production_rollout": false,
+  "source_commit": "ef6c974aa2647f2283cd55afb85bd4d013d14538",
+  "rollback": {
+    "canary_before": "90base/5onpremFT/5FireworksFT",
+    "canary_after": "100base; FT targets removed",
+    "default_unchanged": true,
+    "calls": [
+      {
+        "status": 200,
+        "router_request_id": "req_db8867dd6982b24ef52393dab5ea023a",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_db8d288ab1dcd025c35bcf7f065f2aaf",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_c27e0f16bf667d9b15c799d96eb26f16",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_bd53ccc80f5d95feb8af231a97397e1b",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_67cf8e04b732b2422400b7c15b1bcadd",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_b53b48839104514f90684b7233b68940",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_b550bf78ada4b00098059311eee9387c",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_8c62e27bb0005937610d14b9f98bde0d",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_9c358736756ff9cd400fc1eea440e488",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_c44bb7cfab6a998be91a1dafc5b1a3c2",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 200,
+        "router_request_id": "req_50d30bc82b9f7e19d250ec5129e01b31",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      }
+    ],
+    "omitted_model_uses_base": true,
+    "identifier_mode": "rewrite; fresh private64byte key"
+  },
+  "caller_request_quota": {
+    "day_requests": 1,
+    "calls": [
+      {
+        "status": 429,
+        "router_request_id": "req_b9ab8b3064bbe2c83150067311db115b",
+        "telemetry": {
+          "status": 429,
+          "target_provider": "",
+          "target_model": "",
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      {
+        "status": 429,
+        "router_request_id": "req_a4d83d2f3652d235f90a7c853d0d360f",
+        "telemetry": {
+          "status": 429,
+          "target_provider": "",
+          "target_model": "",
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      }
+    ],
+    "denied_before_upstream": true,
+    "note": "Disposable caller; budget intentionally below prior usage; counters may already be exhausted."
+  },
+  "caller_ft_access_revoked": {
+    "calls": [
+      {
+        "status": 200,
+        "router_request_id": "req_b846b8eb757151d1ac3dbbb40083e1d3",
+        "telemetry": {
+          "status": 200,
+          "target_provider": "vllm_b200_ft",
+          "target_model": "qwen3p8-27b-base",
+          "input_tokens": 15,
+          "output_tokens": 2
+        }
+      },
+      {
+        "status": 403,
+        "router_request_id": "req_14e624fbf13fc3c3a37acfbe99620e6b",
+        "telemetry": {
+          "status": 403,
+          "target_provider": "",
+          "target_model": "",
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      },
+      {
+        "status": 403,
+        "router_request_id": "req_25157271dc92ffe2362320998fdea27a",
+        "telemetry": {
+          "status": 403,
+          "target_provider": "",
+          "target_model": "",
+          "input_tokens": 0,
+          "output_tokens": 0
+        }
+      }
+    ],
+    "base_still_serves": true,
+    "note": "Fireworks already API-deleted; authorization rejects both FT aliases before any upstream dispatch."
+  },
+  "dollar_spend_ceiling": {
+    "status": 502,
+    "router_request_id": "req_e68bacb61127827e196f4f84a265406a",
+    "telemetry": {
+      "status": 502,
+      "target_provider": "",
+      "target_model": "",
+      "input_tokens": 0,
+      "output_tokens": 0
+    },
+    "strategy": "dynamic_score",
+    "ceiling_usd": 1e-09,
+    "illustrative_input_output_usd_per_million": [
+      1,
+      1
+    ],
+    "filter_stage": "spend_ceiling",
+    "filter_reason": "spend-ceiling",
+    "note": "Actual structured request log records candidate0 filtered for spend-ceiling. Illustrative configured rates, not hourly rental protection; weighted ignores spend_ceiling."
+  }
+}

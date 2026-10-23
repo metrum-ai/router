@@ -67,9 +67,12 @@ def main():
     p.add_argument('--deployment', default='metrum-ft-qwen3p8')
     p.add_argument('--execute', action='store_true')
     p.add_argument('--resume-upload', action='store_true', help='explicitly resume an existing same-base adapter owned by this operator')
+    p.add_argument('--ignore-recent-inference', action='store_true', help='delete only: explicitly bypass the recent-inference guard for your owned disposable deployment')
     a = p.parse_args()
+    if a.ignore_recent_inference and a.action != 'delete':p.error('--ignore-recent-inference is delete-only')
     if not a.execute:
-        print(json.dumps({'dry_run': True, 'action': a.action, 'model': a.model, 'deployment': a.deployment}))
+        print(json.dumps({'dry_run': True, 'action': a.action, 'model': a.model, 'deployment': a.deployment,
+            'ignore_recent_inference':a.ignore_recent_inference}))
         return
     if not a.account:
         p.error('set FIREWORKS_ACCOUNT_ID or --account')
@@ -87,17 +90,19 @@ def main():
         result = api(path + '/' + a.deployment, method='GET')
         print(json.dumps({k: result.get(k) for k in ['name', 'state']}))
     else:
-        api(path + '/' + a.deployment, method='DELETE')
-        # A DELETE acknowledgment is not teardown verification; poll the exact ID.
-        for _ in range(60):
-            try:
-                result = api(path + '/' + a.deployment, method='GET')
-                if result.get('state') == 'DELETED':
-                    break
+        resource = path + '/' + a.deployment
+        def deleted():
+            try:return api(resource,method='GET').get('state') == 'DELETED'
             except urllib.error.HTTPError as exc:
-                if exc.code == 404:
-                    break
+                if exc.code == 404:return True
                 raise
+        if not deleted():
+            delete_path = resource + ('?ignore_checks=true' if a.ignore_recent_inference else '')
+            api(delete_path, method='DELETE')
+        # A DELETE acknowledgment is not teardown verification; poll the exact ID.
+        # Do not repeatedly DELETE: tombstones can reject DELETE yet GET DELETED.
+        for _ in range(60):
+            if deleted():break
             time.sleep(3)
         else:
             raise RuntimeError('deployment deletion not verified')

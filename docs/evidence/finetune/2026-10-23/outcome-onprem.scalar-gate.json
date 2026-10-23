@@ -1,0 +1,20 @@
+{
+  "baseline_error_rate": 0.0,
+  "baseline_pass_rate": 0.2733333333333333,
+  "candidate_error_rate": 0.0033333333333333335,
+  "candidate_id": "qwen3p8-27b-ft",
+  "candidate_pass_rate": 0.37333333333333335,
+  "case_count": 300,
+  "cost_ratio": 1.0,
+  "error_rate_increase": 0.0033333333333333335,
+  "failure_metrics": [
+    "error_rate_increase"
+  ],
+  "fixed_model_id": "qwen3p8-27b-base",
+  "latency_ratio": 0.19031883445945946,
+  "pass_rate_regression": -0.10000000000000003,
+  "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v2",
+  "schema_version": "fixed-model-outcome-gate/v1",
+  "status": "fail",
+  "workload_style": "tool"
+}

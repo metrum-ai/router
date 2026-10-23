@@ -114,8 +114,10 @@ python3 fireworks/run.py upload --account "$FIREWORKS_ACCOUNT_ID" --adapter /sec
 python3 fireworks/run.py deploy --account "$FIREWORKS_ACCOUNT_ID"
 python3 fireworks/run.py deploy --account "$FIREWORKS_ACCOUNT_ID" --execute
 python3 fireworks/run.py status --account "$FIREWORKS_ACCOUNT_ID" --execute
-# At step end, always delete; this command polls exact-ID deletion, not just ACK.
-python3 fireworks/run.py delete --account "$FIREWORKS_ACCOUNT_ID" --execute
+# At step end, delete your OWN disposable deployment promptly. Recent inference
+# otherwise blocks deletion for an hour. This explicit flag bypasses that guard;
+# never apply it to somebody else's/production deployment. Poll exact-ID state.
+python3 fireworks/run.py delete --account "$FIREWORKS_ACCOUNT_ID" --ignore-recent-inference --execute
 ```
 
 Default shape is **not necessarily the cheapest hardware**: our first attempt
@@ -195,7 +197,7 @@ python3 eval/build_tests.py --test /secure/canonical/test.jsonl --out /secure/he
 python3 eval/run_eval.py --tests /secure/held-out.yaml --token-file /secure/router.token \
   --out /secure/quality.json
 python3 eval/summarize.py --input /secure/quality.json --journal /secure/quality.router-ids.jsonl \
-  --usage-db /secure/router-usage.sqlite --out /secure/quality-scalars.json
+  --usage-db /secure/router-usage.sqlite --aggregate-joins --out /secure/quality-scalars.json
 python3 eval/prepare_regressions.py --out /secure/regressions
 python3 -c "import nltk; nltk.download('punkt_tab')"
 export IFEVAL_VERIFIER_ROOT=/secure/regressions
@@ -203,14 +205,17 @@ python3 eval/run_eval.py --tests /secure/regressions/tests.yaml --token-file /se
   --out /secure/regressions.json
 python3 eval/summarize.py --input /secure/regressions.json --case-prefix ifeval \
   --journal /secure/regressions.router-ids.jsonl --usage-db /secure/router-usage.sqlite \
-  --out /secure/ifeval-scalars.json
+  --aggregate-joins --out /secure/ifeval-scalars.json
 python3 eval/summarize.py --input /secure/regressions.json --case-prefix mmlu-pro \
   --journal /secure/regressions.router-ids.jsonl --usage-db /secure/router-usage.sqlite \
-  --out /secure/mmlu-scalars.json
+  --aggregate-joins --out /secure/mmlu-scalars.json
 for seed in 326 327 328; do
   python3 eval/run_eval.py --tests /secure/held-out.yaml --non-tool-only \
     --temperature .7 --seed "$seed" --token-file /secure/router.token \
     --out "/secure/sampling-$seed.json"
+  python3 eval/summarize.py --input "/secure/sampling-$seed.json" \
+    --journal "/secure/sampling-$seed.router-ids.jsonl" --usage-db /secure/router-usage.sqlite \
+    --aggregate-joins --out "/secure/sampling-$seed-scalars.json"
 done
 python3 eval/outcome.py --quality /secure/quality-scalars.json \
   --ifeval /secure/ifeval-scalars.json --mmlu /secure/mmlu-scalars.json \
@@ -218,21 +223,32 @@ python3 eval/outcome.py --quality /secure/quality-scalars.json \
   --out /secure/outcome.json
 ```
 
+Promptfoo exit100 means assertion failures; still summarize the completed run and
+verify full denominators/joins. It is not a promotion pass or proof every request
+completed. Other exit codes/incomplete joins need investigation, not exclusion.
+
 The regression preparer fetches the pinned licensed verifier source automatically;
 use the private CPU venv above and `IFEVAL_VERIFIER_ROOT` when running it. Do not
 substitute a permissive IFEval string matcher.
 Exact match/F1 measure **structured tool-selection/JSON extraction**, while the
 native `tools` API and file/tool-result continuation are a separate live smoke.
-The `refusal` score is an omission/refusal proxy, including malformed responses.
-Do not call it a human-coded safety-refusal rate. Summarize the three sampling
+The frozen `refusal` field marks parseable responses with no tool calls when a
+tool was expected. Malformed outputs score0 in that field and are exposed by
+`valid=0` separately; it is not a comprehensive refusal detector. `json_schema`
+checks the outer tool-call wrapper, not each function's parameter schema.
+Do not call this a human-coded safety-refusal rate. Summarize the three sampling
 runs separately (paired case bootstrap per run); repeated answers to the same
 case are not independent human judgments.
 
 Promptfoo deliberately redacts HTTP headers. `telemetry.cjs` allowlists only
 safe request IDs, provider group and case index into a mode0600 private journal
 before redaction; it never journals whole headers or prompts. Missing/duplicate
-IDs or incomplete DB joins fail closed. The standard summary contains only
-scalars, IDs and allowlisted usage fields. Review summaries before publishing.
+IDs or incomplete DB joins fail closed. `--aggregate-joins` additionally rejects
+reused request IDs and emits scalar counts/target counts/statuses/token totals and
+hashes, not per-request rows; provider account IDs are redacted. Keep the full
+joined rows/journal private. Numerical provider/paired metrics are unchanged.
+Without that flag the summary includes IDs/allowlisted usage rows; never publish
+raw model exports. Review summaries before publishing.
 
 For serving measurements use `eval/load.py --help`: SSE concurrency1/8/32,
 explicit hourly rate, ≥32 requests per scenario, TTFT/TPOT/end-to-end latency,
@@ -243,7 +259,7 @@ variant is supported by `standalone/merge.py`, then `MODE=merged` with
 comparing merged/unmerged serving. Never load/merge weights on gyrados.
 
 `eval/economics.py` converts an error-free measured load profile into an explicit
-constant-load break-even **scenario**. For example, the pinned judge's published
+capacity/duty-cycle break-even **scenario**. For example, the pinned judge's published
 $2.50/$10 input/output list rates can be a token-priced reference, but this is
 **not** a demonstrated quality-equivalent alternative or business payback:
 
@@ -255,7 +271,9 @@ python3 eval/economics.py --load /secure/load-onprem.json --concurrency 32 \
 
 State the assumed input/output ratio, utilization, period and any one-off
 training cost. Throughput applies only to the measured short-prompt,
-128-token-cap synthetic workload. Hourly bills continue when idle; operator
+128-token-cap synthetic workload. Scaling its efficiency down to an average
+load fraction assumes batching/bursts; continuous low-concurrency traffic or a
+changed input/output mix has not been validated. Hourly bills continue when idle; operator
 labor, storage, network, taxes, retries and quality differences are not measured.
 Against the same rented base model, fine-tuning does not magically remove GPU
 hourly cost; no reduced-retry savings or positive ROI may be inferred.

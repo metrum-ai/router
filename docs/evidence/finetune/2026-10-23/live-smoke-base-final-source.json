@@ -1,0 +1,19 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "model": "qwen3p8-27b-base",
+  "api_base": "http://127.0.0.1:18525/v1",
+  "reasoning_mode": "explicitly disabled; no greeting reasoning trace",
+  "chat": "pass",
+  "stream": "pass",
+  "stream_frames": 12,
+  "tool_file_creation": "pass",
+  "tool_result_continuation": "pass",
+  "json_schema": "pass",
+  "router_request_ids": [
+    "req_4dc20ebcd8075521089ee0e17af34d14",
+    "req_390b3d74835f6d7bf63ca1db6fdc82df",
+    "req_e7b5dbfd352b8a870af37e77eb126dac",
+    "req_cbd67cd012f8670b1d285e97486cc3c6",
+    "req_cb84f14c224ecfa749cdfe082735b756"
+  ]
+}

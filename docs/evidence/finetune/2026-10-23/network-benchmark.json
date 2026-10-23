@@ -1,0 +1,11 @@
+{
+  "source": "public pinned HF shard; 100MB Range request, discarded on remote GPU host",
+  "independent_link_guarantee": false,
+  "cloudflare_probe_http_status": 403,
+  "http_status": 206,
+  "completed": true,
+  "bytes_read": 100000000,
+  "elapsed_seconds": 0.4829819420010608,
+  "achieved_gbit_per_second": 1.6563766270131957,
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0"
+}
