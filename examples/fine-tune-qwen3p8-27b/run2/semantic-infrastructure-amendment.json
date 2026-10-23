@@ -1,0 +1,93 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "infrastructure_only_frozen_before_whole_semantic_step",
+  "at": "2026-10-23T21:43:31.795158+00:00",
+  "authority": "Explicit orchestrator decision: repair CPU-only grader config; whole400 per merged arm on exact recorded outputs; original NVIDIA LoRA FAIL unaffected. Refs #359",
+  "parent_registration_sha256": "6f8d210b3c18feffbe9bd590fa9b31521af41035cce0993c7a0f69aa5abef867",
+  "cause": "CLI-serialized explicit legacy modalities: [] on frontier-ref target overrides default/input text in targetSupportsInputModalities; pre-route400unsupported_modality. Explicit text only at provider model and group target repairs admission, no model/rubric change.",
+  "protocol_audit": "run2/preregistration.json endpoint_mapping auxiliary uses source-gold rubric; run_auxiliary.py invokes frozen SDK llm-rubric against response.output. No live regeneration required for grader; NEW tool/result requirement is native execution, not this assertion. Run same SDK runAssertion on exact original prompt.raw/testCase/vars/response output and frozen rubric. Restore redacted apiKeyEnvar; change localhost endpoint/caller only.",
+  "grader": {
+    "model": "gpt-4o-2024-11-20",
+    "temperature": 0,
+    "max_tokens": 256,
+    "maxRetries": 0,
+    "showThinking": false,
+    "sdk": "unchanged pinned installed promptfoo, assertions.runAssertion, cache disabled"
+  },
+  "scope": {
+    "arms": [
+      "nvidia_merged",
+      "amd_merged"
+    ],
+    "per_arm": {
+      "primary_seed326": 100,
+      "sampling_seed326": 100,
+      "sampling_seed327": 100,
+      "sampling_seed328": 100
+    },
+    "total": 800,
+    "dispatch_concurrency": 16,
+    "no_new_model_generation": true,
+    "no_gpu_or_dedicated_deployment": true,
+    "no_output_normalization_or_borrowing": true,
+    "no_original_gate_change": true
+  },
+  "archive": "Original private eight SDK export/config/journal files remain immutable at their existing paths, all prior grades and attempt costs retained; new semantic artifacts separate. First CPU proof startup failed config timestamp parse, zero dispatch, retained separately; successful second proof independently costed, not a batch-item replacement.",
+  "pre_batch_regression": {
+    "http_status": 200,
+    "authenticated_provider": "frontier_judge",
+    "actual_model": "gpt-4o-2024-11-20",
+    "valid_rubric_response": true,
+    "tokens": 256,
+    "api_estimate_usd": 0.0009625
+  },
+  "inputs_sha256": "bba12baaeb7be34396f7d88c1ef583670b3f8362cb0bca3e45ff75fe0479dd89",
+  "source_exports": [
+    {
+      "arm": "nvidia_merged",
+      "stage": "primary-326",
+      "sha256": "a0d674c612078935564336c64fafa011c4e01dd2ce558bf29e9ada26d0facc02"
+    },
+    {
+      "arm": "nvidia_merged",
+      "stage": "sampling-326",
+      "sha256": "2bc4fde65ea5bb6f0d9d200941450a5d10959eeab842e819a014f64dafa2054f"
+    },
+    {
+      "arm": "nvidia_merged",
+      "stage": "sampling-327",
+      "sha256": "86ca342e83717fc9235d29c3524a41089714d15c65be490dec0d285ce1891105"
+    },
+    {
+      "arm": "nvidia_merged",
+      "stage": "sampling-328",
+      "sha256": "c09031f99cf2037dfc54a1cc3cb80eae9586a702ba46c0247d36946e5ed69031"
+    },
+    {
+      "arm": "amd_merged",
+      "stage": "primary-326",
+      "sha256": "c53ed1fd1a7b074b2d60db5bb1156110dcb65a2260c0e50dd816826b5e7c1d8b"
+    },
+    {
+      "arm": "amd_merged",
+      "stage": "sampling-326",
+      "sha256": "eaf6b5d361601645f6f591c29852adbada23b9b1e15a1d5641c604eea4933649"
+    },
+    {
+      "arm": "amd_merged",
+      "stage": "sampling-327",
+      "sha256": "0b20fc9361ea54565bc9b4dfeafb84025709a14fd4cf7e4f04d6d24f66f8465f"
+    },
+    {
+      "arm": "amd_merged",
+      "stage": "sampling-328",
+      "sha256": "f063bb7596b2ef5fcb79342b4b06ac5eff4ef92e86704273a8b745cc0ec0383b"
+    }
+  ],
+  "code_sha256": {
+    "run2/grader_route.py": "5435216f726210c2b908c1444ba40ac251921a65f2039fe99716cb734201caea",
+    "run2/semantic_step.cjs": "24de76d83ae67693153ea58fae52ff4defd97bf2dcb26832a9a769ef2b391138",
+    "test_grader_route.py": "4a7d54edd6d01bccd5a6b5786920fe78be9e4f657ee783ec98eaeceaf55ada79"
+  },
+  "budget": "Independent 15minute execution timeout, max800calls+separate proofs, existing120USDstop/150cap retained. No retry; any incomplete step remains incomplete, never selectively repaired. Known prior upper estimates51.04095 plus unknown charges; new grading reserve20USD leaves operational headroom; reconcile all new attempts, costs unknown remain null."
+}

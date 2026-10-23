@@ -1,0 +1,18 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "at": "2026-10-23T19:16:18Z",
+  "kind": "infrastructure-only runtime availability; no inference retry",
+  "qualification_parent": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "blocked_phase": "base sampling 100 cases seed328",
+  "attempt": "19:15:49Z SDK subprocess FileNotFoundError: shared pinned promptfoo executable temporarily absent; no output, zero journal entries, no model dispatch",
+  "continuation": "Run the entire previously unstarted 100-case seed328 cohort once after exact locked SDK executable is restored. Archive no-launch log, empty journal and rendered config separately. Do not replace any inference outcome.",
+  "unchanged": ["registration bytes", "tasks", "scorers", "prompts", "models", "adapter", "generation", "seeds", "denominators", "gates", "AMD FAIL verdict"],
+  "high_capacity_audit": {
+    "all_four_active_caller_keys": {"concurrent": 64, "rpm": 20000, "tpm": 100000000, "day_requests": 20000},
+    "projects_and_groups": "No additional project or group throttles configured. Metadata-only arm policy, no fallback.",
+    "qualification_pre_route_429": 0,
+    "historical_throttled_load": "Retained invalid 26 concurrency-exceeded calls; ALL THREE load profiles rerun at adequate capacity before qualification, all zero errors. Do not combine failed and valid throughput. All lifecycle costs retained.",
+    "creation_scripts": "Private full evaluation preparation and historical development-proof creation scripts now set high rates explicitly rather than inheriting caller CLI defaults. Active configuration was already high before qualification; no mid-cohort change.",
+    "intentional_exception": "Subsequent labelled quota, spend-ceiling and revocation safety-control tests deliberately restrict access, not quality/load measurements."
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "at": "2026-10-23T19:49:31.079179+00:00",
+  "authorization_commit": "b8a25d88d34ad9bb02848496b320d219794283ba",
+  "existing_nvidia_lease": {
+    "old_deadline_utc": "2026-10-23T21:19:00.899571+00:00",
+    "new_hard_deadline_utc": "2026-10-24T00:19:00+00:00",
+    "operational_cleanup_buffer_utc": "2026-10-24T00:10:00Z",
+    "new_rental_created": false,
+    "full_7hour_quote_upper_usd": 15.33,
+    "incremental_max_extension_quote_usd": 6.57,
+    "cached_deadline_watchdog_replaced_after_new_armed": true,
+    "independent_dynamic_outer_watchdog_retained": true,
+    "independent_budget_phase_cleanup_guard_updated": true,
+    "stop_usd": 120,
+    "step_end_cleanup_not_idle_to_deadline": true
+  },
+  "vendor_reference": {
+    "elapsed_hours": 1.0796754588888888,
+    "quote_hourly": 30,
+    "lifecycle_startup_serving_idle_quote_usd": 32.39026376666666,
+    "cleanup_api_verified": true,
+    "not_invoice": true,
+    "new_deployment_prohibited_without_permission": true
+  },
+  "shared_teacher": {
+    "already_completed_whole300_CPU_only": true,
+    "gpu_inference_needed": false,
+    "authenticated_native_requests": 488,
+    "transport_errors": 0,
+    "api_price_estimate_with_engineering_usd": 0.1100148,
+    "not_invoice": true
+  },
+  "live_cost_snapshot": {
+    "as_of": "2026-10-23T19:49:27.410996+00:00",
+    "combined_elapsed_resource_quotes_plus_configured_api_estimates_and_unknown_failure_reserves_usd": 42.924880450208335,
+    "outstanding_buffer_usd": 3,
+    "not_invoice_or_quality_equivalent_ROI": true
+  },
+  "priority": "REGISTERED BASE+LORA GATE AND CONTROLS FIRST; merged only afterward, never rescues/substitutes gate. No active model batch interrupted or repeated for extension; if old compiled scheduling cutoff reached, only whole NOT-YET-STARTED cohorts may continue. No dedicated Fireworks create/recreate without asking orchestrator first; private provisioner now blocks unconditionally.",
+  "scope": "Actual operating deadline/watchdog/vendor cleanup receipt, NOT completed gate/parity/economics/promotion; all prior failed/aborted/startup/idle costs retained. Exact resource IDs/credentials/joins/weights remain private."
+}

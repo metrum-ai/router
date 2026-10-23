@@ -1,0 +1,25 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "UNUSABLE_semantic_model_quality_comparison_due_to_own_harness_failure",
+  "whole_frozen_cohorts_retained": {
+    "primary": 300,
+    "sampling_each": 100,
+    "seeds": [
+      326,
+      327,
+      328
+    ]
+  },
+  "affected_grader_requests": 400,
+  "failure": "pre-route HTTP400 unsupported_modality",
+  "expected_grader_group": "frontier-ref",
+  "observed_parsed_model_group": "empty: rejection before routed model group/target selection",
+  "upstream_dispatches_for_failed_grades": 0,
+  "configured_grader_API_dispatch_cost_usd": 0,
+  "cost_scope": "Proven pre-route no upstream dispatch, NOT free GPU time; ALL rental/attempt/startup/idle costs retained. Not invoice.",
+  "validity": "Merged primary observed5/300 assertion passes and sampling0/100 each remain in raw results but CANNOT be interpreted as semantic degradation, AMD/NVIDIA quality delta, or merge effect. Native mock-tool, exact JSON-text tools, IFEval/MMLU objective callbacks, raw-byte diagnostic and load remain separate endpoints.",
+  "treatment": "NO offline regrade, score borrowing for equal answers, output normalization or selective rerun. GPU already API-deleted after measurements. Further whole-arm inference/grade work requires explicit orchestrator decision; no unauthorized rerental.",
+  "gate": "Original NVIDIA base+LoRA gate FAIL independently (+0.5pp exact <10pp), AMD FAIL stands, merged never rescues either.",
+  "cause_scope": "Operational grader route/config rejection proven, not provider/model failure. Precise config root cause not proven here; do not invent one.",
+  "raw_request_ids_traces_or_answers_published": false
+}

@@ -160,8 +160,8 @@ def assert_deterministic_gate() -> None:
             if f"uses: {action}@" in line:
                 require(re.search(rf"@\w{{40}} # {re.escape(version)}$", line) is not None,
                         f"missing pinned version comment: {line}")
-    require(text.count("runs-on: [self-hosted, Linux, X64, router]") == len(parsed),
-            "gate runner labels must retain repository flow style")
+    require(text.count("runs-on: router-arc") == len(parsed),
+            "gate lanes must use the repository-restricted ARC scale set")
     require("needs.changes.outputs.lrp" in parsed["lrp"], "LRP is not path-filtered")
     changes = parsed["changes"]
     for marker in ("dorny/paths-filter@", "github.event.merge_group.base_sha",
@@ -202,7 +202,22 @@ def assert_provider_workflows() -> None:
     require("scripts/ci_lrp_synthetic.sh" in lrp, "LRP workflow drifted from the shared script")
 
 
+def assert_arc_runners() -> None:
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = read(path)
+        if path.name == "runner-cache-trim.yml":
+            require("runs-on: [self-hosted, Linux, X64, router," in text,
+                    "pikachu cache maintenance must stay on its original host")
+            continue
+        for name, body in jobs(text).items():
+            require(re.search(r"(?m)^    runs-on: router-arc$", body) is not None,
+                    f"{path.name}/{name} must use router-arc")
+        require("cache: false" not in text, f"{path.name} must not rely on warm host Go caches")
+        require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
+
+
 def main() -> int:
+    assert_arc_runners()
     assert_pull_request_cancellation()
     assert_make_tiers()
     assert_fast_go_workflow()

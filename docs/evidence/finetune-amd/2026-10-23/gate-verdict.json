@@ -1,0 +1,16 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "decision": "REJECT / DO NOT PROMOTE",
+  "registration_sha256": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "original_json_text_exact_gain": {"required_pp": 10, "observed_pp": -1, "base": "9/200", "amd": "7/200", "paired_ci95_pp": [-2.5, 0], "pass": false},
+  "overall_primary_no_regression": {"base": "86/300", "amd": "80/300", "pass": false},
+  "ifeval_max_2pp_regression": {"base": "161/200", "amd": "164/200", "pass": true},
+  "mmlu_pro_max_2pp_regression": {"base": "124/200", "amd": "124/200", "pass": true},
+  "primary_p95_max_1p25_ratio": {"base_ms": 34302, "amd_ms": 34487, "pass": true},
+  "native_additive_no_regression": {"base_all": "259/300", "amd_all": "262/300", "native_tool_base": "180/200", "native_tool_amd": "180/200", "pass": true, "cannot_rescue_original": true},
+  "frozen_sdk_response_error_no_regression": {"base": "0/300", "amd": "0/300", "separately_disclosed_predispatch_schema_failures_each": 1, "pass": true},
+  "teacher_comparison": "Unavailable: degraded e411 teacher run is unusable; FT-owned authorized whole-arm replacement pending. Does not change AMD FAIL.",
+  "production_rollout": false,
+  "quality_equivalent_roi_claim": false,
+  "scope": "Single fixed checkpoint, frozen probes/scorers/denominators. No checkpoint search, tuning, retries/best-of, selective inference rerun or native-gate substitution. Review-ready evidence is not acceptance/promotion."
+}

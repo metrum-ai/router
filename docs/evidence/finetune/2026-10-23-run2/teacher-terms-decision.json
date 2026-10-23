@@ -1,0 +1,19 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "teacher_terms_decision": {
+    "status": "cleared_by_maintainer",
+    "reference": "https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842",
+    "teacher": "accounts/fireworks/models/gpt-oss-120b",
+    "decision": "Proceed with the Fireworks-hosted open-weight teacher for synthetic Acme technical loop test with deterministic mock tools, not real customer outputs.",
+    "scope": "This example only; not general permission to train on customer data or arbitrary provider outputs.",
+    "terms_url": "https://fireworks.ai/terms-of-service",
+    "terms_sha256": "78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30",
+    "model_license": "Apache-2.0",
+    "model_license_sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+    "user_requirement": "Choose a teacher whose model license and provider terms permit training on outputs; verify this before enabling training export."
+  },
+  "collection_teacher_cap_usd": 20,
+  "remaining_dependency": "Full useful-sized governed export from PR361 and its real-teacher E2E, then shared NVIDIA/AMD signed hash-bound freeze. Do not train on tiny engineering sample.",
+  "nvidia_gpu_cap_usd": 150,
+  "nvidia_operational_stop_usd": 120
+}

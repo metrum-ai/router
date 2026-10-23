@@ -16,13 +16,35 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import yaml
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
+def wait_ready(process, url, timeout=60, opener=None):
+    """Bounded startup gate; never send test traffic after readiness exhaustion."""
+    opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        code = process.poll()
+        if code is not None:
+            raise RuntimeError(f'router exited before readiness (exit={code})')
+        try:
+            with opener.open(url, timeout=1) as response:
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError, OSError):
+            pass
+        time.sleep(.1)
+    raise RuntimeError(f'router readiness timed out after {timeout}s at {url}; no test traffic sent')
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--router-bin', type=Path, required=True)
+    p.add_argument('--test-rate-limiting', action='store_true', help='EXPLICIT quota test:45 requests then intentional denial; not an eval setting')
     a = p.parse_args()
     seen = {'fireworks_ft': 0, 'vllm_b200_ft': 0}
     seen_models = {'mock-adapter':0,'mock-base':0}
@@ -77,14 +99,14 @@ def main():
                 '--force', '--allow', 'local'], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
             # Use JSON roundtrip through YAML BaseLoader to avoid changing RFC3339 timestamps.
             config_text = (run / 'config.yaml').read_text()
-            config_text = config_text.replace('listen: :8080', 'listen: 127.0.0.1:18530')
-            config_text = config_text.replace('default_model_group: local', 'default_model_group: qwen3p8-27b-ft')
             # PyYAML SafeLoader coerces dates; preserve them as strings instead.
             class Loader(yaml.SafeLoader):
                 pass
             Loader.yaml_implicit_resolvers = {k: [(tag, regex) for tag, regex in v if tag != 'tag:yaml.org,2002:timestamp']
                 for k, v in Loader.yaml_implicit_resolvers.items()}
             x = yaml.load(config_text, Loader=Loader)
+            x['server']['listen'] = '127.0.0.1:18530'
+            x['server']['default_model_group'] = 'qwen3p8-27b-ft'
             x['server']['decision_telemetry'] = {'enabled':True}
             x['providers'] = {}
             for provider, port in [('fireworks_ft',18531),('vllm_b200_ft',18532)]:
@@ -100,26 +122,41 @@ def main():
                     'allow_hosts':['127.0.0.1'],'include_request':False,'on_error':'fail_closed'},
                 'targets':[{'provider':'vllm_b200_ft','model_ref':'base'},
                            {'provider':'vllm_b200_ft','model_ref':'adapter'}]}
-            x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
-            x['callers'][0]['quota']['day']['requests'] = 45
+            assert all(c['rate']['concurrent'] >= 256 and c['rate']['rpm'] >= 100000
+                       and c['quota']['month']['tokens'] >= 20000000000 for c in x['callers']), 'bootstrap must emit high test limits'
+            aliases={'qwen3p8-27b-ft-onprem':('vllm_b200_ft','adapter'),
+                     'qwen3p8-27b-ft-fireworks':('fireworks_ft','adapter'),
+                     'qwen3p8-27b-base':('vllm_b200_ft','base')}
+            for alias,(provider,ref) in aliases.items():
+                x['models'][alias]={'strategy':'static','targets':[{'provider':provider,'model_ref':ref}]}
+            x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow',*aliases]
+            for caller in x['callers']:
+                caller['rate'] = {'rpm':100000,'tpm':100000000,'concurrent':256}
+                caller['quota'] = {'day':{'requests':10000000,'tokens':2000000000},
+                                   'month':{'requests':100000000,'tokens':20000000000}}
+            # EXPLICIT RATE-LIMITING TEST ONLY, isolated from ordinary smoke/eval.
+            if a.test_rate_limiting:
+                x['callers'][0]['quota']['day']['requests'] = 45
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
             log = (run / 'process.log').open('w')
             process = subprocess.Popen([str(a.router_bin.resolve()), '--config', str(run/'config.yaml')], cwd=ROOT, stdout=log, stderr=log)
-            for _ in range(100):
-                try:
-                    urllib.request.urlopen('http://127.0.0.1:18530/readyz', timeout=1).close();break
-                except Exception:
-                    if process.poll() is not None:
-                        raise RuntimeError('router exited; inspect local config')
-                    time.sleep(.1)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            wait_ready(process, 'http://127.0.0.1:18530/readyz', opener=opener)
             token = (run / 'router.token').read_text().strip()
+            admission=[]
+            if not a.test_rate_limiting:
+                admission=preflight('http://127.0.0.1:18530/v1',token,['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow'])
+                # Preflight is a separate synthetic phase, not measured traffic.
+                for key in seen:seen[key]=0
+                for key in seen_models:seen_models[key]=0
+                policy_calls.clear()
             marker = 'FT_PRIVATE_PROMPT_MUST_NOT_BE_LOGGED_326'
             tool = {'type':'function','function':{'name':'create_file','parameters':{'type':'object','properties':{'name':{'type':'string'},'content':{'type':'string'}},'required':['name','content']}}}
             def chat(messages, model='qwen3p8-27b-ft'):
                 body = {'model':model,'messages':messages,'tools':[tool],'max_tokens':128}
                 req = urllib.request.Request('http://127.0.0.1:18530/v1/chat/completions', data=json.dumps(body).encode(),
                     headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-                with urllib.request.urlopen(req, timeout=10) as response:return json.load(response)
+                with opener.open(req, timeout=10) as response:return json.load(response)
             messages = [{'role':'user','content':marker}]
             result = chat(messages)
             assistant = result['choices'][0]['message'];call = assistant['tool_calls'][0]
@@ -135,11 +172,12 @@ def main():
             assert seen['fireworks_ft'] == before['fireworks_ft']
             assert seen['vllm_b200_ft'] == before['vllm_b200_ft'] + 1
             assert seen_models == {'mock-adapter':44,'mock-base':1}
-            try:
-                chat(messages)
-                raise AssertionError('request budget not enforced')
-            except urllib.error.HTTPError as exc:
-                assert exc.code in (402,403,429), exc.code
+            if a.test_rate_limiting:
+                try:
+                    chat(messages)
+                    raise AssertionError('request budget not enforced')
+                except urllib.error.HTTPError as exc:
+                    assert exc.code in (402,403,429), exc.code
             assert all(v > 0 for v in seen.values()), seen
             process.terminate();process.wait(timeout=20);process=None;log.close()
             shadow_recorded = False
@@ -150,7 +188,8 @@ def main():
                     shadow_recorded |= b'shadow_recommended_candidate' in content
             assert shadow_recorded, 'shadow recommendation not recorded'
             print(json.dumps({'tool_continuation':'pass','created_file':True,'weighted_targets':seen,
-                'request_budget':'pass','prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
+                'preflight_requests':len(admission),'purpose':'rate-limiting-test' if a.test_rate_limiting else 'tool-continuation-routing',
+                'request_budget':'pass' if a.test_rate_limiting else 'not-tested-high-limits','prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
     finally:
         if process is not None:
             process.terminate();process.wait(timeout=20)

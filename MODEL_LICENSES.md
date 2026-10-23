@@ -91,6 +91,20 @@ README/metadata, ungated. The converter modifies the upstream representation
 and retains conservative first turns only. Keep real data outside Git and retain
 Glaive AI attribution and any required notices.
 
+Superseded run-2 preparation / potential licensed collection task seeds (#355):
+**current run2 must train on #358 router-captured exports, not this download**.
+`OpenAssistant/oasst1` at
+`fdf72ae0827c1cda404aff25b6603abec9e3399b`, Apache-2.0 per pinned Hub card and
+repository LICENSE, public/ungated. Ready-for-export archive SHA256
+`286a6e9a5a413b3272ae9c0b5a20d327983dea1c24342ae28cb244a6da65185c`.
+Credit Köpf et al., *OpenAssistant Conversations — Democratizing Large Language
+Model Alignment* (2023), arXiv:2304.07327, and LAION/OpenAssistant contributors.
+The converter selects reviewed English nonsynthetic rank0 root replies, drops
+metadata/known PII or spam flags/control-token literals, and modifies the source
+representation. Retain upstream license/notices; neither the corpus nor weights
+are bundled. Separate arithmetic format-rehearsal labels are deterministically
+Metrum-authored Apache-2.0 examples, not human judgments or benchmark answers.
+
 Judge calibration: `lmsys/mt_bench_human_judgments` at
 `f7d2896d2cc5d80f8b55c2bbc722613555233c25`, CC-BY-4.0 per pinned README and
 metadata, ungated. Use the public `human` split, not generated judge labels.

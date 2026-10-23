@@ -1,0 +1,80 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "COMPLETE_CPU_ONLY_INFRASTRUCTURE_REPAIR",
+  "signed_preregistration_commit": "cfbdb3f1a4222b5e7af986ff262fca9bcc43f862",
+  "original_nvidia_lora_gate": "FAIL_UNCHANGED",
+  "grader": "gpt-4o-2024-11-20,temperature0,max_tokens256,maxRetries0,showThinkingfalse,unchanged SDK assertion/rubric/prompt/final output",
+  "whole_step_items": 800,
+  "authenticated_http200": 800,
+  "pre_route_or_upstream_failures": 0,
+  "all_valid_rubric_responses": true,
+  "summary": {
+    "nvidia_merged": {
+      "primary-326": {
+        "n": 100,
+        "passes": 78
+      },
+      "sampling-326": {
+        "n": 100,
+        "passes": 77
+      },
+      "sampling-327": {
+        "n": 100,
+        "passes": 76
+      },
+      "sampling-328": {
+        "n": 100,
+        "passes": 80
+      },
+      "primary_combined": {
+        "n": 300,
+        "passes": 83,
+        "unchanged_tool_passes": 5
+      }
+    },
+    "amd_merged": {
+      "primary-326": {
+        "n": 100,
+        "passes": 74
+      },
+      "sampling-326": {
+        "n": 100,
+        "passes": 81
+      },
+      "sampling-327": {
+        "n": 100,
+        "passes": 79
+      },
+      "sampling-328": {
+        "n": 100,
+        "passes": 73
+      },
+      "primary_combined": {
+        "n": 300,
+        "passes": 81,
+        "unchanged_tool_passes": 7
+      }
+    }
+  },
+  "cross_arm_exact_prompt_and_vars_order_match": {
+    "primary-326": false,
+    "sampling-326": false,
+    "sampling-327": false,
+    "sampling-328": false
+  },
+  "cross_arm_exact_prompt_raw_vars_assertion_task_sets_match": true,
+  "pairing_note": "SDK exports are in different completion orders; full prompt objects include metadata. Exact prompt.raw+vars+assertion hash SETS match100/100 each stage; pair by hash, never exported order.",
+  "paired_ci_caveat": "Paired bootstrap10000 seed326 on exact hash-matched tasks now in comparison JSON: primary delta+.667pp CI[-1.667,3]; seeds-4/-3/+7pp CI[-12,4]/[-11,5]/[-1,15]. Same100sampling tasks repeated, not400independent tasks; independent adapters/stacks and grader stochasticity confound hardware causality.",
+  "api_estimate_usd_whole_step": 2.8800925000000013,
+  "api_estimate_usd_proof": 0.0009625,
+  "api_estimate_usd_all_new": 2.8810550000000013,
+  "cost_scope": "All800including semantic failures plus independent successful proof. First failed proof zero dispatch, retained. API token estimates, not invoice/whole lifecycle or semantic ROI. Prior unknown charges remain unknown.",
+  "outputs_sha256": "956ddcd4a75e3549acb73f78e24433c8d0e7458a6fbdc973234ff49aca37c72e",
+  "inputs_sha256": "bba12baaeb7be34396f7d88c1ef583670b3f8362cb0bca3e45ff75fe0479dd89",
+  "archive": "Original failed400grader attempts and original AMD grades remain immutable/private; newwhole800step is authorized intended infrastructure repair, no generation, normalization, borrowing, selection or hidden retries.",
+  "cleanup": {
+    "at": "2026-10-23T21:49:34.342456+00:00",
+    "owned_cpu_router_stopped_fresh_token_removed": true,
+    "gpu_or_dedicated_resources_created": false
+  }
+}

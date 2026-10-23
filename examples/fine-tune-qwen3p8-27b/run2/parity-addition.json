@@ -1,0 +1,23 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "post_registration_parity_addition_before_merged_inference",
+  "authority": "Maintainer/orchestrator parity-arm request after AMD ROCm vLLM unmerged-LoRA load failure; not outcome-selected",
+  "parent_qualification_registration_sha256": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "arm": "nvidia_merged",
+  "transport_addition_code_sha256": {
+    "run2/run_auxiliary.py": "67149cd96d58414b61a7498a21cd0ffd6d6d197d2e1ebbaee4dc2c4204c1f9b3",
+    "run2/arm_policy.py": "b978192b92e1ff26f613ddbfbb9f614b2af653b373c5e9ba38abd379a4a9524d"
+  },
+  "gate_role": "ADDITIONAL descriptive parity arm only. NVIDIA registered base+LoRA remains original gate arm unchanged; merged never substitutes or rescues its verdict.",
+  "adapter_sha256": "31c622a160277fb1e3b17c357a16befb52c24c49b3cf52e307a981c15b36be2d",
+  "base_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "merge_source": "standalone/merge.py",
+  "merge_source_sha256": "5167c1686db9aa42f037d9b38a737d84cf849641aa488f70e169ec814f9ba9aa",
+  "procedure": "EXACT same script as AMD: AutoModelForImageTextToText BF16 device_map=cpu local_files_only; PeftModel.from_pretrained final adapter; merge_and_unload(safe_merge=True); save safetensors shards5GB plus unchanged AutoProcessor. REMOTE GPU host only, no neural weights on agent machine. Record actual torch/transformers/peft versions and dtype inventory.",
+  "merged_weights_hash_algorithm": "SHA256 of UTF8 canonical JSON {sorted shard filename: SHA256(file bytes)}, sort_keys=true,separators=(',',':'); report every shard hash and index hash too. No hash claimed until actual merge.",
+  "measurement_plan": "SAME frozen300 native initial-input/new-tool-result episodes c8/max8turns, original300 JSON-text/semantic c16, fresh200 IFEval+200 MMLU c16, same100 non-tools temp.7 seeds326/327/328; unchanged source gold/backend/scorers/params/gates. Load c1/8/32 and same SSE/strictJSON/file-new-result/caller quota/rollback/privacy controls. Complete denominators/failures and paired10000-bootstrap CIs; no output normalization or retry/refill. Retain and compare both NVIDIA arms individually.",
+  "routing": "Same support-agent group; fresh unique caller binding to ft_merged / qwen3p8-27b-merged. Unknown/non-canary callers stay teacher. Existing base/LoRA bindings unchanged. Unique SDK display ID qwen3p8-27b-ft-nvidia-merged, no-redirect relay and no hidden retries.",
+  "schedule": "Prioritize completion of registered base+LoRA quality/load/control measurements. CPU merge at a GPU-measurement phase gap, no concurrent CPU merge during NVIDIA quality/load. Same current NVIDIA lease only; no extension/rerental, hard deadline2026-10-23T21:19:00.899571Z, cap150/stop120. If insufficient time, report merged scope pending rather than omit original arm or imply parity.",
+  "comparisons": "NVIDIA LoRA vs NVIDIA merged is same adapter/base but merge rounding and engine adapter path may differ; any gap reported, no presumed equality. NVIDIA merged vs AMD merged aligns serving representation/dtype, NOT identical trained weights or pure hardware causality: different final adapters, trainer/kernel/runtime stacks and observed timing scopes remain confounders.",
+  "economics": "Same authenticated request joins, all failed attempts, unknown costs null, observed sequential window hourly allocations and full lifecycle separate. No invoice or quality-equivalent ROI claim. Merge CPU/startup time included in lifecycle."
+}

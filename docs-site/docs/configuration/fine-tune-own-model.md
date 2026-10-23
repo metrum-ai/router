@@ -107,6 +107,53 @@ must be assessed from their own measured evidence, not inferred from this API.
 7. Delete every rented host and dedicated deployment at step end and verify via
    its API. Hourly deployments incur costs even with no requests.
 
+## AMD Instinct
+
+The additional [NVIDIA/AMD merged comparison](https://github.com/metrum-ai/router/blob/feat/355-ft-run2/docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md)
+now includes quality, training wall/throughput, serving c1/8/32 and scoped cost
+per output token/native-harness success. Authorized CPU-only infrastructure repair
+completed all800semantic assertions on exact recorded outputs (400per merged arm),
+unchanged grader/rubric/prompts and no model regeneration. Original failures stay
+archived; original NVIDIA LoRA and AMD FAIL verdicts remain unchanged. This aligns
+BF16 merged representation, not pure hardware causality, production approval or
+quality-equivalent ROI. Refs #359.
+
+The example's [AMD runbook](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b/amd)
+prepares MI325X training with official `rocm/pytorch` and serving with official
+`rocm/vllm`. MI325X training and merged-serving smoke/load checks have run;
+frozen AMD/base qualification completed with **failed original quality gates**:
+JSON-text exact3.5% (7/200) vs base4.5% (9/200): −1.0pp,
+paired95%CI[−2.5,0]pp (required+10pp); overall80/300vs86/300.
+Native tool180/200both cannot replace these gates. **Do not promote.**
+Pinned Axolotl bootstrap failed on the tested ROCm torch version; the documented
+Transformers/PEFT fallback passed its two-step smoke and fixed one-epoch training
+on the router-exported split. Require a two-step model/toolkit smoke on the actual GPU, a pinned
+host-compatible stack and the governed router-exported dataset from #358.
+Serve on host loopback over SSH through a localhost router; replay newly executed
+tool continuations and keep failures in evaluation denominators. The AMD evidence
+and VIDEO-FACTS under `docs/evidence/finetune-amd/2026-10-23/` explicitly leave
+measured training/load evidence separate from quality verdicts and economics.
+Orchestrator verified droplet API404 and firewall/cloud-key deletion19:23Z.
+GPU quote~6.08USD plus judge~2.874USD is not a settled invoice; failed charges
+remain unknown. Shared teacher's RPM-throttled run is unusable for healthy-teacher
+comparison; FT owns a whole-arm replacement. Matched NVIDIA merged comparison
+is separately owned, not a hardware-only causal claim. Unmerged LoRA serving failed;
+the measured AMD serving path is BF16 merged, not unmerged.
+
+The initial26local concurrency429s were self-inflicted infrastructure throttling,
+not model failures. The entire initial load attempt is excluded from all reported
+benchmark denominators; all three profiles reran whole before qualification.
+Historical failures/costs remain in the lifecycle ledger only. Per #370, local/test
+caller keys and effective project/group profiles must have high limits; only
+explicitly labelled intentional limit tests may throttle. Final outcomes:
+[AMD evidence](https://github.com/metrum-ai/router/tree/main/docs/evidence/finetune-amd/2026-10-23).
+
+The maintainer authorized a Fireworks-hosted open-weight teacher specifically for
+this synthetic Acme/mock-tool technical test, not general customer outputs. The
+manifest and evidence retain `teacher_terms_decision` and the pinned terms hash.
+Users must choose a teacher whose model license and provider terms allow training
+on outputs, and verify that permission before enabling export for training.
+
 ## Governance caveats
 
 - Generate a caller with a narrow model allow-list, rate/concurrency quotas and

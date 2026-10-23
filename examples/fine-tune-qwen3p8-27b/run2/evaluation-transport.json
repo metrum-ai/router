@@ -1,0 +1,21 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "frozen_before_restarted_native_and_first_sdk_qualification",
+  "at": "2026-10-23T17:57:09.467277+00:00",
+  "shared_registration_sha256": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "parent_transport_sha256": "f51a0990ca54c1cbbbbcdf2fc1c1853decb3bc2a0e13f30de068df3f6b41c779",
+  "amendment": "Existing source duplicate tool declaration aborted base cohort at74 persisted episodes, before any comparison/score review. Archive all aborted outputs/costs, restart ALL300 cases in every arm with invalid declarations retained as failures/no dispatch, no filtering/replacement/normalization; preserve failed HTTP request IDs. SDK relay now enforces no redirects, before first SDK qualification. No new training, selection or numerical gate changes.",
+  "scope": "Infrastructure-only same-group per-caller transport and source-declaration fail-closed case accounting; no data/recipe/model/scorer/gate/output normalization changes. Aborted outputs unreviewed and excluded, costs retained.",
+  "physical_model_group": "support-agent",
+  "unique_sdk_labels": "base/teacher/NVIDIA onprem/FW/weighted/AMD IDs stay distinct; passthrough.model fixes physical group; verify usage targets before qualification",
+  "retry_policy": "maxRetries0 evaluated provider AND grader, PROMPTFOO_RETRY_5XX=false; failures remain denominator",
+  "answer_representation": "SDK showThinking=false excludes separate vendor reasoning_content, never strips/normalizes inline message.content; native and training likewise final content only. gpt-oss cannot disable reasoning.",
+  "security": "caller token0600 only; allowlisted child env, no cloud/provider credentials or proxies/template environment; private config/results; policy is loopback metadata only, authenticated ID+project, unknown callers teacher, no fallback",
+  "cost_policy": "Unknown/unpriced router token-cost slots and missing usage/timeouts remain null, never free. Separately report quoted-hourly native replay batch window cost / harness successes including failures; sequential per-arm windows, actual elapsed client time and active required fleets, startup/training/idle/grading in separate lifecycle. For scalar wrapper finite cost input use this explicitly labeled quoted serving-window allocation for base/FT, not zero placeholder or invented token tariff; cost ratio is not a quality gate. Teacher API router-cost unknown remains null; incomplete costs never authorize promotion. No invoice/total-business/quality-equivalent ROI claim.",
+  "hourly_rates": "NVIDIA authenticated2.19USD/h; vendor authenticated fresh quote required before deployment/inference, max2h watchdog. Full lifecycle reserved/checked against120stop/150cap.",
+  "code_sha256": {
+    "run2/run_auxiliary.py": "12264a5adfe787e1e268c58135ec7ed1becceaae3539ba9f78bcda9df259f610",
+    "run2/localhost_proxy.py": "dbb51672bb9c174adab6a5d1a39a619221cf42e7ae853e2284391f9fac4041d5",
+    "run2/arm_policy.py": "9f90802014a61dd2d49d03cd7090dbf4e13d4b5b5f123d77718eb0881ead9138"
+  }
+}

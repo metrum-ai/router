@@ -1,0 +1,17 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "Local checks after resolving rebase onto main666aa4c55320c78275a32e5a77855a7c8702e802; no CI-green or model promotion claim",
+  "checks": {
+    "make ft-example-test": "PASS",
+    "make docs-qa": "PASS",
+    "python3 scripts/check_source_headers.py": "PASS",
+    "make secret-check": "PASS",
+    "git diff --check": "PASS",
+    "go build ./cmd/metrum-ai-router": "PASS",
+    "eval/router_e2e.py --router-bin <working-tree binary>": "PASS, localhost real-file tool continuation with high normal test admission",
+    "eval/router_e2e.py --router-bin <working-tree binary> --test-rate-limiting": "PASS, separately labelled quota-negative test",
+    "whole semantic step": "800/800 authenticatedHTTP200, valid rubric JSON, unchanged frozen grader/model/inputs, original gate FAIL unaffected"
+  },
+  "rebase_resolution": "Retained main's newer bootstrap/high-limit/normal-vs-negative-test/router readiness/AMD runbook changes; restored latest measured comparison section above main README. No historical AMD evidence overwritten. Pre-rebase signed audit chain preserved on archive/359-semantic-infrastructure-signed, including preregistrationcfbdb3f1a4 before whole800items.",
+  "privacy": "Raw answers, request IDs/joins, weights, credentials and infrastructure remain private. Scalar receipts only. CPU grader router stopped and token removed; no GPU or dedicated deployment created."
+}

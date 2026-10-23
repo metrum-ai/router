@@ -3,8 +3,101 @@
 
 # Fine-tune Qwen3.8-27B and govern it with Metrum AI Router
 
+## AMD Instinct — NVIDIA/AMD merged comparison (Refs #359)
+
+Original NVIDIA LoRA **FAIL** (+0.5pp exact gain <required+10pp) and AMD **FAIL**
+stand; this supplemental BF16 safe-merged comparison cannot rescue either gate.
+Same base/export/recipe, independently trained adapters: NVIDIA RTX PRO6000
+Blackwell96GB/Axolotl/CUDA vs AMD MI325X VF256GB/Transformers-PEFT/ROCm reference.
+Different toolkits/kernels/versions, hosts, timing scopes and nonbinding caller
+capacities confound pure hardware causal claims. AMD PR369 evidence is pinned to
+main666aa4c55320c78275a32e5a77855a7c8702e802; source hashes and full caveats in
+[NVIDIA/AMD comparison](../../docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md).
+
+| Measurement | NVIDIA merged | AMD merged | Caveat |
+| --- | ---: | ---: | --- |
+| JSON-text exact tools200 |5/200|7/200|−1pp, original endpoint unchanged |
+| IFEval200 / MMLU-Pro200 |170 /124|164 /124|+3pp /0pp |
+| Native tools200 / all300 |180 /264|180 /262|General completion NOT semantic accuracy |
+| Fixed75step training wrapper |892.894s|1214.947s|Different toolkit/timer scope |
+| Training inputtok/s |887.776|652.448|NVIDIA count derived from exact input/template audit |
+| Primary combined / semantic subset |83/300 /78/100|81/300 /74/100|Whole authorized semantic infrastructure repair |
+| Semantic seeds326/327/328,100each |77 /76 /80|81 /79 /73|SAME100tasks repeated, not300independent |
+| Outputtok/s c1/8/32 |25.874 /194.144 /658.473|70.533 /395.608 /1400.613|32request128cap SSE profiles,0errors, not sustained capacity |
+| Quoted USD/M OUTPUT c1/8/32 |23.51155 /3.13341 /.92385|14.96542 /2.66819 /.75364|Full utilization at2.19vs3.80USD/h, not invoice |
+| Native whole300window quote/success |$.00142097|$.00129650|Failures/idle included; NOT lifecycle/semantic ROI |
+
+Original400NVIDIA grader pre-route400failures remain archived infrastructure,
+not model degradation. Empty legacy `modalities: []` overrode text capability;
+fixed to text, one successful authenticated grader proof before batch. Signed
+cfbdb3f1a4 amendment preceded **800/800HTTP200valid rubric calls** (400per arm) on
+exact recorded outputs with unchanged grader/model/rubric/prompts, no generation,
+borrowing, normalization, selective redo, GPU or vendor rental. New API estimate
+$2.881055 including proof, not invoice/ROI; CPU router/token removed.
+[Repair receipt](../../docs/evidence/finetune/2026-10-23-run2/semantic-step-repair.json).
+Exact prompt/vars/assertion task hashes supply new semantic pairs: primary delta
++.67pp paired95%CI[−1.67,+3]pp; seeds−4/−3/+7pp CI[−12,+4]/[−11,+5]/[−1,+15]pp,
+10000bootstrap seed326. Other AMD aggregate endpoints do not justify invented
+paired CIs. Original gate FAIL unchanged; strictJSON/rollback502 controls still
+failed/incomplete, no promotion. All GPU/dedicated resources API-deleted.
+
+
 Work in progress for #326. Do not infer training completion or promotion from
 this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
+
+## Mandatory authenticated preflight
+
+Before each batch, launchers probe every configured caller/route using only a
+synthetic `PREFLIGHT_ONLY` prompt. The example's weighted/shadow profiles also
+probe each static target alias; semantic runs probe the rubric grader **before**
+starting promptfoo. Any non-2xx, including pre-route400/401/403/429, aborts the
+whole run immediately. No retries, dataset prompts, gold or answer text enter
+preflight receipts. Probes are charged/warm-up traffic, not scored cases or
+latency samples; full collection includes them in its dollar reservation ledger.
+
+For custom weighted profiles pass **every** static target alias through the
+launcher's `--preflight-targets` option. Grant those aliases to the same caller
+key, with high rpm/tpm/quotas/concurrency. Unreachable/unauthorized aliases are
+not replaced with privileged keys. External replay launchers can use the same
+standalone gate once per caller/token file before starting any batch:
+
+```sh
+python examples/fine-tune-qwen3p8-27b/preflight.py \
+  --api-base http://127.0.0.1:18525/v1 --token-file /secure/router.token \
+  --models qwen3p8-27b-base qwen3p8-27b-ft frontier-ref \
+  --out /secure/preflight.json
+```
+
+Only separately labelled `--test-rate-limiting` smoke bypasses normal preflight
+because its purpose is deliberate denial. An unexpected pre-route4xx requires
+a documented infra-only amendment and a fresh **whole-run** attempt, never
+selectively repaired cases. Frozen #358 dataset files remain immutable.
+
+## AMD Instinct
+
+The [AMD runbook](amd/README.md) records one epoch on the governed router-exported
+1186/221/300 split via Transformers/PEFT: pinned Axolotl dependency resolution
+failed against the official ROCm Torch build. Serving used a safe **BF16 merge**
+because ROCm vLLM unmerged-LoRA loading failed. Primary JSON-text exact was
+**3.5% vs base4.5% (−1.0pp; paired95%CI[−2.5,0]pp): gate FAIL, not promoted**.
+The droplet was destroyed and deletion API-verified by the orchestrator at19:23Z.
+See the [final AMD evidence](../../docs/evidence/finetune-amd/2026-10-23/README.md).
+This is not evidence of NVIDIA parity or healthy-teacher savings. It uses #358's
+router export, not the direct-download dataset below.
+
+The initial26local concurrency429s were **self-inflicted infrastructure
+throttling**, not model failures. The entire initial load attempt is excluded
+from all reported benchmark denominators; all three load profiles were rerun
+whole at high capacity before qualification. Historical failures/costs remain
+in the lifecycle ledger only. Per #370, all local/test caller limits are now
+high (including grader keys and effective project/group profiles); only clearly
+labelled intentional limit tests may throttle.
+
+The maintainer authorized the Fireworks-hosted open-weight teacher for the
+synthetic Acme/mock-tool technical test (#358), not general customer traffic.
+Record `teacher_terms_decision` in the export manifest and evidence. Users must
+choose a teacher whose model license and provider terms permit training on
+outputs, and verify those rights before enabling export for training.
 
 ## 1. Industry problem: training is not safe production
 
@@ -41,9 +134,15 @@ confidence intervals, weak judge calibration and hardware/cost limitations.
 Lesson: successful training, faster serving and one improved metric do not
 justify promotion; data/task mismatch and general regressions matter.
 
-## 4. What is accomplished, and what remains unmeasured
+## 4. Historical engineering snapshot — before the final governed run
 
-The new router-loop engineering sample used a real Fireworks open-weight teacher
+This 2026-10-23 small-sample snapshot and its pending-work list are historical,
+not the current AMD status. The AMD outcome and verified teardown are above;
+its final governed split is1186/221/300, not this seven-row engineering sample.
+The historical caller-budget429 below is an infrastructure denial, not a model
+failure or part of any reported AMD benchmark denominator.
+
+The router-loop engineering sample used a real Fireworks open-weight teacher
 under two keys: nine public task seeds per key, eight tool-result continuations
 and seven deterministic task successes per key. Capture enabled only for support;
 audited success-only export produced 2 train / 2 validation / 3 test rows, no IT
@@ -200,6 +299,11 @@ The default route stays on the base. Optional `qwen3p8-27b-canary` starts at
 recorded with decision telemetry. This is recommendation-only shadowing, not a
 second model inference. Never switch production traffic based on smoke alone.
 
+Legacy target `modalities: []` is treated as unset: explicit `input_modalities`
+or the default text capability applies. Nonempty legacy lists retain their
+compatibility override. Routerctl/caller YAML writes omit empty legacy lists;
+this prevents config-edit roundtrips from disabling text admission.
+
 Generate a fresh narrow caller (never pass a raw key on argv):
 
 ```sh
@@ -209,12 +313,32 @@ go run ./cmd/metrum-ai-routerctl callers generate \
   --token-out /secure/router.token --config /secure/ft.yaml --write
 ```
 
-On that generated caller, set `rate.concurrent`, `rate.rpm`, `rate.tpm` and
-`quota.day`/`quota.month` request/token budgets. For example, 10,000 requests and
-10,000,000 tokens/day are bounded dev-evaluation budgets, not production defaults.
-The mock e2e proves an intentionally tiny request budget is enforced.
+Before starting any localhost/test workflow, set **every** generated caller to
+high test capacity (not production defaults or permission to spend):
+
+```yaml
+rate: {rpm: 100000, tpm: 100000000, concurrent: 256}
+quota:
+  day: {requests: 10000000, tokens: 2000000000}
+  month: {requests: 100000000, tokens: 20000000000}
+```
+
+`scripts/local_dev_bootstrap.py` applies these local-only defaults automatically;
+the generic caller-generation CLI retains its production-oriented defaults, so
+apply the block above when using that CLI directly. Project identities and static
+model groups do not have independent rate/quota fields in this config schema;
+configure every key associated with each project/group. Script canaries set
+`script_max_concurrent: 256`. Load/replay/judge keys need the same headroom.
+Normal mock e2e uses high limits. Only `eval/router_e2e.py --test-rate-limiting`
+intentionally installs a tiny quota and labels its result `rate-limiting-test`.
+Any unexpected pre-route429 invalidates the entire run: document an infra-only
+amendment and rerun the whole run, never selected cases. Upstream provider429s
+must be reported separately and never silently retried or reclassified.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
-not an hourly GPU spending cap. Zero list-token prices in this template cannot
+not an hourly GPU spending cap. It is a dynamic-strategy eligibility control;
+weighted/external strategies do not enforce it. The actual AMD external-policy
+control returned200 under a tiny ceiling: do not claim global budget enforcement.
+Zero list-token prices in this template cannot
 protect a rental budget; use the separate hard GPU lease watchdog and track real
 hourly charges. Replace placeholder amortized prices before cost-based routing.
 

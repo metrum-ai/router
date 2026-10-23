@@ -11,6 +11,9 @@ import sqlite3
 import time
 import urllib.request
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 
 def main():
@@ -19,10 +22,12 @@ def main():
     p.add_argument('--usage-db',type=Path,required=True)
     p.add_argument('--router-log',type=Path,required=True)
     p.add_argument('--out',type=Path,required=True)
+    p.add_argument('--preflight-targets',nargs='*',default=[],help='static target aliases for custom route profiles')
     p.add_argument('--requests',type=int,default=100)
     a=p.parse_args()
     if not 32<=a.requests<=1000:p.error('bounded synthetic request count32..1000 required')
     token=a.token_file.read_text().strip()
+    preflight('http://127.0.0.1:18525/v1',token,['qwen3p8-27b-canary','qwen3p8-27b-ft-shadow',*a.preflight_targets])
     marker='FT_GOVERNANCE_PROMPT_ABSENCE_326'
     def call(model):
         body={'model':model,'messages':[{'role':'user','content':'Reply only OK. '+marker}],
@@ -47,7 +52,7 @@ def main():
             time.sleep(.1)
         assert row and row[2]==200, 'missing or unsuccessful telemetry'
         if request_id==shadow_id:
-            assert row[0]=='vllm_b200_ft' and row[1]=='qwen3p8-27b-base', 'shadow must serve base'
+            assert row[0]=='vllm_onprem_ft' and row[1]=='qwen3p8-27b-base', 'shadow must serve base'
         else:
             public_model=re.sub(r'accounts/(?!fireworks/)[^/]+/','accounts/OPERATOR/',row[1])
             counts[row[0]+'/'+public_model]+=1

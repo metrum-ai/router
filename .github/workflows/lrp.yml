@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   synthetic:
-    runs-on: [self-hosted, Linux, X64, router]
+    runs-on: router-arc
     timeout-minutes: 25
     env:
       OMP_NUM_THREADS: '1'
@@ -31,8 +31,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
       - name: Synthetic LRP sandbox and evidence
         run: bash scripts/ci_lrp_synthetic.sh
       - name: Attach approved synthetic training and inference evidence

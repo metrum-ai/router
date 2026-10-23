@@ -126,6 +126,44 @@ def ctl_argv(cli: str, repo_root: Path) -> list[str]:
     return [cli]
 
 
+def high_local_test_limits(text: str) -> str:
+    """Adjust only rate/quota scalars in the CLI-emitted callers YAML block.
+
+    Keep this bootstrap stdlib-only. Input is canonical Go YAML, not arbitrary
+    user YAML. Production callers generate defaults are deliberately unchanged.
+    """
+    lines = text.splitlines(keepends=True)
+    in_callers = False
+    section = period = ''
+    section_indent = -1
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+        if line.startswith('callers:'):
+            in_callers = True
+            continue
+        if not in_callers:
+            continue
+        if indent == 0 and stripped.strip():
+            in_callers = False
+            continue
+        if section and indent <= section_indent:
+            section = period = ''
+        if stripped.strip() in ('rate:', 'quota:'):
+            section = stripped.strip()[:-1]
+            section_indent = indent
+            continue
+        if section == 'quota' and stripped.strip() in ('day:', 'month:'):
+            period = stripped.strip()[:-1]
+        key = stripped.partition(':')[0]
+        values = {'rpm': 100000, 'tpm': 100000000, 'concurrent': 256} if section == 'rate' else (
+            {'requests': 10000000, 'tokens': 2000000000} if section == 'quota' and period == 'day' else
+            {'requests': 100000000, 'tokens': 20000000000} if section == 'quota' and period == 'month' else {})
+        if key in values:
+            lines[index] = ' ' * indent + key + ': ' + str(values[key]) + '\n'
+    return ''.join(lines)
+
+
 def main() -> None:
     args = parse_args()
     repo_root = args.repo_root.resolve()
@@ -176,6 +214,8 @@ def main() -> None:
             str(token_path),
         ]
     )
+    # Local/test-only capacity: do not inherit production-sized caller defaults.
+    config_path.write_text(high_local_test_limits(config_path.read_text(encoding='utf-8')), encoding='utf-8')
     grant_json = json.loads(grant)
     token_name = Path(grant_json.get("token_file") or token_path.name).name
     if token_name != token_path.name:

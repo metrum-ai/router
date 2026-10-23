@@ -12,6 +12,38 @@ import backend
 
 
 class FullProducerTests(unittest.TestCase):
+    def test_local_test_limits_have_headroom(self):
+        import importlib.util
+        with tempfile.TemporaryDirectory() as directory:
+            cfg=full.local.config(Path(directory),{})
+            for caller in cfg['callers']:
+                self.assertGreaterEqual(caller['rate']['rpm'],100000)
+                self.assertGreaterEqual(caller['rate']['tpm'],100000000)
+                self.assertGreaterEqual(caller['rate']['concurrent'],256)
+                self.assertGreaterEqual(caller['quota']['day']['requests'],10000000)
+                self.assertGreaterEqual(caller['quota']['month']['tokens'],20000000000)
+        path=Path(__file__).resolve().parents[3]/'scripts/local_dev_bootstrap.py'
+        spec=importlib.util.spec_from_file_location('bootstrap_limits',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        text='providers:\n    concurrent: 1\ncallers:\n    - id: demo\n      rate:\n        rpm: 120\n        tpm: 100\n        concurrent: 8\n      quota:\n        day:\n          requests: 5\n          tokens: 100\n        month:\n          requests: 0\n          tokens: 1000\nusers: []\n'
+        result=module.high_local_test_limits(text)
+        self.assertIn('providers:\n    concurrent: 1',result)
+        self.assertIn('rpm: 100000',result)
+        self.assertIn('concurrent: 256',result)
+        self.assertIn('tokens: 20000000000',result)
+        self.assertIn('users: []',result)
+
+    def test_admission_probes_use_collection_spend_ledger(self):
+        ledger=full.Ledger();before=ledger.spent
+        response={'usage':{'prompt_tokens':20,'completion_tokens':32}}
+        with patch.object(full.collect,'request',return_value=(200,{},json.dumps(response).encode())):
+            for caller in ('support','it'):
+                full.preflight('http://localhost/v1','fixture-key',['support-agent'],caller=caller,
+                    request=lambda payload:full.routed('http://localhost','fixture-key',payload,ledger))
+        self.assertEqual(ledger.calls,2)
+        self.assertGreater(ledger.spent,before)
+        self.assertEqual(ledger.reserved,0)
+
     def test_budget_reservations_fail_before_dispatch(self):
         ledger=full.Ledger()
         ledger.spent=19.4999
@@ -24,6 +56,18 @@ class FullProducerTests(unittest.TestCase):
         self.assertAlmostEqual(ledger.spent,100*.15/1e6+10*.6/1e6)
         ledger.calls=9400
         with self.assertRaises(RuntimeError): ledger.reserve({})
+
+    def test_pre_route_429_invalidates_whole_run(self):
+        import urllib.error
+        ledger=full.Ledger()
+        with patch.object(full.collect,'request',side_effect=urllib.error.HTTPError('http://localhost',429,'rate',{},None)):
+            with self.assertRaisesRegex(RuntimeError,'infra-only amendment'):
+                full.routed('http://localhost','not-a-real-key',{},ledger)
+        self.assertTrue(ledger.abort.is_set())
+        self.assertEqual(ledger.reserved,0)
+        with self.assertRaisesRegex(RuntimeError,'whole-run'):
+            ledger.reserve({})
+        self.assertEqual(ledger.calls,1)
 
     def test_plan_is_fixed_group_disjoint_and_gold_is_not_input(self):
         with tempfile.TemporaryDirectory() as directory:

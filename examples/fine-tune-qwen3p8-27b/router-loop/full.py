@@ -10,6 +10,9 @@ import io
 import json
 import os
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 import random
 import re
 import sqlite3
@@ -94,15 +97,17 @@ def prepare(pool, out):
         'teacher_thinking':'gpt-oss disable-thinking unsupported; native final content only in training, no reasoning_content labels',
         'no_model_retries_or_score_refills':True,'time_split_schedule':'fixed train -> barrier -> val -> barrier -> test; freeze actual UTC phase boundaries, no outcome-dependent reassignment',
         'budget_usd':20,'previous_collection_estimate_usd':.03170595,
+        'preflight_sha256':sha(Path(__file__).resolve().parents[1]/'preflight.py'),
         'code_sha256':{p.name:sha(p) for p in Path(__file__).parent.glob('*.py')}})
     return selected
 
 
 class Ledger:
-    def __init__(self): self.lock=threading.Lock();self.spent=.03170595;self.reserved=0;self.calls=0
+    def __init__(self): self.lock=threading.Lock();self.abort=threading.Event();self.spent=.03170595;self.reserved=0;self.calls=0
     def reserve(self,payload):
         amount=(len(json.dumps(payload,ensure_ascii=False).encode())+4096)*.15/1e6+2048*.6/1e6
         with self.lock:
+            if self.abort.is_set(): raise RuntimeError('infra failure: whole-run amendment/rerun required')
             if self.spent+self.reserved+amount>19.50 or self.calls>=9400: raise RuntimeError('predispatch budget/usage-row bound reached')
             self.reserved+=amount;self.calls+=1
         return amount
@@ -120,6 +125,11 @@ def routed(base,key,payload,ledger):
         return status,headers,response
     except urllib.error.HTTPError as error:
         ledger.settle(reservation,{})
+        if error.code==429:
+            # Upstream429 maps to router503; HTTP429 here is our own limiter.
+            # Invalidate the WHOLE run, stop queued dispatch, never refill cases.
+            ledger.abort.set()
+            raise RuntimeError('pre-route429 infrastructure failure: document infra-only amendment and rerun whole run') from None
         return error.code,error.headers,{}
     except Exception:
         ledger.settle(reservation,{})
@@ -162,7 +172,14 @@ def episode(base,key,task,ledger):
 
 def run(args,env,selected):
     os.environ.update({k:v for k,v in env.items() if k.startswith('TRACE_')})
-    ledger=Ledger();boundaries=[collect.now()];all_results=[];base='http://127.0.0.1:18410'
+    ledger=Ledger();all_results=[];base='http://127.0.0.1:18410'
+    admission=[]
+    for key_name in ('TRACE_SUPPORT_KEY','TRACE_IT_KEY'):
+        key=env[key_name]
+        admission.extend(preflight(base+'/v1',key,['support-agent'],caller=key_name,
+            request=lambda payload,key=key:routed(base,key,payload,ledger)))
+    private_json(args.out/'preflight.json',admission)
+    boundaries=[collect.now()]
     with (args.out/'episode-ledger.jsonl').open('a') as log:
         for split,tasks in selected.items():
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -213,9 +230,7 @@ def main():
     if args.plan_only:return
     assert args.binary and os.environ.get('FIREWORKS_API_KEY')
     env=dict(os.environ);cfg=local.config(args.out,env)
-    for caller in cfg['callers']:
-        caller['rate']={'rpm':2000,'tpm':2000000,'concurrent':8}
-        caller['quota']={'day':{'requests':10000,'tokens':30000000},'month':{'requests':10000,'tokens':30000000}}
+    # Inherit local.config's high test limits; never replace them with worker-sized caps.
     private_json(args.out/'runtime-local-env.json',{k:v for k,v in env.items() if k.startswith('TRACE_') or k=='CONTENT_CAPTURE_LOCAL_KEY'})
     private_json(args.out/'config.json',cfg)
     with (args.out/'router.log').open('w') as log:

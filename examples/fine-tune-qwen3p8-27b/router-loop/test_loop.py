@@ -6,9 +6,21 @@ import unittest
 from unittest.mock import patch
 import collect
 import backend
+import local
+from pathlib import Path
 
 
 class LoopTests(unittest.TestCase):
+    def test_all_local_callers_have_capacity_for_documented_workflows(self):
+        with patch.object(local.bcrypt, 'hashpw', return_value=b'synthetic-hash'):
+            cfg = local.config(Path('/tmp/synthetic-router-test'), {})
+        for caller in cfg['callers']:
+            self.assertGreaterEqual(caller['rate']['concurrent'],64)
+            self.assertGreaterEqual(caller['rate']['rpm'],20000)
+            self.assertGreaterEqual(caller['rate']['tpm'],100000000)
+            self.assertGreaterEqual(caller['quota']['day']['requests'],1000000)
+            self.assertGreaterEqual(caller['quota']['day']['tokens'],1000000000)
+
     def test_real_continuation_and_no_oracle_input(self):
         tools = [{'type': 'function', 'function': {'name': 'lookup', 'parameters': {
             'type': 'object', 'properties': {'ticket': {'type': 'integer'}}, 'required': ['ticket']}}}]
