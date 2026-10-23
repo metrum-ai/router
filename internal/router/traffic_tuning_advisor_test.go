@@ -124,7 +124,7 @@ func TestTrafficTuningAdvisorNoSignificantErrors(t *testing.T) {
 }
 
 func TestTrafficTuningAdvisorSQLRoutesAroundUpstream400(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestTrafficTuningAdvisorSQLRoutesAroundUpstream400(t *testing.T) {
 }
 
 func TestTrafficTuningAdvisorSQLProvider429AcrossUsersAndLimit(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
