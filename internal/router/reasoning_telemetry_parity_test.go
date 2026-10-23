@@ -158,6 +158,30 @@ func runReasoningTelemetryParity(t *testing.T, cfg UsageDBConfig) {
 	if coverage.ReasoningTokens != 7 || coverage.ReasoningAttemptCount != 3 || coverage.ReasoningSuccessfulAttemptCount != 3 || coverage.ReasoningReportedAttemptCount != 2 || !coverage.CoverageComplete || len(coverage.Coverage) != 1 {
 		t.Fatalf("reasoning aggregate=%+v", coverage)
 	}
+	// Gemini thinking uses the same nullable metric and persistence contract on
+	// both database engines, with reasoning included in billable output.
+	gemini := geminiUsageFromMap(map[string]any{"promptTokenCount": 100, "candidatesTokenCount": 20, "thoughtsTokenCount": 500, "totalTokenCount": 620})
+	geminiRecord := recordFromRow(rowFromRecord(logRecord{TS: ts, RequestID: "gemini-thinking", Usage: gemini, AttemptsDetail: []attemptLogRecord{{Selected: true, ReasoningTokens: gemini.ReasoningTokens}}}))
+	if err := store.db.Create(geminiRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	var persisted usageRecord
+	if err := store.db.Where("request_id = ?", "gemini-thinking").First(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	geminiRow, err := rowFromUsageRecord(persisted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Request reasoning is the served metric, not a sum of failed attempts.
+	// Populate the record as the request path does, using the selected attempt.
+	if persisted.OutputTokens != 520 {
+		t.Fatalf("Gemini output=%d", persisted.OutputTokens)
+	}
+	detail := adminRequestFromRow(geminiRow)
+	if detail.ReasoningTokens == nil || *detail.ReasoningTokens != 500 {
+		t.Fatalf("Gemini detail reasoning=%v", detail.ReasoningTokens)
+	}
 	entry := coverage.Coverage[0]
 	if entry.Attempts != 3 || entry.ReportedAttempts != 2 || entry.ReasoningTokens != 7 {
 		t.Fatalf("reasoning coverage row=%+v", entry)
