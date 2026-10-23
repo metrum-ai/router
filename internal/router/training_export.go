@@ -107,7 +107,7 @@ func (s *Service) handleTrainingOutcome(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var label trainingOutcome
-	if decodeTrainingBody(r, &label) != nil || label.Version != "router-outcome-v1" || len(label.TaskHash) != 64 || label.Quality < 0 || label.Quality > 1 || label.Backend != "acme-support-v1" || len(label.ExpectedFinal) > 1 || (label.ExpectedFinal != "" && !strings.Contains("ABCD", label.ExpectedFinal)) {
+	if decodeTrainingBody(r, &label) != nil || label.Version != "router-outcome-v1" || len(label.TaskHash) != 64 || label.Quality < 0 || label.Quality > 1 || label.Backend != "acme-support-v1" || len(label.ExpectedFinal) > 1 || (label.ExpectedFinal != "" && !strings.Contains("ABCDEFGHIJ", label.ExpectedFinal)) {
 		writeJSON(w, 400, map[string]string{"error": "invalid-outcome"})
 		return
 	}
@@ -232,8 +232,8 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		if !ok {
 			continue
 		}
-		resp, ok := byScope[contentCaptureScopeResponse]
-		if !ok {
+		resp, responseCaptured := byScope[contentCaptureScopeResponse]
+		if !responseCaptured && split != "test.jsonl" {
 			continue
 		}
 		labelCapture, ok := byScope["training_outcome_v1"]
@@ -244,9 +244,12 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		if err != nil {
 			continue
 		}
-		responseBytes, err := s.trainingPlain(resp)
-		if err != nil {
-			continue
+		responseBytes := []byte(`{"text":"","stop_reason":"missing_response"}`)
+		if responseCaptured {
+			responseBytes, err = s.trainingPlain(resp)
+			if err != nil {
+				continue
+			}
 		}
 		labelBytes, err := s.trainingPlain(labelCapture)
 		if err != nil {
@@ -262,16 +265,28 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 			continue
 		}
 		messages, ok := request["chat_messages"].([]any)
-		if !ok || len(messages) == 0 || !trainingChatValid(messages) {
+		if !ok || len(messages) == 0 || (split != "test.jsonl" && !trainingChatValid(messages)) {
 			continue
 		}
 		// Require a completed assistant turn. The final request already includes
 		// every intermediate assistant call and deterministic tool result.
 		text, ok := response["text"].(string)
-		if response["stop_reason"] == "tool_calls" || (split != "test.jsonl" && (!ok || text == "" || (response["stop_reason"] != "stop" && response["stop_reason"] != "end_turn"))) {
+		if split != "test.jsonl" && (response["stop_reason"] == "tool_calls" || !ok || text == "" || (response["stop_reason"] != "stop" && response["stop_reason"] != "end_turn")) {
 			continue
 		}
-		messages = append(messages, map[string]any{"role": "assistant", "content": text})
+		last := map[string]any{"role": "assistant", "content": text}
+		if split == "test.jsonl" && response["stop_reason"] == "tool_calls" {
+			if raw, ok := response["raw"].(map[string]any); ok {
+				if choices, ok := raw["choices"].([]any); ok && len(choices) > 0 {
+					if choice, ok := choices[0].(map[string]any); ok {
+						if canonical := captureChatMessages([]any{choice["message"]}); len(canonical) == 1 {
+							last = canonical[0].(map[string]any)
+						}
+					}
+				}
+			}
+		}
+		messages = append(messages, last)
 		tools := request["tools"]
 		if tools == nil {
 			tools = []any{}
@@ -293,7 +308,7 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		}
 		taskSplit[label.TaskHash] = split
 		clean := transcript.(map[string]any)
-		if !trainingChatValid(clean["messages"].([]any)) {
+		if split != "test.jsonl" && !trainingChatValid(clean["messages"].([]any)) {
 			continue
 		}
 		// PII filters must never rewrite provenance hashes or timestamps. Only
@@ -315,7 +330,7 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 			}
 			initial = append(initial, message)
 		}
-		row := map[string]any{"messages": clean["messages"], "tools": clean["tools"], "provenance": map[string]any{"trace_hash": trainingHash([]byte(u.RequestID)), "task_hash": label.TaskHash, "trace_sha256": trainingHash([]byte(u.RequestID)), "task_sha256": label.TaskHash, "content_hash": hash, "captured_at": req.TS, "teacher_provider": req.TargetProvider, "teacher_model": req.TargetModel}, "outcome": map[string]any{"version": label.Version, "task_hash": label.TaskHash, "task_success": label.TaskSuccess, "schema_valid": label.SchemaValid, "tool_schema_valid": label.SchemaValid, "quality": label.Quality}, "replay": map[string]any{"version": "router-replay-v1", "backend": label.Backend, "checker": "expected-tool-calls-v1", "seed": label.Seed, "initial_messages": initial, "tools": clean["tools"], "expected_calls": fixture, "expected_final": label.ExpectedFinal}}
+		row := map[string]any{"messages": clean["messages"], "tools": clean["tools"], "provenance": map[string]any{"trace_hash": trainingHash([]byte(u.RequestID)), "task_hash": label.TaskHash, "trace_sha256": trainingHash([]byte(u.RequestID)), "task_sha256": label.TaskHash, "content_hash": hash, "captured_at": req.TS, "response_captured": responseCaptured, "teacher_transcript_incomplete": response["stop_reason"] == "tool_calls" || !responseCaptured, "teacher_provider": u.TargetProvider, "teacher_model": u.TargetModel}, "outcome": map[string]any{"version": label.Version, "task_hash": label.TaskHash, "task_success": label.TaskSuccess, "schema_valid": label.SchemaValid, "tool_schema_valid": label.SchemaValid, "quality": label.Quality}, "replay": map[string]any{"version": "router-replay-v1", "backend": label.Backend, "checker": "expected-tool-calls-v1", "seed": label.Seed, "initial_messages": initial, "tools": clean["tools"], "expected_calls": fixture, "expected_final": label.ExpectedFinal}}
 		encoded, _ := json.Marshal(row)
 		files[split].Write(encoded)
 		files[split].WriteByte('\n')

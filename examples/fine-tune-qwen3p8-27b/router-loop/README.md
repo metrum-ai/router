@@ -32,7 +32,7 @@ uv run --with bcrypt --with jsonschema python \
   examples/fine-tune-qwen3p8-27b/router-loop/local.py \
   --binary /secure/router --tasks /secure/canonical/train.jsonl \
   --out /secure/router-loop --per-split 3
-uv run --with jsonschema python -m unittest discover \
+uv run --with bcrypt --with jsonschema python -m unittest discover \
   -s examples/fine-tune-qwen3p8-27b/router-loop -v
 ```
 
@@ -68,6 +68,40 @@ Public dataset attribution: Glaive AI,
 `glaiveai/glaive-function-calling-v2@e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac`,
 Apache-2.0. Preserve upstream notices when redistributing derived data.
 
+## Explicit full-cohort mode
+
+The separate `full.py` producer preserves the small-sample guard in `local.py`.
+Its agreed seed355 attempted matrix is train3000 (1000native/1500general/500letter),
+val500 (167/250/83), test300 (200/75/25). It preflights licensed source schemas,
+input privacy patterns and disjoint groups before fixing the list and private
+gold-sidecar hashes. Letters cover A–J. Source answers are checker/evaluation
+gold only, never model inputs or fallback training labels.
+
+```sh
+uv run --with bcrypt --with jsonschema python \
+  examples/fine-tune-qwen3p8-27b/router-loop/full.py \
+  --binary /secure/router --pool /secure/reviewed-seed-pool \
+  --out /secure/full-cohort
+```
+
+Run only against a reviewed pool matching its pinned seed-file SHA. It uses eight
+workers, eight maximum turns, max2048 output tokens and a predispatch dollar
+reservation ledger capped below $20 including prior collection. No hidden model
+retries or score-based refills. All support groups plus nine fixed IT controls
+run through the router. Train/val eligibility is frozen afterward; test preserves
+all labeled failures, including missing/unfinished upstream responses, with
+explicit provenance rather than inventing successful assistant answers. Such
+test transcripts are provenance only; replay **initial fixtures**, never answers.
+
+Phase barriers freeze UTC boundaries in fixed train→val→test order. Runtime
+versions, exact executed code, selected groups and private gold hashes must be
+bound in the downstream registration. `runtime-local-env.json` contains only
+local caller/admin/encryption credentials with restrictive permissions, not the
+provider key; secure it separately for audit/re-export and delete under operator
+retention. Use a new private output directory for each run, never overwrite an
+active collection. The original JSON-text/semantic/regression gate and native
+replay remain separately registered; completion is not semantic correctness.
+
 ## API and dataset contract
 
 - `POST /admin/training/outcomes/{request_id}` requires deployment-wide admin
@@ -98,7 +132,7 @@ Apache-2.0. Preserve upstream notices when redistributing derived data.
   Provenance hashes/timestamps are never rewritten by content PII filters.
 - `router-outcome-v1`: source `task_hash`, `task_success`, `schema_valid`, quality
   in [0,1], `acme-support-v1` backend, integer seed, public `expected_calls`.
-  An optional `expected_final` A/B/C/D anchor uses exact final-text equality,
+  An optional `expected_final` A–J anchor uses exact final-text equality,
   not mere completion. Labels are harness attestations. Concurrent duplicate labels are ambiguous and
   fail export; they are never silently resolved to a preferred label.
 - Existing storage redaction remains; export additionally masks email, phone

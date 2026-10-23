@@ -26,7 +26,7 @@ def initialize(descriptor):
     fixture = json.loads(json.dumps(descriptor))
     if not isinstance(fixture.get('tools'), list) or not isinstance(fixture.get('expected_calls'), list) or not isinstance(fixture.get('seed'), int):
         raise ValueError('invalid replay fixture')
-    if fixture.get('expected_final', '') not in ('', 'A', 'B', 'C', 'D'):
+    if fixture.get('expected_final', '') not in ('', *'ABCDEFGHIJ'):
         raise ValueError('unknown exact-final anchor')
     local_refs(fixture['tools'])
     return {'fixture': fixture, 'actual': [], 'schema_valid': True}

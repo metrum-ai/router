@@ -25,7 +25,7 @@ func TestTrainingExportCaptureConsentPrivacyAndFrozenSplits(t *testing.T) {
 	now := time.Now().UTC()
 	f := trainingFilters{From: now.Add(-4 * time.Hour), ValidationFrom: now.Add(-2 * time.Hour), TestFrom: now.Add(-time.Hour), To: now.Add(time.Hour), Project: "acme-support", SuccessOnly: true, MinQuality: .9}
 	for _, id := range []string{"captured", "uncaptured", "disabled"} {
-		u := usageRecord{RequestID: id, TS: formatUsageTime(now.Add(-3 * time.Hour)), CallerProject: "acme-support", TokenID: "rtr_public", ResolvedGroup: "support-agent"}
+		u := usageRecord{RequestID: id, TS: formatUsageTime(now.Add(-3 * time.Hour)), CallerProject: "acme-support", TokenID: "rtr_public", ResolvedGroup: "support-agent", TargetProvider: "teacher", TargetModel: "licensed-teacher"}
 		if err := store.db.Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -74,6 +74,9 @@ func TestTrainingExportCaptureConsentPrivacyAndFrozenSplits(t *testing.T) {
 	var row map[string]any
 	if err := json.Unmarshal(bytes.TrimSpace(files["train.jsonl"]), &row); err != nil {
 		t.Fatal(err)
+	}
+	if row["provenance"].(map[string]any)["teacher_model"] != "licensed-teacher" {
+		t.Fatal("teacher provenance must come from resolved usage, not pre-route request capture")
 	}
 	if row["provenance"].(map[string]any)["task_hash"] != strings.Repeat("a", 64) {
 		t.Fatal("privacy filtering corrupted provenance hash")
@@ -190,6 +193,28 @@ func TestTrainingExportCaptureConsentPrivacyAndFrozenSplits(t *testing.T) {
 	}
 	if !foundFailure {
 		t.Fatal("success-only filter removed heldout teacher failure")
+	}
+	// Upstream HTTP failures still have an opted-in request but no response.
+	// Preserve that heldout fixture with explicit missing-response provenance.
+	if err := store.db.Where("request_id = ? AND scope = ?", "captured", contentCaptureScopeResponse).Delete(&contentCaptureRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	missing, err := s.buildTrainingArchive(heldout, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mz, _ := zip.NewReader(bytes.NewReader(missing), int64(len(missing)))
+	missingKept := false
+	for _, file := range mz.File {
+		if file.Name == "test.jsonl" {
+			r, _ := file.Open()
+			b, _ := io.ReadAll(r)
+			r.Close()
+			missingKept = strings.Contains(string(b), `"response_captured":false`)
+		}
+	}
+	if !missingKept {
+		t.Fatal("heldout upstream failure was dropped")
 	}
 	// Deleting captures must remove exportability, even though usage remains.
 	if err := store.db.Where("request_id = ?", "captured").Delete(&contentCaptureRecord{}).Error; err != nil {
