@@ -136,14 +136,15 @@ def test_go_ctl_issues_caller() -> None:
             raise AssertionError("generated config must omit server.license")
         if "token_hash: pbkdf2-sha3-512:i=" not in cfg or "token_sha256:" in cfg or "REPLACE_WITH" in cfg:
             raise AssertionError("caller token_hash was not merged")
-        for field, expected in {"rpm": 2400, "tpm": 4_000_000, "concurrent": 160,
-                                "requests": 100_000, "tokens": 8_000_000_000,
-                                "lifetime_tokens": 40_000_000_000}.items():
+        for field, expected in {"rpm": {100_000}, "tpm": {100_000_000}, "concurrent": {256},
+                                "requests": {10_000_000, 100_000_000},
+                                "tokens": {2_000_000_000, 20_000_000_000},
+                                "lifetime_tokens": {40_000_000_000}}.items():
             caller_block = re.search(r"(?ms)^callers:\n(.*?)(?=^\S|\Z)", cfg)
             if caller_block is None:
                 raise AssertionError("generated callers missing")
             values = re.findall(rf"(?m)^\s+{field}: (\d+)$", caller_block[1])
-            if not values or any(int(value) != expected for value in values):
+            if not values or {int(value) for value in values} != expected:
                 raise AssertionError(f"local caller {field} lacks high-capacity limits")
         token = (out / "router.token").read_bytes()
         if not token.startswith(b"rtr_metrum_"):

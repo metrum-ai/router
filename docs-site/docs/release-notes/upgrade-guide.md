@@ -47,6 +47,25 @@ reliably distinguished from inference and are not retroactively refunded.
 These expansions require restoring the pre-upgrade snapshot for binary rollback.
 Retain the reviewed old configuration as well as the database backup.
 
+### Empty modalities and launcher preflight
+
+An empty legacy `modalities: []` now behaves as unset rather than overriding
+`input_modalities` with an empty capability set. Explicit nonempty `modalities`
+still overrides input metadata; unset/empty legacy metadata falls back to the
+existing input metadata/default text. This repairs serialized config round trips
+that previously made text targets ineligible. If you intentionally used an
+empty array to disable a route, remove/disable the target explicitly instead;
+do not rely on an empty capability array as an access control.
+
+Future training exports collapse canonical-JSON-identical repeated tool declarations by
+name and report normalization counts in the manifest. Conflicting declarations
+are rejected, not silently selected; previously published exports/hashes are not
+rewritten. Fine-tuning launchers now require successful authenticated route,
+static-target and (for semantic runs) grader preflight before batch dispatch.
+Preflight is chargeable warm-up traffic, not a scored case. Missing access or
+pre-route errors abort the whole batch; supply every target alias and sufficient
+local capacity, not privileged replacement keys or selective retries.
+
 ### Accounting and client behavior
 
 Review dashboards that assumed every token count was reported. Inference token
@@ -115,6 +134,15 @@ The fine-tuning example is an operator-owned training/deployment recipe, not
 a default routing change or a quality promotion. Review evidence and the
 outcome gate before using an adapter; enforce rental spend limits and verify
 teardown independently of token billing.
+
+### CI operations
+
+Contributor workflows now target the repository-restricted `router-arc` Actions
+Runner Controller scale set on DigitalOcean Kubernetes. Jobs use ephemeral
+single-use pods and must tolerate cold HOME/tool/cache state. The legacy
+`runner-cache-trim.yml` host-maintenance job remains separate. See the
+[ARC runner runbook](https://github.com/metrum-ai/router/blob/main/docs/ci-arc-runners.md)
+for caching and acceptance; this does not change serving-router deployment.
 
 ## Compatibility and operations (v4.2.0)
 

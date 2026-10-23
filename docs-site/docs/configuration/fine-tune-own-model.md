@@ -49,12 +49,12 @@ policy. See [Usage reporting](../operations/usage-reporting.md) and
 [Privacy](../privacy.md). Replay new model calls from initial fixtures, never
 recorded teacher answers. Freeze backend/checker and gate before held-out calls.
 
-Measured integration is a tiny teacher sample and synthetic candidate stand-in,
-not a trained-model canary or promotion. Run 1's narrow JSON-text improvement
-failed general regressions; base remains default. A useful governed training
-cohort, actual fine-tuned-target replay and cost-per-success comparison remain
-pending. The steps below describe the historical external training machinery,
-not permission to bypass router capture for the router-centric run.
+The initial tiny teacher sample and synthetic candidate stand-in are historical
+integration evidence, superseded for training by the governed run-2 export
+(1,186 train / 221 validation / 300 held-out tasks). Run 1, NVIDIA run 2 and AMD
+all **FAIL their original promotion gates**. Do not promote. Run 1 retained its
+base-default rollback; run-2 non-canary `support-agent` callers remain on the
+teacher. Neither is permission to alter unrelated routing groups.
 
 ## Implemented Export Contract
 
@@ -85,8 +85,8 @@ chat/tool history are ineligible; this is not an automatic historical backfill.
 An earlier small-sample canary hit a router-side budget and is infrastructure
 integration evidence only, not valid model-quality or latency evidence. Rerun
 entire evaluations with reviewed high local limits; do not selectively refill
-failures or relax the outcome gate. The pending trained run-2 and AMD results
-must be assessed from their own measured evidence, not inferred from this API.
+failures or relax the outcome gate. The measured NVIDIA and AMD results below
+must be assessed from their own evidence, not inferred from this API.
 
 ## Workflow
 
@@ -107,9 +107,38 @@ must be assessed from their own measured evidence, not inferred from this API.
 7. Delete every rented host and dedicated deployment at step end and verify via
    its API. Hourly deployments incur costs even with no requests.
 
-## AMD Instinct
+## Measured Outcomes: No Promotion
 
-The additional [NVIDIA/AMD merged comparison](https://github.com/metrum-ai/router/blob/feat/355-ft-run2/docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md)
+- **Run 1 — FAIL:** strict JSON-text exact tools improved 4.5% → 32%, but
+  IFEval fell 81.5% → 63.5% and MMLU-Pro 60.5% → 13%. Those regression gates
+  reject the candidate; a nested gain check is not promotion approval.
+- **NVIDIA run 2 — FAIL:** on one RTX PRO 6000 Blackwell Server Edition 96 GB,
+  base → LoRA JSON-text exact tools were 4 → 5 of 200 (+0.5 percentage points,
+  below the required +10). IFEval was 164 → 161 of 200; MMLU-Pro 123 → 123.
+  Native replay 258 → 265 of 300 is a different endpoint and cannot rescue it.
+- **AMD — FAIL:** MI325X VF 256 GB, approved Transformers/PEFT ROCm fallback;
+  JSON-text exact tools 7/200 versus base 9/200, below the required gain.
+  Its merged serving path is measured; unmerged LoRA serving did not pass.
+
+Both accelerator arms used the hash-bound router export. The supplemental
+BF16 merged comparison reports NVIDIA/AMD native mock-tool success 180/200
+for each, but this is **not semantic parity**, hardware causality, or a
+replacement for either failed original gate. Original grader infrastructure
+failures and authorised whole-step repair remain separately archived.
+
+NVIDIA training wrapper time was 892.894 seconds versus AMD 1,214.947 seconds,
+with different kernels/toolkits/timing scope. All final c1/8/32 serving profiles
+had zero errors, but these small synthetic profiles are not sustained capacity.
+Quoted whole-300 native-window cost per harness success was about $0.001421
+and $0.001297 respectively; this excludes lifecycle costs and does not establish
+semantic resolution, an invoice or quality-equivalent ROI. Missing self-hosted
+price completeness remains unknown, not free. NVIDIA GPU/cloud key and dedicated
+vendor resources were API-deleted; AMD droplet/firewall/cloud key deletion was
+also verified. See the dated receipts before quoting spend or teardown.
+
+## AMD Instinct And Comparison Limits
+
+The additional [NVIDIA/AMD merged comparison](https://github.com/metrum-ai/router/blob/main/docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md)
 now includes quality, training wall/throughput, serving c1/8/32 and scoped cost
 per output token/native-harness success. Authorized CPU-only infrastructure repair
 completed all800semantic assertions on exact recorded outputs (400per merged arm),
@@ -135,9 +164,10 @@ and VIDEO-FACTS under `docs/evidence/finetune-amd/2026-10-23/` explicitly leave
 measured training/load evidence separate from quality verdicts and economics.
 Orchestrator verified droplet API404 and firewall/cloud-key deletion19:23Z.
 GPU quote~6.08USD plus judge~2.874USD is not a settled invoice; failed charges
-remain unknown. Shared teacher's RPM-throttled run is unusable for healthy-teacher
-comparison; FT owns a whole-arm replacement. Matched NVIDIA merged comparison
-is separately owned, not a hardware-only causal claim. Unmerged LoRA serving failed;
+remain unknown. The RPM-throttled teacher run remains invalid infrastructure evidence; a
+whole high-limit teacher replacement completed 300 tasks with zero transport
+errors. It does not change either original gate. The merged NVIDIA comparison
+is measured, but not a hardware-only causal claim. Unmerged LoRA serving failed;
 the measured AMD serving path is BF16 merged, not unmerged.
 
 The initial26local concurrency429s were self-inflicted infrastructure throttling,

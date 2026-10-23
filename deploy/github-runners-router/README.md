@@ -1,4 +1,10 @@
-# Pikachu router runner pool (manual ops)
+# Legacy Pikachu runner pool (host maintenance only)
+
+Repository CI jobs now use ephemeral `router-arc` Actions Runner Controller
+pods on DigitalOcean Kubernetes. See [the current CI runbook](../../docs/ci-arc-runners.md).
+This legacy Compose runbook is retained only for host maintenance, including
+`runner-cache-trim.yml`; do not route ordinary CI back here or copy privileged
+host-container settings into ARC pods.
 
 Compose project on this host: `~/github-runners-router-compose`  
 GitHub labels: `self-hosted`, `Linux`, `X64`, `router`  

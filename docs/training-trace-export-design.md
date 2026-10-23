@@ -5,8 +5,10 @@
 
 Metrum AI Router is the capture, authorization and selection boundary. The
 export/outcome APIs and router-loop harness are implemented; this is not a claim
-that the external training, measured model comparison or promotion loop is
-complete. Run-2 and AMD result evidence is maintained separately.
+of promotion. External NVIDIA run-2 and AMD training/comparison have now run;
+both original quality gates FAIL. Their measured results, infrastructure
+amendments and teardown are maintained in the dated evidence, not inferred
+from export success.
 
 ## Future-export tool declaration normalization (#371)
 
@@ -106,10 +108,12 @@ The exporter aligns with FT's `metrum-router-ft-export-v1` consumer contract:
 splits/boundaries, audit reference, teacher decision/privacy attestations,
 trace/task SHA256, tool-schema validity and replay initial fixtures. The actual
 FT `run2/router_export.py` consumer validated a real seven-row sample without
-rewriting its manifest. This proves schema integration, not useful cohort size
-or training authorization. Full cohort mix/counts and semantic evaluation/gate
-mapping must be frozen with FT before expanded collection/training. No actual
-trained-model promotion is claimed.
+rewriting its manifest. That historical sample proves schema integration, not training authorization.
+The later hash-bound full export contains 1,186 train / 221 validation / 300 test
+tasks; NVIDIA and AMD consumed the same frozen files. The outcomes and original
+FAIL gates are in [run-2 results](evidence/finetune/2026-10-23-run2/RESULTS.md)
+and the [merged comparison](evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md).
+No trained-model promotion is claimed.
 
 ## Teacher-license decision: maintainer-authorized synthetic technical test
 

@@ -45,6 +45,13 @@ Keep each commit's sign-off intact when rebasing, squashing, or amending work.
 
 ## Development
 
+CI runs on ephemeral, repository-restricted `router-arc` Actions Runner
+Controller pods on DigitalOcean Kubernetes, not the legacy Pikachu pool.
+Do not assume persistent HOME, installed tools or warm caches. Follow the
+[ARC runner runbook](docs/ci-arc-runners.md); host cache maintenance remains a
+separate legacy job. No provider-backed workflows are dispatched automatically
+by this documentation audit.
+
 Validate changes with the repository Make targets (no internal `rtk` wrapper
 required):
 

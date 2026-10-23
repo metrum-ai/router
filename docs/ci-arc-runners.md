@@ -3,7 +3,8 @@
 
 # Router CI on ephemeral ARC runners
 
-All workflow jobs target the repository-restricted `router-arc` scale set.
+Workflow jobs target the repository-restricted `router-arc` Actions Runner
+Controller scale set on DigitalOcean Kubernetes (DOKS).
 `runner-cache-trim.yml` is the sole exception: it still maintains the pikachu
 host and must not run in disposable pods. Each ARC job starts a single-use
 agent-workstation pod on an 8-vCPU node. No prior job's HOME, tool installation,

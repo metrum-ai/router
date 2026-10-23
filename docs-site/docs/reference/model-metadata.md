@@ -50,6 +50,10 @@ providers:
 ## Modalities
 
 `input_modalities` and `output_modalities` control routing eligibility.
+A nonempty legacy `modalities` list overrides input metadata. Since v4.3.0,
+`modalities: []` is treated as unset, so existing input metadata/default text
+applies; it is not a way to disable a target or deny access. This also preserves
+text eligibility after CLI/config-control-plane serialization round trips.
 
 | Modality | Use |
 |---|---|

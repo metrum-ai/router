@@ -17,7 +17,7 @@ Provider-backed workflows are not required checks. Dispatch them manually in the
 - Inspect smoke or full: `.github/workflows/inspect-coding-evaluation.yml`
 - Harbor promotion: `.github/workflows/harbor-promotion.yml`, capped at two agents, two groups, and four cells, with concurrency held at one
 
-Harbor promotion needs repository secrets `HARBOR_ROUTER_TOKEN` and `HARBOR_ROUTER_BASE_URL` in that environment. The self-hosted runner also needs the `harbor` CLI on `PATH`. Missing credentials fail closed. Do not schedule these workflows and do not run them from pull requests or tags.
+Harbor promotion needs repository secrets `HARBOR_ROUTER_TOKEN` and `HARBOR_ROUTER_BASE_URL` in that environment. The ephemeral `router-arc` job also needs the `harbor` CLI on `PATH`; provision it in the job/image rather than assuming a persistent host installation. See [ARC runner operations](ci-arc-runners.md). Missing credentials fail closed. Do not schedule these workflows and do not run them from pull requests or tags.
 
 Also require:
 

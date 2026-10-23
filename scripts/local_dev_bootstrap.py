@@ -32,23 +32,6 @@ SECRET_BASENAMES = frozenset(
     }
 )
 
-def high_capacity_local_callers(text: str) -> str:
-    """Raise generated caller limits only; preserve stdlib-only bootstrap.
-
-    Input is the canonical block YAML emitted by routerctl, not arbitrary YAML.
-    Leave providers, model metadata and credentials byte-for-byte unchanged.
-    Projects/groups have no independent rate/quota fields in this schema.
-    """
-    limits = {"rpm": 2400, "tpm": 4_000_000, "concurrent": 160,
-              "requests": 100_000, "tokens": 8_000_000_000,
-              "lifetime_tokens": 40_000_000_000}
-    def callers(match: re.Match) -> str:
-        return match[1] + re.sub(
-            r"(?m)^([ \t]+)(rpm|tpm|concurrent|requests|tokens|lifetime_tokens): \d+[ \t]*$",
-            lambda field: f"{field[1]}{field[2]}: {limits[field[2]]}", match[2])
-    return re.sub(r"(?ms)(^callers:\n)(.*?)(?=^\S|\Z)", callers, text)
-
-
 _LICENSE_BLOCK = re.compile(
     r"(?m)^[ \t]*#.*license\.json.*\n"  # optional preceding comment
     r"^[ \t]*license:\n"
@@ -149,7 +132,7 @@ def high_local_test_limits(text: str) -> str:
             continue
         if section and indent <= section_indent:
             section = period = ''
-        if stripped.strip() in ('rate:', 'quota:'):
+        if stripped.strip() in ('rate:', 'quota:', 'key:'):
             section = stripped.strip()[:-1]
             section_indent = indent
             continue
@@ -158,7 +141,8 @@ def high_local_test_limits(text: str) -> str:
         key = stripped.partition(':')[0]
         values = {'rpm': 100000, 'tpm': 100000000, 'concurrent': 256} if section == 'rate' else (
             {'requests': 10000000, 'tokens': 2000000000} if section == 'quota' and period == 'day' else
-            {'requests': 100000000, 'tokens': 20000000000} if section == 'quota' and period == 'month' else {})
+            {'requests': 100000000, 'tokens': 20000000000} if section == 'quota' and period == 'month' else
+            {'lifetime_tokens': 40000000000} if section == 'key' else {})
         if key in values:
             lines[index] = ' ' * indent + key + ': ' + str(values[key]) + '\n'
     return ''.join(lines)
@@ -220,12 +204,6 @@ def main() -> None:
     token_name = Path(grant_json.get("token_file") or token_path.name).name
     if token_name != token_path.name:
         die("unexpected token_file in caller grant output")
-
-    # Infra-only local allowances: never inherit production-oriented key defaults.
-    config_path.write_text(
-        high_capacity_local_callers(config_path.read_text(encoding="utf-8")),
-        encoding="utf-8",
-    )
 
     next_steps = out_dir / "NEXT_STEPS.txt"
     next_steps.write_text(
