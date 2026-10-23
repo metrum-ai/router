@@ -1,0 +1,66 @@
+{
+  "model": "deepseek.v3.2",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "deepseek",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      },
+      {
+        "content": "I'll write the file with the specified content.\n\n<\uff5cDSML\uff5cfunction_calls",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"content\":\"OK\",\"path\":\"bedrock-proof.txt\"}",
+              "name": "write_file"
+            },
+            "id": "tooluse_J3c6qsKkzgI85VgQVLzv1C",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "tooluse_J3c6qsKkzgI85VgQVLzv1C",
+        "content": "File created successfully."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"I'll write the file with the specified content.\\n\\n\\u003c\uff5cDSML\uff5cfunction_calls\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_J3c6qsKkzgI85VgQVLzv1C\",\"type\":\"function\"}]}}],\"id\":\"resp_78e28e9ba49776f92b90e4cd0cb15f9c\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":72,\"prompt_tokens\":330,\"total_tokens\":402}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"The file \\\"bedrock-proof.txt\\\" has been created with the content \\\"OK\\\".\",\"role\":\"assistant\"}}],\"id\":\"resp_041ca9b268ad4d27b7599d2bd52e2e49\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":18,\"prompt_tokens\":427,\"total_tokens\":445}}\n",
+    "file_created": true
+  }
+}

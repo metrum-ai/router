@@ -1,0 +1,19 @@
+{
+  "model": "openai.gpt-oss-20b-1:0",
+  "region": "us-east-1",
+  "mode": "stream",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "gptoss",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say OK"
+      }
+    ],
+    "stream": true
+  },
+  "response": "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1ababfd44ed909452c8f4e9dffb26da0\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1ababfd44ed909452c8f4e9dffb26da0\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1ababfd44ed909452c8f4e9dffb26da0\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"resp_1ababfd44ed909452c8f4e9dffb26da0\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1ababfd44ed909452c8f4e9dffb26da0\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion.chunk\",\"usage\":{\"completion_tokens\":53,\"prompt_tokens\":69,\"total_tokens\":122}}\n\ndata: [DONE]\n\n"
+}

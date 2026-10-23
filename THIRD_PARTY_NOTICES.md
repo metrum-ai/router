@@ -16,24 +16,27 @@ Metrum AI Router includes, builds with, or refers to the dependencies below. The
 
 | Ecosystem | Name | Version | License | Homepage | Scope / surface |
 | --- | --- | --- | --- | --- | --- |
-| Go | github.com/aws/aws-sdk-go-v2/config | v1.32.12 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/config) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/credentials | v1.19.12 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/credentials) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/feature/ec2/imds | v1.18.20 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/feature/ec2/imds) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/internal/configsources | v1.4.20 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/internal/configsources) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 | v2.7.20 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/internal/endpoints) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream | v1.7.24 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2) | shipped binary; Bedrock streaming |
+| Go | github.com/aws/aws-sdk-go-v2/internal/v4a | v1.5.7 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2) | shipped binary; AWS signing |
+| Go | github.com/aws/aws-sdk-go-v2/service/bedrockruntime | v1.63.7 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2) | shipped binary; Bedrock Converse adapter |
+| Go | github.com/aws/aws-sdk-go-v2/config | v1.33.10 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/config) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/credentials | v1.20.10 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/credentials) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/feature/ec2/imds | v1.20.4 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/feature/ec2/imds) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/internal/configsources | v1.5.7 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/internal/configsources) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 | v2.8.7 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/internal/endpoints) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/aws/aws-sdk-go-v2/internal/ini | v1.8.6 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/internal/ini) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/aws/aws-sdk-go-v2/service/eks | v1.75.0 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/eks) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding | v1.13.7 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/service/internal/presigned-url | v1.13.20 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/internal/presigned-url) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding | v1.13.22 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/service/internal/presigned-url | v1.14.7 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/internal/presigned-url) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/aws/aws-sdk-go-v2/service/rds | v1.101.0 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/rds) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/aws/aws-sdk-go-v2/service/secretsmanager | v1.39.0 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/secretsmanager) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/service/signin | v1.0.8 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/signin) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/service/signin | v1.10.5 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/signin) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/aws/aws-sdk-go-v2/service/ssm | v1.68.0 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/ssm) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/service/ssooidc | v1.35.17 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/ssooidc) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/service/sso | v1.30.13 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/sso) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2/service/sts | v1.41.9 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/sts) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/aws-sdk-go-v2 | v1.41.4 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2) | shipped binary; packages imported by repository Go builds |
-| Go | github.com/aws/smithy-go | v1.24.2 | Apache-2.0 | [project](https://github.com/aws/smithy-go) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/service/ssooidc | v1.43.5 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/ssooidc) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/service/sso | v1.38.5 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/sso) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2/service/sts | v1.51.5 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2/service/sts) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/aws-sdk-go-v2 | v1.47.4 | Apache-2.0 | [project](https://github.com/aws/aws-sdk-go-v2) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/aws/smithy-go | v1.28.6 | Apache-2.0 | [project](https://github.com/aws/smithy-go) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/bmatcuk/doublestar/v4 | v4.6.1 | MIT | [project](https://github.com/bmatcuk/doublestar) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/casbin/casbin/v2 | v2.134.0 | Apache-2.0 | [project](https://github.com/casbin/casbin) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/casbin/govaluate | v1.3.0 | MIT | [project](https://github.com/casbin/govaluate) | shipped binary; packages imported by repository Go builds |

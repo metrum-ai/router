@@ -1,0 +1,66 @@
+{
+  "model": "qwen.qwen3-32b-v1:0",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "qwen",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"content\":\"OK\",\"path\":\"bedrock-proof.txt\"}",
+              "name": "write_file"
+            },
+            "id": "tooluse_6ei6U3jK12JhMZ7oGCJEo4",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "tooluse_6ei6U3jK12JhMZ7oGCJEo4",
+        "content": "File created successfully."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_6ei6U3jK12JhMZ7oGCJEo4\",\"type\":\"function\"}]}}],\"id\":\"resp_93281ab3b0a6ad262923ca59f9ef4145\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":29,\"prompt_tokens\":183,\"total_tokens\":212}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"The file `bedrock-proof.txt` has been successfully created with the content \\\"OK\\\".\",\"role\":\"assistant\"}}],\"id\":\"resp_c4c57de299370a848cb4f2c1ebd61bbf\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":19,\"prompt_tokens\":228,\"total_tokens\":247}}\n",
+    "file_created": true
+  }
+}

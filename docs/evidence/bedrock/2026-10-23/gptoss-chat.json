@@ -1,0 +1,18 @@
+{
+  "model": "openai.gpt-oss-20b-1:0",
+  "region": "us-east-1",
+  "mode": "chat",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "gptoss",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say OK"
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK\",\"role\":\"assistant\"}}],\"id\":\"resp_0b7733e97036b1cdd77ff534d5402a19\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":34,\"prompt_tokens\":69,\"total_tokens\":103}}\n"
+}

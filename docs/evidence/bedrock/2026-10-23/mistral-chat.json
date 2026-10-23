@@ -1,0 +1,18 @@
+{
+  "model": "mistral.mistral-large-3-675b-instruct",
+  "region": "us-east-1",
+  "mode": "chat",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "mistral",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say OK"
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK! \ud83d\ude0a How can I assist you further?\",\"role\":\"assistant\"}}],\"id\":\"resp_0e9e0626e3dbb28e350b70d1fc908ff8\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":13,\"prompt_tokens\":5,\"total_tokens\":18}}\n"
+}

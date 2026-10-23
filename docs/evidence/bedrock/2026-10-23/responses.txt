@@ -1,0 +1,1 @@
+{"created_at":1792724573,"finish_reason":"stop","id":"bedrock-response","model":"mistral.mistral-large-3-675b-instruct","object":"response","output":[{"content":[{"text":"OK","type":"output_text"}],"role":"assistant","type":"message"}],"output_text":"OK","status":"completed","usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}

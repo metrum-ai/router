@@ -1,0 +1,66 @@
+{
+  "model": "mistral.mistral-large-3-675b-instruct",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "mistral",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"content\":\"OK\",\"path\":\"bedrock-proof.txt\"}",
+              "name": "write_file"
+            },
+            "id": "tooluse_ilacpLzT6crWGLM9miYvPN",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "tooluse_ilacpLzT6crWGLM9miYvPN",
+        "content": "File created successfully."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_ilacpLzT6crWGLM9miYvPN\",\"type\":\"function\"}]}}],\"id\":\"resp_5f2689f6585f5cb6ad1bef3b392307f9\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":21,\"prompt_tokens\":92,\"total_tokens\":113}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"The file **`bedrock-proof.txt`** has been created with the content **\\\"OK\\\"**.\",\"role\":\"assistant\"}}],\"id\":\"resp_ee512ef8e37605e81d258fdf3591c8d2\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":22,\"prompt_tokens\":119,\"total_tokens\":141}}\n",
+    "file_created": true
+  }
+}

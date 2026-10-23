@@ -1,0 +1,19 @@
+{
+  "model": "qwen.qwen3-32b-v1:0",
+  "region": "us-east-1",
+  "mode": "stream",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "qwen",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say OK"
+      }
+    ],
+    "stream": true
+  },
+  "response": "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_dbe6839204c86673e5f7abff1fe9adbc\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_dbe6839204c86673e5f7abff1fe9adbc\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"OK! Let me know if you need anything else. \ud83d\ude0a\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_dbe6839204c86673e5f7abff1fe9adbc\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"resp_dbe6839204c86673e5f7abff1fe9adbc\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":null,\"index\":0}],\"id\":\"resp_dbe6839204c86673e5f7abff1fe9adbc\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\",\"usage\":{\"completion_tokens\":14,\"prompt_tokens\":14,\"total_tokens\":28}}\n\ndata: [DONE]\n\n"
+}

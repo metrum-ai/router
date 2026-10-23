@@ -1,0 +1,66 @@
+{
+  "model": "us.meta.llama3-3-70b-instruct-v1:0",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "llama",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      },
+      {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"content\":\"OK\",\"path\":\"bedrock-proof.txt\"}",
+              "name": "write_file"
+            },
+            "id": "tooluse_GwylWEvKuk2kb96E4BvwZv",
+            "type": "function"
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "tooluse_GwylWEvKuk2kb96E4BvwZv",
+        "content": "File created successfully."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_GwylWEvKuk2kb96E4BvwZv\",\"type\":\"function\"}]}}],\"id\":\"resp_ecf02120df5ac3da050db5e231fc0d68\",\"model\":\"us.meta.llama3-3-70b-instruct-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":26,\"prompt_tokens\":193,\"total_tokens\":219}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"This JSON represents a function call to `write_file` with the specified path and content.\",\"role\":\"assistant\"}}],\"id\":\"resp_f9183f53436db78d180c3f8b05fc100b\",\"model\":\"us.meta.llama3-3-70b-instruct-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":19,\"prompt_tokens\":231,\"total_tokens\":250}}\n",
+    "file_created": true
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "calls_in_latest_matrix": 20,
+  "estimated_standard_cost_usd": 0.0014819000000000002,
+  "region": "us-east-1",
+  "excludes": "Direct probes, earlier matrix reruns, and extended dialect smoke. Conservative cumulative estimate under $0.10; no bill access."
+}

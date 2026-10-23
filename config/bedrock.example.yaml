@@ -1,0 +1,250 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Merge into an existing authenticated router config.
+models:
+  deepseek:
+    strategy: static
+    targets:
+    - model_ref: deepseek
+      provider: bedrock
+      region: us-east-1
+  gptoss:
+    strategy: static
+    targets:
+    - model_ref: gptoss
+      provider: bedrock
+      region: us-east-1
+  llama:
+    strategy: static
+    targets:
+    - model_ref: llama
+      provider: bedrock
+      region: us-east-1
+  mistral:
+    strategy: static
+    targets:
+    - model_ref: mistral
+      provider: bedrock
+      region: us-east-1
+  qwen:
+    strategy: static
+    targets:
+    - model_ref: qwen
+      provider: bedrock
+      region: us-east-1
+providers:
+  bedrock:
+    auth_scheme: bedrock
+    base_url: https://bedrock-runtime.us-east-1.amazonaws.com
+    dialect: openai-chat
+    models:
+      deepseek:
+        bridges:
+          responses_to_chat:
+            enabled: true
+            streaming: true
+            text: true
+            tool_choice: true
+            tools: true
+        honors_max_tokens: true
+        input_modalities:
+        - text
+        input_price_per_million_usd: 0.62
+        model: deepseek.v3.2
+        output_modalities:
+        - text
+        output_price_per_million_usd: 1.85
+        pricing_notes: Standard on-demand us-east-1 only; refresh prices for other
+          regions. No batch, flex or priority.
+        pricing_source: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/us-east-1/index.json
+        pricing_updated_at: '2026-10-23'
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-chat
+          - openai-responses
+          - anthropic
+          validation_status: passed
+        responses_to_chat:
+          enabled: true
+          function_tools: true
+          streaming: true
+          text: true
+          tool_choice: true
+        tool_support:
+          anthropic_messages:
+          - client_tools
+          - tool_choice
+          openai_chat:
+          - tools
+          - tool_choice
+          openai_responses:
+          - function
+          - tool_choice
+      gptoss:
+        bridges:
+          responses_to_chat:
+            enabled: true
+            streaming: true
+            text: true
+            tool_choice: true
+            tools: true
+        honors_max_tokens: true
+        input_modalities:
+        - text
+        input_price_per_million_usd: 0.07
+        model: openai.gpt-oss-20b-1:0
+        output_modalities:
+        - text
+        output_price_per_million_usd: 0.3
+        pricing_notes: Standard on-demand us-east-1 only; refresh prices for other
+          regions. No batch, flex or priority.
+        pricing_source: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/us-east-1/index.json
+        pricing_updated_at: '2026-10-23'
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-chat
+          - openai-responses
+          - anthropic
+          validation_status: passed
+        responses_to_chat:
+          enabled: true
+          function_tools: true
+          streaming: true
+          text: true
+          tool_choice: true
+        tool_support:
+          anthropic_messages:
+          - client_tools
+          - tool_choice
+          openai_chat:
+          - tools
+          - tool_choice
+          openai_responses:
+          - function
+          - tool_choice
+      llama:
+        bridges:
+          responses_to_chat:
+            enabled: true
+            streaming: true
+            text: true
+            tool_choice: true
+            tools: true
+        honors_max_tokens: true
+        input_modalities:
+        - text
+        input_price_per_million_usd: 0.72
+        model: us.meta.llama3-3-70b-instruct-v1:0
+        output_modalities:
+        - text
+        output_price_per_million_usd: 0.72
+        pricing_notes: Standard on-demand us-east-1 only; refresh prices for other
+          regions. No batch, flex or priority.
+        pricing_source: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/us-east-1/index.json
+        pricing_updated_at: '2026-10-23'
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-chat
+          - openai-responses
+          - anthropic
+          validation_status: passed
+        responses_to_chat:
+          enabled: true
+          function_tools: true
+          streaming: true
+          text: true
+          tool_choice: true
+        tool_support:
+          anthropic_messages:
+          - client_tools
+          - tool_choice
+          openai_chat:
+          - tools
+          - tool_choice
+          openai_responses:
+          - function
+          - tool_choice
+      mistral:
+        bridges:
+          responses_to_chat:
+            enabled: true
+            streaming: true
+            text: true
+            tool_choice: true
+            tools: true
+        honors_max_tokens: true
+        input_modalities:
+        - text
+        input_price_per_million_usd: 0.5
+        model: mistral.mistral-large-3-675b-instruct
+        output_modalities:
+        - text
+        output_price_per_million_usd: 1.5
+        pricing_notes: Standard on-demand us-east-1 only; refresh prices for other
+          regions. No batch, flex or priority.
+        pricing_source: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/us-east-1/index.json
+        pricing_updated_at: '2026-10-23'
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-chat
+          - openai-responses
+          - anthropic
+          validation_status: passed
+        responses_to_chat:
+          enabled: true
+          function_tools: true
+          streaming: true
+          text: true
+          tool_choice: true
+        tool_support:
+          anthropic_messages:
+          - client_tools
+          - tool_choice
+          openai_chat:
+          - tools
+          - tool_choice
+          openai_responses:
+          - function
+          - tool_choice
+      qwen:
+        bridges:
+          responses_to_chat:
+            enabled: true
+            streaming: true
+            text: true
+            tool_choice: true
+            tools: true
+        honors_max_tokens: true
+        input_modalities:
+        - text
+        input_price_per_million_usd: 0.15
+        model: qwen.qwen3-32b-v1:0
+        output_modalities:
+        - text
+        output_price_per_million_usd: 0.6
+        pricing_notes: Standard on-demand us-east-1 only; refresh prices for other
+          regions. No batch, flex or priority.
+        pricing_source: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/us-east-1/index.json
+        pricing_updated_at: '2026-10-23'
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-chat
+          - openai-responses
+          - anthropic
+          validation_status: passed
+        responses_to_chat:
+          enabled: true
+          function_tools: true
+          streaming: true
+          text: true
+          tool_choice: true
+        tool_support:
+          anthropic_messages:
+          - client_tools
+          - tool_choice
+          openai_chat:
+          - tools
+          - tool_choice
+          openai_responses:
+          - function
+          - tool_choice

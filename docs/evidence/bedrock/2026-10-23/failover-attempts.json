@@ -1,0 +1,18 @@
+[
+  {
+    "request_id": "req_771d164667eaa386083db70d43351b10",
+    "provider": "bedrock",
+    "model": "mistral.mistral-large-3-675b-instruct",
+    "status_code": 429,
+    "error_class": "upstream_rate_limited",
+    "retryable": 1
+  },
+  {
+    "request_id": "req_771d164667eaa386083db70d43351b10",
+    "provider": "fallback",
+    "model": "fallback-model",
+    "status_code": 200,
+    "error_class": "",
+    "retryable": 0
+  }
+]
