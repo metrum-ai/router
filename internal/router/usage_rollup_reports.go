@@ -49,15 +49,7 @@ func validateRollupReportOptions(o UsageReportOptions) error {
 	return nil
 }
 func (s *usageStore) rollupReportQuery(o UsageReportOptions) *gorm.DB {
-	q := s.db.Model(&usageRollupDailyRecord{}).Where("rollup_type = ? AND status = ? AND day_utc >= ? AND day_utc < ? AND day_utc < ?", "daily", "finalized", o.From.UTC().Format("2006-01-02"), o.To.UTC().Format("2006-01-02"), time.Now().UTC().Format("2006-01-02"))
-	// The rollup writer also permits arbitrary manual windows. Only consume a
-	// day if its finalized window covers that entire UTC day. SUBSTR/|| work on
-	// both supported engines; date-only comparison avoids RFC3339 fractional
-	// second ordering traps at midnight.
-	q = q.Where("(SUBSTR(window_start,1,10) < day_utc OR window_start IN (day_utc || 'T00:00:00Z',day_utc || 'T00:00:00.000000000Z')) AND SUBSTR(window_end,1,10) > day_utc")
-	// A prematurely finalized future window never becomes complete merely
-	// because wall time later passes its nominal end.
-	q = q.Where("run_id IN (SELECT id FROM usage_rollup_runs WHERE rollup_type = ? AND status = ? AND finalized_at >= window_end)", "daily", "finalized")
+	q := s.db.Model(&usageRollupDailyRecord{}).Where("rollup_type = ? AND status = ? AND day_utc >= ? AND day_utc < ?", "daily", "finalized", o.From.UTC().Format("2006-01-02"), o.To.UTC().Format("2006-01-02"))
 	for column, value := range map[string]string{"caller_id": o.CallerID, "caller_user": o.CallerUser, "caller_project": o.CallerProject, "caller_environment": o.CallerEnvironment, "token_id": o.TokenID, "requested_model": o.RequestedModel, "resolved_group": o.ResolvedGroup, "target_provider": o.TargetProvider, "target_model": o.TargetModel, "target_dialect": o.TargetDialect, "client": o.Client, "inbound_dialect": o.InboundDialect, "cache": o.Cache} {
 		if value != "" {
 			q = q.Where(column+" = ?", value)

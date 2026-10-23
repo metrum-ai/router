@@ -23,71 +23,6 @@ for measured results, costs, exclusions and verified teardown before quoting
 quality, latency or economics. A passing nested scalar check alone is not
 promotion approval.
 
-## Router-centric loop
-
-A public corpus is not the customer's work, successful training is not safe
-production, and cost per token is not cost per successful task. The router loop
-is: teacher serve → governed opt-in capture for one caller key/project → harness
-outcome labels → audited canonical JSONL and manifest export with frozen time
-splits → external fine-tune → route back inside the same `support-agent` group
-with a key-scoped canary → replay captured initial fixtures through the router
-→ preregistered quality/regression gate decides. Preserve failed-task denominators.
-
-Choose a teacher whose **model license and provider terms permit training on
-outputs**; verify rights before enabling training export. The example's scoped
-maintainer authorization for synthetic Acme technical-test traffic is not a
-permission for customer-data training.
-
-The source example's `router-loop/` provides two-key collection, deterministic
-mock tools, `content:training` admin authorization, durable export audit, privacy
-filters, hashed manifests and same-group caller-bound routing. Only explicitly
-captured encrypted, complete/unexpired text/chat-tool requests with harness
-labels are eligible. Train/val additionally require a complete final response;
-frozen test retains eligible labelled teacher failures and missing/incomplete
-responses as provenance, not successful training answers. Export does not restore PII; copies need their own access/retention
-policy. See [Usage reporting](../operations/usage-reporting.md) and
-[Privacy](../privacy.md). Replay new model calls from initial fixtures, never
-recorded teacher answers. Freeze backend/checker and gate before held-out calls.
-
-Measured integration is a tiny teacher sample and synthetic candidate stand-in,
-not a trained-model canary or promotion. Run 1's narrow JSON-text improvement
-failed general regressions; base remains default. A useful governed training
-cohort, actual fine-tuned-target replay and cost-per-success comparison remain
-pending. The steps below describe the historical external training machinery,
-not permission to bypass router capture for the router-centric run.
-
-## Implemented Export Contract
-
-`POST /admin/training/outcomes/{request_id}` accepts harness attestations using
-`router-outcome-v1`; it does not infer task success from HTTP 200. The initial
-allowlisted backend is `acme-support-v1`, not arbitrary uploaded checker code.
-`POST /admin/training/export` returns a ZIP with `manifest.json`, `train.jsonl`,
-`val.jsonl`, and `test.jsonl` in `metrum-router-ft-export-v1` format. Filters
-include public token ID, project, client, group and a half-open UTC time range;
-validation/test boundaries are explicit and ordered before training. Success and
-quality filters apply to train/val, never to the held-out population.
-
-These are separately authorized deployment-wide `content:training` actions
-`label` and `export`, not ordinary report-export permissions. Both require a
-durable security audit before privileged access. Missing capture consent cannot
-be replaced by uploading a transcript or outcome label. Cross-split source-task
-conflicts and ambiguous capture/labels fail closed. The exporter scans at most
-10,000 matching usage records and limits JSONL payload to 64 MiB; narrow filters
-rather than bypassing limits.
-
-The [router-loop recipe](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b/router-loop)
-provides small-sample and explicit full-cohort modes, a versioned mock backend,
-privacy/split/hash evidence and same-group caller/project canary routing.
-The [export reference](https://github.com/metrum-ai/router/blob/main/docs/training-trace-export-design.md)
-documents API errors and authorization. Existing captures without canonical
-chat/tool history are ineligible; this is not an automatic historical backfill.
-
-An earlier small-sample canary hit a router-side budget and is infrastructure
-integration evidence only, not valid model-quality or latency evidence. Rerun
-entire evaluations with reviewed high local limits; do not selectively refill
-failures or relax the outcome gate. The pending trained run-2 and AMD results
-must be assessed from their own measured evidence, not inferred from this API.
-
 ## Workflow
 
 1. Verify model and dataset licenses, pin artifacts, deduplicate canonical chat
@@ -118,10 +53,8 @@ must be assessed from their own measured evidence, not inferred from this API.
   automatic duplicate inference against both models. Use paired offline replay
   through the router for quality comparisons, and opt into request access only
   inside the trust boundary.
-- Keep content capture disabled except for explicit operator opt-in on the
-  selected key/project. Test that uncaptured callers produce no content export;
-  operational usage reports/logs remain metadata-only. Secure and expire exported
-  copies separately. Synthetic mock tests prove integration, not model quality.
+- Disable content capture and test that usage storage/logs contain no prompt
+  content. Synthetic mock tests prove integration, not trained-model quality.
 - Public human-judgment calibration measures judge agreement on that corpus,
   not correctness on the customer's task. Report confidence intervals and weak
   agreement honestly.

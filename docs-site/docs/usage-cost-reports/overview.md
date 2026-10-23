@@ -87,9 +87,7 @@ aggregate endpoints accept `history_source=rollup` to read only finalized daily
 rollups, with `summary.historySource=finalized_daily_rollups`; raw and rolled
 rows are never mixed. Relative ranges align to UTC days, and explicit `from`/`to`
 require UTC-midnight boundaries. Generate and finalize only complete, closed
-UTC-day windows after review. The reader excludes current/future days, partial
-manual days, and windows finalized before closure, even after wall time passes.
-Retained charts have daily resolution. Unsupported
+UTC-day windows after review. Retained charts have daily resolution. Unsupported
 row-level predicates return HTTP 400. Request drilldown, the primary savings
 endpoint and server-side Markdown export remain raw-only. See
 [Usage Reporting](../operations/usage-reporting) for retention operations.

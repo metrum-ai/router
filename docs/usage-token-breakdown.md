@@ -107,11 +107,7 @@ This reads **only finalized daily rollups**, never a mixture of raw and rolled
 rows. The response advertises `summary.historySource=finalized_daily_rollups`.
 Relative windows are aligned to completed UTC days; explicit `from`/`to` must be
 whole UTC-day boundaries. Charts have daily, not reconstructed hourly,
-resolution. Draft rollups, the current/future day and days only partially
-covered by a manually finalized window are excluded (including fractional
-midnight boundaries). A run must be authoritatively finalized after its nominal
-window closes; prematurely finalized future windows do not later become complete
-just because wall time passes.
+resolution. Draft rollups and the incomplete current day are excluded.
 Authorization's project/environment scope applies identically to both sources.
 
 Stored dimensional filters such as caller, project, environment, model,

@@ -504,8 +504,6 @@ func (s *Service) routes() {
 			},
 		})
 	}
-	s.mux.HandleFunc("POST /admin/training/export", s.handleTrainingExport)
-	s.mux.HandleFunc("POST /admin/training/outcomes/{request_id}", s.handleTrainingOutcome)
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
 	s.mux.HandleFunc("POST /v1/content-captures/purge-expired", s.handleContentCapturePurgeExpired)
 	s.mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)

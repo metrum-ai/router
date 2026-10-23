@@ -40,7 +40,7 @@ func pricedTokenBreakdownRecord(id, cache string, ts time.Time) logRecord {
 	return rec
 }
 func TestTokenBreakdownRollupRetentionParity(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func verifyTokenBreakdownRetentionParity(t *testing.T, store *usageStore) {
 	}
 }
 func TestTokenBreakdownWriteOnlyAndReportedZero(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

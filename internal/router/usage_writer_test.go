@@ -40,7 +40,7 @@ func flushUsageForTest(t testing.TB, svc *Service) {
 
 func asyncUsageTestStore(t *testing.T) *usageStore {
 	t.Helper()
-	s, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	s, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

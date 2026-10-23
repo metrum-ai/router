@@ -84,7 +84,7 @@ func TestUsageProvenanceMetrics(t *testing.T) {
 }
 
 func TestUsageProvenanceSchemaAndFilter(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

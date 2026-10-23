@@ -20,24 +20,6 @@ documented encryption, authorization, and retention controls. The deployment
 operator is responsible for publishing any privacy notice required for its own
 users, infrastructure, providers, and data-handling choices.
 
-Training export is a separate privileged content operation, not ordinary usage
-reporting. `POST /admin/training/export` requires explicit deployment-wide
-`content:training` `export` authorization and a durable security audit event;
-harness labels require the separate `label` action. Only existing complete,
-encrypted, unexpired opt-in captures are eligible. Caller keys and ordinary
-report permissions do not grant export. Headers and raw vendor request extensions
-are not training fields. Storage redaction is preserved and content PII/secret
-filters apply without restoration. Regex filtering is not a universal sensitive-
-data guarantee; deployment operators must review consent and policy.
-
-Exported JSONL and manifests are customer-controlled copies. Deleting/expiring
-router captures prevents later exports but cannot recall downloaded artifacts;
-secure downstream access, retention and deletion independently. Legal holds do
-not grant training rights. Verify that the selected teacher's model license and
-provider terms permit training on outputs before enabling training export. The
-synthetic Acme example's scoped maintainer decision is not permission to train
-on customer outputs.
-
 When model-group PII filtering uses response restoration, restoration applies
 to buffered responses. Same-dialect native OpenAI Chat, OpenAI Responses, and
 Anthropic Messages streams preserve the generated placeholders in caller-visible

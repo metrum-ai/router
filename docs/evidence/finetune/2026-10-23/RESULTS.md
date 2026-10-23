@@ -11,56 +11,6 @@ Sampling, all serving-lane loads, remote merge, actual controls and API-verified
 teardown are complete. Draft PR354 awaits acceptance of a rejected-candidate
 workflow example; no merged-issue or production claim.
 
-## 1. Industry problem
-
-Training a fine-tune is not safely reaching production. Public training data is
-not the customer's work; ungoverned traffic lacks consent and labels; models need
-a safe caller-specific route back; evaluations must match production tools.
-Cost per token alone misses failed tasks: retain failures and report cost per
-successful task. No positive production ROI is established here.
-
-## 2. Router-centric solution
-
-Teacher serve → opt-in capture for one key/project → outcome labels → admin-only
-audited JSONL/manifest export with frozen time splits → external fine-tune →
-same `support-agent` group, key-scoped canary → replay router-captured initial
-fixtures through the router → preregistered quality/regression gate decides.
-Choose a teacher whose model license and provider terms permit output training;
-verify permission before export. The scoped maintainer decision for this
-synthetic Acme technical test is not customer-data permission.
-
-## 3. What we did: rejected run 1 and lessons
-
-The run-1 results below use direct public data, not router-captured training
-data. Weighted strict JSON-text exact score rose 4.5% → 32.0%, but wrapper validity
-fell 99.5% → 42.5%; IFEval fell 81.5% → 63.5%, MMLU-Pro 60.5% → 13.0%.
-The preregistered gate rejected the candidate. Base stays default. Training and
-faster serving do not override data/task mismatch or general regressions.
-
-## 4. Router-loop accomplishments and evidence gaps
-
-A separate engineering sample collected nine task seeds per key through a local
-router and real Fireworks `gpt-oss-120b`: eight actual tool-result continuations
-and seven deterministic successes per key. Only support was captured; audited
-success-only export contained 2 train / 2 val / 3 test rows, no IT rows.
-Same-group key+project canary routing used a **synthetic candidate stand-in**,
-not a fine-tuned model; a second support request was denied by its caller budget
-(429). This is integration evidence, not run-2 training success. Observed public
-list prices × router tokens estimate $0.00210315 per nine-task caller cohort,
-$0.00030045 per success including failed-task tokens. Cache discounts are ignored;
-these are not invoices, hourly serving economics or production ROI. Scalar
-source: `router-loop-sample.json`; debugging plus collection/consumer-validation estimate $0.03170595.
-The checker measures public expected tool-call arguments plus a completed turn,
-not semantic final-answer quality; it is not comparable with run 1's JSON-text
-metric. No candidate quality or held-out evaluation claim follows.
-
-Pending evidence: useful-sized governed cohort; actual trained-target canary;
-frozen held-out routed teacher/candidate/base comparison; comparable latency
-and cost per successful task; preregistered run-2 decision. Keep these placeholders
-until FT supplies measured results. Private sample dataset and collection/canary
-evidence remain outside Git; see the example's `router-loop/README.md` for the
-reproducible command and schema. No prompts or raw outputs are published here.
-
 ## Strict JSON-text tool-selection/extraction (200 targets)
 
 | Arm | Exact |95% bootstrap CI| Paired gain vs base (95% CI)|

@@ -371,17 +371,6 @@ func contentCaptureRequestPayload(req *IRRequest, cfg ContentCaptureConfig) map[
 	var payload map[string]any
 	_ = json.Unmarshal(raw, &payload)
 	delete(payload, "raw")
-	// IRMessage intentionally contains only text/image parts. Preserve the
-	// canonical chat continuation separately: dropping call IDs and arguments
-	// makes governed tool traces unusable for training or deterministic replay.
-	// Never persist the whole raw request (it can contain vendor credentials).
-	if cfg.CaptureToolCalls && req.Raw != nil {
-		if messages, ok := req.Raw["messages"].([]any); ok {
-			if canonical := captureChatMessages(messages); canonical != nil {
-				payload["chat_messages"] = canonical
-			}
-		}
-	}
 	if !cfg.CaptureToolCalls {
 		delete(payload, "tools")
 		redactToolMessages(payload)

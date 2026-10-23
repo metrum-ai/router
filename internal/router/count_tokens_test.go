@@ -254,7 +254,7 @@ func TestCountTokensProviderCredentials(t *testing.T) {
 }
 
 func TestCountTokensStorageAndRollupExclusion(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "counts.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "counts.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

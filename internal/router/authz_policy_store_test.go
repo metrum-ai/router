@@ -15,7 +15,7 @@ import (
 func TestDBBackedAuthorizationLoadsActivePolicySet(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "usage.sqlite")
-	store, err := openTestUsageStorePath(dbPath)
+	store, err := OpenUsageStorePath(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestDBBackedAuthorizationLoadsActivePolicySet(t *testing.T) {
 func TestDBBackedAuthorizationMissingActivePolicyFailsClosed(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "usage.sqlite")
-	store, err := openTestUsageStorePath(dbPath)
+	store, err := OpenUsageStorePath(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestDBBackedAuthorizationMissingActivePolicyFailsClosed(t *testing.T) {
 
 func TestAuthzPolicyActivationRejectsMalformedAndKeepsLastKnownValid(t *testing.T) {
 	dir := t.TempDir()
-	store, err := openTestUsageStorePath(filepath.Join(dir, "usage.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(dir, "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestAuthzPolicyActivationRejectsMalformedAndKeepsLastKnownValid(t *testing.
 
 func TestAuthzPolicyActivationRejectsUnsupportedRuleEffect(t *testing.T) {
 	dir := t.TempDir()
-	store, err := openTestUsageStorePath(filepath.Join(dir, "usage.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(dir, "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestSafeAuthzAuditFieldRedactsKeyShapedValues(t *testing.T) {
 
 func TestAuthzPolicyRollbackReactivatesPreviousValidSet(t *testing.T) {
 	dir := t.TempDir()
-	store, err := openTestUsageStorePath(filepath.Join(dir, "usage.sqlite"))
+	store, err := OpenUsageStorePath(filepath.Join(dir, "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

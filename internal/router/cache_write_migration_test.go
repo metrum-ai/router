@@ -9,7 +9,7 @@ import (
 )
 
 func TestCacheWriteMigrationReplay(t *testing.T) {
-	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg := freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
 		t.Fatal(err)
