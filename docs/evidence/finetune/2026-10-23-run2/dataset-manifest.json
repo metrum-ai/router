@@ -1,0 +1,66 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "protocol": "metrum-qwen3p8-text-lora-20261023-run2",
+  "seed": 355,
+  "dataset_revision": "e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac",
+  "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "general_revision": "fdf72ae0827c1cda404aff25b6603abec9e3399b",
+  "sha256": {
+    "train": "93ea4c00a0ac20474a3bc8ced93091cea702e5465ef154ecf3a271655161b6a1",
+    "val": "33836fd9ed1f35bad71eee1adee700fb5fc5ff28493cbae4fde6504ee9398b72",
+    "test": "db1c9521e7042f116c529d065de126cd1f3c8b020c5f62a6662feb993f082d57"
+  },
+  "axolotl_view_sha256": {
+    "train": "dffc7c761fc6edb96d37443a5211daa44ddbd40ab5e85dec3dadcdb9194114b2",
+    "val": "d5186584f0dac23293b94291df12ca43be9e96ceb6d06e48af3ce84e87212942"
+  },
+  "axolotl_view_format": "same messages; tools encoded as opaque JSON string, decoded by Axolotl before base-template rendering",
+  "counts": {
+    "train": 5667,
+    "val": 500,
+    "test": 300
+  },
+  "source_rejections": 2555,
+  "components": {
+    "train": {
+      "native_glaive": 1000,
+      "json_text_glaive": 667,
+      "oasst": 3000,
+      "synthetic_letter": 1000
+    },
+    "val": {
+      "native_glaive": 200,
+      "json_text_glaive": 100,
+      "oasst": 200
+    }
+  },
+  "heldout_tool_targets": 200,
+  "old_canonical_excluded": 2800,
+  "old_regressions_excluded": 400,
+  "public_calibration_user_prompts_excluded": 160,
+  "synthetic_precheck_prompts_excluded": 12,
+  "cross_split_normalized_prompt_overlap": 0,
+  "old_evaluated_prompt_overlap": 0,
+  "heldout_yaml_sha256": "656d39cc8b8cb7b383a2cf4efb629f352b9cc1bf62e3df6f92d5c0d474d5aee3",
+  "regressions_yaml_sha256": "ad137088f4be9bb8a1de165306267aa8671a3af3c83a63d913be45c9b8b43c2c",
+  "regression_counts": {
+    "ifeval": 200,
+    "mmlu_pro": 200
+  },
+  "oasst_eligible_root_pairs": 3324,
+  "source_sha256": {
+    "glaive": "e9b5d671812b5ca2fbd7b625a37d5c99a19576c37252cdc806defe256aea6dad",
+    "oasst": "286a6e9a5a413b3272ae9c0b5a20d327983dea1c24342ae28cb244a6da65185c",
+    "mtbench": "4877bc46a40929f4082c3c79593700fb897b1d6c7f4c473032694a01322f5769",
+    "regressions_manifest": "99c267500a3f09b9547881e89933c81f4032878297fa3a6afc63d731a8bc157b",
+    "old_regression_tests": "446eb6e57278a38fb8b8baa7312cc9bdbf81378176a483915d923e73cf9d515c"
+  },
+  "code_sha256": {
+    "data.py": "19cbd196ddb46c1a76ac8ceb2074f1d159a8231e02142a7e747bc66cd3cf5f0d",
+    "prepare_data.py": "a9cbf5a53da001ac3361985c4c5aae0b960839ec9fd869272420359851496357",
+    "build_tests.py": "442e6f9331333f7f0901b32b31300893b49f5979ed8558cbd14215226db3037f",
+    "tools.py": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6",
+    "precheck.py": "c8e0b4e31d996b88658586335994043bae28762354e3588b9c9585436afa44df"
+  },
+  "sampling": "seed355; exclude old/protected prompts before source-group split; fresh tool/text2:1; test then val then native train; augment train/val only; OASST root groups disjoint"
+}

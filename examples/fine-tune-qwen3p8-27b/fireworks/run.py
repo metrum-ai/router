@@ -27,20 +27,24 @@ def api(path, payload=None, method='POST'):
 
 def upload(account, model, adapter, resume=False):
     config = json.loads((adapter / 'adapter_config.json').read_text())
-    if config['r'] != 16:
-        raise ValueError('expected rank 16')
+    rank = config['r']
+    if type(rank) is not int or rank not in (8, 16):
+        raise ValueError('expected rank 8 (run2) or 16 (run1)')
     files = {p.name: p for p in adapter.iterdir() if p.name in ('adapter_config.json', 'adapter_model.safetensors')}
     if len(files) != 2:
         raise ValueError('missing adapter artifacts')
     path = f'accounts/{account}/models/{model}'
     if not resume:
         api(f'accounts/{account}/models', {'modelId': model, 'model': {'kind': 'HF_PEFT_ADDON',
-            'peftDetails': {'baseModel': 'accounts/fireworks/models/qwen3p8-27b', 'r': 16,
+            'peftDetails': {'baseModel': 'accounts/fireworks/models/qwen3p8-27b', 'r': rank,
                             'targetModules': config['target_modules']}}})
     else:
         current = api(path, method='GET')
-        if current.get('peftDetails', {}).get('baseModel') != 'accounts/fireworks/models/qwen3p8-27b':
-            raise ValueError('refusing to resume an adapter with a different base model')
+        details = current.get('peftDetails', {})
+        if (details.get('baseModel') != 'accounts/fireworks/models/qwen3p8-27b'
+                or details.get('r') != rank
+                or set(details.get('targetModules', [])) != set(config['target_modules'])):
+            raise ValueError('refusing to resume an adapter with different base/rank/target modules')
     endpoints = api(path + ':getUploadEndpoint', {'filenameToSize': {n: p.stat().st_size for n, p in files.items()}})
     for name, url in endpoints['filenameToSignedUrls'].items():
         # Signed URL remains in memory only. Never include it in error logs.

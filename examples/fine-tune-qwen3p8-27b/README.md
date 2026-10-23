@@ -21,6 +21,16 @@ this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
   relabel AI-generated judgments as human. Pairwise agreement on this public
   corpus is not a domain-specific correctness guarantee.
 
+## Run 2: fresh cohort and format-preserving regularization
+
+[Run-2 instructions](run2/README.md) track #355 (Refs #326): smaller/lower-LR
+attention-only LoRA, licensed OASST general instructions and synthetic answer-format
+rehearsal, fresh heldout/standard cohorts, base-template/token/cache/generation
+pre-checks and the unchanged promotion gate. Select `RECIPE=run2` explicitly;
+run-1 defaults/failed outcomes remain historical. This is not a promotion claim.
+Provider IDs are hardware-neutral (`vllm_onprem_ft`); measured run-1 training
+hardware was RTX PRO 6000 Blackwell Server Edition, not B200.
+
 ## Prepare and test without spending
 
 Install CPU-only data/eval tools with `python3 -m pip install -r eval/requirements.txt`
@@ -134,9 +144,11 @@ an accidental shared/default-deployment route.
 ## Router groups, caller budgets and rollback
 
 Copy `config.qwen3p8-ft.example.yaml` outside Git and replace the Fireworks account
-and deployment endpoint as appropriate. `vllm_b200_ft` is a logical provider name
-retained from the issue, not a claim that the current host is a B200: this run
-uses RTX PRO 6000 Blackwell. The default FT group splits traffic 50/50. The static
+and deployment endpoint as appropriate. `vllm_onprem_ft` is a hardware-neutral
+logical provider name. Run 1 actually trained on RTX PRO 6000 Blackwell Server
+Edition, not B200. Historical public evidence normalizes the old provider label
+only; original receipts/hashes and all metrics are preserved (see the run-1
+evidence README). The default FT group splits traffic 50/50. The static
 `-onprem` and `-fireworks` FT groups isolate serving stacks for paired evaluation.
 The default route stays on the base. Optional `qwen3p8-27b-canary` starts at
 90% base/5% on-prem FT/5% Fireworks FT. The `-shadow` group uses

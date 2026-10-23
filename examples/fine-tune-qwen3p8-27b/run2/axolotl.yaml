@@ -1,0 +1,56 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Run 2: conservative text-attention-only LoRA; do not edit after preregistration.
+# Pinned base/image and full base chat template unchanged from run 1.
+base_model: /data/base
+strict: false
+chat_template: tokenizer_default
+chat_template_kwargs:
+  enable_thinking: false
+datasets:
+  - path: /data/canonical/train-axolotl.jsonl
+    ds_type: json
+    type: chat_template
+    field_messages: messages
+    field_tools: tools
+    train_on_inputs: false
+test_datasets:
+  - path: /data/canonical/val-axolotl.jsonl
+    ds_type: json
+    type: chat_template
+    field_messages: messages
+    field_tools: tools
+val_set_size: 0.0
+output_dir: /data/adapter
+dataset_prepared_path: /data/prepared
+sequence_len: 8192
+sample_packing: false
+load_in_4bit: false
+load_in_8bit: false
+adapter: lora
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.0
+# No MLP, gate, vision, embeddings or lm_head updates. Verify actual names.
+lora_target_modules:
+  - q_proj
+  - v_proj
+  - linear_attn.in_proj_qkv
+  - linear_attn.out_proj
+gradient_accumulation_steps: 16
+micro_batch_size: 1
+num_epochs: 1
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.00001
+bf16: true
+tf32: true
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+attn_implementation: sdpa
+warmup_ratio: 0.03
+evals_per_epoch: 2
+saves_per_epoch: 1
+seed: 355

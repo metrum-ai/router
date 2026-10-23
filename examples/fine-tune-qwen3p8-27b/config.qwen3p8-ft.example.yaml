@@ -27,7 +27,7 @@ providers:
         input_modalities: [text]
         output_modalities: [text]
         tool_support: {openai_chat: [tools, tool_choice, structured_outputs]}
-  vllm_b200_ft:
+  vllm_onprem_ft:
     dialect: openai-chat
     base_url: http://127.0.0.1:18526/v1
     models:
@@ -71,14 +71,14 @@ models:
     strategy: weighted
     targets:
       - {provider: fireworks_ft, model_ref: adapter, weight: 50}
-      - {provider: vllm_b200_ft, model_ref: adapter, weight: 50}
+      - {provider: vllm_onprem_ft, model_ref: adapter, weight: 50}
   # Optional base/FT canary: start at 10% FT, retain the base for instant rollback.
   qwen3p8-27b-canary:
     strategy: weighted
     targets:
-      - {provider: vllm_b200_ft, model_ref: base, weight: 90}
+      - {provider: vllm_onprem_ft, model_ref: base, weight: 90}
       - {provider: fireworks_ft, model_ref: adapter, weight: 5}
-      - {provider: vllm_b200_ft, model_ref: adapter, weight: 5}
+      - {provider: vllm_onprem_ft, model_ref: adapter, weight: 5}
   # Optional: start python3 eval/shadow_policy.py before calling this group.
   # Base serves; FT recommendation is recorded, NOT a second inference.
   qwen3p8-27b-ft-shadow:
@@ -90,8 +90,8 @@ models:
       include_request: false
       on_error: fail_closed
     targets:
-      - {provider: vllm_b200_ft, model_ref: base}
-      - {provider: vllm_b200_ft, model_ref: adapter}
+      - {provider: vllm_onprem_ft, model_ref: base}
+      - {provider: vllm_onprem_ft, model_ref: adapter}
   qwen3p8-27b-ft-fireworks:
     strategy: static
     targets:
@@ -99,11 +99,11 @@ models:
   qwen3p8-27b-ft-onprem:
     strategy: static
     targets:
-      - {provider: vllm_b200_ft, model_ref: adapter}
+      - {provider: vllm_onprem_ft, model_ref: adapter}
   qwen3p8-27b-base:
     strategy: static
     targets:
-      - {provider: vllm_b200_ft, model_ref: base}
+      - {provider: vllm_onprem_ft, model_ref: base}
   frontier-ref:
     strategy: static
     targets:

@@ -4,9 +4,9 @@
   "requests": 100,
   "configured_weights": "base90/onpremFT5/FireworksFT5",
   "observed_targets": {
-    "vllm_b200_ft/qwen3p8-27b-base": 96,
+    "vllm_onprem_ft/qwen3p8-27b-base": 96,
     "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 3,
-    "vllm_b200_ft/metrum-ft": 1
+    "vllm_onprem_ft/metrum-ft": 1
   },
   "shadow_baseline": "qwen3p8-27b-base",
   "shadow_recommendation_recorded": true,

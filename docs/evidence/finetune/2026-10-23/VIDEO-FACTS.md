@@ -3,8 +3,9 @@
 
 # Video facts — measured experiment, rejected candidate
 
-**Do not promote. Base remains default.** Draft [PR354](https://github.com/metrum-ai/router/pull/354)
-is a reproducible workflow/negative-result example, pending product acceptance.
+**Do not promote. Base remains default.** [PR354](https://github.com/metrum-ai/router/pull/354)
+merged at2026-10-23T12:07:55Z as`0ea1e6f3`: maintainer accepted the reproducible
+workflow/negative-result example, NOT this candidate. Run 2 is tracked in #355.
 All paid resources and the owned provider SSH key are API-verified deleted.
 No production traffic, in-house human labeling, quality-equivalent ROI or invoice claim.
 
@@ -16,8 +17,12 @@ Source:`training-runtime-v2.json`, `dataset-manifest.json`, `prepared-tokenizati
   image, BF16 compute, F32 adapter storage; no Unsloth fallback or managed Fireworks SFT.
 - Cheapest qualifying advertised approved Shadeform candidate in the recorded
   search: **1×RTX PRO6000 Blackwell Server Edition,96GB, $2.19/h**,192GB RAM,
-  750GB disk, driver580.126.09. Provider alias `vllm_b200_ft` is historical,
-  **not** a B200 hardware claim. Vast B200 availability was checked, not rented.
+  750GB disk, driver580.126.09. The hardware-neutral provider label is now
+  `vllm_onprem_ft`; this is publication-label normalization, not a rerun.
+  **No B200 training occurred.** Two brief failed Vast B200 startup rentals were
+  deleted without training; a later availability recheck caused no new rental.
+  Original receipts/join hashes and all metrics are preserved; see the run-2
+  `provider-alias-publication-audit.json` for the label-only update audit.
 - Corrected **2000/500/300** train/val/test; **1333/333/200** tool targets. Actual
   prepared-cache inspection proves supervised tool tokens were retained.
   Longest observed train example3929 tokens;8192 is the configured cap only.

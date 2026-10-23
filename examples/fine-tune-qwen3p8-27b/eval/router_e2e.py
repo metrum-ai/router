@@ -24,10 +24,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--router-bin', type=Path, required=True)
     a = p.parse_args()
-    seen = {'fireworks_ft': 0, 'vllm_b200_ft': 0}
+    seen = {'fireworks_ft': 0, 'vllm_onprem_ft': 0}
     seen_models = {'mock-adapter':0,'mock-base':0}
     servers = []
-    for provider, port in [('fireworks_ft', 18531), ('vllm_b200_ft', 18532)]:
+    for provider, port in [('fireworks_ft', 18531), ('vllm_onprem_ft', 18532)]:
         def handler(name):
             class Handler(BaseHTTPRequestHandler):
                 def log_message(self, *args):
@@ -87,19 +87,19 @@ def main():
             x = yaml.load(config_text, Loader=Loader)
             x['server']['decision_telemetry'] = {'enabled':True}
             x['providers'] = {}
-            for provider, port in [('fireworks_ft',18531),('vllm_b200_ft',18532)]:
+            for provider, port in [('fireworks_ft',18531),('vllm_onprem_ft',18532)]:
                 x['providers'][provider] = {'dialect': 'openai-chat', 'base_url': f'http://127.0.0.1:{port}/v1',
                     'models': {'adapter': {'model': 'mock-adapter', 'input_price_per_million_usd': 1,
                     'output_price_per_million_usd': 1, 'tool_support': {'openai_chat': ['tools','tool_choice']}}}}
-            x['providers']['vllm_b200_ft']['models']['base'] = {
-                **x['providers']['vllm_b200_ft']['models']['adapter'],'model':'mock-base'}
+            x['providers']['vllm_onprem_ft']['models']['base'] = {
+                **x['providers']['vllm_onprem_ft']['models']['adapter'],'model':'mock-base'}
             x['models'] = {'qwen3p8-27b-ft': {'strategy': 'weighted', 'targets': [
                 {'provider': n, 'model_ref': 'adapter', 'weight': 50} for n in seen]}}
             x['models']['qwen3p8-27b-ft-shadow'] = {'strategy':'external',
                 'external_policy': {'url':'http://127.0.0.1:18533/route','mode':'shadow',
                     'allow_hosts':['127.0.0.1'],'include_request':False,'on_error':'fail_closed'},
-                'targets':[{'provider':'vllm_b200_ft','model_ref':'base'},
-                           {'provider':'vllm_b200_ft','model_ref':'adapter'}]}
+                'targets':[{'provider':'vllm_onprem_ft','model_ref':'base'},
+                           {'provider':'vllm_onprem_ft','model_ref':'adapter'}]}
             x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
             x['callers'][0]['quota']['day']['requests'] = 45
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
@@ -133,7 +133,7 @@ def main():
             chat(messages, 'qwen3p8-27b-ft-shadow')
             assert policy_calls == [True]
             assert seen['fireworks_ft'] == before['fireworks_ft']
-            assert seen['vllm_b200_ft'] == before['vllm_b200_ft'] + 1
+            assert seen['vllm_onprem_ft'] == before['vllm_onprem_ft'] + 1
             assert seen_models == {'mock-adapter':44,'mock-base':1}
             try:
                 chat(messages)
