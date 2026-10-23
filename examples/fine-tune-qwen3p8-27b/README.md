@@ -241,24 +241,27 @@ go run ./cmd/metrum-ai-routerctl callers generate \
   --token-out /secure/router.token --config /secure/ft.yaml --write
 ```
 
-Before any localhost/test inference, set **every** generated caller (including
-base, candidate, grader and other-project keys) to ample test capacity; do not
-inherit the caller CLI's conservative defaults. For this documented workflow:
+Before starting any localhost/test workflow, set **every** generated caller to
+high test capacity (not production defaults or permission to spend):
 
 ```yaml
-rate: {concurrent: 64, rpm: 20000, tpm: 100000000}
+rate: {rpm: 100000, tpm: 100000000, concurrent: 256}
 quota:
-  day: {requests: 1000000, tokens: 1000000000}
-  month: {requests: 10000000, tokens: 10000000000}
+  day: {requests: 10000000, tokens: 2000000000}
+  month: {requests: 100000000, tokens: 20000000000}
 ```
 
-Check effective project/group profiles as well: none may throttle the test.
-The router-loop local/full generators set these local-only values explicitly;
-they are **not production quota recommendations or monetary budget controls**.
-A pre-route429 invalidates that measurement: retain it and its costs, publish an
-infrastructure-only amendment and rerun the **whole affected cohort**, never
-selectively. The synthetic mock e2e is explicitly an **intentional quota test**:
-it uses high rates but exactly45 successful requests before verifying denial.
+`scripts/local_dev_bootstrap.py` applies these local-only defaults automatically;
+the generic caller-generation CLI retains its production-oriented defaults, so
+apply the block above when using that CLI directly. Project identities and static
+model groups do not have independent rate/quota fields in this config schema;
+configure every key associated with each project/group. Script canaries set
+`script_max_concurrent: 256`. Load/replay/judge keys need the same headroom.
+Normal mock e2e uses high limits. Only `eval/router_e2e.py --test-rate-limiting`
+intentionally installs a tiny quota and labels its result `rate-limiting-test`.
+Any unexpected pre-route429 invalidates the entire run: document an infra-only
+amendment and rerun the whole run, never selected cases. Upstream provider429s
+must be reported separately and never silently retried or reclassified.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
 not an hourly GPU spending cap. It is a dynamic-strategy eligibility control;
 weighted/external strategies do not enforce it. The actual AMD external-policy

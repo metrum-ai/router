@@ -41,6 +41,7 @@ def wait_ready(process, url, timeout=60, opener=None):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--router-bin', type=Path, required=True)
+    p.add_argument('--test-rate-limiting', action='store_true', help='EXPLICIT quota test:45 requests then intentional denial; not an eval setting')
     a = p.parse_args()
     seen = {'fireworks_ft': 0, 'vllm_b200_ft': 0}
     seen_models = {'mock-adapter':0,'mock-base':0}
@@ -118,11 +119,16 @@ def main():
                     'allow_hosts':['127.0.0.1'],'include_request':False,'on_error':'fail_closed'},
                 'targets':[{'provider':'vllm_b200_ft','model_ref':'base'},
                            {'provider':'vllm_b200_ft','model_ref':'adapter'}]}
+            assert all(c['rate']['concurrent'] >= 256 and c['rate']['rpm'] >= 100000
+                       and c['quota']['month']['tokens'] >= 20000000000 for c in x['callers']), 'bootstrap must emit high test limits'
             x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
-            x['callers'][0]['rate'] = {'rpm':20000,'tpm':100000000,'concurrent':64}
-            # INTENTIONAL LIMIT TEST: exactly45 successes then quota denial.
-            # This is not a quality/load cohort; rates otherwise stay high.
-            x['callers'][0]['quota']['day']['requests'] = 45
+            for caller in x['callers']:
+                caller['rate'] = {'rpm':100000,'tpm':100000000,'concurrent':256}
+                caller['quota'] = {'day':{'requests':10000000,'tokens':2000000000},
+                                   'month':{'requests':100000000,'tokens':20000000000}}
+            # EXPLICIT RATE-LIMITING TEST ONLY, isolated from ordinary smoke/eval.
+            if a.test_rate_limiting:
+                x['callers'][0]['quota']['day']['requests'] = 45
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
             log = (run / 'process.log').open('w')
             process = subprocess.Popen([str(a.router_bin.resolve()), '--config', str(run/'config.yaml')], cwd=ROOT, stdout=log, stderr=log)
@@ -151,11 +157,12 @@ def main():
             assert seen['fireworks_ft'] == before['fireworks_ft']
             assert seen['vllm_b200_ft'] == before['vllm_b200_ft'] + 1
             assert seen_models == {'mock-adapter':44,'mock-base':1}
-            try:
-                chat(messages)
-                raise AssertionError('request budget not enforced')
-            except urllib.error.HTTPError as exc:
-                assert exc.code in (402,403,429), exc.code
+            if a.test_rate_limiting:
+                try:
+                    chat(messages)
+                    raise AssertionError('request budget not enforced')
+                except urllib.error.HTTPError as exc:
+                    assert exc.code in (402,403,429), exc.code
             assert all(v > 0 for v in seen.values()), seen
             process.terminate();process.wait(timeout=20);process=None;log.close()
             shadow_recorded = False
@@ -166,7 +173,8 @@ def main():
                     shadow_recorded |= b'shadow_recommended_candidate' in content
             assert shadow_recorded, 'shadow recommendation not recorded'
             print(json.dumps({'tool_continuation':'pass','created_file':True,'weighted_targets':seen,
-                'request_budget':'pass','intentional_limit_test':True,'prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
+                'purpose':'rate-limiting-test' if a.test_rate_limiting else 'tool-continuation-routing',
+                'request_budget':'pass' if a.test_rate_limiting else 'not-tested-high-limits','prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
     finally:
         if process is not None:
             process.terminate();process.wait(timeout=20)

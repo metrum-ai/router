@@ -169,12 +169,32 @@ model. `canary-evidence.json` joins actual request IDs to selected provider/mode
 Replace that target with the real FT endpoint only after FT training/serving;
 retain caller quotas, rollback and preregistered regression gates.
 
+## Local test limit policy
+
+All normal launcher/full-cohort caller keys use rpm100000/tpm100000000,
+concurrency256; quotas day10000000requests/2000000000tokens and
+month100000000requests/20000000000tokens. This is local capacity headroom, not
+production defaults or spend authorization; the independent teacher-dollar
+reservation and GPU lease guards remain unchanged. Every project-associated key
+uses these values. Projects/static groups have no separate rate/quota fields in
+the schema; script canary concurrency is explicitly256. Evaluation/load/replay
+keys generated elsewhere must receive equivalent headroom before use.
+
+Normal canaries do not install tiny quotas. The **only** exception is explicit
+`local.py --test-rate-limiting`, which labels the canary evidence
+`purpose: rate-limiting-test` and deliberately tests quota1/denial429. Do not use
+that option for collection/evaluation measurements. Any unexpected pre-route429
+requires a documented infra-only amendment and **whole-run** rerun, never selective
+retry/refill. Audit provider429 attempts separately from router-owned limits.
+
 ## Measured example, not a promotion
 
 The initial real-provider sample collected nine tasks per key (18 episodes),
 with eight real tool-result continuations and seven deterministic successes per
 key. Export contained only seven support rows: 2 train / 2 val / 3 test.
-The canary's second support request was denied by its caller budget (429).
+That historical canary included an intentional quota1 **rate-limiting test**:
+the second support request was denied (429). New normal canaries keep high limits;
+this denial test now requires the explicit option above.
 Public list prices × observed router tokens estimate $0.00210315 per nine-task
 caller cohort, $0.00030045 per success including failed-task tokens. These are
 not invoices or production ROI. All debugging plus collection/consumer validation estimated $0.0318.
