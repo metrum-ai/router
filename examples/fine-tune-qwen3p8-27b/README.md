@@ -6,6 +6,23 @@
 Work in progress for #326. Do not infer training completion or promotion from
 this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 
+## AMD Instinct
+
+The [AMD preparation runbook](amd/README.md) covers official `rocm/pytorch` and
+`rocm/vllm` planning, loopback-only serving, environment capture and two-step
+toolkit smoke requirements for MI325X (#359). Official ROCm tensor/base-tool
+proofs and a PEFT two-step smoke pass; full training/quality parity remains
+unmeasured. Pinned Axolotl dependency resolution failed; the documented
+Transformers/PEFT alternative keeps the frozen recipe. It requires #358's governed
+router-exported dataset, not the direct-download dataset below. See
+`docs/evidence/finetune-amd/2026-10-23/` for status and claim limits.
+
+The maintainer authorized the Fireworks-hosted open-weight teacher for the
+synthetic Acme/mock-tool technical test (#358), not general customer traffic.
+Record `teacher_terms_decision` in the export manifest and evidence. Users must
+choose a teacher whose model license and provider terms permit training on
+outputs, and verify those rights before enabling export for training.
+
 ## 1. Industry problem: training is not safe production
 
 Fine-tunes rarely reach production safely: a public training corpus is not the
