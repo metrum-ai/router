@@ -13,6 +13,12 @@ function names(fields: ReadonlyArray<readonly [string, string, string]>) {
 }
 
 describe("admin report filters", () => {
+  test("distinguishes free count-token events in request rows", () => {
+    const tab = tabById("requests");
+    if (!tab) throw new Error("requests tab missing");
+    const columns = columnsForTab(tab, [{ requestKind: "count_tokens", usageSource: "none", inputTokens: 0 }]);
+    expect(columns.map(column => column.key)).toContain("requestKind");
+  });
   test("keeps the compatibility filter list as global filters followed by tab and pagination filters", () => {
     expect(filterFields).toEqual([...globalFilterFields, ...tabFilterFields, ...paginationFilterFields]);
   });

@@ -324,6 +324,7 @@ function savingsBreakdownColumns(primaryLabel: string, secondaryLabel?: string):
 }
 
 const requestColumns: ReportColumn[] = [
+  { key: "requestKind", label: "Request kind" },
   { key: "usageSource", label: "Usage source" },
   { key: "timeUtc", label: "Time" },
   { key: "requestId", label: "Request ID" },

@@ -776,6 +776,7 @@ type adminReportTableRow struct {
 type adminReportRequest struct {
 	CacheReadInputTokens            *int    `json:"cacheReadInputTokens,omitempty"`
 	CacheWriteInputTokens           *int    `json:"cacheWriteInputTokens,omitempty"`
+	RequestKind                     string  `json:"requestKind"`
 	UsageSource                     string  `json:"usageSource"`
 	TimeUTC                         string  `json:"timeUtc"`
 	RequestID                       string  `json:"requestId"`
@@ -1925,6 +1926,7 @@ func (s *Service) handleAdminReportRequests(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	filters.IncludeRequestEvents = true
 	if !validateAdminCursorPageParams(w, filters) {
 		return
 	}
@@ -5146,6 +5148,9 @@ func adminSavingsAggFor(data map[string]*adminSavingsAgg, key string) *adminSavi
 }
 
 func (a *adminSavingsAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
+	if row.RequestKind == "count_tokens" {
+		return
+	}
 	if row.UsageSource == "estimated" {
 		a.EstimatedRequests++
 		a.EstimatedInputTokens += int64(row.InputTokens)
@@ -5519,6 +5524,7 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 	return adminReportRequest{
 		CacheReadInputTokens:            row.CachedInputTokens,
 		CacheWriteInputTokens:           row.CacheWriteInputTokens,
+		RequestKind:                     row.RequestKind,
 		UsageSource:                     row.UsageSource,
 		TimeUTC:                         formatUsageTime(row.TS),
 		RequestID:                       row.RequestID,

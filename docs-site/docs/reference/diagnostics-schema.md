@@ -62,6 +62,7 @@ This section is generated from the router usage and content-capture schema used 
 
 | Column | Scalar type | Nullable | Populated when | Safe to log/share | Example or range |
 |---|---|---|---|---|---|
+| `request_kind` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `usage_source` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `request_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `req_0123456789abcdef0123456789abcdef` |
 | `ts` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `2026-06-29T12:34:56Z` |

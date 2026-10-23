@@ -810,17 +810,25 @@ def test_anthropic_thinking_deltas_and_redacted_blocks(api, router):
 
 
 def test_anthropic_count_tokens_aliases(api, router):
-    """ANTH-10 (cheap): count_tokens aliases + unauthorized model reject before upstream."""
+    """ANTH-10: native exact count aliases proxy; denied callers never reach upstream."""
     for path in ("/anthropic/v1/messages/count_tokens", "/v1/messages/count_tokens"):
         FakeUpstream.reset_state()
-        status, _, raw = api(
+        scenario = ScriptedScenario().expect(
+            path_suffix="/v1/messages/count_tokens", response={"input_tokens": 12345}
+        )
+        FakeUpstream.scenario = scenario
+        status, headers, raw = api(
             path,
             {"model": "messages", "messages": [{"role": "user", "content": PROMPT_CANARY}]},
         )
         assert status == 200, path
-        body = _body(raw)
-        assert body["input_tokens"] > 0
-        assert router["upstream"].calls == []
+        assert _body(raw)["input_tokens"] == 12345
+        assert headers["X-Metrum-Usage-Source"] == "reported"
+        scenario.assert_complete()
+        assert len(router["upstream"].calls) == 1
+        forwarded = router["upstream"].calls[0]["body"]
+        assert forwarded["model"] == "synthetic-messages"
+        assert forwarded["messages"] == [{"role": "user", "content": PROMPT_CANARY}]
 
     FakeUpstream.reset_state()
     status, _, raw = api(

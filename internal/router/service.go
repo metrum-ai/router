@@ -973,7 +973,9 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// Bound concurrent body buffering before ReadAll (16 MiB cap).
+	rc.rec.RequestKind = "count_tokens"
+	// Counting is a free control-plane operation: hold concurrency only, never
+	// reserve or settle inference tokens (even for a heuristic fallback).
 	conc := s.quota.AcquireConcurrency(rc.caller)
 	if !conc.OK {
 		s.writeAdmissionError(w, rc, conc)
@@ -1017,27 +1019,11 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusForbidden, "model-not-found")
 		return
 	}
-	s.quota.Release(rc.caller)
-	bodyConcurrencyHeld = false
-	ad := s.quota.Admit(rc.caller, estimateTokens(req))
-	if !ad.OK {
-		s.writeAdmissionError(w, rc, ad)
-		return
-	}
-	defer s.quota.ReleaseReservation(rc.caller, ad.Reservation)
-	defer s.quota.Release(rc.caller)
 	rc.rec.RequestedModel = req.Model
-	rc.rec.QuotaState = ad.QuotaState
-	rc.rec.KeyState = ad.KeyState
-	tokens := estimateTokens(req)
-	rc.rec.Usage = Usage{InputTokens: tokens, TotalTokens: tokens}
-	rc.rec.UsageSource = "estimated"
-	if _, _, err := s.quota.RecordTokens(rc.caller, ad.Reservation, rc.rec.Usage); err != nil {
-		s.writeError(w, rc, http.StatusServiceUnavailable, "quota-state-error")
-		return
-	}
-	defer s.finish(rc, http.StatusOK, nil)
-	writeJSON(w, http.StatusOK, map[string]any{"input_tokens": tokens})
+	rc.rec.QuotaState = conc.QuotaState
+	rc.rec.KeyState = conc.KeyState
+	rc.rec.UsageSource = "none"
+	s.serveCountTokens(w, r, rc, req, body)
 }
 
 func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect string) {
@@ -1557,6 +1543,11 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Warnings:             []string{},
 		},
 	}
+	// Mark count requests before authentication errors can be recorded.
+	switch r.URL.Path {
+	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
+		rc.rec.RequestKind = "count_tokens"
+	}
 	// Recognized inactive credentials retain safe attribution, never authorization.
 	// Unknown credentials have no caller and cannot acquire a report domain.
 	rc.rec.TokenID = tokenID
@@ -1597,7 +1588,11 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	if rc.rec.UsageSource == "" {
 		rc.rec.UsageSource = "none"
 	}
-	rc.trace("quota_settlement", fmt.Sprintf("usage_source=%s input_tokens=%d output_tokens=%d", rc.rec.UsageSource, rc.rec.Usage.InputTokens, rc.rec.Usage.OutputTokens), Target{}, 0, status, "", false, 0)
+	traceEvent := "quota_settlement"
+	if rc.rec.RequestKind == "count_tokens" {
+		traceEvent = "count_tokens_complete"
+	}
+	rc.trace(traceEvent, fmt.Sprintf("usage_source=%s input_tokens=%d output_tokens=%d", rc.rec.UsageSource, rc.rec.Usage.InputTokens, rc.rec.Usage.OutputTokens), Target{}, 0, status, "", false, 0)
 	populateReasoningUsageCoverage(&rc.rec)
 	s.sanitizeDiagnosticRecord(&rc.rec)
 	s.recordCacheStats(rc)
@@ -1632,7 +1627,7 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 }
 
 func (s *Service) dispatchExternalPolicyFeedback(rc *requestContext) {
-	if s == nil || rc == nil || !strings.EqualFold(rc.rec.Strategy, "external") {
+	if s == nil || rc == nil || rc.rec.RequestKind == "count_tokens" || !strings.EqualFold(rc.rec.Strategy, "external") {
 		return
 	}
 	group := strings.TrimSpace(rc.rec.ResolvedGroup)
@@ -1915,7 +1910,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 			Requirements: routingRequirements(req, callerDialect),
 		}
 	}
-	contractResult := s.targetsForContract(groupName, group, targets, req, callerDialect)
+	contractResult := contractFilterResult{targets: targets}
+	if rc == nil || rc.rec.RequestKind != "count_tokens" {
+		contractResult = s.targetsForContract(groupName, group, targets, req, callerDialect)
+	}
 	targets = contractResult.targets
 	if len(targets) == 0 {
 		requirements := append(routingRequirements(req, callerDialect), defaultString(contractResult.reason, "contract-quality-floor"))
@@ -3115,6 +3113,12 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 }
 
 func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *IRRequest, callerDialect string) []Target {
+	// Counting does not require an inference bridge, tool execution support or
+	// room to generate output. In particular compaction counts can exceed the
+	// inference context limit; unsupported transports use a marked estimate.
+	if rc != nil && rc.rec.RequestKind == "count_tokens" {
+		return targets
+	}
 	requiredModalities := requestInputModalities(req)
 	requiresStructuredOutput := requestHasStructuredOutput(req)
 	estimate := s.requestTokenEstimateForSelection(rc, req, callerDialect)
@@ -3699,7 +3703,7 @@ func cloneMap(in map[string]any) map[string]any {
 }
 
 func populateThroughput(rec *logRecord) {
-	if rec == nil {
+	if rec == nil || rec.RequestKind == "count_tokens" {
 		return
 	}
 	rec.UpstreamOutputTPS = tokensPerSecond(rec.Usage.OutputTokens, rec.UpstreamMS)
@@ -3710,6 +3714,11 @@ func populateThroughput(rec *logRecord) {
 
 func populateCosts(rec *logRecord) {
 	if rec == nil {
+		return
+	}
+	if rec.RequestKind == "count_tokens" {
+		rec.Usage = Usage{}
+		rec.InputCostUSD, rec.OutputCostUSD, rec.ImageCostUSD, rec.TotalCostUSD = 0, 0, 0, 0
 		return
 	}
 	if rec.Usage.InputTokens > 0 && rec.InputPricePerMillionUSD == 0 {

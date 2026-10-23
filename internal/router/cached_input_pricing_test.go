@@ -345,7 +345,7 @@ func TestCachedInputPricingMigrationPreservesHistoricalNulls(t *testing.T) {
 	if db.Migrator().HasColumn(&usageRecord{}, "CachedInputTokens") {
 		t.Fatal("cached columns must not exist before migration")
 	}
-	if err := db.Omit("CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD").Create(&usageRecord{RequestID: "hist", TS: "2026-09-01T00:00:00Z"}).Error; err != nil {
+	if err := db.Omit("CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind").Create(&usageRecord{RequestID: "hist", TS: "2026-09-01T00:00:00Z"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := applyUsageCachedInputPricingMigration(db); err != nil {

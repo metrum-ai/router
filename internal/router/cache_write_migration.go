@@ -19,4 +19,6 @@ func applyUsageCacheWriteMigration(db *gorm.DB) error {
 	}
 	return verifyUsageCacheWriteMigration(db)
 }
-func verifyUsageCacheWriteMigration(db *gorm.DB) error { return ensureUsageRelationalSchema(db) }
+func verifyUsageCacheWriteMigration(db *gorm.DB) error {
+	return ensureUsageRelationalSchemaExcept(db, usageRequestKindColumns)
+}

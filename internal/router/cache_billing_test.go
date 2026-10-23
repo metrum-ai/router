@@ -22,7 +22,7 @@ func TestCacheBillingMigrationBackfill(t *testing.T) {
 		}
 	}
 	for _, state := range []string{"hit", "miss", "unknown"} {
-		if err := db.Omit("CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD").Create(&usageRecord{RequestID: state, Cache: state, TotalCostUSD: 2}).Error; err != nil {
+		if err := db.Omit("CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind").Create(&usageRecord{RequestID: state, Cache: state, TotalCostUSD: 2}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
