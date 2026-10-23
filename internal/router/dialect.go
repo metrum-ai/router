@@ -222,7 +222,7 @@ func encodeGeminiGenerateContent(req *IRRequest) ([]byte, error) {
 		return nil, fmt.Errorf("gemini generateContent request is required")
 	}
 	if !geminiGenerateContentTextEligible(req) {
-		return nil, fmt.Errorf("gemini generateContent codec supports non-streaming text requests only")
+		return nil, fmt.Errorf("gemini generateContent codec supports text requests only (streaming callers are synthesized)")
 	}
 	contents := make([]map[string]any, 0, len(req.Messages)+1)
 	for _, message := range req.Messages {
@@ -269,7 +269,7 @@ func encodeGeminiGenerateContent(req *IRRequest) ([]byte, error) {
 }
 
 func geminiGenerateContentTextEligible(req *IRRequest) bool {
-	if req == nil || req.Stream || len(req.Tools) > 0 || requestHasImages(req) || requestHasStructuredOutput(req) || requestRequiresReasoning(req) {
+	if req == nil || len(req.Tools) > 0 || requestHasImages(req) || requestHasStructuredOutput(req) || requestRequiresReasoning(req) {
 		return false
 	}
 	for _, message := range req.Messages {
@@ -622,7 +622,22 @@ func geminiStopReason(reason string) string {
 func geminiUsageFromMap(value any) Usage {
 	usage, _ := value.(map[string]any)
 	input, _ := numberAsInt(usage["promptTokenCount"])
+	toolInput, _ := numberAsInt(usage["toolUsePromptTokenCount"])
+	input += toolInput
 	output, _ := numberAsInt(usage["candidatesTokenCount"])
+	var reasoning *int
+	if thoughts, present := numberAsInt(usage["thoughtsTokenCount"]); present {
+		// Gemini excludes thoughts from candidates but bills them as output.
+		output += thoughts
+		reasoning = &thoughts
+	}
+	imageTokens := 0
+	for _, detail := range valueAsSlice(usage["promptTokensDetails"]) {
+		if m, ok := detail.(map[string]any); ok && stringValue(m["modality"]) == "IMAGE" {
+			n, _ := numberAsInt(m["tokenCount"])
+			imageTokens += n
+		}
+	}
 	total, _ := numberAsInt(usage["totalTokenCount"])
 	if total == 0 {
 		total = input + output
@@ -631,7 +646,7 @@ func geminiUsageFromMap(value any) Usage {
 	if n, present := numberAsInt(usage["cachedContentTokenCount"]); present {
 		cached = validatedCachedInputTokens(&n, input)
 	}
-	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total, CachedInputTokens: cached}
+	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total, CachedInputTokens: cached, ReasoningTokens: reasoning, InputImageTokens: imageTokens}
 }
 
 func decodeResponsesPassthrough(raw []byte, model string) (*IRResponse, error) {

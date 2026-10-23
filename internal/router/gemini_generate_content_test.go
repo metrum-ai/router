@@ -110,9 +110,8 @@ func TestGeminiGenerateContentDispatchFailsClosed(t *testing.T) {
 		t.Fatal("unknown endpoint dialect did not fail closed")
 	}
 	for name, body := range map[string]string{
-		"stream": `{"model":"g","stream":true,"messages":[{"role":"user","content":"hello"}]}`,
-		"tools":  `{"model":"g","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"x"}}]}`,
-		"image":  `{"model":"g","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`,
+		"tools": `{"model":"g","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"x"}}]}`,
+		"image": `{"model":"g","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			shaped, err := decodeRequest("openai-chat", []byte(body), nil)
