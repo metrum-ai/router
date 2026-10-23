@@ -209,10 +209,27 @@ go run ./cmd/metrum-ai-routerctl callers generate \
   --token-out /secure/router.token --config /secure/ft.yaml --write
 ```
 
-On that generated caller, set `rate.concurrent`, `rate.rpm`, `rate.tpm` and
-`quota.day`/`quota.month` request/token budgets. For example, 10,000 requests and
-10,000,000 tokens/day are bounded dev-evaluation budgets, not production defaults.
-The mock e2e proves an intentionally tiny request budget is enforced.
+Before starting any localhost/test workflow, set **every** generated caller to
+high test capacity (not production defaults or permission to spend):
+
+```yaml
+rate: {rpm: 100000, tpm: 100000000, concurrent: 256}
+quota:
+  day: {requests: 10000000, tokens: 2000000000}
+  month: {requests: 100000000, tokens: 20000000000}
+```
+
+`scripts/local_dev_bootstrap.py` applies these local-only defaults automatically;
+the generic caller-generation CLI retains its production-oriented defaults, so
+apply the block above when using that CLI directly. Project identities and static
+model groups do not have independent rate/quota fields in this config schema;
+configure every key associated with each project/group. Script canaries set
+`script_max_concurrent: 256`. Load/replay/judge keys need the same headroom.
+Normal mock e2e uses high limits. Only `eval/router_e2e.py --test-rate-limiting`
+intentionally installs a tiny quota and labels its result `rate-limiting-test`.
+Any unexpected pre-route429 invalidates the entire run: document an infra-only
+amendment and rerun the whole run, never selected cases. Upstream provider429s
+must be reported separately and never silently retried or reclassified.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
 not an hourly GPU spending cap. Zero list-token prices in this template cannot
 protect a rental budget; use the separate hard GPU lease watchdog and track real
