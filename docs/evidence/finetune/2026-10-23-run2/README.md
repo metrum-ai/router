@@ -20,15 +20,21 @@ Run1's historical base-default rollback does not authorize changing this group.
   authenticated join audits; frozen SDK grades retained, no new scoring.
 - [Merged grader infrastructure audit](nvidia-merged-grader-infrastructure-audit.json):
   **all400 semantic rubric calls rejected pre-route400unsupported_modality**.
-  Semantic primary/repeat comparison is UNUSABLE, not model degradation; no
-  offline regrade, score borrowing, selective redo or unauthorized rerental.
+  Original failed attempt is unusable, not model degradation. **Whole semantic
+  step repaired CPU-only**, signedcfbdb3f1a4 before800/800successful grader calls,
+  exact recorded outputs and frozen grader/rubric/prompts, no model generation.
+  [Repair receipt](semantic-step-repair.json): primary semantic78vs74/100,
+  combined83vs81/300, seeds77/76/80vs81/79/73of100; old attempt archived unchanged.
+  Empty legacy modalities override repaired to text, independent successful grader
+  proof before batch. No score borrowing/selective redo/GPU/dedicated deployment.
 - [Healthy shared teacher whole-arm rerun](shared-teacher-native-high-rerun.json):
  300episodes once,488authenticated requests,0transport errors; general completion
   is not semantic correctness. Prior227/300RPM429 teacher run remains archived
   as unusable infrastructure evidence. All earlier attempted costs retained.
 - [Economics and teardown](economics-and-teardown.json): NVIDIA instance/key
   API-deleted21:25:13Z, earlier vendor deployment/model API-deleted19:44:53Z.
-  Known quote/API estimates plus collection upper≈$51.04095, **plus unknown
+  Known quote/API estimates plus collection upper and new grading$2.881055
+  ≈$53.92200, **plus unknown
   upstream charges**; complete total/invoice null. Quotes are not ROI.
 
 Data: full governed1186train/221val/300test, shared pinned base and recipe;

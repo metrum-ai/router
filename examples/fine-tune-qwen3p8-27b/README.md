@@ -26,12 +26,18 @@ capacities differ. This aligns representation/dtype, **not pure hardware causali
 | Training inputtok/s |887.776|652.448|792690inputs each; NVIDIA count derived from exact template/input audit |
 | Mixed native batch quote/success |$0.00142097|$0.00129650|Whole300 serving-window allocation, failures/idle included; NOT lifecycle/semantic ROI |
 
-**Semantic parity is unusable:** all400 NVIDIA-merged primary/repeat rubric calls
-were rejected in our own harness pre-route with400`unsupported_modality`. Observed
-assertion failures remain archived but are not evidence of model degradation or
-a merge effect. No offline regrade, score borrowing or selective redo; no
-unauthorized rerental. Objective/native/load results above are separate endpoints.
-AMD publishes aggregates, so no invented paired cross-hardware uncertainty.
+**Whole semantic step repaired CPU-only under signed infrastructure amendment:**
+all400 per merged arm (800total) on exact recorded outputs, same frozen grader,
+rubric/prompts, zero model generation;800authenticated HTTP200/valid rubric results.
+Primary semantic78/100vs74/100; combined primary83/300vs81/300 (+.67pp, paired95%CI
+[−1.67,+3]pp). Seeds326/327/328:77/76/80vs81/79/73of100 (same100tasks repeated).
+New semantic pairs verified by exact prompt/vars/assertion hashes; other AMD
+aggregate endpoints do not justify invented paired CIs. Original failed400calls
+remain archived infrastructure, not model failure. Cause: explicit serialized
+`modalities: []` overrode grader text capability; repaired to text and one
+successful grader request proved before batch. [Repair receipt](../../docs/evidence/finetune/2026-10-23-run2/semantic-step-repair.json).
+New API estimate$2.881055 including proof, not invoice/ROI; CPU router/token removed.
+No GPU or vendor deployment created; original gate FAIL unchanged.
 
 | c1/8/32,32requests each,128output-token cap | NVIDIA | AMD |
 | --- | ---: | ---: |

@@ -8,9 +8,13 @@ not required+10pp. IFEval164→161/200, MMLU123→123/200; native258→265/300 d
 rescue the failed gate. See [original scalar gate](nvidia-original-gate.json).
 Additional NVIDIA merged vs AMD merged measurements are in
 [NVIDIA-AMD-COMPARISON](NVIDIA-AMD-COMPARISON.md), including quality, train/load
-throughput and correctly scoped unit/task costs. **Merged semantic grading is
-UNUSABLE:** all400rubric requests failed pre-route400unsupported_modality; no
-semantic degradation/merge-effect claim, offline regrade or score borrowing.
+throughput and correctly scoped unit/task costs. **Whole semantic grading repaired
+CPU-only under signedcfbdb3f1a4:** exact recorded outputs, unchanged grader/rubric,
+800/800authenticatedHTTP200. Primary semantic78vs74/100; combined83vs81/300;
+seeds77/76/80vs81/79/73of100. No model generation. Original400unsupported_modality
+failures retained as infrastructure, never model degradation; explicit serialized
+empty legacy modalities repaired to text after successful one-request regression.
+See [whole-step receipt](semantic-step-repair.json), including hashes/cost/cleanup.
 StrictJSON/rollback502 controls remain failed/incomplete, not production approval.
 
 Non-canary `support-agent` callers remain teacher; historical Run1 base-default
@@ -26,7 +30,8 @@ NVIDIA instance AND fresh SSH key API-deleted21:25:13Z after4.10355h, quote$8.98
 Explicit one-lease extension authorized00:19Z maximum, but cleanup occurred as soon
 as model work ended. Earlier vendor deployment/model API-deleted19:44:53Z, full
 lifecycle quote$32.39026; no new/recreated dedicated deployment permission.
-Known quotes/configured API estimates plus collection upper sum≈$51.04095 **plus
+Known quotes/configured API estimates plus collection upper and new semantic
+whole-step/proof$2.881055 sum≈$53.92200 **plus
 unknown upstream charges**; complete total/invoice remains null, below120USD
 operational stop on observed/reserved bounds. See [economics/teardown](economics-and-teardown.json).
 Raw data/gold/answers/joins/keys/weights/infrastructure remain outside Git.
@@ -112,7 +117,7 @@ additional native no-success-regression guard does not replace the original gate
 | Full #358 training export and mix/cohort |**FROZEN** train405native/523general/258letter; val74/100/47; test200/75/25. Dataset6c437067…; full manifest/row/view/gold/backend hashes in signed registration |
 | Teacher identity/output training terms |**CLEARED**: Fireworks gpt-oss-120b, scoped synthetic-test maintainer decision; model/license/provider-terms hashes recorded |
 | Actual run2 GPU / training / adapter |Fixed75steps/892.894s, adapter31c622a1…; extra BF16 safe merge85.2s/01c32fb9…; no checkpoint search |
-| Candidate vs teacher vs base quality/latency |Original numeric gate FAIL; native is separate. Shared teacher healthy rerun complete; merged semantic grader failure explicitly UNUSABLE |
+| Candidate vs teacher vs base quality/latency |Original numeric gate FAIL; native is separate. Shared teacher healthy rerun complete; merged semantic whole-step repaired800/800HTTP200, original failures archived |
 | Cost per successful captured task |NVIDIA merged whole-native-window quote/success$0.00142097 vs AMD$0.00129650; completion-only mixed harness, not semantic/lifecycle ROI |
 | Full quality/general-regression/sampling gates |Original complete frozen cohorts reduced without rescoring: +0.5pp exact fails+10pp. Supplemental objective/native/load comparisons available; semantic comparison invalid |
 | Run2 promotion |**REJECT original numeric gate; DO NOT PROMOTE**. Extra merged never rescues it; failed controls and incomplete economics remain |

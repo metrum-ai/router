@@ -37,10 +37,13 @@ customer resolution. Non-canary callers stay teacher.
   completion is NOT semantic correctness. No paired cross-hardware CI is invented
   from AMD's aggregates; different independently trained adapters/stacks confound
   any pure hardware causal claim.
-- **Merged semantic comparison is UNUSABLE**:400rubric requests failed in our
-  harness pre-route400unsupported_modality. Preserve observed assertions/costs,
-  but never call them semantic degradation, a merge effect, or valid savings.
-  No offline regrade, borrowed grades, selective redo or unauthorized rerental.
+- **Semantic infrastructure repaired CPU-only**: original400pre-route400failures
+  archived, never model degradation. Empty legacy modalities override fixed to
+  text; signedcfbdb3f1a4 amendment before whole800exact stored-output rubric calls,
+  same frozen grader/prompts/model, no model generation. All800HTTP200/valid grades;
+  semantic primary78vs74/100, combined83vs81/300; seeds77/76/80vs81/79/73of100.
+  Independent one-request success proved before batch; no borrowing/selective redo.
+  New API estimate$2.881055 including proof; CPU router/token removed, no GPU.
 - c1/8/32 outputtok/s NVIDIA merged25.874/194.144/658.473 vs AMD70.533/395.608/
   1400.613. Quoted USD/Moutput23.51155/3.13341/.92385 vs14.96542/2.66819/.75364.
   Same32request128cap synthetic SSE profiles,0errors, not sustained capacity.
@@ -57,7 +60,7 @@ NVIDIA instance AND fresh cloud key API-deleted21:25:13Z, lifecycle4.10355h/$8.9
 quote. Authorized extension permitted00:19Z maximum, but did not justify idling.
 Earlier vendor deployment/model API-deleted19:44:53Z/$32.39026lifecycle quote;
 no new/recreated dedicated deployment without permission. Known quote/API estimates
-plus collection upper≈$51.04095 **plus unknown upstream charges**; no complete
+plus collection upper and new semantic grading≈$53.92200 **plus unknown upstream charges**; no complete
 invoice total. GPU was remote, loopback served/tunneled, neural weights never on
 the coding-agent machine. Raw answers/joins/weights/secrets/infrastructure outsideGit.
 
@@ -71,5 +74,5 @@ model promotion. Run1 PR354 accepted a reproducible negative workflow, not a
 promoted model; it actually trained on RTX PRO6000, not B200.
 
 Sources: [RESULTS](RESULTS.md), [comparison](NVIDIA-AMD-COMPARISON.md), machine-readable
-receipts in this directory. Refs #359; semantic-grading decision/review remains
-explicit, no automatic issue-completion or current CI-green claim.
+receipts in this directory. Refs #359; authorized whole semantic step is complete,
+original FAIL unchanged; no automatic issue-completion or current CI-green claim.

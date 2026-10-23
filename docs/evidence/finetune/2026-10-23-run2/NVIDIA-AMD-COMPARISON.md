@@ -1,15 +1,21 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# NVIDIA merged vs AMD merged — measured comparison with semantic-grader limitation
+# NVIDIA merged vs AMD merged — measured comparison, whole semantic step repaired
 
 Refs #359. **Do not promote.** The original NVIDIA LoRA gate FAIL and AMD FAIL
 stand. This supplemental merged comparison cannot replace either gate.
-**Semantic primary/sampling parity is unusable:** all400 NVIDIA-merged rubric
-requests failed in our harness before routing (`400 unsupported_modality`).
-We retain every result/cost; no offline regrade, score borrowing, normalization,
-selective redo or unauthorized rerental. Those assertion failures are **not**
-evidence of semantic model degradation or a merge effect.
+**Semantic step repaired CPU-only under explicit orchestrator authority:** signed
+amendment `cfbdb3f1a4` preceded all800items (whole400 per merged arm). Original
+400NVIDIA rubric failures were infrastructure, not quality; retained separately.
+Explicit legacy `modalities: []` overrode text capability after CLI serialization;
+fixed grader target to text, proved one authenticated successful grader request,
+then executed the unchanged SDK rubric on exact recorded output strings/prompts.
+No protocol requirement for live regeneration at this grading step; no evaluated
+model calls, GPU, borrowing, normalization or selective redo. All800HTTP200 with
+valid rubric responses and authenticated frozen `gpt-4o-2024-11-20` joins.
+[Repair receipt](semantic-step-repair.json): new API estimate$2.881055 including
+proof; CPU router/token removed. Old failed attempt remains archived/disclosed.
 
 AMD source: merged PR#369 evidence at
 [`docs/evidence/finetune-amd/2026-10-23/`](https://github.com/metrum-ai/router/tree/666aa4c55320c78275a32e5a77855a7c8702e802/docs/evidence/finetune-amd/2026-10-23),
@@ -45,8 +51,9 @@ archived with costs, not selectively filtered.
 | MMLU-Pro fresh200 |124/200 (62%)|124/200 (62%)|0pp |
 | Native mock-tool success,200 |180/200 (90%)|180/200 (90%)|0pp |
 | All300 native harness success |264/300 (88%)|262/300 (87.33%)|+0.67pp |
-| Primary overall/semantic pass |**UNUSABLE grading infrastructure**|80/300|No valid delta |
-| Non-tool sampling seeds326/327/328 |**UNUSABLE grading infrastructure**|82/78/75 of100|No valid delta |
+| Primary overall (tools + semantic) |83/300|81/300|+0.67pp; paired95%CI[−1.67,+3]pp |
+| Primary semantic subset |78/100|74/100|+4pp |
+| Non-tool sampling seeds326/327/328 |77/76/80 of100|81/79/73 of100|−4/−3/+7pp |
 
 Native all300 includes75general **completion**, not semantic correctness, and
 25letter cases. NVIDIA has70/75general completions and14/25letters; AMD70/75 and
@@ -56,13 +63,15 @@ remains in every full denominator without dispatch. Native does not substitute
 for the original JSON-text endpoint. Sampling repeats the SAME100cases, not300
 independent observations.
 
-AMD publishes aggregate vectors, not per-case cross-hardware pairs: reported
-point deltas are descriptive; **no invented paired CI or subtraction of marginal
-CIs**. Within-arm bootstrap intervals remain in the JSON. See
-[nvidia-merged-grader-infrastructure-audit.json](nvidia-merged-grader-infrastructure-audit.json):
-observed merged primary5/300 assertion passes and sampling0/100 each are retained
-but cannot be interpreted as model-quality rates. Objective callbacks and native
-oracles are separate from the failed semantic grader.
+Original AMD publication supplies aggregates: no paired uncertainty is invented
+for those objective/native endpoints. For the newly authorized semantic step,
+private recorded exports provide exact prompt.raw+vars+assertion hash pairs,
+100/100 per stage (export completion order differs). Paired bootstrap10000seed326
+repeat delta95%CIs: [−12,+4]/[−11,+5]/[−1,+15]pp. These include zero and are not
+hardware causality or semantic equivalence. Old primary5/300 and repeats0/100 are
+retained as unusable infrastructure assertions in the original
+[grader audit](nvidia-merged-grader-infrastructure-audit.json), never model failure.
+New whole-step results supersede semantic-only fields, not original gate verdicts.
 
 ## Training wall time and throughput
 
@@ -120,7 +129,9 @@ Exact JSON tools5/200 both; IFEval161→170/200; MMLU123→124/200. Native265→
 paired delta−0.33pp,95%CI[−1.67,+1.0]pp; native tools180/200both. Raw final-content
 bytes match223/299comparable nonempty/nonerror pairs (74.58%), with1missing/schema
 case not counted as agreement. This diagnostic never removes quality cases and
-is not semantic equivalence. Semantic primary/repeat deltas remain unusable.
+is not semantic equivalence. Authorized repaired merged semantic primary78/100
+versus original LoRA83/100 (combined83vs88/300) is descriptive, not a replacement
+LoRA gate; original LoRA grades remain untouched.
 Serving c1/8/32 LoRA24.2412/185.1950/624.4912 vs merged25.8738/194.1444/658.4734
 outputtok/s. Separate original gate remains **FAIL**: base4→LoRA5/200 exact,
 +0.5pp below+10pp. Controls are not fully passed: strictJSON502 and rollback502
@@ -135,7 +146,8 @@ NVIDIA instance AND fresh cloud SSH key API-deleted at
 The authorized extension was used only briefly, not idled until00:19Z. Earlier
 Fireworks deployment/model were API-deleted19:44:53Z, lifecycle quote$32.39026;
 no recreation. Local routers/policy/tunnel stopped and caller tokens removed.
-Known quotes/configured API estimates plus collection upper sum≈$51.04095,
-**plus unknown failed-upstream charges**; complete total/invoice remains null.
-All neural weights stayed on the remote GPU host. #359 remains for review of this
-limited comparison/semantic-grading decision, not an automatic closure claim.
+Known pre-repair quotes/configured API estimates plus collection upper≈$51.04095,
+plus new whole-step/proof API estimate$2.881055 gives≈$53.92200 **plus unknown
+failed-upstream charges**; complete total/invoice remains null. NVIDIA neural
+weights stayed on the remote GPU host. CPU grader router/token also removed.
+Refs #359; measured comparison is delivered for review, no automatic closure.

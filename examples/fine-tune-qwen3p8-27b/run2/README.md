@@ -27,8 +27,12 @@ Low limits are retained **only** in labelled quota/rate negative tests.
 fixed75-step RTX PRO6000 training and the supplemental BF16 safe merge completed;
 see the metadata-only training/merge receipts. **Original NVIDIA LoRA gate FAIL**:
 exact4→5/200 (+0.5pp <required+10pp), no promotion. Supplemental merged comparison
-is measured but its400semantic grader calls failed pre-route400unsupported_modality:
-semantic parity UNUSABLE, no offline regrade/score borrowing or unauthorized rerent.
+is measured. Original400semantic grader failures were infrastructure, archived.
+Authorized CPU-only whole semantic step now repaired under signedcfbdb3f1a4:
+800/800authenticatedHTTP200 (400per merged arm), exact stored outputs and frozen
+SDK/grader/rubric/prompts, no model generation. Explicit legacy modalities:[]
+override repaired to text; one successful grader regression before batch.
+Receipt `semantic-step-repair.json` in evidence; no GPU/dedicated rental created.
 See the [NVIDIA/AMD comparison](../../../docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md)
 and its per-endpoint caveats. Native/objective/load measurements are distinct from
 semantic accuracy and cannot rescue either original NVIDIA or AMD FAIL.

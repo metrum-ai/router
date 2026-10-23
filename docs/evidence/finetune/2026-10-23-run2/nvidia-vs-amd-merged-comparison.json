@@ -27,7 +27,26 @@
       "load-amd-merged.json": "8cfabc66b61c634d22be94ff3fec62bac61683118f72edfe039e3662287f1889"
     }
   },
+  "semantic_repair": {
+    "status": "COMPLETE_CPU_ONLY_WHOLE_STEP_800_HTTP200",
+    "receipt": "semantic-step-repair.json",
+    "signed_amendment_commit": "cfbdb3f1a4222b5e7af986ff262fca9bcc43f862",
+    "primary_semantic_n_each": 100,
+    "nvidia_primary_semantic_passes": 78,
+    "amd_primary_semantic_passes": 74,
+    "api_estimate_usd_all_new": 2.881055,
+    "note": "Active quality below supersedes archived failed attempt. No model generation, frozen grader/rubric/prompt/output unchanged. Same100sampling cases repeated, independent adapters/stacks, no hardware causal claim. Original gates FAIL unchanged. Paired bootstrap10000 seed326, prompt.raw+vars+assertion hash pairs verified."
+  },
   "quality": {
+    "primary-exact": {"n_each": 200, "nvidia_rate": 0.025, "amd_rate": 0.035, "nvidia_minus_amd_pp": -1.0},
+    "ifeval-passed": {"n_each": 200, "nvidia_rate": 0.85, "amd_rate": 0.82, "nvidia_minus_amd_pp": 3.0},
+    "mmlu-pro-passed": {"n_each": 200, "nvidia_rate": 0.62, "amd_rate": 0.62, "nvidia_minus_amd_pp": 0.0},
+    "primary-passed": {"n_each": 300, "nvidia_rate": 0.27666666666666667, "amd_rate": 0.27, "nvidia_minus_amd_pp": 0.6666666666666667, "cross_hardware_paired_delta_ci95_pp": [-1.6666666666666667, 3.0], "valid_model_quality_comparison": true},
+    "sampling-326": {"n_each": 100, "nvidia_rate": 0.77, "amd_rate": 0.81, "nvidia_minus_amd_pp": -4.0, "cross_hardware_paired_delta_ci95_pp": [-12.0, 4.0], "valid_model_quality_comparison": true},
+    "sampling-327": {"n_each": 100, "nvidia_rate": 0.76, "amd_rate": 0.79, "nvidia_minus_amd_pp": -3.0, "cross_hardware_paired_delta_ci95_pp": [-11.0, 5.0], "valid_model_quality_comparison": true},
+    "sampling-328": {"n_each": 100, "nvidia_rate": 0.8, "amd_rate": 0.73, "nvidia_minus_amd_pp": 7.0, "cross_hardware_paired_delta_ci95_pp": [-1.0, 15.0], "valid_model_quality_comparison": true}
+  },
+  "archived_quality_before_semantic_infrastructure_repair": {
     "primary-exact": {
       "n_each": 200,
       "nvidia_rate": 0.025,
