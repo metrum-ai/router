@@ -15,8 +15,8 @@ func typedEvent(typ string, p map[string]any) Event {
 	return Event{Name: typ, Type: typ, Data: raw}
 }
 
-// AnthropicUpstreamToChatCaller accepts text and tool blocks only. Arguments are
-// opaque strings throughout; thinking remains on the native Anthropic route.
+// AnthropicUpstreamToChatCaller translates text and tools. Thinking and redacted
+// thinking blocks are skipped, never exposed to a caller that did not opt in.
 type AnthropicUpstreamToChatCaller struct {
 	IDs                         IdentifierEncoder
 	Model                       string
@@ -99,6 +99,8 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		}
 		t.blocks[p.Index] = p.Block.Type
 		switch p.Block.Type {
+		case "thinking", "redacted_thinking":
+			return nil, nil
 		case "text":
 			if p.Block.Text != "" {
 				return []Event{t.chat.chunk(map[string]any{"content": p.Block.Text}, nil)}, nil
@@ -124,6 +126,9 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		}
 	case "content_block_delta":
 		kind := t.blocks[p.Index]
+		if kind == "thinking" || kind == "redacted_thinking" {
+			return nil, nil
+		}
 		if kind == "text" && p.Delta.Type == "text_delta" {
 			return []Event{t.chat.chunk(map[string]any{"content": p.Delta.Text}, nil)}, nil
 		}

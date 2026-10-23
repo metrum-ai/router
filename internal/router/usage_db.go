@@ -3280,10 +3280,10 @@ func rowFromRecord(rec logRecord) usageRow {
 	}
 }
 
-// reasoningUsageCoverage preserves absence. Reasoning token counts are a subset
-// of output tokens and are intentionally not used in cost or throughput totals.
+// reasoningUsageCoverage counts coverage across all attempts, but returns only
+// selected-attempt reasoning, matching the served output token denominator.
+// Per-attempt rows retain failed-attempt reasoning for coverage exports.
 func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted, successful, reported int) {
-	var sum int
 	for _, attempt := range attempts {
 		attempted++
 		// HTTP 2xx alone is not a completed upstream attempt: read, size, or
@@ -3294,13 +3294,12 @@ func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted,
 		}
 		if attempt.ReasoningTokens != nil {
 			reported++
-			sum += *attempt.ReasoningTokens
+			if attempt.Selected {
+				total = attempt.ReasoningTokens
+			}
 		}
 	}
-	if reported > 0 {
-		return &sum, attempted, successful, reported
-	}
-	return nil, attempted, successful, 0
+	return total, attempted, successful, reported
 }
 
 func recordFromRow(row usageRow) *usageRecord {

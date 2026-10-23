@@ -66,9 +66,11 @@ type IRResponse struct {
 }
 
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	// Warnings records invalid upstream accounting without rejecting the response.
+	Warnings     []string `json:"warnings,omitempty"`
+	InputTokens  int      `json:"input_tokens"`
+	OutputTokens int      `json:"output_tokens"`
+	TotalTokens  int      `json:"total_tokens"`
 	// ReasoningTokens is nil when the upstream omitted the metric; reported zero remains distinct.
 	ReasoningTokens *int `json:"reasoning_tokens,omitempty"`
 	// CachedInputTokens is nil when the upstream omitted cache-read evidence; reported zero remains distinct.

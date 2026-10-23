@@ -219,6 +219,8 @@ func accumulateNativeSSE(resp *IRResponse, dialect string, frame []byte) (done, 
 				resp.StopReason = stringValue(delta["stop_reason"])
 			}
 			mergeStreamUsage(&resp.Usage, usageFromMap(payload["usage"]))
+			// Anthropic has no reported total; message_delta is output-only.
+			resp.Usage.TotalTokens = resp.Usage.InputTokens + resp.Usage.OutputTokens
 		case "message_stop":
 			return true, true
 		}
@@ -259,7 +261,8 @@ func mergeStreamUsage(dst *Usage, src Usage) {
 	if src.InputImageTokens != 0 {
 		dst.InputImageTokens = src.InputImageTokens
 	}
-	if dst.InputTokens != 0 || dst.OutputTokens != 0 {
+	dst.Warnings = append(dst.Warnings, src.Warnings...)
+	if dst.TotalTokens == 0 {
 		dst.TotalTokens = dst.InputTokens + dst.OutputTokens
 	}
 }

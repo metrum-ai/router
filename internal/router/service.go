@@ -1460,6 +1460,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.UpstreamReportedInputCostUSD = resp.Usage.UpstreamReportedInputCostUSD
 		rc.rec.UpstreamReportedOutputCostUSD = resp.Usage.UpstreamReportedOutputCostUSD
 		rc.rec.UpstreamReportedTotalCostUSD = resp.Usage.UpstreamReportedTotalCostUSD
+		resp.Warnings = append(resp.Warnings, resp.Usage.Warnings...)
 		rc.rec.Warnings = append(rc.rec.Warnings, resp.Warnings...)
 		if !resp.Streamed {
 			s.writeIR(w, dialect, resp, req.Stream, rc)
