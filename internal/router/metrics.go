@@ -32,6 +32,12 @@ type metricLabels struct {
 }
 
 type metricValues struct {
+	UsageTokenBreakdown
+	InputCostUSD             float64
+	CachedInputCostUSD       float64
+	CacheWriteCostUSD        float64
+	OutputCostUSD            float64
+	ImageCostUSD             float64
 	Requests                 int64
 	Errors                   int64
 	InputTokens              int64
@@ -83,6 +89,40 @@ func (m *metricsStore) Observe(rec logRecord) {
 	values.Requests++
 	if rec.Status >= 400 {
 		values.Errors++
+	}
+	reasoningTokens := rec.Usage.ReasoningTokens
+	if rec.ReasoningCoverageMeasured {
+		reasoningTokens = rec.ReasoningTokens
+	}
+	values.UsageTokenBreakdown.addUsage(usageRow{ReasoningTokens: reasoningTokens, CachedInputTokens: rec.Usage.CachedInputTokens, CacheWriteInputTokens: rec.Usage.CacheWriteInputTokens, ReasoningAttemptCount: rec.ReasoningAttemptCount, ReasoningSuccessfulAttemptCount: rec.ReasoningSuccessfulAttemptCount, ReasoningReportedAttemptCount: rec.ReasoningReportedAttemptCount})
+	if rec.Cache != "hit" {
+		cachedCost := 0.0
+		if rec.Usage.CachedInputTokens != nil && *rec.Usage.CachedInputTokens >= 0 && *rec.Usage.CachedInputTokens <= rec.Usage.InputTokens {
+			price := rec.InputPricePerMillionUSD
+			if rec.CachedInputPricePerMillionUSD != nil {
+				price = *rec.CachedInputPricePerMillionUSD
+			}
+			cachedCost = roundUSD(float64(*rec.Usage.CachedInputTokens) * price / 1_000_000)
+			if cachedCost > rec.InputCostUSD {
+				cachedCost = rec.InputCostUSD
+			}
+		}
+		writeCost := 0.0
+		if rec.Usage.CacheWriteInputTokens != nil && *rec.Usage.CacheWriteInputTokens >= 0 && *rec.Usage.CacheWriteInputTokens <= rec.Usage.InputTokens {
+			price := rec.InputPricePerMillionUSD
+			if rec.CacheWritePricePerMillionUSD != nil {
+				price = *rec.CacheWritePricePerMillionUSD
+			}
+			writeCost = roundUSD(float64(*rec.Usage.CacheWriteInputTokens) * price / 1_000_000)
+			if writeCost > rec.InputCostUSD-cachedCost {
+				writeCost = rec.InputCostUSD - cachedCost
+			}
+		}
+		values.CacheWriteCostUSD += writeCost
+		values.CachedInputCostUSD += cachedCost
+		values.InputCostUSD += rec.InputCostUSD - cachedCost - writeCost
+		values.OutputCostUSD += rec.OutputCostUSD
+		values.ImageCostUSD += rec.ImageCostUSD
 	}
 	values.InputTokens += int64(rec.Usage.InputTokens)
 	values.OutputTokens += int64(rec.Usage.OutputTokens)
@@ -166,6 +206,10 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 	var b strings.Builder
 	writeHelp(&b, "metrum_ai_router_requests_total", "Total authorized router requests.")
 	writeHelp(&b, "metrum_ai_router_errors_total", "Total authorized router requests ending in HTTP error status.")
+	writeHelp(&b, "metrum_ai_router_reasoning_tokens_total", "Reported reasoning tokens (a subset of output).")
+	writeHelp(&b, "metrum_ai_router_cache_write_input_tokens_total", "Reported cache-write input tokens (a subset of input).")
+	writeHelp(&b, "metrum_ai_router_cached_input_tokens_total", "Reported cache-read input tokens (a subset of input).")
+	writeHelp(&b, "metrum_ai_router_cost_usd_total", "Billed request cost in USD by component.")
 	writeHelp(&b, "metrum_ai_router_input_tokens_total", "Total input tokens by usage_source (reported, partial, estimated, or none).")
 	writeHelp(&b, "metrum_ai_router_output_tokens_total", "Total output tokens by usage_source (reported, partial, estimated, or none).")
 	writeHelp(&b, "metrum_ai_router_tokens_total", "Total tokens by usage_source (reported, partial, estimated, or none).")
@@ -248,6 +292,15 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 	for _, labels := range keys {
 		values := m.series[labels]
 		labelText := prometheusLabels(labels)
+		writeMetric(&b, "metrum_ai_router_reasoning_tokens_total", labelText, values.ReasoningTokens)
+		writeMetric(&b, "metrum_ai_router_cached_input_tokens_total", labelText, values.CachedInputTokens)
+		writeMetric(&b, "metrum_ai_router_cache_write_input_tokens_total", labelText, values.CacheWriteInputTokens)
+		for _, component := range []struct {
+			name string
+			cost float64
+		}{{"input", values.InputCostUSD}, {"cached_input", values.CachedInputCostUSD}, {"cache_write", values.CacheWriteCostUSD}, {"output", values.OutputCostUSD}, {"image", values.ImageCostUSD}} {
+			writeFloatMetric(&b, "metrum_ai_router_cost_usd_total", labelText+`,component="`+component.name+`"`, component.cost)
+		}
 		writeMetric(&b, "metrum_ai_router_requests_total", labelText, values.Requests)
 		writeMetric(&b, "metrum_ai_router_errors_total", labelText, values.Errors)
 		tokenLabels := labelText
