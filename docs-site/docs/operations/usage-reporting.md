@@ -41,8 +41,9 @@ CLI-generated reports are Markdown files with structured tables for usage, cost,
 
 ## Local Validation Capacity
 
-Local documentation proofs and API-compatibility profiles use explicit caller
-allowances of 2,400 RPM, 4,000,000 TPM and 160 concurrent requests, with high
+Local documentation proofs use explicit caller allowances of 2,400 RPM,
+4,000,000 TPM and 160 concurrent requests. API-compatibility profiles use
+100,000,000 TPM to admit the synthetic 10-million-output-cap cases, with high
 request/token quotas and lifetime budgets. The local bootstrap also raises its
 generated key instead of inheriting production-oriented key-generator defaults.
 These are infrastructure allowances, not recommended production budgets or a

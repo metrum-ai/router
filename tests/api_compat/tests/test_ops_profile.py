@@ -196,7 +196,7 @@ callers:
     token_sha256: {CALLER_DIGEST}
     allow: [chat, chat-fallback, chat-priced-fallback, chat-dead-first, chat-timeout, responses-fallback, messages-fallback, messages]
     # Infrastructure-only local capacity shared across allowed groups.
-    rate: &local_rate {{rpm: 2400, tpm: 4000000, concurrent: 160}}
+    rate: &local_rate {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: &local_quota {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
     key: &local_key {{lifetime_tokens: 40000000000}}
   - id: ops-other
