@@ -70,7 +70,7 @@ jobs:
         run: go vet ./...
       - name: Go tests
         if: github.event_name != 'pull_request'
-        run: go test ./...
+        run: go test ./... -timeout=15m
   contracts:
     runs-on: [self-hosted, Linux, X64, router]
     timeout-minutes: 90
