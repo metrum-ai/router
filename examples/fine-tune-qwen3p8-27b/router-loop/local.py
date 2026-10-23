@@ -22,6 +22,13 @@ import bcrypt
 import collect
 
 
+# Local/evaluation capacity, NOT production defaults or a spend authorization.
+# Keep headroom above collection8, governance16 and load-test workers.
+TEST_RATE = {'rpm': 100000, 'tpm': 100000000, 'concurrent': 256}
+TEST_QUOTA = {'day': {'requests': 10000000, 'tokens': 2000000000},
+              'month': {'requests': 100000000, 'tokens': 20000000000}}
+
+
 def config(out, env):
     callers, users, projects, memberships = [], [], [], []
     for team, variable in [('support', 'TRACE_SUPPORT_KEY'), ('it', 'TRACE_IT_KEY')]:
@@ -32,8 +39,8 @@ def config(out, env):
         memberships.append({'user_id': project, 'project': project, 'role': 'developer', 'status': 'active'})
         caller = {'id': project + '-prod', 'owner_user': project, 'project': project, 'environment': 'test',
                   'token_id': 'rtr_' + project, 'token_sha256': hashlib.sha256(env[variable].encode()).hexdigest(),
-                  'allow': ['support-agent'], 'rate': {'rpm': 120, 'tpm': 100000, 'concurrent': 2},
-                  'quota': {'day': {'requests': 200, 'tokens': 200000}, 'month': {'requests': 1000, 'tokens': 1000000}}}
+                  'allow': ['support-agent'], 'rate': dict(TEST_RATE),
+                  'quota': json.loads(json.dumps(TEST_QUOTA))}
         if team == 'support':
             caller['content_capture'] = {'enabled': True, 'retention_days': 7, 'capture_request': True,
                                          'capture_response': True, 'capture_tool_calls': True,
@@ -61,7 +68,7 @@ def config(out, env):
         'users': users, 'projects': projects, 'project_memberships': memberships, 'callers': callers}
 
 
-def demonstrate_canary(binary, out, cfg, env):
+def demonstrate_canary(binary, out, cfg, env, test_rate_limiting=False):
     """Routing-control proof with a synthetic stand-in, NOT a trained model."""
     class Mock(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -77,8 +84,11 @@ def demonstrate_canary(binary, out, cfg, env):
     env['TRACE_MOCK_KEY'] = secrets.token_urlsafe(24)
     cfg['providers']['ft-canary'] = {'dialect': 'openai-chat', 'base_url': 'http://127.0.0.1:18411/v1', 'api_key_env': 'TRACE_MOCK_KEY', 'api_key': '${TRACE_MOCK_KEY}'}
     cfg['state_path'] = str(out / 'canary-state.json')
-    cfg['callers'][0]['quota']['day']['requests'] = 1
+    # EXPLICIT RATE-LIMITING TEST ONLY: never constrain normal canary traffic.
+    if test_rate_limiting:
+        cfg['callers'][0]['quota']['day']['requests'] = 1
     group = cfg['models']['support-agent']
+    group['script_max_concurrent'] = 256
     group['strategy'] = 'script'; group['script'] = str(Path(__file__).with_name('canary.ts').resolve())
     group['targets'].append({'provider': 'ft-canary', 'model': 'synthetic-ft-standin', 'context_tokens': 131072})
     path = out / 'canary-config.json'; path.write_text(json.dumps(cfg)); path.chmod(0o600)
@@ -100,13 +110,15 @@ def demonstrate_canary(binary, out, cfg, env):
                 answer = json.loads(raw)['choices'][0]['message'].get('content')
                 assert (answer == 'CANARY_STANDIN') == (variable == 'TRACE_SUPPORT_KEY')
                 evidence.append({'caller': variable, 'request_id': headers['X-Request-Id']})
-            try:
-                collect.request('http://127.0.0.1:18410', '/v1/chat/completions', {
-                    'model': 'support-agent', 'messages': [{'role': 'user', 'content': 'Budget must reject this second request.'}]}, env['TRACE_SUPPORT_KEY'])
-                raise AssertionError('canary bypassed caller request budget')
-            except urllib.error.HTTPError as error:
-                assert error.code == 429
-                budget_status = error.code
+            budget_status = None
+            if test_rate_limiting:
+                try:
+                    collect.request('http://127.0.0.1:18410', '/v1/chat/completions', {
+                        'model': 'support-agent', 'messages': [{'role': 'user', 'content': 'RATE-LIMITING TEST: reject second request.'}]}, env['TRACE_SUPPORT_KEY'])
+                    raise AssertionError('canary bypassed caller request budget')
+                except urllib.error.HTTPError as error:
+                    assert error.code == 429
+                    budget_status = error.code
     finally:
         if router is not None:
             router.terminate()
@@ -118,7 +130,7 @@ def demonstrate_canary(binary, out, cfg, env):
             provider, model = db.execute('SELECT target_provider,target_model FROM request_usage WHERE request_id=?', (result['request_id'],)).fetchone()
             assert provider == ('ft-canary' if result['caller'] == 'TRACE_SUPPORT_KEY' else 'teacher')
             result.update(provider=provider, model=model)
-    (out / 'canary-evidence.json').write_text(json.dumps({'synthetic_standin_not_trained': True, 'same_group': 'support-agent', 'caller_budget_rejection': budget_status, 'results': evidence}, indent=2))
+    (out / 'canary-evidence.json').write_text(json.dumps({'purpose': 'rate-limiting-test' if test_rate_limiting else 'caller-scoped-routing', 'synthetic_standin_not_trained': True, 'same_group': 'support-agent', 'caller_budget_rejection': budget_status, 'results': evidence}, indent=2))
 
 
 def main():
@@ -129,6 +141,7 @@ def main():
     p.add_argument('--per-split', type=int, default=2)
     p.add_argument('--include-text', action='store_true')
     p.add_argument('--task-source-json', type=Path)
+    p.add_argument('--test-rate-limiting', action='store_true', help='EXPLICIT rate-limiting test: canary quota1 and intentional429; never use for evaluation')
     a = p.parse_args()
     if not os.environ.get('FIREWORKS_API_KEY'):
         p.error('FIREWORKS_API_KEY required in environment')
@@ -161,7 +174,7 @@ def main():
                 router.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 router.kill(); router.wait()
-    demonstrate_canary(a.binary, a.out, cfg, env)
+    demonstrate_canary(a.binary, a.out, cfg, env, a.test_rate_limiting)
 
 if __name__ == '__main__':
     main()
