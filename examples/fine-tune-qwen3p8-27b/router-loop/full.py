@@ -213,9 +213,9 @@ def main():
     if args.plan_only:return
     assert args.binary and os.environ.get('FIREWORKS_API_KEY')
     env=dict(os.environ);cfg=local.config(args.out,env)
-    for caller in cfg['callers']:
-        caller['rate']={'rpm':2000,'tpm':2000000,'concurrent':8}
-        caller['quota']={'day':{'requests':10000,'tokens':30000000},'month':{'requests':10000,'tokens':30000000}}
+    # local.config supplies ample local-only rates/quotas for every caller.
+    # Collector's separate monetary stop still applies; do not use throttling
+    # as a budget mechanism or change generation/scoring after failures.
     private_json(args.out/'runtime-local-env.json',{k:v for k,v in env.items() if k.startswith('TRACE_') or k=='CONTENT_CAPTURE_LOCAL_KEY'})
     private_json(args.out/'config.json',cfg)
     with (args.out/'router.log').open('w') as log:

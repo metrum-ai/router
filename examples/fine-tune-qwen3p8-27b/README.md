@@ -226,12 +226,29 @@ go run ./cmd/metrum-ai-routerctl callers generate \
   --token-out /secure/router.token --config /secure/ft.yaml --write
 ```
 
-On that generated caller, set `rate.concurrent`, `rate.rpm`, `rate.tpm` and
-`quota.day`/`quota.month` request/token budgets. For example, 10,000 requests and
-10,000,000 tokens/day are bounded dev-evaluation budgets, not production defaults.
-The mock e2e proves an intentionally tiny request budget is enforced.
+Before any localhost/test inference, set **every** generated caller (including
+base, candidate, grader and other-project keys) to ample test capacity; do not
+inherit the caller CLI's conservative defaults. For this documented workflow:
+
+```yaml
+rate: {concurrent: 64, rpm: 20000, tpm: 100000000}
+quota:
+  day: {requests: 1000000, tokens: 1000000000}
+  month: {requests: 10000000, tokens: 10000000000}
+```
+
+Check effective project/group profiles as well: none may throttle the test.
+The router-loop local/full generators set these local-only values explicitly;
+they are **not production quota recommendations or monetary budget controls**.
+A pre-route429 invalidates that measurement: retain it and its costs, publish an
+infrastructure-only amendment and rerun the **whole affected cohort**, never
+selectively. The synthetic mock e2e is explicitly an **intentional quota test**:
+it uses high rates but exactly45 successful requests before verifying denial.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
-not an hourly GPU spending cap. Zero list-token prices in this template cannot
+not an hourly GPU spending cap. It is a dynamic-strategy eligibility control;
+weighted/external strategies do not enforce it. The actual AMD external-policy
+control returned200 under a tiny ceiling: do not claim global budget enforcement.
+Zero list-token prices in this template cannot
 protect a rental budget; use the separate hard GPU lease watchdog and track real
 hourly charges. Replace placeholder amortized prices before cost-based routing.
 

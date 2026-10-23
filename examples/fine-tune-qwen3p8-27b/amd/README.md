@@ -7,7 +7,12 @@ Metrum AI's MI325X path has passed actual official-ROCm base/template/native and
 PEFT two-step/fixed-full-training checks. Pinned Axolotl dependency resolution
 failed, and unmerged ROCm vLLM LoRA loading failed; the documented alternatives
 are PEFT training and safe BF16-merged serving. Merged smoke/load checks pass;
-frozen held-out quality/parity and API-verified teardown are still pending.
+frozen AMD/base qualification completed but original exact/overall quality gates
+**FAIL: do not promote** (7/200vs9/200 JSON-text exact). Native180/200both is
+separate and cannot rescue the original gate. Orchestrator API-verified teardown
+completed19:23Z (404/tagempty/firewall+cloudkeyabsent). Healthy shared-teacher
+replacement and NVIDIA matched-merge comparison remain separately owned;
+no quality-equivalent ROI or pure hardware advantage claimed.
 See `docs/evidence/finetune-amd/2026-10-23/` from the repository root.
 Only #358's governed router export may supply training/validation/held-out rows;
 never run the direct-download preparation instructions for this track.

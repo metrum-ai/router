@@ -72,15 +72,21 @@ not permission to bypass router capture for the router-centric run.
 The example's [AMD runbook](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b/amd)
 prepares MI325X training with official `rocm/pytorch` and serving with official
 `rocm/vllm`. MI325X training and merged-serving smoke/load checks have run;
-quality qualification and a matched NVIDIA parity result are still pending.
+frozen AMD/base qualification completed with **failed original quality gates**:
+JSON-text exact7/200vsbase9/200 (−1pp, required+10pp), overall80/300vs86/300.
+Native tool180/200both cannot replace these gates. **Do not promote.**
 Pinned Axolotl bootstrap failed on the tested ROCm torch version; the documented
 Transformers/PEFT fallback passed its two-step and fixed full training run. Require a two-step model/toolkit smoke on the actual GPU, a pinned
 host-compatible stack and the governed router-exported dataset from #358.
 Serve on host loopback over SSH through a localhost router; replay newly executed
 tool continuations and keep failures in evaluation denominators. The AMD evidence
 and VIDEO-FACTS under `docs/evidence/finetune-amd/2026-10-23/` explicitly leave
-measured training/load evidence separate from still-pending held-out quality,
-full lifecycle economics and verified teardown. Unmerged LoRA serving failed;
+measured training/load evidence separate from quality verdicts and economics.
+Orchestrator verified droplet API404 and firewall/cloud-key deletion19:23Z.
+GPU quote~6.08USD plus judge~2.874USD is not a settled invoice; failed charges
+remain unknown. Shared teacher's RPM-throttled run is unusable for healthy-teacher
+comparison; FT owns a whole-arm replacement. Matched NVIDIA merged comparison
+is separately owned, not a hardware-only causal claim. Unmerged LoRA serving failed;
 the measured AMD serving path is BF16 merged, not unmerged.
 
 The maintainer authorized a Fireworks-hosted open-weight teacher specifically for

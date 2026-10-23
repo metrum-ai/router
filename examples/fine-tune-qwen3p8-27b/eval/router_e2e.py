@@ -101,6 +101,9 @@ def main():
                 'targets':[{'provider':'vllm_b200_ft','model_ref':'base'},
                            {'provider':'vllm_b200_ft','model_ref':'adapter'}]}
             x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
+            x['callers'][0]['rate'] = {'rpm':20000,'tpm':100000000,'concurrent':64}
+            # INTENTIONAL LIMIT TEST: exactly45 successes then quota denial.
+            # This is not a quality/load cohort; rates otherwise stay high.
             x['callers'][0]['quota']['day']['requests'] = 45
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
             log = (run / 'process.log').open('w')
@@ -150,7 +153,7 @@ def main():
                     shadow_recorded |= b'shadow_recommended_candidate' in content
             assert shadow_recorded, 'shadow recommendation not recorded'
             print(json.dumps({'tool_continuation':'pass','created_file':True,'weighted_targets':seen,
-                'request_budget':'pass','prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
+                'request_budget':'pass','intentional_limit_test':True,'prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
     finally:
         if process is not None:
             process.terminate();process.wait(timeout=20)

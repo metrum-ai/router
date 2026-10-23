@@ -32,8 +32,9 @@ def config(out, env):
         memberships.append({'user_id': project, 'project': project, 'role': 'developer', 'status': 'active'})
         caller = {'id': project + '-prod', 'owner_user': project, 'project': project, 'environment': 'test',
                   'token_id': 'rtr_' + project, 'token_sha256': hashlib.sha256(env[variable].encode()).hexdigest(),
-                  'allow': ['support-agent'], 'rate': {'rpm': 120, 'tpm': 100000, 'concurrent': 2},
-                  'quota': {'day': {'requests': 200, 'tokens': 200000}, 'month': {'requests': 1000, 'tokens': 1000000}}}
+                  # Local harness capacity, NOT a production quota recommendation.
+                  'allow': ['support-agent'], 'rate': {'rpm': 20000, 'tpm': 100000000, 'concurrent': 64},
+                  'quota': {'day': {'requests': 1000000, 'tokens': 1000000000}, 'month': {'requests': 10000000, 'tokens': 10000000000}}}
         if team == 'support':
             caller['content_capture'] = {'enabled': True, 'retention_days': 7, 'capture_request': True,
                                          'capture_response': True, 'capture_tool_calls': True,
