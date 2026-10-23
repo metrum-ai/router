@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   harbor:
-    runs-on: [self-hosted, Linux, X64, router]
+    runs-on: router-arc
     environment: evaluation
     timeout-minutes: 90
     steps:
