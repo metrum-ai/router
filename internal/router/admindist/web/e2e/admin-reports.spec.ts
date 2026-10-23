@@ -45,6 +45,29 @@ test("count-token control events remain identifiable in the request table", asyn
   await page.screenshot({ path: "test-results/count-tokens-request-kind.png", fullPage: true });
 });
 
+test("reasoning and cache coverage, cost partitions and rollup source stay visible", async ({ page }) => {
+  await page.route("**/api/summary*", route => {
+    apiRequests.push(route.request().url());
+    return route.fulfill({ json: {
+      summary: { requests: 4, inputTokens: 400, outputTokens: 160, reasoningTokens: 20, reasoningReportedRequests: 2, cachedInputTokens: 120, cachedInputReportedRequests: 3, cacheWriteInputTokens: 20, cacheWriteReportedRequests: 1, costComponentReportedRequests: 4, uncachedInputCostUsd: .0026, cachedInputCostUsd: .00024, cacheWriteCostUsd: .00025, visibleOutputCostUsd: .0028, reasoningOutputCostUsd: .0004, historySource: "finalized_daily_rollups", routingSavingsUsd: .004, promptCacheSavingsUsd: .00091, responseCacheSavingsUsd: 0 },
+      byGroup: [{ key: "reasoning-model", requests: 4, reasoningTokens: 20, cachedInputTokens: 120, cacheWriteInputTokens: 20 }], charts: [], requests: [],
+    } });
+  });
+  await page.goto("/?tab=overview&history_source=rollup&since=48h");
+  await expect(page.getByText("12.5%", { exact: true })).toBeVisible();
+  await expect(page.getByText("30.0%", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 / 4 requests reported", { exact: true })).toBeVisible();
+  await expect(page.getByText("3 / 4 requests reported", { exact: true })).toBeVisible();
+  await expect(page.getByText("Cache write: $0.000250", { exact: true })).toBeVisible();
+  await expect(page.getByText(/History source: finalized daily rollups/)).toBeVisible();
+  expect(apiRequests.some(value => new URL(value).searchParams.get("history_source") === "rollup")).toBe(true);
+  await page.screenshot({ path: "test-results/reasoning-cache-overview.png", fullPage: true });
+  await page.goto("/?tab=groups&history_source=rollup&since=48h");
+  await expect(page.getByRole("columnheader", { name: "Reasoning tokens", exact: true })).toBeAttached();
+  await expect(page.getByRole("columnheader", { name: "Cached input tokens", exact: true })).toBeAttached();
+  await expect(page.getByRole("columnheader", { name: "Cache write tokens", exact: true })).toBeAttached();
+});
+
 function globalFiltersButton(page: Page) {
   return page.getByRole("button", { name: "Filters", exact: true }).first();
 }
@@ -129,6 +152,7 @@ test("admin report filter model splits global and tab filters without overlap", 
   expect(result.hasEveryTab).toBe(true);
   expect(globalFilterFields.map(([name]) => name)).toContain("since");
   expect(tabFilterFields.map(([name]) => name)).toEqual([
+    "history_source",
     "baseline",
     "status",
     "cache",

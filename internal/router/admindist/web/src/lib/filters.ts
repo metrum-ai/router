@@ -17,12 +17,14 @@ export type GlobalFilterName =
   | "target_model"
   | "dialect"
   | "client"
+  | "reasoning_present"
+  | "cache_present"
   | "usage_source"
   | "error_class"
   | "request_shape_fingerprint"
   | "tool_schema_fingerprint";
 
-export type TabFilterName = "baseline" | "status" | "cache" | "sort" | "direction" | "traffic_shape_bucket" | "traffic_shape_scope" | "scope" | "release" | "state" | "type" | "date" | "limit";
+export type TabFilterName = "history_source" | "baseline" | "status" | "cache" | "sort" | "direction" | "traffic_shape_bucket" | "traffic_shape_scope" | "scope" | "release" | "state" | "type" | "date" | "limit";
 
 export type PaginationFilterName = "cursor" | "offset";
 
@@ -42,6 +44,8 @@ export const globalFilterFields = [
   ["target_model", "Target", ""],
   ["dialect", "Dialect", ""],
   ["client", "Client", ""],
+  ["reasoning_present", "Reasoning present (true/false)", ""],
+  ["cache_present", "Cache usage reported (true/false)", ""],
   ["usage_source", "Usage source (reported/partial/estimated/none)", ""],
   ["error_class", "Error class", ""],
   ["request_shape_fingerprint", "Shape FP", ""],
@@ -49,6 +53,7 @@ export const globalFilterFields = [
 ] as const satisfies ReadonlyArray<FilterField<GlobalFilterName>>;
 
 export const tabFilterFields = [
+ ["history_source", "History source (raw/rollup; whole UTC days)", ""],
   ["baseline", "Baseline", ""],
   ["status", "Status", ""],
   ["cache", "Cache", ""],
