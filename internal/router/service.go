@@ -154,6 +154,7 @@ type upstreamError struct {
 	Canceled     bool
 	Committed    bool
 	PartialUsage *Usage
+	PartialText  string
 	ResponseLen  int64
 	RetryAfter   time.Duration
 	Details      []upstreamErrorDetailLogRecord
@@ -1030,6 +1031,7 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	rc.rec.KeyState = ad.KeyState
 	tokens := estimateTokens(req)
 	rc.rec.Usage = Usage{InputTokens: tokens, TotalTokens: tokens}
+	rc.rec.UsageSource = "estimated"
 	if _, _, err := s.quota.RecordTokens(rc.caller, ad.Reservation, rc.rec.Usage); err != nil {
 		s.writeError(w, rc, http.StatusServiceUnavailable, "quota-state-error")
 		return
@@ -1325,6 +1327,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			s.recordCacheReasonTelemetry(rc, "hit", "cache-hit", dec.Target)
 			rc.rec.Status = http.StatusOK
 			rc.rec.Usage = cached.Usage
+			rc.rec.UsageSource = "reported"
+			if containsUsageEstimate(cached.Warnings) {
+				rc.rec.UsageSource = "estimated"
+			}
 			// Router response-cache hits are not upstream prompt-cache evidence for this request.
 			rc.rec.Usage.CachedInputTokens = nil
 			rc.trace("cache_hit", "", dec.Target, 0, http.StatusOK, "", false, 0)
@@ -1390,9 +1396,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 					rc.rec.KeyState = "error"
 				} else {
 					rc.rec.Usage = usage
+					rc.rec.UsageSource = "partial"
 					if !committedStreamUsageReported(err) {
-						// Same provenance marker as the unary path: the settled
-						// tokens are the router's reservation estimate.
+						rc.rec.UsageSource = "estimated"
+						// The stream settled an estimate based on observed text,
+						// not upstream-reported usage or the output ceiling.
 						rc.rec.Warnings = appendWarning(rc.rec.Warnings, "usage-estimated")
 					}
 				}
@@ -1414,6 +1422,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		ensureResponseID(resp)
 		if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
 			resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)
+			if resp.Streamed {
+				resp.Usage = estimatedStreamUsage(req, resp.Text)
+			}
 			resp.Warnings = appendWarning(resp.Warnings, "usage-estimated")
 		}
 		served := dec.Target
@@ -1456,6 +1467,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.QuotaState = quotaState
 		rc.rec.KeyState = keyState
 		rc.rec.Usage = resp.Usage
+		rc.rec.UsageSource = "reported"
+		if containsUsageEstimate(resp.Warnings) {
+			rc.rec.UsageSource = "estimated"
+		}
 		rc.rec.InputImageTokens = resp.Usage.InputImageTokens
 		rc.rec.UpstreamReportedInputCostUSD = resp.Usage.UpstreamReportedInputCostUSD
 		rc.rec.UpstreamReportedOutputCostUSD = resp.Usage.UpstreamReportedOutputCostUSD
@@ -1498,9 +1513,8 @@ func committedStreamUsage(err error, req *IRRequest, dialect string, reservation
 		return *upstream.PartialUsage
 	}
 	if reservationTokens > 0 {
-		usage := estimatedUsageForReservation(req, dialect, reservationTokens)
-		usage.TotalTokens = totalTokens(usage)
-		return usage
+		errors.As(err, &upstream)
+		return estimatedStreamUsage(req, upstream.PartialText)
 	}
 	return Usage{}
 }
@@ -1577,6 +1591,10 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	if rc == nil {
 		return
 	}
+	if rc.rec.UsageSource == "" {
+		rc.rec.UsageSource = "none"
+	}
+	rc.trace("quota_settlement", fmt.Sprintf("usage_source=%s input_tokens=%d output_tokens=%d", rc.rec.UsageSource, rc.rec.Usage.InputTokens, rc.rec.Usage.OutputTokens), Target{}, 0, status, "", false, 0)
 	populateReasoningUsageCoverage(&rc.rec)
 	s.sanitizeDiagnosticRecord(&rc.rec)
 	s.recordCacheStats(rc)
@@ -2337,7 +2355,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "encode_error", Message: err.Error(), Err: err}
 	}
 	if nativeStream || (anthropicBridge && bridgeStream) {
-		upReqBody, err = enableNativeUpstreamStream(upReqBody, req, outDialect)
+		upReqBody, err = enableNativeUpstreamStream(upReqBody, req, outDialect, supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "stream_options"))
 		if err != nil {
 			attempt.ErrorClass = "encode_error"
 			attempt.ErrorMessage = err.Error()
@@ -2519,6 +2537,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if streamErr != nil {
 			upErr := classifyError(streamErr)
 			upErr.Committed = streamResult.Committed
+			if streamResult.Response != nil {
+				upErr.PartialText = streamResult.Response.Text
+			}
 			if streamResult.Response != nil && totalTokens(streamResult.Response.Usage) > 0 {
 				usage := streamResult.Response.Usage
 				upErr.PartialUsage = &usage

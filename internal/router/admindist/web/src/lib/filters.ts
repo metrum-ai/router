@@ -17,6 +17,7 @@ export type GlobalFilterName =
   | "target_model"
   | "dialect"
   | "client"
+  | "usage_source"
   | "error_class"
   | "request_shape_fingerprint"
   | "tool_schema_fingerprint";
@@ -41,6 +42,7 @@ export const globalFilterFields = [
   ["target_model", "Target", ""],
   ["dialect", "Dialect", ""],
   ["client", "Client", ""],
+  ["usage_source", "Usage source (reported/partial/estimated/none)", ""],
   ["error_class", "Error class", ""],
   ["request_shape_fingerprint", "Shape FP", ""],
   ["tool_schema_fingerprint", "Tool FP", ""],

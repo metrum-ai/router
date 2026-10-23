@@ -16,6 +16,50 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+func TestUsageProvenancePostgresSchema(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("USAGE_B_POSTGRES_TEST_DSN"))
+	if dsn == "" {
+		t.Skip("USAGE_B_POSTGRES_TEST_DSN required for disposable provenance schema test")
+	}
+	if !strings.Contains(dsn, "usage_b_provenance") {
+		t.Fatal("disposable usage_b_provenance database required")
+	}
+	cfg := UsageDBConfig{Driver: "postgres", DSN: dsn, MigrationPolicy: usageDBMigrationPolicyAutoSafe}
+	runner, closeDB, err := UsageMigrationRunner(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.ApplyPending("usage-b-test"); err != nil {
+		_ = closeDB()
+		t.Fatal(err)
+	}
+	if err := runner.ApplyMaintenancePendingWithEvidence("usage-b-test", "disposable-empty-test-database"); err != nil {
+		_ = closeDB()
+		t.Fatal(err)
+	}
+	if err := runner.ApplyPending("usage-b-test"); err != nil {
+		_ = closeDB()
+		t.Fatal(err)
+	}
+	defer closeDB()
+	// Inspect the migrated schema directly: serving additionally requires the
+	// unrelated historical-validation data job to be certified.
+	store := &usageStore{db: runner.db}
+	if err := verifyUsageProvenanceMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Create(&usageRecord{RequestID: "provenance", UsageSource: "estimated"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var row usageRecord
+	if err := store.db.Where("request_id = ?", "provenance").First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.UsageSource != "estimated" {
+		t.Fatal("lost provenance")
+	}
+}
+
 type usagePostgresDefaultContractFixture struct {
 	ID    int    `gorm:"primaryKey"`
 	Value string `gorm:"type:text;not null;default:''"`

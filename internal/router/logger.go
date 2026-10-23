@@ -37,6 +37,7 @@ type adminReportQueryFailureLogRecord struct {
 }
 
 type logRecord struct {
+	UsageSource                        string                           `json:"usage_source"`
 	TS                                 string                           `json:"ts"`
 	RequestID                          string                           `json:"request_id"`
 	CallerID                           string                           `json:"caller_id"`

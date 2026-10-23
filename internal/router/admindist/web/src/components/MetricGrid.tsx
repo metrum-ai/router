@@ -51,6 +51,13 @@ export function MetricGrid({ summary, config }: { summary?: ReportSummary; confi
   if (entries.length === 0) return null;
   return (
     <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {typeof summary?.estimatedTokenShare === "number" && (
+        <Card className="panel-gradient"><CardContent className="p-4">
+          <div className="font-display text-2xl text-white">{summary.estimatedTokenShare.toFixed(1)}%</div>
+          <div className="mt-1 font-mono text-xs uppercase text-white/58">Estimated usage</div>
+          <div className="text-xs text-white/58">Share of tokens estimated, not upstream-reported</div>
+        </CardContent></Card>
+      )}
       {entries.map(({ key, label, value }) => (
         <Card key={key} className="panel-gradient">
           <CardContent className="p-4">

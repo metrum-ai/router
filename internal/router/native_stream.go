@@ -28,15 +28,21 @@ func nativeStreamEligible(req *IRRequest, callerDialect, upstreamDialect string)
 	}
 }
 
-func enableNativeUpstreamStream(raw []byte, req *IRRequest, dialect string) ([]byte, error) {
+func enableNativeUpstreamStream(raw []byte, req *IRRequest, dialect string, disableUsage ...bool) ([]byte, error) {
 	var body map[string]any
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
 	body["stream"] = true
-	if normalizeDialect(dialect) == "openai-chat" && req != nil && req.Raw != nil {
-		if streamOptions, ok := req.Raw["stream_options"]; ok {
-			body["stream_options"] = streamOptions
+	if normalizeDialect(dialect) == "openai-chat" {
+		if req != nil && req.Raw != nil {
+			if streamOptions, ok := req.Raw["stream_options"]; ok {
+				body["stream_options"] = streamOptions
+				return json.Marshal(body)
+			}
+		}
+		if len(disableUsage) == 0 || !disableUsage[0] {
+			body["stream_options"] = map[string]any{"include_usage": true}
 		}
 	}
 	return json.Marshal(body)
