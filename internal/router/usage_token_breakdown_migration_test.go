@@ -10,7 +10,7 @@ import (
 )
 
 func TestTokenBreakdownMigrationPreservesUnknownHistoricalCoverage(t *testing.T) {
-	cfg := freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
 		t.Fatal(err)

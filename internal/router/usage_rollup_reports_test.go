@@ -5,10 +5,53 @@ package router
 
 import (
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestTokenBreakdownRollupOnlyReadsCompletedWholeDays(t *testing.T) {
+	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	day := today.Add(-24 * time.Hour)
+	for _, tc := range []struct {
+		name     string
+		from, to time.Time
+	}{
+		{"complete", day, today}, {"premature-finalization", day.Add(-24 * time.Hour), today}, {"fractional-start", day.Add(time.Nanosecond), today}, {"partial-end", day, today.Add(-time.Nanosecond)}, {"current-day", today, today.Add(24 * time.Hour)}, {"future-day", today.Add(24 * time.Hour), today.Add(48 * time.Hour)},
+	} {
+		ts := tc.from.Add(time.Hour)
+		if tc.name == "premature-finalization" {
+			ts = day.Add(time.Hour)
+		}
+		rec := pricedTokenBreakdownRecord(tc.name, "miss", ts)
+		rec.CallerID = tc.name
+		rows := dailyRollupRecords([]usageRow{rowFromRecord(rec)}, "finalized", formatUsageTime(tc.from), formatUsageTime(tc.to), usageRollupBaselineFromOptions(UsageRollupOptions{}))
+		run := usageRollupRunRecord{RollupType: "daily", Status: "finalized", WindowStart: formatUsageTime(tc.from), WindowEnd: formatUsageTime(tc.to), FinalizedAt: formatUsageTime(time.Now())}
+		if tc.name == "premature-finalization" {
+			run.FinalizedAt = formatUsageTime(day.Add(time.Hour))
+		}
+		if err := store.db.Create(&run).Error; err != nil {
+			t.Fatal(err)
+		}
+		rows[0].RunID = run.ID
+		if err := store.db.Create(&rows[0]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := store.adminOverviewSQL(UsageReportOptions{From: day, To: today.Add(48 * time.Hour), RollupHistory: true}, adminSavingsBaselineDTO{}, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Total.Calls != 1 || report.Total.InputTokens != 100 || report.Total.ReasoningTokens != 20 {
+		t.Fatalf("partial/current/future day leaked into historical totals: %+v", report.Total)
+	}
+}
 
 func TestTokenBreakdownRollupFilterValidation(t *testing.T) {
 	day := time.Now().UTC().Truncate(24 * time.Hour)

@@ -8,6 +8,27 @@ is a reproducible workflow/negative-result example, pending product acceptance.
 All paid resources and the owned provider SSH key are API-verified deleted.
 No production traffic, in-house human labeling, quality-equivalent ROI or invoice claim.
 
+## Router-loop engineering sample (#358), separate from run 1
+
+- Real Fireworks-hosted Apache-2.0 `gpt-oss-120b`, local worktree router,
+  nine public task seeds under each of two keys (18 episodes). Eight tool-result
+  continuations and seven deterministic expected-call successes per key.
+- Only support capture enabled. Audited success-only export: 2 train / 2 val /
+  3 test rows; IT absent. This tiny sample is not useful-sized training/evaluation
+  evidence or a candidate promotion result.
+- Same `support-agent` group, key+project-scoped routing demonstrated with a local
+  **synthetic candidate stand-in**; other key retained the real teacher. No claim
+  that an actual trained candidate was served in this sample.
+- Router-loop checker measures tool calls against public gold plus completion,
+  not semantic answer quality or run 1's strict JSON-text metric. Keep failures
+  in task denominators. Candidate/base/teacher held-out comparison and production
+  cost-per-success remain pending, never replace them with token-price claims.
+- Scoped maintainer teacher-terms decision and pinned terms SHA are recorded in
+  the export manifest. Users must independently verify that teacher license and
+  provider terms permit training on outputs; this test is not customer permission.
+- See `examples/fine-tune-qwen3p8-27b/router-loop/README.md`; raw prompts, outputs,
+  datasets and credentials remain outside Git. No GPU rented for this sample.
+
 ## Training: what actually happened
 
 Source:`training-runtime-v2.json`, `dataset-manifest.json`, `prepared-tokenization-v2.json`.

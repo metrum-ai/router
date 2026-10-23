@@ -64,7 +64,7 @@ INSERT INTO request_attempts (
 		t.Fatal(err)
 	}
 
-	store, err := OpenUsageStorePath(dbPath)
+	store, err := openTestUsageStorePath(dbPath)
 	if store != nil {
 		_ = store.Close()
 		t.Fatal("legacy store missing retry_after_ms unexpectedly opened")
@@ -76,7 +76,7 @@ INSERT INTO request_attempts (
 
 func TestUsageStoreMigratesUpstreamErrorDetailsTable(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
-	store, err := OpenUsageStorePath(dbPath)
+	store, err := openTestUsageStorePath(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestUsageReportImportsJSONLAndRendersMarkdown(t *testing.T) {
 	if imported != 3 {
 		t.Fatalf("imported=%d", imported)
 	}
-	store, err := OpenUsageStorePath(dbPath)
+	store, err := openTestUsageStorePath(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestUsageJSONLImportSkipsOperationalEventRecords(t *testing.T) {
 		t.Fatalf("imported=%d, want 1 usage row", imported)
 	}
 
-	store, err := OpenUsageStorePath(dbPath)
+	store, err := openTestUsageStorePath(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestUsageJSONLImportSkipsOperationalEventRecords(t *testing.T) {
 func TestSQLiteUsageDBUsesPrivateFileMode(t *testing.T) {
 	clearUmaskForTest(t)
 	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
-	store, err := OpenUsageStorePath(dbPath)
+	store, err := openTestUsageStorePath(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func markdownSection(md, start, end string) string {
 }
 
 func TestDecisionTelemetryPersistsExplicitFalseAndZeroValues(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +538,7 @@ func TestUsageReportMarkdownEscapesHTMLAndActiveMarkdownCells(t *testing.T) {
 }
 
 func TestSecurityAccessEventsFilterCallerEnvironment(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,7 +580,7 @@ func TestSecurityAccessEventsFilterCallerEnvironment(t *testing.T) {
 }
 
 func TestUsageRollupDailyTotalsDraftRerunAndFinalize(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,7 +854,7 @@ func TestUsageRollupDailyTotalsDraftRerunAndFinalize(t *testing.T) {
 }
 
 func TestAdminScalarMultiBucketAggsSQLUsesNormalizedBuckets(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -975,7 +975,7 @@ func TestAdminScalarMultiBucketAggsSQLUsesNormalizedBuckets(t *testing.T) {
 }
 
 func TestAdminScalarAggsSQLUsesLatestCacheSnapshot(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1044,7 +1044,7 @@ func TestAdminScalarAggsSQLUsesLatestCacheSnapshot(t *testing.T) {
 }
 
 func TestAdminShapeAggsSQLAggregatesCallerShapingWithLimit(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1168,7 +1168,7 @@ func TestAdminShapeAggsSQLAggregatesCallerShapingWithLimit(t *testing.T) {
 }
 
 func TestAdminShapeAggsSQLAggregatesOverviewCallerAndProvider(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1317,7 +1317,7 @@ func TestAdminShapeSQLKeyExprOmitsSyntheticSurfaceFromGroupAndFilter(t *testing.
 }
 
 func TestAdminShapeAggsSQLAggregatesProviderAndAdaptiveBackoff(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1439,7 +1439,7 @@ func TestAdminShapeAggsSQLAggregatesProviderAndAdaptiveBackoff(t *testing.T) {
 }
 
 func TestUsageRollupHourlyAndMonthlyWithBaseline(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1598,7 +1598,7 @@ func maxFloat64(a, b float64) float64 {
 }
 
 func TestUsageDBSchemaIsRelationalOnly(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1658,7 +1658,7 @@ func TestUsageDBSchemaIsRelationalOnly(t *testing.T) {
 }
 
 func TestRetentionDryRunWritesJobRecordsAndHonorsLegalHold(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1775,7 +1775,7 @@ func TestRetentionDryRunWritesJobRecordsAndHonorsLegalHold(t *testing.T) {
 }
 
 func TestRetentionUsageDetailRequiresFinalizedRollupBeforeFutureDelete(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1848,7 +1848,7 @@ func TestRetentionUsageDetailRequiresFinalizedRollupBeforeFutureDelete(t *testin
 }
 
 func TestRetentionUsageDetailHonorsChildTelemetryLegalHold(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1909,7 +1909,7 @@ func TestRetentionUsageDetailHonorsChildTelemetryLegalHold(t *testing.T) {
 }
 
 func TestRetentionDryRunAndPurgeDiagnosticsBatchHonorsRequestLegalHold(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2006,7 +2006,7 @@ func TestRetentionDryRunAndPurgeDiagnosticsBatchHonorsRequestLegalHold(t *testin
 }
 
 func TestRetentionRunPurgesContentCaptureAndHeaders(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2092,7 +2092,7 @@ func assertTableCount(t *testing.T, store *usageStore, model any, want int64) {
 }
 
 func TestDecisionTelemetryTablesReferenceRequestUsage(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2146,7 +2146,7 @@ func assertRequestUsageForeignKey(t *testing.T, store *usageStore, table string)
 }
 
 func TestContentCaptureRetentionPurgeDeletesRowsAndAudits(t *testing.T) {
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

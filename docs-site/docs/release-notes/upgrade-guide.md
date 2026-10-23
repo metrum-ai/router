@@ -83,7 +83,9 @@ values. No separate reasoning cost counter should be added.
 The admin history selector is opt-in: `history_source=rollup` reads finalized
 daily aggregates rather than raw rows. Use complete closed UTC-day windows;
 unsupported predicates and report types return HTTP 400 rather than silently
-mixing sources. Keep raw retention long enough for request-level investigation
+mixing sources. The retained-history reader now excludes current/future days,
+partial manually finalized days, and snapshots finalized before their window
+closed; an early snapshot does not become complete merely with elapsed time. Keep raw retention long enough for request-level investigation
 and Markdown exports, which cannot be reconstructed from aggregates.
 
 ### Optional upstreams and fine-tuning
@@ -94,6 +96,20 @@ credential chain, never keys in YAML; grant only the validated model/profile
 resources. Cross-region profiles require destination permissions and a residency
 review. Existing providers need no Bedrock configuration. See
 [Providers And Models](../providers-models/overview) for the validated matrix.
+
+The governed training surface adds `POST /admin/training/outcomes/{request_id}`
+and `POST /admin/training/export`. Both require opt-in encrypted content capture,
+explicit deployment-wide `content:training` grants (`label`/`export`) and a
+durable security audit; report-view/export grants do not imply training access.
+No new schema migration is introduced for these endpoints: labels reuse
+encrypted content-capture records. Existing IR-only captures lack canonical
+chat/tool history and cannot be retroactively converted. Keep encryption keys
+available while captures remain exportable. Exported datasets have independent
+access/retention obligations; deleting captures cannot recall downloaded copies.
+Review teacher model license, provider terms, consent and output-training rights
+before enabling this optional surface. The synthetic example authorization is
+not permission for customer-data training. See
+[Fine-tune And Route Your Own Model](../configuration/fine-tune-own-model).
 
 The fine-tuning example is an operator-owned training/deployment recipe, not
 a default routing change or a quality promotion. Review evidence and the
