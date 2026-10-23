@@ -136,21 +136,23 @@ and deployment endpoint as appropriate. `vllm_b200_ft` is a logical provider nam
 retained from the issue, not a claim that the current host is a B200: this run
 uses RTX PRO 6000 Blackwell. The default FT group splits traffic 50/50. The static
 `-onprem` and `-fireworks` FT groups isolate serving stacks for paired evaluation.
-The optional `-shadow` group uses `python3 eval/shadow_policy.py`: it records the
-alternate recommendation with decision telemetry enabled while serving configured
-baseline order. It does not run a second model inference.
+The default route stays on the base. Optional `qwen3p8-27b-canary` starts at
+90% base/5% on-prem FT/5% Fireworks FT. The `-shadow` group uses
+`python3 eval/shadow_policy.py`: base serves while an FT recommendation is
+recorded with decision telemetry. This is recommendation-only shadowing, not a
+second model inference. Never switch production traffic based on smoke alone.
 
 Generate a fresh narrow caller (never pass a raw key on argv):
 
 ```sh
 go run ./cmd/metrum-ai-routerctl callers generate \
   --owner-user local-dev --project example-project --env dev \
-  --allow qwen3p8-27b-ft,qwen3p8-27b-base,qwen3p8-27b-ft-onprem,qwen3p8-27b-ft-fireworks,frontier-ref \
+  --allow qwen3p8-27b-ft,qwen3p8-27b-base,qwen3p8-27b-ft-onprem,qwen3p8-27b-ft-fireworks,qwen3p8-27b-canary,qwen3p8-27b-ft-shadow,frontier-ref \
   --token-out /secure/router.token --config /secure/ft.yaml --write
 ```
 
 On that generated caller, set `rate.concurrent`, `rate.rpm`, `rate.tpm` and
-`quota.day`/`quota.month` request/token budgets. For example, 5,000 requests and
+`quota.day`/`quota.month` request/token budgets. For example, 10,000 requests and
 10,000,000 tokens/day are bounded dev-evaluation budgets, not production defaults.
 The mock e2e proves an intentionally tiny request budget is enforced.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
@@ -163,6 +165,19 @@ supported) and route callers to the base group. Disable content capture; do not
 publish promptfoo raw outputs. `eval/run_eval.py` keeps raw configs/results in a
 private output location and reads the caller key only from its token file into
 the child environment. `eval/summarize.py` publishes scalars and paired CIs.
+
+For a **synthetic local-dev** rollout proof (not promotion), start the loopback
+shadow policy and run the bounded routing/DB/privacy check:
+
+```sh
+(
+  python3 eval/shadow_policy.py & policy=$!
+  trap 'kill "$policy" 2>/dev/null || true' EXIT
+  python3 eval/governance.py --token-file /secure/router.token \
+    --usage-db /secure/router-usage.sqlite --router-log /secure/router.log \
+    --out /secure/governance-scalars.json
+)
+```
 
 ## Evaluate through the localhost router
 
@@ -226,6 +241,24 @@ Model errors or missing streaming usage make the load command fail. A merged
 variant is supported by `standalone/merge.py`, then `MODE=merged` with
 `serve/run.sh`; do not change quantization, dataset or outcome thresholds while
 comparing merged/unmerged serving. Never load/merge weights on gyrados.
+
+`eval/economics.py` converts an error-free measured load profile into an explicit
+constant-load break-even **scenario**. For example, the pinned judge's published
+$2.50/$10 input/output list rates can be a token-priced reference, but this is
+**not** a demonstrated quality-equivalent alternative or business payback:
+
+```sh
+python3 eval/economics.py --load /secure/load-onprem.json --concurrency 32 \
+  --reference-input-usd 2.5 --reference-output-usd 10 --input-output-ratio 1 \
+  --hours 720 --one-off-usd 0 --out /secure/economics-scenario.json
+```
+
+State the assumed input/output ratio, utilization, period and any one-off
+training cost. Throughput applies only to the measured short-prompt,
+128-token-cap synthetic workload. Hourly bills continue when idle; operator
+labor, storage, network, taxes, retries and quality differences are not measured.
+Against the same rented base model, fine-tuning does not magically remove GPU
+hourly cost; no reduced-retry savings or positive ROI may be inferred.
 
 ## Budget and release safety
 

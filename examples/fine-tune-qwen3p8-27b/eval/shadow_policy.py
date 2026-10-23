@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 def recommend(payload):
     targets = payload.get('targets', [])
     if len(targets) < 2:
-        raise ValueError('shadow example requires both FT targets')
+        raise ValueError('shadow example requires baseline and FT targets')
     return {'targetIndex': 1, 'classLabel': 'ft-onprem-shadow'}
 
 

@@ -30,7 +30,7 @@ def main():
     results = []
     def one(_):
         body = {'model':a.model,'messages':[{'role':'user','content':'List the integers from one through one hundred, separated by spaces.'}],
-                'temperature':0,'max_tokens':128,'stream':True,'stream_options':{'include_usage':True}}
+                'temperature':0,'top_p':.95,'top_k':20,'chat_template_kwargs':{'enable_thinking':False},'max_tokens':128,'stream':True,'stream_options':{'include_usage':True}}
         req = urllib.request.Request(a.api_base+'/chat/completions',data=json.dumps(body).encode(),
                 headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
         start = time.monotonic(); first = None; tokens = None

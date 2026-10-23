@@ -45,7 +45,10 @@ permit copyright or arbitrary metadata keys); this companion supplies provenance
   comparisons use the same case IDs. Temperature 0 for objective outcomes;
   sampling-sensitive repeats at temperature .7 with seeds 326/327/328.
   Target decoding: max2048 output tokens, top_p=.95, top_k=20; objective
-  temperature0. Judge grading is temperature0 with max256 output tokens.
+  temperature0. Runner concurrency16 for interleaved paired evaluations.
+  Judge grading is temperature0 with max256 output tokens. Send
+  `chat_template_kwargs.enable_thinking=false` to both serving stacks;
+  Fireworks maps this NIM/vLLM-compatible flag to `reasoning_effort=none`.
   Do not silently compare thinking-on Fireworks to thinking-off vLLM; verify
   non-thinking serving settings on synthetic smoke before outcome calls.
 - Pin judge `gpt-4o-2024-11-20`, temperature 0; calibrate against 50 distinct

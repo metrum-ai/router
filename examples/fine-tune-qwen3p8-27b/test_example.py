@@ -98,6 +98,23 @@ class RuntimeTests(unittest.TestCase):
                 fw.upload('synthetic-account','synthetic-model',adapter)
             self.assertEqual(calls[-1],('accounts/synthetic-account/models/synthetic-model:validateUpload','GET'))
 
+    def test_rollout_and_economics(self):
+        import yaml
+        config = yaml.safe_load((Path(__file__).parent/'config.qwen3p8-ft.example.yaml').read_text())
+        self.assertEqual(config['server']['default_model_group'],'qwen3p8-27b-base')
+        self.assertEqual([t['weight'] for t in config['models']['qwen3p8-27b-canary']['targets']],[90,5,5])
+        shadow = config['models']['qwen3p8-27b-ft-shadow']
+        self.assertEqual([t['model_ref'] for t in shadow['targets']],['base','adapter'])
+        self.assertFalse(shadow['external_policy']['include_request'])
+        economics = self.load('economics_test','eval/economics.py')
+        profile={'concurrency':32,'hourly_usd':3.6,'output_tokens_per_second':1000,'errors':0}
+        result=economics.scenario(profile,2,2,1,hours=1)
+        self.assertAlmostEqual(result['measured_full_utilization_gpu_usd_per_million_outputs'],1)
+        self.assertAlmostEqual(result['break_even_output_tokens_in_period'],900000)
+        self.assertAlmostEqual(result['break_even_capacity_fraction'],.25)
+        with self.assertRaises(ValueError):economics.scenario(profile,float('nan'),2,1)
+        with self.assertRaises(ValueError):economics.scenario({**profile,'output_tokens_per_second':0},2,2,1)
+
     def test_redaction_and_dryrun(self):
         cloud = self.load('cloud', 'standalone/cloud.py')
         self.assertEqual(cloud.redact({'instance_api_key': 'not-a-real-key', 'nested': {'token': 'x'}, 'id': 1}),

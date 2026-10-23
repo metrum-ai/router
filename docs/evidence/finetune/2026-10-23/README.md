@@ -15,7 +15,13 @@ is superseded and not promotable. No held-out FT outcome inference was run.
 Fixed with safe literal parsing, regression tests and seeded 2:1 tool/text
 stratification; corrected counts are train1333/2000, val333/500, test200/300.
 Current `dataset-manifest.json` and the amended protocol identify the corrected
-hashes; the original signed commit below preserves the flawed preflight.
+hashes, first published before outcome inference in verified commit
+[`55834c5ad4999aeb12160a9835d21ce87f3aa5f0`](https://github.com/metrum-ai/router/commit/55834c5ad4999aeb12160a9835d21ce87f3aa5f0).
+Actual Axolotl prepared-cache inspection confirms1333/2000 training and333/500
+validation rows contain **supervised native tool markers**, not dropped tool
+fields; see `prepared-tokenization-v2.json`. Maximum observed training example
+is3929 tokens;8192 is a configured cap, not an observed full-length example.
+The original signed commit below preserves the flawed preflight.
 The first full training and vLLM native/tool/schema smoke completed, but are
 **not corrected-data model evidence**. Fireworks first upload validated with
 zero warnings; its 2×B300 default deployment was still CREATING when stopped

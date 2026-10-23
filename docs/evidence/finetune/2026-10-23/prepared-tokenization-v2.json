@@ -1,0 +1,22 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "data_revision": "corrected-literal-parser-v2",
+  "method": "CPU inspection of actual Axolotl prepared cache on rented GPU host during corrected training; no model outputs",
+  "cache_identity": "train-f6e06596d2144be2ab5fda10c4b3350e689f086fc09f5d90ad1982a58deb30b6",
+  "tool_marker_ids": {"<tool_call>": 248058, "</tool_call>": 248059},
+  "training": {
+    "rows": 2000,
+    "rows_with_supervised_tool_markers": 1333,
+    "supervised_tokens": 226370,
+    "maximum_example_tokens": 3929,
+    "dataset_cache": "d3f6352c8da3c57b645dd706ec4cf596"
+  },
+  "validation": {
+    "rows": 500,
+    "rows_with_supervised_tool_markers": 333,
+    "supervised_tokens": 62020,
+    "maximum_example_tokens": 2269,
+    "dataset_cache": "f2d9bfdbfaad978be9b99ce5494e17e0"
+  },
+  "caveat": "8192 is the configured sequence cap, not the longest observed training example. This is tokenization QA, not outcome quality."
+}

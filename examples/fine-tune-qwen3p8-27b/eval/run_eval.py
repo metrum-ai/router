@@ -23,6 +23,7 @@ def main():
     p.add_argument('--temperature', type=float, default=0)
     p.add_argument('--seed', type=int, default=326)
     p.add_argument('--non-tool-only', action='store_true')
+    p.add_argument('--concurrency', type=int, choices=[1,8,16,32], default=16)
     a = p.parse_args()
     out = a.out.resolve()
     if ROOT/'docs' in out.parents or ROOT/'examples' in out.parents:
@@ -42,7 +43,7 @@ def main():
     prototype = config['providers'][0]['config']
     config['providers'] = [{'id':'openai:chat:'+group,'config':{**prototype,'temperature':a.temperature,
         'seed':a.seed,'max_tokens':2048,'top_p':.95,
-        **({'passthrough':{'top_k':20}} if group.startswith('qwen3p8-27b-') else {})}} for group in a.groups]
+        **({'passthrough':{'top_k':20,'chat_template_kwargs':{'enable_thinking':False}}} if group.startswith('qwen3p8-27b-') else {})}} for group in a.groups]
     out.parent.mkdir(parents=True,exist_ok=True)
     cfg = out.with_suffix('.private-config.yaml')
     cfg.write_text(yaml.safe_dump(config,sort_keys=False));cfg.chmod(0o600)
@@ -54,7 +55,7 @@ def main():
     journal.write_text('');journal.chmod(0o600)
     env['FT_ROUTER_JOURNAL'] = str(journal)
     binary = HERE.parent/'.cache/promptfoo/node_modules/.bin/promptfoo'
-    process = subprocess.run([str(binary),'eval','-c',str(cfg),'--no-cache','--max-concurrency','8','-o',str(out)],env=env,umask=0o077)
+    process = subprocess.run([str(binary),'eval','-c',str(cfg),'--no-cache','--max-concurrency',str(a.concurrency),'-o',str(out)],env=env,umask=0o077)
     if out.exists() and out.stat().st_size:
         rows = json.loads(out.read_text())['results']['results']
         if len(journal.read_text().splitlines()) != len(rows):

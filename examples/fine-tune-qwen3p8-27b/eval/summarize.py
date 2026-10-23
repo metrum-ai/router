@@ -107,6 +107,10 @@ def main():
                 p.error('router request ID absent from usage DB')
             join['telemetry'] = dict(row)
         connection.close()
+        for provider, summary in result['providers'].items():
+            summary['total_cost_usd'] = sum(float(j['telemetry']['total_cost_usd'] or 0)
+                for j in result['router_joins'] if j['provider']==provider)
+    result['cost_scope'] = 'Model-request token estimates only; excludes grader calls and hourly GPU/deployment charges. Zero token price is not free serving.'
     a.out.write_text(json.dumps(result, indent=2))
 
 if __name__ == '__main__':

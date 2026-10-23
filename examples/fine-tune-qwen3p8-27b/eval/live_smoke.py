@@ -22,14 +22,17 @@ def main():
         headers = {'Content-Type':'application/json'}
         if token:
             headers['Authorization'] = 'Bearer ' + token
-        payload = {'model':a.model,'max_tokens':2048,'temperature':0,**body}
+        payload = {'model':a.model,'max_tokens':2048,'temperature':0,
+            'chat_template_kwargs':{'enable_thinking':False},**body}
         req = urllib.request.Request(a.api_base+'/chat/completions',data=json.dumps(payload).encode(),headers=headers)
         response = urllib.request.urlopen(req,timeout=180)
         ids.append(response.headers.get('X-Request-Id'))
         return response
     with call({'messages':[{'role':'user','content':'Reply with one short greeting.'}]}) as response:
         chat = json.load(response)
-    assert chat['choices'][0]['message'].get('content')
+    greeting = chat['choices'][0]['message']
+    assert greeting.get('content') and not greeting.get('reasoning_content')
+    assert '<think>' not in greeting['content']
     chunks = 0;done = False
     with call({'messages':[{'role':'user','content':'Say hello.'}],'stream':True}) as response:
         for line in response:
@@ -62,7 +65,7 @@ def main():
         result = json.load(response)
     assert json.loads(result['choices'][0]['message']['content'])=={'ok':True}
     a.out.write_text(json.dumps({'copyright':'Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0',
-        'model':a.model,'api_base':a.api_base,'chat':'pass','stream':'pass','stream_frames':chunks,
+        'model':a.model,'api_base':a.api_base,'reasoning_mode':'explicitly disabled; no greeting reasoning trace','chat':'pass','stream':'pass','stream_frames':chunks,
         'tool_file_creation':'pass','tool_result_continuation':'pass','json_schema':'pass','router_request_ids':ids},indent=2))
     print('chat, streaming, tool continuation, JSON-schema: PASS')
 

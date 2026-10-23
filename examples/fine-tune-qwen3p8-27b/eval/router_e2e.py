@@ -25,6 +25,7 @@ def main():
     p.add_argument('--router-bin', type=Path, required=True)
     a = p.parse_args()
     seen = {'fireworks_ft': 0, 'vllm_b200_ft': 0}
+    seen_models = {'mock-adapter':0,'mock-base':0}
     servers = []
     for provider, port in [('fireworks_ft', 18531), ('vllm_b200_ft', 18532)]:
         def handler(name):
@@ -34,6 +35,7 @@ def main():
                 def do_POST(self):
                     body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                     seen[name] += 1
+                    seen_models[body['model']] += 1
                     messages = body['messages']
                     if messages[-1]['role'] == 'tool':
                         assert messages[-1]['tool_call_id'] == 'call_ft_0'
@@ -44,7 +46,7 @@ def main():
                             'function': {'name': 'create_file', 'arguments': '{"name":"proof.txt","content":"synthetic"}'}}]}
                         finish = 'tool_calls'
                     result = {'id': 'chatcmpl-ft-mock', 'object': 'chat.completion', 'created': 1,
-                        'model': 'mock-adapter', 'choices': [{'index': 0, 'message': message, 'finish_reason': finish}],
+                        'model': body['model'], 'choices': [{'index': 0, 'message': message, 'finish_reason': finish}],
                         'usage': {'prompt_tokens': 20, 'completion_tokens': 10, 'total_tokens': 30}}
                     raw = json.dumps(result).encode()
                     self.send_response(200); self.send_header('Content-Type', 'application/json')
@@ -89,12 +91,15 @@ def main():
                 x['providers'][provider] = {'dialect': 'openai-chat', 'base_url': f'http://127.0.0.1:{port}/v1',
                     'models': {'adapter': {'model': 'mock-adapter', 'input_price_per_million_usd': 1,
                     'output_price_per_million_usd': 1, 'tool_support': {'openai_chat': ['tools','tool_choice']}}}}
+            x['providers']['vllm_b200_ft']['models']['base'] = {
+                **x['providers']['vllm_b200_ft']['models']['adapter'],'model':'mock-base'}
             x['models'] = {'qwen3p8-27b-ft': {'strategy': 'weighted', 'targets': [
                 {'provider': n, 'model_ref': 'adapter', 'weight': 50} for n in seen]}}
             x['models']['qwen3p8-27b-ft-shadow'] = {'strategy':'external',
                 'external_policy': {'url':'http://127.0.0.1:18533/route','mode':'shadow',
                     'allow_hosts':['127.0.0.1'],'include_request':False,'on_error':'fail_closed'},
-                'targets':x['models']['qwen3p8-27b-ft']['targets']}
+                'targets':[{'provider':'vllm_b200_ft','model_ref':'base'},
+                           {'provider':'vllm_b200_ft','model_ref':'adapter'}]}
             x['callers'][0]['allow'] = ['qwen3p8-27b-ft','qwen3p8-27b-ft-shadow']
             x['callers'][0]['quota']['day']['requests'] = 45
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
@@ -127,8 +132,9 @@ def main():
             before = dict(seen)
             chat(messages, 'qwen3p8-27b-ft-shadow')
             assert policy_calls == [True]
-            assert seen['fireworks_ft'] == before['fireworks_ft'] + 1
-            assert seen['vllm_b200_ft'] == before['vllm_b200_ft']
+            assert seen['fireworks_ft'] == before['fireworks_ft']
+            assert seen['vllm_b200_ft'] == before['vllm_b200_ft'] + 1
+            assert seen_models == {'mock-adapter':44,'mock-base':1}
             try:
                 chat(messages)
                 raise AssertionError('request budget not enforced')

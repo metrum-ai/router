@@ -3,7 +3,7 @@
 # Local/dev only. Fill account/deployment identifiers outside Git.
 server:
   listen: 127.0.0.1:18525
-  default_model_group: qwen3p8-27b-ft
+  default_model_group: qwen3p8-27b-base
   identifiers: {mode: passthrough}
   decision_telemetry: {enabled: true}
   cache: {enabled: false}
@@ -72,8 +72,15 @@ models:
     targets:
       - {provider: fireworks_ft, model_ref: adapter, weight: 50}
       - {provider: vllm_b200_ft, model_ref: adapter, weight: 50}
+  # Optional base/FT canary: start at 10% FT, retain the base for instant rollback.
+  qwen3p8-27b-canary:
+    strategy: weighted
+    targets:
+      - {provider: vllm_b200_ft, model_ref: base, weight: 90}
+      - {provider: fireworks_ft, model_ref: adapter, weight: 5}
+      - {provider: vllm_b200_ft, model_ref: adapter, weight: 5}
   # Optional: start python3 eval/shadow_policy.py before calling this group.
-  # shadow records an alternate recommendation; it does NOT duplicate inference.
+  # Base serves; FT recommendation is recorded, NOT a second inference.
   qwen3p8-27b-ft-shadow:
     strategy: external
     external_policy:
@@ -83,8 +90,8 @@ models:
       include_request: false
       on_error: fail_closed
     targets:
-      - {provider: fireworks_ft, model_ref: adapter, weight: 50}
-      - {provider: vllm_b200_ft, model_ref: adapter, weight: 50}
+      - {provider: vllm_b200_ft, model_ref: base}
+      - {provider: vllm_b200_ft, model_ref: adapter}
   qwen3p8-27b-ft-fireworks:
     strategy: static
     targets:
