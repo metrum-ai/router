@@ -88,16 +88,31 @@ class ExportTests(unittest.TestCase):
 
 
 class RentalBlockTests(unittest.TestCase):
-    def test_current_registration_blocks_training_before_inputs(self):
+    def test_unfrozen_registration_blocks_training_before_inputs(self):
         readiness = module('readiness_export','run2/readiness.py')
-        with self.assertRaisesRegex(ValueError,'not frozen'):
-            readiness.verify(ROOT)
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d);(p/'run2').mkdir()
+            (p/'run2/preregistration.json').write_text(json.dumps({'status':'blocked'}))
+            with self.assertRaisesRegex(ValueError,'not frozen'):readiness.verify(p)
+
+    def test_projection_uses_source_gold_not_recorded_teacher(self):
+        projector=module('source_projection','run2/project_eval.py')
+        rows=[{'provenance':{'task_sha256':'task'},'messages':[{'content':'TEACHER_SENTINEL'}]}]
+        gold={'task':{'initial_messages':[{'role':'user','content':'question'}],
+            'tools':[],'expected_calls':[],'reference':'SOURCE_REFERENCE'}}
+        tests=projector.project(rows,gold)
+        self.assertNotIn('TEACHER_SENTINEL',json.dumps(tests))
+        self.assertNotIn('SOURCE_REFERENCE',tests[0]['vars']['messages'])
+        self.assertIn('SOURCE_REFERENCE',tests[0]['assert'][0]['value'])
+        with self.assertRaises(ValueError):projector.project(rows,{})
 
     def test_replay_execute_blocked_before_backend_or_network(self):
         with tempfile.TemporaryDirectory() as d:
             out=Path(d)/'private.jsonl'
+            registration=Path(d)/'blocked.json'
+            registration.write_text(json.dumps({'status':'blocked'}))
             result=subprocess.run([sys.executable,str(ROOT/'run2/run_replay.py'),
-                '--export',str(Path(d)/'absent-export'),'--preregistration',str(ROOT/'run2/preregistration.json'),
+                '--export',str(Path(d)/'absent-export'),'--preregistration',str(registration),
                 '--backend',str(Path(d)/'absent-backend'),'--arm','candidate','--out',str(out),'--execute'],
                 capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0)

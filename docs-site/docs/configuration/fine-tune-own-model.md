@@ -17,6 +17,37 @@ The source example is
 It is a **work-in-progress operator recipe**, not a published promotion result.
 Consult its evidence before quoting quality, latency or economics.
 
+## Router-centric loop
+
+A public corpus is not the customer's work, successful training is not safe
+production, and cost per token is not cost per successful task. The router loop
+is: teacher serve → governed opt-in capture for one caller key/project → harness
+outcome labels → audited canonical JSONL and manifest export with frozen time
+splits → external fine-tune → route back inside the same `support-agent` group
+with a key-scoped canary → replay captured initial fixtures through the router
+→ preregistered quality/regression gate decides. Preserve failed-task denominators.
+
+Choose a teacher whose **model license and provider terms permit training on
+outputs**; verify rights before enabling training export. The example's scoped
+maintainer authorization for synthetic Acme technical-test traffic is not a
+permission for customer-data training.
+
+The source example's `router-loop/` provides two-key collection, deterministic
+mock tools, `content:training` admin authorization, durable export audit, privacy
+filters, hashed manifests and same-group caller-bound routing. Only explicitly
+captured complete/unexpired text/chat-tool traces with harness labels are
+eligible. Export does not restore PII; copies need their own access/retention
+policy. See [Usage reporting](../operations/usage-reporting.md) and
+[Privacy](../privacy.md). Replay new model calls from initial fixtures, never
+recorded teacher answers. Freeze backend/checker and gate before held-out calls.
+
+Measured integration is a tiny teacher sample and synthetic candidate stand-in,
+not a trained-model canary or promotion. Run 1's narrow JSON-text improvement
+failed general regressions; base remains default. A useful governed training
+cohort, actual fine-tuned-target replay and cost-per-success comparison remain
+pending. The steps below describe the historical external training machinery,
+not permission to bypass router capture for the router-centric run.
+
 ## Workflow
 
 1. Verify model and dataset licenses, pin artifacts, deduplicate canonical chat
@@ -82,7 +113,8 @@ blocking dependencies and validated versus still-unmeasured facts.
   explicitly opt in only the authorized key/project with redaction/PII policy
   and retention; prove other callers remain uncaptured/unexported. For ordinary
   evaluation, keep capture off and prove logs/usage contain no prompt content.
-  Synthetic mock tests prove integration, not trained-model quality.
+  Secure and expire exported copies separately. Synthetic mock tests prove
+  integration, not trained-model quality.
 - Public human-judgment calibration measures judge agreement on that corpus,
   not correctness on the customer's task. Report confidence intervals and weak
   agreement honestly.

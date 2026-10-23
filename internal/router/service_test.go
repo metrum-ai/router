@@ -15255,10 +15255,19 @@ func testConfig(t testing.TB, upstreamURL, providerKey, dir string) *Config {
 	}
 }
 
-// freshSQLiteUsageDBConfigForTest makes a fresh temporary store's migration
-// intent explicit without performing I/O. Unrelated service tests use
-// auto-safe; migration and deployment-job tests construct deliberate state.
+// Ordinary service fixtures clone a fully migrated empty store. Startup still
+// runs its real compatibility checks; migration tests use the uncached helper.
 func freshSQLiteUsageDBConfigForTest(path string, enabled ...*bool) UsageDBConfig {
+	cfg := uncachedSQLiteUsageDBConfigForTest(path, enabled...)
+	if cfg.Enable == nil || *cfg.Enable {
+		if err := cloneUsageFixture(path, true); err != nil {
+			panic(fmt.Sprintf("clone usage fixture: %v", err))
+		}
+	}
+	return cfg
+}
+
+func uncachedSQLiteUsageDBConfigForTest(path string, enabled ...*bool) UsageDBConfig {
 	cfg := UsageDBConfig{}
 	cfg.Driver = "sqlite"
 	cfg.Path = path
@@ -15635,7 +15644,9 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+	code := m.Run()
+	cleanupUsageFixtureTemplates()
+	os.Exit(code)
 }
 
 // TestAdminReportsPrefixRedirectStaysLocal checks that the bare admin reports

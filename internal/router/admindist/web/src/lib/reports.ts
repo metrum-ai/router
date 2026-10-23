@@ -199,6 +199,15 @@ const trafficTuningColumns: ReportColumn[] = [
 ];
 
 const tokenColumns: ReportColumn[] = [
+  {key:"reasoningTokens",label:"Reasoning tokens"},
+  {key:"reasoningReportedRequests",label:"Reasoning reported requests"},
+  {key:"cachedInputTokens",label:"Cached input tokens"},
+  {key:"cachedInputReportedRequests",label:"Cache reported requests"},
+  {key:"cacheWriteInputTokens",label:"Cache write tokens"},
+ {key:"cacheWriteReportedRequests",label:"Cache write reported requests"},
+ {key:"reasoningAttemptCount",label:"Reasoning attempts"},
+ {key:"reasoningSuccessfulAttemptCount",label:"Successful reasoning attempts"},
+ {key:"reasoningReportedAttemptCount",label:"Reported reasoning attempts"},
   { key: "inputTokens", label: "Input tokens" },
   { key: "outputTokens", label: "Output tokens" },
   { key: "inputImageTokens", label: "Image tokens" },
@@ -293,6 +302,9 @@ const defaultScalarColumns: ReportColumn[] = [
 ];
 
 const savingsColumns: ReportColumn[] = [
+  {key:"routingSavingsUsd",label:"Routing savings",unit:"USD"},
+  {key:"promptCacheSavingsUsd",label:"Prompt cache savings",unit:"USD"},
+  {key:"responseCacheSavingsUsd",label:"Response cache savings",unit:"USD"},
   { key: "key", label: "Bucket" },
   { key: "requests", label: "Requests" },
   { key: "input_tokens", label: "Input tokens" },
@@ -441,7 +453,7 @@ const catalogColumns: ReportColumn[] = [
   { key: "pricingMissing", label: "Pricing missing" },
 ];
 
-const statusCacheFilters = ["status", "cache"] as const satisfies ReadonlyArray<TabFilterName>;
+const statusCacheFilters = ["status", "cache", "history_source"] as const satisfies ReadonlyArray<TabFilterName>;
 const savingsFilters = ["baseline", "sort", "direction"] as const satisfies ReadonlyArray<TabFilterName>;
 const statusCacheSortFilters = ["status", "cache", "sort", "direction"] as const satisfies ReadonlyArray<TabFilterName>;
 const shapingFilters = ["traffic_shape_bucket", "traffic_shape_scope", "sort", "direction"] as const satisfies ReadonlyArray<TabFilterName>;
@@ -1219,7 +1231,7 @@ function reportMeta(id: keyof typeof reportMetadataById): ReportMetadata {
 
 export const tabSpecs: TabSpec[] = [
   { id: "data-migrations", label: "Data migrations", endpoint: "migrations", metadata: reportMeta("data-migrations"), columns: migrationColumns, filters: ["scope", "release", "state", "type", "date"] },
-  { id: "overview", label: "Overview", endpoint: "summary", metadata: reportMeta("overview"), overview: true },
+  { id: "overview", label: "Overview", endpoint: "summary", metadata: reportMeta("overview"), overview: true, filters: ["history_source"] },
   { id: "groups", label: "Groups", endpoint: "summary", metadata: reportMeta("groups"), columns: defaultScalarColumns, filters: statusCacheFilters },
   { id: "providers", label: "Providers", endpoint: "summary", metadata: reportMeta("providers"), columns: defaultScalarColumns, filters: statusCacheFilters },
   { id: "tokens", label: "Keys", endpoint: "summary", metadata: reportMeta("tokens"), columns: defaultScalarColumns, filters: statusCacheFilters },
