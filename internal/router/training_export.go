@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -29,6 +30,7 @@ type trainingOutcome struct {
 	Backend       string           `json:"backend"`
 	Seed          int64            `json:"seed"`
 	ExpectedCalls []map[string]any `json:"expected_calls,omitempty"`
+	ExpectedFinal string           `json:"expected_final,omitempty"`
 }
 
 type trainingFilters struct {
@@ -105,7 +107,7 @@ func (s *Service) handleTrainingOutcome(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var label trainingOutcome
-	if decodeTrainingBody(r, &label) != nil || label.Version != "router-outcome-v1" || len(label.TaskHash) != 64 || label.Quality < 0 || label.Quality > 1 || label.Backend != "acme-support-v1" {
+	if decodeTrainingBody(r, &label) != nil || label.Version != "router-outcome-v1" || len(label.TaskHash) != 64 || label.Quality < 0 || label.Quality > 1 || label.Backend != "acme-support-v1" || len(label.ExpectedFinal) > 1 || (label.ExpectedFinal != "" && !strings.Contains("ABCD", label.ExpectedFinal)) {
 		writeJSON(w, 400, map[string]string{"error": "invalid-outcome"})
 		return
 	}
@@ -171,7 +173,7 @@ func (s *Service) handleTrainingExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var f trainingFilters
-	if decodeTrainingBody(r, &f) != nil || f.From.IsZero() || !f.From.Before(f.ValidationFrom) || !f.ValidationFrom.Before(f.TestFrom) || !f.TestFrom.Before(f.To) || f.MinQuality < 0 || f.MinQuality > 1 || f.TeacherTermsDecision["decision"] == "" || f.TaskSource["license"] == "" {
+	if decodeTrainingBody(r, &f) != nil || f.From.IsZero() || !f.From.Before(f.ValidationFrom) || !f.ValidationFrom.Before(f.TestFrom) || !f.TestFrom.Before(f.To) || f.MinQuality < 0 || f.MinQuality > 1 || f.TeacherTermsDecision["decision"] == "" || f.TeacherTermsDecision["training_outputs_allowed"] != "true" || f.TaskSource["license"] == "" {
 		writeJSON(w, 400, map[string]string{"error": "invalid-export-filters"})
 		return
 	}
@@ -205,6 +207,16 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 	seen := map[string]bool{}
 	taskSplit := map[string]string{}
 	for _, u := range usages {
+		ts, err := time.Parse(time.RFC3339Nano, u.TS)
+		if err != nil {
+			return nil, err
+		}
+		split := "train.jsonl"
+		if !ts.Before(f.TestFrom) {
+			split = "test.jsonl"
+		} else if !ts.Before(f.ValidationFrom) {
+			split = "val.jsonl"
+		}
 		var captures []contentCaptureRecord
 		if err := s.usage.db.Where("request_id = ? AND retention_until > ?", u.RequestID, formatUsageTime(time.Now().UTC())).Find(&captures).Error; err != nil {
 			return nil, err
@@ -241,7 +253,7 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 			continue
 		}
 		var label trainingOutcome
-		if json.Unmarshal(labelBytes, &label) != nil || label.Version != "router-outcome-v1" || label.Quality < f.MinQuality || (f.SuccessOnly && (!label.TaskSuccess || !label.SchemaValid)) {
+		if json.Unmarshal(labelBytes, &label) != nil || label.Version != "router-outcome-v1" || (split != "test.jsonl" && (label.Quality < f.MinQuality || (f.SuccessOnly && (!label.TaskSuccess || !label.SchemaValid)))) {
 			continue
 		}
 		var request map[string]any
@@ -256,11 +268,15 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		// Require a completed assistant turn. The final request already includes
 		// every intermediate assistant call and deterministic tool result.
 		text, ok := response["text"].(string)
-		if !ok || text == "" || response["stop_reason"] == "tool_calls" {
+		if response["stop_reason"] == "tool_calls" || (split != "test.jsonl" && (!ok || text == "" || (response["stop_reason"] != "stop" && response["stop_reason"] != "end_turn"))) {
 			continue
 		}
 		messages = append(messages, map[string]any{"role": "assistant", "content": text})
-		canonical, _ := json.Marshal(map[string]any{"messages": messages, "tools": request["tools"]})
+		tools := request["tools"]
+		if tools == nil {
+			tools = []any{}
+		}
+		canonical, _ := json.Marshal(map[string]any{"messages": messages, "tools": tools})
 		// Export-only filtering never restores PII. Filter parsed string leaves so
 		// replacements cannot corrupt JSON syntax or function-argument escaping.
 		var transcript any
@@ -272,16 +288,6 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 			continue
 		}
 		seen[hash] = true
-		ts, err := time.Parse(time.RFC3339Nano, u.TS)
-		if err != nil {
-			return nil, err
-		}
-		split := "train.jsonl"
-		if !ts.Before(f.TestFrom) {
-			split = "test.jsonl"
-		} else if !ts.Before(f.ValidationFrom) {
-			split = "val.jsonl"
-		}
 		if previous, ok := taskSplit[label.TaskHash]; ok && previous != split {
 			return nil, errors.New("task crosses frozen split boundary")
 		}
@@ -292,6 +298,9 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		}
 		// PII filters must never rewrite provenance hashes or timestamps. Only
 		// content fields (including the public checker fixture) are filtered.
+		if label.ExpectedCalls == nil {
+			label.ExpectedCalls = []map[string]any{}
+		}
 		fixtureBytes, _ := json.Marshal(label.ExpectedCalls)
 		var fixture any
 		_ = json.Unmarshal(fixtureBytes, &fixture)
@@ -306,7 +315,7 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 			}
 			initial = append(initial, message)
 		}
-		row := map[string]any{"messages": clean["messages"], "tools": clean["tools"], "provenance": map[string]any{"trace_hash": trainingHash([]byte(u.RequestID)), "task_hash": label.TaskHash, "content_hash": hash, "captured_at": req.TS, "teacher_provider": req.TargetProvider, "teacher_model": req.TargetModel}, "outcome": label, "replay": map[string]any{"version": "router-replay-v1", "backend": label.Backend, "checker": "expected-tool-calls-v1", "seed": label.Seed, "initial_messages": initial, "tools": clean["tools"], "expected_calls": fixture}}
+		row := map[string]any{"messages": clean["messages"], "tools": clean["tools"], "provenance": map[string]any{"trace_hash": trainingHash([]byte(u.RequestID)), "task_hash": label.TaskHash, "trace_sha256": trainingHash([]byte(u.RequestID)), "task_sha256": label.TaskHash, "content_hash": hash, "captured_at": req.TS, "teacher_provider": req.TargetProvider, "teacher_model": req.TargetModel}, "outcome": map[string]any{"version": label.Version, "task_hash": label.TaskHash, "task_success": label.TaskSuccess, "schema_valid": label.SchemaValid, "tool_schema_valid": label.SchemaValid, "quality": label.Quality}, "replay": map[string]any{"version": "router-replay-v1", "backend": label.Backend, "checker": "expected-tool-calls-v1", "seed": label.Seed, "initial_messages": initial, "tools": clean["tools"], "expected_calls": fixture, "expected_final": label.ExpectedFinal}}
 		encoded, _ := json.Marshal(row)
 		files[split].Write(encoded)
 		files[split].WriteByte('\n')
@@ -315,12 +324,22 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		}
 		counts[split]++
 	}
-	manifest := map[string]any{"format": "router-chat-tools-v1", "audit_event_id": auditID, "teacher_terms_decision": f.TeacherTermsDecision, "task_source": f.TaskSource, "source": map[string]string{"kind": "router_capture"}, "filters": f, "privacy": map[string]any{"redaction_preserved": true, "pii_filter": "export-email-phone-v1", "headers_exported": false}, "files": map[string]any{}}
+	manifest := map[string]any{"format": "metrum-router-ft-export-v1", "chat_format": "router-chat-tools-v1", "audit_event_id": auditID, "teacher_terms_decision": f.TeacherTermsDecision, "task_source": f.TaskSource, "source": map[string]string{"kind": "router_capture"}, "filters": f, "privacy": map[string]any{"redaction_preserved": true, "pii_filter": "export-email-phone-v1", "headers_exported": false}, "files": map[string]any{}}
+	manifest["outcome_filter_scope"] = "train,val only; heldout retains labeled teacher failures"
+	manifest["split_boundaries"] = map[string]any{"from": f.From, "validation_from": f.ValidationFrom, "test_from": f.TestFrom, "to": f.To}
+	manifest["audit_event_ref"] = map[string]any{"table": "security_access_events", "id": auditID}
+	manifest["teacher_terms"] = map[string]any{"training_outputs_allowed": f.TeacherTermsDecision["training_outputs_allowed"] == "true", "decision": f.TeacherTermsDecision, "attestation": "authorized admin assertion, not independent legal verification"}
+	privacy := manifest["privacy"].(map[string]any)
+	privacy["capture_opt_in"] = true
+	privacy["redaction_applied"] = true
+	privacy["pii_filter_applied"] = true
+	manifest["splits"] = map[string]any{}
 	fileInfo := manifest["files"].(map[string]any)
 	names := []string{"train.jsonl", "val.jsonl", "test.jsonl"}
 	sort.Strings(names)
 	for _, name := range names {
 		fileInfo[name] = map[string]any{"sha256": trainingHash(files[name].Bytes()), "count": counts[name]}
+		manifest["splits"].(map[string]any)[name[:len(name)-len(".jsonl")]] = fileInfo[name]
 	}
 	fileHashes, _ := json.Marshal(fileInfo)
 	manifest["dataset_hash"] = trainingHash(fileHashes)

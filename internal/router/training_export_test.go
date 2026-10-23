@@ -146,6 +146,51 @@ func TestTrainingExportCaptureConsentPrivacyAndFrozenSplits(t *testing.T) {
 	if err := store.db.Where("request_id = ?", "second").Delete(&contentCaptureRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
+	// Outcome selection is training-only: never remove labeled teacher failures
+	// from the frozen heldout population and improve evaluation by selection.
+	var labelRecord contentCaptureRecord
+	if err := store.db.Where("request_id = ? AND scope = ?", "captured", "training_outcome_v1").First(&labelRecord).Error; err != nil {
+		t.Fatal(err)
+	}
+	failed, _ := json.Marshal(trainingOutcome{Version: "router-outcome-v1", TaskHash: strings.Repeat("a", 64), TaskSuccess: false, SchemaValid: false, Quality: 0, Backend: "acme-support-v1"})
+	cipher, nonce, err := encryptContentCaptureValue(s.contentCaptureKeys, encryption.LocalKeyID, string(failed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Model(&labelRecord).Updates(map[string]any{"content_text": cipher, "encryption_nonce": nonce}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var emptyResponse contentCaptureRecord
+	if err := store.db.Where("request_id = ? AND scope = ?", "captured", contentCaptureScopeResponse).First(&emptyResponse).Error; err != nil {
+		t.Fatal(err)
+	}
+	emptyCipher, emptyNonce, err := encryptContentCaptureValue(s.contentCaptureKeys, encryption.LocalKeyID, `{"text":"","stop_reason":"length"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Model(&emptyResponse).Updates(map[string]any{"content_text": emptyCipher, "encryption_nonce": emptyNonce}).Error; err != nil {
+		t.Fatal(err)
+	}
+	heldout := f
+	heldout.ValidationFrom = now.Add(-210 * time.Minute)
+	heldout.TestFrom = now.Add(-195 * time.Minute)
+	data, err := s.buildTrainingArchive(heldout, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	z, _ := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	foundFailure := false
+	for _, file := range z.File {
+		if file.Name == "test.jsonl" {
+			r, _ := file.Open()
+			b, _ := io.ReadAll(r)
+			r.Close()
+			foundFailure = strings.Contains(string(b), `"task_success":false`)
+		}
+	}
+	if !foundFailure {
+		t.Fatal("success-only filter removed heldout teacher failure")
+	}
 	// Deleting captures must remove exportability, even though usage remains.
 	if err := store.db.Where("request_id = ?", "captured").Delete(&contentCaptureRecord{}).Error; err != nil {
 		t.Fatal(err)

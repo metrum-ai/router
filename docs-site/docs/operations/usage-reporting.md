@@ -348,8 +348,9 @@ security reporting. A security-event row must commit before content leaves;
 audit failure refuses access. Filter by public `token_id`, `project`, `client`,
 `group`, half-open UTC `from`/`to`, `success_only`, and `min_quality`. Supply
 explicit frozen `validation_from` and `test_from` boundaries, a reviewed
-`teacher_terms_decision.decision` and `task_source.license`. Source tasks cannot
-cross splits. Narrow filters if selection exceeds 10,000 usage rows or 64 MiB.
+`teacher_terms_decision.decision`, its explicit string
+`training_outputs_allowed: "true"` attestation, and `task_source.license`. Success/quality filters apply to train/val only; eligible labeled teacher
+failures remain in the frozen test population. Source tasks cannot cross splits. Narrow filters if selection exceeds 10,000 usage rows or 64 MiB.
 
 The ZIP contains `train.jsonl`, `val.jsonl`, `test.jsonl`, `manifest.json` with
 counts, effective filters, hashes, capture provenance, audit-event reference and

@@ -97,7 +97,7 @@ def demonstrate_canary(binary, out, cfg, env):
             for variable in ('TRACE_SUPPORT_KEY', 'TRACE_IT_KEY'):
                 _, headers, raw = collect.request('http://127.0.0.1:18410', '/v1/chat/completions', {
                     'model': 'support-agent', 'messages': [{'role': 'user', 'content': 'Reply only ROUTE_PROBE.'}], 'max_tokens': 64}, env[variable])
-                answer = json.loads(raw)['choices'][0]['message']['content']
+                answer = json.loads(raw)['choices'][0]['message'].get('content')
                 assert (answer == 'CANARY_STANDIN') == (variable == 'TRACE_SUPPORT_KEY')
                 evidence.append({'caller': variable, 'request_id': headers['X-Request-Id']})
             try:
@@ -127,6 +127,8 @@ def main():
     p.add_argument('--tasks', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--per-split', type=int, default=2)
+    p.add_argument('--include-text', action='store_true')
+    p.add_argument('--task-source-json', type=Path)
     a = p.parse_args()
     if not os.environ.get('FIREWORKS_API_KEY'):
         p.error('FIREWORKS_API_KEY required in environment')
@@ -146,8 +148,13 @@ def main():
                     break
                 except Exception:
                     time.sleep(.25)
-            subprocess.run([sys.executable, str(Path(__file__).with_name('collect.py')), '--tasks', str(a.tasks.resolve()),
-                            '--out', str(a.out / 'dataset'), '--per-split', str(a.per_split)], env=env, check=True)
+            command = [sys.executable, str(Path(__file__).with_name('collect.py')), '--tasks', str(a.tasks.resolve()),
+                       '--out', str(a.out / 'dataset'), '--per-split', str(a.per_split)]
+            if a.include_text:
+                command.append('--include-text')
+            if a.task_source_json:
+                command.extend(['--task-source-json', str(a.task_source_json.resolve())])
+            subprocess.run(command, env=env, check=True)
         finally:
             router.terminate()
             try:

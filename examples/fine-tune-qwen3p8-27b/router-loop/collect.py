@@ -20,6 +20,7 @@ from jsonschema import Draft202012Validator
 
 TERMS_SHA = '78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30'
 DECISION = {
+    'training_outputs_allowed': 'true',
     'decision': 'Maintainer authorized synthetic technical loop test, illustrative Acme scenario and deterministic mock tools; not real customer outputs.',
     'reference': 'https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842',
     'terms_url': 'https://fireworks.ai/terms-of-service',
@@ -56,8 +57,9 @@ def execute(call, tools, seed):
     schema = next(t['function']['parameters'] for t in tools if t['function']['name'] == name)
     def local_refs(value):
         if isinstance(value, dict):
-            if '$ref' in value and not value['$ref'].startswith('#'):
-                raise ValueError('remote schema references forbidden')
+            for key in ('$ref', '$dynamicRef', '$recursiveRef'):
+                if key in value and not value[key].startswith('#'):
+                    raise ValueError('remote schema references forbidden')
             for child in value.values():
                 local_refs(child)
         elif isinstance(value, list):
@@ -65,6 +67,8 @@ def execute(call, tools, seed):
                 local_refs(child)
     local_refs(schema)
     args = json.loads(call['function']['arguments'])
+    if not isinstance(args, dict):
+        raise ValueError('function arguments must be an object')
     Draft202012Validator(schema).validate(args)
     return {'ok': True, 'mock': True, 'status': 'completed', 'seed': seed}, {'name': name, 'arguments': args}
 
@@ -75,6 +79,8 @@ def episode(base, key, row, seed):
     tools = row.get('tools', [])
     expected = [{'name': c['function']['name'], 'arguments': json.loads(c['function']['arguments'])}
                 for m in row['messages'] for c in m.get('tool_calls', [])]
+    gold = row['messages'][-1].get('content')
+    expected_final = gold.strip() if isinstance(gold, str) and gold.strip() in ('A','B','C','D') and not expected else ''
     messages = json.loads(json.dumps(initial))
     actual, schema_valid, tokens = [], True, 0
     request_ids = []
@@ -89,8 +95,10 @@ def episode(base, key, row, seed):
         messages.append(assistant)
         calls = assistant.get('tool_calls', [])
         if not calls:
-            success = bool(actual) and actual == expected and bool(assistant.get('content')) and schema_valid
-            return {'initial': initial, 'tools': tools, 'expected': expected, 'success': success,
+            content = assistant.get('content') or ''
+            complete = response['choices'][0].get('finish_reason', 'stop') == 'stop'
+            success = actual == expected and bool(content) and complete and schema_valid and (not expected_final or content.strip() == expected_final)
+            return {'initial': initial, 'tools': tools, 'expected': expected, 'expected_final': expected_final, 'success': success,
                     'schema_valid': schema_valid, 'request_ids': request_ids, 'tokens': tokens,
                     'task_hash': digest({'initial': initial, 'tools': tools}), 'turns': turn + 1}
         for call in calls:
@@ -120,7 +128,8 @@ def validate_archive(raw):
             for row in rows:
                 assert row['provenance']['task_hash'] not in tasks
                 tasks.add(row['provenance']['task_hash'])
-                assert row['outcome']['task_success']
+                if name != 'test.jsonl':
+                    assert row['outcome']['task_success']
                 assert row['replay']['initial_messages']
         return manifest
 
@@ -131,12 +140,20 @@ def main():
     p.add_argument('--tasks', type=Path, required=True, help='licensed canonical task-seed JSONL; not training data')
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--per-split', type=int, default=2)
+    p.add_argument('--include-text', action='store_true', help='also collect general/text seed tasks; completion validity is not semantic answer quality')
+    p.add_argument('--task-source-json', type=Path, help='reviewed map of string attribution/license/revision fields for mixed public seed sources')
     args = p.parse_args()
     if not 1 <= args.per_split <= 10:
         p.error('small-sample spend guard: per-split must be 1..10')
     args.out.mkdir(parents=True, exist_ok=True)
+    source = json.loads(args.task_source_json.read_text()) if args.task_source_json else dict(SOURCE)
+    if not isinstance(source, dict) or not source.get('license') or not all(isinstance(v, str) for v in source.values()):
+        raise ValueError('source attribution must be a reviewed string map with license')
+    source['seed_file_sha256'] = hashlib.sha256(args.tasks.read_bytes()).hexdigest()
     rows = [json.loads(line) for line in args.tasks.read_text().splitlines()]
-    rows = [r for r in rows if any(m.get('tool_calls') for m in r['messages'])]
+    rows = [r for r in rows if args.include_text or any(m.get('tool_calls') for m in r['messages'])]
+    if args.include_text and not args.task_source_json:
+        p.error('--include-text requires reviewed --task-source-json attribution')
     selected, seen = [], set()
     for row in rows:
         task = digest([m for m in row['messages'] if m['role'] == 'user'])
@@ -156,7 +173,7 @@ def main():
                 label = {'version': 'router-outcome-v1', 'task_hash': result['task_hash'],
                          'task_success': result['success'], 'schema_valid': result['schema_valid'],
                          'quality': float(result['success']), 'backend': 'acme-support-v1', 'seed': seed,
-                         'expected_calls': result['expected']}
+                         'expected_calls': result['expected'], 'expected_final': result['expected_final']}
                 # Asynchronous capture must settle before authorized labeling.
                 time.sleep(.25)
                 for attempt in range(20):
@@ -175,7 +192,6 @@ def main():
                 evidence.append({'caller': key_name, **result, 'captured': captured})
         time.sleep(.05)
         boundaries.append(now())
-    source = {**SOURCE, 'seed_file_sha256': hashlib.sha256(args.tasks.read_bytes()).hexdigest()}
     filters = {'project': 'acme-support', 'group': 'support-agent', 'from': boundaries[0],
                'validation_from': boundaries[1], 'test_from': boundaries[2], 'to': boundaries[3],
                'success_only': True, 'min_quality': 1, 'teacher_terms_decision': DECISION, 'task_source': source}

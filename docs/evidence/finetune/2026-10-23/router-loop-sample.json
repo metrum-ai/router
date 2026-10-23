@@ -36,7 +36,25 @@
     "cached_discount_ignored": true,
     "invoiced_cost": false,
     "includes_failed_task_tokens": true,
-    "all_debugging_and_collection_estimate_usd": 0.01716105
+    "all_debugging_and_collection_estimate_usd": 0.03170595
+  },
+  "consumer_contract_validation": {
+    "format": "metrum-router-ft-export-v1",
+    "dataset_hash": "4c558344e6da5e2edab5ef52a40f7807b0dd186d449d14f800a63992002cb14b",
+    "unchanged_ft_run2_consumer_validated": true,
+    "counts": {"train": 2, "val": 2, "test": 3},
+    "training_authorized": false
+  },
+  "mixed_consumer_contract_validation": {
+    "dataset_hash": "e7ef76753b30f7030b4b4db6963cfacaf85c5ff5ee10ba1250d9d333fa62674d",
+    "unchanged_ft_run2_consumer_validated": true,
+    "counts": {"train": 1, "val": 3, "test": 3},
+    "native_tool_rows": 2,
+    "general_or_letter_rows": 5,
+    "exact_letter_anchors": 2,
+    "heldout_teacher_failures_retained": 2,
+    "training_authorized": false,
+    "scope": "Engineering sample only; expanded cohort size/mix/gate mapping requires FT freeze"
   },
   "checker": "expected-tool-calls-v1: public ordered name/argument equality plus nonempty final completion; not semantic answer quality",
   "canary": {

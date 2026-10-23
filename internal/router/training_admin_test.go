@@ -32,7 +32,7 @@ func TestTrainingAdminAuthorizationAuditAndMissingCapture(t *testing.T) {
 			}
 			defer svc.Close()
 			now := time.Now().UTC()
-			f := trainingFilters{From: now.Add(-4 * time.Hour), ValidationFrom: now.Add(-2 * time.Hour), TestFrom: now.Add(-time.Hour), To: now, TeacherTermsDecision: map[string]string{"decision": "synthetic unit test"}, TaskSource: map[string]string{"license": "Apache-2.0"}}
+			f := trainingFilters{From: now.Add(-4 * time.Hour), ValidationFrom: now.Add(-2 * time.Hour), TestFrom: now.Add(-time.Hour), To: now, TeacherTermsDecision: map[string]string{"decision": "synthetic unit test", "training_outputs_allowed": "true"}, TaskSource: map[string]string{"license": "Apache-2.0"}}
 			body, _ := json.Marshal(f)
 			call := func(path, body string, admin bool) int {
 				r := httptest.NewRequest("POST", path, strings.NewReader(body))

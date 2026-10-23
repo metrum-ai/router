@@ -51,9 +51,18 @@ Returned model function calls are JSON-schema validated and executed by
 `execute(call, tools, seed)`, a deterministic mock returning an explicit mock
 completion object. Results go back through the router as paired tool messages.
 The checker compares the ordered tool name/argument objects with the public gold
-and requires a nonempty final response. This is **tool-call task correctness**,
+and requires a nonempty, non-truncated final response. This is **tool-call task correctness**,
 not human judgment or semantic final-answer quality. Failed episodes remain in
-`collection-evidence.json` denominators; success-only export excludes them.
+`collection-evidence.json` denominators; success/quality filtering excludes them
+from **train/val only**. Frozen test export retains eligible labeled teacher
+failures, so evaluation cannot improve by success-only population selection.
+
+For reviewed general/text seed tasks, add `--include-text --task-source-json
+/secure/reviewed-sources.json`. Attribution must be a string map with `license`
+and pinned source revisions. These episodes use no recorded source answer:
+the label measures completion/schema validity, **not semantic answer quality**.
+No general/text production-quality claim follows. FT must freeze cohort mix,
+semantic evaluation and gates before collecting/training an expanded cohort.
 
 Public dataset attribution: Glaive AI,
 `glaiveai/glaive-function-calling-v2@e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac`,
@@ -73,8 +82,12 @@ Apache-2.0. Preserve upstream notices when redistributing derived data.
 - Filters: `token_id` (public ID, never bearer key), `project`, `client`, `group`,
   UTC `from`/`to` (half-open), `success_only`, `min_quality`. Required explicit
   boundaries: `validation_from`, `test_from`, ordered inside the range. Also
-  supply `teacher_terms_decision.decision` and `task_source.license`; these are
+  supply `teacher_terms_decision.decision`, its explicit string
+  `training_outputs_allowed: "true"`, and `task_source.license`; these are
   admin attestations, not machine verification of legal rights.
+- Format `metrum-router-ft-export-v1` (chat format `router-chat-tools-v1`).
+  Manifest exposes consumer `splits`, `split_boundaries`, `audit_event_ref`,
+  teacher authorization/decision and privacy attestations, alongside file details.
 - ZIP contains canonical `train.jsonl`, `val.jsonl`, `test.jsonl`, `manifest.json`.
   Rows: `{messages, tools, provenance, outcome, replay}`. Function arguments stay
   JSON strings. Full tool continuations remain paired. Source-task hashes cannot
@@ -85,7 +98,8 @@ Apache-2.0. Preserve upstream notices when redistributing derived data.
   Provenance hashes/timestamps are never rewritten by content PII filters.
 - `router-outcome-v1`: source `task_hash`, `task_success`, `schema_valid`, quality
   in [0,1], `acme-support-v1` backend, integer seed, public `expected_calls`.
-  Labels are harness attestations. Concurrent duplicate labels are ambiguous and
+  An optional `expected_final` A/B/C/D anchor uses exact final-text equality,
+  not mere completion. Labels are harness attestations. Concurrent duplicate labels are ambiguous and
   fail export; they are never silently resolved to a preferred label.
 - Existing storage redaction remains; export additionally masks email, phone
   and diagnostic-secret patterns on parsed content strings. It never restores
@@ -103,7 +117,14 @@ multimodal captures are skipped rather than converted into partial conversations
 `router-replay-v1` supplies `initial_messages`, `tools`, allowlisted backend
 `acme-support-v1`, seed and checker `expected-tool-calls-v1`/`expected_calls`.
 Replay only the initial fixture, execute **new** model calls with `execute`, and
-compare with the checker. Never supply recorded teacher assistant/tool answers
+compare with the checker. The importable `backend.py` provides
+`initialize(descriptor) -> isolated state`, `execute(state, name, args) -> mock
+JSON result`, `success(state, final_message) -> bool`. State is deep-copied per
+episode for concurrent replay. Pass the response choice's finish reason to the
+final-message descriptor so truncation cannot count as completion. Freeze the
+self-contained backend file and jsonschema runtime with FT's protocol. No remote
+schema references (`$ref`, `$dynamicRef`, `$recursiveRef`) are allowed.
+Never supply recorded teacher assistant/tool answers
 to candidate/teacher/base as an oracle continuation. Do not execute code or URLs
 from exported data. Freeze scorer/fixture/gates before training or held-out calls.
 
@@ -122,7 +143,7 @@ key. Export contained only seven support rows: 2 train / 2 val / 3 test.
 The canary's second support request was denied by its caller budget (429).
 Public list prices × observed router tokens estimate $0.00210315 per nine-task
 caller cohort, $0.00030045 per success including failed-task tokens. These are
-not invoices or production ROI. All debugging plus collection estimated $0.0172.
+not invoices or production ROI. All debugging plus collection/consumer validation estimated $0.0318.
 The tiny sample proves engineering integration, not useful training or quality
 improvement. Candidate/base/teacher held-out comparison, actual trained-model
 canary, latency distribution and production ROI are **not measured yet**.

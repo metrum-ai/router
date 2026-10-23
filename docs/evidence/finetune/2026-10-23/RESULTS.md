@@ -49,7 +49,7 @@ not a fine-tuned model; a second support request was denied by its caller budget
 list prices × router tokens estimate $0.00210315 per nine-task caller cohort,
 $0.00030045 per success including failed-task tokens. Cache discounts are ignored;
 these are not invoices, hourly serving economics or production ROI. Scalar
-source: `router-loop-sample.json`; debugging plus collection estimate $0.01716105.
+source: `router-loop-sample.json`; debugging plus collection/consumer-validation estimate $0.03170595.
 The checker measures public expected tool-call arguments plus a completed turn,
 not semantic final-answer quality; it is not comparable with run 1's JSON-text
 metric. No candidate quality or held-out evaluation claim follows.

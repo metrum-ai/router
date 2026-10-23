@@ -53,8 +53,12 @@ Draft outcome version `router-outcome-v1`: source `task_hash`, boolean
 `task_success`, boolean `schema_valid`, numeric `quality` in [0,1], allowlisted
 `backend` and integer seed. These are authorized harness attestations, not router
 inferences from HTTP 200 or claims of independent judgment. Missing labels are
-ineligible, never default success. Evaluation must preserve failed-task
-denominators even if training selects successes only.
+ineligible, never default success. Success/quality filters apply to train/val,
+not test: frozen test preserves eligible labeled teacher failures. Evaluation
+must also retain every task in its denominator. General/text completion labels
+assert completed transport/schema validity, not semantic answer correctness.
+The importable backend.py interface is initialize/execute/success with isolated
+per-episode state and no remote schema references.
 
 Export never restores PII. Preserve storage redaction and add export filtering
 on parsed strings. Header contents, raw metadata, caller credentials, provider
@@ -69,10 +73,14 @@ Existing script routing exposes `caller.id`, project and public `tokenId` and
 can select targets within the same group. Prefer that mechanism over introducing
 another routing configuration surface; caller quotas/budgets remain in force.
 A demonstrated two-key canary and real-provider collection are still required.
-FT's issue comment defines the target consumer contract. Current draft does not
-yet satisfy it completely: fixture attribution, teacher terms, full replay
-initial-state contract and manifest attestation/identity need to be frozen with
-FT before any dataset handoff. No training dataset is ready.
+The exporter aligns with FT's `metrum-router-ft-export-v1` consumer contract:
+splits/boundaries, audit reference, teacher decision/privacy attestations,
+trace/task SHA256, tool-schema validity and replay initial fixtures. The actual
+FT `run2/router_export.py` consumer validated a real seven-row sample without
+rewriting its manifest. This proves schema integration, not useful cohort size
+or training authorization. Full cohort mix/counts and semantic evaluation/gate
+mapping must be frozen with FT before expanded collection/training. No actual
+trained-model promotion is claimed.
 
 ## Teacher-license decision: maintainer-authorized synthetic technical test
 

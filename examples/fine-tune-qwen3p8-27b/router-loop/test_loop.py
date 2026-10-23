@@ -5,6 +5,7 @@ import json
 import unittest
 from unittest.mock import patch
 import collect
+import backend
 
 
 class LoopTests(unittest.TestCase):
@@ -25,6 +26,35 @@ class LoopTests(unittest.TestCase):
         self.assertEqual([m['role'] for m in sent[0]['messages']], ['user'])
         self.assertEqual([m['role'] for m in sent[1]['messages']], ['user', 'assistant', 'tool'])
         self.assertEqual(sent[1]['messages'][-1]['tool_call_id'], 'call_1')
+
+    def test_general_completion_labels_are_not_oracle_answers(self):
+        row = {'messages':[{'role':'user','content':'Explain a mock ticket.'},{'role':'assistant','content':'GOLD_SENTINEL_NOT_INPUT'}], 'tools':[]}
+        def request(base,path,payload,key):
+            self.assertNotIn('GOLD_SENTINEL_NOT_INPUT',json.dumps(payload))
+            return 200, {'X-Request-Id':'general'}, json.dumps({'choices':[{'message':{'role':'assistant','content':'A complete new response.'}}]}).encode()
+        with patch.object(collect,'request',request):
+            result=collect.episode('http://localhost','not-real',row,1)
+        self.assertTrue(result['success'])
+        self.assertEqual(result['turns'],1)
+        self.assertEqual(result['expected'],[])
+
+    def test_letter_anchor_uses_exact_final_not_completion_only(self):
+        fixture={'version':'router-replay-v1','backend':'acme-support-v1','checker':'expected-tool-calls-v1','seed':0,'tools':[],'expected_calls':[],'expected_final':'B'}
+        state=backend.initialize(fixture)
+        self.assertTrue(backend.success(state,{'content':'B'}))
+        self.assertFalse(backend.success(state,{'content':'A'}))
+        self.assertFalse(backend.success(state,{'content':'The answer is B'}))
+
+    def test_replay_backend_state_is_isolated(self):
+        fixture = {'version':'router-replay-v1','backend':'acme-support-v1','checker':'expected-tool-calls-v1','seed':2,
+                   'tools':[{'function':{'name':'lookup','parameters':{'type':'object'}}}],
+                   'expected_calls':[{'name':'lookup','arguments':{}}]}
+        a, b = backend.initialize(fixture), backend.initialize(fixture)
+        self.assertTrue(backend.execute(a, 'lookup', {})['mock'])
+        self.assertTrue(backend.success(a, {'content':'done'}))
+        self.assertFalse(backend.success(b, {'content':'done'}))
+        with self.assertRaises(ValueError):
+            backend.initialize({'backend':'https://untrusted.example/code'})
 
     def test_backend_does_not_execute_commands_and_validates_schema(self):
         tools = [{'function': {'name': 'refund', 'parameters': {'type': 'object', 'properties': {'amount': {'type': 'integer'}}, 'required': ['amount']}}}]
