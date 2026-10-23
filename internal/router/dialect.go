@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1304,12 +1305,12 @@ func usageFromMap(v any) Usage {
 	if !ok {
 		return Usage{}
 	}
-	in, _ := numberAsInt(m["input_tokens"])
-	if in == 0 {
+	in, inPresent := numberAsInt(m["input_tokens"])
+	if !inPresent {
 		in, _ = numberAsInt(m["prompt_tokens"])
 	}
-	out, _ := numberAsInt(m["output_tokens"])
-	if out == 0 {
+	out, outPresent := numberAsInt(m["output_tokens"])
+	if !outPresent {
 		out, _ = numberAsInt(m["completion_tokens"])
 	}
 	total, _ := numberAsInt(m["total_tokens"])
@@ -1333,6 +1334,13 @@ func usageFromMap(v any) Usage {
 	if n, present := numberAsInt(m["cache_creation_input_tokens"]); present {
 		in += n
 	}
+	var warnings []string
+	for _, n := range []*int{&in, &out, &total, &imageTokens, reasoningTokens} {
+		if n != nil && *n < 0 {
+			*n = 0
+			warnings = appendWarning(warnings, "usage-invalid-upstream")
+		}
+	}
 	if total == 0 {
 		total = in + out
 	}
@@ -1345,6 +1353,7 @@ func usageFromMap(v any) Usage {
 		upstreamTotalCost, _ = numberAsFloat(costDetails["upstream_inference_cost"])
 	}
 	return Usage{
+		Warnings:                      warnings,
 		InputTokens:                   in,
 		OutputTokens:                  out,
 		TotalTokens:                   total,
@@ -1412,6 +1421,11 @@ func stringValue(v any) string {
 
 func numberAsInt(v any) (int, bool) {
 	switch n := v.(type) {
+	case json.Number:
+		return numberAsInt(string(n))
+	case string:
+		value, err := strconv.Atoi(n)
+		return value, err == nil
 	case float64:
 		return int(n), true
 	case int:
@@ -1425,6 +1439,13 @@ func numberAsInt(v any) (int, bool) {
 
 func numberAsFloat(v any) (float64, bool) {
 	switch n := v.(type) {
+	case json.Number:
+		return numberAsFloat(string(n))
+	case string:
+		value, err := strconv.ParseFloat(n, 64)
+		return value, err == nil && !math.IsNaN(value) && !math.IsInf(value, 0)
+	case int64:
+		return float64(n), true
 	case float64:
 		return n, true
 	case int:
