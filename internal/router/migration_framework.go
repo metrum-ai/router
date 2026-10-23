@@ -33,7 +33,7 @@ const usageContentCaptureEncryptionMigrationID = 2026081901
 const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 8, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 9, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -187,6 +187,13 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	PostconditionKey: "usage.cache-write.schema.v1@verifyUsageCacheWriteMigration",
 	Dependencies:     []int{2026102202}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyUsageCacheWriteMigration, Verify: verifyUsageCacheWriteMigration,
+}, {
+	ID: 2026102302, Scope: usageMigrationScope, Name: "identify unbilled count-token events", Release: "2026.10",
+	Checksum:      "c7a3bfd4997ec15f63d963088cdf91974a0417d22c85bb0d6c74f4b0d5e31c4e",
+	SchemaVersion: 9, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey: "usage.request-kind.apply.v1@applyUsageRequestKindMigration", PostconditionKey: "usage.request-kind.schema.v1@verifyUsageRequestKindMigration",
+	Dependencies: []int{2026102301}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyUsageRequestKindMigration, Verify: verifyUsageRequestKindMigration,
 }}
 
 func init() {

@@ -6967,6 +6967,15 @@ func TestCountTokensEndpoint(t *testing.T) {
 			if body["input_tokens"] <= 0 {
 				t.Fatalf("bad token estimate: %#v", body)
 			}
+			if rr.Header().Get("X-Metrum-Usage-Source") != "estimated" {
+				t.Fatal("unmarked estimate")
+			}
+			svc.quota.mu.Lock()
+			charged := svc.quota.state.Callers["alice"].LifetimeTokens
+			svc.quota.mu.Unlock()
+			if charged != 0 {
+				t.Fatalf("count estimate consumed %d quota tokens", charged)
+			}
 		})
 	}
 }

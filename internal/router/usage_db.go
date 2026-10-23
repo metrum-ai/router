@@ -68,44 +68,45 @@ func validUsageDBMigrationPolicy(policy string) bool {
 }
 
 type UsageReportOptions struct {
-	UsageSource        string
-	Driver             string
-	DBPath             string
-	DSN                string
-	MigrationPolicy    string
-	LogPath            string
-	From               time.Time
-	To                 time.Time
-	CallerID           string
-	CallerIP           string
-	TokenID            string
-	TokenIDPrefix      string
-	CallerUser         string
-	CallerProject      string
-	CallerEnvironment  string
-	RequestedModel     string
-	ResolvedGroup      string
-	TargetProvider     string
-	TargetModel        string
-	TargetDialect      string
-	Status             int
-	Cache              string
-	Client             string
-	TrafficShapedOnly  bool
-	TrafficShapeBucket string
-	TrafficShapeScope  string
-	InboundDialect     string
-	StreamOnly         *bool
-	ToolChoiceMode     string
-	ToolCountBucket    string
-	RequestBytesBucket string
-	InputTokensBucket  string
-	OutputCapBucket    string
-	ReasoningPresent   *bool
-	MultimodalOnly     bool
-	RequestShapeFP     string
-	ToolSchemaFP       string
-	ErrorClass         string
+	IncludeRequestEvents bool
+	UsageSource          string
+	Driver               string
+	DBPath               string
+	DSN                  string
+	MigrationPolicy      string
+	LogPath              string
+	From                 time.Time
+	To                   time.Time
+	CallerID             string
+	CallerIP             string
+	TokenID              string
+	TokenIDPrefix        string
+	CallerUser           string
+	CallerProject        string
+	CallerEnvironment    string
+	RequestedModel       string
+	ResolvedGroup        string
+	TargetProvider       string
+	TargetModel          string
+	TargetDialect        string
+	Status               int
+	Cache                string
+	Client               string
+	TrafficShapedOnly    bool
+	TrafficShapeBucket   string
+	TrafficShapeScope    string
+	InboundDialect       string
+	StreamOnly           *bool
+	ToolChoiceMode       string
+	ToolCountBucket      string
+	RequestBytesBucket   string
+	InputTokensBucket    string
+	OutputCapBucket      string
+	ReasoningPresent     *bool
+	MultimodalOnly       bool
+	RequestShapeFP       string
+	ToolSchemaFP         string
+	ErrorClass           string
 }
 
 // ReasoningCoverageExport is an aggregate-only view for protected evaluation
@@ -260,6 +261,7 @@ type securityTrendBucketRecord struct {
 }
 
 type usageRow struct {
+	RequestKind                        string
 	UsageSource                        string
 	TS                                 time.Time
 	RequestID                          string
@@ -412,6 +414,7 @@ type securityAccessEvent struct {
 }
 
 type usageRecord struct {
+	RequestKind                        string                             `gorm:"column:request_kind;type:text;not null;default:''"`
 	UsageSource                        string                             `gorm:"column:usage_source;type:text;not null;default:''"`
 	RequestID                          string                             `gorm:"column:request_id;primaryKey;type:text"`
 	TS                                 string                             `gorm:"column:ts;type:text;not null;index:idx_request_usage_ts"`
@@ -1623,6 +1626,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyUsageRequestKindMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1803,6 +1810,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageCacheBillingColumns,
 		usageProvenanceColumns,
 		usageCacheWriteColumns,
+		usageRequestKindColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2586,8 +2594,11 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns)...)
+}
+
+func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
 	merged := map[string]map[string]struct{}{}
-	groups = append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns)
 	for _, group := range groups {
 		for table, columns := range group {
 			if merged[table] == nil {
@@ -3244,6 +3255,7 @@ func rowFromRecord(rec logRecord) usageRow {
 		UpstreamTotalTPS:                   rec.UpstreamTotalTPS,
 		DownstreamOutputTPS:                rec.DownstreamOutputTPS,
 		DownstreamTotalTPS:                 rec.DownstreamTotalTPS,
+		RequestKind:                        rec.RequestKind,
 		UsageSource:                        rec.UsageSource,
 		InputTokens:                        rec.Usage.InputTokens,
 		OutputTokens:                       rec.Usage.OutputTokens,
@@ -3332,6 +3344,13 @@ func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted,
 }
 
 func recordFromRow(row usageRow) *usageRecord {
+	if row.RequestKind == "count_tokens" {
+		row.InputTokens, row.OutputTokens, row.TotalTokens = 0, 0, 0
+		row.InputImageCount, row.InputImageTokens = 0, 0
+		row.ReasoningTokens, row.CachedInputTokens, row.CacheWriteInputTokens = nil, nil, nil
+		row.TotalCostUSD, row.CostListUSD, row.InputCostUSD, row.OutputCostUSD, row.ImageCostUSD = 0, 0, 0, 0, 0
+		row.UsageSource = "none"
+	}
 	listCost := row.TotalCostUSD
 	if row.CostListUSD > 0 {
 		listCost = row.CostListUSD
@@ -3371,6 +3390,7 @@ func recordFromRow(row usageRow) *usageRecord {
 		UpstreamTotalTPS:                   row.UpstreamTotalTPS,
 		DownstreamOutputTPS:                row.DownstreamOutputTPS,
 		DownstreamTotalTPS:                 row.DownstreamTotalTPS,
+		RequestKind:                        row.RequestKind,
 		UsageSource:                        row.UsageSource,
 		InputTokens:                        row.InputTokens,
 		OutputTokens:                       row.OutputTokens,
@@ -3474,6 +3494,7 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		UpstreamTotalTPS:                   record.UpstreamTotalTPS,
 		DownstreamOutputTPS:                record.DownstreamOutputTPS,
 		DownstreamTotalTPS:                 record.DownstreamTotalTPS,
+		RequestKind:                        record.RequestKind,
 		UsageSource:                        record.UsageSource,
 		InputTokens:                        record.InputTokens,
 		OutputTokens:                       record.OutputTokens,
@@ -4898,6 +4919,9 @@ func usageRollupAuditSummary(run usageRollupRunRecord, action string) string {
 func decisionBucketRollupRecords(rows []usageRow, rollupType, status, windowStart, windowEnd string) []usageRollupDecisionBucketRecord {
 	byDimension := map[string]*usageRollupDecisionBucketRecord{}
 	for _, row := range rows {
+		if row.RequestKind == "count_tokens" {
+			continue
+		}
 		bucket := usageRollupBucketUTC(row.TS, rollupType)
 		addDecisionRollupBucket(byDimension, row, rollupType, status, windowStart, windowEnd, bucket, "max_token_bucket", defaultString(row.MaxTokenBucket, "unknown"), "")
 		addDecisionRollupBucket(byDimension, row, rollupType, status, windowStart, windowEnd, bucket, "input_token_bucket", defaultString(row.InputTokenBucket, "unknown"), "")
@@ -4975,6 +4999,9 @@ func dailyRollupRecords(rows []usageRow, status, windowStart, windowEnd string, 
 func periodRollupRecords(rows []usageRow, rollupType, status, windowStart, windowEnd string, baseline usageRollupBaseline) []usageRollupDailyRecord {
 	byDimension := map[string]*usageRollupDailyRecord{}
 	for _, row := range rows {
+		if row.RequestKind == "count_tokens" {
+			continue
+		}
 		bucket := usageRollupBucketUTC(row.TS, rollupType)
 		key := dailyRollupDimensionKey(bucket, row, baseline.ID)
 		rec := byDimension[key]
@@ -7142,6 +7169,9 @@ func usageRowsFromRecords(records []usageRecord) ([]usageRow, error) {
 
 func (s *usageStore) usageRowsQuery(opts UsageReportOptions) *gorm.DB {
 	q := s.db.Model(&usageRecord{}).Where("ts >= ? AND ts < ?", formatUsageTime(opts.From), formatUsageTime(opts.To))
+	if !opts.IncludeRequestEvents {
+		q = q.Where("request_kind <> ?", "count_tokens")
+	}
 	if opts.TokenID != "" {
 		q = q.Where("token_id = ?", opts.TokenID)
 	}
@@ -7891,6 +7921,9 @@ func renderUsageMarkdownWithTimeFormatter(from, to time.Time, rows []usageRow, d
 }
 
 func (a *agg) add(row usageRow) {
+	if row.RequestKind == "count_tokens" {
+		return
+	}
 	if row.UsageSource == "estimated" {
 		a.EstimatedRequestCount++
 		a.EstimatedInputTokens += int64(row.InputTokens)

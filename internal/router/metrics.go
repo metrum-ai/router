@@ -58,7 +58,7 @@ func newMetricsStore() *metricsStore {
 }
 
 func (m *metricsStore) Observe(rec logRecord) {
-	if m == nil || rec.CallerID == "" {
+	if m == nil || rec.CallerID == "" || rec.RequestKind == "count_tokens" {
 		return
 	}
 	labels := metricLabels{

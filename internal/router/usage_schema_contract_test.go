@@ -56,7 +56,11 @@ func TestUsageProvenancePostgresSchema(t *testing.T) {
 			t.Fatalf("missing %s", field)
 		}
 	}
-	if err := store.db.Create(&usageRecord{RequestID: "provenance", UsageSource: "estimated"}).Error; err != nil {
+	if err := verifyUsageRequestKindMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.db.Create(&usageRecord{RequestID: "provenance", UsageSource: "estimated", TS: now.Format(time.RFC3339Nano), InputTokens: 10, TotalTokens: 10}).Error; err != nil {
 		t.Fatal(err)
 	}
 	var row usageRecord
@@ -65,6 +69,25 @@ func TestUsageProvenancePostgresSchema(t *testing.T) {
 	}
 	if row.UsageSource != "estimated" {
 		t.Fatal("lost provenance")
+	}
+	event := recordFromRow(usageRow{TS: now, RequestID: "count-postgres", RequestKind: "count_tokens", InputTokens: 12345, TotalCostUSD: 50})
+	if err := store.db.Create(event).Error; err != nil {
+		t.Fatal(err)
+	}
+	opts := UsageReportOptions{From: now.Add(-time.Hour), To: now.Add(time.Hour)}
+	overview, err := store.adminOverviewSQL(opts, adminSavingsBaselineDTO{}, 100)
+	if err != nil || overview.Total.Calls != 1 || overview.Total.InputTokens != 10 {
+		t.Fatalf("Postgres inference aggregate includes count event: %+v err=%v", overview.Total, err)
+	}
+	opts.IncludeRequestEvents = true
+	rows, err := store.rows(opts)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("Postgres request visibility rows=%d err=%v", len(rows), err)
+	}
+	for _, event := range rows {
+		if event.RequestKind == "count_tokens" && (event.InputTokens != 0 || event.TotalCostUSD != 0 || event.UsageSource != "none") {
+			t.Fatalf("Postgres count billed: %+v", event)
+		}
 	}
 }
 

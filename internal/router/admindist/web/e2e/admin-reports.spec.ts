@@ -35,6 +35,16 @@ test("overview distinguishes estimated usage and preserves the source filter", a
   await page.screenshot({ path: "test-results/usage-provenance-overview.png", fullPage: true });
 });
 
+test("count-token control events remain identifiable in the request table", async ({ page }) => {
+  await page.route("**/api/requests?*", route => route.fulfill({ json: commonResponse("requests", {
+    requests: [{ ...requestRow("req_count_unbilled"), requestKind: "count_tokens", usageSource: "none", inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0, totalCostUsd: 0 }],
+  }, cursorPagination(new URL(route.request().url()), 1, 1, false)) }));
+  await page.goto("/?tab=requests");
+  await expect(page.getByRole("columnheader", { name: "Request kind" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "count_tokens", exact: true })).toBeVisible();
+  await page.screenshot({ path: "test-results/count-tokens-request-kind.png", fullPage: true });
+});
+
 function globalFiltersButton(page: Page) {
   return page.getByRole("button", { name: "Filters", exact: true }).first();
 }

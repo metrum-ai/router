@@ -19,10 +19,12 @@ func TestCacheWriteMigrationReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := store.db.Where("scope = ? AND migration_id = ?", usageMigrationScope, 2026102301).Delete(&migrationAttemptRecord{}).Error; err != nil {
+	// A replay must also clear dependent migrations, not leave applied children
+	// referencing a missing parent migration.
+	if err := store.db.Where("scope = ? AND migration_id >= ?", usageMigrationScope, 2026102301).Delete(&migrationAttemptRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Exec("DELETE FROM schema_migration_ledger WHERE scope = ? AND migration_id = ?", usageMigrationScope, 2026102301).Error; err != nil {
+	if err := store.db.Exec("DELETE FROM schema_migration_ledger WHERE scope = ? AND migration_id >= ?", usageMigrationScope, 2026102301).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {

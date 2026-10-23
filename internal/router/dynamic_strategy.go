@@ -59,7 +59,7 @@ func newDynamicObservationStore() *dynamicObservationStore {
 }
 
 func (s *Service) recordDynamicObservation(rec logRecord) {
-	if s == nil || s.observations == nil || rec.ResolvedGroup == "" {
+	if s == nil || s.observations == nil || rec.ResolvedGroup == "" || rec.RequestKind == "count_tokens" {
 		return
 	}
 	// Router response-cache hits measure local cache latency, not upstream
