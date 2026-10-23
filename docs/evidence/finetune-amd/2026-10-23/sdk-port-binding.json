@@ -1,0 +1,15 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "qualification_registration_sha256": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "scope": "Operator-only fixed loopback port binding; unchanged shared config_for/child_environment, prompts/scorers/case hashes, original e411 bytes/gates. No SDK inference before this binding. Not a new qualification protocol or request-payload change.",
+  "shared_relay": "127.0.0.1:18629 -> NVIDIA router18625",
+  "amd_relay": "127.0.0.1:18596 -> AMD working-tree router18592",
+  "shared_sha256": {
+    "shared_runner": "67149cd96d58414b61a7498a21cd0ffd6d6d197d2e1ebbaee4dc2c4204c1f9b3",
+    "amd_runner": "022a69304f5745adcdd68f160a042b1ea3682f4b64b5c6006cba0e1483eb3336",
+    "amd_relay": "269dcbc6058c0a15e619fc5ff472147fd38303a09313ee9d25c68f83e054f848"
+  },
+  "prior_sdk_attempts": "All5invocations exited2 before dispatch because shared CLI enforces NVIDIA ports; no primary/regression/sampling outcomes existed. Native e411300 complete and retained, not rerun.",
+  "security": "fixed literal loopback, bounded paths/body, no redirects/proxies/retries; identical request bytes/request-ID headers; no secret/content logs",
+  "notes": "AMD SDK wrapper calls same frozen shared configuration/environment functions and executable; only local relay binding differs, because both agents run simultaneously on same machine."
+}

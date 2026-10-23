@@ -8,6 +8,9 @@ import yaml
 import plan
 import render
 import train_peft
+import sdk
+import localhost_proxy
+from unittest.mock import patch, MagicMock
 
 
 class AMDTests(unittest.TestCase):
@@ -29,6 +32,27 @@ class AMDTests(unittest.TestCase):
                 return [99] if kwargs['add_generation_prompt'] else [1,2]
         with self.assertRaises(ValueError):
             train_peft.encode(row, Broken())
+
+    def test_fixed_relay_preserves_bytes_and_request_id_no_redirect(self):
+        client = MagicMock()
+        response = client.getresponse.return_value
+        response.status = 200
+        response.read.return_value = b'{"unchanged":true}'
+        response.getheader.side_effect = lambda name: {'Content-Type':'application/json','X-Request-Id':'proof'}.get(name)
+        with patch.object(localhost_proxy.http.client, 'HTTPConnection', return_value=client) as create:
+            result = localhost_proxy.forward_request('POST','/v1/chat/completions',b'{"model":"support-agent"}',{'Authorization':'Bearer synthetic','X-Untrusted':'drop'})
+            self.assertEqual(result, (200, {'Content-Type':'application/json','X-Request-Id':'proof'}, b'{"unchanged":true}'))
+            create.assert_called_once_with('127.0.0.1',18592,timeout=180)
+            self.assertEqual(client.request.call_args.kwargs['body'], b'{"model":"support-agent"}')
+            self.assertNotIn('X-Untrusted',client.request.call_args.kwargs['headers'])
+            response.status = 302
+            with self.assertRaises(ValueError):
+                localhost_proxy.forward_request('GET','/v1/models',b'',{})
+            self.assertEqual(client.request.call_count,2)  # one each, no redirect/retry
+        with self.assertRaises(ValueError):
+            localhost_proxy.forward_request('POST','http://upstream.invalid/',b'',{})
+        self.assertEqual(sdk.REGISTRATION, 'e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea')
+        self.assertEqual(localhost_proxy.LISTEN,('127.0.0.1',18596))
 
     def test_official_digest_only(self):
         for image in ['rocm/vllm:latest', 'vllm/vllm-openai@sha256:'+'a'*64,
