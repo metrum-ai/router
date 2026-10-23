@@ -1,16 +1,19 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Run 2 RESULTS — BLOCKED on #358; no trained-model result
+# Run 2 RESULTS — governed cohort frozen; NVIDIA bootstrap running
 
-**GPU cap$150, operational stop$120. No FT GPU rental/student training or
-qualification-heldout inference. FT paid spend$0. No promotion.**
+**GPUcap$150, operational stop$120. Fresh NVIDIA VM active at$2.19/h with
+independent watchdogs/max4h. Student quality/qualification outcomes unmeasured;
+no promotion.**
 Run2 non-canary support-agent callers stay teacher; Run1 base-default decision is
 unchanged, not authorization to move this teacher group to Qwen base.
-Producer's real-teacher engineering collection is separate, not a student result.
-The directly downloaded cohort/registration published at`2bfd8de018` is superseded,
-not run2 training input. Current registration fails closed. No paid work is
-triggered by the demo narrative or by synthetic integration checks.
+Producer completed the real-teacher full cohort; collection conservative upper
+estimate$4.27000440, not invoice. The directly downloaded cohort/registration at
+`2bfd8de018` is superseded, never training input. Shared signed registration is
+`881e394461`, SHA42eb694e24e79756bf809d1ddaefdaec1ab0177e7692c80f52eef3279a776d92.
+NVIDIA rental follows explicit DATASET-READY execution authorization, not a demo
+narrative. Raw data/gold/keys/weights remain outside Git.
 
 ## 1. The industry problem: training is not safe production delivery
 
@@ -37,9 +40,12 @@ attempts and compare routed model cost / successful tasks; unknown prices or zer
 successes are explicit, not fabricated free inference or savings.
 
 #358 owns capture/export authorization/privacy/audit/selection and collection
-backend. FT's provisional consumer/replay contract is being coordinated there;
-the actual 1/3/3 real-teacher engineering export is consumer-compatible, but the
-useful-sized full cohort and joint NVIDIA/AMD hash-bound freeze remain pending.
+backend. Full export validates1186train/221val/300test; all300heldout tasks retain
+historical failures98. Both accelerators consume identical hash-bound bytes/views.
+Native replay uses EXPORTED masked initial inputs/oracles; auxiliary original
+JSON-text/semantic probe uses PRIVATE source gold unchanged. Exactly two tool
+oracles differ through output-policy masking; representations/endpoints stay
+explicitly distinct, never normalized or restored into training.
 Teacher-output rights are CLEARED by scoped maintainer decision6366186842 for
 this synthetic technical test, recorded in`teacher-terms-decision.json` and the
 manifest. Users still must verify model license/provider output-training terms.
@@ -75,7 +81,8 @@ output style alone; reduce LR/epochs/capacity; mix general/format training; eval
 real governed work, not only a downloaded proxy task. The recipe plan remains one
 epoch/LR1e-5/rank8-alpha16/text-attention-only/BF16, with fresh captured cohorts and
 unchanged≥10pp exact gain,≤2pp standard regressions, no pass/error regression and
-p95 ratio≤1.25. Actual endpoint mapping/mix/hashes await new preregistration.
+p95 ratio≤1.25. Endpoint mapping/mix/hashes are now frozen before qualification;
+additional native no-success-regression guard does not replace the original gate.
 
 ## 4. What was accomplished — measured only, placeholders otherwise
 
@@ -84,17 +91,17 @@ p95 ratio≤1.25. Actual endpoint mapping/mix/hashes await new preregistration.
 | Run1 reproducible workflow |Merged; model rejected; base default |
 | Hardware-neutral provider rename |Done; eight-file alias-only invariance audit; no numeric changes |
 | Conservative recipe / format safeguards |Implemented; real remote base/cache checks NOT yet executed for new export |
-| Export consumer |Actual PR361 real-teacher engineering export validates1/3/3 and preserves teacher_terms_decision; not a useful training cohort or independent exporter privacy proof |
+| Export consumer |Actual full PR361/368 export validates1186/221/300; teacher_terms_decision preserved; consumer attestations not independent consent/privacy proof |
 | Replay engine |Actual localhost working-tree router with synthetic upstreams created a file and continued with NEW tool result; recorded teacher-answer sentinel not sent |
 | Routed cost accounting |Synthetic tests include failed attempts, same task sets, missing/invalid costs and zero-success null handling; NOT measured model economics |
-| Full #358 training export and mix/cohort |**PENDING**; tiny real-teacher engineering export exists; no direct-download fallback |
+| Full #358 training export and mix/cohort |**FROZEN** train405native/523general/258letter; val74/100/47; test200/75/25. Dataset6c437067…; full manifest/row/view/gold/backend hashes in signed registration |
 | Teacher identity/output training terms |**CLEARED**: Fireworks gpt-oss-120b, scoped synthetic-test maintainer decision; model/license/provider-terms hashes recorded |
-| Actual run2 GPU / training / adapter |**NOT RENTED / NOT RUN / NONE** |
+| Actual run2 GPU / training / adapter |Fresh RTX PRO6000 VM $2.19/h active; pinned image/model bootstrap and pregradient proofs underway; no adapter result yet |
 | Candidate vs teacher vs base quality/latency |**NOT MEASURED** |
 | Cost per successful captured task |**NOT MEASURED** |
 | Full quality/general-regression/sampling gates |**NOT RUN** |
 | Run2 promotion |**NO DECISION; DO NOT PROMOTE** |
-| Run2 teardown |Not applicable yet: no paid resource created; exact API verification mandatory if rented later |
+| Run2 teardown |**PENDING**, active owned fresh VM; two watchdogs/max4h, exact API-verified instance/key/vendor deletion required |
 
 Synthetic plumbing does not validate trained-model quality, uncaptured-caller
 export privacy, production safety or quality-equivalent ROI. Historical public

@@ -8,6 +8,7 @@ Actual base/candidate answer-format and native tool continuation are separate.
 """
 import argparse
 from copy import deepcopy
+from collections.abc import Mapping
 import hashlib
 import json
 from pathlib import Path
@@ -43,6 +44,15 @@ def fixtures():
     ]
 
 
+def token_ids(value):
+    """Transformers may return BatchEncoding, not the historical flat ID list."""
+    if isinstance(value, Mapping):
+        value = value['input_ids']
+    if not isinstance(value, list) or any(type(v) is not int for v in value):
+        raise ValueError('expected one flat integer token sequence')
+    return value
+
+
 def check_case(tokenizer, messages, tools):
     messages = template_messages(messages)
     kwargs = {'tools':tools,'enable_thinking':False}
@@ -53,8 +63,8 @@ def check_case(tokenizer, messages, tools):
     content = messages[-1].get('content')
     if content and full != prefix + content.strip() + END:
         raise ValueError('plain/JSON answer format was altered')
-    prefix_ids = tokenizer.apply_chat_template(messages[:-1],tokenize=True,add_generation_prompt=True,**kwargs)
-    full_ids = tokenizer.apply_chat_template(messages,tokenize=True,add_generation_prompt=False,**kwargs)
+    prefix_ids = token_ids(tokenizer.apply_chat_template(messages[:-1],tokenize=True,add_generation_prompt=True,**kwargs))
+    full_ids = token_ids(tokenizer.apply_chat_template(messages,tokenize=True,add_generation_prompt=False,**kwargs))
     if full_ids[:len(prefix_ids)] != prefix_ids:
         raise ValueError('training and generation token prefixes differ')
     return {'generation_prefix_tokens':len(prefix_ids),'full_tokens':len(full_ids),

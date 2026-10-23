@@ -45,7 +45,7 @@ def main():
         row = json.loads(line)
         ids = tokenizer.apply_chat_template(contract.template_messages(row['messages']),tools=row.get('tools',[]),
             tokenize=True,add_generation_prompt=False,enable_thinking=False)
-        expected[ids_hash(ids)]+=1
+        expected[ids_hash(contract.token_ids(ids))]+=1
         native += any(m.get('tool_calls') for m in row['messages'] if m['role']=='assistant')
     observed = Counter()
     marker = tokenizer.convert_tokens_to_ids('<tool_call>')

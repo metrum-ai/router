@@ -156,7 +156,7 @@
     "fireworks/run.py": "9779bb599ea32a3c55d0b25621be0d7e32b57713c37b20a40f44b1b3c0c2186e",
     "prepare_data.py": "a9cbf5a53da001ac3361985c4c5aae0b960839ec9fd869272420359851496357",
     "router-loop/backend.py": "960b86909d37fd13f3084d3f1481908f8a6306214d573864fdd45503a8f51dd2",
-    "run2/audit_prepared.py": "78123dd4f73a964b1f01764a1e521d5ed509049deeb960c4dd8561086f2311d5",
+    "run2/audit_prepared.py": "a38715bba1a9f3528c57db9c27db32e38199131f9799685d16692f61e33f7d17",
     "run2/axolotl.yaml": "0f49ad81152f909b8df709667d970f7b406aeeda6cde6b07393a90abc3738075",
     "run2/data.py": "0de5778bc4b350187dde94a3e8f8d68d9caa433b249adfda171ce538eb311de1",
     "run2/precheck.py": "c8e0b4e31d996b88658586335994043bae28762354e3588b9c9585436afa44df",
@@ -167,7 +167,7 @@
     "run2/router_export.py": "aeb98d0cd409e281aa84833b674545690f0ce6f090d5b260cd29118a4490ba41",
     "run2/run_replay.py": "459b8e67b2b0d13f82ea6b6ab5b2b8254bd4ddedda76ecdc42e37a8713697dde",
     "run2/scalar-preregistration.json": "6c31182a8b95ff09aa7db85947a2d9452538dcd249f2ca5db8529c71863674b1",
-    "run2/template_check.py": "7f595335116a80baaf2a75f3a117e5e983e01f936e95fda86db8cf27919555cd",
+    "run2/template_check.py": "7f0ed054dbc6c70f439d4a2490b8245402f28d497c91139e256456bbc283d20e",
     "schema.json": "2a06ea58ccd62a45a8d9d127122211c25220731f85b20a08d6d81039109403d7",
     "serve/run.sh": "05174fb1a5d6d538fbb50c990a4de4e7ba108b23b3530c0dd2cdf5f0ba2ec65d",
     "standalone/download_model.py": "a97e9b04852ea227d3b86145d2960209a3e9af06f598889fc08c6f403acbf6b3",
@@ -284,5 +284,19 @@
     "routing": "same support-agent group, distinct per-arm caller-bound targets verified by usage IDs. Non-canary callers stay teacher. No hidden routing regressions to base.",
     "cost": "all attempted request costs including failures / harness successes. Missing/unknown cost or zero successes null; authenticated IDs and full cohort required. Separate native strata and auxiliary metric. Include hourly serving/training/startup/lifecycle separately, never invoice/quality-equivalent ROI."
   },
-  "platform_variance": "Same export, views, model/template, recipe, endpoints and seeds. CUDA vs ROCm image/driver/kernel/launcher only. Official ROCm image/install lock recorded by AMD before gradients; no retuning. Infrastructure-only source/transport/runtime amendments require signed hash envelope BEFORE qualification inference, retain this immutable data/recipe/gate registration."
+  "platform_variance": "Same export, views, model/template, recipe, endpoints and seeds. CUDA vs ROCm image/driver/kernel/launcher only. Official ROCm image/install lock recorded by AMD before gradients; no retuning. Infrastructure-only source/transport/runtime amendments require signed hash envelope BEFORE qualification inference, retain this immutable data/recipe/gate registration.",
+  "infrastructure_amendments": [
+    {
+      "at": "2026-10-23T17:32:16.036659+00:00",
+      "parent_registration_sha256": "42eb694e24e79756bf809d1ddaefdaec1ab0177e7692c80f52eef3279a776d92",
+      "reason": "Actual remote Transformers5.20 apply_chat_template(tokenize=True) returns BatchEncoding by default. Extract input_ids rather than slicing/hashing mapping keys. Actual unmodified base exact token-prefix equality already verified for all5fixtures; no template, data, recipe, model parameters, output normalization or endpoint/gate change. No gradients or qualification inference before amendment.",
+      "exact_prefix_token_counts": [
+        22,
+        22,
+        22,
+        276,
+        321
+      ]
+    }
+  ]
 }

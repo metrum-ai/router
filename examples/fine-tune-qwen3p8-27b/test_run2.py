@@ -37,6 +37,17 @@ def root_pair():
             dict(common, message_id='reply', role='assistant', text='Synthetic answer', parent_id='root', rank=0)]
 
 
+class TokenInterfaceTests(unittest.TestCase):
+    def test_list_and_batch_encoding_ids_are_identical(self):
+        from collections import UserDict
+        ids=[1,2,3,4]
+        wrapped=UserDict({'input_ids':ids,'attention_mask':[1]*4})
+        self.assertEqual(contract.token_ids(wrapped),contract.token_ids(ids))
+        self.assertEqual(len(contract.token_ids(wrapped)),4)
+        for bad in ({'input_ids':[[1,2]]},{'input_ids':['input_ids']},[True]):
+            with self.assertRaises(ValueError):contract.token_ids(bad)
+
+
 class Run2DataTests(unittest.TestCase):
     def test_arithmetic_correct_deterministic_balanced(self):
         rows = data.format_rehearsal(20)

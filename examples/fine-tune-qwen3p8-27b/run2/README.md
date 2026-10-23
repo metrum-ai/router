@@ -1,13 +1,15 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Run 2 (#355): router-captured agent traces, blocked on #358
+# Run 2 (#355): governed agent traces, shared freeze released
 
-**Do not rent GPUs or train until #358 produces the governed export.** GPU cap
-$150; operational stop $120. No GPU rented or new model/heldout inference yet.
-The direct-download preparation at `2bfd8de018` is **superseded**, not run-2 data.
-`preregistration.json` now fails closed. Its historical predecessor is archived
-as `preregistration-direct-download-superseded.json`; never activate it to train.
+**Full export and signed NVIDIA/AMD registration are frozen.** Dataset counts:
+1186train/221val/300test; same export bytes/views on both accelerators. NVIDIA
+fresh RTX PRO6000 VM bootstrap is underway at$2.19/h, GPUcap$150/stop$120/max4h
+with independent watchdogs. Student quality/promotion results remain unmeasured.
+The direct-download preparation at`2bfd8de018` is **superseded**, not training data.
+Current`preregistration.json` authorizes only its hash-bound governed cohort;
+never activate`preregistration-direct-download-superseded.json` to train.
 
 ## Required router-centric loop
 
@@ -25,16 +27,17 @@ including pinned license/provider-terms hashes. This is NOT customer-data permis
 Users must choose a teacher whose license AND provider terms allow training on
 outputs, and verify that before enabling export. Collection cap remains about$20.
 
-PR361's real-teacher engineering export is consumer-compatible (1train/3val/3test),
-not a useful training cohort. Shared NVIDIA/AMD recipe/evaluation freeze is being
-coordinated through reports; no GPU rental on consumed debugging probes.
+PR361/368's full real-teacher export is validated: train405native/523general/
+258letter, val74/100/47, test200/75/25. All300 heldout tasks, including98 historical
+teacher failures, remain. Original1/3/3 engineering sample is excluded, not training
+or qualification data. Shared registration is signed at commit`881e394461`.
 
 FT consumes canonical chat/tool JSONL plus manifest, preserving complete native
 assistant/tool-result continuations and provenance. **All training rows, including
 general/letter-format anchors, must come from the router export.** Downloaded
 Glaive/OASST may be licensed task seeds for collection, never a direct training
 fallback. Request a substantial general-instruction majority and letter-format
-examples in the captured mix; exact counts/weights await actual export and freeze.
+examples in the captured mix; actual counts and immutable hashes are registered.
 The old 5,667/500/300 cohort and hashes are archival preparation, not current splits.
 
 Coordination proposal:
@@ -82,7 +85,8 @@ already cleared), freeze a NEW registration containing actual
 export/data/view/source/scorer/recipe hashes, mix/counts, source-group/time splits,
 replay contract, sampling, arms and unchanged numerical gates **before training or
 heldout inference**. `readiness.py` requires confirmed router-export provenance;
-the current blocked registration cannot launch smoke/full training.
+the frozen registration additionally requires actual base-format/template/cache
+proofs before smoke/full training; a registration alone is not hardware evidence.
 
 On the remote GPU host only: run the five synthetic base-template/token-prefix
 fixtures; serve bare base (`MODE=base`) via official loopback vLLM/SSH tunnel and
@@ -102,7 +106,12 @@ continuations. Backend code is trusted/frozen harness code, not imported from a
 row; row-provided shell/code/URLs must never execute. `run_replay.py` provides
 bounded preregistered concurrency/turns, same-group caller-bound router dispatch,
 frozen backend/source checks and private incremental metadata. It is dry-run by
-default; actual #358 backend/caller bindings and contract confirmation are pending.
+default. Trusted backend and full-export hashes are frozen; actual trained-target
+caller binding and qualification execution remain required. Native replay uses
+EXPORTED masked initial inputs/oracles. Auxiliary JSON-text/semantic evaluation
+uses private licensed SOURCE gold unchanged through`project_eval.py`; exactly two
+tool descriptors have different masked/source oracle values. These representations
+and endpoints are explicitly distinct, never normalized or silently substituted.
 `reconcile_replay.py` joins a post-run authenticated router cost ledger and emits
 aggregate candidate/teacher/base task economics. CLI examples (not rental or
 inference permission):
