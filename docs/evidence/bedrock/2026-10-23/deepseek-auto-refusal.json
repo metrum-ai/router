@@ -1,0 +1,42 @@
+{
+  "model": "deepseek.v3.2",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "fail",
+  "http_status": 200,
+  "request": {
+    "model": "deepseek",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"I understand you want me to write a file with the specified path and content. However, I'm currently unable to execute the write_file function to perform this task. \\n\\nTo write a file named \\\"bedrock-proof.txt\\\" with the content \\\"OK\\\", you'll need to use a different method or tool. You could use command-line tools like `echo` or `touch` commands in a terminal, or use a text editor to create and save the file manually.\",\"role\":\"assistant\"}}],\"id\":\"resp_70003dddb2ce2cb459dcecdd45b90186\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":95,\"prompt_tokens\":330,\"total_tokens\":425}}\n"
+}

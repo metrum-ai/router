@@ -7,6 +7,7 @@
   "request": {
     "model": "gptoss",
     "max_tokens": 256,
+    "temperature": 0,
     "messages": [
       {
         "role": "user",
@@ -14,5 +15,5 @@
       }
     ]
   },
-  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK\",\"role\":\"assistant\"}}],\"id\":\"resp_0b7733e97036b1cdd77ff534d5402a19\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":34,\"prompt_tokens\":69,\"total_tokens\":103}}\n"
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK\",\"role\":\"assistant\"}}],\"id\":\"resp_68f700b520595a53da9740ccb9f33323\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":34,\"prompt_tokens\":69,\"total_tokens\":103}}\n"
 }

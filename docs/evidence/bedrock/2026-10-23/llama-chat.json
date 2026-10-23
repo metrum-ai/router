@@ -7,6 +7,7 @@
   "request": {
     "model": "llama",
     "max_tokens": 256,
+    "temperature": 0,
     "messages": [
       {
         "role": "user",
@@ -14,5 +15,5 @@
       }
     ]
   },
-  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK\",\"role\":\"assistant\"}}],\"id\":\"resp_99ae4dbd916669df93db46ebc2b2347d\",\"model\":\"us.meta.llama3-3-70b-instruct-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":2,\"prompt_tokens\":37,\"total_tokens\":39}}\n"
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK\",\"role\":\"assistant\"}}],\"id\":\"resp_57493cad568817a47fb34d052166abeb\",\"model\":\"us.meta.llama3-3-70b-instruct-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":2,\"prompt_tokens\":37,\"total_tokens\":39}}\n"
 }

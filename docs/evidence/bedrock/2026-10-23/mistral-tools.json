@@ -7,29 +7,11 @@
   "request": {
     "model": "mistral",
     "max_tokens": 256,
+    "temperature": 0,
     "messages": [
       {
         "role": "user",
         "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
-      },
-      {
-        "content": "",
-        "role": "assistant",
-        "tool_calls": [
-          {
-            "function": {
-              "arguments": "{\"content\":\"OK\",\"path\":\"bedrock-proof.txt\"}",
-              "name": "write_file"
-            },
-            "id": "tooluse_ilacpLzT6crWGLM9miYvPN",
-            "type": "function"
-          }
-        ]
-      },
-      {
-        "role": "tool",
-        "tool_call_id": "tooluse_ilacpLzT6crWGLM9miYvPN",
-        "content": "File created successfully."
       }
     ],
     "tools": [
@@ -57,10 +39,10 @@
       }
     ]
   },
-  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_ilacpLzT6crWGLM9miYvPN\",\"type\":\"function\"}]}}],\"id\":\"resp_5f2689f6585f5cb6ad1bef3b392307f9\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":21,\"prompt_tokens\":92,\"total_tokens\":113}}\n",
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_mTzA79UzG1YWQgX1w78fS2\",\"type\":\"function\"}]}}],\"id\":\"resp_88c4fdc929b0a87f23a724762882e90f\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":21,\"prompt_tokens\":92,\"total_tokens\":113}}\n",
   "continuation": {
     "http_status": 200,
-    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"The file **`bedrock-proof.txt`** has been created with the content **\\\"OK\\\"**.\",\"role\":\"assistant\"}}],\"id\":\"resp_ee512ef8e37605e81d258fdf3591c8d2\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":22,\"prompt_tokens\":119,\"total_tokens\":141}}\n",
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"The file **`bedrock-proof.txt`** has been created with the content **\\\"OK\\\"**.\",\"role\":\"assistant\"}}],\"id\":\"resp_2d2b6eb4f0aa7c506f8e3d22a3d74476\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":22,\"prompt_tokens\":119,\"total_tokens\":141}}\n",
     "file_created": true
   }
 }

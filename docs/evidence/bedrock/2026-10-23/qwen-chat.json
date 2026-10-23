@@ -7,6 +7,7 @@
   "request": {
     "model": "qwen",
     "max_tokens": 256,
+    "temperature": 0,
     "messages": [
       {
         "role": "user",
@@ -14,5 +15,5 @@
       }
     ]
   },
-  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK! Let me know how I can assist you. \ud83d\ude0a\",\"role\":\"assistant\"}}],\"id\":\"resp_8b6d9054940afc6f909065f3c6f01189\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":14,\"prompt_tokens\":14,\"total_tokens\":28}}\n"
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK! Let me know if there's anything I can help with. \ud83d\ude0a\",\"role\":\"assistant\"}}],\"id\":\"resp_184199d8ff5c006dea752b96d88ad148\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":17,\"prompt_tokens\":14,\"total_tokens\":31}}\n"
 }

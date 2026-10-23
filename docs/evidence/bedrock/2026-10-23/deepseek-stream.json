@@ -7,6 +7,7 @@
   "request": {
     "model": "deepseek",
     "max_tokens": 256,
+    "temperature": 0,
     "messages": [
       {
         "role": "user",
@@ -15,5 +16,5 @@
     ],
     "stream": true
   },
-  "response": "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1dd9daea733a8da48837bf77bdf63bd7\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1dd9daea733a8da48837bf77bdf63bd7\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1dd9daea733a8da48837bf77bdf63bd7\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"resp_1dd9daea733a8da48837bf77bdf63bd7\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":null,\"index\":0}],\"id\":\"resp_1dd9daea733a8da48837bf77bdf63bd7\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\",\"usage\":{\"completion_tokens\":2,\"prompt_tokens\":6,\"total_tokens\":8}}\n\ndata: [DONE]\n\n"
+  "response": "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_88966efc77ff39210bcdb9bbe5322303\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_88966efc77ff39210bcdb9bbe5322303\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"OK\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_88966efc77ff39210bcdb9bbe5322303\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"resp_88966efc77ff39210bcdb9bbe5322303\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":null,\"index\":0}],\"id\":\"resp_88966efc77ff39210bcdb9bbe5322303\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion.chunk\",\"usage\":{\"completion_tokens\":2,\"prompt_tokens\":6,\"total_tokens\":8}}\n\ndata: [DONE]\n\n"
 }

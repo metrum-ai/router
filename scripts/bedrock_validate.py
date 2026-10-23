@@ -4,6 +4,7 @@
 Never sends credentials anywhere except the supplied localhost router.
 """
 import argparse
+import copy
 import json
 import pathlib
 import urllib.error
@@ -37,11 +38,13 @@ def call(body, path='/v1/chat/completions'):
 results = []
 for group, model in models.items():
     for mode in ['chat', 'stream', 'tools']:
-        body = {'model': group, 'max_tokens': 256,
+        body = {'model': group, 'max_tokens': 256, 'temperature': 0,
                 'messages': [{'role': 'user', 'content': 'Say OK'}]}
         if mode == 'stream':
             body['stream'] = True
         if mode == 'tools':
+            if group == 'deepseek':
+                body['tool_choice'] = 'required'
             body['messages'][0]['content'] = 'Call write_file with path bedrock-proof.txt and content OK. Do not just describe it.'
             body['tools'] = [{'type': 'function', 'function': {'name': 'write_file',
                 'description': 'Write a file', 'parameters': {'type': 'object',
@@ -55,7 +58,7 @@ for group, model in models.items():
             passed = passed and bool(json.loads(response).get('choices', [{}])[0].get('message', {}).get('tool_calls'))
         record = {'model': model, 'region': 'us-east-1', 'mode': mode,
                   'status': 'pass' if passed else 'fail', 'http_status': status,
-                  'request': body, 'response': response}
+                  'request': copy.deepcopy(body), 'response': response}
         if mode == 'tools' and passed:
             msg = json.loads(response)['choices'][0]['message']
             body['messages'].append(msg)
@@ -64,6 +67,7 @@ for group, model in models.items():
                 proof = out / 'bedrock-proof.txt'
                 proof.write_text(args.get('content', 'OK'))
                 body['messages'].append({'role': 'tool', 'tool_call_id': tc['id'], 'content': 'File created successfully.'})
+            body.pop('tool_choice', None)
             s, r = call(body)
             record['continuation'] = {'http_status': s, 'response': r, 'file_created': proof.exists()}
             if s != 200:
