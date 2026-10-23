@@ -36,6 +36,24 @@ Consult its evidence before quoting quality, latency or economics.
 7. Delete every rented host and dedicated deployment at step end and verify via
    its API. Hourly deployments incur costs even with no requests.
 
+## AMD Instinct
+
+The example's [AMD runbook](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b/amd)
+prepares MI325X training with official `rocm/pytorch` and serving with official
+`rocm/vllm`. It is **preparation only**, not hardware-validated support or an AMD
+parity result. Require a two-step model/toolkit smoke on the actual GPU, a pinned
+host-compatible stack and the governed router-exported dataset from #358.
+Serve on host loopback over SSH through a localhost router; replay newly executed
+tool continuations and keep failures in evaluation denominators. The AMD evidence
+and VIDEO-FACTS under `docs/evidence/finetune-amd/2026-10-23/` explicitly leave
+quality, throughput and economics unmeasured until those runs occur.
+
+The maintainer authorized a Fireworks-hosted open-weight teacher specifically for
+this synthetic Acme/mock-tool technical test, not general customer outputs. The
+manifest and evidence retain `teacher_terms_decision` and the pinned terms hash.
+Users must choose a teacher whose model license and provider terms allow training
+on outputs, and verify that permission before enabling export for training.
+
 ## Governance caveats
 
 - Generate a caller with a narrow model allow-list, rate/concurrency quotas and

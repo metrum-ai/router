@@ -6,6 +6,21 @@
 Work in progress for #326. Do not infer training completion or promotion from
 this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 
+## AMD Instinct
+
+The [AMD preparation runbook](amd/README.md) covers official `rocm/pytorch` and
+`rocm/vllm` planning, loopback-only serving, environment capture and two-step
+Axolotl smoke requirements for MI325X (#359). This path is **not hardware
+validated** and has no measured parity result. It requires #358's governed
+router-exported dataset, not the direct-download dataset below. See
+`docs/evidence/finetune-amd/2026-10-23/` for status and claim limits.
+
+The maintainer authorized the Fireworks-hosted open-weight teacher for the
+synthetic Acme/mock-tool technical test (#358), not general customer traffic.
+Record `teacher_terms_decision` in the export manifest and evidence. Users must
+choose a teacher whose model license and provider terms permit training on
+outputs, and verify those rights before enabling export for training.
+
 ## Pins and rights
 
 - Base: `Qwen/Qwen3.8-27B@1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0`,
