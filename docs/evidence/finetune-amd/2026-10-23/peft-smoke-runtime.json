@@ -1,0 +1,20 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "mode": "peft-smoke",
+  "wall_seconds": 11.434785165999983,
+  "optimizer_steps": 2,
+  "peak_allocated_bytes": 55673092608,
+  "peak_reserved_bytes": 55840866304,
+  "torch": "2.10.0+rocm7.2.4.git3d3aa833",
+  "hip": "7.2.53211",
+  "metrics": {
+    "train_runtime": 11.2091,
+    "train_samples_per_second": 0.178,
+    "train_steps_per_second": 0.178,
+    "total_flos": 31158521583456.0,
+    "train_loss": 0.285978227853775,
+    "epoch": 1.0
+  },
+  "training_input_tokens": null,
+  "input_tokens_per_second": null
+}

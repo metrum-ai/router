@@ -51,6 +51,30 @@ A full token/supervision audit, base-generation/native proofs and **two complete
 optimizer steps** are still mandatory before full training.
 
 Frozen alternative trainer SHA256 before gradients:
-`37f324714098e5322e22fa0450b218f7fb61387d38a35a85e6b29ebeab1d2711`.
-Any implementation corrections must be recorded before measurement. Actual
-training/serving throughput, quality and cost parity are not yet measured.
+Initial source `37f324714098e5322e22fa0450b218f7fb61387d38a35a85e6b29ebeab1d2711`.
+First smoke launch stopped before gradients because Transformers5.20 removed the
+`warmup_ratio` TrainingArguments keyword. Corrected API transport to explicit
+ceil(0.03*total_optimizer_steps), preserving the same recipe:1warmup smoke step,
+3warmup full-run steps. Corrected source SHA256 before full training:
+`7aa76c011654313a7c9d0e20d45cec503709d2a951785de90437ee4ae12dbc4f`.
+
+## Actual pre-training checks and two-step result
+
+- Template5/5 PASS, official ROCm vLLM base strict letter FORMAT12/12 PASS
+  (arithmetic correctness3/12 is separate, not a knowledge claim).
+- Real base native tool call through a working-tree localhost router wrote a
+  temporary file, received NEW tool result, and completed. This used development
+  fixtures only, no qualification tasks. vLLM stopped before training smoke.
+- Full consumed train/val views:1186/221rows, max2180/2544tokens,
+  input792690/154901tokens, supervised581388/114102tokens,
+  native405/74rows. Full input template prefixes unchanged, supervised totals
+  match the NVIDIA actual audit. No hidden empty labels or dropped earlier calls.
+- **ROCm PEFT smoke PASS**: two completed optimizer steps,11.435s wrapper,
+ 11.209s trainer, peak allocated55,673,092,608bytes/reserved55,840,866,304bytes,
+ 13,238,272trainable parameters, BF16 rank8/alpha16. Adapter separate from the
+ candidate, losses0.1874/0.3845 (not heldout quality). Scalar runtime/audit attached.
+- ROCm uses correct but slower PyTorch reference causal-conv1d and gated-delta
+  kernels because CUDA-specific optimized extras are not installed. Record this
+  major throughput caveat versus NVIDIA; do not silently alter the model/recipe.
+
+Full training, serving throughput, quality and cost parity remain unmeasured.
