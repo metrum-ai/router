@@ -1,0 +1,12 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Overlay onto axolotl.yaml when using 2..8 approved GPUs.
+fsdp_version: 2
+fsdp_config:
+  offload_params: false
+  cpu_ram_efficient_loading: false
+  auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  transformer_layer_cls_to_wrap: Qwen3_5DecoderLayer
+  state_dict_type: FULL_STATE_DICT
+  reshard_after_forward: true
+  activation_checkpointing: true

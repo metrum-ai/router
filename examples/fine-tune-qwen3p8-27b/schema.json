@@ -1,0 +1,24 @@
+{
+  "$comment": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object", "required": ["messages"], "additionalProperties": false,
+  "properties": {
+    "messages": {"type": "array", "minItems": 2, "items": {
+      "type": "object", "required": ["role"], "additionalProperties": false,
+      "properties": {
+        "role": {"enum": ["system", "user", "assistant", "tool"]},
+        "content": {"type": ["string", "null"]},
+        "tool_call_id": {"type": "string"},
+        "tool_calls": {"type": "array", "items": {
+          "type": "object", "required": ["id", "type", "function"],
+          "properties": {"id": {"type": "string"}, "type": {"const": "function"},
+            "function": {"type": "object", "required": ["name", "arguments"],
+              "properties": {"name": {"type": "string"}, "arguments": {"type": "string"}}, "additionalProperties": false}},
+          "additionalProperties": false}}
+      }
+    }},
+    "tools": {"type": "array", "items": {"type": "object", "required": ["type", "function"],
+      "properties": {"type": {"const": "function"}, "function": {"type": "object", "required": ["name"],
+        "properties": {"name": {"type": "string"}, "description": {"type": "string"}, "parameters": {"type": "object"}}}}, "additionalProperties": false}}
+  }
+}

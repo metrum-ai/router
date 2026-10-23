@@ -55,6 +55,7 @@ const sidebars = {
         "configuration/image-analysis-vlm",
         "configuration/reasoning-routing",
         "configuration/self-hosted-upstreams",
+        "configuration/fine-tune-own-model",
         "operations/usage-reporting",
         "operations/admin-browser-reports",
         "troubleshooting/index",

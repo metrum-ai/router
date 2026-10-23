@@ -1,0 +1,10 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# CPU-only data/evaluation tools, versions used by this run. No model weights.
+jsonschema==4.26.0
+PyYAML==6.0.3
+pyarrow==26.0.0
+huggingface-hub==2.2.0
+nltk==3.10.4
+langdetect==1.0.9
+immutabledict==4.3.1

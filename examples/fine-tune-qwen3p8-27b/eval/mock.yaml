@@ -1,0 +1,30 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+prompts: ['Synthetic fixture: {{case}}']
+providers: [file://mock.cjs]
+defaultTest:
+  options:
+    disableVarExpansion: true
+tests:
+  - vars:
+      case: exact
+      output: {tool_calls: [{function: {name: lookup, arguments: '{"id":1}'}}]}
+      expected: [{function: {name: lookup, arguments: '{"id":1}'}}]
+      declared: [lookup, other]
+    assert:
+      - {type: python, value: 'file://scorers/tools.py'}
+      - {type: is-json}
+      - type: contains-json
+        value:
+          type: object
+          required: [tool_calls]
+          properties:
+            tool_calls: {type: array, items: {type: object, required: [function]}}
+  - vars:
+      case: planted-mismatch
+      output: [{function: {name: hallucination, arguments: '{}'}}]
+      expected: [{function: {name: lookup, arguments: '{"id":1}'}}]
+      declared: [lookup]
+    assert:
+      - type: not-python
+        value: file://scorers/tools.py

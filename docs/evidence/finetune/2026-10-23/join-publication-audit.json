@@ -1,0 +1,14 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "complete_model_responses": 4000,
+  "globally_unique_joined_request_ids": 4000,
+  "quality": 1200,
+  "ifeval": 800,
+  "mmlu_pro": 800,
+  "sampling": 1200,
+  "private_full_join_rows_archived": true,
+  "public_summaries_include_aggregates_and_hashes_only": true,
+  "providers_and_paired_metrics_unchanged_on_aggregation": true,
+  "sorted_global_request_ids_sha256": "fd9c71fdccad4934171956cd289c35f7a81a3b69866f4f4288fad19b98578f63",
+  "accounting_note": "Objective audit descriptions on regressions updated from earlier unused every-tool wording; zero tool cases there, callback count0/hash unchanged. No metric, prompt, threshold, output or inference changed."
+}

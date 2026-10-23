@@ -1,0 +1,31 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Generated held-out tests live outside Git. Each test carries messages, expected,
+# declared tools and JSON-schema assertions. Pin router port/key through env.
+description: Qwen3.8 text-only LoRA comparison through Metrum AI Router
+prompts:
+  - '{{messages}}'
+providers:
+  - id: openai:chat:qwen3p8-27b-base
+    config:
+      apiBaseUrl: http://127.0.0.1:18525/v1
+      apiKeyEnvar: ROUTER_CALLER_KEY
+      temperature: 0
+      max_tokens: 1024
+  - id: openai:chat:qwen3p8-27b-ft
+    config:
+      apiBaseUrl: http://127.0.0.1:18525/v1
+      apiKeyEnvar: ROUTER_CALLER_KEY
+      temperature: 0
+      max_tokens: 1024
+# Generate this file from the held-out canonical split; never use train/val.
+tests: file://../../../tmp/ft-eval-tests.yaml
+defaultTest:
+  options:
+    provider:
+      id: openai:chat:frontier-ref
+      config:
+        apiBaseUrl: http://127.0.0.1:18525/v1
+        apiKeyEnvar: ROUTER_CALLER_KEY
+        temperature: 0
+        max_tokens: 256

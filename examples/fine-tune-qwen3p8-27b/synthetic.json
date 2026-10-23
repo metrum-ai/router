@@ -1,0 +1,8 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "provenance": "Metrum AI synthetic fixture; not copied from a training corpus",
+  "rows": [
+    {"messages": [{"role": "user", "content": "Look up synthetic item 7"}, {"role": "assistant", "content": null, "tool_calls": [{"id": "call_7", "type": "function", "function": {"name": "lookup", "arguments": "{\"id\":7}"}}]}], "tools": [{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"], "additionalProperties": false}}}]},
+    {"messages": [{"role": "user", "content": "Say hello without calling tools"}, {"role": "assistant", "content": "Hello"}], "tools": []}
+  ]
+}

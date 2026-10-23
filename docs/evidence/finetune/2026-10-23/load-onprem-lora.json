@@ -1,0 +1,85 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "model": "qwen3p8-27b-ft-onprem",
+  "measurements": [
+    {
+      "concurrency": 1,
+      "requests": 32,
+      "errors": 0,
+      "wall_seconds": 171.89509259001352,
+      "output_tokens": 4096,
+      "output_tokens_per_second": 23.828487121324386,
+      "hourly_usd": 2.19,
+      "usd_per_million_output_tokens": 25.529666664776585,
+      "latency_ms": {
+        "n": 32,
+        "p50": 5382.391202962026,
+        "p95": 5390.509114018641
+      },
+      "ttft_ms": {
+        "n": 32,
+        "p50": 146.81668003322557,
+        "p95": 149.2719060042873
+      },
+      "tpot_ms": {
+        "n": 32,
+        "p50": 41.22254474768708,
+        "p95": 41.26862255126736
+      }
+    },
+    {
+      "concurrency": 8,
+      "requests": 32,
+      "errors": 0,
+      "wall_seconds": 22.613164357026108,
+      "output_tokens": 4096,
+      "output_tokens_per_second": 181.13342897661897,
+      "hourly_usd": 2.19,
+      "usd_per_million_output_tokens": 3.3584818482725134,
+      "latency_ms": {
+        "n": 32,
+        "p50": 5596.9500680221245,
+        "p95": 5716.953197028488
+      },
+      "ttft_ms": {
+        "n": 32,
+        "p50": 229.54645002027974,
+        "p95": 346.50442004203796
+      },
+      "tpot_ms": {
+        "n": 32,
+        "p50": 42.40902226764753,
+        "p95": 42.72118096073034
+      }
+    },
+    {
+      "concurrency": 32,
+      "requests": 32,
+      "errors": 0,
+      "wall_seconds": 6.8332226849743165,
+      "output_tokens": 4096,
+      "output_tokens_per_second": 599.4243402906743,
+      "hourly_usd": 2.19,
+      "usd_per_million_output_tokens": 1.0148625813865664,
+      "latency_ms": {
+        "n": 32,
+        "p50": 6818.578417995013,
+        "p95": 6830.130684014875
+      },
+      "ttft_ms": {
+        "n": 32,
+        "p50": 602.0113959675655,
+        "p95": 647.2241469891742
+      },
+      "tpot_ms": {
+        "n": 32,
+        "p50": 48.98362589759869,
+        "p95": 50.82874953578131
+      }
+    }
+  ],
+  "caveat": "End-to-end router timings; TPOT requires streamed usage. Hourly economics assume fully utilized measured throughput; not invoices.",
+  "serving_mode": "official vLLM unmerged rank16 LoRA",
+  "peak_driver_memory_mib": 84591,
+  "memory_sampling": "1Hz nvidia-smi over all3 profiles plus adjacent idle; may miss subsecond peaks"
+}

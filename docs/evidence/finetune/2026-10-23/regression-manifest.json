@@ -1,0 +1,20 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "ifeval_revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+  "ifeval_license": "Apache-2.0",
+  "mmlu_revision": "b189ec765aa7ed75c8acfea42df31fdae71f97be",
+  "mmlu_license": "MIT",
+  "verifier_revision": "d6de81643928d653435c431bae19945d41d32520",
+  "seed": 326,
+  "count_per_benchmark": 200,
+  "source_sha256": {
+    "ifeval.jsonl": "6a85310ca8ce15eff755aa08a3a4ff931c7e273e7515ebb3c492ea85fd8288f2",
+    "ifeval-README.md": "c3e2d7da8286ae27649f526e3153cc72f071c21a6a7702d06f09cef5f9c114f1",
+    "mmlu.parquet": "0e24a191921c2f453518a537a8b2117bd137e7714d4ef1565e9ba06c1ecb9ad8",
+    "mmlu-README.md": "4bd710f67da3fa359a33edce1b4b5816b3de416c823c2624ba5e89c2557d2a47",
+    "instructions.py": "511cc41a53787d818c292d8335c8e98aa833296a0789ac470db56bcd6496345e",
+    "instructions_util.py": "e8c4d9187bac1482d93941fb46469609c3ae78d896195bfcb300a0707d492567",
+    "instructions_registry.py": "9db1c062cdb70a91420d3789a588235a1064c2b9a1a66e09e5fb9df9e7584a6c"
+  },
+  "test_yaml_sha256": "446eb6e57278a38fb8b8baa7312cc9bdbf81378176a483915d923e73cf9d515c"
+}

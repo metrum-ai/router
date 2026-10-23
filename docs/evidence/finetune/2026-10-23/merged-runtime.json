@@ -1,0 +1,15 @@
+{
+  "exit_code": 0,
+  "wall_seconds": 110,
+  "observed_at": "2026-10-23T07:07:50.336793+00:00",
+  "base_load_dtype": "bfloat16",
+  "merge_compute_device": "remote GPU host CPU",
+  "safe_merge": true,
+  "training": false,
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "adapter_sha256": "1f1ce60dac65f01ba54601c557d821c490ff954a969fbb563425c7728d86bb2e",
+  "base_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "driver_peak_memory_mib": 86115,
+  "memory_sampling": "1Hz driver readings across merge/startup/native/load phase; not torch peak or isolated per-profile memory",
+  "quality_not_retested_for_local_merged": true
+}

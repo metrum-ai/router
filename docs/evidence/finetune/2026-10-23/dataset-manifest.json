@@ -1,0 +1,22 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "dataset_revision": "e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac",
+  "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "sha256": {
+    "train": "c0d42dd93fa23e720c089dd2f521716362d4f6732b7c834ce606fffeb6107733",
+    "val": "561eab18fd7a235e0cf68dddec41080ac7bd3987ea7d9137c5044975ee78970e",
+    "test": "ade8207dd44c41942c965333ddb8b503f2bf210640904f78a29cbea4ca941361"
+  },
+  "counts": {
+    "train": 2000,
+    "val": 500,
+    "test": 300
+  },
+  "rejected": 2555,
+  "sampling": "seed 326; 2:1 tool/text stratified; test then validation then training",
+  "tool_targets": {
+    "train": 1333,
+    "val": 333,
+    "test": 200
+  }
+}

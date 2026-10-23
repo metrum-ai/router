@@ -1,0 +1,24 @@
+{
+  "schema_version": "fixed-model-outcome-gate/v1",
+  "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v2",
+  "arms": [
+    {
+      "role": "fixed_model",
+      "model_id": "qwen3p8-27b-base",
+      "total_cases": 300,
+      "passed_cases": 82,
+      "error_count": 0,
+      "p95_latency_ms": 94720,
+      "total_cost_usd": 0.0
+    },
+    {
+      "role": "candidate",
+      "model_id": "qwen3p8-27b-ft",
+      "total_cases": 300,
+      "passed_cases": 120,
+      "error_count": 0,
+      "p95_latency_ms": 12769,
+      "total_cost_usd": 0.0
+    }
+  ]
+}

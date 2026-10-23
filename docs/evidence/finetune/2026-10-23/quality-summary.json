@@ -1,0 +1,1068 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "providers": {
+    "openai:chat:qwen3p8-27b-base": {
+      "count": 300,
+      "metrics": {
+        "argument_f1": {
+          "n": 200,
+          "mean": 0.045,
+          "ci95": [
+            0.02,
+            0.075
+          ]
+        },
+        "error": {
+          "n": 300,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "exact": {
+          "n": 200,
+          "mean": 0.045,
+          "ci95": [
+            0.02,
+            0.075
+          ]
+        },
+        "json_schema": {
+          "n": 200,
+          "mean": 0.995,
+          "ci95": [
+            0.985,
+            1.0
+          ]
+        },
+        "json_validity": {
+          "n": 200,
+          "mean": 0.045,
+          "ci95": [
+            0.02,
+            0.075
+          ]
+        },
+        "latency_ms": {
+          "n": 300,
+          "mean": 15623.026666666667,
+          "ci95": [
+            12804.41,
+            18727.656666666666
+          ]
+        },
+        "no_hallucination": {
+          "n": 200,
+          "mean": 0.045,
+          "ci95": [
+            0.02,
+            0.075
+          ]
+        },
+        "over_call": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "passed": {
+          "n": 300,
+          "mean": 0.2733333333333333,
+          "ci95": [
+            0.22333333333333333,
+            0.3233333333333333
+          ]
+        },
+        "refusal": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "tool_name_exact": {
+          "n": 200,
+          "mean": 0.045,
+          "ci95": [
+            0.02,
+            0.075
+          ]
+        },
+        "valid": {
+          "n": 200,
+          "mean": 0.045,
+          "ci95": [
+            0.02,
+            0.075
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 94720
+    },
+    "openai:chat:qwen3p8-27b-ft-fireworks": {
+      "count": 300,
+      "metrics": {
+        "argument_f1": {
+          "n": 200,
+          "mean": 0.3422857142857143,
+          "ci95": [
+            0.2782857142857143,
+            0.4067857142857143
+          ]
+        },
+        "error": {
+          "n": 300,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "exact": {
+          "n": 200,
+          "mean": 0.325,
+          "ci95": [
+            0.26,
+            0.39
+          ]
+        },
+        "json_schema": {
+          "n": 200,
+          "mean": 0.44,
+          "ci95": [
+            0.37,
+            0.51
+          ]
+        },
+        "json_validity": {
+          "n": 200,
+          "mean": 0.355,
+          "ci95": [
+            0.29,
+            0.42
+          ]
+        },
+        "latency_ms": {
+          "n": 300,
+          "mean": 419.96,
+          "ci95": [
+            370.01,
+            477.38666666666666
+          ]
+        },
+        "no_hallucination": {
+          "n": 200,
+          "mean": 0.355,
+          "ci95": [
+            0.29,
+            0.42
+          ]
+        },
+        "over_call": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "passed": {
+          "n": 300,
+          "mean": 0.41333333333333333,
+          "ci95": [
+            0.3566666666666667,
+            0.47
+          ]
+        },
+        "refusal": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "tool_name_exact": {
+          "n": 200,
+          "mean": 0.35,
+          "ci95": [
+            0.285,
+            0.415
+          ]
+        },
+        "valid": {
+          "n": 200,
+          "mean": 0.355,
+          "ci95": [
+            0.29,
+            0.42
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 1242
+    },
+    "openai:chat:qwen3p8-27b-ft": {
+      "count": 300,
+      "metrics": {
+        "argument_f1": {
+          "n": 200,
+          "mean": 0.3372857142857143,
+          "ci95": [
+            0.2747857142857143,
+            0.4022857142857143
+          ]
+        },
+        "error": {
+          "n": 300,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "exact": {
+          "n": 200,
+          "mean": 0.32,
+          "ci95": [
+            0.255,
+            0.385
+          ]
+        },
+        "json_schema": {
+          "n": 200,
+          "mean": 0.425,
+          "ci95": [
+            0.36,
+            0.495
+          ]
+        },
+        "json_validity": {
+          "n": 200,
+          "mean": 0.35,
+          "ci95": [
+            0.285,
+            0.415
+          ]
+        },
+        "latency_ms": {
+          "n": 300,
+          "mean": 2852.6433333333334,
+          "ci95": [
+            2006.4266666666667,
+            3877.4933333333333
+          ]
+        },
+        "no_hallucination": {
+          "n": 200,
+          "mean": 0.35,
+          "ci95": [
+            0.285,
+            0.415
+          ]
+        },
+        "over_call": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "passed": {
+          "n": 300,
+          "mean": 0.4,
+          "ci95": [
+            0.3433333333333333,
+            0.45666666666666667
+          ]
+        },
+        "refusal": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "tool_name_exact": {
+          "n": 200,
+          "mean": 0.345,
+          "ci95": [
+            0.28,
+            0.41
+          ]
+        },
+        "valid": {
+          "n": 200,
+          "mean": 0.35,
+          "ci95": [
+            0.285,
+            0.415
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 12769
+    },
+    "openai:chat:qwen3p8-27b-ft-onprem": {
+      "count": 300,
+      "metrics": {
+        "argument_f1": {
+          "n": 200,
+          "mean": 0.3072857142857143,
+          "ci95": [
+            0.24485714285714283,
+            0.3707857142857143
+          ]
+        },
+        "error": {
+          "n": 300,
+          "mean": 0.0033333333333333335,
+          "ci95": [
+            0.0,
+            0.01
+          ]
+        },
+        "exact": {
+          "n": 200,
+          "mean": 0.29,
+          "ci95": [
+            0.225,
+            0.355
+          ]
+        },
+        "json_schema": {
+          "n": 200,
+          "mean": 0.39,
+          "ci95": [
+            0.325,
+            0.455
+          ]
+        },
+        "json_validity": {
+          "n": 200,
+          "mean": 0.32,
+          "ci95": [
+            0.255,
+            0.385
+          ]
+        },
+        "latency_ms": {
+          "n": 300,
+          "mean": 4746.176666666666,
+          "ci95": [
+            3740.8866666666668,
+            5949.64
+          ]
+        },
+        "no_hallucination": {
+          "n": 200,
+          "mean": 0.32,
+          "ci95": [
+            0.255,
+            0.385
+          ]
+        },
+        "over_call": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "passed": {
+          "n": 300,
+          "mean": 0.37333333333333335,
+          "ci95": [
+            0.32,
+            0.4266666666666667
+          ]
+        },
+        "refusal": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "tool_name_exact": {
+          "n": 200,
+          "mean": 0.315,
+          "ci95": [
+            0.25,
+            0.38
+          ]
+        },
+        "valid": {
+          "n": 200,
+          "mean": 0.32,
+          "ci95": [
+            0.255,
+            0.385
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 18027
+    }
+  },
+  "paired": {
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft": {
+      "argument_f1": {
+        "n": 200,
+        "right_minus_left": 0.29228571428571426,
+        "ci95": [
+          0.21850000000000003,
+          0.3658571428571429
+        ]
+      },
+      "error": {
+        "n": 300,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "exact": {
+        "n": 200,
+        "right_minus_left": 0.275,
+        "ci95": [
+          0.2,
+          0.35
+        ]
+      },
+      "json_schema": {
+        "n": 200,
+        "right_minus_left": -0.57,
+        "ci95": [
+          -0.64,
+          -0.5
+        ]
+      },
+      "json_validity": {
+        "n": 200,
+        "right_minus_left": 0.305,
+        "ci95": [
+          0.23,
+          0.38
+        ]
+      },
+      "latency_ms": {
+        "n": 300,
+        "right_minus_left": -12770.383333333333,
+        "ci95": [
+          -15495.393333333333,
+          -10292.716666666667
+        ]
+      },
+      "no_hallucination": {
+        "n": 200,
+        "right_minus_left": 0.305,
+        "ci95": [
+          0.23,
+          0.38
+        ]
+      },
+      "over_call": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "passed": {
+        "n": 300,
+        "right_minus_left": 0.12666666666666668,
+        "ci95": [
+          0.06333333333333334,
+          0.19
+        ]
+      },
+      "refusal": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "tool_name_exact": {
+        "n": 200,
+        "right_minus_left": 0.3,
+        "ci95": [
+          0.225,
+          0.375
+        ]
+      },
+      "valid": {
+        "n": 200,
+        "right_minus_left": 0.305,
+        "ci95": [
+          0.23,
+          0.38
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-fireworks": {
+      "argument_f1": {
+        "n": 200,
+        "right_minus_left": 0.29728571428571426,
+        "ci95": [
+          0.222,
+          0.3715714285714286
+        ]
+      },
+      "error": {
+        "n": 300,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "exact": {
+        "n": 200,
+        "right_minus_left": 0.28,
+        "ci95": [
+          0.205,
+          0.355
+        ]
+      },
+      "json_schema": {
+        "n": 200,
+        "right_minus_left": -0.555,
+        "ci95": [
+          -0.625,
+          -0.485
+        ]
+      },
+      "json_validity": {
+        "n": 200,
+        "right_minus_left": 0.31,
+        "ci95": [
+          0.235,
+          0.385
+        ]
+      },
+      "latency_ms": {
+        "n": 300,
+        "right_minus_left": -15203.066666666668,
+        "ci95": [
+          -18264.733333333334,
+          -12415.37
+        ]
+      },
+      "no_hallucination": {
+        "n": 200,
+        "right_minus_left": 0.31,
+        "ci95": [
+          0.235,
+          0.385
+        ]
+      },
+      "over_call": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "passed": {
+        "n": 300,
+        "right_minus_left": 0.14,
+        "ci95": [
+          0.07666666666666666,
+          0.20333333333333334
+        ]
+      },
+      "refusal": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "tool_name_exact": {
+        "n": 200,
+        "right_minus_left": 0.305,
+        "ci95": [
+          0.23,
+          0.38
+        ]
+      },
+      "valid": {
+        "n": 200,
+        "right_minus_left": 0.31,
+        "ci95": [
+          0.235,
+          0.385
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "argument_f1": {
+        "n": 200,
+        "right_minus_left": 0.2622857142857143,
+        "ci95": [
+          0.1885,
+          0.3345714285714286
+        ]
+      },
+      "error": {
+        "n": 300,
+        "right_minus_left": 0.0033333333333333335,
+        "ci95": [
+          0.0,
+          0.01
+        ]
+      },
+      "exact": {
+        "n": 200,
+        "right_minus_left": 0.245,
+        "ci95": [
+          0.175,
+          0.32
+        ]
+      },
+      "json_schema": {
+        "n": 200,
+        "right_minus_left": -0.605,
+        "ci95": [
+          -0.675,
+          -0.535
+        ]
+      },
+      "json_validity": {
+        "n": 200,
+        "right_minus_left": 0.275,
+        "ci95": [
+          0.2,
+          0.35
+        ]
+      },
+      "latency_ms": {
+        "n": 300,
+        "right_minus_left": -10876.85,
+        "ci95": [
+          -13310.316666666668,
+          -8610.303333333333
+        ]
+      },
+      "no_hallucination": {
+        "n": 200,
+        "right_minus_left": 0.275,
+        "ci95": [
+          0.2,
+          0.35
+        ]
+      },
+      "over_call": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "passed": {
+        "n": 300,
+        "right_minus_left": 0.1,
+        "ci95": [
+          0.03666666666666667,
+          0.16
+        ]
+      },
+      "refusal": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "tool_name_exact": {
+        "n": 200,
+        "right_minus_left": 0.27,
+        "ci95": [
+          0.195,
+          0.345
+        ]
+      },
+      "valid": {
+        "n": 200,
+        "right_minus_left": 0.275,
+        "ci95": [
+          0.2,
+          0.35
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft -> openai:chat:qwen3p8-27b-ft-fireworks": {
+      "argument_f1": {
+        "n": 200,
+        "right_minus_left": 0.005,
+        "ci95": [
+          -0.02,
+          0.03
+        ]
+      },
+      "error": {
+        "n": 300,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "exact": {
+        "n": 200,
+        "right_minus_left": 0.005,
+        "ci95": [
+          -0.02,
+          0.03
+        ]
+      },
+      "json_schema": {
+        "n": 200,
+        "right_minus_left": 0.015,
+        "ci95": [
+          -0.01,
+          0.04
+        ]
+      },
+      "json_validity": {
+        "n": 200,
+        "right_minus_left": 0.005,
+        "ci95": [
+          -0.02,
+          0.03
+        ]
+      },
+      "latency_ms": {
+        "n": 300,
+        "right_minus_left": -2432.6833333333334,
+        "ci95": [
+          -3425.8333333333335,
+          -1618.29
+        ]
+      },
+      "no_hallucination": {
+        "n": 200,
+        "right_minus_left": 0.005,
+        "ci95": [
+          -0.02,
+          0.03
+        ]
+      },
+      "over_call": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "passed": {
+        "n": 300,
+        "right_minus_left": 0.013333333333333334,
+        "ci95": [
+          -0.01,
+          0.03666666666666667
+        ]
+      },
+      "refusal": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "tool_name_exact": {
+        "n": 200,
+        "right_minus_left": 0.005,
+        "ci95": [
+          -0.02,
+          0.03
+        ]
+      },
+      "valid": {
+        "n": 200,
+        "right_minus_left": 0.005,
+        "ci95": [
+          -0.02,
+          0.03
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "argument_f1": {
+        "n": 200,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.06,
+          -0.005
+        ]
+      },
+      "error": {
+        "n": 300,
+        "right_minus_left": 0.0033333333333333335,
+        "ci95": [
+          0.0,
+          0.01
+        ]
+      },
+      "exact": {
+        "n": 200,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.06,
+          -0.005
+        ]
+      },
+      "json_schema": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      },
+      "json_validity": {
+        "n": 200,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.06,
+          -0.005
+        ]
+      },
+      "latency_ms": {
+        "n": 300,
+        "right_minus_left": 1893.5333333333333,
+        "ci95": [
+          1328.2466666666667,
+          2624.9366666666665
+        ]
+      },
+      "no_hallucination": {
+        "n": 200,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.06,
+          -0.005
+        ]
+      },
+      "over_call": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "passed": {
+        "n": 300,
+        "right_minus_left": -0.02666666666666667,
+        "ci95": [
+          -0.05333333333333334,
+          0.0
+        ]
+      },
+      "refusal": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "tool_name_exact": {
+        "n": 200,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.06,
+          -0.005
+        ]
+      },
+      "valid": {
+        "n": 200,
+        "right_minus_left": -0.03,
+        "ci95": [
+          -0.06,
+          -0.005
+        ]
+      }
+    },
+    "openai:chat:qwen3p8-27b-ft-fireworks -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "argument_f1": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      },
+      "error": {
+        "n": 300,
+        "right_minus_left": 0.0033333333333333335,
+        "ci95": [
+          0.0,
+          0.01
+        ]
+      },
+      "exact": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      },
+      "json_schema": {
+        "n": 200,
+        "right_minus_left": -0.05,
+        "ci95": [
+          -0.08,
+          -0.02
+        ]
+      },
+      "json_validity": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      },
+      "latency_ms": {
+        "n": 300,
+        "right_minus_left": 4326.216666666666,
+        "ci95": [
+          3366.9066666666668,
+          5475.7733333333335
+        ]
+      },
+      "no_hallucination": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      },
+      "over_call": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "passed": {
+        "n": 300,
+        "right_minus_left": -0.04,
+        "ci95": [
+          -0.06666666666666667,
+          -0.013333333333333334
+        ]
+      },
+      "refusal": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "tool_name_exact": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      },
+      "valid": {
+        "n": 200,
+        "right_minus_left": -0.035,
+        "ci95": [
+          -0.065,
+          -0.01
+        ]
+      }
+    }
+  },
+  "objective_audit": {
+    "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+    "sdk_skipped_callbacks": 25,
+    "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+  },
+  "cost_scope": "Model-request token estimates only; excludes grader calls and hourly GPU/deployment charges. Zero token price is not free serving.",
+  "router_join_audit": {
+    "complete_responses": 1200,
+    "unique_request_ids": 1200,
+    "joined_records_sha256": "40e0dc2f142ea727786cee2f6c3370f74cd9a4627e21bf8b0b41450df9e28e16",
+    "by_eval_provider": {
+      "openai:chat:qwen3p8-27b-ft-fireworks": {
+        "responses": 300,
+        "observed_targets": {
+          "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 300
+        },
+        "status_counts": {
+          "200": 300
+        },
+        "input_tokens": 52712,
+        "output_tokens": 27898
+      },
+      "openai:chat:qwen3p8-27b-ft": {
+        "responses": 300,
+        "observed_targets": {
+          "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 151,
+          "vllm_b200_ft/metrum-ft": 149
+        },
+        "status_counts": {
+          "200": 300
+        },
+        "input_tokens": 52712,
+        "output_tokens": 28395
+      },
+      "openai:chat:qwen3p8-27b-ft-onprem": {
+        "responses": 300,
+        "observed_targets": {
+          "vllm_b200_ft/metrum-ft": 300
+        },
+        "status_counts": {
+          "200": 299,
+          "502": 1
+        },
+        "input_tokens": 52482,
+        "output_tokens": 29569
+      },
+      "openai:chat:qwen3p8-27b-base": {
+        "responses": 300,
+        "observed_targets": {
+          "vllm_b200_ft/qwen3p8-27b-base": 300
+        },
+        "status_counts": {
+          "200": 300
+        },
+        "input_tokens": 52712,
+        "output_tokens": 100428
+      }
+    },
+    "journal_sha256": "2330a36d0f119df9dac0aa2e9b0cecdf4bd4e5e13e39ad441718d0dca06b653a",
+    "privacy": "Full per-request rows private; provider account IDs redacted. Hashes commit to original joined rows and journal."
+  }
+}

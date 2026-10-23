@@ -1,0 +1,20 @@
+{
+  "concurrency": 1,
+  "measured_capacity_output_tokens_per_second": 23.828487121324386,
+  "measured_full_utilization_gpu_usd_per_million_outputs": 25.529666664776585,
+  "scenario_hours": 720.0,
+  "scenario_one_off_usd": 1.345025,
+  "scenario_fixed_usd": 1578.145025,
+  "reference_input_usd_per_million": 2.5,
+  "reference_output_usd_per_million": 10.0,
+  "assumed_input_output_token_ratio": 1.0,
+  "reference_equivalent_usd_per_million_outputs": 12.5,
+  "break_even_output_tokens_in_period": 126251602.0,
+  "measured_capacity_output_tokens_in_period": 61763438.61847281,
+  "break_even_capacity_fraction": 2.0441154965461954,
+  "within_measured_capacity": false,
+  "caveat": "Hypothetical capacity/duty-cycle price comparison only. Assumes measured batching efficiency at scaled average load; not validated for continuous low-concurrency traffic or a changed input/output mix. Reference model is not proven quality-equivalent; excludes operator labor, network, storage, downtime and taxes. No retry reduction or business payback measured.",
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "model": "qwen3p8-27b-ft-onprem",
+  "one_off_scope": "Corrected training wrapper only; excludes first attempt and setup. Not all-in historical spend."
+}
