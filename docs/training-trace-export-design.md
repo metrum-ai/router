@@ -6,6 +6,20 @@
 Metrum AI Router remains the capture, authorization and selection boundary. This
 is a work-in-progress design, not a declaration that the complete loop is ready.
 
+## Future-export tool declaration normalization (#371)
+
+Before content hashing, compare whole function declarations as canonical JSON.
+Keep the first occurrence of byte-identical declarations in stable input order;
+reject rows containing conflicting declarations for the same function name
+(including different descriptions), rather than picking an arbitrary schema.
+Recheck after export privacy filtering in case redaction collapses names.
+`manifest.tool_declarations.counts` reports identical declarations removed,
+rows with identical duplicates, conflicting rows rejected and invalid declaration
+rows rejected. Counts cover eligible candidate rows before content dedupe; they
+are not inferred model failures. Consumers must validate expected cohort counts
+and decline a population-short export instead of selectively refilling it.
+This is future-export behavior only: never rewrite the frozen #358 dataset.
+
 ## Existing foundation
 
 `content_capture.go` encrypts redacted content in dedicated relational tables,
