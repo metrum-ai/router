@@ -1,0 +1,107 @@
+[
+  {
+    "model": "us.meta.llama3-3-70b-instruct-v1:0",
+    "region": "us-east-1",
+    "mode": "chat",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "us.meta.llama3-3-70b-instruct-v1:0",
+    "region": "us-east-1",
+    "mode": "stream",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "us.meta.llama3-3-70b-instruct-v1:0",
+    "region": "us-east-1",
+    "mode": "tools",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "mistral.mistral-large-3-675b-instruct",
+    "region": "us-east-1",
+    "mode": "chat",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "mistral.mistral-large-3-675b-instruct",
+    "region": "us-east-1",
+    "mode": "stream",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "mistral.mistral-large-3-675b-instruct",
+    "region": "us-east-1",
+    "mode": "tools",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "qwen.qwen3-32b-v1:0",
+    "region": "us-east-1",
+    "mode": "chat",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "qwen.qwen3-32b-v1:0",
+    "region": "us-east-1",
+    "mode": "stream",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "qwen.qwen3-32b-v1:0",
+    "region": "us-east-1",
+    "mode": "tools",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "deepseek.v3.2",
+    "region": "us-east-1",
+    "mode": "chat",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "deepseek.v3.2",
+    "region": "us-east-1",
+    "mode": "stream",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "deepseek.v3.2",
+    "region": "us-east-1",
+    "mode": "tools",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "openai.gpt-oss-20b-1:0",
+    "region": "us-east-1",
+    "mode": "chat",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "openai.gpt-oss-20b-1:0",
+    "region": "us-east-1",
+    "mode": "stream",
+    "status": "pass",
+    "http_status": 200
+  },
+  {
+    "model": "openai.gpt-oss-20b-1:0",
+    "region": "us-east-1",
+    "mode": "tools",
+    "status": "pass",
+    "http_status": 200
+  }
+]

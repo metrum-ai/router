@@ -1,0 +1,375 @@
+{
+  "source": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonBedrock/current/us-east-1/index.json",
+  "products": [
+    {
+      "sku": "RA2QAWYCCM9R5BR6",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Qwen3-32B-output-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Output tokens",
+        "model": "Qwen3 32B",
+        "provider": "Qwen",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "RA2QAWYCCM9R5BR6.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "RA2QAWYCCM9R5BR6",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "RA2QAWYCCM9R5BR6.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "RA2QAWYCCM9R5BR6.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0006 per 1K output tokens for Qwen3 32B in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0006000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "XPBN9YNK7QGZXBRN",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama3-3-70B-input-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Input tokens",
+        "model": "Llama 3.3 70B",
+        "provider": "Meta",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "XPBN9YNK7QGZXBRN.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "XPBN9YNK7QGZXBRN",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "XPBN9YNK7QGZXBRN.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "XPBN9YNK7QGZXBRN.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.00072 per 1K input tokens for Llama 3.3 70B in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0007200000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "NFE9F5EY3U77MWSW",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Llama3-3-70B-output-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Output tokens",
+        "model": "Llama 3.3 70B",
+        "provider": "Meta",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "NFE9F5EY3U77MWSW.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "NFE9F5EY3U77MWSW",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "NFE9F5EY3U77MWSW.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "NFE9F5EY3U77MWSW.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.00072 per 1K output tokens for Llama 3.3 70B in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0007200000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "F6SEZYUB98SAU4VQ",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Mistral-Large-3-675b-Instruct-input-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Input tokens",
+        "model": "Mistral Large 3",
+        "provider": "Mistral",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "F6SEZYUB98SAU4VQ.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "F6SEZYUB98SAU4VQ",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "F6SEZYUB98SAU4VQ.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "F6SEZYUB98SAU4VQ.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0005 per 1K input tokens for Mistral Large 3 in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0005000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "KXUENRNPAKP78CD6",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-deepseek.v3.2-output-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Output tokens",
+        "model": "DeepSeek v3.2",
+        "provider": "DeepSeek",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "KXUENRNPAKP78CD6.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "KXUENRNPAKP78CD6",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "KXUENRNPAKP78CD6.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "KXUENRNPAKP78CD6.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.00185 per 1K output tokens for DeepSeek v3.2 in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0018500000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "V7FNUEGYBCQ8QAW2",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-gpt-oss-20b-input-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Input tokens",
+        "model": "gpt-oss-20b",
+        "provider": "OpenAI",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "V7FNUEGYBCQ8QAW2.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "V7FNUEGYBCQ8QAW2",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "V7FNUEGYBCQ8QAW2.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "V7FNUEGYBCQ8QAW2.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.00007 per 1K input tokens for gpt-oss-20b in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0000700000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "GKSCNNJ6M7WBX7C3",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-deepseek.v3.2-input-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Input tokens",
+        "model": "DeepSeek v3.2",
+        "provider": "DeepSeek",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "GKSCNNJ6M7WBX7C3.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "GKSCNNJ6M7WBX7C3",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "GKSCNNJ6M7WBX7C3.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "GKSCNNJ6M7WBX7C3.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.00062 per 1K input tokens for DeepSeek v3.2 in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0006200000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "F9R4KP9PYNDYGQ9E",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-gpt-oss-20b-output-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Output tokens",
+        "model": "gpt-oss-20b",
+        "provider": "OpenAI",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "F9R4KP9PYNDYGQ9E.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "F9R4KP9PYNDYGQ9E",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "F9R4KP9PYNDYGQ9E.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "F9R4KP9PYNDYGQ9E.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0003 per 1K output tokens for gpt-oss-20b in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0003000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "3BG26FXFTP3HQ6SM",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Mistral-Large-3-675b-Instruct-output-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Output tokens",
+        "model": "Mistral Large 3",
+        "provider": "Mistral",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "3BG26FXFTP3HQ6SM.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "3BG26FXFTP3HQ6SM",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "3BG26FXFTP3HQ6SM.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "3BG26FXFTP3HQ6SM.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.0015 per 1K output tokens for Mistral Large 3 in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0015000000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    },
+    {
+      "sku": "5UQHJ7CFUZCUD9UX",
+      "attributes": {
+        "servicecode": "AmazonBedrock",
+        "location": "US East (N. Virginia)",
+        "locationType": "AWS Region",
+        "usagetype": "USE1-Qwen3-32B-input-tokens",
+        "operation": "",
+        "feature": "On-demand Inference",
+        "inferenceType": "Input tokens",
+        "model": "Qwen3 32B",
+        "provider": "Qwen",
+        "regionCode": "us-east-1",
+        "servicename": "Amazon Bedrock"
+      },
+      "terms": {
+        "5UQHJ7CFUZCUD9UX.JRTCKXETXF": {
+          "offerTermCode": "JRTCKXETXF",
+          "sku": "5UQHJ7CFUZCUD9UX",
+          "effectiveDate": "2026-10-01T00:00:00Z",
+          "priceDimensions": {
+            "5UQHJ7CFUZCUD9UX.JRTCKXETXF.6YS6EN2CT7": {
+              "rateCode": "5UQHJ7CFUZCUD9UX.JRTCKXETXF.6YS6EN2CT7",
+              "description": "$0.00015 per 1K input tokens for Qwen3 32B in US East (N. Virginia)",
+              "beginRange": "0",
+              "endRange": "Inf",
+              "unit": "1K tokens",
+              "pricePerUnit": {
+                "USD": "0.0001500000"
+              },
+              "appliesTo": []
+            }
+          },
+          "termAttributes": {}
+        }
+      }
+    }
+  ]
+}

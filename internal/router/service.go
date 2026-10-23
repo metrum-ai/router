@@ -2422,7 +2422,12 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			},
 		}))
 	}
-	httpResp, err := s.httpClient.Do(httpReq)
+	var httpResp *http.Response
+	if isBedrock(provider) {
+		httpResp, err = bedrockDo(attemptCtx, target.Region, upReqBody, s.httpClient)
+	} else {
+		httpResp, err = s.httpClient.Do(httpReq)
+	}
 	if wroteRequestSeen {
 		errorClass := ""
 		if err != nil {

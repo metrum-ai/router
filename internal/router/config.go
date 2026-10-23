@@ -1301,6 +1301,9 @@ func (c *Config) Validate() error {
 		if normalizeDialect(p.Dialect) == "" {
 			return fmt.Errorf("provider %s has unsupported dialect %q", name, p.Dialect)
 		}
+		if isBedrock(p) && normalizeDialect(p.Dialect) != "openai-chat" {
+			return fmt.Errorf("provider %s bedrock requires dialect openai-chat for internal bridges", name)
+		}
 		if p.AuthScheme != "" && normalizeAuthScheme(p.AuthScheme) == "" {
 			return fmt.Errorf("provider %s has unsupported auth_scheme %q", name, p.AuthScheme)
 		}
@@ -2708,6 +2711,8 @@ func normalizeAuthScheme(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "", "default":
 		return "default"
+	case "bedrock":
+		return "bedrock"
 	case "bearer", "authorization-bearer":
 		return "bearer"
 	case "x-api-key", "anthropic":

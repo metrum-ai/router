@@ -1,0 +1,11 @@
+{
+  "request_id": "req_ec225604921af0540eff5a315b2e3bde",
+  "target_model": "mistral.mistral-large-3-675b-instruct",
+  "input_tokens": 75,
+  "output_tokens": 12,
+  "total_cost_usd": 5.55e-05,
+  "input_price_per_million_usd": 0.5,
+  "output_price_per_million_usd": 1.5,
+  "expected_cost_usd": 5.55e-05,
+  "matches": true
+}

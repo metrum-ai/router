@@ -1,0 +1,48 @@
+{
+  "model": "us.meta.llama3-3-70b-instruct-v1:0",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "llama",
+    "max_tokens": 256,
+    "temperature": 0,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_EQj7TTtHhOWnw8uAaKW8uP\",\"type\":\"function\"}]}}],\"id\":\"resp_301efe2f57b640a4d7adc5aa11e21a84\",\"model\":\"us.meta.llama3-3-70b-instruct-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":26,\"prompt_tokens\":193,\"total_tokens\":219}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"This JSON represents a function call to `write_file` with the specified path and content.\",\"role\":\"assistant\"}}],\"id\":\"resp_caf8868f61af4f0c7032765bf2d5e3fc\",\"model\":\"us.meta.llama3-3-70b-instruct-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":19,\"prompt_tokens\":231,\"total_tokens\":250}}\n",
+    "file_created": true
+  }
+}

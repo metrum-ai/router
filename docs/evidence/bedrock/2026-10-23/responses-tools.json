@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "response": "{\"created_at\":1792725142,\"finish_reason\":\"tool_calls\",\"id\":\"resp_2cdd058b17877d7886400b3fa7b2f3fe\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"response\",\"output\":[{\"arguments\":\"{\\\"content\\\":\\\"OK now\\\"}\",\"call_id\":\"tooluse_tNemEVlQOi4wp8X279kEz4\",\"id\":\"tooluse_tNemEVlQOi4wp8X279kEz4\",\"name\":\"write_file\",\"status\":\"completed\",\"type\":\"function_call\"}],\"output_text\":\"\",\"status\":\"completed\",\"usage\":{\"input_tokens\":75,\"output_tokens\":12,\"total_tokens\":87}}\n",
+  "continuation": {
+    "status": 200,
+    "response": "{\"created_at\":1792725143,\"finish_reason\":\"stop\",\"id\":\"resp_f1548093c12e4806785075b75ffafb92\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"object\":\"response\",\"output\":[{\"content\":[{\"text\":\"The file has been successfully written with the content **\\\"OK now\\\"**. Let me know if you need anything else!\",\"type\":\"output_text\"}],\"role\":\"assistant\",\"type\":\"message\"}],\"output_text\":\"The file has been successfully written with the content **\\\"OK now\\\"**. Let me know if you need anything else!\",\"status\":\"completed\",\"usage\":{\"input_tokens\":93,\"output_tokens\":24,\"total_tokens\":117}}\n"
+  }
+}

@@ -1,0 +1,12 @@
+event: message_start
+data: {"message":{"content":[],"id":"msg_req_02b46a8574dcf13f82983ab03bfe68c9","model":"mistral.mistral-large-3-675b-instruct","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":6,"output_tokens":0}},"type":"message_start"}
+
+event: content_block_start
+data: {"content_block":{"text":"","type":"text"},"index":0,"type":"content_block_start"}
+
+event: content_block_delta
+data: {"delta":{"text":"OK! 😊 How can I assist you today?","type":"text_delta"},"index":0,"type":"content_block_delta"}
+
+event: content_block_stop
+data: {"index":0,"type":"content_block_stop"}
+

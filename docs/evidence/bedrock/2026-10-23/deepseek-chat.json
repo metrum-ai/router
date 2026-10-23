@@ -1,0 +1,19 @@
+{
+  "model": "deepseek.v3.2",
+  "region": "us-east-1",
+  "mode": "chat",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "deepseek",
+    "max_tokens": 256,
+    "temperature": 0,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say OK"
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"OK\",\"role\":\"assistant\"}}],\"id\":\"resp_396054f278d390975806f781cfeef833\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":2,\"prompt_tokens\":6,\"total_tokens\":8}}\n"
+}

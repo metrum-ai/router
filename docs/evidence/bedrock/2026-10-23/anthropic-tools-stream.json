@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "response": "event: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"msg_req_d6940b11eb905c22978b520601ff564f\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":64,\"output_tokens\":0}},\"type\":\"message_start\"}\n\nevent: content_block_start\ndata: {\"content_block\":{\"id\":\"tooluse_UhMt7WaYw47fAKTfQWECfG\",\"input\":{},\"name\":\"write_file\",\"type\":\"tool_use\"},\"index\":0,\"type\":\"content_block_start\"}\n\nevent: content_block_delta\ndata: {\"delta\":{\"partial_json\":\"{\\\"content\\\": \\\"OK now\\\"}\",\"type\":\"input_json_delta\"},\"index\":0,\"type\":\"content_block_delta\"}\n\nevent: content_block_stop\ndata: {\"index\":0,\"type\":\"content_block_stop\"}\n\n"
+}
