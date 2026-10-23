@@ -57,7 +57,7 @@ func TestConfigControlPlanePhase1MigratesRelationalSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !status.Compatible || status.State != "current" || status.SchemaVersion != 6 {
+	if !status.Compatible || status.State != "current" || status.SchemaVersion != configControlPlaneCompatibility.MaxSchema {
 		t.Fatalf("unexpected migration status: %+v", status)
 	}
 	for _, table := range ConfigControlPlaneTableNames() {

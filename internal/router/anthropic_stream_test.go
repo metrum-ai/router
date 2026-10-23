@@ -219,7 +219,11 @@ func TestAnthropicBridgeStreamingToolsAndIdentifiers(t *testing.T) {
 			ids := testIdentifierTransform(t)
 			rr := httptest.NewRecorder()
 			result, err := anthropicBridgeProxy(pair[0])(context.Background(), rr, strings.NewReader(string(raw)), pair[1], "test", 1<<20, nil, ids)
-			if err != nil || result.Response.Usage.TotalTokens != 8 {
+			wantTotal := 8
+			if pair[1] == "anthropic" {
+				wantTotal = 10
+			} // 5 uncached + 2 cache-read + 3 output
+			if err != nil || result.Response.Usage.TotalTokens != wantTotal {
 				t.Fatal(result, err)
 			}
 			names := []string{"call_weather", "call_clock"}
@@ -256,7 +260,7 @@ func TestAnthropicBridgeInterruptedUsage(t *testing.T) {
 	for _, caller := range []string{"openai-chat", "openai-responses"} {
 		rr := httptest.NewRecorder()
 		result, err := anthropicBridgeProxy(caller)(context.Background(), rr, strings.NewReader(raw), "anthropic", "test", 1<<20, nil)
-		if err == nil || !committedStreamError(err) || result.Response.Usage.TotalTokens != 8 {
+		if err == nil || !committedStreamError(err) || result.Response.Usage.TotalTokens != 10 {
 			t.Fatal(result, err)
 		}
 		if strings.Contains(rr.Body.String(), "[DONE]") || strings.Contains(rr.Body.String(), "response.completed") {

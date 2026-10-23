@@ -1295,6 +1295,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	rc.rec.InputPricePerMillionUSD = dec.Target.InputPricePerMillionUSD
 	rc.rec.OutputPricePerMillionUSD = dec.Target.OutputPricePerMillionUSD
+	rc.rec.CacheWritePricePerMillionUSD = dec.Target.CacheWritePricePerMillionUSD
 	rc.rec.CachedInputPricePerMillionUSD = dec.Target.CachedInputPricePerMillionUSD
 	rc.rec.ImageInputPricePerMillionTokensUSD = dec.Target.ImageInputPricePerMillionTokensUSD
 	rc.rec.ImageInputPricePerImageUSD = dec.Target.ImageInputPricePerImageUSD
@@ -1333,6 +1334,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			}
 			// Router response-cache hits are not upstream prompt-cache evidence for this request.
 			rc.rec.Usage.CachedInputTokens = nil
+			rc.rec.Usage.CacheWriteInputTokens = nil
 			rc.trace("cache_hit", "", dec.Target, 0, http.StatusOK, "", false, 0)
 			s.writeIR(w, dialect, cached, req.Stream, rc)
 			s.finish(rc, http.StatusOK, nil)
@@ -1681,6 +1683,7 @@ func (s *Service) applyServingTargetRecord(rc *requestContext, served Target) {
 	}
 	rc.rec.InputPricePerMillionUSD = served.InputPricePerMillionUSD
 	rc.rec.OutputPricePerMillionUSD = served.OutputPricePerMillionUSD
+	rc.rec.CacheWritePricePerMillionUSD = served.CacheWritePricePerMillionUSD
 	rc.rec.CachedInputPricePerMillionUSD = served.CachedInputPricePerMillionUSD
 	rc.rec.ImageInputPricePerMillionTokensUSD = served.ImageInputPricePerMillionTokensUSD
 	rc.rec.ImageInputPricePerImageUSD = served.ImageInputPricePerImageUSD
@@ -3727,7 +3730,22 @@ func populateCosts(rec *logRecord) {
 		rec.Warnings = appendWarning(rec.Warnings, "missing-image-token-pricing-metadata")
 	}
 	imageUnitCost := float64(rec.InputImageCount) * rec.ImageInputPricePerImageUSD
-	rec.InputCostUSD = roundUSD(textInputCostUSD(textInputTokens, rec.InputPricePerMillionUSD, rec.Usage.CachedInputTokens, rec.CachedInputPricePerMillionUSD))
+	write := 0
+	if rec.Usage.CacheWriteInputTokens != nil {
+		write = *rec.Usage.CacheWriteInputTokens
+	}
+	if write > 0 && write <= textInputTokens {
+		if rec.CacheWritePricePerMillionUSD == nil {
+			rec.Warnings = appendWarning(rec.Warnings, "missing-cache-write-pricing-metadata")
+		}
+	} else {
+		write = 0
+	}
+	writePrice := rec.InputPricePerMillionUSD
+	if rec.CacheWritePricePerMillionUSD != nil {
+		writePrice = *rec.CacheWritePricePerMillionUSD
+	}
+	rec.InputCostUSD = roundUSD(textInputCostUSD(textInputTokens-write, rec.InputPricePerMillionUSD, rec.Usage.CachedInputTokens, rec.CachedInputPricePerMillionUSD) + float64(write)*writePrice/1_000_000)
 	rec.ImageCostUSD = roundUSD(imageTokenCost + imageUnitCost)
 	rec.OutputCostUSD = roundUSD(float64(rec.Usage.OutputTokens) * rec.OutputPricePerMillionUSD / 1_000_000)
 	rec.TotalCostUSD = roundUSD(rec.InputCostUSD + rec.ImageCostUSD + rec.OutputCostUSD)

@@ -6,5 +6,5 @@
 {"delta":{"partial_json":"\"Paris\"}","type":"input_json_delta"},"index":0,"type":"content_block_delta"}
 {"index":0,"type":"content_block_stop"}
 {"index":1,"type":"content_block_stop"}
-{"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"cache_read_input_tokens":2,"input_tokens":5,"output_tokens":3}}
+{"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"cache_read_input_tokens":2,"input_tokens":3,"output_tokens":3}}
 {"type":"message_stop"}

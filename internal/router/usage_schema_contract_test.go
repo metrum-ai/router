@@ -48,6 +48,14 @@ func TestUsageProvenancePostgresSchema(t *testing.T) {
 	if err := verifyUsageProvenanceMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
+	if err := verifyUsageCacheWriteMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"CacheWriteInputTokens", "CacheWritePricePerMillionUSD"} {
+		if !store.db.Migrator().HasColumn(&usageRecord{}, field) {
+			t.Fatalf("missing %s", field)
+		}
+	}
 	if err := store.db.Create(&usageRecord{RequestID: "provenance", UsageSource: "estimated"}).Error; err != nil {
 		t.Fatal(err)
 	}

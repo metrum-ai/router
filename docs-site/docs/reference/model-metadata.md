@@ -359,6 +359,7 @@ Set pricing metadata for every active target when a provider price or customer c
 - `input_price_per_million_usd`
 - `output_price_per_million_usd`
 - `cached_input_price_per_million_usd` (optional; omit when unknown, `0` when known free)
+- `cache_write_price_per_million_usd` (optional; omit when unknown). Cache writes are partitioned from inclusive input and priced separately. Missing write pricing falls back to base input price with a warning; choose pricing appropriate to the cache TTL policy.
 - `image_input_price_per_million_tokens_usd`
 - `image_input_price_per_image_usd`
 - `pricing_source`

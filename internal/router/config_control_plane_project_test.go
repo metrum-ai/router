@@ -352,8 +352,12 @@ func TestProjectConfigToRelationalRoundTripsThroughLoader(t *testing.T) {
 	r, closeDB := newRelationalProjectionTestDB(t, "set-1")
 	defer func() { _ = closeDB() }()
 	db := r.db
-
-	if err := ProjectConfigToRelational(db, "set-1", minimalProjectionConfig()); err != nil {
+	cfg := minimalProjectionConfig()
+	price := 12.5
+	model := cfg.Provider["mock"].Models["small"]
+	model.CacheWritePricePerMillionUSD = &price
+	cfg.Provider["mock"].Models["small"] = model
+	if err := ProjectConfigToRelational(db, "set-1", cfg); err != nil {
 		t.Fatal(err)
 	}
 	// Promote the draft set to active so the read path accepts it.
@@ -368,6 +372,9 @@ func TestProjectConfigToRelationalRoundTripsThroughLoader(t *testing.T) {
 	provider, ok := loaded.Provider["mock"]
 	if !ok {
 		t.Fatal("round-trip lost provider")
+	}
+	if got := provider.Models["small"].CacheWritePricePerMillionUSD; got == nil || *got != 12.5 {
+		t.Fatalf("lost cache write price: %v", got)
 	}
 	if provider.APIKey != "test-only-projection-provider-key" || provider.APIKeyEnv != "MOCK_API_KEY" {
 		t.Fatal("round-trip must resolve the credential from the environment reference")

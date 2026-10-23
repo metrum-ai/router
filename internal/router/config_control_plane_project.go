@@ -249,6 +249,7 @@ func projectControlPlaneProviderModel(tx *gorm.DB, configSetID, name, modelRef s
 		"context_tokens":                     model.ContextTokens,
 		"input_price_per_million_usd":        model.InputPricePerMillionUSD,
 		"output_price_per_million_usd":       model.OutputPricePerMillionUSD,
+		"cache_write_price_per_million_usd":  model.CacheWritePricePerMillionUSD,
 		"cached_input_price_per_million_usd": model.CachedInputPricePerMillionUSD,
 		"pricing_source":                     model.PricingSource,
 		"pricing_updated_at":                 model.PricingUpdatedAt,
