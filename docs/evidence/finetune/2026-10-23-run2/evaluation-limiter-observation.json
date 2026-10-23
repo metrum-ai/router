@@ -1,0 +1,13 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "historical_observation_SUPERSEDED_by_maintainer_whole_run_high_limit_amendment",
+  "superseding_rule": "Maintainer requires ALL pre-route429 affected runs classified infrastructure failures and WHOLE-run restarts with proper high local limits. Original costs/artifacts remain archived. Signed amendment6f8d210b3c18feffbe9bd590fa9b31521af41035cce0993c7a0f69aa5abef867 at84942f7394. The historical no-rerun treatment below is no longer active.",
+  "qualification_registration_sha256": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "actual_existing_evaluation_caller_limits": {"concurrent": 8, "rpm": 120, "tpm": 200000},
+  "offered_concurrency": {"native": 8, "sdk": 16, "load": [1, 8, 32]},
+  "finding": "Authenticated router-side429 admission outcomes observed during the frozen qualification. Defaults were retained by fresh caller creation. Offered SDK16 and load32 exceed caller concurrency8; RPM/TPM may also bind. This is an experiment limitation, not evidence of semantic forgetting or a pure GPU/merge effect.",
+  "treatment": "Retain EVERY failure/full attempted cohort, all attempted costs, no caller limiter changes, retries, reruns, replacement cases, output normalization, or gate relaxation after observed outcomes. Unknown costs remain null, never free. Completed failed load/control measurements remain findings rather than disappear from reporting.",
+  "parity": "Supplemental NVIDIA merged has the SAME staged8/120/200000 limits. Independent fresh caller counters, time windows and runtime stacks remain possible confounds. Report complete paired outcomes and errors; no rate-corrected score, presumed near-equality, or pure hardware causal claim. Check AMD caller settings before asserting transport parity.",
+  "gate": "Original NVIDIA base+LoRA remains registered gate arm. Extra merged cannot rescue/substitute for negative or incomplete original results. Failed/incomplete safety/economics never authorize promotion.",
+  "scope": "Operational observation only, not final quality/load/control results, invoice, or completed model promotion. No raw prompts/answers/credentials/request joins included."
+}

@@ -1,0 +1,28 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "at": "2026-10-23T13:10:35.796462+00:00",
+  "make_test_fast_exit": 0,
+  "make_ft_example_test": "pass",
+  "python_tests": 41,
+  "node_privacy_tests": 2,
+  "promptfoo_mock_cases": 2,
+  "scalar_gate_selftests": "pass",
+  "make_docs_qa": "pass",
+  "source_headers": "pass",
+  "secret_check": "pass",
+  "git_diff_check": "pass",
+  "shell_syntax_and_default_dryruns": "pass",
+  "actual_localhost_worktree_router_mock": {
+    "tool_continuation": "pass",
+    "created_file": true,
+    "weighted_targets": {
+      "fireworks_ft": 21,
+      "vllm_onprem_ft": 24
+    },
+    "request_budget": "pass",
+    "prompt_content_absent": "pass",
+    "shadow_recommendation": "pass",
+    "synthetic_only": true
+  },
+  "scope": "CPU/offline/synthetic proof only; no new heldout inference, model training or paid resources"
+}

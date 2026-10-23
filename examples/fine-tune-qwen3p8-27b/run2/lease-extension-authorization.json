@@ -1,0 +1,20 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "One existing NVIDIA Run2 lease only; NO create/rerental or Fireworks dedicated deployment authorization",
+  "authority": "Explicit orchestrator19:45Z2026-10-23 instruction: if registered base+LoRA gate and merged parity cannot fit21:19Z, extend existing NVIDIA lease by up to3h, deadline at most00:19Z, same watchdogs, total under120USD stop",
+  "qualification_registration_sha256": "6f8d210b3c18feffbe9bd590fa9b31521af41035cce0993c7a0f69aa5abef867",
+  "old_deadline_utc": "2026-10-23T21:19:00.899571Z",
+  "new_hard_deadline_utc": "2026-10-24T00:19:00Z",
+  "operational_cleanup_buffer_utc": "2026-10-24T00:10:00Z",
+  "additional_quote_upper_usd": 6.57,
+  "gpu_full_7hour_quote_upper_usd": 15.33,
+  "hourly_quote_usd": 2.19,
+  "total_operational_stop_usd": 120,
+  "hard_cap_usd": 150,
+  "priority": ["finish registered base+LoRA frozen gate cohorts and controls", "additional safe-merged parity, never substitute/rescue original gate", "no more paid vendor reference work without permission"],
+  "watchdogs": "Atomically update existing lease state; keep dynamic outer watchdog, replace original cached-deadline lease watchdog with same exact-resource watchdog using new deadline, update independent budget/phase-end guard and queued phase cutoffs. No watchdog disabled without replacement; exact-instance/cloud-key API deletion required as soon as step ends or budget/deadline requires.",
+  "already_completed": "Fixed final training, BF16 CPU safe merge and weight hashes, fresh high-limit base/candidate native300 each, shared CPU-only teacher-native300 once with0transport errors/488authenticated requests/0.11001480USD including engineering; no need to repeat teacher or merge",
+  "vendor_disclosure": "A dedicated Fireworks deployment was provisioned BEFORE this new prohibition; whole vendor quality cohorts finished. Its waiting scheduler was stopped and exact-owned deployment/model teardown requested immediately on instruction. Existing vendor attempted/startup/idle costs remain fully reported. NO create/recreate or replacement deployment will occur without asking orchestrator first; adapter upload is separately permitted.",
+  "invariants": "No changes to model/weights/training recipe/tasks/prompts/teacher/scorer/gold/backend/dispatch seeds/concurrency/numeric gates, no selective redo/retries/normalization. All prior infrastructure failures/costs remain archived. Quotes/observed token-price estimates are not invoices or quality-equivalent ROI. Unknown costs null. AMD FAIL not overturned by shared teacher rerun.",
+  "note": "Published schedule/lease-only authorization, not complete quality/parity/economics/promotion evidence. Extension is a maximum safety bound, never permission to idle until deadline."
+}

@@ -47,7 +47,7 @@ def main():
             time.sleep(.1)
         assert row and row[2]==200, 'missing or unsuccessful telemetry'
         if request_id==shadow_id:
-            assert row[0]=='vllm_b200_ft' and row[1]=='qwen3p8-27b-base', 'shadow must serve base'
+            assert row[0]=='vllm_onprem_ft' and row[1]=='qwen3p8-27b-base', 'shadow must serve base'
         else:
             public_model=re.sub(r'accounts/(?!fireworks/)[^/]+/','accounts/OPERATOR/',row[1])
             counts[row[0]+'/'+public_model]+=1

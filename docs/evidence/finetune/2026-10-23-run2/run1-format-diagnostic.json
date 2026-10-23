@@ -1,0 +1,39 @@
+{
+  "scope": "Exploratory format-only audit of consumed RUN1 MMLU outputs, no rescoring/gate change/accuracy inference",
+  "source_raw_sha256": "ccae3d5fdcbe8f6201f0c1b2ff63cf6831d03b6aabfbc3d277a557ebd6b7c54f",
+  "providers": {
+    "openai:chat:qwen3p8-27b-ft": {
+      "n": 200,
+      "strict_letter_format": 31,
+      "has_think_tags": 0,
+      "has_native_tool_markup": 0,
+      "json_or_fence_start": 0,
+      "over_32_chars": 46
+    },
+    "openai:chat:qwen3p8-27b-ft-fireworks": {
+      "n": 200,
+      "strict_letter_format": 30,
+      "has_think_tags": 0,
+      "has_native_tool_markup": 0,
+      "json_or_fence_start": 0,
+      "over_32_chars": 46
+    },
+    "openai:chat:qwen3p8-27b-ft-onprem": {
+      "n": 200,
+      "strict_letter_format": 29,
+      "has_think_tags": 0,
+      "has_native_tool_markup": 0,
+      "json_or_fence_start": 0,
+      "over_32_chars": 46
+    },
+    "openai:chat:qwen3p8-27b-base": {
+      "n": 200,
+      "strict_letter_format": 191,
+      "has_think_tags": 0,
+      "has_native_tool_markup": 0,
+      "json_or_fence_start": 0,
+      "over_32_chars": 9
+    }
+  },
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0"
+}

@@ -1,0 +1,59 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "request_issue": 355,
+  "original_evidence_git_commit": "0ea1e6f38826bd3a4961ccb1b5045e3394ea42c2",
+  "normalized_provider": "vllm_onprem_ft",
+  "legacy_alias_sha256": "3eea14a4551526190f1769974422e98f78726b9eb57aa9aacc6fbeaecdb68eeb",
+  "scope": "Publication-only provider-label normalization. No inference rerun; source commits, original receipt/join hashes and all numerical results preserved. Actual run1 training GPU: RTX PRO 6000 Blackwell Server Edition, not B200.",
+  "all_nonlabel_json_data_unchanged": true,
+  "files": [
+    {
+      "file": "ifeval-summary.json",
+      "original_sha256": "07e392f1b760d515291971edd8c448ac65b07e663de9ff6f5009263a945f239e",
+      "normalized_sha256": "1398d0d65f6e0a564e31eb35658f27729c606f8f282274e6cfafa7ae358c3981",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "live-governance.json",
+      "original_sha256": "b1bcef0dac1add55893d044c870287566a502e61d2843f3a5b3443757b12f74c",
+      "normalized_sha256": "897f365a3b4ec4b488cd56e98ff9fe8ed7523d90156afeafb23f26ca20fdf956",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "live-rollback-budget.json",
+      "original_sha256": "4f906aa80d9324c5fe074658fc2cec09e06aa015a211cbd5e9d490edd6955e8e",
+      "normalized_sha256": "edf873e4620a630a3262aaa346d8ab79b118224e3ae26d576306c9ddb7b5e0ec",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "mmlu-summary.json",
+      "original_sha256": "28430fa204c1a9d2d2f2e3237f2f52742dc3b7a5e13772e9fb4f328e39788f15",
+      "normalized_sha256": "1c2cad7f905533d42b5cd38edb41be4773be7219fa924341f5256ae9711a5827",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "quality-summary.json",
+      "original_sha256": "e5e459dcf0e17c4b3a74c001d7b5082878ae94dc091f293ca2b2f93d44dcf6c3",
+      "normalized_sha256": "bab42a7e979395799a017df8112afdfd7a61bc0615d7bd3c9fcaa2138af1ecd1",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "sampling-326-summary.json",
+      "original_sha256": "db4578ec32c6ef96de81a1c1f1e131604740e2863d377769dfa6e3849331294f",
+      "normalized_sha256": "f6f093b8fa7a8862c54acb7d25dd3cd557d4899ebf02864baa222a00428c5693",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "sampling-327-summary.json",
+      "original_sha256": "809fb22eaa2e5668b4fe6efc497a39268c5ca09a43453843d2ebfc1fc9065f39",
+      "normalized_sha256": "c30b5d0f5bde8345b1d18b80f178621127c82ffc19e451aec221c599730d1654",
+      "only_provider_labels_changed": true
+    },
+    {
+      "file": "sampling-328-summary.json",
+      "original_sha256": "45381b0982ca550a5ecaa875fb2aa09f92af1f32c32e1dfc205caed563107143",
+      "normalized_sha256": "1d3cd3144686ab94a591bfa5c59a2d577ac4ef788e8add5e34532d418a61e4ee",
+      "only_provider_labels_changed": true
+    }
+  ]
+}

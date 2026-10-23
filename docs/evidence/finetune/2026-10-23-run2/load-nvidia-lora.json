@@ -1,0 +1,82 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "model": "support-agent",
+  "measurements": [
+    {
+      "concurrency": 1,
+      "requests": 32,
+      "errors": 0,
+      "wall_seconds": 168.96857262699632,
+      "output_tokens": 4096,
+      "output_tokens_per_second": 24.24119430210288,
+      "hourly_usd": 2.19,
+      "usd_per_million_output_tokens": 25.095023196961936,
+      "latency_ms": {
+        "n": 32,
+        "p50": 5267.470864986535,
+        "p95": 5308.229249960277
+      },
+      "ttft_ms": {
+        "n": 32,
+        "p50": 149.73075198940933,
+        "p95": 184.4400450354442
+      },
+      "tpot_ms": {
+        "n": 32,
+        "p50": 40.30184207876455,
+        "p95": 40.61400542525193
+      }
+    },
+    {
+      "concurrency": 8,
+      "requests": 32,
+      "errors": 0,
+      "wall_seconds": 22.117223592998926,
+      "output_tokens": 4096,
+      "output_tokens_per_second": 185.1950351171819,
+      "hourly_usd": 2.19,
+      "usd_per_million_output_tokens": 3.2848252813495313,
+      "latency_ms": {
+        "n": 32,
+        "p50": 5478.840054012835,
+        "p95": 5610.359904996585
+      },
+      "ttft_ms": {
+        "n": 32,
+        "p50": 218.97962398361415,
+        "p95": 300.6994519964792
+      },
+      "tpot_ms": {
+        "n": 32,
+        "p50": 41.53956160614795,
+        "p95": 41.833015173438966
+      }
+    },
+    {
+      "concurrency": 32,
+      "requests": 32,
+      "errors": 0,
+      "wall_seconds": 6.5589391849935055,
+      "output_tokens": 4096,
+      "output_tokens_per_second": 624.4912301323702,
+      "hourly_usd": 2.19,
+      "usd_per_million_output_tokens": 0.9741263031097939,
+      "latency_ms": {
+        "n": 32,
+        "p50": 6508.122586004902,
+        "p95": 6547.82526101917
+      },
+      "ttft_ms": {
+        "n": 32,
+        "p50": 405.15420999145135,
+        "p95": 445.8448159857653
+      },
+      "tpot_ms": {
+        "n": 32,
+        "p50": 48.06573836978041,
+        "p95": 48.91226640957459
+      }
+    }
+  ],
+  "caveat": "End-to-end router timings; TPOT requires streamed usage. Hourly economics assume fully utilized measured throughput; not invoices."
+}

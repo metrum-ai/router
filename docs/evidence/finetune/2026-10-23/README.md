@@ -7,9 +7,18 @@ Track FT, issue #326, Metrum AI Router. Corrected training and both-stack native
 serving passed. **The frozen promotion gate FAILS. Base remains default.**
 See [RESULTS.md](RESULTS.md) for the complete300-case quality and200+200 standard
 regression results. Sampling, all three serving-lane loads, remote BF16 merge, actual rollback/budget
-controls and API-verified paid-resource teardown are complete. Draft
-[PR354](https://github.com/metrum-ai/router/pull/354) awaits product acceptance of
-a rejected-candidate workflow example; no production or merged-issue claim.
+controls and API-verified paid-resource teardown are complete.
+[PR354](https://github.com/metrum-ai/router/pull/354) merged at
+2026-10-23T12:07:55Z as`0ea1e6f38826bd3a4961ccb1b5045e3394ea42c2`, retaining
+Fixes #326. Maintainer accepted the rejected-candidate **workflow**, NOT model
+promotion or a production rollout. Run 2 is separately tracked in #355.
+
+Publication update for #355: provider labels in this evidence now use the
+hardware-neutral`vllm_onprem_ft`. This is display-label normalization only,
+not a rerun or alteration of measured hardware/results. Original source commits,
+private receipts/full joins and their hashes are preserved. The normalization
+audit in`../2026-10-23-run2/provider-alias-publication-audit.json` records original
+and updated file hashes and verifies that all other JSON data are unchanged.
 
 ## Result and claim boundaries
 

@@ -1,0 +1,611 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "ORIGINAL registered NVIDIA base+LoRA gates, separate from supplemental merged. Original SDK callback scores retained, missing duplicate-enum no-dispatch objective callback gets unchanged frozen zero, no new scoring/inference/normalization. Complete denominators300/200/200 retained.",
+  "quality_gate_status": "fail",
+  "failure_metrics": [
+    "tool_exact_improvement_below_10pt"
+  ],
+  "primary": {
+    "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+    "providers": {
+      "openai:chat:qwen3p8-27b-base": {
+        "count": 300,
+        "metrics": {
+          "argument_f1": {
+            "n": 200,
+            "mean": 0.025,
+            "ci95": [
+              0.0075,
+              0.0475
+            ]
+          },
+          "error": {
+            "n": 300,
+            "mean": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "exact": {
+            "n": 200,
+            "mean": 0.02,
+            "ci95": [
+              0.005,
+              0.04
+            ]
+          },
+          "json_schema": {
+            "n": 200,
+            "mean": 0.99,
+            "ci95": [
+              0.975,
+              1.0
+            ]
+          },
+          "json_validity": {
+            "n": 200,
+            "mean": 0.03,
+            "ci95": [
+              0.01,
+              0.055
+            ]
+          },
+          "latency_ms": {
+            "n": 300,
+            "mean": 13078.156666666666,
+            "ci95": [
+              10773.066666666668,
+              15543.076666666666
+            ]
+          },
+          "no_hallucination": {
+            "n": 200,
+            "mean": 0.03,
+            "ci95": [
+              0.01,
+              0.055
+            ]
+          },
+          "over_call": {
+            "n": 200,
+            "mean": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "passed": {
+            "n": 300,
+            "mean": 0.2633333333333333,
+            "ci95": [
+              0.21333333333333335,
+              0.31333333333333335
+            ]
+          },
+          "refusal": {
+            "n": 200,
+            "mean": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "tool_name_exact": {
+            "n": 200,
+            "mean": 0.03,
+            "ci95": [
+              0.01,
+              0.055
+            ]
+          },
+          "valid": {
+            "n": 200,
+            "mean": 0.03,
+            "ci95": [
+              0.01,
+              0.055
+            ]
+          }
+        },
+        "total_cost_usd": null,
+        "p95_latency_ms": 62552
+      },
+      "openai:chat:qwen3p8-27b-ft-onprem": {
+        "count": 300,
+        "metrics": {
+          "argument_f1": {
+            "n": 200,
+            "mean": 0.03,
+            "ci95": [
+              0.01,
+              0.055
+            ]
+          },
+          "error": {
+            "n": 300,
+            "mean": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "exact": {
+            "n": 200,
+            "mean": 0.025,
+            "ci95": [
+              0.005,
+              0.05
+            ]
+          },
+          "json_schema": {
+            "n": 200,
+            "mean": 0.99,
+            "ci95": [
+              0.975,
+              1.0
+            ]
+          },
+          "json_validity": {
+            "n": 200,
+            "mean": 0.035,
+            "ci95": [
+              0.01,
+              0.06
+            ]
+          },
+          "latency_ms": {
+            "n": 300,
+            "mean": 13733.52,
+            "ci95": [
+              11366.993333333334,
+              16309.263333333334
+            ]
+          },
+          "no_hallucination": {
+            "n": 200,
+            "mean": 0.035,
+            "ci95": [
+              0.01,
+              0.06
+            ]
+          },
+          "over_call": {
+            "n": 200,
+            "mean": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "passed": {
+            "n": 300,
+            "mean": 0.29333333333333333,
+            "ci95": [
+              0.24333333333333335,
+              0.3433333333333333
+            ]
+          },
+          "refusal": {
+            "n": 200,
+            "mean": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "tool_name_exact": {
+            "n": 200,
+            "mean": 0.035,
+            "ci95": [
+              0.01,
+              0.06
+            ]
+          },
+          "valid": {
+            "n": 200,
+            "mean": 0.035,
+            "ci95": [
+              0.01,
+              0.06
+            ]
+          }
+        },
+        "total_cost_usd": null,
+        "p95_latency_ms": 64352
+      }
+    },
+    "paired": {
+      "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+        "argument_f1": {
+          "n": 200,
+          "right_minus_left": 0.005,
+          "ci95": [
+            0.0,
+            0.015
+          ]
+        },
+        "error": {
+          "n": 300,
+          "right_minus_left": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "exact": {
+          "n": 200,
+          "right_minus_left": 0.005,
+          "ci95": [
+            0.0,
+            0.015
+          ]
+        },
+        "json_schema": {
+          "n": 200,
+          "right_minus_left": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "json_validity": {
+          "n": 200,
+          "right_minus_left": 0.005,
+          "ci95": [
+            0.0,
+            0.015
+          ]
+        },
+        "latency_ms": {
+          "n": 300,
+          "right_minus_left": 655.3633333333333,
+          "ci95": [
+            207.51,
+            1120.9833333333333
+          ]
+        },
+        "no_hallucination": {
+          "n": 200,
+          "right_minus_left": 0.005,
+          "ci95": [
+            0.0,
+            0.015
+          ]
+        },
+        "over_call": {
+          "n": 200,
+          "right_minus_left": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "passed": {
+          "n": 300,
+          "right_minus_left": 0.03,
+          "ci95": [
+            0.006666666666666667,
+            0.05333333333333334
+          ]
+        },
+        "refusal": {
+          "n": 200,
+          "right_minus_left": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "tool_name_exact": {
+          "n": 200,
+          "right_minus_left": 0.005,
+          "ci95": [
+            0.0,
+            0.015
+          ]
+        },
+        "valid": {
+          "n": 200,
+          "right_minus_left": 0.005,
+          "ci95": [
+            0.0,
+            0.015
+          ]
+        }
+      }
+    },
+    "objective_audit": {
+      "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+      "sdk_skipped_callbacks": 2,
+      "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+    }
+  },
+  "standards": {
+    "ifeval": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "providers": {
+        "openai:chat:qwen3p8-27b-base": {
+          "count": 200,
+          "metrics": {
+            "error": {
+              "n": 200,
+              "mean": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "latency_ms": {
+              "n": 200,
+              "mean": 15985.955,
+              "ci95": [
+                13443.09,
+                18763.715
+              ]
+            },
+            "passed": {
+              "n": 200,
+              "mean": 0.82,
+              "ci95": [
+                0.765,
+                0.875
+              ]
+            }
+          },
+          "total_cost_usd": null,
+          "p95_latency_ms": 53847
+        },
+        "openai:chat:qwen3p8-27b-ft-onprem": {
+          "count": 200,
+          "metrics": {
+            "error": {
+              "n": 200,
+              "mean": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "latency_ms": {
+              "n": 200,
+              "mean": 16777.815,
+              "ci95": [
+                14147.995,
+                19683.33
+              ]
+            },
+            "passed": {
+              "n": 200,
+              "mean": 0.805,
+              "ci95": [
+                0.75,
+                0.86
+              ]
+            }
+          },
+          "total_cost_usd": null,
+          "p95_latency_ms": 54493
+        }
+      },
+      "paired": {
+        "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+          "error": {
+            "n": 200,
+            "right_minus_left": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "latency_ms": {
+            "n": 200,
+            "right_minus_left": 791.86,
+            "ci95": [
+              -286.275,
+              1576.065
+            ]
+          },
+          "passed": {
+            "n": 200,
+            "right_minus_left": -0.015,
+            "ci95": [
+              -0.04,
+              0.01
+            ]
+          }
+        }
+      },
+      "objective_audit": {
+        "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+        "sdk_skipped_callbacks": 0,
+        "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+      }
+    },
+    "mmlu-pro": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "providers": {
+        "openai:chat:qwen3p8-27b-base": {
+          "count": 200,
+          "metrics": {
+            "error": {
+              "n": 200,
+              "mean": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "latency_ms": {
+              "n": 200,
+              "mean": 1002.96,
+              "ci95": [
+                304.225,
+                2118.935
+              ]
+            },
+            "passed": {
+              "n": 200,
+              "mean": 0.615,
+              "ci95": [
+                0.55,
+                0.68
+              ]
+            }
+          },
+          "total_cost_usd": null,
+          "p95_latency_ms": 375
+        },
+        "openai:chat:qwen3p8-27b-ft-onprem": {
+          "count": 200,
+          "metrics": {
+            "error": {
+              "n": 200,
+              "mean": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ]
+            },
+            "latency_ms": {
+              "n": 200,
+              "mean": 1068.04,
+              "ci95": [
+                338.52,
+                2247.85
+              ]
+            },
+            "passed": {
+              "n": 200,
+              "mean": 0.615,
+              "ci95": [
+                0.55,
+                0.68
+              ]
+            }
+          },
+          "total_cost_usd": null,
+          "p95_latency_ms": 417
+        }
+      },
+      "paired": {
+        "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+          "error": {
+            "n": 200,
+            "right_minus_left": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          },
+          "latency_ms": {
+            "n": 200,
+            "right_minus_left": 65.08,
+            "ci95": [
+              27.94,
+              132.87
+            ]
+          },
+          "passed": {
+            "n": 200,
+            "right_minus_left": 0.0,
+            "ci95": [
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      "objective_audit": {
+        "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+        "sdk_skipped_callbacks": 0,
+        "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+      }
+    }
+  },
+  "native": {
+    "base": {
+      "tasks": 300,
+      "successes": 258,
+      "transport_errors": 0
+    },
+    "nvidia_onprem": {
+      "tasks": 300,
+      "successes": 265,
+      "transport_errors": 0
+    }
+  },
+  "p95_ratio": 1.0287760583194783,
+  "authenticated_join_audits": {
+    "base-primary": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 300,
+      "joined_http_requests": 299,
+      "known_duplicate_declaration_no_dispatch": 1,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 299
+      },
+      "target_counts": {
+        "base": 299
+      },
+      "joined_records_sha256": "c6734ebd35e7968597ea66eb946b8079edfc3fb15f0ab7a05f0314e5a0476aef",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "nvidia_onprem-primary": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 300,
+      "joined_http_requests": 299,
+      "known_duplicate_declaration_no_dispatch": 1,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 299
+      },
+      "target_counts": {
+        "ft_onprem": 299
+      },
+      "joined_records_sha256": "b8337208ffa3b7fa6cab9a0c0560bb8da888fa94b95ca6b80b9827e9dd743a63",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "base-regressions": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 400,
+      "joined_http_requests": 400,
+      "known_duplicate_declaration_no_dispatch": 0,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 400
+      },
+      "target_counts": {
+        "base": 400
+      },
+      "joined_records_sha256": "ad1bbda61ef0bff66a26e9765d8c49f1c24559e57b8947ae4385b86bcf8cad85",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "nvidia_onprem-regressions": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 400,
+      "joined_http_requests": 400,
+      "known_duplicate_declaration_no_dispatch": 0,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 400
+      },
+      "target_counts": {
+        "ft_onprem": 400
+      },
+      "joined_records_sha256": "3e525efa428734625e4559a416a36a70c5b9b38edfa32b5fbf91877fc166cd97",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    }
+  },
+  "costs": "Router selfhosted prices unpriced, NOT zero/free; quote-window allocations and full lifecycle separately. Costs/control completeness do not authorize promotion.",
+  "original_control_failures_retained": [
+    "strictJSON HTTP502, router error no-eligible-target",
+    "rollback HTTP502, router error upstream-failed; no passed rollback or precise root-cause claim"
+  ],
+  "promotion_decision": "DO_NOT_PROMOTE"
+}

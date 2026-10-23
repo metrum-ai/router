@@ -1,0 +1,26 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "deterministic_replay_byte_identical": [
+    "train.jsonl",
+    "val.jsonl",
+    "test.jsonl",
+    "train-axolotl.jsonl",
+    "val-axolotl.jsonl",
+    "manifest.json",
+    "held-out.yaml",
+    "regressions.yaml"
+  ],
+  "cpu_arrow_wire_roundtrip": {
+    "train": {
+      "rows": 5667,
+      "opaque_tools_decode_equal_canonical": true,
+      "wire_sha256": "dffc7c761fc6edb96d37443a5211daa44ddbd40ab5e85dec3dadcdb9194114b2"
+    },
+    "val": {
+      "rows": 500,
+      "opaque_tools_decode_equal_canonical": true,
+      "wire_sha256": "d5186584f0dac23293b94291df12ca43be9e96ceb6d06e48af3ce84e87212942"
+    }
+  },
+  "scope": "CPU serialization/reproducibility only, not actual Axolotl tokenization or model outcomes"
+}

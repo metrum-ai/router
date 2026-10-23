@@ -1,0 +1,71 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "snapshot_at": "2026-10-23T12:17:02.926849+00:00",
+  "no_resource_rented": true,
+  "qualifiers": [
+    "approved GPU family, BF16 capacity",
+    "Docker-capable VM for two official images; no nested-Docker workaround",
+    "500GB disk minimum; CUDA13-capable driver verified at boot",
+    "requested >=1Gbps; actual network test pending"
+  ],
+  "shade_candidates": [
+    {
+      "cloud": "massedcompute",
+      "shade_instance_type": "RTXPro6000",
+      "gpu_type": "RTXPro6000",
+      "num_gpus": 1,
+      "storage_in_gb": 750,
+      "hourly_price": 219
+    },
+    {
+      "cloud": "hyperstack",
+      "shade_instance_type": "H100",
+      "gpu_type": "H100",
+      "num_gpus": 1,
+      "storage_in_gb": 850,
+      "hourly_price": 250
+    },
+    {
+      "cloud": "massedcompute",
+      "shade_instance_type": "H100",
+      "gpu_type": "H100",
+      "num_gpus": 1,
+      "storage_in_gb": 1250,
+      "hourly_price": 273
+    },
+    {
+      "cloud": "verda",
+      "shade_instance_type": "RTXPro6000x2",
+      "gpu_type": "RTXPro6000",
+      "num_gpus": 2,
+      "storage_in_gb": 500,
+      "hourly_price": 391
+    },
+    {
+      "cloud": "massedcompute",
+      "shade_instance_type": "RTXPro6000x2",
+      "gpu_type": "RTXPro6000",
+      "num_gpus": 2,
+      "storage_in_gb": 1500,
+      "hourly_price": 438
+    }
+  ],
+  "shade_price_unit": "USD cents/hour",
+  "vast_all_approved_cheapest_quote_usd_hour": 1.4714814814814814,
+  "vast_vm_capable_not_vm_deverified_cheapest_quote_usd_hour": 2.6481481481481484,
+  "vast_query_truncated": false,
+  "vast_vm_candidates": [
+    {
+      "id": 54746043,
+      "gpu_name": "RTX PRO 6000 Max-Q",
+      "dph_total": 2.6481481481481484,
+      "vms_enabled": true,
+      "is_vm_deverified": false,
+      "cuda_max_good": 13.2,
+      "disk_space": 1219.0,
+      "inet_up": 1352.7,
+      "inet_down": 1783.2
+    }
+  ],
+  "decision": "Shadeform1xRTXPro6000 advertised$2.19/h, cheaper than lowest non-VM-deverified VM-capable Vast hardware quote. Recheck availability/auth before create; actual fit/driver/network not yet proved."
+}

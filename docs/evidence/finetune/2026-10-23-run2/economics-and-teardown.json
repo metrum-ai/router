@@ -1,0 +1,19 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "nvidia_full_lifecycle_hours": 4.1035470994444445,
+  "nvidia_full_lifecycle_quote_usd": 8.986768147783334,
+  "nvidia_instance_and_fresh_cloud_key_API_deleted_at": "2026-10-23T21:25:13.669113+00:00",
+  "vendor_full_lifecycle_quote_usd": 32.39026376666666,
+  "vendor_exact_deployment_and_model_API_deleted": true,
+  "collection_conservative_upper_usd": 4.2700044,
+  "main_router_recorded_teacher_grader_price_estimates_usd": 5.28389625,
+  "independent_shared_teacher_CPU_API_estimate_usd": 0.1100148,
+  "before_semantic_repair_known_sum_usd": 51.04094736445,
+  "cpu_semantic_whole800_API_estimate_usd": 2.8800925,
+  "cpu_semantic_independent_proof_API_estimate_usd": 0.0009625,
+  "cpu_semantic_router_stopped_token_removed": true,
+  "known_quote_estimate_plus_collection_upper_sum_usd": 53.92200236445,
+  "unknown_upstream_failed_attempts": 1,
+  "complete_total_or_invoice_usd": null,
+  "scope": "ALL training/bootstrap/cache/smoke/merge/startup/idle/aborted/throttled/failed/final measurement time retained in resource lifecycle. Configured API token estimates, NOT invoices or quality-equivalent ROI. Proven pre-route rejected grader calls have zero dispatch cost, not free GPU time. Unknown upstream charges stay null. Resource windows not added again to serving-window/task/unit allocations."
+}

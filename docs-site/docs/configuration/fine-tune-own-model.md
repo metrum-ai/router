@@ -69,6 +69,15 @@ not permission to bypass router capture for the router-centric run.
 
 ## AMD Instinct
 
+The additional [NVIDIA/AMD merged comparison](https://github.com/metrum-ai/router/blob/feat/355-ft-run2/docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md)
+now includes quality, training wall/throughput, serving c1/8/32 and scoped cost
+per output token/native-harness success. Authorized CPU-only infrastructure repair
+completed all800semantic assertions on exact recorded outputs (400per merged arm),
+unchanged grader/rubric/prompts and no model regeneration. Original failures stay
+archived; original NVIDIA LoRA and AMD FAIL verdicts remain unchanged. This aligns
+BF16 merged representation, not pure hardware causality, production approval or
+quality-equivalent ROI. Refs #359.
+
 The example's [AMD runbook](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b/amd)
 prepares MI325X training with official `rocm/pytorch` and serving with official
 `rocm/vllm`. MI325X training and merged-serving smoke/load checks have run;
