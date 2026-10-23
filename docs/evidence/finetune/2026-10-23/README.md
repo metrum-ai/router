@@ -27,7 +27,28 @@ The first full training and vLLM native/tool/schema smoke completed, but are
 zero warnings; its 2×B300 default deployment was still CREATING when stopped
 immediately on discovery. Deployment deletion was API-verified04:56:23Z and
 uploaded model deletion GET404 verified05:00:52Z. Official vLLM was stopped to
-release VRAM; corrected hardware smoke + full retraining are now running.
+release VRAM. **Corrected smoke and full retraining now passed**; see
+`training-runtime-v2.json`:2211s wrapper,66.17GiB peak allocated,800 text-only
+adapter tensors, validation likelihood0.383500→0.155748. This is not held-out
+accuracy. Corrected official vLLM and Fireworks live-merge dedicated serving both passed
+actual router-backed chat/SSE/file creation/tool-result continuation/strict JSON
+schema checks (`live-smoke-onprem.json`, `live-smoke-fireworks.json`, plus base
+control). Real100-request canary sample routed96base/1onpremFT/3FireworksFT;
+configured weights90/5/5, not an exact observed10% promise. Base served the
+recommendation-only shadow and the synthetic marker was absent from logs/DB
+(`live-governance.json`). Unmerged LoRA SSE load at1/8/32 concurrency had0errors:
+23.83/181.13/599.42 outputtokens/s,32 requests/profile. At32, p95TTFT647ms,
+p95latency6.83s, peakdriver84591MiB (`load-onprem-lora.json`). These are synthetic
+short-prompt128-token-cap fully-utilized measurements, not productionSLO/ROI.
+
+The first held-out attempt began06:02 and was aborted06:06UTC, before reviewing
+any held-out outputs/scores: synthetic integration exposed SDK variable expansion
+coercing scorer arrays to strings. The transport-only guard is now tested;
+canonical cases, prompts, scorer hash and thresholds are unchanged. Partial raw
+files are excluded/archived outside Git; see protocol correction. No valid
+held-out quality result or promotion claim yet. Serving watchdog renewal ends07:41UTC, total GPU
+reservation including Vast≤$8.53. New Fireworks2×B300 dedicated maximum2h
+reservation$60, below$240stop; cleanup immediately when checks finish.
 
 Preregistration and original scorer were published **before any FT outcome
 inference** in verified GitHub commit
@@ -83,7 +104,8 @@ renderer are included. **Real hardware smoke passed**: see
 verified to belong to `language_model.layers`, not vision or LM head. The image
 supports Qwen3.8, so Unsloth fallback was unnecessary. Reference causal-conv1d
 was used (slower than its optional optimized kernel); do not treat tiny-smoke
-throughput as a production result. Full 2,000-row, two-epoch training is running.
+throughput as a production result. The first full 2,000-row, two-epoch run was subsequently superseded; the
+corrected full-run scalar evidence is linked above.
 Current Shadeform host: massedcompute RTXPro6000 1×96GB, 750GB disk,
 $2.19/h; instance `3b0c7858-2854-4dda-b121-b0fdea186fbe` is provisioning with
 fresh key and independent three-hour teardown watchdog. This is the cheapest

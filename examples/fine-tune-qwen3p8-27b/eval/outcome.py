@@ -73,7 +73,8 @@ def main():
         failures += scalar['failure_metrics']
         a.out.write_text(json.dumps({'copyright':'Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0',
             'status':'fail' if failures else 'pass','failure_metrics':failures,
-            'preregistration_id':prereg['preregistration_id'],'scalar_gate':scalar},indent=2))
+            'preregistration_id':prereg['preregistration_id'],
+            'evaluated_provider_groups':{'fixed_model':a.base,'candidate':a.candidate},'scalar_gate':scalar},indent=2))
         return 1 if failures else 0
     except (OSError,ValueError,KeyError,TypeError) as exc:
         print('outcome gate invalid input:',str(exc),file=sys.stderr)

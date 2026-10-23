@@ -26,8 +26,8 @@ def main():
     p.add_argument('--concurrency', type=int, choices=[1,8,16,32], default=16)
     a = p.parse_args()
     out = a.out.resolve()
-    if ROOT/'docs' in out.parents or ROOT/'examples' in out.parents:
-        p.error('raw outputs/configs must remain outside public docs/examples')
+    if (out==ROOT or ROOT in out.parents) and ROOT/'tmp' not in out.parents:
+        p.error('raw outputs/configs must remain outside the worktree or in its ignored tmp directory')
     config = yaml.safe_load((HERE/'promptfooconfig.yaml').read_text())
     tests = yaml.safe_load(a.tests.read_text())
     if a.non_tool_only:
@@ -47,10 +47,15 @@ def main():
     out.parent.mkdir(parents=True,exist_ok=True)
     cfg = out.with_suffix('.private-config.yaml')
     cfg.write_text(yaml.safe_dump(config,sort_keys=False));cfg.chmod(0o600)
-    env = os.environ.copy()
+    # Provider/GitHub/cloud credentials are unnecessary in an untrusted-data evaluator.
+    env = {key:value for key,value in os.environ.items()
+        if not any(part in key.upper() for part in ('TOKEN','API_KEY','SECRET','PASSWORD'))}
     env['ROUTER_CALLER_KEY'] = a.token_file.read_text().strip()
     env['PROMPTFOO_PYTHON'] = sys.executable
     env['PROMPTFOO_DISABLE_TELEMETRY'] = '1'
+    env['PROMPTFOO_DISABLE_TEMPLATE_ENV_VARS'] = '1'
+    # These arrays are scorer inputs, NOT a Cartesian test-variable sweep.
+    env['PROMPTFOO_DISABLE_VAR_EXPANSION'] = '1'
     journal = out.with_suffix('.router-ids.jsonl')
     journal.write_text('');journal.chmod(0o600)
     env['FT_ROUTER_JOURNAL'] = str(journal)

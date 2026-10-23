@@ -3,8 +3,26 @@
 
 # Frozen outcome protocol — 2026-10-23
 
-Before any base/FT outcome evaluation. Public human-judge calibration is separate
-and cannot be used to tune training hyperparameters or the held-out split.
+## Runtime transport correction (2026-10-23T06:06UTC)
+
+The first measurement attempt began06:02UTC and was aborted06:06UTC before
+reviewing **any held-out case outputs or scores**. A separate synthetic end-to-end
+integration exposed promptfoo's default Cartesian expansion coercing an atomic
+`declared` array into scalar strings, violating the scorer's input contract.
+Its partial raw files/journal remain outside Git and are excluded.
+
+The runner now sets `PROMPTFOO_DISABLE_VAR_EXPANSION=1`. The mock requires an
+actual array and includes two declared names to catch accidental case expansion.
+This is an SDK transport correction, not a change to canonical cases, prompts,
+model sampling, scoring formulas/hash or numerical thresholds. It is committed
+before the fresh complete measurement. The synthetic smoke verified all8
+response request IDs join usage telemetry and real rubric calls work through the
+router, but had4/8 assertion passes; it is not held-out improvement evidence.
+
+## Frozen criteria
+
+Established before any base/FT outcome evaluation. Public human-judge calibration
+is separate and cannot tune training hyperparameters or the held-out split.
 `preregistration.json` uses the existing gate's exact schema (which does not
 permit copyright or arbitrary metadata keys); this companion supplies provenance.
 

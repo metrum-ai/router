@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 prompts: ['Synthetic fixture: {{case}}']
 providers: [file://mock.cjs]
+defaultTest:
+  options:
+    disableVarExpansion: true
 tests:
   - vars:
       case: exact
       output: {tool_calls: [{function: {name: lookup, arguments: '{"id":1}'}}]}
       expected: [{function: {name: lookup, arguments: '{"id":1}'}}]
-      declared: [lookup]
+      declared: [lookup, other]
     assert:
       - {type: python, value: 'file://scorers/tools.py'}
       - {type: is-json}
