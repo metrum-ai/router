@@ -668,7 +668,7 @@ type IntelligentDecisionModel struct {
 type Target struct {
 	CacheWritePricePerMillionUSD *float64       `yaml:"cache_write_price_per_million_usd" json:"cacheWritePricePerMillionUsd,omitempty"`
 	AllowedBetas                 []string       `yaml:"allowed_betas" json:"allowedBetas,omitempty"`
-	Modalities                   []string       `yaml:"modalities" json:"modalities,omitempty"`
+	Modalities                   []string       `yaml:"modalities,omitempty" json:"modalities,omitempty"`
 	StructuredOutput             bool           `yaml:"structured_output" json:"structuredOutput,omitempty"`
 	Provider                     string         `yaml:"provider" json:"provider"`
 	Model                        string         `yaml:"model" json:"model"`
