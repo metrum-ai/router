@@ -53,22 +53,27 @@ type IRContentPart struct {
 }
 
 type IRResponse struct {
-	ID          string            `json:"id"`
-	Model       string            `json:"model"`
-	Text        string            `json:"text"`
-	StopReason  string            `json:"stop_reason"`
-	Usage       Usage             `json:"usage"`
-	Raw         map[string]any    `json:"raw,omitempty"`
-	RawResponse bool              `json:"raw_response,omitempty"`
-	Streamed    bool              `json:"-"`
-	Warnings    []string          `json:"warnings,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
+	anthropicStreamUsage map[string]any
+	ID                   string            `json:"id"`
+	Model                string            `json:"model"`
+	Text                 string            `json:"text"`
+	StopReason           string            `json:"stop_reason"`
+	Usage                Usage             `json:"usage"`
+	Raw                  map[string]any    `json:"raw,omitempty"`
+	RawResponse          bool              `json:"raw_response,omitempty"`
+	Streamed             bool              `json:"-"`
+	Warnings             []string          `json:"warnings,omitempty"`
+	Headers              map[string]string `json:"headers,omitempty"`
 }
 
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	// InputTokens includes uncached, cache-read and cache-write input.
+	CacheWriteInputTokens *int `json:"cache_write_input_tokens,omitempty"`
+	// Warnings records invalid upstream accounting without rejecting the response.
+	Warnings     []string `json:"warnings,omitempty"`
+	InputTokens  int      `json:"input_tokens"`
+	OutputTokens int      `json:"output_tokens"`
+	TotalTokens  int      `json:"total_tokens"`
 	// ReasoningTokens is nil when the upstream omitted the metric; reported zero remains distinct.
 	ReasoningTokens *int `json:"reasoning_tokens,omitempty"`
 	// CachedInputTokens is nil when the upstream omitted cache-read evidence; reported zero remains distinct.

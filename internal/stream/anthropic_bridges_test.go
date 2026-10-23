@@ -114,8 +114,22 @@ func TestAnthropicBridgeRejectsInvalidLifecycle(t *testing.T) {
 		tr := &AnthropicUpstreamToChatCaller{}
 		tr.Begin(TokenEstimate{})
 		tr.Next(Event{Data: []byte(`{"type":"message_start","message":{"id":"msg"}}`)})
-		if _, err := tr.Next(Event{Data: []byte(fmt.Sprintf(`{"type":"content_block_start","content_block":{"type":%q}}`, block))}); err == nil {
-			t.Fatal("synthesized reasoning")
+		if out, err := tr.Next(Event{Data: []byte(fmt.Sprintf(`{"type":"content_block_start","content_block":{"type":%q}}`, block))}); err != nil || len(out) != 0 {
+			t.Fatalf("thinking must be skipped: %v %v", out, err)
+		}
+		for _, raw := range []string{
+			`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"private"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"content_block_start","index":1,"content_block":{"type":"text","text":"hello"}}`,
+			`{"type":"content_block_stop","index":1}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}`,
+		} {
+			if _, err := tr.Next(Event{Data: []byte(raw)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := tr.Next(Event{Data: []byte(`{"type":"message_stop"}`)}); err != ErrTerminal {
+			t.Fatalf("terminal: %v", err)
 		}
 	}
 }

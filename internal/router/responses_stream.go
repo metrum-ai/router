@@ -85,7 +85,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 				}
 			}()
 			u := result.Response.Usage
-			events, finishErr = t.Finish(reason, stream.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens})
+			events, finishErr = t.Finish(reason, stream.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
 		}()
 		if finishErr == nil && ctx.Err() == nil {
 			finishErr = emit(events)
@@ -144,7 +144,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		events, err = t.Next(up)
 		if accounting, ok := t.(interface{ UsageSnapshot() stream.Usage }); ok {
 			u := accounting.UsageSnapshot()
-			mergeStreamUsage(&result.Response.Usage, Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens})
+			mergeStreamUsage(&result.Response.Usage, Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
 		}
 		if err != nil && !errors.Is(err, stream.ErrTerminal) {
 			return result, upstreamError{Class: "stream_translator_error", Message: "invalid upstream stream event", Err: err}

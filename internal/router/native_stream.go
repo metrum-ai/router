@@ -28,15 +28,21 @@ func nativeStreamEligible(req *IRRequest, callerDialect, upstreamDialect string)
 	}
 }
 
-func enableNativeUpstreamStream(raw []byte, req *IRRequest, dialect string) ([]byte, error) {
+func enableNativeUpstreamStream(raw []byte, req *IRRequest, dialect string, disableUsage ...bool) ([]byte, error) {
 	var body map[string]any
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return nil, err
 	}
 	body["stream"] = true
-	if normalizeDialect(dialect) == "openai-chat" && req != nil && req.Raw != nil {
-		if streamOptions, ok := req.Raw["stream_options"]; ok {
-			body["stream_options"] = streamOptions
+	if normalizeDialect(dialect) == "openai-chat" {
+		if req != nil && req.Raw != nil {
+			if streamOptions, ok := req.Raw["stream_options"]; ok {
+				body["stream_options"] = streamOptions
+				return json.Marshal(body)
+			}
+		}
+		if len(disableUsage) == 0 || !disableUsage[0] {
+			body["stream_options"] = map[string]any{"include_usage": true}
 		}
 	}
 	return json.Marshal(body)
@@ -208,7 +214,7 @@ func accumulateNativeSSE(resp *IRResponse, dialect string, frame []byte) (done, 
 				if upstreamModel := stringValue(message["model"]); upstreamModel != "" {
 					resp.Model = upstreamModel
 				}
-				mergeStreamUsage(&resp.Usage, usageFromMap(message["usage"]))
+				mergeAnthropicStreamUsage(resp, message["usage"])
 			}
 		case "content_block_delta":
 			if delta, ok := payload["delta"].(map[string]any); ok && stringValue(delta["type"]) == "text_delta" {
@@ -218,7 +224,7 @@ func accumulateNativeSSE(resp *IRResponse, dialect string, frame []byte) (done, 
 			if delta, ok := payload["delta"].(map[string]any); ok {
 				resp.StopReason = stringValue(delta["stop_reason"])
 			}
-			mergeStreamUsage(&resp.Usage, usageFromMap(payload["usage"]))
+			mergeAnthropicStreamUsage(resp, payload["usage"])
 		case "message_stop":
 			return true, true
 		}
@@ -237,6 +243,23 @@ func sseFrameData(frame []byte) []byte {
 	return []byte(strings.Join(lines, "\n"))
 }
 
+func mergeAnthropicStreamUsage(resp *IRResponse, v any) {
+	if resp.anthropicStreamUsage == nil {
+		resp.anthropicStreamUsage = map[string]any{}
+	}
+	if m, ok := v.(map[string]any); ok {
+		if _, breakdown := m["cache_creation"]; breakdown {
+			if _, aggregate := m["cache_creation_input_tokens"]; !aggregate {
+				delete(resp.anthropicStreamUsage, "cache_creation_input_tokens")
+			}
+		}
+		for key, value := range m {
+			resp.anthropicStreamUsage[key] = value
+		}
+	}
+	resp.Usage = usageFromMap(resp.anthropicStreamUsage)
+}
+
 func mergeStreamUsage(dst *Usage, src Usage) {
 	if dst == nil {
 		return
@@ -253,13 +276,17 @@ func mergeStreamUsage(dst *Usage, src Usage) {
 	if src.ReasoningTokens != nil {
 		dst.ReasoningTokens = src.ReasoningTokens
 	}
+	if src.CacheWriteInputTokens != nil {
+		dst.CacheWriteInputTokens = src.CacheWriteInputTokens
+	}
 	if src.CachedInputTokens != nil {
 		dst.CachedInputTokens = src.CachedInputTokens
 	}
 	if src.InputImageTokens != 0 {
 		dst.InputImageTokens = src.InputImageTokens
 	}
-	if dst.InputTokens != 0 || dst.OutputTokens != 0 {
+	dst.Warnings = append(dst.Warnings, src.Warnings...)
+	if dst.TotalTokens == 0 {
 		dst.TotalTokens = dst.InputTokens + dst.OutputTokens
 	}
 }

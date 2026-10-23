@@ -19,6 +19,7 @@ type metricsStore struct {
 }
 
 type metricLabels struct {
+	UsageSource       string
 	CallerID          string
 	CallerUser        string
 	CallerProject     string
@@ -61,6 +62,7 @@ func (m *metricsStore) Observe(rec logRecord) {
 		return
 	}
 	labels := metricLabels{
+		UsageSource:       sanitizeMetricLabel(rec.UsageSource, "none"),
 		CallerID:          rec.CallerID,
 		CallerUser:        rec.CallerUser,
 		CallerProject:     rec.CallerProject,
@@ -164,9 +166,9 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 	var b strings.Builder
 	writeHelp(&b, "metrum_ai_router_requests_total", "Total authorized router requests.")
 	writeHelp(&b, "metrum_ai_router_errors_total", "Total authorized router requests ending in HTTP error status.")
-	writeHelp(&b, "metrum_ai_router_input_tokens_total", "Total input tokens reported or estimated.")
-	writeHelp(&b, "metrum_ai_router_output_tokens_total", "Total output tokens reported.")
-	writeHelp(&b, "metrum_ai_router_tokens_total", "Total tokens reported.")
+	writeHelp(&b, "metrum_ai_router_input_tokens_total", "Total input tokens by usage_source (reported, partial, estimated, or none).")
+	writeHelp(&b, "metrum_ai_router_output_tokens_total", "Total output tokens by usage_source (reported, partial, estimated, or none).")
+	writeHelp(&b, "metrum_ai_router_tokens_total", "Total tokens by usage_source (reported, partial, estimated, or none).")
 	writeHelp(&b, "metrum_ai_router_latency_ms_sum", "Sum of request latency in milliseconds.")
 	writeHelp(&b, "metrum_ai_router_cache_hits_total", "Total cache hits.")
 	writeHelp(&b, "metrum_ai_router_cache_misses_total", "Total cache misses.")
@@ -248,9 +250,10 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 		labelText := prometheusLabels(labels)
 		writeMetric(&b, "metrum_ai_router_requests_total", labelText, values.Requests)
 		writeMetric(&b, "metrum_ai_router_errors_total", labelText, values.Errors)
-		writeMetric(&b, "metrum_ai_router_input_tokens_total", labelText, values.InputTokens)
-		writeMetric(&b, "metrum_ai_router_output_tokens_total", labelText, values.OutputTokens)
-		writeMetric(&b, "metrum_ai_router_tokens_total", labelText, values.TotalTokens)
+		tokenLabels := labelText
+		writeMetric(&b, "metrum_ai_router_input_tokens_total", tokenLabels, values.InputTokens)
+		writeMetric(&b, "metrum_ai_router_output_tokens_total", tokenLabels, values.OutputTokens)
+		writeMetric(&b, "metrum_ai_router_tokens_total", tokenLabels, values.TotalTokens)
 		writeMetric(&b, "metrum_ai_router_latency_ms_sum", labelText, values.LatencyMS)
 		writeMetric(&b, "metrum_ai_router_cache_hits_total", labelText, values.CacheHits)
 		writeMetric(&b, "metrum_ai_router_cache_misses_total", labelText, values.CacheMisses)
@@ -300,6 +303,7 @@ func writeFloatMetric(b *strings.Builder, name, labels string, value float64) {
 
 func prometheusLabels(labels metricLabels) string {
 	parts := []string{
+		`usage_source="` + escapeLabel(labels.UsageSource) + `"`,
 		`caller_id="` + escapeLabel(labels.CallerID) + `"`,
 		`caller_user="` + escapeLabel(labels.CallerUser) + `"`,
 		`caller_project="` + escapeLabel(labels.CallerProject) + `"`,
@@ -322,6 +326,7 @@ func escapeLabel(v string) string {
 
 func labelKey(labels metricLabels) string {
 	return strings.Join([]string{
+		labels.UsageSource,
 		labels.CallerID,
 		labels.CallerUser,
 		labels.CallerProject,

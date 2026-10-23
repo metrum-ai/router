@@ -33,7 +33,7 @@ const usageContentCaptureEncryptionMigrationID = 2026081901
 const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 6, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 8, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -172,6 +172,21 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	PostconditionKey: "usage.cache-billing.schema.v1@verifyUsageCacheBillingMigration",
 	Dependencies:     []int{usageCachedInputPricingMigrationID}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyUsageCacheBillingMigration, Verify: verifyUsageCacheBillingMigration,
+}, {
+	ID: 2026102202, Scope: usageMigrationScope, Name: "retain usage provenance", Release: "2026.10",
+	Checksum:      "7a74ec4d511aa7936df7dd55a95237911e5453c6ac8cf6a7f403f1cbe6f834de",
+	SchemaVersion: 7, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey:       "usage.provenance.apply.v1@applyUsageProvenanceMigration",
+	PostconditionKey: "usage.provenance.schema.v1@verifyUsageProvenanceMigration",
+	Dependencies:     []int{2026102101}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyUsageProvenanceMigration, Verify: verifyUsageProvenanceMigration,
+}, {
+	ID: 2026102301, Scope: usageMigrationScope, Name: "retain cache write usage and pricing", Release: "2026.10", Checksum: "e3fe2cecbc7460b6a836e85f5b3e593adaa706d13ea653a340b47caf65dc76dc",
+	SchemaVersion: 8, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey:       "usage.cache-write.apply.v1@applyUsageCacheWriteMigration",
+	PostconditionKey: "usage.cache-write.schema.v1@verifyUsageCacheWriteMigration",
+	Dependencies:     []int{2026102202}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyUsageCacheWriteMigration, Verify: verifyUsageCacheWriteMigration,
 }}
 
 func init() {

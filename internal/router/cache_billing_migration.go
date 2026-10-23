@@ -30,5 +30,5 @@ func applyUsageCacheBillingMigration(db *gorm.DB) error {
 }
 
 func verifyUsageCacheBillingMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchema(db)
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns(usageProvenanceColumns))
 }

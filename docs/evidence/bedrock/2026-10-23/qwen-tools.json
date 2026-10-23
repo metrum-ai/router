@@ -1,0 +1,48 @@
+{
+  "model": "qwen.qwen3-32b-v1:0",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "qwen",
+    "max_tokens": 256,
+    "temperature": 0,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_3BD2VwhjiieEKCIuNaOhkU\",\"type\":\"function\"}]}}],\"id\":\"resp_9c55250fbe9686e8c78759ab523863e5\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":29,\"prompt_tokens\":183,\"total_tokens\":212}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"The file `bedrock-proof.txt` has been created successfully with the content \\\"OK\\\".\",\"role\":\"assistant\"}}],\"id\":\"resp_d7e16153bdd1d8dbbe2cfbb0dd530b0e\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":19,\"prompt_tokens\":228,\"total_tokens\":247}}\n",
+    "file_created": true
+  }
+}

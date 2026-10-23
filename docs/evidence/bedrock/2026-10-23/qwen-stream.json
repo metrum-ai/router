@@ -1,0 +1,20 @@
+{
+  "model": "qwen.qwen3-32b-v1:0",
+  "region": "us-east-1",
+  "mode": "stream",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "qwen",
+    "max_tokens": 256,
+    "temperature": 0,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say OK"
+      }
+    ],
+    "stream": true
+  },
+  "response": "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_e4ab16e6addbf8223956aaab987ce97d\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_e4ab16e6addbf8223956aaab987ce97d\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"OK! Let me know if there's anything I can help with. \ud83d\ude0a\"},\"finish_reason\":null,\"index\":0}],\"id\":\"resp_e4ab16e6addbf8223956aaab987ce97d\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":\"stop\",\"index\":0}],\"id\":\"resp_e4ab16e6addbf8223956aaab987ce97d\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\"}\n\ndata: {\"choices\":[{\"delta\":null,\"finish_reason\":null,\"index\":0}],\"id\":\"resp_e4ab16e6addbf8223956aaab987ce97d\",\"model\":\"qwen.qwen3-32b-v1:0\",\"object\":\"chat.completion.chunk\",\"usage\":{\"completion_tokens\":17,\"prompt_tokens\":14,\"total_tokens\":31}}\n\ndata: [DONE]\n\n"
+}

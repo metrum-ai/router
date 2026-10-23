@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/metrum-ai/router/internal/stream"
 )
 
 func decodeRequest(dialect string, body []byte, h http.Header) (*IRRequest, error) {
@@ -219,7 +222,7 @@ func encodeGeminiGenerateContent(req *IRRequest) ([]byte, error) {
 		return nil, fmt.Errorf("gemini generateContent request is required")
 	}
 	if !geminiGenerateContentTextEligible(req) {
-		return nil, fmt.Errorf("gemini generateContent codec supports non-streaming text requests only")
+		return nil, fmt.Errorf("gemini generateContent codec supports text requests only (streaming callers are synthesized)")
 	}
 	contents := make([]map[string]any, 0, len(req.Messages)+1)
 	for _, message := range req.Messages {
@@ -266,7 +269,7 @@ func encodeGeminiGenerateContent(req *IRRequest) ([]byte, error) {
 }
 
 func geminiGenerateContentTextEligible(req *IRRequest) bool {
-	if req == nil || req.Stream || len(req.Tools) > 0 || requestHasImages(req) || requestHasStructuredOutput(req) || requestRequiresReasoning(req) {
+	if req == nil || len(req.Tools) > 0 || requestHasImages(req) || requestHasStructuredOutput(req) || requestRequiresReasoning(req) {
 		return false
 	}
 	for _, message := range req.Messages {
@@ -619,7 +622,22 @@ func geminiStopReason(reason string) string {
 func geminiUsageFromMap(value any) Usage {
 	usage, _ := value.(map[string]any)
 	input, _ := numberAsInt(usage["promptTokenCount"])
+	toolInput, _ := numberAsInt(usage["toolUsePromptTokenCount"])
+	input += toolInput
 	output, _ := numberAsInt(usage["candidatesTokenCount"])
+	var reasoning *int
+	if thoughts, present := numberAsInt(usage["thoughtsTokenCount"]); present {
+		// Gemini excludes thoughts from candidates but bills them as output.
+		output += thoughts
+		reasoning = &thoughts
+	}
+	imageTokens := 0
+	for _, detail := range valueAsSlice(usage["promptTokensDetails"]) {
+		if m, ok := detail.(map[string]any); ok && stringValue(m["modality"]) == "IMAGE" {
+			n, _ := numberAsInt(m["tokenCount"])
+			imageTokens += n
+		}
+	}
 	total, _ := numberAsInt(usage["totalTokenCount"])
 	if total == 0 {
 		total = input + output
@@ -628,7 +646,7 @@ func geminiUsageFromMap(value any) Usage {
 	if n, present := numberAsInt(usage["cachedContentTokenCount"]); present {
 		cached = validatedCachedInputTokens(&n, input)
 	}
-	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total, CachedInputTokens: cached}
+	return Usage{InputTokens: input, OutputTokens: output, TotalTokens: total, CachedInputTokens: cached, ReasoningTokens: reasoning, InputImageTokens: imageTokens}
 }
 
 func decodeResponsesPassthrough(raw []byte, model string) (*IRResponse, error) {
@@ -722,10 +740,7 @@ func encodeAnthropicResponse(resp *IRResponse, publicModel string) map[string]an
 		"content":       []map[string]any{{"type": "text", "text": resp.Text}},
 		"stop_reason":   defaultString(resp.StopReason, "end_turn"),
 		"stop_sequence": nil,
-		"usage": map[string]any{
-			"input_tokens":  resp.Usage.InputTokens,
-			"output_tokens": resp.Usage.OutputTokens,
-		},
+		"usage":         anthropicUsageMap(resp.Usage),
 	}
 }
 
@@ -778,6 +793,9 @@ func chatUsageMap(usage Usage) map[string]any {
 	if usage.ReasoningTokens != nil {
 		out["completion_tokens_details"] = map[string]any{"reasoning_tokens": *usage.ReasoningTokens}
 	}
+	if usage.CacheWriteInputTokens != nil {
+		details["cache_write_tokens"] = *usage.CacheWriteInputTokens
+	}
 	if usage.CachedInputTokens != nil {
 		details["cached_tokens"] = *usage.CachedInputTokens
 	}
@@ -792,8 +810,15 @@ func responsesUsageMap(usage Usage) map[string]any {
 	if usage.ReasoningTokens != nil {
 		out["output_tokens_details"] = map[string]any{"reasoning_tokens": *usage.ReasoningTokens}
 	}
+	details := map[string]any{}
 	if usage.CachedInputTokens != nil {
-		out["input_tokens_details"] = map[string]any{"cached_tokens": *usage.CachedInputTokens}
+		details["cached_tokens"] = *usage.CachedInputTokens
+	}
+	if usage.CacheWriteInputTokens != nil {
+		details["cache_write_tokens"] = *usage.CacheWriteInputTokens
+	}
+	if len(details) > 0 {
+		out["input_tokens_details"] = details
 	}
 	return out
 }
@@ -1304,12 +1329,12 @@ func usageFromMap(v any) Usage {
 	if !ok {
 		return Usage{}
 	}
-	in, _ := numberAsInt(m["input_tokens"])
-	if in == 0 {
+	in, inPresent := numberAsInt(m["input_tokens"])
+	if !inPresent {
 		in, _ = numberAsInt(m["prompt_tokens"])
 	}
-	out, _ := numberAsInt(m["output_tokens"])
-	if out == 0 {
+	out, outPresent := numberAsInt(m["output_tokens"])
+	if !outPresent {
 		out, _ = numberAsInt(m["completion_tokens"])
 	}
 	total, _ := numberAsInt(m["total_tokens"])
@@ -1330,8 +1355,37 @@ func usageFromMap(v any) Usage {
 		cachedTokens = &n
 		in += n
 	}
+	var cacheWrite *int
 	if n, present := numberAsInt(m["cache_creation_input_tokens"]); present {
-		in += n
+		cacheWrite = &n
+	} else if creation, ok := m["cache_creation"].(map[string]any); ok {
+		five, p5 := numberAsInt(creation["ephemeral_5m_input_tokens"])
+		hour, p1 := numberAsInt(creation["ephemeral_1h_input_tokens"])
+		if p5 || p1 {
+			n := five + hour
+			cacheWrite = &n
+		}
+	}
+	if cacheWrite != nil {
+		in += *cacheWrite
+	}
+	// The Chat bridge preserves cache-write evidence in prompt details.
+	if cacheWrite == nil {
+		for _, key := range []string{"prompt_tokens_details", "input_tokens_details"} {
+			if details, ok := m[key].(map[string]any); ok {
+				if n, present := numberAsInt(details["cache_write_tokens"]); present {
+					cacheWrite = &n
+					break
+				}
+			}
+		}
+	}
+	var warnings []string
+	for _, n := range []*int{&in, &out, &total, &imageTokens, reasoningTokens} {
+		if n != nil && *n < 0 {
+			*n = 0
+			warnings = appendWarning(warnings, "usage-invalid-upstream")
+		}
 	}
 	if total == 0 {
 		total = in + out
@@ -1345,11 +1399,13 @@ func usageFromMap(v any) Usage {
 		upstreamTotalCost, _ = numberAsFloat(costDetails["upstream_inference_cost"])
 	}
 	return Usage{
+		Warnings:                      warnings,
 		InputTokens:                   in,
 		OutputTokens:                  out,
 		TotalTokens:                   total,
 		ReasoningTokens:               reasoningTokens,
 		CachedInputTokens:             cachedTokens,
+		CacheWriteInputTokens:         cacheWrite,
 		InputImageTokens:              imageTokens,
 		UpstreamReportedInputCostUSD:  upstreamInputCost,
 		UpstreamReportedOutputCostUSD: upstreamOutputCost,
@@ -1410,8 +1466,17 @@ func stringValue(v any) string {
 	return ""
 }
 
+func anthropicUsageMap(u Usage) map[string]any {
+	return stream.AnthropicUsageMap(stream.Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
+}
+
 func numberAsInt(v any) (int, bool) {
 	switch n := v.(type) {
+	case json.Number:
+		return numberAsInt(string(n))
+	case string:
+		value, err := strconv.Atoi(n)
+		return value, err == nil
 	case float64:
 		return int(n), true
 	case int:
@@ -1425,6 +1490,13 @@ func numberAsInt(v any) (int, bool) {
 
 func numberAsFloat(v any) (float64, bool) {
 	switch n := v.(type) {
+	case json.Number:
+		return numberAsFloat(string(n))
+	case string:
+		value, err := strconv.ParseFloat(n, 64)
+		return value, err == nil && !math.IsNaN(value) && !math.IsInf(value, 0)
+	case int64:
+		return float64(n), true
 	case float64:
 		return n, true
 	case int:

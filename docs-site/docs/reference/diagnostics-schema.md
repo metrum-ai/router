@@ -62,6 +62,7 @@ This section is generated from the router usage and content-capture schema used 
 
 | Column | Scalar type | Nullable | Populated when | Safe to log/share | Example or range |
 |---|---|---|---|---|---|
+| `usage_source` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `request_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `req_0123456789abcdef0123456789abcdef` |
 | `ts` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `2026-06-29T12:34:56Z` |
 | `caller_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
@@ -96,6 +97,8 @@ This section is generated from the router usage and content-capture schema used 
 | `output_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `total_tokens` | integer | no | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_tokens` | integer | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
+| `cache_write_input_tokens` | integer | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
+| `cache_write_price_per_million_usd` | decimal | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0.0` or positive decimal |
 | `cached_input_tokens` | integer | yes | after usage and request-time cost accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_attempt_count` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `0` or positive integer |
 | `reasoning_successful_attempt_count` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `0` or positive integer |

@@ -1130,7 +1130,7 @@ func TestUsageHistoricalValidationRequiresMultipleCheckpointsBeforeDeploymentJob
 	}
 	for i := 0; i < 101; i++ {
 		row := usageRecord{RequestID: fmt.Sprintf("historical-row-%03d", i), TS: "2026-08-05T00:00:00Z"}
-		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD").Create(&row).Error; err != nil {
+		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD").Create(&row).Error; err != nil {
 			_ = store.Close()
 			t.Fatalf("create synthetic historical usage row %d: %v", i, err)
 		}
@@ -1376,7 +1376,7 @@ func TestUsageStoreAutoSafeRejectsExistingSQLiteUsageRowsBeforeValidation(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Omit("CostListUSD", "CostBilledUSD").Create(&usageRecord{RequestID: "existing-row", TS: "2026-08-05T00:00:00Z"}).Error; err != nil {
+	if err := store.db.Omit("CostListUSD", "CostBilledUSD", "UsageSource").Create(&usageRecord{RequestID: "existing-row", TS: "2026-08-05T00:00:00Z"}).Error; err != nil {
 		_ = store.Close()
 		t.Fatal(err)
 	}

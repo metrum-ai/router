@@ -1,0 +1,49 @@
+{
+  "model": "deepseek.v3.2",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "deepseek",
+    "max_tokens": 256,
+    "temperature": 0,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      }
+    ],
+    "tool_choice": "required",
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_Zkf5WJV5zv3kayqYfk8k77\",\"type\":\"function\"}]}}],\"id\":\"resp_4c405a0d9a2fc73c79358c53c0230eb2\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":29,\"prompt_tokens\":330,\"total_tokens\":359}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"I have successfully written the file \\\"bedrock-proof.txt\\\" with the content \\\"OK\\\".\",\"role\":\"assistant\"}}],\"id\":\"resp_c91bc6d87ee195b797a722b8420d17b0\",\"model\":\"deepseek.v3.2\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":19,\"prompt_tokens\":412,\"total_tokens\":431}}\n",
+    "file_created": true
+  }
+}

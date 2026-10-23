@@ -1,0 +1,48 @@
+{
+  "model": "openai.gpt-oss-20b-1:0",
+  "region": "us-east-1",
+  "mode": "tools",
+  "status": "pass",
+  "http_status": 200,
+  "request": {
+    "model": "gptoss",
+    "max_tokens": 256,
+    "temperature": 0,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Call write_file with path bedrock-proof.txt and content OK. Do not just describe it."
+      }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "write_file",
+          "description": "Write a file",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "response": "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"index\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\",\"tool_calls\":[{\"function\":{\"arguments\":\"{\\\"content\\\":\\\"OK\\\",\\\"path\\\":\\\"bedrock-proof.txt\\\"}\",\"name\":\"write_file\"},\"id\":\"tooluse_pSTf956c7lyEu1WNwnqBTr\",\"type\":\"function\"}]}}],\"id\":\"resp_9d01b61f2a4e6104f2a8f720ade8227b\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":52,\"prompt_tokens\":140,\"total_tokens\":192}}\n",
+  "continuation": {
+    "http_status": 200,
+    "response": "{\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"File `bedrock-proof.txt` has been created with the content `OK`.\",\"role\":\"assistant\"}}],\"id\":\"resp_d5b11655fe609d89bc38c38ca06c3fde\",\"model\":\"openai.gpt-oss-20b-1:0\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":67,\"prompt_tokens\":181,\"total_tokens\":248}}\n",
+    "file_created": true
+  }
+}

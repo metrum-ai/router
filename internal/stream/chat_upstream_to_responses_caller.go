@@ -261,6 +261,10 @@ func (t *ChatUpstreamToResponsesCaller) UsageSnapshot() Usage {
 	u.OutputTokens, _ = t.usage["output_tokens"].(int)
 	u.TotalTokens = u.InputTokens + u.OutputTokens
 	if d, ok := t.usage["input_tokens_details"].(map[string]any); ok {
+		if n, ok := d["cache_write_tokens"].(float64); ok {
+			v := int(n)
+			u.CacheWriteInputTokens = &v
+		}
 		if n, ok := d["cached_tokens"].(float64); ok {
 			v := int(n)
 			u.CachedInputTokens = &v

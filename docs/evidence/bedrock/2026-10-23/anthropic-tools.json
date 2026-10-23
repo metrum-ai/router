@@ -1,0 +1,8 @@
+{
+  "status": 200,
+  "response": "{\"content\":[{\"id\":\"tooluse_QdyzN4W2ZvbRkInhZVCMG6\",\"input\":{\"content\":\"OK now\"},\"name\":\"write_file\",\"type\":\"tool_use\"}],\"id\":\"resp_6b44127b023bc584fbac6170c22e5bc0\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"role\":\"assistant\",\"stop_reason\":\"tool_use\",\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":75,\"output_tokens\":12}}\n",
+  "continuation": {
+    "status": 200,
+    "response": "{\"content\":[{\"text\":\"The file has been written with the content **\\\"OK now\\\"**. Let me know if you need anything else!\",\"type\":\"text\"}],\"id\":\"resp_04fea6b145508d69f61b744d902b5a9c\",\"model\":\"mistral.mistral-large-3-675b-instruct\",\"role\":\"assistant\",\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":93,\"output_tokens\":23}}\n"
+  }
+}

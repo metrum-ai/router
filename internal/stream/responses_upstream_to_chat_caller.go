@@ -87,6 +87,10 @@ func (t *ResponsesUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		t.usage = map[string]any{"prompt_tokens": u.Input, "completion_tokens": u.Output, "total_tokens": total}
 		t.accounting = Usage{InputTokens: u.Input, OutputTokens: u.Output, TotalTokens: total}
 		if u.InputDetails != nil {
+			if n, ok := u.InputDetails["cache_write_tokens"].(float64); ok {
+				v := int(n)
+				t.accounting.CacheWriteInputTokens = &v
+			}
 			t.usage["prompt_tokens_details"] = u.InputDetails
 			if n, ok := u.InputDetails["cached_tokens"].(float64); ok {
 				v := int(n)

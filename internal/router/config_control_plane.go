@@ -40,7 +40,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 6, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 7, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -141,7 +141,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition())
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}
@@ -256,6 +256,7 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 				ContextTokens:                      model.ContextTokens,
 				InputPricePerMillionUSD:            model.InputPricePerMillionUSD,
 				OutputPricePerMillionUSD:           model.OutputPricePerMillionUSD,
+				CacheWritePricePerMillionUSD:       model.CacheWritePricePerMillionUSD,
 				CachedInputPricePerMillionUSD:      model.CachedInputPricePerMillionUSD,
 				ImageInputPricePerMillionTokensUSD: capabilities.ImageInputPricePerMillionTokensUSD,
 				ImageInputPricePerImageUSD:         capabilities.ImageInputPricePerImageUSD,
@@ -1321,6 +1322,7 @@ type providerHeaderRow struct {
 func (providerHeaderRow) TableName() string { return "router_config_provider_headers" }
 
 type providerModelRow struct {
+	CacheWritePricePerMillionUSD  *float64 `gorm:"column:cache_write_price_per_million_usd"`
 	ModelRef                      string   `gorm:"column:model_ref"`
 	Model                         string   `gorm:"column:model"`
 	Dialect                       string   `gorm:"column:dialect"`
