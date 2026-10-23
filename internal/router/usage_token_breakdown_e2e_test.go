@@ -56,6 +56,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	defer upstream.Close()
 	dir := t.TempDir()
 	cfg := testConfig(t, "http://127.0.0.1:18454", "mock-key", dir)
+	configureDocsSmokeCapacity(cfg)
 	cfg.Server.Cache.Enabled = false
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Callers[0].Project = "local"

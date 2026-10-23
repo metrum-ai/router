@@ -75,6 +75,35 @@ Ordinary router caller tokens receive `403 reports-forbidden`. Missing or invali
 
 ## What It Shows
 
+### Reasoning, Cache And Cost Coverage (v4.3.0)
+
+The Overview includes **Reasoning share** (reasoning/output), **Cached input
+share** (reads/input), reporting-request coverage, token composition and billed
+token-cost composition. Aggregate table columns include reasoning, cached input,
+cache-write tokens, their reported-request counts, and reasoning attempt counts.
+A reported zero is evidence; missing reporting is not zero. Unattributed input
+can include unreported caching and visible/unattributed output can include
+undisclosed reasoning. Do not add these subsets again to input/output totals.
+
+Cost composition excludes separately billed images. Savings cards distinguish
+routing, provider prompt-cache and router response-cache savings; prompt-cache
+savings can be negative when writes carry premiums. Historical incomplete
+attribution is not displayed as a measured complete split. See
+[Usage, Cost, And Reports](../usage-cost-reports/overview) for API fields.
+
+Global `reasoning_present` remains a request-shape filter, not a reported-token
+coverage filter. `cache_present` selects reported reads or writes, including
+reported zero. Both require raw history.
+
+The **History source** control accepts `raw` (default) or `rollup` on supported
+aggregate views. Rollup history reads only finalized daily aggregates, applies
+the same authorization scope, and has daily chart resolution. Use finalized
+complete closed UTC-day windows; relative ranges align to UTC days and explicit
+bounds must be UTC midnight. Unsupported row-level filters return HTTP 400.
+Request drilldown, the primary savings endpoint and server Markdown export
+remain raw-only; client CSV export reflects the selected table. Raw retention
+therefore still determines how long request-level investigations are possible.
+
 ### Data Migrations
 
 The **Operations / Data migrations** view is a read-only, authenticated view of the checked-in migration contract and its safe scalar ledger state. It shows scope, schema/data version, compatibility, effective pending/applied/failed/running/in-progress state, release, execution/maintenance/lock/timeout class, rollback class, bounded duration, data-job key and state, safe progress totals, and safe error class. A bound data job is projected only after its schema ledger is applied: missing, pending, paused, and cancelled jobs remain pending; running jobs are in progress; failed jobs remain failed; and only validated jobs are verified. A failed or running schema ledger remains authoritative even if a job is absent or reports a conflicting state. It deliberately does not expose SQL, DSNs, raw configuration, credentials, tokens, hashes, prompts, images, tool payloads, or database rows.

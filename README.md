@@ -4,6 +4,14 @@ Metrum website: [metrum.ai](https://www.metrum.ai). See the
 [Metrum AI Router product page](https://www.metrum.ai/router) for product
 information and enterprise inquiries.
 
+For v4.3.0 operations, see the
+[upgrade guide](docs-site/docs/release-notes/upgrade-guide.md#compatibility-and-operations-v430),
+[AWS Bedrock Converse upstream](docs/bedrock.md),
+[usage provenance](docs/usage-provenance.md), and
+[unbilled count-token requests](docs/count-tokens.md).
+The [fine-tuning recipe](docs-site/docs/configuration/fine-tune-own-model.md)
+links measured evidence and promotion limits; it is not a default model change.
+
 Agent workloads often make dozens of model calls per task. Paying frontier
 price for each call is the default path, and token spend shows up after the
 monthly budget is gone. In one committed Harbor run, Codex on `big-coder` used

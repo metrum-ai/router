@@ -87,9 +87,17 @@ callers:
   - id: synthetic-allowed
     token_sha256: {CALLER_DIGEST}
     allow: [chat, responses, messages, responses-to-chat, chat-to-responses]
+    # Infrastructure-only local capacity, not production budget guidance.
+    # CHAT-09 intentionally reserves a 10M output cap; allow the whole suite.
+    rate: &local_rate {{rpm: 2400, tpm: 100000000, concurrent: 160}}
+    quota: &local_quota {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
+    key: &local_key {{lifetime_tokens: 40000000000}}
   - id: synthetic-denied
     token_sha256: {DENIED_CALLER_DIGEST}
     allow: [chat]
+    rate: *local_rate
+    quota: *local_quota
+    key: *local_key
 '''
     config_path = work / "config.yaml"
     config_path.write_text(config)

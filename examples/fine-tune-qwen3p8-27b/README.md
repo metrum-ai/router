@@ -42,8 +42,13 @@ paired CIs. Original gate FAIL unchanged; strictJSON/rollback502 controls still
 failed/incomplete, no promotion. All GPU/dedicated resources API-deleted.
 
 
-Work in progress for #326. Do not infer training completion or promotion from
-this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
+Run 1, NVIDIA run 2 and AMD all **FAIL their original promotion gates**.
+Training/serving completion is not promotion. Run 1 was rejected by regression
+gates; NVIDIA run 2 gained only +0.5pp strict JSON-text exact (required +10pp);
+AMD lost 1.0pp against its base. Native mock-tool equality is not semantic or
+hardware parity. See the dated [run-1 evidence](../../docs/evidence/finetune/2026-10-23/README.md),
+[run-2 results](../../docs/evidence/finetune/2026-10-23-run2/RESULTS.md), and
+[AMD evidence](../../docs/evidence/finetune-amd/2026-10-23/README.md).
 
 ## Mandatory authenticated preflight
 
@@ -155,7 +160,7 @@ tokens**. These tiny-sample list-token estimates ignore cache discounts and are
 not invoices, hourly serving economics or production ROI. See
 [`router-loop-sample.json`](../../docs/evidence/finetune/2026-10-23/router-loop-sample.json).
 
-Still pending: useful-sized governed training cohort, trained-target canary,
+Historical small-sample pending list (not the final run-2 state): useful-sized governed training cohort, trained-target canary,
 frozen held-out candidate/teacher/base replay, comparable latency distributions
 and measured production cost per successful task. No positive run-2 outcome or
 promotion is implied. The run-1 reproduction instructions below remain historical
@@ -289,9 +294,9 @@ an accidental shared/default-deployment route.
 ## Router groups, caller budgets and rollback
 
 Copy `config.qwen3p8-ft.example.yaml` outside Git and replace the Fireworks account
-and deployment endpoint as appropriate. `vllm_b200_ft` is a logical provider name
-retained from the issue, not a claim that the current host is a B200: this run
-uses RTX PRO 6000 Blackwell. The default FT group splits traffic 50/50. The static
+and deployment endpoint as appropriate. The hardware-neutral provider name is
+`vllm_onprem_ft`; run 1 and NVIDIA run 2 used RTX PRO 6000 Blackwell, not B200.
+Historical receipts preserve their provenance while published aliases are neutral. The default FT group splits traffic 50/50. The static
 `-onprem` and `-fireworks` FT groups isolate serving stacks for paired evaluation.
 The default route stays on the base. Optional `qwen3p8-27b-canary` starts at
 90% base/5% on-prem FT/5% Fireworks FT. The `-shadow` group uses

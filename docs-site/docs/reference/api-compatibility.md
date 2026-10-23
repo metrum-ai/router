@@ -27,7 +27,7 @@ Anthropic-compatible clients use the `/anthropic` base URL:
 | Endpoint | Compatibility target | Typical clients |
 |---|---|---|
 | `/anthropic/v1/messages` | Anthropic Messages-style requests | Claude Code CLI, Anthropic-compatible clients |
-| `/anthropic/v1/messages/count_tokens` | Anthropic Messages token-count estimate | Claude Code CLI startup and compatibility checks |
+| `/anthropic/v1/messages/count_tokens` | Native Anthropic count proxy; estimated fallback for other transports | Unbilled Claude Code compaction and compatibility checks |
 
 Legacy Anthropic aliases remain available for existing clients: `/v1/messages` and `/v1/messages/count_tokens`. New setup should prefer `/anthropic` so OpenAI-compatible and Anthropic-compatible client configuration stays visibly separate.
 
@@ -308,7 +308,7 @@ Bridge requests remain stateless unless a Chat-to-Responses target enables state
 
 Before an upstream call, the router reserves the estimated input tokens plus the requested output budget for token-based admission. Chat Completions requests use `max_tokens` or `max_completion_tokens`, Responses requests use `max_output_tokens`, and Messages requests use `max_tokens`. Messages requests without a caller cap reserve the router default output cap when the router injects one.
 
-TPM, daily token, monthly token, and lifetime key budgets include in-flight reservations. This prevents several concurrent large-cap requests from collectively exceeding a caller's budget. When a request completes, the reservation is reconciled to the actual usage reported by the upstream. Failed or canceled upstream requests release the reservation, and cache hits do not consume persisted token quota.
+TPM, daily token, monthly token, and lifetime key budgets include in-flight reservations. This prevents several concurrent large-cap requests from collectively exceeding a caller's budget. When a request completes, the reservation is reconciled to reported usage, or to an explicitly marked estimate when usage is absent. A failed committed stream can settle partial reported usage; requests without settled usage release their reservation. Router response-cache hits and count-token calls do not consume inference token quota.
 
 Optional caller traffic shaping can also smooth short bursts before upstream calls. It is separate from hard TPM/RPM/quota admission and can return `429 traffic-shaped` with `Retry-After` and a safe bucket label when request-start or token-reservation throughput is exceeded.
 

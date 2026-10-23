@@ -210,15 +210,16 @@ cases:
     priority: P1
     owner: api-compat
     component: anthropic-count-tokens
-    source_url: https://github.com/metrum-ai/router/issues/94
-    reviewed_date: "2026-09-11"
+    source_url: https://github.com/metrum-ai/router/issues/338
+    reviewed_date: "2026-10-23"
     inbound_route: /anthropic/v1/messages/count_tokens
     outbound_dialect: anthropic
     transport: unary
     disposition: native_supported
     assertions:
-      - /messages/count_tokens and /anthropic alias return nonnegative local estimates
-      - forbidden models reject with zero generation upstream calls
+      - /v1/messages/count_tokens and /anthropic alias proxy native Anthropic counts exactly with X-Metrum-Usage-Source reported
+      - native forwarding rewrites the model alias and preserves messages
+      - forbidden models reject with zero upstream calls
     evidence_paths:
       - tests/api_compat/tests/test_anthropic_turn_two.py
     test_id: test_anthropic_count_tokens_aliases

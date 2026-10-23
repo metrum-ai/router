@@ -1,10 +1,14 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Governed training trace export — draft design (#358)
+# Governed training trace export (#358)
 
-Metrum AI Router remains the capture, authorization and selection boundary. This
-is a work-in-progress design, not a declaration that the complete loop is ready.
+Metrum AI Router is the capture, authorization and selection boundary. The
+export/outcome APIs and router-loop harness are implemented; this is not a claim
+of promotion. External NVIDIA run-2 and AMD training/comparison have now run;
+both original quality gates FAIL. Their measured results, infrastructure
+amendments and teardown are maintained in the dated evidence, not inferred
+from export success.
 
 ## Future-export tool declaration normalization (#371)
 
@@ -40,7 +44,7 @@ Old captures without the representation are ineligible for canonical export.
 
 ## Export and outcome contract
 
-Proposed endpoints: `POST /admin/training/export` and
+Implemented endpoints: `POST /admin/training/export` and
 `POST /admin/training/outcomes/{request_id}`. Require explicit deployment-wide
 admin policy for `content:training` actions `export` and `label` respectively;
 ordinary report viewers, caller keys and content deletion permissions do not
@@ -48,6 +52,14 @@ implicitly grant training export. A security event must be durably written
 before privileged access proceeds. No payloads or credentials belong in audit
 rows. Outcome attachment requires an existing encrypted, complete, unexpired
 captured request, not an uploaded transcript.
+
+Requests require `Content-Type: application/json`. Wrong media type returns
+415 `application-json-required`; unauthorized training actions return 403
+`training-forbidden`. Disabled/failed mandatory audit returns 503
+`security-audit-required` / `security-audit-failed`. Invalid labels/filters
+return 400; duplicate labels return 409 `outcome-already-recorded`. An ineligible
+or missing request capture returns 404 `captured-request-not-found`. Export
+construction errors return 422 `export-failed`; narrow oversized selections.
 
 The export response is a ZIP containing `manifest.json`, `train.jsonl`,
 `val.jsonl`, and `test.jsonl`. Effective filters: public token ID, project, client,
@@ -58,12 +70,15 @@ canonical transcript hashes, retain provenance hashes, file counts and SHA256s.
 
 Rows use `{messages, tools, provenance, outcome, replay}`. Canonical OpenAI
 assistant `tool_calls[].function.arguments` remain JSON strings, with subsequent
-`tool_call_id` results. Export the final complete request history plus the final
-assistant response, not isolated first-turn requests. Never feed recorded
+`tool_call_id` results. Train/val export the final complete request history plus a nonempty completed
+assistant response, not isolated first-turn requests. Test can retain labelled
+failed/incomplete teacher responses, including missing response captures; its
+request capture must still be encrypted, complete, eligible and unexpired.
+`response_captured` and `teacher_transcript_incomplete` preserve that provenance. Never feed recorded
 teacher answers to candidate replay. Replay requires a versioned allowlisted
 backend/checker and frozen initial fixture, never arbitrary code/URLs.
 
-Draft outcome version `router-outcome-v1`: source `task_hash`, boolean
+Outcome version `router-outcome-v1`: source `task_hash`, boolean
 `task_success`, boolean `schema_valid`, numeric `quality` in [0,1], allowlisted
 `backend` and integer seed. These are authorized harness attestations, not router
 inferences from HTTP 200 or claims of independent judgment. Missing labels are
@@ -86,15 +101,19 @@ copies: capture retention/deletion cannot recall an already downloaded dataset.
 Existing script routing exposes `caller.id`, project and public `tokenId` and
 can select targets within the same group. Prefer that mechanism over introducing
 another routing configuration surface; caller quotas/budgets remain in force.
-A demonstrated two-key canary and real-provider collection are still required.
+The example demonstrates two-key real-provider collection and same-group
+routing to a synthetic candidate stand-in. This does not demonstrate an actual
+fine-tuned-model canary or production quality.
 The exporter aligns with FT's `metrum-router-ft-export-v1` consumer contract:
 splits/boundaries, audit reference, teacher decision/privacy attestations,
 trace/task SHA256, tool-schema validity and replay initial fixtures. The actual
 FT `run2/router_export.py` consumer validated a real seven-row sample without
-rewriting its manifest. This proves schema integration, not useful cohort size
-or training authorization. Full cohort mix/counts and semantic evaluation/gate
-mapping must be frozen with FT before expanded collection/training. No actual
-trained-model promotion is claimed.
+rewriting its manifest. That historical sample proves schema integration, not training authorization.
+The later hash-bound full export contains 1,186 train / 221 validation / 300 test
+tasks; NVIDIA and AMD consumed the same frozen files. The outcomes and original
+FAIL gates are in [run-2 results](evidence/finetune/2026-10-23-run2/RESULTS.md)
+and the [merged comparison](evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md).
+No trained-model promotion is claimed.
 
 ## Teacher-license decision: maintainer-authorized synthetic technical test
 

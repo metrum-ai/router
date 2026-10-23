@@ -20,6 +20,130 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Compatibility and operations (v4.3.0)
+
+### Migrations and rollback
+
+Back up and rehearse restore before upgrading. Use the **Required Migration
+Gate** below, including the non-serving PostgreSQL migration job; do not bypass
+the ledger or manually add columns. Usage migrations `2026102202` (schema v7),
+`2026102301` (v8), and `2026102302` (v9) retain provenance, cache-write usage and
+pricing, and unbilled count-event identity respectively. The configuration
+control plane has its own `2026102301` cache-write pricing migration (v7);
+identical IDs in separate scopes are not the same migration.
+
+Usage migration `2026102303` (schema v10, dependent on v9) adds reasoning,
+cache-read/write coverage, attempt counters and cost allocation to daily, hourly
+and monthly aggregate tables. Existing aggregates retain their ordinary totals
+but start with zero **known evidence**, not proof that no reasoning/cache usage
+occurred. Regenerate draft windows only while raw rows remain; finalized windows
+are immutable through the generator. Recomputing finalized history requires a
+separately reviewed maintenance/restore workflow, not an automatic backfill.
+
+Historical provenance remains empty/unknown. New estimated rollup counters
+start at zero, not a reconstruction of historical estimates. Historical nullable
+cache-write counts/prices remain unknown. Historical count calls cannot be
+reliably distinguished from inference and are not retroactively refunded.
+These expansions require restoring the pre-upgrade snapshot for binary rollback.
+Retain the reviewed old configuration as well as the database backup.
+
+### Empty modalities and launcher preflight
+
+An empty legacy `modalities: []` now behaves as unset rather than overriding
+`input_modalities` with an empty capability set. Explicit nonempty `modalities`
+still overrides input metadata; unset/empty legacy metadata falls back to the
+existing input metadata/default text. This repairs serialized config round trips
+that previously made text targets ineligible. If you intentionally used an
+empty array to disable a route, remove/disable the target explicitly instead;
+do not rely on an empty capability array as an access control.
+
+Future training exports collapse canonical-JSON-identical repeated tool declarations by
+name and report normalization counts in the manifest. Conflicting declarations
+are rejected, not silently selected; previously published exports/hashes are not
+rewritten. Fine-tuning launchers now require successful authenticated route,
+static-target and (for semantic runs) grader preflight before batch dispatch.
+Preflight is chargeable warm-up traffic, not a scored case. Missing access or
+pre-route errors abort the whole batch; supply every target alias and sufficient
+local capacity, not privileged replacement keys or selective retries.
+
+### Accounting and client behavior
+
+Review dashboards that assumed every token count was reported. Inference token
+metrics now include `usage_source`; aggregate across this label when comparing
+with older totals. Missing stream usage settles using observed text rather than
+the requested maximum; partial reported usage can survive committed stream
+failure. Explicit Chat `stream_options` are preserved; when absent the router
+requests final usage unless the target declares that feature unsupported.
+
+Gemini thinking tokens count as output, and Anthropic input includes uncached,
+cache-read and cache-write tokens. Reasoning is already included in output and
+must not be charged twice. Configure optional
+`cache_write_price_per_million_usd` for the actual cache policy; missing write
+pricing uses base input pricing and warns. Validate refreshed catalog prices
+before promoting targets. See [Usage, Cost, And Reports](../usage-cost-reports/overview)
+for fields, provenance and cache-cost distinctions.
+
+Native Anthropic `count_tokens` now proxies the provider count and errors;
+other transports return marked estimates. Both paths are unbilled and excluded
+from inference quotas/aggregates. Request reports still show count events.
+Clients must not assume counts are always local or tokenizer-exact.
+
+Reporting now preserves reasoning/cache token subsets and known reporting
+coverage through rollups, API tables and CLI Markdown output. Cost/savings
+composition distinguishes routing, provider prompt caching and free router
+response caching; cache-write premiums can make prompt-cache savings negative.
+Additional counters are `metrum_ai_router_reasoning_tokens_total`,
+`metrum_ai_router_cached_input_tokens_total`, and
+`metrum_ai_router_cache_write_input_tokens_total`. Cost metric components now
+include `cached_input` and `cache_write`; `input` excludes these, while `output`
+already includes reasoning. Review dashboards that selected only old component
+values. No separate reasoning cost counter should be added.
+
+The admin history selector is opt-in: `history_source=rollup` reads finalized
+daily aggregates rather than raw rows. Use complete closed UTC-day windows;
+unsupported predicates and report types return HTTP 400 rather than silently
+mixing sources. The retained-history reader now excludes current/future days,
+partial manually finalized days, and snapshots finalized before their window
+closed; an early snapshot does not become complete merely with elapsed time. Keep raw retention long enough for request-level investigation
+and Markdown exports, which cannot be reconstructed from aggregates.
+
+### Optional upstreams and fine-tuning
+
+Bedrock is opt-in: use `auth_scheme: bedrock`, internal `dialect: openai-chat`,
+and a target `region` (or the AWS SDK region chain). Use the default AWS
+credential chain, never keys in YAML; grant only the validated model/profile
+resources. Cross-region profiles require destination permissions and a residency
+review. Existing providers need no Bedrock configuration. See
+[Providers And Models](../providers-models/overview) for the validated matrix.
+
+The governed training surface adds `POST /admin/training/outcomes/{request_id}`
+and `POST /admin/training/export`. Both require opt-in encrypted content capture,
+explicit deployment-wide `content:training` grants (`label`/`export`) and a
+durable security audit; report-view/export grants do not imply training access.
+No new schema migration is introduced for these endpoints: labels reuse
+encrypted content-capture records. Existing IR-only captures lack canonical
+chat/tool history and cannot be retroactively converted. Keep encryption keys
+available while captures remain exportable. Exported datasets have independent
+access/retention obligations; deleting captures cannot recall downloaded copies.
+Review teacher model license, provider terms, consent and output-training rights
+before enabling this optional surface. The synthetic example authorization is
+not permission for customer-data training. See
+[Fine-tune And Route Your Own Model](../configuration/fine-tune-own-model).
+
+The fine-tuning example is an operator-owned training/deployment recipe, not
+a default routing change or a quality promotion. Review evidence and the
+outcome gate before using an adapter; enforce rental spend limits and verify
+teardown independently of token billing.
+
+### CI operations
+
+Contributor workflows now target the repository-restricted `router-arc` Actions
+Runner Controller scale set on DigitalOcean Kubernetes. Jobs use ephemeral
+single-use pods and must tolerate cold HOME/tool/cache state. The legacy
+`runner-cache-trim.yml` host-maintenance job remains separate. See the
+[ARC runner runbook](https://github.com/metrum-ai/router/blob/main/docs/ci-arc-runners.md)
+for caching and acceptance; this does not change serving-router deployment.
+
 ## Compatibility and operations (v4.2.0)
 
 ### Translation eligibility and beta policy

@@ -18,6 +18,7 @@ func TestTrainingAdminAuthorizationAuditAndMissingCapture(t *testing.T) {
 		t.Run(map[bool]string{false: "scoped_denied", true: "global_allowed"}[global], func(t *testing.T) {
 			dir := t.TempDir()
 			cfg := testConfig(t, "http://127.0.0.1:1", "unused", dir)
+			configureDocsSmokeCapacity(cfg)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 			cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 7}}
 			domain := "acme-support/test"

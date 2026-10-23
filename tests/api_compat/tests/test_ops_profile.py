@@ -195,13 +195,23 @@ callers:
   - id: ops-main
     token_sha256: {CALLER_DIGEST}
     allow: [chat, chat-fallback, chat-priced-fallback, chat-dead-first, chat-timeout, responses-fallback, messages-fallback, messages]
+    # Infrastructure-only local capacity shared across allowed groups.
+    rate: &local_rate {{rpm: 2400, tpm: 100000000, concurrent: 160}}
+    quota: &local_quota {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
+    key: &local_key {{lifetime_tokens: 40000000000}}
   - id: ops-other
     token_sha256: {OTHER_DIGEST}
     allow: [chat]
+    rate: *local_rate
+    quota: *local_quota
+    key: *local_key
   - id: ops-quota
     token_sha256: {QUOTA_DIGEST}
     allow: [chat, chat-timeout]
-    quota: {{day: {{tokens: {QUOTA_DAY_TOKENS}}}}}
+    rate: *local_rate
+    key: *local_key
+    # ADMISSION-LIMIT TEST EXCEPTION: only OPS-03 uses this boundary key.
+    quota: {{day: {{requests: 100000, tokens: {QUOTA_DAY_TOKENS}}}, month: {{tokens: 8000000000}}}}
 '''
 
 
@@ -904,6 +914,18 @@ def test_ops04_cache_and_reasoning_details_attribute_to_serving_target(ops_route
     row = usage_rows(db, headers["X-Request-Id"])[0]
     assert (row["cached_input_tokens"], row["reasoning_tokens"]) == (None, None)
     assert (row["target_model"], row["attempts"], row["fallback_used"]) == ("ops-p-primary", 1, 0)
+
+    # Reported zero is known evidence, unlike omitted fields above. The public
+    # reporting contract relies on this distinction when calculating coverage.
+    zero_usage = usage | {
+        "prompt_tokens_details": {"cached_tokens": 0},
+        "completion_tokens_details": {"reasoning_tokens": 0},
+    }
+    OpsUpstream.reset(lambda h, b: h.send_json(200, chat_ok(usage=zero_usage)))
+    code, headers, raw = call(base, "/v1/chat/completions", chat_body("chat-priced-fallback"))
+    assert code == 200, raw
+    row = usage_rows(db, headers["X-Request-Id"])[0]
+    assert (row["cached_input_tokens"], row["reasoning_tokens"]) == (0, 0)
 
     # Responses details map onto the same canonical columns.
     OpsUpstream.reset(

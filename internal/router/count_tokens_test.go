@@ -48,6 +48,7 @@ func TestCountTokensProxyUnbilled(t *testing.T) {
 	defer upstream.Close()
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
+	configureDocsSmokeCapacity(cfg)
 	cfg.Server.Identifiers = identifierTestConfig()
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Callers[0].Project = "local"
@@ -62,7 +63,8 @@ func TestCountTokensProxyUnbilled(t *testing.T) {
 	group.Targets[0].InputPricePerMillionUSD = 10
 	group.Targets[0].OutputPricePerMillionUSD = 20
 	cfg.Models["default"] = group
-	// Counting must not reserve against tiny token budgets, including a large
+	// ADMISSION-LIMIT TEST EXCEPTION: counting must not reserve against tiny
+	// token budgets. All unrelated limits retain the high smoke profile. A large
 	// compaction payload that would fail inference admission.
 	cfg.Callers[0].Rate.TPM = 1
 	cfg.Callers[0].Quota.Day.Tokens = 1
@@ -226,6 +228,7 @@ func TestCountTokensProviderCredentials(t *testing.T) {
 			}))
 			defer upstream.Close()
 			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+			configureDocsSmokeCapacity(cfg)
 			provider := cfg.Provider["mock"]
 			provider.Dialect = "anthropic"
 			provider.AuthScheme = scheme

@@ -96,6 +96,17 @@ Anthropic input counts are inclusive inside Metrum AI Router: uncached input + c
 
 Configure optional `cache_write_price_per_million_usd` on the catalog or target to price writes separately. Request rows snapshot this nullable price. Input cost is uncached at base price + reads at the known cached price (otherwise base) + writes at the known write price (otherwise base with `missing-cache-write-pricing-metadata`). A single configured write price applies to both TTLs; operators must provide appropriate request/target pricing for their cache policy, not assume all writes cost the read rate. Router response-cache hits clear inherited cache-read and cache-write evidence. Usage migration 2026102301 (schema v8) and config-control-plane migration 2026102301 (schema v7, separate scope) add nullable columns; no historical counts or write prices are invented.
 
+Usage migration `2026102303` (schema v10, dependent on v9) adds token subset
+sums, reported-request coverage, reasoning attempt counters and billed-cost
+partitions to hourly, daily and monthly aggregates. Existing rows retain their
+ordinary totals but default to zero known coverage/allocation evidence, not a
+historical reconstruction. Missing evidence after retention cannot be invented.
+Draft windows may be regenerated from raw rows; finalized windows remain
+immutable through the generator. See [Token breakdown and retained history](usage-token-breakdown.md)
+for exact API fields, savings composition, metrics and `history_source=rollup`
+limitations. Use reviewed complete closed UTC-day windows for daily history;
+request-level drilldown and Markdown exports remain raw-only.
+
 Usage rollups are generated from stored `request_usage` rows and also follow the scalar relational rule:
 
 - `usage_rollup_runs`: one row per generated hourly, daily, or monthly rollup window, with draft/finalized status, UTC source window, source table name, source request count, source min/max request timestamp, deterministic source checksum, aggregate row counts, decision-bucket row count, router version/commit, safe error text, and generation/finalization timestamps.

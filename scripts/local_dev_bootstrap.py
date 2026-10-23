@@ -132,7 +132,7 @@ def high_local_test_limits(text: str) -> str:
             continue
         if section and indent <= section_indent:
             section = period = ''
-        if stripped.strip() in ('rate:', 'quota:'):
+        if stripped.strip() in ('rate:', 'quota:', 'key:'):
             section = stripped.strip()[:-1]
             section_indent = indent
             continue
@@ -141,7 +141,8 @@ def high_local_test_limits(text: str) -> str:
         key = stripped.partition(':')[0]
         values = {'rpm': 100000, 'tpm': 100000000, 'concurrent': 256} if section == 'rate' else (
             {'requests': 10000000, 'tokens': 2000000000} if section == 'quota' and period == 'day' else
-            {'requests': 100000000, 'tokens': 20000000000} if section == 'quota' and period == 'month' else {})
+            {'requests': 100000000, 'tokens': 20000000000} if section == 'quota' and period == 'month' else
+            {'lifetime_tokens': 40000000000} if section == 'key' else {})
         if key in values:
             lines[index] = ' ' * indent + key + ': ' + str(values[key]) + '\n'
     return ''.join(lines)
