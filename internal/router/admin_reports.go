@@ -363,6 +363,8 @@ type adminSecurityEventRow struct {
 }
 
 type adminScalarReportRow struct {
+	SavingsAttribution
+	UsageTokenBreakdown
 	Key                                  string   `json:"key"`
 	SecondaryKey                         string   `json:"secondaryKey,omitempty"`
 	Status                               int      `json:"status,omitempty"`
@@ -609,6 +611,8 @@ func optionalRequestTokenEstimateRecord(rec requestTokenEstimateRecord, ok bool)
 }
 
 type adminSavingsRow struct {
+	SavingsAttribution
+	UsageTokenBreakdown
 	EstimatedRequests     int64   `json:"estimatedRequests"`
 	EstimatedInputTokens  int64   `json:"estimatedInputTokens"`
 	EstimatedOutputTokens int64   `json:"estimatedOutputTokens"`
@@ -630,6 +634,9 @@ type adminReportPeriod struct {
 }
 
 type adminReportSummary struct {
+	HistorySource string `json:"historySource"`
+	SavingsAttribution
+	UsageTokenBreakdown
 	EstimatedRequests           int64    `json:"estimatedRequests"`
 	EstimatedInputTokens        int64    `json:"estimatedInputTokens"`
 	EstimatedOutputTokens       int64    `json:"estimatedOutputTokens"`
@@ -678,6 +685,7 @@ type adminReportCache struct {
 }
 
 type adminReportSeries struct {
+	UsageTokenBreakdown
 	TimeUTC             string  `json:"timeUtc"`
 	Requests            int64   `json:"requests"`
 	Successes           int64   `json:"successes"`
@@ -755,6 +763,7 @@ type adminReportFilterDTO struct {
 }
 
 type adminReportTableRow struct {
+	UsageTokenBreakdown
 	Key           string  `json:"key"`
 	Requests      int64   `json:"requests"`
 	Errors        int64   `json:"errors"`
@@ -1511,6 +1520,15 @@ func (s *Service) handleAdminScalarEndpoint(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	filters.Sort = normalizeAdminAggregateSortOrDefault(filters.Sort, "")
+	if filters.RollupHistory {
+		resp, err := s.buildAdminScalarReportResponseSQL(filters, spec, baseline)
+		if err != nil {
+			s.writeAdminReportQueryFailed(w, r, spec.Report, "handleAdminScalarEndpoint", &filters, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
 	if adminScalarSpecCanUseSQLMultiAgg(spec) {
 		resp, err := s.buildAdminScalarMultiReportResponseSQL(filters, spec, baseline)
 		if err != nil {
@@ -1632,10 +1650,14 @@ func (s *Service) buildAdminScalarReportResponseSQL(filters adminReportFilters, 
 		return adminScalarReportResponse{}, err
 	}
 	resp := buildAdminScalarReportResponseFromAgg(filters, table, total, spec, baseline)
+	if filters.RollupHistory {
+		resp.Summary.HistorySource = "finalized_daily_rollups"
+	}
 	if baseline.BaselineID != "" {
 		actualCost := resp.Summary.TotalCostUSD
 		savings := totalBaselineCost - actualCost
 		savingsPct := ratioPctFloat(savings, totalBaselineCost)
+		resp.Summary.SavingsAttribution = savingsAttributionForUsage(resp.Summary.UsageTokenBreakdown, resp.Summary.Requests, totalBaselineCost, actualCost)
 		resp.Summary.ActualCostUSD = &actualCost
 		resp.Summary.BaselineCostUSD = &totalBaselineCost
 		resp.Summary.SavingsUSD = &savings
@@ -2489,6 +2511,15 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 		}
 		streamOnly = &parsed
 	}
+	var cachePresent *bool
+	if raw := strings.TrimSpace(q.Get("cache_present")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeInvalidReportFilter(w, "invalid cache_present")
+			return adminReportFilters{}, false
+		}
+		cachePresent = &parsed
+	}
 	var reasoningPresent *bool
 	if raw := strings.TrimSpace(q.Get("reasoning_present")); raw != "" {
 		parsed, err := strconv.ParseBool(raw)
@@ -2526,6 +2557,7 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 		InputTokensBucket:  strings.TrimSpace(q.Get("estimated_input_tokens_bucket")),
 		OutputCapBucket:    strings.TrimSpace(q.Get("output_cap_bucket")),
 		UsageSource:        strings.TrimSpace(q.Get("usage_source")),
+		CachePresent:       cachePresent,
 		ReasoningPresent:   reasoningPresent,
 		MultimodalOnly:     parseTruthy(q.Get("multimodal")),
 		RequestShapeFP:     strings.TrimSpace(q.Get("request_shape_fingerprint")),
@@ -2535,6 +2567,11 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 	if !global {
 		applyAdminDomainScope(&opts, subject.domain)
 	}
+	if err := configureRollupHistory(&opts, q, r.URL.Path, cleanAdminReportsPrefix(s.cfg.Server.AdminReports.PathPrefix)); err != nil {
+		writeJSON(w, 400, map[string]any{"error": map[string]string{"type": "invalid-report-filter", "message": err.Error()}})
+		return adminReportFilters{}, false
+	}
+	from, to = opts.From, opts.To
 	return adminReportFilters{
 		From:               from,
 		To:                 to,
@@ -2935,11 +2972,15 @@ func buildAdminReportResponseSQL(filters adminReportFilters, overview adminOverv
 		requests = append(requests, adminRequestFromRow(row))
 	}
 	summary := adminSummaryFromAgg(&total)
+	if filters.RollupHistory {
+		summary.HistorySource = "finalized_daily_rollups"
+	}
 	if baseline.BaselineID != "" {
 		actualCost := summary.TotalCostUSD
 		baselineCost := overview.Total.BaselineCostUSD
 		savings := baselineCost - actualCost
 		savingsPct := ratioPctFloat(savings, baselineCost)
+		summary.SavingsAttribution = savingsAttributionForUsage(summary.UsageTokenBreakdown, summary.Requests, baselineCost, actualCost)
 		summary.ActualCostUSD = &actualCost
 		summary.BaselineCostUSD = &baselineCost
 		summary.SavingsUSD = &savings
@@ -3675,6 +3716,7 @@ func adminSummaryWithSavings(summary adminReportSummary, table map[string]*admin
 	}
 	savings := baselineCost - actualCost
 	savingsPct := ratioPctFloat(savings, baselineCost)
+	summary.SavingsAttribution = savingsAttributionForUsage(summary.UsageTokenBreakdown, summary.Requests, baselineCost, actualCost)
 	summary.ActualCostUSD = &actualCost
 	summary.BaselineCostUSD = &baselineCost
 	summary.SavingsUSD = &savings
@@ -4623,7 +4665,13 @@ func (a *adminScalarAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
 func (a *adminScalarAgg) row() adminScalarReportRow {
 	cacheable := a.Agg.CacheHits + a.Agg.CacheMisses
 	savings := a.BaselineCostUSD - a.Agg.TotalCostUSD
+	attributionBaseline := a.Agg.RoutingListCostUSD
+	if a.HasBaseline {
+		attributionBaseline = a.BaselineCostUSD
+	}
 	row := adminScalarReportRow{
+		SavingsAttribution:                   savingsAttributionForUsage(a.Agg.UsageTokenBreakdown, a.Agg.Calls, attributionBaseline, a.Agg.TotalCostUSD),
+		UsageTokenBreakdown:                  a.Agg.UsageTokenBreakdown,
 		Key:                                  a.Key,
 		SecondaryKey:                         a.SecondaryKey,
 		Requests:                             a.Agg.Calls,
@@ -5129,6 +5177,9 @@ func adminChartSeriesFromRequestRows(name, unit, colorKey string, rows []adminRe
 }
 
 type adminSavingsAgg struct {
+	UndiscountedListCostUSD float64
+	CostListUSD             float64
+	UsageTokenBreakdown
 	EstimatedRequests     int64
 	EstimatedInputTokens  int64
 	EstimatedOutputTokens int64
@@ -5151,6 +5202,7 @@ func (a *adminSavingsAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
 	if row.RequestKind == "count_tokens" {
 		return
 	}
+	a.UsageTokenBreakdown.addUsage(row)
 	if row.UsageSource == "estimated" {
 		a.EstimatedRequests++
 		a.EstimatedInputTokens += int64(row.InputTokens)
@@ -5160,6 +5212,8 @@ func (a *adminSavingsAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
 	a.InputTokens += int64(row.InputTokens)
 	a.OutputTokens += int64(row.OutputTokens)
 	a.TotalTokens += int64(totalTokens(Usage{InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, TotalTokens: row.TotalTokens}))
+	a.UndiscountedListCostUSD += undiscountedUsageListCost(row)
+	a.CostListUSD += providerUsageListCost(row)
 	a.ActualCostUSD += row.TotalCostUSD
 	a.BaselineCostUSD += adminBaselineCost(row, baseline)
 }
@@ -5167,6 +5221,8 @@ func (a *adminSavingsAgg) add(row usageRow, baseline adminSavingsBaselineDTO) {
 func (a *adminSavingsAgg) row(key string) adminSavingsRow {
 	savings := a.BaselineCostUSD - a.ActualCostUSD
 	return adminSavingsRow{
+		UsageTokenBreakdown:   a.UsageTokenBreakdown,
+		SavingsAttribution:    savingsAttributionForUsage(a.UsageTokenBreakdown, a.Requests, a.BaselineCostUSD, a.ActualCostUSD),
 		EstimatedRequests:     a.EstimatedRequests,
 		EstimatedInputTokens:  a.EstimatedInputTokens,
 		EstimatedOutputTokens: a.EstimatedOutputTokens,
@@ -5268,6 +5324,9 @@ func addAdminAgg(m map[string]*agg, key string, row usageRow) {
 
 func adminSummaryFromAgg(a *agg) adminReportSummary {
 	return adminReportSummary{
+		HistorySource:               "raw",
+		SavingsAttribution:          savingsAttributionForUsage(a.UsageTokenBreakdown, a.Calls, a.RoutingListCostUSD, a.TotalCostUSD),
+		UsageTokenBreakdown:         a.UsageTokenBreakdown,
 		EstimatedRequests:           a.EstimatedRequestCount,
 		EstimatedInputTokens:        a.EstimatedInputTokens,
 		EstimatedOutputTokens:       a.EstimatedOutputTokens,
@@ -5317,7 +5376,7 @@ func adminRowsFromAgg(data map[string]*agg) []adminReportTableRow {
 	out := make([]adminReportTableRow, 0, len(data))
 	for _, key := range sortedAggKeys(data) {
 		a := data[key]
-		out = append(out, adminReportTableRow{Key: key, Requests: a.Calls, Errors: a.Errors, Tokens: a.TotalTokens, TotalTokens: a.TotalTokens, InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, CostUSD: a.TotalCostUSD, InputCostUSD: a.InputCostUSD, ImageCostUSD: a.ImageCostUSD, OutputCostUSD: a.OutputCostUSD, TotalCostUSD: a.TotalCostUSD, Attempts: a.Attempts, Fallbacks: a.Fallbacks, AvgLatencyMS: avg(a.LatencyMS, a.Calls), MaxLatencyMS: a.MaxLatencyMS})
+		out = append(out, adminReportTableRow{UsageTokenBreakdown: a.UsageTokenBreakdown, Key: key, Requests: a.Calls, Errors: a.Errors, Tokens: a.TotalTokens, TotalTokens: a.TotalTokens, InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, CostUSD: a.TotalCostUSD, InputCostUSD: a.InputCostUSD, ImageCostUSD: a.ImageCostUSD, OutputCostUSD: a.OutputCostUSD, TotalCostUSD: a.TotalCostUSD, Attempts: a.Attempts, Fallbacks: a.Fallbacks, AvgLatencyMS: avg(a.LatencyMS, a.Calls), MaxLatencyMS: a.MaxLatencyMS})
 	}
 	return out
 }
@@ -5327,7 +5386,7 @@ func adminRowsFromSQLRecords(records []tokenScalarAggRecord) []adminReportTableR
 	for _, rec := range records {
 		a := aggFromTokenScalarAggRecord(rec)
 		key := defaultString(rec.Key, "unknown")
-		out = append(out, adminReportTableRow{Key: key, Requests: a.Calls, Errors: a.Errors, Tokens: a.TotalTokens, TotalTokens: a.TotalTokens, InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, CostUSD: a.TotalCostUSD, InputCostUSD: a.InputCostUSD, ImageCostUSD: a.ImageCostUSD, OutputCostUSD: a.OutputCostUSD, TotalCostUSD: a.TotalCostUSD, Attempts: a.Attempts, Fallbacks: a.Fallbacks, AvgLatencyMS: avg(a.LatencyMS, a.Calls), MaxLatencyMS: a.MaxLatencyMS})
+		out = append(out, adminReportTableRow{UsageTokenBreakdown: a.UsageTokenBreakdown, Key: key, Requests: a.Calls, Errors: a.Errors, Tokens: a.TotalTokens, TotalTokens: a.TotalTokens, InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, CostUSD: a.TotalCostUSD, InputCostUSD: a.InputCostUSD, ImageCostUSD: a.ImageCostUSD, OutputCostUSD: a.OutputCostUSD, TotalCostUSD: a.TotalCostUSD, Attempts: a.Attempts, Fallbacks: a.Fallbacks, AvgLatencyMS: avg(a.LatencyMS, a.Calls), MaxLatencyMS: a.MaxLatencyMS})
 	}
 	return out
 }
@@ -5357,6 +5416,7 @@ func adminSeriesFromAggValue(key string, a agg, baselineCost float64, hasBaselin
 		successes = 0
 	}
 	row := adminReportSeries{
+		UsageTokenBreakdown: a.UsageTokenBreakdown,
 		TimeUTC:             key,
 		Requests:            a.Calls,
 		Successes:           successes,

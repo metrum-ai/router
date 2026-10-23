@@ -10,8 +10,10 @@ this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 
 The [AMD preparation runbook](amd/README.md) covers official `rocm/pytorch` and
 `rocm/vllm` planning, loopback-only serving, environment capture and two-step
-Axolotl smoke requirements for MI325X (#359). This path is **not hardware
-validated** and has no measured parity result. It requires #358's governed
+toolkit smoke requirements for MI325X (#359). Official ROCm tensor/base-tool
+proofs and a PEFT two-step smoke pass; full training/quality parity remains
+unmeasured. Pinned Axolotl dependency resolution failed; the documented
+Transformers/PEFT alternative keeps the frozen recipe. It requires #358's governed
 router-exported dataset, not the direct-download dataset below. See
 `docs/evidence/finetune-amd/2026-10-23/` for status and claim limits.
 
@@ -20,6 +22,62 @@ synthetic Acme/mock-tool technical test (#358), not general customer traffic.
 Record `teacher_terms_decision` in the export manifest and evidence. Users must
 choose a teacher whose model license and provider terms permit training on
 outputs, and verify those rights before enabling export for training.
+
+## 1. Industry problem: training is not safe production
+
+Fine-tunes rarely reach production safely: a public training corpus is not the
+customer's work; ungoverned agent traffic lacks consent and outcome labels;
+there may be no safe route back to the originating callers; evaluation may not
+match production tool continuations. Token price alone misses the cost of
+retries and failed tasks. Measure **cost per successful task**, retaining failures
+in the denominator, alongside quality, regressions and latency.
+
+## 2. Router-centric solution
+
+Serve the teacher → enable governed capture for one key/project only → attach
+outcome labels → audited canonical JSONL/manifest export with frozen time splits
+→ fine-tune externally → register the target in the **same `support-agent` group**
+with a key-scoped canary → replay router-captured fixtures through the router →
+let the preregistered gate decide promotion or rollback. See
+[`router-loop/README.md`](router-loop/README.md) for the two-key Acme harness,
+admin API, privacy/manifest contract and caller-bound script. Choose a teacher
+whose **license and provider terms permit training on outputs** and verify that
+before export. Our scoped synthetic technical-test decision is not customer-data
+permission. Public seed answers must not bypass governed capture into training.
+
+## 3. What we did: run 1 was rejected
+
+Run 1 used direct public data, not customer/router-captured training data. Its
+weighted candidate improved a narrow strict JSON-text extraction metric from
+4.5% to 32.0%, while wrapper validity fell from 99.5% to 42.5%. General regression
+checks failed: IFEval 81.5% → 63.5%; MMLU-Pro 60.5% → 13.0%. The gate rejected it;
+**base remains default**. These are formatting-sensitive results, not native
+API tool-selection quality or production ROI. See the evidence
+[`RESULTS.md`](../../docs/evidence/finetune/2026-10-23/RESULTS.md) for denominators,
+confidence intervals, weak judge calibration and hardware/cost limitations.
+Lesson: successful training, faster serving and one improved metric do not
+justify promotion; data/task mismatch and general regressions matter.
+
+## 4. What is accomplished, and what remains unmeasured
+
+The new router-loop engineering sample used a real Fireworks open-weight teacher
+under two keys: nine public task seeds per key, eight tool-result continuations
+and seven deterministic task successes per key. Capture enabled only for support;
+audited success-only export produced 2 train / 2 validation / 3 test rows, no IT
+rows. Same-group key+project routing was demonstrated with a **synthetic candidate
+stand-in**, not a trained fine-tune; a second support request hit its caller
+budget (429). Small-sample success is not a quality gate. At the observed public
+list prices and router token counts, each nine-task caller cohort cost an
+estimated $0.00210315, or $0.00030045 per successful task **including failed-task
+tokens**. These tiny-sample list-token estimates ignore cache discounts and are
+not invoices, hourly serving economics or production ROI. See
+[`router-loop-sample.json`](../../docs/evidence/finetune/2026-10-23/router-loop-sample.json).
+
+Still pending: useful-sized governed training cohort, trained-target canary,
+frozen held-out candidate/teacher/base replay, comparable latency distributions
+and measured production cost per successful task. No positive run-2 outcome or
+promotion is implied. The run-1 reproduction instructions below remain historical
+and are not a direct-download training fallback for the router-centric run 2.
 
 ## Pins and rights
 
