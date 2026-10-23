@@ -205,6 +205,7 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 	files := map[string]*bytes.Buffer{"train.jsonl": {}, "val.jsonl": {}, "test.jsonl": {}}
 	counts := map[string]int{}
 	seen := map[string]bool{}
+	toolCounts := map[string]int{"identical_declarations_removed": 0, "rows_with_identical_duplicates": 0, "conflicting_rows_rejected": 0, "invalid_rows_rejected": 0}
 	taskSplit := map[string]string{}
 	for _, u := range usages {
 		ts, err := time.Parse(time.RFC3339Nano, u.TS)
@@ -287,9 +288,14 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 			}
 		}
 		messages = append(messages, last)
-		tools := request["tools"]
-		if tools == nil {
-			tools = []any{}
+		tools, removed, toolErr := trainingTools(request["tools"])
+		if toolErr != nil {
+			if errors.Is(toolErr, errConflictingTrainingTools) {
+				toolCounts["conflicting_rows_rejected"]++
+			} else {
+				toolCounts["invalid_rows_rejected"]++
+			}
+			continue
 		}
 		canonical, _ := json.Marshal(map[string]any{"messages": messages, "tools": tools})
 		// Export-only filtering never restores PII. Filter parsed string leaves so
@@ -297,6 +303,22 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		var transcript any
 		json.Unmarshal(canonical, &transcript)
 		transcript = trainingPrivacy(transcript)
+		// Redaction can also collapse names; recheck before hashing/emission.
+		cleanTools, extraRemoved, toolErr := trainingTools(transcript.(map[string]any)["tools"])
+		if toolErr != nil {
+			if errors.Is(toolErr, errConflictingTrainingTools) {
+				toolCounts["conflicting_rows_rejected"]++
+			} else {
+				toolCounts["invalid_rows_rejected"]++
+			}
+			continue
+		}
+		transcript.(map[string]any)["tools"] = cleanTools
+		removed += extraRemoved
+		toolCounts["identical_declarations_removed"] += removed
+		if removed > 0 {
+			toolCounts["rows_with_identical_duplicates"]++
+		}
 		canonical, _ = json.Marshal(transcript)
 		hash := trainingHash(canonical)
 		if seen[hash] {
@@ -340,6 +362,7 @@ func (s *Service) buildTrainingArchive(f trainingFilters, auditID uint) ([]byte,
 		counts[split]++
 	}
 	manifest := map[string]any{"format": "metrum-router-ft-export-v1", "chat_format": "router-chat-tools-v1", "audit_event_id": auditID, "teacher_terms_decision": f.TeacherTermsDecision, "task_source": f.TaskSource, "source": map[string]string{"kind": "router_capture"}, "filters": f, "privacy": map[string]any{"redaction_preserved": true, "pii_filter": "export-email-phone-v1", "headers_exported": false}, "files": map[string]any{}}
+	manifest["tool_declarations"] = map[string]any{"policy": "first-identical-declaration-wins; reject ambiguous/invalid rows before hashing", "count_scope": "eligible candidate rows before content dedupe", "counts": toolCounts}
 	manifest["outcome_filter_scope"] = "train,val only; heldout retains labeled teacher failures"
 	manifest["split_boundaries"] = map[string]any{"from": f.From, "validation_from": f.ValidationFrom, "test_from": f.TestFrom, "to": f.To}
 	manifest["audit_event_ref"] = map[string]any{"table": "security_access_events", "id": auditID}
