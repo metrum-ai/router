@@ -3,6 +3,45 @@
 
 # Fine-tune Qwen3.8-27B and govern it with Metrum AI Router
 
+## AMD Instinct — NVIDIA/AMD merged comparison (Refs #359)
+
+Original NVIDIA LoRA **FAIL** (+0.5pp exact gain <required+10pp) and AMD **FAIL**
+stand; this supplemental BF16 safe-merged comparison cannot rescue either gate.
+Same base/export/recipe, independently trained adapters: NVIDIA RTX PRO6000
+Blackwell96GB/Axolotl/CUDA vs AMD MI325X VF256GB/Transformers-PEFT/ROCm reference.
+Different toolkits/kernels/versions, hosts, timing scopes and nonbinding caller
+capacities confound pure hardware causal claims. AMD PR369 evidence is pinned to
+main666aa4c55320c78275a32e5a77855a7c8702e802; source hashes and full caveats in
+[NVIDIA/AMD comparison](../../docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md).
+
+| Measurement | NVIDIA merged | AMD merged | Caveat |
+| --- | ---: | ---: | --- |
+| JSON-text exact tools200 |5/200|7/200|−1pp, original endpoint unchanged |
+| IFEval200 / MMLU-Pro200 |170 /124|164 /124|+3pp /0pp |
+| Native tools200 / all300 |180 /264|180 /262|General completion NOT semantic accuracy |
+| Fixed75step training wrapper |892.894s|1214.947s|Different toolkit/timer scope |
+| Training inputtok/s |887.776|652.448|NVIDIA count derived from exact input/template audit |
+| Primary combined / semantic subset |83/300 /78/100|81/300 /74/100|Whole authorized semantic infrastructure repair |
+| Semantic seeds326/327/328,100each |77 /76 /80|81 /79 /73|SAME100tasks repeated, not300independent |
+| Outputtok/s c1/8/32 |25.874 /194.144 /658.473|70.533 /395.608 /1400.613|32request128cap SSE profiles,0errors, not sustained capacity |
+| Quoted USD/M OUTPUT c1/8/32 |23.51155 /3.13341 /.92385|14.96542 /2.66819 /.75364|Full utilization at2.19vs3.80USD/h, not invoice |
+| Native whole300window quote/success |$.00142097|$.00129650|Failures/idle included; NOT lifecycle/semantic ROI |
+
+Original400NVIDIA grader pre-route400failures remain archived infrastructure,
+not model degradation. Empty legacy `modalities: []` overrode text capability;
+fixed to text, one successful authenticated grader proof before batch. Signed
+cfbdb3f1a4 amendment preceded **800/800HTTP200valid rubric calls** (400per arm) on
+exact recorded outputs with unchanged grader/model/rubric/prompts, no generation,
+borrowing, normalization, selective redo, GPU or vendor rental. New API estimate
+$2.881055 including proof, not invoice/ROI; CPU router/token removed.
+[Repair receipt](../../docs/evidence/finetune/2026-10-23-run2/semantic-step-repair.json).
+Exact prompt/vars/assertion task hashes supply new semantic pairs: primary delta
++.67pp paired95%CI[−1.67,+3]pp; seeds−4/−3/+7pp CI[−12,+4]/[−11,+5]/[−1,+15]pp,
+10000bootstrap seed326. Other AMD aggregate endpoints do not justify invented
+paired CIs. Original gate FAIL unchanged; strictJSON/rollback502 controls still
+failed/incomplete, no promotion. All GPU/dedicated resources API-deleted.
+
+
 Work in progress for #326. Do not infer training completion or promotion from
 this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 

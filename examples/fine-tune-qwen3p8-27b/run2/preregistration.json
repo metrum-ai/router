@@ -1,0 +1,309 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "frozen",
+  "protocol": "metrum-qwen3p8-router-traces-run2-20261023-v1",
+  "frozen_at_utc": "2026-10-23T17:15:06.086578+00:00",
+  "before_gpu_rental_training_and_new_heldout_inference": true,
+  "selection": "one fixed recipe; final adapter after one epoch; no checkpoint/hyperparameter selection on old or new heldout outcomes",
+  "qualification_infrastructure_amendment": {
+    "parent_registration_sha256": "96f851a75b967b54a3ff0a942ab9e7707a211a9863e964db33172c714c4e5326",
+    "reason": "Base replay aborted on existing duplicate tool declaration before any score/comparison review; 74 persisted episodes and all attempted costs retained privately, excluded from qualification summaries. No candidate/teacher qualification ran.",
+    "scope": "Complete frozen 300-case cohorts restarted after metadata-only case-failure handling. Duplicate/invalid declarations fail ALL arms unchanged, no dispatch, no task replacement/filtering/schema normalization. HTTP error request IDs retained; unknown cost remains null. SDK no-redirect relay added before any SDK qualification.",
+    "source_schema_audit": {"train_duplicate_declarations": 2, "val_duplicate_declarations": 0, "test_duplicate_declarations": 1, "other_invalid_schemas": 0},
+    "training_registration_unchanged": "Final fixed 75-step adapter already trained under parent96f851a7; no retraining/selection/data/recipe/model/scorer/numeric gate changes. Initial registration timing remains historical; this amendment is before restart and score review."
+  },
+  "model": "Qwen/Qwen3.8-27B",
+  "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "chat_template": {
+    "mode": "tokenizer_default",
+    "sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+    "enable_thinking": false,
+    "generation_suffix": "<|im_start|>assistant\n<think>\n\n</think>\n\n",
+    "unchanged_from_base": true
+  },
+  "recipe": {
+    "epochs": 1,
+    "learning_rate": 1e-05,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "targets": [
+      "q_proj",
+      "v_proj",
+      "linear_attn.in_proj_qkv",
+      "linear_attn.out_proj"
+    ],
+    "bf16": true,
+    "effective_batch": 16,
+    "sequence_cap": 8192,
+    "tf32": false,
+    "attention": "sdpa",
+    "micro_batch_size": 1,
+    "gradient_accumulation_steps": 16,
+    "seed": 355,
+    "packing": false,
+    "quantization": false,
+    "dropout": 0,
+    "recipe_yaml_sha256": "0f49ad81152f909b8df709667d970f7b406aeeda6cde6b07393a90abc3738075"
+  },
+  "datasets": {
+    "source": {
+      "kind": "router_capture",
+      "export_id": "34dbfa6a59e0e527854329eda98539b135ee13dbaec6dbac6f08d681d763735b"
+    },
+    "router_export_manifest_sha256": "a7e7d40fc892c58a85b94e9efff19324f7063ad8597d099a860bbfb6188f703d",
+    "teacher_terms_decision": {
+      "decision": "Maintainer authorized synthetic technical loop test, illustrative Acme scenario and deterministic mock tools; not real customer outputs.",
+      "model_license": "Apache-2.0",
+      "model_license_sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+      "reference": "https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842",
+      "scope": "This example only; users must independently verify license and provider output-training permission.",
+      "teacher": "accounts/fireworks/models/gpt-oss-120b",
+      "terms_sha256": "78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30",
+      "terms_url": "https://fireworks.ai/terms-of-service",
+      "training_outputs_allowed": "true"
+    },
+    "sha256": {
+      "train": "556bb4eaf575fc18dfdedd0bf530659233165df077212ba961e02e049ee1879c",
+      "val": "f8815d0604f189ed0d91a9a8da83d196179020578663b16dddb4ea2cddce7864",
+      "test": "66aca0246fd02da4a4c9da5daba169cc67472cbfac7ffe073edee13b9f6e494b"
+    },
+    "axolotl_view_sha256": {
+      "train": "483d4c35b0cfbe9befce60243a278afba1f71307765869ca2b4bfc61eaf1b5c4",
+      "val": "5afb69cc318b1540c8ba3aff5d6d1290608123e1147bbf90cf674cce869c2442"
+    },
+    "counts": {
+      "train": 1186,
+      "val": 221,
+      "test": 300
+    },
+    "contract_status": "consumer-compatible PR361 engineering schema; full cohort and new shared preregistration required",
+    "training_authorized": true,
+    "dataset_hash": "6c437067adf7f1e86da86c386cf6e3ecfabea87b6700f52d95e9aeb3717fea7d",
+    "export_sha256": {
+      "train": "9f1ad7109b6615893400c2002736ae2f468476f1148a3f12199c590cdee02315",
+      "val": "9b6c4a00b41d7c61541f7e1dc775db2bbd89d1059f696988cf57a9605bd9c6f2",
+      "test": "9892928037fcf90685ed5f87d3d9567286bfb1c48d0c7ff476bd461cb2a7e82d"
+    }
+  },
+  "dataset_manifest_sha256": "c0b541abab718aa9fc3f1b936934c2965e4bcf85b33acda32c79fae85bf8d836",
+  "precheck_cases_sha256": "e0abee547263781702abca597d4647a0fd4966be8e14c91c0ec30c41d6a686d1",
+  "precheck": "five template/token cases, twelve disjoint development letter probes; base format12/12 before gradients; actual full Axolotl cache inputs must match base HF rendering; candidate diagnostics do not replace full promotion gate",
+  "promotion_rules": {
+    "tool_exact_gain_pp_at_least": 10,
+    "ifeval_regression_pp_at_most": 2,
+    "mmlu_pro_regression_pp_at_most": 2,
+    "max_overall_pass_rate_regression": 0,
+    "max_error_rate_increase": 0,
+    "max_p95_latency_ratio": 1.25,
+    "required_tool_denominator": 200
+  },
+  "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6",
+  "shared_scalar_gate_sha256": "858ec0048d88ba2b2f335f6b8aebacf44a8c15c7e5efa8fde2e8523a8907761e",
+  "arms": [
+    "base",
+    "teacher",
+    "nvidia_onprem",
+    "nvidia_fireworks",
+    "nvidia_weighted",
+    "amd_onprem"
+  ],
+  "inference": {
+    "temperature": 0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "max_output_tokens": 2048,
+    "concurrency": 16,
+    "enable_thinking": false,
+    "judge": "gpt-4o-2024-11-20",
+    "judge_temperature": 0,
+    "judge_max_tokens": 256
+  },
+  "sampling": {
+    "cases": "same100 captured non-tool source-gold tasks (75general/25letter)",
+    "temperature": 0.7,
+    "nominal_seeds": [
+      326,
+      327,
+      328
+    ],
+    "not_independent_case_count": 300,
+    "top_p": 0.95,
+    "top_k": 20,
+    "max_tokens": 2048,
+    "concurrency": 16
+  },
+  "budget": {
+    "gpu_hard_cap_usd": 150,
+    "operational_stop_usd": 120,
+    "maximum_standalone_hours": 4,
+    "expected_standalone_usd_hour": 2.19,
+    "maximum_vendor_deployment_hours": 2,
+    "expected_vendor_usd_hour": 30,
+    "judge_reservation_usd": 10,
+    "known_planned_reservation_usd": 78.76,
+    "independent_watchdogs_and_api_verified_teardown_required": true,
+    "collection_teacher_upper_estimate_usd": 4.2700044,
+    "collection_cap_usd": 20,
+    "reserved_other_usd": 70
+  },
+  "images": {
+    "axolotl": "axolotlai/axolotl@sha256:26a660139e62125256473dce660087786d68e23411c7013339deffa4141a8631",
+    "vllm": "vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34"
+  },
+  "code_sha256": {
+    "config.qwen3p8-ft.example.yaml": "c3f6b279513d90b186245ccc3703159a9e98945d67c61eb4122fd05ac68b8a86",
+    "eval/build_tests.py": "442e6f9331333f7f0901b32b31300893b49f5979ed8558cbd14215226db3037f",
+    "eval/outcome.py": "6e0fe1a40db9c56a696df5ec3036c83b7f9736e9b2c3f213a1c7510350c609cb",
+    "eval/promptfooconfig.yaml": "96663699b7511ee250a3402463fc2f7c2e88a51985fad4cb3dfcb5c3fdf344a0",
+    "eval/run_eval.py": "93d47a70d8769ecd340ae94e85ecb1dd71e7bde629c244b467057db7c52b0a99",
+    "eval/scorers/ifeval.py": "779cf0885b3f5c3ad574f39209a4cc59adad0a231bfc2f7ca76261584e049f6f",
+    "eval/scorers/tools.py": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6",
+    "eval/summarize.py": "69f8d558b453102b860f58cab6e6902443c01110475fa72e6e42572f0a43bb63",
+    "eval/telemetry.cjs": "71f74e233e14e6e85a7ff7d2bdaf435d42b5cbfea71ef25c1547b0454b79e5e2",
+    "fireworks/run.py": "9779bb599ea32a3c55d0b25621be0d7e32b57713c37b20a40f44b1b3c0c2186e",
+    "prepare_data.py": "a9cbf5a53da001ac3361985c4c5aae0b960839ec9fd869272420359851496357",
+    "router-loop/backend.py": "960b86909d37fd13f3084d3f1481908f8a6306214d573864fdd45503a8f51dd2",
+    "run2/audit_prepared.py": "a38715bba1a9f3528c57db9c27db32e38199131f9799685d16692f61e33f7d17",
+    "run2/axolotl.yaml": "0f49ad81152f909b8df709667d970f7b406aeeda6cde6b07393a90abc3738075",
+    "run2/data.py": "0de5778bc4b350187dde94a3e8f8d68d9caa433b249adfda171ce538eb311de1",
+    "run2/precheck.py": "c8e0b4e31d996b88658586335994043bae28762354e3588b9c9585436afa44df",
+    "run2/project_eval.py": "923b897e0b4c48ac0e78af7af16ccf0940abfccc86a76bf75f180618950a587e",
+    "run2/readiness.py": "2858d21d5d8800d782ee33965b250747932802415c3eec347da1489770da6a19",
+    "run2/reconcile_replay.py": "cb46c57d8b61bbedbbcde6feeb81cd9497e15a469186af11710aff4490ea0c71",
+    "run2/replay.py": "37c24ae79b946fba7d56114bef8fe24a667e353fe58160545ad924fe96a4d0f6",
+    "run2/router_export.py": "aeb98d0cd409e281aa84833b674545690f0ce6f090d5b260cd29118a4490ba41",
+    "run2/run_replay.py": "459b8e67b2b0d13f82ea6b6ab5b2b8254bd4ddedda76ecdc42e37a8713697dde",
+    "run2/scalar-preregistration.json": "6c31182a8b95ff09aa7db85947a2d9452538dcd249f2ca5db8529c71863674b1",
+    "run2/template_check.py": "7f0ed054dbc6c70f439d4a2490b8245402f28d497c91139e256456bbc283d20e",
+    "schema.json": "2a06ea58ccd62a45a8d9d127122211c25220731f85b20a08d6d81039109403d7",
+    "serve/run.sh": "05174fb1a5d6d538fbb50c990a4de4e7ba108b23b3530c0dd2cdf5f0ba2ec65d",
+    "standalone/download_model.py": "a97e9b04852ea227d3b86145d2960209a3e9af06f598889fc08c6f403acbf6b3",
+    "standalone/inventory.py": "ed50e8af66a02e7dd9bdca58a702269bc0503f4b1426135b6fa4e06f0c0bd6cf",
+    "standalone/merge.py": "5167c1686db9aa42f037d9b38a737d84cf849641aa488f70e169ec814f9ba9aa",
+    "standalone/render.py": "6d7cac1a1ffd119a8a6b0056e426fe1fb253c59d7c65ebf8bae2873c47fe6e4f",
+    "standalone/run.sh": "f724db7dc9e0f871e0811bbeed63c4c6f05d5baf4118f0b5fa3cc771be8e453a"
+  },
+  "limits": [
+    "historical public judge calibration60% CI46-74%, weak not domain validation",
+    "same adapter, provider base-byte equivalence unverified",
+    "fresh to this experiment; public source may occur in base pretraining",
+    "all objective failures/absent responses retained; no posthoc normalization; no regression tests routed to base"
+  ],
+  "router_export_contract_confirmed": true,
+  "teacher_terms_decision": {
+    "decision": "Maintainer authorized synthetic technical loop test, illustrative Acme scenario and deterministic mock tools; not real customer outputs.",
+    "model_license": "Apache-2.0",
+    "model_license_sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+    "reference": "https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842",
+    "scope": "This example only; users must independently verify license and provider output-training permission.",
+    "teacher": "accounts/fireworks/models/gpt-oss-120b",
+    "terms_sha256": "78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30",
+    "terms_url": "https://fireworks.ai/terms-of-service",
+    "training_outputs_allowed": "true"
+  },
+  "selected_plan_sha256": "c09c7dae48b08798c9607e1a59cc7e4a185ea2cb3481da7a7b68d85d2e99ff47",
+  "heldout_gold_sha256": "6c2413ecf4dd5455b6a63b382ef3a8e11a0da57dd8608fceabd0b5359f548e19",
+  "replay_backend_sha256": "960b86909d37fd13f3084d3f1481908f8a6306214d573864fdd45503a8f51dd2",
+  "jsonschema_version": "4.26.0",
+  "model_group": "support-agent",
+  "max_agent_turns": 8,
+  "replay_concurrency": 8,
+  "request_parameters": {
+    "candidate": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "base": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "nvidia_onprem": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "nvidia_fireworks": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "nvidia_weighted": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "amd_onprem": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048,
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      }
+    },
+    "teacher": {
+      "temperature": 0,
+      "top_p": 0.95,
+      "top_k": 20,
+      "max_tokens": 2048
+    }
+  },
+  "teacher": "accounts/fireworks/models/gpt-oss-120b",
+  "teacher_thinking": "disable-thinking unsupported; final content only; no reasoning_content labels",
+  "endpoint_mapping": {
+    "auxiliary_original_gate": "300 source-gold projected tasks:200 JSON-text exact tools +75 reference rubric general +25 computed-reference rubric letters. project_eval.py -> unchanged build_tests.py and tools.py. Source oracle, NEVER recorded teacher outputs.",
+    "native": "300 exported initial-message tasks, NEW tools/results against reset backend.200 ordered calls/schema/stop-nonempty-final;25 exact letter;75 completion-only, NOT semantic correctness. Report strata separately; aggregate cost success is harness-defined, not business-semantic success.",
+    "privacy_oracles": "Exactly2 of200 native expected_calls are export-policy masked vs private licensed source gold. Native uses exported masked descriptors/initial inputs UNCHANGED; auxiliary JSON-text/semantic uses private source initial inputs and source gold UNCHANGED. No restoration into training; no rewriting provenance; report representation difference, not interchangeable endpoint scores.",
+    "gate": "Original numeric/general rules unchanged, per FT arm vs corresponding Qwen base; teacher separately compared. Additional native harness success must not regress vs base, strata visible. Missing arm/cohort/cost ->incomplete, never promote. Historical teacher collection failures98 remain in300 native cohort; teacher replay NEW after freeze."
+  },
+  "heldout_projection_sha256": "887f0c014574bac27568124290e4e9c7d04a147eebeeea114f5f7aceb4924027",
+  "fresh_regressions": {
+    "sha256": "ad137088f4be9bb8a1de165306267aa8671a3af3c83a63d913be45c9b8b43c2c",
+    "ifeval": 200,
+    "mmlu_pro": 200,
+    "status": "fresh unconsumed R2 public benchmarks; NOT direct training labels"
+  },
+  "comparisons": {
+    "pairing": "identical task hashes per arm, complete cohorts/errors retained; paired bootstrap10000 resamples seed326,95% percentile CIs; no best arm selection",
+    "shared_reference": "reuse teacher/base only if identical frozen task representation/request params/runtime target and artifact hashes; otherwise separately identify hardware-specific base",
+    "routing": "same support-agent group, distinct per-arm caller-bound targets verified by usage IDs. Non-canary callers stay teacher. No hidden routing regressions to base.",
+    "cost": "all attempted request costs including failures / harness successes. Missing/unknown cost or zero successes null; authenticated IDs and full cohort required. Separate native strata and auxiliary metric. Include hourly serving/training/startup/lifecycle separately, never invoice/quality-equivalent ROI."
+  },
+  "platform_variance": "Same export, views, model/template, recipe, endpoints and seeds. CUDA vs ROCm image/driver/kernel/launcher only. Official ROCm image/install lock recorded by AMD before gradients; no retuning. Infrastructure-only source/transport/runtime amendments require signed hash envelope BEFORE qualification inference, retain this immutable data/recipe/gate registration.",
+  "infrastructure_amendments": [
+    {
+      "at": "2026-10-23T17:32:16.036659+00:00",
+      "parent_registration_sha256": "42eb694e24e79756bf809d1ddaefdaec1ab0177e7692c80f52eef3279a776d92",
+      "reason": "Actual remote Transformers5.20 apply_chat_template(tokenize=True) returns BatchEncoding by default. Extract input_ids rather than slicing/hashing mapping keys. Actual unmodified base exact token-prefix equality already verified for all5fixtures; no template, data, recipe, model parameters, output normalization or endpoint/gate change. No gradients or qualification inference before amendment.",
+      "exact_prefix_token_counts": [
+        22,
+        22,
+        22,
+        276,
+        321
+      ]
+    }
+  ]
+}

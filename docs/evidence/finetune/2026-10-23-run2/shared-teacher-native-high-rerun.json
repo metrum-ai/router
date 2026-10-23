@@ -1,0 +1,107 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "whole300_teacher_native_rerun_completed_once",
+  "amendment_sha256": "6f8d210b3c18feffbe9bd590fa9b31521af41035cce0993c7a0f69aa5abef867",
+  "signed_commit": "84942f7394d8a585d22b5b634cd50ef2274ac521",
+  "scope": "CPU-only localhost router on gyrados; same support-agent group, authenticated fresh acme-support caller -> exact same Fireworks teacher. No GPU/rental/deployment provisioning. All300 including schema failure, exact original tasks/prompts/model/requestparams/scorer/backend/gates; no retries/filter/refill/normalization. Teacher-only rerun does not overturn candidate-vs-base verdicts; AMD FAIL stands.",
+  "degraded": {
+    "tasks": 300,
+    "transport_errors": 227,
+    "pre_route_rpm_exceeded_episodes": 227,
+    "harness_successes": 52,
+    "records_sha256": "6c007676a4c11194c85d703af82aaa083bfa7b9a8d4ac487dc63574ad3271e67",
+    "classification": "INFRASTRUCTURE FAILURE; teacher comparison and teacher cost-per-successful-task UNUSABLE; archived full raw metadata/costs outsideGit, not teacher capability evidence",
+    "cost_per_successful_task_usd": null
+  },
+  "rerun": {
+    "all": {
+      "tasks": 300,
+      "harness_successes": 226,
+      "success_rate": 0.7533333333333333,
+      "success_ci95_bootstrap10000_seed326": [
+        0.7033333333333334,
+        0.8
+      ],
+      "transport_errors": 0,
+      "input_schema_failures": 1,
+      "router_cost_complete": true,
+      "authenticated_configured_token_price_estimate_usd_including_failed_attempts": 0.10989225,
+      "cost_per_harness_successful_task_usd": 0.0004862488938053097
+    },
+    "native_tool": {
+      "tasks": 200,
+      "harness_successes": 151,
+      "success_rate": 0.755,
+      "success_ci95_bootstrap10000_seed326": [
+        0.695,
+        0.815
+      ],
+      "transport_errors": 0,
+      "input_schema_failures": 1,
+      "router_cost_complete": true,
+      "authenticated_configured_token_price_estimate_usd_including_failed_attempts": 0.0436881,
+      "cost_per_harness_successful_task_usd": 0.0002893251655629139
+    },
+    "general_completion": {
+      "tasks": 75,
+      "harness_successes": 50,
+      "success_rate": 0.6666666666666666,
+      "success_ci95_bootstrap10000_seed326": [
+        0.56,
+        0.7733333333333333
+      ],
+      "transport_errors": 0,
+      "input_schema_failures": 0,
+      "router_cost_complete": true,
+      "authenticated_configured_token_price_estimate_usd_including_failed_attempts": 0.06505230000000001,
+      "cost_per_harness_successful_task_usd": 0.0013010460000000001
+    },
+    "letter": {
+      "tasks": 25,
+      "harness_successes": 25,
+      "success_rate": 1.0,
+      "success_ci95_bootstrap10000_seed326": [
+        1.0,
+        1.0
+      ],
+      "transport_errors": 0,
+      "input_schema_failures": 0,
+      "router_cost_complete": true,
+      "authenticated_configured_token_price_estimate_usd_including_failed_attempts": 0.00115185,
+      "cost_per_harness_successful_task_usd": 4.6074e-05
+    }
+  },
+  "window": {
+    "start": "2026-10-23T19:17:35.175119+00:00",
+    "wall_seconds": 106.14468536304776,
+    "exit_code": 0,
+    "amendment_sha256": "6f8d210b3c18feffbe9bd590fa9b31521af41035cce0993c7a0f69aa5abef867",
+    "whole_arm_once": true,
+    "candidate_gate_verdict_unchanged": true
+  },
+  "raw_outputs_or_request_joins_published": false,
+  "promotion_decision": null,
+  "authentication_join": {
+    "attempts": 488,
+    "joined": 488,
+    "same_teacher_target": 488,
+    "http200": 488,
+    "pre_route429": 0,
+    "upstream429": 0,
+    "engineering_new_file_new_nonce_receipt_continuation_passed": true,
+    "engineering_requests": 2,
+    "engineering_price_estimate_usd": 0.00012255,
+    "all_api_estimate_usd_including_engineering": 0.1100148,
+    "ledger_private_sha256": "c6fba6d0a81533b9a8184af84ac6d265277c473945fc871058f40d906e8a384d"
+  },
+  "limits": {
+    "rpm": 10000,
+    "tpm": 1000000000,
+    "concurrent": 128,
+    "day_month_requests": 1000000,
+    "day_month_tokens": 1000000000,
+    "actual_native_dispatch_concurrency": 8,
+    "max_turns": 8
+  },
+  "caveats": "General completion is NOT semantic correctness. Letter backend compares expected_final after surrounding whitespace strip; unchanged frozen checker, no new raw-format scoring. Tool technical success is the frozen isolated mock-tool oracle, not customer resolution. Costs are configured0.15input/0.60outputUSD perM router token estimates including failed native attempts, NOT invoices, full lifecycle/training/grading/idle economics or quality-equivalent ROI. Proven input-schema failure with no dispatch has zero API dispatch cost, never an unknown billed request made free."
+}

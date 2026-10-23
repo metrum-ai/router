@@ -49,11 +49,13 @@ def main():
     p.add_argument('--base', required=True)
     p.add_argument('--candidate', required=True)
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--preregistration', type=Path, default=Path(__file__).with_name('preregistration.json'),
+                   help='scalar registration; run2 changes protocol identity, not numerical thresholds')
     a = p.parse_args()
     try:
         quality, ifeval, mmlu = [json.loads(path.read_text()) for path in [a.quality,a.ifeval,a.mmlu]]
         failures = additional_failures(quality, ifeval, mmlu, a.base, a.candidate)
-        prereg = json.loads(Path(__file__).with_name('preregistration.json').read_text())
+        prereg = json.loads(a.preregistration.read_text())
         arms = []
         for role, provider, model in [('fixed_model',a.base,prereg['fixed_model_id']),('candidate',a.candidate,prereg['candidate_id'])]:
             summary = quality['providers'][provider]
@@ -65,7 +67,7 @@ def main():
         scalar_output = a.out.with_suffix('.scalar-gate.json')
         result_path.write_text(json.dumps({'schema_version':prereg['schema_version'],'preregistration_id':prereg['preregistration_id'],'arms':arms},indent=2))
         process = subprocess.run([sys.executable,str(ROOT/'scripts/fixed_model_outcome_gate.py'),
-            '--preregistration',str(Path(__file__).with_name('preregistration.json')),
+            '--preregistration',str(a.preregistration),
             '--results',str(result_path),'--out',str(scalar_output)],check=False)
         if process.returncode == 2:
             return 2

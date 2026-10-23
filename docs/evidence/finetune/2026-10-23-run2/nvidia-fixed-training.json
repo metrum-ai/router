@@ -1,0 +1,46 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "fixed_training_completed_qualification_pending",
+  "training_registration_sha256": "96f851a75b967b54a3ff0a942ab9e7707a211a9863e964db33172c714c4e5326",
+  "qualification_registration_sha256": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+  "dataset_hash": "6c437067adf7f1e86da86c386cf6e3ecfabea87b6700f52d95e9aeb3717fea7d",
+  "export_manifest_file_sha256": "a7e7d40fc892c58a85b94e9efff19324f7063ad8597d099a860bbfb6188f703d",
+  "recipe_yaml_sha256": "0f49ad81152f909b8df709667d970f7b406aeeda6cde6b07393a90abc3738075",
+  "base_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "gpu": "RTX PRO 6000 Blackwell Server Edition",
+  "driver": "580.126.09",
+  "smoke": {"optimizer_steps": 2, "wrapper_seconds": 87.7734101539827, "candidate": false},
+  "final": {
+    "epochs": 1,
+    "optimizer_steps": 75,
+    "wrapper_seconds": 892.8943054859992,
+    "trainer_runtime_seconds_rounded_log": 852.4,
+    "trainer_train_loss_rounded_log": 0.6644,
+    "selection": "fixed final one-epoch adapter, never selected by validation/heldout results",
+    "adapter_sha256": "31c622a160277fb1e3b17c357a16befb52c24c49b3cf52e307a981c15b36be2d",
+    "adapter_config_sha256": "2dfb8ba64aa49b8ce8f3698ecd807a6fc6903159c4c31e29c219eb7c86424398",
+    "rank": 8, "alpha": 16, "tensors": 256, "parameters": 13238272,
+    "saved_dtype": "F32", "compute_dtype": "BF16", "tf32": false,
+    "verified_no_vision_mlp_lmhead_updates": true
+  },
+  "actual_full_cache": {
+    "train_rows": 1186, "val_rows": 221,
+    "supervised_train_tokens": 581388, "supervised_val_tokens": 114102,
+    "max_train_input_tokens": 2180, "max_val_input_tokens": 2544,
+    "native_rows_train": 405, "native_rows_val": 74,
+    "all_native_rows_have_supervised_tool_markers": true,
+    "all_full_input_token_multisets_equal_unmodified_base_template": true,
+    "empty_supervised_rows": 0
+  },
+  "validation_nll": [
+    {"step": 0, "value": 0.6550535559654236},
+    {"step": 38, "value": 0.6315557360649109},
+    {"step": 75, "value": 0.6166630983352661}
+  ],
+  "memory": {
+    "max_logged_torch_allocated_gib": 57.14,
+    "max_logged_torch_reserved_gib": 60.54,
+    "observed_driver_peak_mib_1second_sampler": 64013
+  },
+  "scope": "NEW governed captured teacher labels only, same canonical/opaque bytes and recipe as AMD. NLL is teacher-label likelihood, not heldout task/general knowledge accuracy. Timings include toolkit/kernel/evaluation-scope confounds and are not pure hardware causality. No promotion, price invoice, parity equality or completed qualification claim."
+}

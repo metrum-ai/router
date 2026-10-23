@@ -1,0 +1,86 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "MAIN MODEL REQUESTS ONLY, NOT semantic grader success; all graded400failures separately disclosed. Metadata-only join audit, no model calls/score changes/normalization",
+  "audits": {
+    "primary-326": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 300,
+      "joined_http_requests": 299,
+      "known_duplicate_declaration_no_dispatch": 1,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 299
+      },
+      "target_counts": {
+        "ft_merged": 299
+      },
+      "joined_records_sha256": "dd37624ff0cbb3255f71163895c8c3985d56ccc6a82e072d9d5e34c361639333",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "regressions-326": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 400,
+      "joined_http_requests": 400,
+      "known_duplicate_declaration_no_dispatch": 0,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 400
+      },
+      "target_counts": {
+        "ft_merged": 400
+      },
+      "joined_records_sha256": "45354baeff066c161df225d17b5974457452670f49cae29dc3a8be97c9e57ecd",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "sampling-326": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 100,
+      "joined_http_requests": 100,
+      "known_duplicate_declaration_no_dispatch": 0,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 100
+      },
+      "target_counts": {
+        "ft_merged": 100
+      },
+      "joined_records_sha256": "62da9e1d76249a77aef4629c58b3673aa438d9b7fd8df339cc56efe4037ca3b1",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "sampling-327": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 100,
+      "joined_http_requests": 100,
+      "known_duplicate_declaration_no_dispatch": 0,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 100
+      },
+      "target_counts": {
+        "ft_merged": 100
+      },
+      "joined_records_sha256": "fec7424fafadea8fced04e0cc649e9baa52a484ab18599e87839eb8dc8f2c6a8",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    },
+    "sampling-328": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "complete_result_denominator": 100,
+      "joined_http_requests": 100,
+      "known_duplicate_declaration_no_dispatch": 0,
+      "unknown_missing_dispatch_or_ids": 0,
+      "coverage_complete": true,
+      "status_counts": {
+        "200": 100
+      },
+      "target_counts": {
+        "ft_merged": 100
+      },
+      "joined_records_sha256": "c1af3e0a4d24a0597b2a6bd6d8d07bd1d262163a1034549a85722bc66a2f4034",
+      "cost_scope": "Known no-dispatch has zero routed requests, NOT zero GPU elapsed cost. Missing genuine calls remain unknown. Zero token metadata is NOT free hourly serving. Grader and lifecycle separate."
+    }
+  }
+}

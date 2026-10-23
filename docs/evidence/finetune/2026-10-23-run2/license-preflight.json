@@ -1,0 +1,24 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "stage": "pre-spend, no GPU/model inference",
+  "sources": [
+    {
+      "kind": "model",
+      "repo": "Qwen/Qwen3.8-27B",
+      "sha": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "license": "apache-2.0",
+      "gated": false
+    },
+    {
+      "kind": "dataset",
+      "repo": "OpenAssistant/oasst1",
+      "sha": "fdf72ae0827c1cda404aff25b6603abec9e3399b",
+      "license": "apache-2.0",
+      "gated": false
+    }
+  ],
+  "base_chat_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+  "oasst_license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+  "oasst_ready_archive_sha256": "286a6e9a5a413b3272ae9c0b5a20d327983dea1c24342ae28cb244a6da65185c",
+  "run2_paid_spend_usd": 0
+}

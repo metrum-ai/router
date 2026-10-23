@@ -13,7 +13,7 @@
         "router_request_id": "req_db8867dd6982b24ef52393dab5ea023a",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -24,7 +24,7 @@
         "router_request_id": "req_db8d288ab1dcd025c35bcf7f065f2aaf",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -35,7 +35,7 @@
         "router_request_id": "req_c27e0f16bf667d9b15c799d96eb26f16",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -46,7 +46,7 @@
         "router_request_id": "req_bd53ccc80f5d95feb8af231a97397e1b",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -57,7 +57,7 @@
         "router_request_id": "req_67cf8e04b732b2422400b7c15b1bcadd",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -68,7 +68,7 @@
         "router_request_id": "req_b53b48839104514f90684b7233b68940",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -79,7 +79,7 @@
         "router_request_id": "req_b550bf78ada4b00098059311eee9387c",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -90,7 +90,7 @@
         "router_request_id": "req_8c62e27bb0005937610d14b9f98bde0d",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -101,7 +101,7 @@
         "router_request_id": "req_9c358736756ff9cd400fc1eea440e488",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -112,7 +112,7 @@
         "router_request_id": "req_c44bb7cfab6a998be91a1dafc5b1a3c2",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -123,7 +123,7 @@
         "router_request_id": "req_50d30bc82b9f7e19d250ec5129e01b31",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2
@@ -169,7 +169,7 @@
         "router_request_id": "req_b846b8eb757151d1ac3dbbb40083e1d3",
         "telemetry": {
           "status": 200,
-          "target_provider": "vllm_b200_ft",
+          "target_provider": "vllm_onprem_ft",
           "target_model": "qwen3p8-27b-base",
           "input_tokens": 15,
           "output_tokens": 2

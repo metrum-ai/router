@@ -1030,7 +1030,7 @@
         "responses": 300,
         "observed_targets": {
           "fireworks_ft/accounts/OPERATOR/models/qwen3p8-27b-metrum-ft-20261023-v2#accounts/OPERATOR/deployments/metrum-ft-qwen3p8-20261023-v2": 151,
-          "vllm_b200_ft/metrum-ft": 149
+          "vllm_onprem_ft/metrum-ft": 149
         },
         "status_counts": {
           "200": 300
@@ -1041,7 +1041,7 @@
       "openai:chat:qwen3p8-27b-ft-onprem": {
         "responses": 300,
         "observed_targets": {
-          "vllm_b200_ft/metrum-ft": 300
+          "vllm_onprem_ft/metrum-ft": 300
         },
         "status_counts": {
           "200": 299,
@@ -1053,7 +1053,7 @@
       "openai:chat:qwen3p8-27b-base": {
         "responses": 300,
         "observed_targets": {
-          "vllm_b200_ft/qwen3p8-27b-base": 300
+          "vllm_onprem_ft/qwen3p8-27b-base": 300
         },
         "status_counts": {
           "200": 300
