@@ -160,7 +160,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     for flag in ('glaive', 'oasst', 'mtbench', 'old-canonical', 'regressions', 'out'):
         p.add_argument('--' + flag, type=Path, required=True)
+    p.add_argument('--historical-preparation-only',action='store_true',
+        help='reproduce superseded direct-download preparation, NEVER authorized run2 training data')
     a = p.parse_args()
+    if not a.historical_preparation_only:
+        p.error('direct-download run2 superseded by #358; consume router_export.py instead')
     if a.out.resolve().is_relative_to(ROOT.parents[1]):
         p.error('raw output must be outside the worktree')
     for path, expected in ((a.oasst, OASST_SHA), (a.glaive, GLAIVE_SHA), (a.mtbench, MTBENCH_SHA)):

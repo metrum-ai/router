@@ -17,6 +17,11 @@ def verify(workspace, require_prepared=False):
     registration = json.loads(registration_path.read_text())
     if registration['status'] != 'frozen':
         raise ValueError('preregistration is not frozen')
+    if (registration.get('datasets',{}).get('source',{}).get('kind') != 'router_capture'
+            or registration.get('router_export_contract_confirmed') is not True):
+        raise ValueError('confirmed #358 router export required; direct-download run2 refused')
+    if sha(workspace/'canonical/router-export-manifest.json') != registration['datasets']['router_export_manifest_sha256']:
+        raise ValueError('router export provenance manifest mismatch')
     for name, expected in registration['code_sha256'].items():
         path = (workspace/name).resolve()
         if not path.is_relative_to(workspace.resolve()) or sha(path) != expected:

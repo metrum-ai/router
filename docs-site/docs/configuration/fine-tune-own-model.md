@@ -36,6 +36,32 @@ Consult its evidence before quoting quality, latency or economics.
 7. Delete every rented host and dedicated deployment at step end and verify via
    its API. Hourly deployments incur costs even with no requests.
 
+## Router-captured traces: run 2 (in progress, #358)
+
+Run2 (#355) is re-scoped to a governed router export, not direct downloaded
+training rows. **No GPU rental until the #358 export exists and a new protocol
+is frozen.** The previous direct-download preparation is superseded.
+
+The intended loop is licensed task seeds → teacher agent → deterministic tool
+execution/result continuation through the router → opted-in project/key capture
+→ audited admin export with filters, redaction/PII policy, provenance hashes and
+time-based heldout split → fine-tune → caller-scoped canary in the same
+`support-agent` group. Other callers remain on teacher and must not be exported.
+General/answer-format anchors also come through the governed export.
+
+Replay heldout captured tasks through the router for candidate, teacher and base,
+executing each arm's NEW calls against the same reset backend, never providing
+recorded teacher answers as candidate continuations. Report deterministic task
+success, unchanged quality/general-regression gates, latency and total attempted
+routed model cost per successful task (failures included; unknown cost/zero
+successes explicit). Native success is not JSON-text exact accuracy; endpoints
+must be preregistered, not silently interchanged. Teacher output rights must
+permit training. Export/backend contract and real-model evidence are pending;
+this is not a claim the export feature or full loop has shipped.
+
+See the source example's `run2/README.md` and dated `VIDEO-FACTS.md` for current
+blocking dependencies and validated versus still-unmeasured facts.
+
 ## Governance caveats
 
 - Generate a caller with a narrow model allow-list, rate/concurrency quotas and
@@ -47,8 +73,11 @@ Consult its evidence before quoting quality, latency or economics.
   automatic duplicate inference against both models. Use paired offline replay
   through the router for quality comparisons, and opt into request access only
   inside the trust boundary.
-- Disable content capture and test that usage storage/logs contain no prompt
-  content. Synthetic mock tests prove integration, not trained-model quality.
+- Keep content capture off by default. For intentional training collection,
+  explicitly opt in only the authorized key/project with redaction/PII policy
+  and retention; prove other callers remain uncaptured/unexported. For ordinary
+  evaluation, keep capture off and prove logs/usage contain no prompt content.
+  Synthetic mock tests prove integration, not trained-model quality.
 - Public human-judgment calibration measures judge agreement on that corpus,
   not correctness on the customer's task. Report confidence intervals and weak
   agreement honestly.

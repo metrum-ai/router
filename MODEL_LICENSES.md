@@ -91,7 +91,9 @@ README/metadata, ungated. The converter modifies the upstream representation
 and retains conservative first turns only. Keep real data outside Git and retain
 Glaive AI attribution and any required notices.
 
-Run-2 general-instruction data (#355): `OpenAssistant/oasst1` at
+Superseded run-2 preparation / potential licensed collection task seeds (#355):
+**current run2 must train on #358 router-captured exports, not this download**.
+`OpenAssistant/oasst1` at
 `fdf72ae0827c1cda404aff25b6603abec9e3399b`, Apache-2.0 per pinned Hub card and
 repository LICENSE, public/ungated. Ready-for-export archive SHA256
 `286a6e9a5a413b3272ae9c0b5a20d327983dea1c24342ae28cb244a6da65185c`.

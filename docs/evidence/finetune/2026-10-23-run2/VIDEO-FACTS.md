@@ -1,67 +1,61 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Run 2 video facts — preregistered, no model outcome yet
+# Run 2 video facts — RE-SCOPED, blocked on router trace export #358
 
-Issue #355, Refs #326. **Run 2 is in preparation. No GPU rented, no new
-held-out inference, no quality improvement/promotion or ROI claim.** Run 1's
-rejected-result evidence remains under `2026-10-23/`; do not relabel it run 2.
+## Current facts (not model results)
 
-## Provider/hardware attribution
+- Maintainer requires run2 (#355) to train on **governed router-captured agent
+  traces exported by #358**, not directly downloaded training data.
+- **No run2 GPU rented, deployment created, training or new model/heldout
+  inference performed; run2 paid spend$0.** Do not show a completed run2 demo yet.
+- Direct-download preparation/preregistration at`2bfd8de018` is **superseded**.
+  Its5667/500/300 counts, hashes, CPU replay and Arrow checks are historical
+  preparation ONLY, not the new run2 training/evaluation cohort.
+- Current `run2/preregistration.json` explicitly BLOCKS training. No rental until
+  #358 export, approved teacher-output training rights and new signed freeze.
+- Keep recipe plan: one epoch, LR1e-5, rank8/alpha16, text-attention projections
+  only; BF16 base/template unchanged. General/letter-format anchors must also
+  be router-captured/exported. Actual mix/counts await the export.
+- Five synthetic template/token fixtures, twelve disjoint letter probes and
+  full actual Axolotl-cache parity remain required remote pre-training checks;
+  these have NOT run against a real run2 model/export.
+- GPU cap$150, operational stop$120. Quotes are not rentals/invoices.
 
-The example and referenced public evidence use hardware-neutral`vllm_onprem_ft`.
-Run 1 actually trained on **1× RTX PRO 6000 Blackwell Server Edition,96GB**,
-not B200. Historical evidence labels are normalized, with original receipts and
-hashes preserved and all non-label JSON data unchanged; see
-`provider-alias-publication-audit.json`. Run-2 hardware is not yet rented or
-measured. Do not infer hardware from a provider ID or reuse run-1 metrics as run 2.
+## Router-centric story to prove (pending)
 
-## Measured diagnostic, not run-2 quality
+1. Licensed task seeds → teacher agent → real deterministic mock tool execution
+   → tool-result continuation **through router**, under several callers.
+2. Capture only opted-in support caller/project, with redaction/PII policy and
+   retention. Prove other callers are not captured/exported.
+3. Audited admin export: filters, dedupe/provenance hashes, canonical chat/tool
+   JSONL + manifest, frozen temporal/source-group heldout split.
+4. Train the export, route back to the SAME`support-agent` group, canary only
+   the selected support caller/project; others stay teacher.
+5. Replay captured heldout TASKS through router for candidate vs teacher vs base.
+   Execute NEW calls/results; never feed recorded teacher answers to candidate.
+6. Report deterministic task success, quality/general gates, latency and all
+   attempted routed cost / successful tasks (including failures). Unknown cost
+   or zero successes is not a fake free-cost/savings claim. Native success is
+   not strict JSON-text exact accuracy; freeze endpoints before inference.
+7. Accept/reject honestly; API-verify instance/key/vendor teardown.
 
-Source:`run1-format-diagnostic.json`. In the consumed run-1 MMLU cohort,
-strict single-letter output conformance was **191/200 base**, **29/200 onpremFT**,
-**30/200 FireworksFT**, **31/200 weightedFT**. Format-only analysis; no accuracy
-rescoring, retained-knowledge claim or changed run-1 gate. This motivates a
-small disjoint synthetic template/answer-format pre-check, not benchmark tuning.
+Exporter/backend contract coordination posted on #358, comment6365813193.
+Consumer/replay modules are preparatory/provisional, not proof this loop is done.
 
-## License/provenance preflight
+## Provider-name correction / Run 1 facts that must remain true
 
-Same pinned Apache-2.0 Qwen base. New proposed general instruction source:
-OpenAssistant/OASST1, Apache-2.0, pinned
-`fdf72ae0827c1cda404aff25b6603abec9e3399b`; see README for attribution and hashes.
-No new in-house human labels. Glaive remains pinned Apache-2.0.
-
-## Frozen recipe and fresh data (not measured model quality)
-
-- `run2/preregistration.json` freezes one epoch, LR1e-5, rank8/alpha16;
-  q_proj,v_proj,linear_attn.in_proj_qkv,linear_attn.out_proj only. BF16 base and
-  base chat template unchanged; no MLP/gate/vision/lm_head updates.
-- Train5,667 rows:1,000 native Glaive (667tool),667 JSON-text variants from the
-  same training sources,3,000 licensed OASST roots,1,000 computed letter-format
-  examples. Val500. Within-split variants are not extra independent sources.
-- Fresh300-case heldout (200tools/100text), SHA256
-  `db1c9521e7042f116c529d065de126cd1f3c8b020c5f62a6662feb993f082d57`.
-  Fresh200IFEval/200MMLU-Pro exclude the old400; no overlap with old2,800 canonical
-  prompts. Public calibration questions and12 synthetic probes are excluded.
-- Eight generated files replay byte-identically. Opaque-JSON-tools training
-  views survive CPU Arrow roundtrip without changing canonical tool definitions.
-  This is serialization proof, NOT actual trainer-cache or model correctness.
-- Hardware-neutral-name localhost router **mock** continuation/file creation,
-  weighted routing (21Fireworks/24onprem observed counters), quota/shadow/privacy
-  checks passed. Eight historical JSON evidence files differ only in provider
-  labels; all non-label JSON data and original receipt/join hashes preserved.
-- Recorded cheapest fitting Docker-VM plan:1×RTX PRO6000,750GB,$2.19/h Shadeform;
-  cheapest non-VM-deverified VM-capable Vast hardware quote$2.648148/h. Cheaper
-  container/deverified offers do not qualify. These are quotes, not actual run-2
-  hardware observations or invoices. Recheck before rental.
-
-## Still to measure
-
-Actual base-template/token parity,
-base/candidate pre-check, training runtime/loss/memory, quality deltas/paired CIs,
-IFEval/MMLU regressions, native continuation/load/controls, cost and API-verified
-teardown. GPU cap **$150**, conservative operational stop$120. Paid spend so far$0.
-
-Do not claim a template bug is proven: run 1 already selected tokenizer_default
-and explicit non-thinking mode. Do not soften the frozen strict scorer or route
-general regression tests to base to manufacture a pass. Report honestly pass/fail.
+- Current provider ID **`vllm_onprem_ft`** is hardware-neutral throughout example
+  and referenced public evidence. Eight historical JSON publications changed
+  provider labels only; numerical results and original receipt/join hashes stay
+  unchanged (`provider-alias-publication-audit.json`). Not a rerun.
+- Run1 trained on **1×RTX PRO6000 Blackwell Server Edition,96GB**, not B200.
+  Two failed Vast startup rentals on B200 offers were deleted without training;
+  later availability recheck created no rental. Actual run2 hardware UNKNOWN.
+- PR354 merged as`0ea1e6f38826bd3a4961ccb1b5045e3394ea42c2`, retaining Fixes#326:
+  acceptance of reproducible REJECTED workflow, not promotion/production rollout.
+- Run1 exact-text tool gain passed, standard regressions failed; **base remains
+  default, DO NOT PROMOTE**. Do not present run1 metrics as run2 metrics.
+- Historical public judge agreement60%(CI46–74%) is weak, not domain validation.
+  Provider base-byte equivalence remains unverified. No retained-knowledge,
+  production-safety, quality-equivalent ROI or invoice-total claims.

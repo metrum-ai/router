@@ -55,15 +55,36 @@ def delete(directory):
 
 
 def create(a):
-    if (not all(math.isfinite(v) for v in (a.hourly_usd,a.hours,a.spent_usd)) or
-            a.spent_usd < 0 or a.hourly_usd <= 0 or a.hours <= 0 or a.hours > 3 or
-            a.spent_usd + a.hourly_usd*a.hours >= 800):
-        raise ValueError('invalid lease or reservation reaches $800 GPU stop threshold')
+    profile = getattr(a, 'budget_profile', 'run1')
+    if profile not in ('run1','run2'):
+        raise ValueError('unknown budget profile')
+    stop, hard_cap, max_hours = (120,150,4) if profile == 'run2' else (800,1000,3)
+    reserved_other = getattr(a, 'reserved_other_usd', 0)
+    if (not all(math.isfinite(v) for v in (a.hourly_usd,a.hours,a.spent_usd,reserved_other)) or
+            a.spent_usd < 0 or reserved_other < 0 or a.hourly_usd <= 0 or a.hours <= 0 or a.hours > max_hours or
+            a.spent_usd + reserved_other + a.hourly_usd*a.hours >= stop):
+        raise ValueError(f'invalid lease or reservation reaches ${stop} stop threshold')
     payload = json.loads(a.payload.read_text())
     if not a.execute:
         print(json.dumps({'dry_run':True,'provider':a.provider,'max_hours':a.hours,
-            'reservation_usd':a.hourly_usd*a.hours,'fresh_key_planned':True,'verified_teardown_planned':True}))
+            'reservation_usd':a.hourly_usd*a.hours,'reserved_other_usd':reserved_other,
+            'budget_profile':profile,'stop_usd':stop,'hard_cap_usd':hard_cap,
+            'fresh_key_planned':True,'verified_teardown_planned':True}))
         return
+    if profile == 'run2':
+        registration_path = getattr(a,'preregistration',None)
+        export_dir = getattr(a,'router_export',None)
+        if registration_path is None or export_dir is None:
+            raise ValueError('run2 rental blocked until #358 export and new preregistration')
+        registration = json.loads(registration_path.read_text())
+        if registration.get('status')!='frozen' or registration.get('router_export_contract_confirmed') is not True:
+            raise ValueError('run2 rental blocked: confirmed router export freeze required')
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('lease_export_contract',Path(__file__).resolve().parents[1]/'run2/router_export.py')
+        consumer = importlib.util.module_from_spec(spec);spec.loader.exec_module(consumer)
+        consumer.load_export(export_dir)
+        if consumer.sha(export_dir/'manifest.json') != registration['datasets']['router_export_manifest_sha256']:
+            raise ValueError('run2 rental blocked: export differs from preregistration')
     directory = a.state_dir.resolve()
     root = Path(__file__).resolve().parents[3]
     if directory == root or root in directory.parents:
@@ -88,6 +109,8 @@ def create(a):
         now = datetime.datetime.now(datetime.timezone.utc)
         state = {'provider':a.provider,'id':identifier,'ssh_key_id':key_id,'name':tag,
             'created_at':now.isoformat(),'hourly_usd':a.hourly_usd,
+            'budget_profile':profile,'stop_usd':stop,'hard_cap_usd':hard_cap,
+            'reserved_other_usd':reserved_other,'spent_usd_before':a.spent_usd,
             'deadline':(now+datetime.timedelta(hours=a.hours)).isoformat()}
         (directory/'lease.json').write_text(json.dumps(state,indent=2))
         # Credential-free argv; environment credentials stay local, never copied to GPU.
@@ -124,6 +147,12 @@ def main():
     p.add_argument('--hourly-usd',type=float,default=0)
     p.add_argument('--spent-usd',type=float,default=0)
     p.add_argument('--hours',type=float,default=3)
+    p.add_argument('--budget-profile',choices=['run1','run2'],default='run1',
+                   help='run2 enforces $120 stop / $150 cap and maximum4h; run1 retains old limits')
+    p.add_argument('--router-export',type=Path,help='run2: verified #358 export directory required for paid create')
+    p.add_argument('--preregistration',type=Path,help='run2: confirmed export/new frozen protocol required for paid create')
+    p.add_argument('--reserved-other-usd',type=float,default=0,
+                   help='reserve dedicated serving/judge or other known costs before creating a GPU')
     p.add_argument('--execute',action='store_true')
     a = p.parse_args()
     if a.action == 'create':

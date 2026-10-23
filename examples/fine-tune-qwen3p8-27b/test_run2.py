@@ -134,10 +134,10 @@ class Run2ReadinessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             w = Path(td)
             for directory in ('run2','canonical','base'):(w/directory).mkdir()
-            for name in ('canonical/train.jsonl','canonical/val.jsonl','canonical/train-axolotl.jsonl','canonical/val-axolotl.jsonl','canonical/manifest.json','base/chat_template.jinja','source.txt'):
+            for name in ('canonical/train.jsonl','canonical/val.jsonl','canonical/train-axolotl.jsonl','canonical/val-axolotl.jsonl','canonical/manifest.json','canonical/router-export-manifest.json','base/chat_template.jinja','source.txt'):
                 (w/name).write_text('synthetic fixture')
-            registration = {'status':'frozen','protocol':'synthetic-only','code_sha256':{'source.txt':readiness.sha(w/'source.txt')},
-                'datasets':{'sha256':{n:readiness.sha(w/'canonical'/f'{n}.jsonl') for n in ('train','val')},
+            registration = {'status':'frozen','protocol':'synthetic-only','router_export_contract_confirmed':True,'code_sha256':{'source.txt':readiness.sha(w/'source.txt')},
+                'datasets':{'source':{'kind':'router_capture'},'router_export_manifest_sha256':readiness.sha(w/'canonical/router-export-manifest.json'),'sha256':{n:readiness.sha(w/'canonical'/f'{n}.jsonl') for n in ('train','val')},
                             'axolotl_view_sha256':{n:readiness.sha(w/'canonical'/f'{n}-axolotl.jsonl') for n in ('train','val')}},
                 'dataset_manifest_sha256':readiness.sha(w/'canonical/manifest.json'),
                 'chat_template':{'sha256':readiness.sha(w/'base/chat_template.jinja')},'precheck_cases_sha256':'synthetic-cases'}

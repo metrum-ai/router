@@ -3,14 +3,63 @@
 
 # Fine-tune Qwen3.8-27B and govern it with Metrum AI Router
 
-Work in progress for #326. Do not infer training completion or promotion from
-this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
+Run1's rejected-candidate workflow (#326, PR354) is merged; that is NOT model
+promotion. Run2 (#355) is **blocked on governed trace export #358**, with no GPU
+rental/training authorized before the export and new freeze. Current evidence:
+[Run-2 RESULTS](../../docs/evidence/finetune/2026-10-23-run2/RESULTS.md).
+
+## 1. The industry problem: training is not safe production delivery
+
+A fine-tune checkpoint does not demonstrate that customer work gets done safely.
+Common gaps are training data disconnected from actual work, agent traffic without
+consistent per-key governance, no controlled route back to callers, evaluation
+unlike real tool continuations, and token-price comparisons instead of cost per
+successful task. This example addresses those gaps; it does not quantify industry
+failure rates or claim production safety from a benchmark.
+
+## 2. The router-centric solution
+
+Serve a licensed teacher → opt in ONE caller/key/project to governed capture
+(redaction/PII policy, retention; others uncaptured) → attach deterministic outcome
+labels → audited admin export (canonical chat/tool JSONL+manifest, dedupe/provenance,
+frozen temporal split) → fine-tune → route back into the SAME `support-agent`
+group with a key-scoped canary, quotas and budgets → replay heldout captured TASKS
+through the router for candidate/teacher/base → the preregistered gate decides.
+Execute each arm's new tool calls/results, never feed teacher answers as candidate
+continuations. Measure all attempted routed cost per successful task, including
+failures. The #358 export/full loop is still in progress, not a shipped claim.
+
+## 3. What we did: Run 1's gain, rejection and lessons
+
+Run1 used directly downloaded licensed Glaive data and trained on **1×RTX PRO6000
+Blackwell Server Edition,96GB**, not B200. On200 strict JSON-text tool cases,
+base4.5%(9/200) → weighted FT32%(64/200), +27.5pp (paired95%CI20–35).
+But IFEval81.5% →63.5% and MMLU-Pro60.5% →13% broke the≤2pp regression limits;
+**all FT promotion wrappers rejected**. Base stays default. This is not native
+API tool accuracy or proof of retained/lost underlying knowledge. The consumed
+run1 format audit motivates stronger parity/format checks, not a proven root cause
+or post-hoc rescoring. See the dated run1 RESULTS for full arms, errors and caveats.
+
+## 4. What was accomplished — measured versus pending
+
+Delivered: merged reproducible negative-result workflow; actual run1 router/native
+continuation, serving, controls and API-verified teardown. Provider IDs are now
+hardware-neutral; historical JSON label normalization changes no numerical result.
+New consumer/replay code is provisional and tested with synthetic data/localhost
+mock upstreams, NOT a trained-model result. **Run2 captured export, exact mix,
+training, candidate-vs-teacher-vs-base quality, cost per successful task and
+promotion decision: PENDING.** Keep those placeholders until evidence exists.
+GPU cap$150, stop$120; no run2 paid resources or model inference yet.
+
+The technical commands below reproduce the historical run1 workflow; they are NOT
+permission to use direct-download training for run2. Follow `run2/README.md` for
+the captured-export dependency, new freeze and format/cache pre-checks.
 
 ## Pins and rights
 
 - Base: `Qwen/Qwen3.8-27B@1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0`,
   Apache-2.0 (verified Hub LICENSE), public and ungated; see MODEL_LICENSES.md.
-- Training: Glaive AI `glaiveai/glaive-function-calling-v2` revision
+- Run1 training / possible licensed run2 collection task seeds (not direct run2 training): Glaive AI `glaiveai/glaive-function-calling-v2` revision
   `e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac`, Apache-2.0, ungated.
   Retain upstream attribution/NOTICE and record modifications. No real rows in Git.
 - Judge calibration: LMSYS `lmsys/mt_bench_human_judgments` revision
@@ -21,13 +70,16 @@ this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
   relabel AI-generated judgments as human. Pairwise agreement on this public
   corpus is not a domain-specific correctness guarantee.
 
-## Run 2: fresh cohort and format-preserving regularization
+## Run 2: router-captured traces and format preservation
 
-[Run-2 instructions](run2/README.md) track #355 (Refs #326): smaller/lower-LR
-attention-only LoRA, licensed OASST general instructions and synthetic answer-format
-rehearsal, fresh heldout/standard cohorts, base-template/token/cache/generation
-pre-checks and the unchanged promotion gate. Select `RECIPE=run2` explicitly;
-run-1 defaults/failed outcomes remain historical. This is not a promotion claim.
+[Run-2 instructions](run2/README.md) track #355 (Refs #326), now dependent on
+**#358 governed router-captured trace export**. No GPU rental/training until that
+export and a new signed protocol exist. Direct-download preparation was superseded.
+Retain smaller/lower-LR attention-only LoRA and base-template/token/cache/generation
+checks; general/format anchors must also come through capture/export. Replay heldout
+captured tasks through the router: candidate vs teacher vs base, including routed
+cost per successful task and unchanged general/promotion gates. Current run2
+registration fails closed. Run1 defaults/failed outcomes remain historical.
 Provider IDs are hardware-neutral (`vllm_onprem_ft`); measured run-1 training
 hardware was RTX PRO 6000 Blackwell Server Edition, not B200.
 

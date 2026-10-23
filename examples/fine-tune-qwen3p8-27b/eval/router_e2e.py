@@ -6,6 +6,7 @@
 This proves plumbing, NOT trained-model quality. All processes are torn down.
 """
 import argparse
+import importlib.util
 import json
 import subprocess
 import tempfile
@@ -119,14 +120,31 @@ def main():
                 body = {'model':model,'messages':messages,'tools':[tool],'max_tokens':128}
                 req = urllib.request.Request('http://127.0.0.1:18530/v1/chat/completions', data=json.dumps(body).encode(),
                     headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-                with urllib.request.urlopen(req, timeout=10) as response:return json.load(response)
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.load(response)
+                    data['_router_request_id'] = response.headers.get('X-Request-Id')
+                    return data
             messages = [{'role':'user','content':marker}]
-            result = chat(messages)
-            assistant = result['choices'][0]['message'];call = assistant['tool_calls'][0]
-            args = json.loads(call['function']['arguments'])
-            (run / args['name']).write_text(args['content'])
-            result = chat(messages + [assistant, {'role':'tool','tool_call_id':call['id'],'content':'file created'}])
-            assert result['choices'][0]['message']['content'].endswith('continuation complete')
+            spec = importlib.util.spec_from_file_location('trace_replay',Path(__file__).parents[1]/'run2/replay.py')
+            replay = importlib.util.module_from_spec(spec);spec.loader.exec_module(replay)
+            class Backend:
+                def initialize(self, descriptor):return run
+                def execute(self, state, name, arguments):
+                    assert name=='create_file' and arguments['name']=='proof.txt'
+                    (state/'proof.txt').write_text(arguments['content'])
+                    return {'created':True}
+                def success(self, state, message):
+                    return ((state/'proof.txt').read_text()=='synthetic'
+                            and message['content'].endswith('continuation complete'))
+            def routed(initial, tools):
+                assert all('RECORDED_TEACHER_ANSWER' not in json.dumps(m) for m in initial)
+                result = chat(initial)
+                return result['choices'][0]['message'],result['_router_request_id']
+            case = {'provenance':{'task_sha256':'0'*64},'tools':[tool],
+                    'messages':[{'role':'assistant','content':'RECORDED_TEACHER_ANSWER'}],
+                    'replay':{'initial_messages':messages}}
+            episode = replay.run_case(case,routed,Backend())
+            assert episode['task_success'] and len(episode['request_ids'])==2
             assert (run/'proof.txt').read_text() == 'synthetic'
             for _ in range(42):chat(messages)
             before = dict(seen)
@@ -150,7 +168,8 @@ def main():
                     shadow_recorded |= b'shadow_recommended_candidate' in content
             assert shadow_recorded, 'shadow recommendation not recorded'
             print(json.dumps({'tool_continuation':'pass','created_file':True,'weighted_targets':seen,
-                'request_budget':'pass','prompt_content_absent':'pass','shadow_recommendation':'pass','synthetic_only':True}))
+                'request_budget':'pass','prompt_content_absent':'pass','shadow_recommendation':'pass',
+                'router_capture_replay_engine':'pass','recorded_teacher_answers_not_reused':True,'synthetic_only':True}))
     finally:
         if process is not None:
             process.terminate();process.wait(timeout=20)
