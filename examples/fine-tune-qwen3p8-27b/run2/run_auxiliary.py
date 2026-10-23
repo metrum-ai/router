@@ -21,7 +21,8 @@ import yaml
 ROOT=Path(__file__).resolve().parents[1]
 LABELS={'base':'qwen3p8-27b-base','teacher':'qwen3p8-27b-teacher',
         'nvidia_onprem':'qwen3p8-27b-ft-onprem','nvidia_fireworks':'qwen3p8-27b-ft-fireworks',
-        'nvidia_weighted':'qwen3p8-27b-ft','amd_onprem':'qwen3p8-27b-ft-amd'}
+        'nvidia_weighted':'qwen3p8-27b-ft','amd_onprem':'qwen3p8-27b-ft-amd',
+        'nvidia_merged':'qwen3p8-27b-ft-nvidia-merged'}
 
 
 def config_for(tests,arm,mode,seed,api_base):

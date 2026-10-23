@@ -41,7 +41,7 @@ class RoutedTransportTests(unittest.TestCase):
     def test_same_group_unique_labels_no_retries_or_reasoning_rewrite(self):
         runner=load('auxiliary_transport','run2/run_auxiliary.py')
         tests=[{'vars':{'messages':'[]'},'assert':[{'type':'is-json'}]}]
-        for arm in ('base','teacher','nvidia_onprem'):
+        for arm in ('base','teacher','nvidia_onprem','nvidia_merged'):
             config=runner.config_for(tests,arm,'primary',326,'http://127.0.0.1:18625/v1')
             provider=config['providers'][0]
             self.assertIn(runner.LABELS[arm],provider['id'])
@@ -70,6 +70,9 @@ class RoutedTransportTests(unittest.TestCase):
         bindings={'key':{'project':'acme-support','providers':['ft_onprem']}}
         ctx={'caller':{'tokenId':'key','project':'acme-support'},'targets':[{'provider':'teacher'},{'provider':'ft_onprem'}]}
         self.assertEqual(policy.route(ctx,bindings)['targetIndex'],1)
+        bindings['merged']={'project':'acme-support','providers':['ft_merged']}
+        merged={'caller':{'tokenId':'merged','project':'acme-support'},'targets':[{'provider':'teacher'},{'provider':'ft_merged'}]}
+        self.assertEqual(policy.route(merged,bindings)['targetIndex'],1)
         ctx['caller']['project']='other'
         self.assertEqual(policy.route(ctx,bindings)['targetIndex'],0)
         ctx['caller']['project']='acme-support';ctx['targets']=ctx['targets'][:1]

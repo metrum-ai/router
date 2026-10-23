@@ -19,7 +19,7 @@ def route(context,bindings):
     providers=['teacher']
     if item and caller.get('project')==item['project']:
         providers=item['providers']
-        if providers not in (['teacher'],['base'],['ft_onprem'],['ft_fireworks'],['ft_onprem','ft_fireworks']):
+        if providers not in (['teacher'],['base'],['ft_onprem'],['ft_fireworks'],['ft_onprem','ft_fireworks'],['ft_merged']):
             raise ValueError('unregistered arm target')
     provider=providers[secrets.randbelow(len(providers))]
     matches=[i for i,t in enumerate(context['targets']) if t['provider']==provider]

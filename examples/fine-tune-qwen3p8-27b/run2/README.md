@@ -142,6 +142,26 @@ no-pass/error-regression/p95≤1.25 gates. Same-item paired CIs/repeats and all 
 remain required. Public historical judge calibration60%(CI46–74%) is weak, not
 in-house domain validation. Standard-cohort selection also awaits the new freeze.
 
+## Post-registration merged parity addition
+
+The maintainer requested an **additional NVIDIA BF16 safe-merged arm** after
+ROCm vLLM could not load AMD's unmerged LoRA. `parity-addition.json` records its
+scope before merged inference. The registered NVIDIA base+LoRA remains the gate
+arm, unchanged; merged results cannot substitute for or rescue that verdict.
+Use the same final adapter and pinned base with the exact AMD
+`standalone/merge.py` procedure (`device_map=cpu`, BF16,
+`merge_and_unload(safe_merge=True)`), on the remote GPU host only. Record each
+weight-shard SHA and the documented aggregate, actual merge package versions,
+and all frozen quality/load/control measurements through the same group with a
+fresh caller binding. No merged results or equality are claimed until measured.
+
+Compare NVIDIA LoRA versus merged with complete paired cohorts; any gap is a
+finding. NVIDIA-merged versus AMD-merged aligns serving representation, but the
+independently trained adapters and different trainer/kernel/runtime stacks
+remain confounders—not pure hardware causality. Prioritize the registered arm
+within the existing lease's hard deadline; report any unmeasured parity scope.
+No extension, replacement cohort, output normalization, or relaxed gates.
+
 ## Rental/cleanup only after export and freeze
 
 Recheck authenticated approved GPU inventory and choose the cheapest fitting
