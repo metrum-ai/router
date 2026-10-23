@@ -10,6 +10,7 @@ import render
 import train_peft
 import sdk
 import localhost_proxy
+import qualification
 from unittest.mock import patch, MagicMock
 
 
@@ -53,6 +54,26 @@ class AMDTests(unittest.TestCase):
             localhost_proxy.forward_request('POST','http://upstream.invalid/',b'',{})
         self.assertEqual(sdk.REGISTRATION, 'e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea')
         self.assertEqual(localhost_proxy.LISTEN,('127.0.0.1',18596))
+
+    def test_predispatch_duplicate_remains_failure_denominator_not_fake_join(self):
+        first = {'provider':{'id':'openai:chat:synthetic'},'testIdx':0,'response':{'output':'synthetic'}}
+        duplicate = {'provider':{'id':'openai:chat:synthetic'},'testIdx':1,'response':{},
+            'vars':{'declared':['lookup','lookup']},'error':'Error: schema is invalid: data/properties/function/properties/name/enum must NOT have duplicate items'}
+        doc = {'results':{'results':[first,duplicate]}}
+        journal = [{'provider':'openai:chat:synthetic','case_index':0,'router_request_id':'req_proof'}]
+        lookup = lambda _: {'status':200,'target_provider':'synthetic','request_id':'req_proof'}
+        result = qualification.reconcile(doc,journal,lookup)
+        self.assertEqual(result['complete_result_denominator'],2)
+        self.assertEqual(result['joined_http_requests'],1)
+        self.assertEqual(result['known_duplicate_declaration_no_dispatch'],1)
+        self.assertTrue(result['coverage_complete'])
+        duplicate['error'] = 'HTTP timeout, unknown dispatch'
+        result = qualification.reconcile(doc,journal,lookup)
+        self.assertFalse(result['coverage_complete'])
+        self.assertEqual(result['known_duplicate_declaration_no_dispatch'],0)
+        self.assertEqual(result['unknown_missing_dispatch_or_ids'],1)
+        with self.assertRaises(ValueError):
+            qualification.reconcile(doc,journal+journal,lookup)
 
     def test_official_digest_only(self):
         for image in ['rocm/vllm:latest', 'vllm/vllm-openai@sha256:'+'a'*64,
