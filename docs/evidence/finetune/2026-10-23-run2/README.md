@@ -6,7 +6,9 @@
 **No GPU rental until #358 produces the governed captured-trace export.**
 No FT GPU rented, student training or qualification-heldout inference; FT spend$0.
 The traces track has a real-teacher engineering sample, not a training cohort.
-Cap remains$150, operational stop$120. Base stays default, no promotion claim.
+Cap remains$150, operational stop$120. No promotion claim. Run2 non-canary
+`support-agent` callers stay on the teacher; Run1's rejected/base-default decision
+is unchanged and does not authorize routing this teacher group to Qwen base.
 
 The maintainer superseded the direct-download preparation at signed commit
 `2bfd8de018f527781074b68f58f30da3fc625bf4`. Its dataset manifest, licence/offer

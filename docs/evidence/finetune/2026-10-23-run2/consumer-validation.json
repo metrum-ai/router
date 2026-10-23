@@ -24,7 +24,7 @@
     "recorded_teacher_answers_not_reused": true,
     "synthetic_only": true
   },
-  "scope": "synthetic proposed-export/localhost mock proof only; NOT real captured export, teacher licensing, trained model, production privacy or model economics",
+  "scope": "unit/synthetic localhost checks only; actual engineering export and scoped teacher decision are recorded separately. NOT independent consent/privacy proof, trained-model quality or model economics.",
   "ft_worker_paid_resources_created": 0,
   "ft_worker_paid_spend_usd": 0,
   "trace_agent_collection_costs": "separate producer ledger; engineering estimate0.03170595USD, not invoices",

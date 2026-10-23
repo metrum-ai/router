@@ -4,7 +4,9 @@
 # Run 2 RESULTS — BLOCKED on #358; no trained-model result
 
 **GPU cap$150, operational stop$120. No FT GPU rental/student training or
-qualification-heldout inference. FT paid spend$0. Base remains default.**
+qualification-heldout inference. FT paid spend$0. No promotion.**
+Run2 non-canary support-agent callers stay teacher; Run1 base-default decision is
+unchanged, not authorization to move this teacher group to Qwen base.
 Producer's real-teacher engineering collection is separate, not a student result.
 The directly downloaded cohort/registration published at`2bfd8de018` is superseded,
 not run2 training input. Current registration fails closed. No paid work is
