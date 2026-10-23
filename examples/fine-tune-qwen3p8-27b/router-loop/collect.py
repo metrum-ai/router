@@ -11,6 +11,9 @@ import io
 import json
 import os
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 import time
 import urllib.error
 import urllib.request
@@ -163,6 +166,12 @@ def main():
             break
     if len(selected) < 3 * args.per_split:
         raise ValueError('insufficient unique tool tasks')
+    admission=[]
+    for key_name in ('TRACE_SUPPORT_KEY','TRACE_IT_KEY'):
+        key=os.environ[key_name]
+        admission.extend(preflight(args.base+'/v1',key,['support-agent'],caller=key_name,
+            request=lambda payload,key=key:request(args.base,'/v1/chat/completions',payload,key)))
+    (args.out/'preflight.json').write_text(json.dumps(admission,indent=2))
     boundaries, evidence = [now()], []
     for split in range(3):
         for i in range(args.per_split):

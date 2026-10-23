@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 import yaml
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = Path(__file__).parent
@@ -20,6 +22,7 @@ def main():
     p.add_argument('--token-file', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True, help='PRIVATE output, never public evidence')
     p.add_argument('--groups', nargs='+', default=['qwen3p8-27b-base','qwen3p8-27b-ft','qwen3p8-27b-ft-onprem','qwen3p8-27b-ft-fireworks'])
+    p.add_argument('--preflight-targets', nargs='*', default=[], help='static target aliases for custom weighted routes')
     p.add_argument('--temperature', type=float, default=0)
     p.add_argument('--seed', type=int, default=326)
     p.add_argument('--non-tool-only', action='store_true')
@@ -51,6 +54,13 @@ def main():
     env = {key:value for key,value in os.environ.items()
         if not any(part in key.upper() for part in ('TOKEN','API_KEY','SECRET','PASSWORD'))}
     env['ROUTER_CALLER_KEY'] = a.token_file.read_text().strip()
+    admission=preflight(prototype['apiBaseUrl'],env['ROUTER_CALLER_KEY'],[*a.groups,*a.preflight_targets])
+    if any(item.get('type')=='llm-rubric' for test in tests for item in test.get('assert',[])):
+        grader=config['defaultTest']['options']['provider']
+        judge_route=grader['id'].removeprefix('openai:chat:')
+        if grader['config']['apiBaseUrl']!=prototype['apiBaseUrl'] or not any(r['route']==judge_route for r in admission):
+            admission.extend(preflight(grader['config']['apiBaseUrl'],env['ROUTER_CALLER_KEY'],[judge_route]))
+    receipt=out.with_suffix('.preflight.json');receipt.write_text(json.dumps(admission,indent=2));receipt.chmod(0o600)
     env['PROMPTFOO_PYTHON'] = sys.executable
     env['PROMPTFOO_DISABLE_TELEMETRY'] = '1'
     env['PROMPTFOO_DISABLE_TEMPLATE_ENV_VARS'] = '1'

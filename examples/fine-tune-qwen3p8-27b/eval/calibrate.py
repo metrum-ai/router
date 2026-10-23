@@ -11,6 +11,9 @@ import json
 import random
 import urllib.request
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from preflight import preflight
 
 REVISION = 'f7d2896d2cc5d80f8b55c2bbc722613555233c25'
 JUDGE = 'gpt-4o-2024-11-20'
@@ -32,6 +35,7 @@ def main():
     p.add_argument('--token-file', type=Path, required=True)
     p.add_argument('--api-base', default='http://127.0.0.1:18525/v1')
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--preflight-targets', nargs='*', default=[], help='static target aliases for custom judge routes')
     a = p.parse_args()
     rows = pq.read_table(a.human_parquet).to_pylist()
     rng = random.Random(326)
@@ -44,6 +48,7 @@ def main():
     if len(selected) != 50:
         raise ValueError('need 50 distinct human-labeled questions')
     token = a.token_file.read_text().strip()
+    preflight(a.api_base,token,['frontier-ref',*a.preflight_targets])
     records = []
     for row in selected:
         payload = {'model': 'frontier-ref', 'temperature': 0, 'max_tokens': 16,
