@@ -7,7 +7,16 @@ import path from "node:path";
 
 export default defineConfig({
   base: "./",
-  plugins: [react()],
+  plugins: [react(), {
+    name: "metrum-copyright",
+    generateBundle(_options, bundle) {
+      for (const output of Object.values(bundle)) {
+        if (output.type === "chunk") {
+          output.code = "// Copyright 2026 Metrum AI\n// SPDX-License-Identifier: Apache-2.0\n" + output.code;
+        }
+      }
+    },
+  }],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
