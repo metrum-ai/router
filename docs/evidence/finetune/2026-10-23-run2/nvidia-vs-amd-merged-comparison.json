@@ -1,0 +1,390 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "NVIDIA SAFE-MERGED vs AMD SAFE-MERGED BF16 descriptive comparison ONLY; no substituted/rescued NVIDIA LoRA gate, no AMD FAIL reversal, no pure hardware causality/assumed parity/promotion",
+  "amd_reference": {
+    "main_revision": "666aa4c55320c78275a32e5a77855a7c8702e802",
+    "directory": "docs/evidence/finetune-amd/2026-10-23/",
+    "files_sha256": {
+      "qualification-amendment.md": "c527ac696c05f0c94ec2390595a369f9c0c0edba3447ecad7c2a6430887d6497",
+      "live-smoke-amd.json": "e00bf29091e1be809244566c654a66cca4db913128b51547989d3b2a308b8585",
+      "bootstrap-amendment.md": "1ece693c6129a92940081afb0a15447f7d9acc97e4370ef7fd9296c2108bc95b",
+      "training-summary.json": "5b3f7c76cd183fbe438e8f2a0ab65c0e3992ac2f66f2cd98a52e0118098cfdb8",
+      "VIDEO-FACTS.md": "decf7d4c657e8bb8196c61502991c66a53b7a2e41214331774eee140adebb8c0",
+      "sdk-runtime-availability.json": "1787a70b22c03c82f8cfe3dbe2440f7549c806770c85b2e15a7dd030f93e6e80",
+      "peft-token-audit.json": "f7157fc09bba8952973c562237481e7671961cff4069279ad27b3aff373924f9",
+      "router-controls.json": "3a11c9545fecf9c0bb832fb52a83136834684ce39a54ec710ee3463aafcd5521",
+      "peft-train-runtime.json": "63eb845abc467ed7f46772dcdb7bcaef02991eac52325c2f30db7bd27ec735a9",
+      "economics-and-teardown.json": "cdac00348e4d17d9b68c53b9594ec11a6ae86a20f33594c68d14f688f9be5644",
+      "README.md": "6842f7e552c7415876751e3a891e092c014314a701b086338f2a2214458521e1",
+      "merged-weight-evidence.json": "976b19f9bf932f233495fc0aa465d6ad40aeaca438e6f73c2f669750e0043f7a",
+      "qualification-results.json": "c1e8968c615967aab1f1933d21a29c759b130fd998f42d18c111f816f6521d66",
+      "qualification-preregistration.json": "e411fc9f7c6216eb87e659d3b120561bc0e1b3f45ef2ef6c623637796e0ee1ea",
+      "sdk-port-binding.json": "873bf9a23926fee961db6484c57d55459c62d0fdb620523536a46bab4e71fde2",
+      "shared-freeze.json": "2e39dc9001c93f02dd62c236a63c1df2ba8aa82ad9a3c13de77061c97b888dda",
+      "gate-verdict.json": "71ddc321f486aefd6a444aecf85ca5005b21f70fd4682adf3630286a09ffbad2",
+      "peft-smoke-runtime.json": "3a0b656142b911137a6147f968e0fff32dee8e0bda5eb7df8d6072c3bb1d2056",
+      "native-results.json": "8872ac8289e72743cd17fafb424cdbe83a0e32385e39a35cc859dfb02f90b4b1",
+      "load-amd-merged.json": "8cfabc66b61c634d22be94ff3fec62bac61683118f72edfe039e3662287f1889"
+    }
+  },
+  "quality": {
+    "primary-exact": {
+      "n_each": 200,
+      "nvidia_rate": 0.025,
+      "amd_rate": 0.035,
+      "nvidia_minus_amd_pp": -1.0000000000000002,
+      "nvidia_within_arm_ci95": [
+        0.005,
+        0.05
+      ],
+      "amd_within_arm_ci95": [
+        0.01,
+        0.065
+      ],
+      "cross_hardware_paired_delta_ci95": null,
+      "caveat": "Same frozen cases, but AMD publication supplies aggregates, not paired per-case vectors; do NOT subtract marginal CIs or invent paired uncertainty. Different independently trained adapters/toolkits/runtimes, not hardware-only quality causality."
+    },
+    "primary-passed": {
+      "n_each": 300,
+      "nvidia_rate": null,
+      "amd_rate": 0.26666666666666666,
+      "nvidia_minus_amd_pp": null,
+      "nvidia_within_arm_ci95": null,
+      "amd_within_arm_ci95": [
+        0.21666666666666667,
+        0.31666666666666665
+      ],
+      "cross_hardware_paired_delta_ci95": null,
+      "caveat": "ALL100non-tool primary rubric calls rejected pre-route400unsupported_modality; raw assertion passes5/300 retained, NOT semantic model degradation/merge effect. No regrade/score borrowing/selective redo. Objective exact-tool scoring remains valid. GPU already API-deleted; further whole-arm inference needs explicit decision, no unauthorized rerent.",
+      "nvidia_observed_assertion_pass_rate": 0.016666666666666666,
+      "valid_model_quality_comparison": false
+    },
+    "ifeval-passed": {
+      "n_each": 200,
+      "nvidia_rate": 0.85,
+      "amd_rate": 0.82,
+      "nvidia_minus_amd_pp": 3.0000000000000027,
+      "nvidia_within_arm_ci95": [
+        0.8,
+        0.9
+      ],
+      "amd_within_arm_ci95": [
+        0.765,
+        0.875
+      ],
+      "cross_hardware_paired_delta_ci95": null,
+      "caveat": "Same frozen cases, but AMD publication supplies aggregates, not paired per-case vectors; do NOT subtract marginal CIs or invent paired uncertainty. Different independently trained adapters/toolkits/runtimes, not hardware-only quality causality."
+    },
+    "mmlu-pro-passed": {
+      "n_each": 200,
+      "nvidia_rate": 0.62,
+      "amd_rate": 0.62,
+      "nvidia_minus_amd_pp": 0.0,
+      "nvidia_within_arm_ci95": [
+        0.555,
+        0.685
+      ],
+      "amd_within_arm_ci95": [
+        0.555,
+        0.685
+      ],
+      "cross_hardware_paired_delta_ci95": null,
+      "caveat": "Same frozen cases, but AMD publication supplies aggregates, not paired per-case vectors; do NOT subtract marginal CIs or invent paired uncertainty. Different independently trained adapters/toolkits/runtimes, not hardware-only quality causality."
+    },
+    "sampling-326": {
+      "n_each": 100,
+      "nvidia_observed_assertion_pass_rate": 0.0,
+      "nvidia_rate": null,
+      "amd_rate": 0.82,
+      "nvidia_minus_amd_pp": null,
+      "valid_model_quality_comparison": false,
+      "caveat": "ALL100rubric requests per seed failed pre-route400unsupported_modality. Observed assertion scores retained but UNUSABLE as model quality; no regrade/substitution. SAME100non-tools repeated, not300independent tasks; final content unchanged."
+    },
+    "sampling-327": {
+      "n_each": 100,
+      "nvidia_observed_assertion_pass_rate": 0.0,
+      "nvidia_rate": null,
+      "amd_rate": 0.78,
+      "nvidia_minus_amd_pp": null,
+      "valid_model_quality_comparison": false,
+      "caveat": "ALL100rubric requests per seed failed pre-route400unsupported_modality. Observed assertion scores retained but UNUSABLE as model quality; no regrade/substitution. SAME100non-tools repeated, not300independent tasks; final content unchanged."
+    },
+    "sampling-328": {
+      "n_each": 100,
+      "nvidia_observed_assertion_pass_rate": 0.0,
+      "nvidia_rate": null,
+      "amd_rate": 0.75,
+      "nvidia_minus_amd_pp": null,
+      "valid_model_quality_comparison": false,
+      "caveat": "ALL100rubric requests per seed failed pre-route400unsupported_modality. Observed assertion scores retained but UNUSABLE as model quality; no regrade/substitution. SAME100non-tools repeated, not300independent tasks; final content unchanged."
+    }
+  },
+  "training": {
+    "input_tokens_each": 792690,
+    "supervised_tokens_each": 581388,
+    "nvidia_wrapper_seconds": 892.8943054859992,
+    "amd_wrapper_seconds": 1214.946589695,
+    "nvidia_minus_amd_wall_seconds": -322.05228420900085,
+    "amd_over_nvidia_wrapper_ratio": 1.3606835458914803,
+    "nvidia_derived_input_tokens_per_second": 887.7758488654955,
+    "amd_input_tokens_per_second": 652.448434131575,
+    "nvidia_over_amd_input_throughput_ratio": 1.3606835458914803,
+    "nvidia_trainer_runtime_rounded_seconds": 852.4,
+    "amd_trainer_runtime_seconds": 1214.7243,
+    "caveat": "Both fixed75steps/oneepoch, identical full-template inputs581388supervised/792690input tokens. NVIDIA input count DERIVED from identical canonical bytes+full-template input parity, not a separate logged counter. NVIDIA Axolotl/CUDA optimized stack versus AMD Transformers/PEFT ROCm reference kernels; Torch2.14.1 vs2.10; wrapper/model-construction/evaluation timing scope differs. Excludes complete bootstrap/download/rental idle lifecycle, NOT pure hardware speedup. NLL is teacher-label likelihood, not task correctness."
+  },
+  "serving": [
+    {
+      "concurrency": 1,
+      "requests_each": 32,
+      "nvidia_errors": 0,
+      "amd_errors": 0,
+      "nvidia_output_tokens_per_second": 25.873805944766225,
+      "amd_output_tokens_per_second": 70.53295377605794,
+      "nvidia_over_amd_throughput_ratio": 0.36683287115573715,
+      "nvidia_quote_usd_per_M_output_tokens": 23.511551977778804,
+      "amd_quote_usd_per_M_output_tokens": 14.965423947888862,
+      "nvidia_over_amd_unit_cost_ratio": 1.5710581978598424,
+      "nvidia_p95_ms": 4963.759135978762,
+      "amd_p95_ms": 1869.1277059842832,
+      "caveat": "Same32request128output-token-cap SSE integer-list workload through localhost router at offered1/8/32, NOT sustained production traffic/capacity. Output tokens ONLY, not input+output total. Costs assume fully utilized measured throughput at quotes2.19USD/h NVIDIA,3.80USD/h AMD, NOT invoices/training/startup/idle/grading or quality-equivalent ROI. Different physical hosts, network, runtimes, cache/warmup and independently trained adapters; no pure hardware causal advantage. Failed requests remain denominator; ratios null if profile errors."
+    },
+    {
+      "concurrency": 8,
+      "requests_each": 32,
+      "nvidia_errors": 0,
+      "amd_errors": 0,
+      "nvidia_output_tokens_per_second": 194.14439901706794,
+      "amd_output_tokens_per_second": 395.6078408298103,
+      "nvidia_over_amd_throughput_ratio": 0.49074962369259123,
+      "nvidia_quote_usd_per_M_output_tokens": 3.133406559309767,
+      "amd_quote_usd_per_M_output_tokens": 2.6681866399348073,
+      "nvidia_over_amd_unit_cost_ratio": 1.1743580874036332,
+      "nvidia_p95_ms": 5312.875305011403,
+      "amd_p95_ms": 2684.29142300738,
+      "caveat": "Same32request128output-token-cap SSE integer-list workload through localhost router at offered1/8/32, NOT sustained production traffic/capacity. Output tokens ONLY, not input+output total. Costs assume fully utilized measured throughput at quotes2.19USD/h NVIDIA,3.80USD/h AMD, NOT invoices/training/startup/idle/grading or quality-equivalent ROI. Different physical hosts, network, runtimes, cache/warmup and independently trained adapters; no pure hardware causal advantage. Failed requests remain denominator; ratios null if profile errors."
+    },
+    {
+      "concurrency": 32,
+      "requests_each": 32,
+      "nvidia_errors": 0,
+      "amd_errors": 0,
+      "nvidia_output_tokens_per_second": 658.4733916814725,
+      "amd_output_tokens_per_second": 1400.6126898829505,
+      "nvidia_over_amd_throughput_ratio": 0.47013239023023656,
+      "nvidia_quote_usd_per_M_output_tokens": 0.9238540858574378,
+      "amd_quote_usd_per_M_output_tokens": 0.7536384349364766,
+      "nvidia_over_amd_unit_cost_ratio": 1.2258585059230802,
+      "nvidia_p95_ms": 6210.884196974803,
+      "amd_p95_ms": 2916.684633004479,
+      "caveat": "Same32request128output-token-cap SSE integer-list workload through localhost router at offered1/8/32, NOT sustained production traffic/capacity. Output tokens ONLY, not input+output total. Costs assume fully utilized measured throughput at quotes2.19USD/h NVIDIA,3.80USD/h AMD, NOT invoices/training/startup/idle/grading or quality-equivalent ROI. Different physical hosts, network, runtimes, cache/warmup and independently trained adapters; no pure hardware causal advantage. Failed requests remain denominator; ratios null if profile errors."
+    }
+  ],
+  "native_harness": {
+    "n_each": 300,
+    "nvidia_successes": 264,
+    "amd_successes": 262,
+    "nvidia_minus_amd_success_pp": 0.666666666666671,
+    "nvidia_serving_window_quote_usd": 0.375135950059321,
+    "amd_serving_window_quote_usd": 0.33968393393357593,
+    "nvidia_quote_per_harness_success_usd": 0.0014209695078004584,
+    "amd_quote_per_harness_success_usd": 0.0012965035646319693,
+    "router_model_cost_complete": false,
+    "full_lifecycle_cost_per_semantically_successful_task_usd": null,
+    "caveat": "Identical WHOLE300native endpoint:200mocktool/75general completion/25letter; general completion NOT semantic accuracy. Entire sequential arm serving-window hours*quote includes failed/input-invalid/idle attempts, divided by ALL harness successes. NOT source JSON-text exact or teacher ROI. Unpriced selfhosted router costs stay unknown/null, not free. AMD publication lacks per-class task/cost vectors; do NOT invent tool-only CPS or paired cross-hardware CI."
+  },
+  "caveats": [
+    "AMD registratione411 vs NVIDIA infrastructure-only high-limit6f8d: identical tasks/model/recipe/probes/scorer/gates/dispatch, different nonbinding admission settings: AMD64concurrent/20kRPM/100Mtpm vs NVIDIA128/10kRPM/1bTPM. Require zero LOCALpre-route429 audits before valid comparison. Old self-inflicted throttled runs archived/excluded whole, ALL lifecycle costs retained.",
+    "Raw answers/paired task vectors/joins/weights/credentials remain private. This consumes published AMD aggregate evidence from pinned main, not new AMD inference or private scoring.",
+    "Original NVIDIA LoRA gate and AMD FAIL are independent of this descriptive merged comparison; no promotion or issue-completion claim from throughput/cost figures."
+  ],
+  "status": "measured_comparison_WITH_UNUSABLE_merged_semantic_grading",
+  "nvidia_lora_vs_merged": {
+    "exact_json_text_tools": {
+      "n_each": 200,
+      "lora_rate": 0.025,
+      "merged_rate": 0.025
+    },
+    "primary_semantic_delta": null,
+    "primary_semantic_scope": "Merged grader infrastructure failure; no model-quality delta inferred from raw assertions.",
+    "native_paired": {
+      "n": 300,
+      "delta": -0.0033333333333333335,
+      "ci95": [
+        -0.016666666666666666,
+        0.01
+      ],
+      "outcome_disagreements": 5
+    },
+    "native_tools": {
+      "n": 200,
+      "lora_successes": 180,
+      "merged_successes": 180,
+      "merged_minus_lora": 0.0,
+      "paired_ci95": [
+        0.0,
+        0.0
+      ],
+      "scope": "frozen backend, general completion NOT semantic correctness; letter backend compares expected_final after surrounding-whitespace strip, not a new raw-format scorer"
+    },
+    "general_completion": {
+      "n": 75,
+      "lora_successes": 69,
+      "merged_successes": 70,
+      "merged_minus_lora": 0.013333333333333334,
+      "paired_ci95": [
+        -0.02666666666666667,
+        0.06666666666666667
+      ],
+      "scope": "frozen backend, general completion NOT semantic correctness; letter backend compares expected_final after surrounding-whitespace strip, not a new raw-format scorer"
+    },
+    "letters": {
+      "n": 25,
+      "lora_successes": 16,
+      "merged_successes": 14,
+      "merged_minus_lora": -0.08,
+      "paired_ci95": [
+        -0.2,
+        0.0
+      ],
+      "scope": "frozen backend, general completion NOT semantic correctness; letter backend compares expected_final after surrounding-whitespace strip, not a new raw-format scorer"
+    },
+    "raw_conditional_byte_agreement": {
+      "complete_cohort": 300,
+      "both_strings": 299,
+      "missing_empty_or_error_one_or_both": 1,
+      "exact_bytes_equal": 223,
+      "conditional_agreement": 0.745819397993311,
+      "scope": "NO normalization; missing/empty/errors never counted as agreement; conditional byte agreement is not semantic equivalence and NEVER removes cases from full quality denominators"
+    }
+  },
+  "representations": {
+    "base_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+    "dataset_hash": "6c437067adf7f1e86da86c386cf6e3ecfabea87b6700f52d95e9aeb3717fea7d",
+    "nvidia_adapter_sha256": "31c622a160277fb1e3b17c357a16befb52c24c49b3cf52e307a981c15b36be2d",
+    "amd_adapter_sha256": "9d78ff96de0c0ee9a8c00f894689de78824d090b9aa3d6134f4cba2bef6f8b85",
+    "same_merge_script_sha256": "5167c1686db9aa42f037d9b38a737d84cf849641aa488f70e169ec814f9ba9aa",
+    "nvidia_merged_manifest": {
+      "merged_weights_sha256": "01c32fb9907f163c0e239e9216879e6fb6ed597352776e08ce55ac9296886e42",
+      "shard_sha256": {
+        "model-00001-of-00012.safetensors": "54d83c1d36631de231876217a8e0c2483eccee8746369a482b79442bdfc5d958",
+        "model-00002-of-00012.safetensors": "d2191ab3e2ad755484c00b7253566359bbe8f8fc0733e3cd3be063a4633711d4",
+        "model-00003-of-00012.safetensors": "d8a5cca2200316ef40baa30ddb80cd42bb2c9248ca27b1e3460a3269e84e2446",
+        "model-00004-of-00012.safetensors": "bd1c5b463982aba5fbaa1b4f2f25f4c7919fe0728451a7bec122823d694a79c3",
+        "model-00005-of-00012.safetensors": "15b3881752a84e637f458518bdbd2f8a7c6ab118bb3475a68308bd0482ab4e6a",
+        "model-00006-of-00012.safetensors": "dac1f163e9aca596c7e3544a93174fee9f442b0bb3c25ad2988a699b4bee703f",
+        "model-00007-of-00012.safetensors": "a776df5cf6c998550b7e8765004f8b66be5283089c1a59cae647a699b2a54869",
+        "model-00008-of-00012.safetensors": "907ef222b9db32bd4f6c1dc380a699391b71ba32722d44f7508caedbff4a270b",
+        "model-00009-of-00012.safetensors": "f083b1d5b665ea7e20f5026081f67a6b11da688ff7fdb610f45f16abb62756c5",
+        "model-00010-of-00012.safetensors": "8217ce1eb511da36e3ca036b1e60a76693e61bab7fda3f398f18dfa680ca01b6",
+        "model-00011-of-00012.safetensors": "e4944f0e55d3608c6db7104d338c0b0fe8bfb334c6477fe281183c4a4e2551e8",
+        "model-00012-of-00012.safetensors": "f8af2334189cae452d58dac5e04adab76f8940c24d3c43f363ad7bf024d2184d"
+      },
+      "index_sha256": "a600c6626eb1eb653a3f078ab3dd1c7a8fab2e71185c7ef3aa923a39aaa637be",
+      "dtype_tensors": {
+        "BF16": 1184
+      },
+      "algorithm": "sha256(canonicalJSON(sorted filename: sha256(file bytes)))",
+      "same_base_template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041"
+    },
+    "amd_merged_manifest": {
+      "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+      "shards": [
+        {
+          "file": "model-00001-of-00012.safetensors",
+          "sha256": "54d83c1d36631de231876217a8e0c2483eccee8746369a482b79442bdfc5d958"
+        },
+        {
+          "file": "model-00002-of-00012.safetensors",
+          "sha256": "368112ff1b6003d276805deae0ec9b63d5b2519d3cc8d798ee1bbdb1049c0dc6"
+        },
+        {
+          "file": "model-00003-of-00012.safetensors",
+          "sha256": "e2ee6fd91dc32e62f1c7476652564dab2471e5a43a603f614bc305a60a1f6ecb"
+        },
+        {
+          "file": "model-00004-of-00012.safetensors",
+          "sha256": "9b4afa37bdddf2ef9d12574c4ba61a0544e6a43fcd2d679a973ce67f3e6e1ee8"
+        },
+        {
+          "file": "model-00005-of-00012.safetensors",
+          "sha256": "8d826a939ee1b0da3683d240cbe9b0320bcb5ea77632765c2cc5bcd1cbc015b0"
+        },
+        {
+          "file": "model-00006-of-00012.safetensors",
+          "sha256": "994a86a154e065a6bc3b02e0f41be659b40141b7f6a1e8f4c94feaa8ad18ab47"
+        },
+        {
+          "file": "model-00007-of-00012.safetensors",
+          "sha256": "839080ed1428c8d735adf77065c9a9c49bf28cd613bfd47e833302646352a465"
+        },
+        {
+          "file": "model-00008-of-00012.safetensors",
+          "sha256": "a724d97d012f0b386d7574307d889f20153935a9c2704aedf566757b8b9412d0"
+        },
+        {
+          "file": "model-00009-of-00012.safetensors",
+          "sha256": "0b509472c591f5858d0411ab3315231bd5294ee356585d180f6c724f8435a558"
+        },
+        {
+          "file": "model-00010-of-00012.safetensors",
+          "sha256": "0ec1bd59c81b791d6736117f132f8376271bf5595e32bedd99033b93707e1720"
+        },
+        {
+          "file": "model-00011-of-00012.safetensors",
+          "sha256": "eadf8355100175e428e0bd4d526f9e76320cea3e059bce192cccd56f3a748f09"
+        },
+        {
+          "file": "model-00012-of-00012.safetensors",
+          "sha256": "80d309a66edeeef2f9b08bb1b30820719126722f055a07a7c6a13dd0326ad9da"
+        }
+      ],
+      "canonical_shard_manifest_sha256": "e38db84e1e2a1afa28236330e9f23fab467808d1d4ea7dcaa3cd3f4308daec6f",
+      "canonicalization": "JSON array shards sorted by file; json.dumps(sort_keys=True,separators=(comma,colon)); UTF8/no newline",
+      "merge_source_sha256": "5167c1686db9aa42f037d9b38a737d84cf849641aa488f70e169ec814f9ba9aa",
+      "dtype": "BF16",
+      "device_map": "cpu",
+      "safe_merge": true,
+      "maximum_shard_size": "5GB",
+      "adapter_sha256": "9d78ff96de0c0ee9a8c00f894689de78824d090b9aa3d6134f4cba2bef6f8b85"
+    },
+    "caveat": "Both BF16 CPU safe_merge same exact script/5GB shards, NOT same independently-trained adapter. NVIDIA canonical hash uses sorted filename->SHA mapping, AMD uses sorted array; different manifest algorithms, hash strings are NOT direct weight-equivalence test. Same representation/dtype improves comparability but does not establish pure hardware causality."
+  },
+  "controls": {
+    "nvidia_original_lora": "StrictJSON502(no-eligible-target) and rollback502(upstream-failed) retained; original numeric gate FAIL independently. Merged control502classes are no-eligible-target/routing-policy-error. Precise root causes NOT proven; do not attribute to GPU/model or claim complete API/control parity.",
+    "nvidia_merged_live_failure_receipt": {
+      "exit_code": 1,
+      "scope": "retained parity stage failure, no tuning/retry; NEVER substitute for original LoRA"
+    },
+    "nvidia_merged_router_safety": {
+      "controls_complete": false,
+      "quota_negative_test_denied_before_upstream": true,
+      "access_revocation_denied_before_upstream": true,
+      "rollback_attempt_http_status_counts": {
+        "502": 2
+      },
+      "rollback_attempt_target_counts": {
+        "": 2
+      },
+      "portable_success_not_implied_by_target_mapping": true,
+      "raw_request_ids_or_joins_published": false
+    },
+    "amd_reference": "Public live-smoke and router-controls receipts on pinned main; labelled intentional quota tests distinct from qualification; dynamic spend_ceiling not monetary GPU cap."
+  },
+  "merged_real_file_new_result_proof": {
+    "scope": "ADDITIONAL engineering native real-file/new-result proof, never rescues original failed controls/quality gate; original attempts/costs retained",
+    "passed": true,
+    "same_group": "support-agent",
+    "requests": 2,
+    "all_authenticated_same_merged_target": true,
+    "receipt_sha256": "7f6167f7fbb4a7b4c226f2c07925ef4d0378ad77c5c43033ea437076668c4382"
+  },
+  "cleanup": {
+    "at": "2026-10-23T21:25:13.952411+00:00",
+    "instance_and_fresh_cloud_key_api_deleted": true,
+    "local_router_policy_tunnel_stopped_tokens_env_removed": true,
+    "vendor_cleanup_independent_watchdog": true,
+    "scope": "Exact owned Run2 IDs only; all receipts retained; no issue/promotion completion claim"
+  },
+  "grader_infrastructure_audit": "nvidia-merged-grader-infrastructure-audit.json"
+}

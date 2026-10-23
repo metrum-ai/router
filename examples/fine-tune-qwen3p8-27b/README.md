@@ -3,6 +3,50 @@
 
 # Fine-tune Qwen3.8-27B and govern it with Metrum AI Router
 
+## AMD Instinct — NVIDIA/AMD merged comparison (Refs #359)
+
+AMD evidence PR#369 is merged; its original gate **FAIL** stands. The NVIDIA
+original LoRA gate also **FAILS** (+0.5pp exact-tool gain, below required+10pp).
+Neither can be rescued by this additional safe-merged comparison. Full metrics,
+source hashes and limitations: [NVIDIA/AMD comparison](../../docs/evidence/finetune/2026-10-23-run2/NVIDIA-AMD-COMPARISON.md),
+using the [AMD evidence on pinned main](https://github.com/metrum-ai/router/tree/666aa4c55320c78275a32e5a77855a7c8702e802/docs/evidence/finetune-amd/2026-10-23).
+
+Both serve BF16 CPU-safe-merged weights from the same base/export/recipe and exact
+merge script. They have **independently trained adapters**: RTX PRO6000 Blackwell
+96GB/Axolotl/CUDA versus MI325X VF256GB/Transformers-PEFT/ROCm reference fallback.
+Toolkits/kernels/versions, host/network, timing scopes and nonbinding caller
+capacities differ. This aligns representation/dtype, **not pure hardware causality**.
+
+| Measurement | NVIDIA merged | AMD merged | Caveat |
+| --- | ---: | ---: | --- |
+| JSON-text exact tools,200 |5/200 (2.5%)|7/200 (3.5%)|−1pp; descriptive, no cross-hardware paired CI from aggregates |
+| IFEval200 / MMLU-Pro200 |170 /124|164 /124|+3pp /0pp; fixed objective endpoints |
+| Native tools200 / all300 |180 /264|180 /262|All300 includes completion-only general tasks, not semantic accuracy |
+| Fixed75step training wrapper |892.894s|1214.947s|Different toolkit/timer scope; NOT isolated GPU speedup |
+| Training inputtok/s |887.776|652.448|792690inputs each; NVIDIA count derived from exact template/input audit |
+| Mixed native batch quote/success |$0.00142097|$0.00129650|Whole300 serving-window allocation, failures/idle included; NOT lifecycle/semantic ROI |
+
+**Semantic parity is unusable:** all400 NVIDIA-merged primary/repeat rubric calls
+were rejected in our own harness pre-route with400`unsupported_modality`. Observed
+assertion failures remain archived but are not evidence of model degradation or
+a merge effect. No offline regrade, score borrowing or selective redo; no
+unauthorized rerental. Objective/native/load results above are separate endpoints.
+AMD publishes aggregates, so no invented paired cross-hardware uncertainty.
+
+| c1/8/32,32requests each,128output-token cap | NVIDIA | AMD |
+| --- | ---: | ---: |
+| Outputtok/s, c1 /c8 /c32 |25.874 /194.144 /658.473|70.533 /395.608 /1400.613|
+| Quoted USD/M **output** tokens, c1 /c8 /c32 |23.51155 /3.13341 /0.92385|14.96542 /2.66819 /0.75364|
+
+Zero errors in both final load profiles. Quotes2.19USD/h versus3.80USD/h assume
+fully utilized observed throughput; not invoices, sustained production capacity,
+combined input/output token costs or quality-equivalent ROI. Full lifecycle and
+unknown upstream charges are separate; unpriced selfhosted token costs stay null,
+not free. NVIDIA strictJSON/rollback502 controls are retained as failures, not a
+full API-parity pass; a separate real-file/NEW-nonce-result merged continuation
+passed. NVIDIA instance/key API-deleted21:25Z, AMD resources API-deleted19:23Z.
+The semantic-grading limitation remains explicit for #359 review; do not promote.
+
 Run1's rejected-candidate workflow (#326, PR354) is merged; that is NOT model
 promotion. Run2 (#355) is **blocked on governed trace export #358**, with no GPU
 rental/training authorized before the export and new freeze. Current evidence:

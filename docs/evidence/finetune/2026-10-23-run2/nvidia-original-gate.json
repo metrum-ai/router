@@ -604,8 +604,8 @@
   },
   "costs": "Router selfhosted prices unpriced, NOT zero/free; quote-window allocations and full lifecycle separately. Costs/control completeness do not authorize promotion.",
   "original_control_failures_retained": [
-    "strictJSON upstream502",
-    "GPU-specific rollback payload routed toward teacher but rejected; separate teacher-compatible proof required"
+    "strictJSON HTTP502, router error no-eligible-target",
+    "rollback HTTP502, router error upstream-failed; no passed rollback or precise root-cause claim"
   ],
   "promotion_decision": "DO_NOT_PROMOTE"
 }

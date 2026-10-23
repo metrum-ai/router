@@ -1,19 +1,35 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Run 2 RESULTS — governed cohort frozen; NVIDIA bootstrap running
+# Run 2 RESULTS — original gate FAIL; merged comparison limited; resources deleted
 
-**GPUcap$150, operational stop$120. Fresh NVIDIA VM active at$2.19/h with
-independent watchdogs/max4h. Student quality/qualification outcomes unmeasured;
-no promotion.**
-Run2 non-canary support-agent callers stay teacher; Run1 base-default decision is
-unchanged, not authorization to move this teacher group to Qwen base.
-Producer completed the real-teacher full cohort; collection conservative upper
-estimate$4.27000440, not invoice. The directly downloaded cohort/registration at
-`2bfd8de018` is superseded, never training input. Shared signed registration is
-`881e394461`, SHA42eb694e24e79756bf809d1ddaefdaec1ab0177e7692c80f52eef3279a776d92.
-NVIDIA rental follows explicit DATASET-READY execution authorization, not a demo
-narrative. Raw data/gold/keys/weights remain outside Git.
+**Do not promote.** Original NVIDIA base→LoRA JSON-text exact4→5/200 (+0.5pp),
+not required+10pp. IFEval164→161/200, MMLU123→123/200; native258→265/300 does not
+rescue the failed gate. See [original scalar gate](nvidia-original-gate.json).
+Additional NVIDIA merged vs AMD merged measurements are in
+[NVIDIA-AMD-COMPARISON](NVIDIA-AMD-COMPARISON.md), including quality, train/load
+throughput and correctly scoped unit/task costs. **Merged semantic grading is
+UNUSABLE:** all400rubric requests failed pre-route400unsupported_modality; no
+semantic degradation/merge-effect claim, offline regrade or score borrowing.
+StrictJSON/rollback502 controls remain failed/incomplete, not production approval.
+
+Non-canary `support-agent` callers remain teacher; historical Run1 base-default
+rollback is not authorization to change this group. Shared CPU-only teacher
+whole300 rerun has488authenticated requests/0transport errors/$0.11001480 API
+estimate including engineering, not invoice. Degraded227/300pre-route429 teacher
+run and all other throttled/aborted attempts remain archived infrastructure
+failures with costs; whole high-limit reruns preserve all tasks/scorers/gates.
+Training parent96f851a7 and qualification6f8d210b infrastructure amendment remain
+distinct; direct-download preparation remains superseded, never training input.
+
+NVIDIA instance AND fresh SSH key API-deleted21:25:13Z after4.10355h, quote$8.98677.
+Explicit one-lease extension authorized00:19Z maximum, but cleanup occurred as soon
+as model work ended. Earlier vendor deployment/model API-deleted19:44:53Z, full
+lifecycle quote$32.39026; no new/recreated dedicated deployment permission.
+Known quotes/configured API estimates plus collection upper sum≈$51.04095 **plus
+unknown upstream charges**; complete total/invoice remains null, below120USD
+operational stop on observed/reserved bounds. See [economics/teardown](economics-and-teardown.json).
+Raw data/gold/answers/joins/keys/weights/infrastructure remain outside Git.
 
 ## 1. The industry problem: training is not safe production delivery
 
@@ -23,7 +39,7 @@ no controlled path back to callers, evaluation unlike real multi-turn tools, and
 cost per token rather than cost per successful task. These are design risks, not
 a measured industry-wide failure-rate claim.
 
-## 2. The router-centric solution (full loop still pending)
+## 2. The router-centric solution (qualification limitations explicit)
 
 **Serve → governed opt-in capture for one key/project → outcome labels → audited
 export (canonical chat/tool JSONL+manifest, provenance/dedupe, frozen temporal
@@ -54,8 +70,7 @@ both before inference; do not silently relabel metrics or relax the original gat
 
 ## 3. What we did: Run 1 results, rejection and lessons
 
-Run1 workflow PR354 merged at`0ea1e6f38826bd3a4961ccb1b5045e3394ea42c2`, retaining
-Fixes#326. It accepted a reproducible **negative result**, not candidate promotion.
+Run1 workflow PR354 merged at`0ea1e6f38826bd3a4961ccb1b5045e3394ea42c2`, with workflow acceptance under #326. It accepted a reproducible **negative result**, not candidate promotion.
 
 | Measured run1 endpoint | Base | Weighted FT | Decision/context |
 |---|---:|---:|---|
@@ -90,18 +105,18 @@ additional native no-success-regression guard does not replace the original gate
 |---|---|
 | Run1 reproducible workflow |Merged; model rejected; base default |
 | Hardware-neutral provider rename |Done; eight-file alias-only invariance audit; no numeric changes |
-| Conservative recipe / format safeguards |Implemented; real remote base/cache checks NOT yet executed for new export |
+| Conservative recipe / format safeguards |Actual unchanged template/cache/full supervised-marker audits and remote prechecks passed; no template root-cause claim |
 | Export consumer |Actual full PR361/368 export validates1186/221/300; teacher_terms_decision preserved; consumer attestations not independent consent/privacy proof |
 | Replay engine |Actual localhost working-tree router with synthetic upstreams created a file and continued with NEW tool result; recorded teacher-answer sentinel not sent |
-| Routed cost accounting |Synthetic tests include failed attempts, same task sets, missing/invalid costs and zero-success null handling; NOT measured model economics |
+| Routed cost accounting |Authenticated shared-teacher estimate and quoted native/load GPU allocations measured; failed/idle attempts included, unknown full costs null, no invoice/quality-equivalent ROI |
 | Full #358 training export and mix/cohort |**FROZEN** train405native/523general/258letter; val74/100/47; test200/75/25. Dataset6c437067…; full manifest/row/view/gold/backend hashes in signed registration |
 | Teacher identity/output training terms |**CLEARED**: Fireworks gpt-oss-120b, scoped synthetic-test maintainer decision; model/license/provider-terms hashes recorded |
-| Actual run2 GPU / training / adapter |Fresh RTX PRO6000 VM $2.19/h active; pinned image/model bootstrap and pregradient proofs underway; no adapter result yet |
-| Candidate vs teacher vs base quality/latency |**NOT MEASURED** |
-| Cost per successful captured task |**NOT MEASURED** |
-| Full quality/general-regression/sampling gates |**NOT RUN** |
-| Run2 promotion |**NO DECISION; DO NOT PROMOTE** |
-| Run2 teardown |**PENDING**, active owned fresh VM; two watchdogs/max4h, exact API-verified instance/key/vendor deletion required |
+| Actual run2 GPU / training / adapter |Fixed75steps/892.894s, adapter31c622a1…; extra BF16 safe merge85.2s/01c32fb9…; no checkpoint search |
+| Candidate vs teacher vs base quality/latency |Original numeric gate FAIL; native is separate. Shared teacher healthy rerun complete; merged semantic grader failure explicitly UNUSABLE |
+| Cost per successful captured task |NVIDIA merged whole-native-window quote/success$0.00142097 vs AMD$0.00129650; completion-only mixed harness, not semantic/lifecycle ROI |
+| Full quality/general-regression/sampling gates |Original complete frozen cohorts reduced without rescoring: +0.5pp exact fails+10pp. Supplemental objective/native/load comparisons available; semantic comparison invalid |
+| Run2 promotion |**REJECT original numeric gate; DO NOT PROMOTE**. Extra merged never rescues it; failed controls and incomplete economics remain |
+| Run2 teardown |**API-VERIFIED** NVIDIA instance/key and vendor deployment/model deleted; local router/policy/tunnel stopped and caller tokens removed |
 
 Synthetic plumbing does not validate trained-model quality, uncaptured-caller
 export privacy, production safety or quality-equivalent ROI. Historical public
