@@ -3229,7 +3229,8 @@ func targetSupportsToolsForCallerDialect(target Target, callerDialect, outDialec
 
 func targetSupportsInputModalities(target Target, required []string) bool {
 	targetModalities := defaultModalities(target.InputModalities)
-	if target.Modalities != nil {
+	// An empty legacy list is unset, including after YAML/CLI roundtrips.
+	if len(target.Modalities) > 0 {
 		targetModalities = target.Modalities
 	}
 	for _, req := range required {

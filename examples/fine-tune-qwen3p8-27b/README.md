@@ -232,6 +232,11 @@ The default route stays on the base. Optional `qwen3p8-27b-canary` starts at
 recorded with decision telemetry. This is recommendation-only shadowing, not a
 second model inference. Never switch production traffic based on smoke alone.
 
+Legacy target `modalities: []` is treated as unset: explicit `input_modalities`
+or the default text capability applies. Nonempty legacy lists retain their
+compatibility override. Routerctl/caller YAML writes omit empty legacy lists;
+this prevents config-edit roundtrips from disabling text admission.
+
 Generate a fresh narrow caller (never pass a raw key on argv):
 
 ```sh
