@@ -37,6 +37,32 @@ def root_pair():
             dict(common, message_id='reply', role='assistant', text='Synthetic answer', parent_id='root', rank=0)]
 
 
+class RoutedTransportTests(unittest.TestCase):
+    def test_same_group_unique_labels_no_retries_or_reasoning_rewrite(self):
+        runner=load('auxiliary_transport','run2/run_auxiliary.py')
+        tests=[{'vars':{'messages':'[]'},'assert':[{'type':'is-json'}]}]
+        for arm in ('base','teacher','nvidia_onprem'):
+            config=runner.config_for(tests,arm,'primary',326,'http://127.0.0.1:18625/v1')
+            provider=config['providers'][0]
+            self.assertIn(runner.LABELS[arm],provider['id'])
+            self.assertEqual(provider['config']['passthrough']['model'],'support-agent')
+            self.assertEqual(provider['config']['maxRetries'],0)
+            self.assertFalse(provider['config']['showThinking'])
+        safe=runner.child_environment({'PATH':'/bin','AWS_ACCESS_KEY_ID':'secret','HTTP_PROXY':'private','OPENAI_API_KEY':'private'},'scoped','journal')
+        self.assertEqual(set(safe)&{'AWS_ACCESS_KEY_ID','HTTP_PROXY','OPENAI_API_KEY'},set())
+        with self.assertRaises(ValueError):runner.config_for(tests,'base','primary',326,'https://external.invalid/v1')
+
+    def test_policy_binds_authenticated_id_and_project_no_fallback(self):
+        policy=load('frozen_arm_policy','run2/arm_policy.py')
+        bindings={'key':{'project':'acme-support','providers':['ft_onprem']}}
+        ctx={'caller':{'tokenId':'key','project':'acme-support'},'targets':[{'provider':'teacher'},{'provider':'ft_onprem'}]}
+        self.assertEqual(policy.route(ctx,bindings)['targetIndex'],1)
+        ctx['caller']['project']='other'
+        self.assertEqual(policy.route(ctx,bindings)['targetIndex'],0)
+        ctx['caller']['project']='acme-support';ctx['targets']=ctx['targets'][:1]
+        with self.assertRaises(ValueError):policy.route(ctx,bindings)
+
+
 class TokenInterfaceTests(unittest.TestCase):
     def test_list_and_batch_encoding_ids_are_identical(self):
         from collections import UserDict

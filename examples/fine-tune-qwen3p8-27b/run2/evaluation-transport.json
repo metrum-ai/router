@@ -1,0 +1,18 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "frozen_before_qualification",
+  "at": "2026-10-23T17:57:09.467277+00:00",
+  "shared_registration_sha256": "96f851a75b967b54a3ff0a942ab9e7707a211a9863e964db33172c714c4e5326",
+  "scope": "Infrastructure-only same-group per-caller transport; no data/recipe/model/scorer/gate/output normalization changes. No qualification outputs consumed.",
+  "physical_model_group": "support-agent",
+  "unique_sdk_labels": "base/teacher/NVIDIA onprem/FW/weighted/AMD IDs stay distinct; passthrough.model fixes physical group; verify usage targets before qualification",
+  "retry_policy": "maxRetries0 evaluated provider AND grader, PROMPTFOO_RETRY_5XX=false; failures remain denominator",
+  "answer_representation": "SDK showThinking=false excludes separate vendor reasoning_content, never strips/normalizes inline message.content; native and training likewise final content only. gpt-oss cannot disable reasoning.",
+  "security": "caller token0600 only; allowlisted child env, no cloud/provider credentials or proxies/template environment; private config/results; policy is loopback metadata only, authenticated ID+project, unknown callers teacher, no fallback",
+  "cost_policy": "Unknown/unpriced router token-cost slots and missing usage/timeouts remain null, never free. Separately report quoted-hourly native replay batch window cost / harness successes including failures; sequential per-arm windows, actual elapsed client time and active required fleets, startup/training/idle/grading in separate lifecycle. For scalar wrapper finite cost input use this explicitly labeled quoted serving-window allocation for base/FT, not zero placeholder or invented token tariff; cost ratio is not a quality gate. Teacher API router-cost unknown remains null; incomplete costs never authorize promotion. No invoice/total-business/quality-equivalent ROI claim.",
+  "hourly_rates": "NVIDIA authenticated2.19USD/h; vendor authenticated fresh quote required before deployment/inference, max2h watchdog. Full lifecycle reserved/checked against120stop/150cap.",
+  "code_sha256": {
+    "run2/run_auxiliary.py": "8ba8e8d113bdcc4eb90b837994c0024ec06a816f11860bb23f3f384ed4a15cc2",
+    "run2/arm_policy.py": "9f90802014a61dd2d49d03cd7090dbf4e13d4b5b5f123d77718eb0881ead9138"
+  }
+}
