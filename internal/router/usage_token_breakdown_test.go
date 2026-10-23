@@ -74,7 +74,7 @@ func TestTokenBreakdownCoverageAndRollups(t *testing.T) {
 	if adminSummaryFromAgg(&total).UsageTokenBreakdown != want || adminSeriesFromAggValue("test", total, 0, false).UsageTokenBreakdown != want {
 		t.Fatal("lost API telemetry")
 	}
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

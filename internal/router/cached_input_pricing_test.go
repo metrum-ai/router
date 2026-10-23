@@ -191,7 +191,7 @@ func TestCachedInputStoreRoundTripJSONLAndRelational(t *testing.T) {
 	zeroTokens := 0
 	freePrice := 0.0
 
-	store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}
