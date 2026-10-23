@@ -280,10 +280,24 @@ go run ./cmd/metrum-ai-routerctl callers generate \
   --token-out /secure/router.token --config /secure/ft.yaml --write
 ```
 
-On that generated caller, set `rate.concurrent`, `rate.rpm`, `rate.tpm` and
-`quota.day`/`quota.month` request/token budgets. For example, 10,000 requests and
-10,000,000 tokens/day are bounded dev-evaluation budgets, not production defaults.
-The mock e2e proves an intentionally tiny request budget is enforced.
+For **localhost/test evaluation**, set `server.listen` to a literal loopback
+address and apply high admission limits **after every caller creation**, including
+SDK graders, replay, canary, load and staged merged profiles:
+
+```sh
+python3 run2/test_limits.py --config /secure/ft.yaml
+```
+
+This sets every caller to10,000RPM/1bTPM/concurrency128, day/month quotas to1m
+requests/1b tokens, disables test traffic shaping and raises script-group
+admission to128. Actual benchmark dispatch stays at its frozen8/16/32, not128.
+Project records have no independent rate/quota fields in this router schema.
+These are isolated-test settings, **not production defaults or financial caps**.
+Keep separate hard API/GPU budgets and deadlines. Any qualification that saw
+our own pre-route429 is an infrastructure failure: archive it and restart the
+**whole affected run** under a signed infrastructure-only amendment, never
+selectively redo cases. Low limits are allowed only for explicitly labelled
+rate/quota negative tests; the mock e2e deliberately exhausts45 requests.
 `spend_ceiling.max_estimated_cost_usd` is a **per-request** estimated-cost ceiling,
 not an hourly GPU spending cap. Zero list-token prices in this template cannot
 protect a rental budget; use the separate hard GPU lease watchdog and track real

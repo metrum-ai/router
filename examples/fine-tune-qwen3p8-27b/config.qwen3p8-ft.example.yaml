@@ -111,4 +111,7 @@ models:
 users: [{id: local-dev, name: Local Developer, type: service_account, status: active}]
 projects: [{id: example-project, name: Example Project, status: active}]
 project_memberships: [{user_id: local-dev, project: example-project, role: developer, status: active}]
+# For isolated localhost eval, AFTER EACH caller creation apply
+# python3 run2/test_limits.py --config /secure/ft.yaml
+# High admission is not a production policy or a monetary spending cap.
 callers: []

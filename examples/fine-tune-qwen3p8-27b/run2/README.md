@@ -3,10 +3,31 @@
 
 # Run 2 (#355): governed agent traces, shared freeze released
 
+## High-limit infrastructure amendment
+
+`high-limit-infrastructure-preregistration.json` (SHA256
+`6f8d210b3c18feffbe9bd590fa9b31521af41035cce0993c7a0f69aa5abef867`)
+implements the maintainer rule: all localhost/test callers use high admission
+limits via `test_limits.py`, including new keys and staged profiles. The original
+8concurrent/120RPM/200kTPM settings produced pre-route429s. Those runs are
+**infrastructure failures**, archived with all attempted costs, not teacher
+capability or usable teacher cost-per-success evidence. Whole affected native,
+primary, regression and seeded-sampling runs restart once; no selective redo.
+Tasks, model/weights, prompts, code/backend, dispatch concurrency, scorer and
+numeric gates do not change. Teacher-native runs independently through a CPU-only
+localhost router on gyrados; no GPU inference or new rental is required. The
+teacher-only rerun does not overturn candidate-vs-base verdicts (AMD FAIL stands).
+Extra merged measurements never replace the original LoRA gate. Any scope that
+cannot fit the existing deadlines/budgets remains explicitly incomplete.
+Low limits are retained **only** in labelled quota/rate negative tests.
+
+
 **Full export and signed NVIDIA/AMD registration are frozen.** Dataset counts:
 1186train/221val/300test; same export bytes/views on both accelerators. NVIDIA
-fresh RTX PRO6000 VM bootstrap is underway at$2.19/h, GPUcap$150/stop$120/max4h
-with independent watchdogs. Student quality/promotion results remain unmeasured.
+fixed75-step RTX PRO6000 training and the supplemental BF16 safe merge completed;
+see the metadata-only training/merge receipts. GPUcap$150/stop$120/max4h and the
+existing21:19Z lease deadline remain unchanged. Valid student qualification and
+promotion results remain pending.
 The direct-download preparation at`2bfd8de018` is **superseded**, not training data.
 Current`preregistration.json` authorizes only its hash-bound governed cohort;
 never activate`preregistration-direct-download-superseded.json` to train.
