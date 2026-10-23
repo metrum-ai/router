@@ -31,9 +31,12 @@
  70.533/395.608/1400.613 outputtok/s. Fully utilized quote estimate atc32
  $0.753638/M outputtokens, NOT invoice/productionSLO/quality-equivalent ROI.
  128token output cap, GPUmemoryfraction.42, one active merged engine. Initial
-  invalid load hit router caller concurrency8; retained privately/costs retained,
-  not relabeled as upstream throughput. Caller capacity corrected BEFORE any
-  heldout inference; no model/scorer/gate change.
+  load's26local concurrency429s were self-inflicted infrastructure throttling,
+  not model failures. The ENTIRE initial attempt is excluded from ALL reported
+  benchmark denominators; all3profiles reran whole. Historical failures/costs
+  remain only in the lifecycle ledger. Caller capacity corrected BEFORE any
+  heldout inference; no model/scorer/gate change. Per #370, local/test limits
+  are high; only explicitly labelled intentional limit tests may throttle.
 - All AMD+same-stack base frozen cohorts complete: original JSON-text exact
   AMD7/200vsbase9/200 (−1pp; needed+10pp), overall80/300vs86/300: **FAIL,
   DO NOT PROMOTE**. Native tool180/200both cannot rescue it. IFEval164vs161/200,

@@ -8,14 +8,23 @@ this runbook. Actual results live in `docs/evidence/finetune/2026-10-23/`.
 
 ## AMD Instinct
 
-The [AMD preparation runbook](amd/README.md) covers official `rocm/pytorch` and
-`rocm/vllm` planning, loopback-only serving, environment capture and two-step
-toolkit smoke requirements for MI325X (#359). Official ROCm tensor/base-tool
-proofs and a PEFT two-step smoke pass; full training/quality parity remains
-unmeasured. Pinned Axolotl dependency resolution failed; the documented
-Transformers/PEFT alternative keeps the frozen recipe. It requires #358's governed
-router-exported dataset, not the direct-download dataset below. See
-`docs/evidence/finetune-amd/2026-10-23/` for status and claim limits.
+The [AMD runbook](amd/README.md) records one epoch on the governed router-exported
+1186/221/300 split via Transformers/PEFT: pinned Axolotl dependency resolution
+failed against the official ROCm Torch build. Serving used a safe **BF16 merge**
+because ROCm vLLM unmerged-LoRA loading failed. Primary JSON-text exact was
+**3.5% vs base4.5% (−1.0pp; paired95%CI[−2.5,0]pp): gate FAIL, not promoted**.
+The droplet was destroyed and deletion API-verified by the orchestrator at19:23Z.
+See the [final AMD evidence](../../docs/evidence/finetune-amd/2026-10-23/README.md).
+This is not evidence of NVIDIA parity or healthy-teacher savings. It uses #358's
+router export, not the direct-download dataset below.
+
+The initial26local concurrency429s were **self-inflicted infrastructure
+throttling**, not model failures. The entire initial load attempt is excluded
+from all reported benchmark denominators; all three load profiles were rerun
+whole at high capacity before qualification. Historical failures/costs remain
+in the lifecycle ledger only. Per #370, all local/test caller limits are now
+high (including grader keys and effective project/group profiles); only clearly
+labelled intentional limit tests may throttle.
 
 The maintainer authorized the Fireworks-hosted open-weight teacher for the
 synthetic Acme/mock-tool technical test (#358), not general customer traffic.
@@ -58,9 +67,15 @@ confidence intervals, weak judge calibration and hardware/cost limitations.
 Lesson: successful training, faster serving and one improved metric do not
 justify promotion; data/task mismatch and general regressions matter.
 
-## 4. What is accomplished, and what remains unmeasured
+## 4. Historical engineering snapshot — before the final governed run
 
-The new router-loop engineering sample used a real Fireworks open-weight teacher
+This 2026-10-23 small-sample snapshot and its pending-work list are historical,
+not the current AMD status. The AMD outcome and verified teardown are above;
+its final governed split is1186/221/300, not this seven-row engineering sample.
+The historical caller-budget429 below is an infrastructure denial, not a model
+failure or part of any reported AMD benchmark denominator.
+
+The router-loop engineering sample used a real Fireworks open-weight teacher
 under two keys: nine public task seeds per key, eight tool-result continuations
 and seven deterministic task successes per key. Capture enabled only for support;
 audited success-only export produced 2 train / 2 validation / 3 test rows, no IT

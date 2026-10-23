@@ -3,6 +3,25 @@
 
 # Shared qualification envelope e411fc9f — no mixed protocols
 
+## Outcome (final) — 2026-10-23, after19:23Z teardown
+
+The dated amendment below records the qualification restart, not current status.
+All AMD/base frozen cohorts completed; original quality gates **FAIL / not
+promoted** (exact3.5%vsbase4.5%, −1.0pp; paired95%CI[−2.5,0]pp).
+See [gate-verdict.json](gate-verdict.json) for the decision and
+[economics-and-teardown.json](economics-and-teardown.json) for quote-only costs,
+unknown failed charges and orchestrator API-verified destruction19:23Z.
+Shared healthy-teacher replacement and NVIDIA comparison remain separately
+owned; neither can rescue the AMD gate verdict.
+
+Initial26local concurrency429s were self-inflicted infrastructure throttling.
+The entire initial load attempt is excluded from all reported benchmark
+denominators; all three profiles reran whole at high capacity before
+qualification. Costs remain in the lifecycle ledger. Current local/test limits
+are high per #370, with separately labelled intentional limit-test exceptions.
+
+## Historical qualification amendment — 2026-10-23, restart18:37Z
+
 Training provenance remains shared96f851a7 with the documented ROCm toolkit/API
 bootstrap amendments. **Current comparable qualification** uses the exact shared
 `qualification-preregistration.json`, SHA256

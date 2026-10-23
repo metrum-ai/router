@@ -71,9 +71,13 @@ Corrected high-capacity32request load profiles at concurrency1/8/32:
 Fully utilized quoted GPU cost/M
 output tokens:14.9654/2.66819/0.753638USD. These128-token-cap profiles are not
 quality-equivalent economics or invoices. Initial26local concurrency429s were
-retained as invalid; **all three profiles** reran before held-out inference.
+**self-inflicted infrastructure throttling**, not model failures. The **entire
+initial load attempt** is excluded from all reported benchmark denominators;
+**all three profiles** reran whole before held-out inference. Historical
+failures/costs remain in the lifecycle ledger only.
 All current eval callers had64concurrent/20kRPM/100Mtpm/day20krequests; no extra
-project/group throttle. Example generator defaults are now high as well.
+project/group throttle. Per #370, example generator defaults are now high as
+well; only explicitly labelled intentional limit tests may throttle.
 
 Scalar evidence is in `router-controls.json`. Same support-agent group real-file plus newly generated receipt continuation
 passed base/candidate/teacher/other-project,8requests with authenticated targets.

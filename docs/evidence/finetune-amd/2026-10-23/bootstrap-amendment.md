@@ -3,6 +3,25 @@
 
 # MI325X bootstrap and toolkit amendment (before gradients/outcomes)
 
+## Outcome (final) — 2026-10-23, after19:23Z teardown
+
+The dated bootstrap record below is historical, not the current run status.
+One-epoch Transformers/PEFT training and BF16-merged serving completed;
+Axolotl resolution and unmerged ROCm LoRA loading failed as documented.
+Original quality gates **FAIL / not promoted**: exact3.5%vsbase4.5%, −1.0pp,
+paired95%CI[−2.5,0]pp. See [gate-verdict.json](gate-verdict.json) and
+[economics-and-teardown.json](economics-and-teardown.json): GPU quote≈6.08USD,
+failed upstream charges unknown, droplet deletion API-verified19:23Z.
+No healthy-teacher savings or hardware-only parity claim follows.
+
+Initial26local concurrency429s were self-inflicted infrastructure throttling;
+the entire initial load attempt is excluded from all reported benchmark
+denominators. All three load profiles reran whole before qualification.
+Historical costs remain in the lifecycle ledger. Local/test limits are now high
+per #370; intentional quota tests are separately labelled.
+
+## Historical bootstrap record — 2026-10-23, before full training
+
 DigitalOcean droplet611994722, source-restricted SSH firewall, $3.80/h; remote
 UTC17:48Z on2026-10-23. Image advertises ROCm6.4.1 but actual host reports
 6.4.0-47, driver6.12.12, kernel6.8.0-59-generic. MI325X VF gfx942,261824MB,
