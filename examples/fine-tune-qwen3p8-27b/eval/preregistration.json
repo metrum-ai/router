@@ -1,0 +1,11 @@
+{
+  "schema_version": "fixed-model-outcome-gate/v1",
+  "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v1",
+  "workload_style": "tool",
+  "case_count": 300,
+  "fixed_model_id": "qwen3p8-27b-base",
+  "candidate_id": "qwen3p8-27b-ft",
+  "max_pass_rate_regression": 0,
+  "max_error_rate_increase": 0,
+  "max_latency_ratio": 1.25
+}

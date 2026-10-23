@@ -1,0 +1,8 @@
+{
+  "_comment": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "cloud": "massedcompute",
+  "region": "beltsville-usa-1",
+  "shade_instance_type": "RTXPro6000",
+  "shade_cloud": true,
+  "os": "ubuntu22.04_cuda13.0_shade_os"
+}

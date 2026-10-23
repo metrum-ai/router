@@ -1,0 +1,6 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Primary toolkit. Prefer pinned official Axolotl image; use its pip freeze
+# as the hardware-run environment inventory, not the legacy TRL stack.
+axolotl==0.21.0
+PyYAML==6.0.3

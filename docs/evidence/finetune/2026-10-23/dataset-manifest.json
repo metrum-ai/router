@@ -1,0 +1,16 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "dataset_revision": "e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac",
+  "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "sha256": {
+    "train": "3c4bd766a4c459170ae39cfea553d619bdb80fd645677b36b493e969f4f41001",
+    "val": "c844cb854c8702cf693d10c9ca08ae4e427a849339db4affaeb03f9f2501fc32",
+    "test": "b46d1c6cd90b67e212fe9c2ec55d46a49201a37892f221f5ac087b795f2ef0d2"
+  },
+  "counts": {
+    "train": 2000,
+    "val": 500,
+    "test": 300
+  },
+  "rejected": 36110
+}

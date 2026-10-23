@@ -1,0 +1,107 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Local/dev only. Fill account/deployment identifiers outside Git.
+server:
+  listen: 127.0.0.1:18525
+  default_model_group: qwen3p8-27b-ft
+  identifiers: {mode: passthrough}
+  decision_telemetry: {enabled: true}
+  cache: {enabled: false}
+  logging: {path: requests.jsonl}
+  usage_db: {enabled: true, driver: sqlite, path: usage.sqlite, migration_policy: auto-safe}
+state_path: router-state.json
+providers:
+  fireworks_ft:
+    dialect: openai-chat
+    base_url: https://api.fireworks.ai/inference/v1
+    api_key: ${FIREWORKS_API_KEY}
+    api_key_env: FIREWORKS_API_KEY
+    models:
+      adapter:
+        model: accounts/REPLACE_ACCOUNT/models/qwen3p8-27b-metrum-ft
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        pricing_source: operator-dedicated-deployment-meter
+        pricing_updated_at: '2026-10-23'
+        pricing_notes: Dedicated hourly billing; zero token price is NOT free service. Add measured hourly economics separately.
+        input_modalities: [text]
+        output_modalities: [text]
+        tool_support: {openai_chat: [tools, tool_choice]}
+  vllm_b200_ft:
+    dialect: openai-chat
+    base_url: http://127.0.0.1:18526/v1
+    models:
+      adapter:
+        model: metrum-ft
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        pricing_source: operator-gpu-hour-meter
+        pricing_updated_at: '2026-10-23'
+        pricing_notes: GPU hourly billing; replace with measured amortized token prices before enforcing dollar budgets.
+        input_modalities: [text]
+        output_modalities: [text]
+        tool_support: {openai_chat: [tools, tool_choice]}
+      base:
+        model: qwen3p8-27b-base
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        pricing_source: operator-gpu-hour-meter
+        pricing_updated_at: '2026-10-23'
+        pricing_notes: Control shares GPU rental; zero token price is not a cost claim.
+        input_modalities: [text]
+        output_modalities: [text]
+        tool_support: {openai_chat: [tools, tool_choice]}
+  openai:
+    dialect: openai-chat
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    api_key_env: OPENAI_API_KEY
+    models:
+      judge:
+        model: gpt-4o-2024-11-20
+        input_price_per_million_usd: 2.5
+        output_price_per_million_usd: 10
+        pricing_source: https://openai.com/api/pricing/
+        pricing_updated_at: '2026-10-23'
+        pricing_notes: Verify current rates before use; pin identifies the judge snapshot, not a floating alias.
+        input_modalities: [text]
+        output_modalities: [text]
+models:
+  qwen3p8-27b-ft:
+    strategy: weighted
+    targets:
+      - {provider: fireworks_ft, model_ref: adapter, weight: 50}
+      - {provider: vllm_b200_ft, model_ref: adapter, weight: 50}
+  # Optional: start python3 eval/shadow_policy.py before calling this group.
+  # shadow records an alternate recommendation; it does NOT duplicate inference.
+  qwen3p8-27b-ft-shadow:
+    strategy: external
+    external_policy:
+      url: http://127.0.0.1:18534/route
+      mode: shadow
+      allow_hosts: [127.0.0.1]
+      include_request: false
+      on_error: fail_closed
+    targets:
+      - {provider: fireworks_ft, model_ref: adapter, weight: 50}
+      - {provider: vllm_b200_ft, model_ref: adapter, weight: 50}
+  qwen3p8-27b-ft-fireworks:
+    strategy: static
+    targets:
+      - {provider: fireworks_ft, model_ref: adapter}
+  qwen3p8-27b-ft-onprem:
+    strategy: static
+    targets:
+      - {provider: vllm_b200_ft, model_ref: adapter}
+  qwen3p8-27b-base:
+    strategy: static
+    targets:
+      - {provider: vllm_b200_ft, model_ref: base}
+  frontier-ref:
+    strategy: static
+    targets:
+      - {provider: openai, model_ref: judge}
+users: [{id: local-dev, name: Local Developer, type: service_account, status: active}]
+projects: [{id: example-project, name: Example Project, status: active}]
+project_memberships: [{user_id: local-dev, project: example-project, role: developer, status: active}]
+callers: []

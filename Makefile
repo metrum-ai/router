@@ -270,6 +270,16 @@ test-k8s-amd-instinct-local-serving:
 test-k8s-nvidia-llmd-compat:
 	bash scripts/test_k8s_nvidia_llmd_compat.sh
 
+# Fine-tuning operator example: only tiny synthetic rows; never trains a model.
+.PHONY: ft-example-test
+ft-example-test:
+	cd examples/fine-tune-qwen3p8-27b && uv run --with jsonschema --with pyyaml python -m unittest -v
+	mkdir -p examples/fine-tune-qwen3p8-27b/.cache/promptfoo
+	cp examples/fine-tune-qwen3p8-27b/eval/package*.json examples/fine-tune-qwen3p8-27b/.cache/promptfoo/
+	npm ci --prefix examples/fine-tune-qwen3p8-27b/.cache/promptfoo --ignore-scripts --no-audit --no-fund
+	PROMPTFOO_DISABLE_TELEMETRY=1 examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules/.bin/promptfoo eval -c examples/fine-tune-qwen3p8-27b/eval/mock.yaml --no-cache
+	python3 scripts/fixed_model_outcome_gate_test.py
+
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.
 test-fast: secret-contract capability-smoke-contracts
@@ -521,6 +531,7 @@ docs-origin-test:
 	python3 scripts/check_docs_origin_test.py
 
 docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
+	go run ./cmd/metrum-ai-routerctl config validate --config examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml
 	python3 scripts/check_docs_public_face.py
 	python3 scripts/check_docs_origin.py
 	python3 scripts/validate_docs_versioning.py

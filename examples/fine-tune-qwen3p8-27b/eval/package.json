@@ -1,0 +1,9 @@
+{
+  "name": "metrum-qwen3p8-ft-eval",
+  "private": true,
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scripts": {"test": "promptfoo eval -c mock.yaml --no-cache", "eval": "promptfoo eval -c promptfooconfig.yaml --no-cache"},
+  "devDependencies": {"promptfoo": "0.124.1"}
+}

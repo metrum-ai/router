@@ -78,6 +78,28 @@ source record proves that conclusion. Confirm their origin and that exemplar
 text was not copied from a restricted benchmark before redistributing the
 source repository.
 
+## Fine-tuning example pins (2026-10-23)
+
+`examples/fine-tune-qwen3p8-27b/` pins external
+`Qwen/Qwen3.8-27B@1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0`.
+Authenticated Hub metadata and the pinned LICENSE were rechecked: public,
+ungated, Apache-2.0. No weights are bundled.
+
+Training data: `glaiveai/glaive-function-calling-v2` at
+`e7f4b6456019f5d8bcb991ef0dd67d8ff23221ac`, Apache-2.0 per pinned dataset
+README/metadata, ungated. The converter modifies the upstream representation
+and retains conservative first turns only. Keep real data outside Git and retain
+Glaive AI attribution and any required notices.
+
+Judge calibration: `lmsys/mt_bench_human_judgments` at
+`f7d2896d2cc5d80f8b55c2bbc722613555233c25`, CC-BY-4.0 per pinned README and
+metadata, ungated. Use the public `human` split, not generated judge labels.
+Credit Zheng et al., *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*
+(2023), arXiv:2306.05685. Calibration selects one human preference per distinct
+question; only scalar agreement and question IDs enter public evidence, not the
+underlying conversations. Dataset licensing is not an endorsement or a grant of
+rights to the models whose outputs the dataset contains.
+
 ## Remaining unknown terms and operator responsibility
 
 The exact Qwen and LiveCodeBench evidence above is limited to the named

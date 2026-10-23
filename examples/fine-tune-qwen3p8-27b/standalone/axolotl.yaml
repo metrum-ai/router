@@ -1,0 +1,62 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Based on Axolotl's Qwen3.8 recipe, inspected at commit
+# 777990d36ab92dcdc8b62d5ad07dc30b9618ff25. Install axolotl==0.21.0.
+# Use a pre-downloaded immutable snapshot; no credentials in this YAML.
+base_model: /data/base
+strict: false
+chat_template: tokenizer_default
+chat_template_kwargs:
+  enable_thinking: false
+datasets:
+  - path: /data/canonical/train.jsonl
+    ds_type: json
+    type: chat_template
+    field_messages: messages
+    train_on_inputs: false
+test_datasets:
+  - path: /data/canonical/val.jsonl
+    ds_type: json
+    type: chat_template
+    field_messages: messages
+val_set_size: 0.0
+output_dir: /data/adapter
+dataset_prepared_path: /data/prepared
+sequence_len: 8192
+sample_packing: false
+load_in_4bit: false
+load_in_8bit: false
+adapter: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.0
+# Only text decoder attention/MLP projections, never vision or lm_head.
+lora_target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+  - linear_attn.in_proj_qkv
+  - linear_attn.in_proj_z
+  - linear_attn.out_proj
+gradient_accumulation_steps: 16
+micro_batch_size: 1
+num_epochs: 2
+optimizer: adamw_torch
+lr_scheduler: cosine
+learning_rate: 0.0001
+bf16: true
+tf32: true
+gradient_checkpointing: true
+gradient_checkpointing_kwargs:
+  use_reentrant: false
+logging_steps: 1
+attn_implementation: sdpa
+warmup_ratio: 0.03
+evals_per_epoch: 2
+saves_per_epoch: 1
+seed: 326
+# Single GPU default. For approved multi-GPU use axolotl-fsdp2.yaml instead.

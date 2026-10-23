@@ -1,0 +1,10 @@
+{
+  "_comment": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "client_id": "me",
+  "image": "vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34",
+  "disk": 500,
+  "runtype": "ssh",
+  "env": {},
+  "cancel_unavail": true,
+  "onstart": "mkdir -p /workspace"
+}
