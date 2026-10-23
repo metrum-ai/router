@@ -8,6 +8,24 @@ Merge `config/bedrock.example.yaml` into an existing authenticated router config
 
 Set `region` on each **group target** (persisted in the configuration control plane). If omitted, SDK region resolution uses the environment/profile. Model IDs are passed intact, including optional `us.*` cross-region inference profile IDs. Cross-region inference requires permission for the profile and destination resources; residency and profile availability are AWS concerns. Standard SDK endpoint overrides are useful for isolated local tests, but must not be set in production to untrusted hosts.
 
+## Least-privilege IAM
+
+Converse requires IAM action `bedrock:InvokeModel`; ConverseStream requires
+`bedrock:InvokeModelWithResponseStream`. The SDK calls Converse APIs, but IAM
+uses these InvokeModel action names. Limit `Resource` to the foundation-model
+ARNs actually enabled in the router, not `*`. Cross-region inference profiles
+also require the inference-profile ARN and the destination-region model ARNs;
+restrict the allowed destinations in IAM/SCPs and check AWS's current profile
+routing before deployment. A policy that permits only the source region may
+fail cross-region inference. Grant neither model administration nor billing
+permissions to the serving role. Model entitlement/account prerequisites still
+apply; IAM permission alone is not activation evidence.
+
+Prefer short-lived workload-role credentials. Shared development profiles and
+environment credentials are supported by the SDK chain, not stored in the
+router control plane. Do not enable untrusted SDK endpoint overrides: requests
+are signed and sent to that destination.
+
 ## Capabilities and limits
 
 The example enables only validated text capabilities for these exact IDs in `us-east-1`:

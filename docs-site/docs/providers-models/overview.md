@@ -15,6 +15,40 @@ The customer-facing workflow is:
 4. Promote the target into a caller-visible model group after workload acceptance passes.
 5. Use reports to confirm usage, cost, latency, fallback, and selected provider/model.
 
+## AWS Bedrock Converse (v4.3.0)
+
+Bedrock uses the AWS SDK default credential chain and SigV4, not a provider API
+key. Set `auth_scheme: bedrock`, `dialect: openai-chat` (the internal bridge),
+a regional runtime `base_url`, and `region` on each group target. If region is
+omitted the SDK resolves it from environment/profile configuration. Model IDs,
+including cross-region `us.*` profile IDs, are passed intact.
+
+The validated text/stream/function-tool matrix covers
+`us.meta.llama3-3-70b-instruct-v1:0`,
+`mistral.mistral-large-3-675b-instruct`, `qwen.qwen3-32b-v1:0`,
+`deepseek.v3.2`, and `openai.gpt-oss-20b-1:0` in `us-east-1`.
+This does not establish family-wide support, vision, structured output,
+reasoning controls or provider cache controls. Unknown IDs warn and need
+explicit capability/pricing evidence. Responses continuation is stateless
+full-history bridging, not `previous_response_id` support.
+
+Grant only `bedrock:InvokeModel` and, for streaming,
+`bedrock:InvokeModelWithResponseStream` on enabled resources. Cross-region
+profiles additionally need profile and destination-model permissions; review
+residency separately. Do not put AWS credentials in YAML. Throttles map to 429,
+validation errors to 400, denied access to 403, and unavailable/not-ready models
+to 503. Ordinary retry/failover policy applies before stream commitment;
+midstream failures do not replay completed output.
+
+Use the repository's
+[example configuration](https://github.com/metrum-ai/router/blob/main/config/bedrock.example.yaml),
+[Bedrock operations guide](https://github.com/metrum-ai/router/blob/main/docs/bedrock.md),
+and [dated validation evidence](https://github.com/metrum-ai/router/tree/main/docs/evidence/bedrock/2026-10-23).
+The example is a fragment: merge it into authenticated configuration, allow its
+groups for the caller, and refresh region-specific prices before deployment.
+The evidence includes tool-result continuation and simulated throttle failover;
+it does not reconcile the final AWS account bill.
+
 ## Catalog, Smoke Group, Active Target
 
 | State | Meaning | Typical Use |

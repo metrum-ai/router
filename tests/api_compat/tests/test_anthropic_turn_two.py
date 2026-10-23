@@ -811,6 +811,11 @@ def test_anthropic_thinking_deltas_and_redacted_blocks(api, router):
 
 def test_anthropic_count_tokens_aliases(api, router):
     """ANTH-10: native exact count aliases proxy; denied callers never reach upstream."""
+    # Counting must preserve token-bearing tool schemas and cache controls too.
+    messages = [{"role": "user", "content": [{
+        "type": "text", "text": PROMPT_CANARY,
+        "cache_control": {"type": "ephemeral"},
+    }]}]
     for path in ("/anthropic/v1/messages/count_tokens", "/v1/messages/count_tokens"):
         FakeUpstream.reset_state()
         scenario = ScriptedScenario().expect(
@@ -819,7 +824,7 @@ def test_anthropic_count_tokens_aliases(api, router):
         FakeUpstream.scenario = scenario
         status, headers, raw = api(
             path,
-            {"model": "messages", "messages": [{"role": "user", "content": PROMPT_CANARY}]},
+            {"model": "messages", "messages": messages, "tools": [BASH_TOOL]},
         )
         assert status == 200, path
         assert _body(raw)["input_tokens"] == 12345
@@ -828,7 +833,8 @@ def test_anthropic_count_tokens_aliases(api, router):
         assert len(router["upstream"].calls) == 1
         forwarded = router["upstream"].calls[0]["body"]
         assert forwarded["model"] == "synthetic-messages"
-        assert forwarded["messages"] == [{"role": "user", "content": PROMPT_CANARY}]
+        assert forwarded["messages"] == messages
+        assert forwarded["tools"] == [BASH_TOOL]
 
     FakeUpstream.reset_state()
     status, _, raw = api(

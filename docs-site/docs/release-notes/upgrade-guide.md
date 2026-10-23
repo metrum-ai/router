@@ -20,6 +20,61 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Compatibility and operations (v4.3.0)
+
+### Migrations and rollback
+
+Back up and rehearse restore before upgrading. Use the **Required Migration
+Gate** below, including the non-serving PostgreSQL migration job; do not bypass
+the ledger or manually add columns. Usage migrations `2026102202` (schema v7),
+`2026102301` (v8), and `2026102302` (v9) retain provenance, cache-write usage and
+pricing, and unbilled count-event identity respectively. The configuration
+control plane has its own `2026102301` cache-write pricing migration (v7);
+identical IDs in separate scopes are not the same migration.
+
+Historical provenance remains empty/unknown. New estimated rollup counters
+start at zero, not a reconstruction of historical estimates. Historical nullable
+cache-write counts/prices remain unknown. Historical count calls cannot be
+reliably distinguished from inference and are not retroactively refunded.
+These expansions require restoring the pre-upgrade snapshot for binary rollback.
+Retain the reviewed old configuration as well as the database backup.
+
+### Accounting and client behavior
+
+Review dashboards that assumed every token count was reported. Inference token
+metrics now include `usage_source`; aggregate across this label when comparing
+with older totals. Missing stream usage settles using observed text rather than
+the requested maximum; partial reported usage can survive committed stream
+failure. Explicit Chat `stream_options` are preserved; when absent the router
+requests final usage unless the target declares that feature unsupported.
+
+Gemini thinking tokens count as output, and Anthropic input includes uncached,
+cache-read and cache-write tokens. Reasoning is already included in output and
+must not be charged twice. Configure optional
+`cache_write_price_per_million_usd` for the actual cache policy; missing write
+pricing uses base input pricing and warns. Validate refreshed catalog prices
+before promoting targets. See [Usage, Cost, And Reports](../usage-cost-reports/overview)
+for fields, provenance and cache-cost distinctions.
+
+Native Anthropic `count_tokens` now proxies the provider count and errors;
+other transports return marked estimates. Both paths are unbilled and excluded
+from inference quotas/aggregates. Request reports still show count events.
+Clients must not assume counts are always local or tokenizer-exact.
+
+### Optional upstreams and fine-tuning
+
+Bedrock is opt-in: use `auth_scheme: bedrock`, internal `dialect: openai-chat`,
+and a target `region` (or the AWS SDK region chain). Use the default AWS
+credential chain, never keys in YAML; grant only the validated model/profile
+resources. Cross-region profiles require destination permissions and a residency
+review. Existing providers need no Bedrock configuration. See
+[Providers And Models](../providers-models/overview) for the validated matrix.
+
+The fine-tuning example is an operator-owned training/deployment recipe, not
+a default routing change or a quality promotion. Review evidence and the
+outcome gate before using an adapter; enforce rental spend limits and verify
+teardown independently of token billing.
+
 ## Compatibility and operations (v4.2.0)
 
 ### Translation eligibility and beta policy

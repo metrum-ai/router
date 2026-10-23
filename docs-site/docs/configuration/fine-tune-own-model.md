@@ -14,8 +14,14 @@ remain operator responsibilities; the router does not run a GPU trainer.
 
 The source example is
 [`examples/fine-tune-qwen3p8-27b/`](https://github.com/metrum-ai/router/tree/main/examples/fine-tune-qwen3p8-27b).
-It is a **work-in-progress operator recipe**, not a published promotion result.
-Consult its evidence before quoting quality, latency or economics.
+Run 1 is a **rejected candidate**, not a quality promotion: training and serving
+passed, but the frozen promotion gate failed, so the base remains default.
+The measured host was one RTX PRO 6000 Blackwell, not a B200; provider keys
+are routing identifiers, not evidence of the hardware used. Consult the
+[dated evidence](https://github.com/metrum-ai/router/blob/main/docs/evidence/finetune/2026-10-23/README.md)
+for measured results, costs, exclusions and verified teardown before quoting
+quality, latency or economics. A passing nested scalar check alone is not
+promotion approval.
 
 ## Workflow
 
