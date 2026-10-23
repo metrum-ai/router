@@ -20,6 +20,24 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 
 
+def wait_ready(process, url, timeout=60, opener=None):
+    """Bounded startup gate; never send test traffic after readiness exhaustion."""
+    opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        code = process.poll()
+        if code is not None:
+            raise RuntimeError(f'router exited before readiness (exit={code})')
+        try:
+            with opener.open(url, timeout=1) as response:
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError, OSError):
+            pass
+        time.sleep(.1)
+    raise RuntimeError(f'router readiness timed out after {timeout}s at {url}; no test traffic sent')
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--router-bin', type=Path, required=True)
@@ -77,14 +95,14 @@ def main():
                 '--force', '--allow', 'local'], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
             # Use JSON roundtrip through YAML BaseLoader to avoid changing RFC3339 timestamps.
             config_text = (run / 'config.yaml').read_text()
-            config_text = config_text.replace('listen: :8080', 'listen: 127.0.0.1:18530')
-            config_text = config_text.replace('default_model_group: local', 'default_model_group: qwen3p8-27b-ft')
             # PyYAML SafeLoader coerces dates; preserve them as strings instead.
             class Loader(yaml.SafeLoader):
                 pass
             Loader.yaml_implicit_resolvers = {k: [(tag, regex) for tag, regex in v if tag != 'tag:yaml.org,2002:timestamp']
                 for k, v in Loader.yaml_implicit_resolvers.items()}
             x = yaml.load(config_text, Loader=Loader)
+            x['server']['listen'] = '127.0.0.1:18530'
+            x['server']['default_model_group'] = 'qwen3p8-27b-ft'
             x['server']['decision_telemetry'] = {'enabled':True}
             x['providers'] = {}
             for provider, port in [('fireworks_ft',18531),('vllm_b200_ft',18532)]:
@@ -108,13 +126,8 @@ def main():
             (run / 'config.yaml').write_text(yaml.safe_dump(x))
             log = (run / 'process.log').open('w')
             process = subprocess.Popen([str(a.router_bin.resolve()), '--config', str(run/'config.yaml')], cwd=ROOT, stdout=log, stderr=log)
-            for _ in range(100):
-                try:
-                    urllib.request.urlopen('http://127.0.0.1:18530/readyz', timeout=1).close();break
-                except Exception:
-                    if process.poll() is not None:
-                        raise RuntimeError('router exited; inspect local config')
-                    time.sleep(.1)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            wait_ready(process, 'http://127.0.0.1:18530/readyz', opener=opener)
             token = (run / 'router.token').read_text().strip()
             marker = 'FT_PRIVATE_PROMPT_MUST_NOT_BE_LOGGED_326'
             tool = {'type':'function','function':{'name':'create_file','parameters':{'type':'object','properties':{'name':{'type':'string'},'content':{'type':'string'}},'required':['name','content']}}}
@@ -122,7 +135,7 @@ def main():
                 body = {'model':model,'messages':messages,'tools':[tool],'max_tokens':128}
                 req = urllib.request.Request('http://127.0.0.1:18530/v1/chat/completions', data=json.dumps(body).encode(),
                     headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
-                with urllib.request.urlopen(req, timeout=10) as response:return json.load(response)
+                with opener.open(req, timeout=10) as response:return json.load(response)
             messages = [{'role':'user','content':marker}]
             result = chat(messages)
             assistant = result['choices'][0]['message'];call = assistant['tool_calls'][0]
