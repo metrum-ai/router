@@ -1,0 +1,17 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "scope": "CodeQL alert26 py/http-response-splitting repair; BOTH run2/localhost_proxy.py and amd/localhost_proxy.py had unvalidated upstream response values. No alert dismissal, no model inference/grade/gate changes, no GPU or deployment creation.",
+  "fix": "Only Content-Type and X-Request-Id may be forwarded, always with literal output names. Reject any non-printable/non-ASCII value including CR/LF, TAB, NUL, DEL, C1 controls and folded headers BEFORE writing response status/headers. Explicit CR/LF sanitation at validated-value boundary. All other upstream names (including malformed control-bearing names), framing, redirects and cookies dropped. Content-Length computed from received body bytes; no raw header-line construction.",
+  "checks": {
+    "python -m unittest test_localhost_proxy_headers -v": "PASS; both relays, CRLF injection in each allowed field, all ASCII/C1 controls, Unicode line separator, parsed folded header, malformed names ignored, exact allowed-header/body/framing behavior",
+    "make ft-example-test": "PASS",
+    "uv run --with pyyaml python -m unittest discover -s examples/fine-tune-qwen3p8-27b/amd -v": "PASS",
+    "go build ./cmd/metrum-ai-router": "PASS",
+    "private relay_header_e2e.py": "PASS BOTH relays through actual working-tree localhost router, real file creation and tool-result continuation,45requests each with HIGH test limits. Test-only upstream-port mapping to isolated smoke router18530; production fixed ports unchanged. Initial harness mock-constructor error fixed before successful full rerun; no paid API requests.",
+    "make docs-qa": "PASS",
+    "python3 scripts/check_source_headers.py": "PASS",
+    "make secret-check": "PASS",
+    "git diff --check": "PASS"
+  },
+  "ci": "New CodeQL run must validate the pushed fix; local checks are not a CodeQL-clean claim. Orchestrator owns re-queue after clean."
+}

@@ -10,6 +10,23 @@ import http.client
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 
 
+def response_headers(response):
+    """Only fixed names and validated printable ASCII may reach send_header.
+
+    Ignore every other upstream header, including malformed names. Reject folded
+    values, CR/LF, tabs, NUL, DEL, C1 controls and non-ASCII before writing status.
+    Explicit CR/LF removal also keeps the serialization boundary self-contained.
+    """
+    headers = {}
+    for name in ('Content-Type', 'X-Request-Id'):
+        value = response.getheader(name)
+        if value is not None:
+            if not isinstance(value, str) or any(not 32 <= ord(c) <= 126 for c in value):
+                raise ValueError('invalid upstream response header')
+            headers[name] = value.replace('\r', '').replace('\n', '')
+    return headers
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def do_GET(self):self.forward()
@@ -27,10 +44,12 @@ class Handler(BaseHTTPRequestHandler):
                 connection.request(self.command,self.path,body=body,headers=headers)
                 response=connection.getresponse()
                 if 300<=response.status<400:raise ValueError('router redirect forbidden')
+                headers=response_headers(response)
                 data=response.read();self.send_response(response.status)
-                for name in ('Content-Type','X-Request-Id'):
-                    value=response.getheader(name)
-                    if value:self.send_header(name,value)
+                if 'Content-Type' in headers:
+                    self.send_header('Content-Type',headers['Content-Type'])
+                if 'X-Request-Id' in headers:
+                    self.send_header('X-Request-Id',headers['X-Request-Id'])
                 self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
             finally:connection.close()
         except Exception:self.send_error(502,'local router transport failed; no retry/redirect')

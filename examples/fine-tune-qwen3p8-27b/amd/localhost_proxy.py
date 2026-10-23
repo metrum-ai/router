@@ -13,6 +13,23 @@ LISTEN = ('127.0.0.1', 18596)
 TARGET = ('127.0.0.1', 18592)
 
 
+def response_headers(response):
+    """Only fixed names and validated printable ASCII may reach send_header.
+
+    Ignore every other upstream header, including malformed names. Reject folded
+    values, CR/LF, tabs, NUL, DEL, C1 controls and non-ASCII before writing status.
+    Explicit CR/LF removal also keeps the serialization boundary self-contained.
+    """
+    headers = {}
+    for name in ('Content-Type', 'X-Request-Id'):
+        value = response.getheader(name)
+        if value is not None:
+            if not isinstance(value, str) or any(not 32 <= ord(c) <= 126 for c in value):
+                raise ValueError('invalid upstream response header')
+            headers[name] = value.replace('\r', '').replace('\n', '')
+    return headers
+
+
 def forward_request(method, path, body, headers):
     if path not in ('/v1/chat/completions', '/v1/models'):
         raise ValueError('unsupported relay path')
@@ -26,7 +43,7 @@ def forward_request(method, path, body, headers):
         if 300 <= response.status < 400:
             raise ValueError('router redirect forbidden')
         data = response.read()
-        safe_headers = {name:response.getheader(name) for name in ('Content-Type','X-Request-Id') if response.getheader(name)}
+        safe_headers = response_headers(response)
         return response.status, safe_headers, data
     finally:
         connection.close()
@@ -48,8 +65,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('bounded request required')
             status, headers, data = forward_request(self.command, self.path, self.rfile.read(n), self.headers)
             self.send_response(status)
-            for name, value in headers.items():
-                self.send_header(name, value)
+            if 'Content-Type' in headers:
+                self.send_header('Content-Type', headers['Content-Type'])
+            if 'X-Request-Id' in headers:
+                self.send_header('X-Request-Id', headers['X-Request-Id'])
             self.send_header('Content-Length', str(len(data)))
             self.end_headers(); self.wfile.write(data)
         except Exception:
