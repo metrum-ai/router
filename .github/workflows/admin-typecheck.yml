@@ -19,13 +19,15 @@ permissions:
 
 jobs:
   admin-typecheck:
-    runs-on: [self-hosted, Linux, X64, router]
+    runs-on: router-arc
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/router/admindist/web/package-lock.json
       - name: admin typecheck
         run: |
           npm ci --prefix internal/router/admindist/web --no-audit --no-fund
