@@ -3,8 +3,9 @@
 
 # Run 2 RESULTS — BLOCKED on #358; no trained-model result
 
-**GPU cap$150, operational stop$120. No run2 GPU rental, paid deployment,
-training or new model/heldout inference. Paid spend$0. Base remains default.**
+**GPU cap$150, operational stop$120. No FT GPU rental/student training or
+qualification-heldout inference. FT paid spend$0. Base remains default.**
+Producer's real-teacher engineering collection is separate, not a student result.
 The directly downloaded cohort/registration published at`2bfd8de018` is superseded,
 not run2 training input. Current registration fails closed. No paid work is
 triggered by the demo narrative or by synthetic integration checks.
@@ -35,7 +36,11 @@ successes are explicit, not fabricated free inference or savings.
 
 #358 owns capture/export authorization/privacy/audit/selection and collection
 backend. FT's provisional consumer/replay contract is being coordinated there;
-actual export/teacher terms/backend agreement and new signed protocol are pending.
+the actual 1/3/3 real-teacher engineering export is consumer-compatible, but the
+useful-sized full cohort and joint NVIDIA/AMD hash-bound freeze remain pending.
+Teacher-output rights are CLEARED by scoped maintainer decision6366186842 for
+this synthetic technical test, recorded in`teacher-terms-decision.json` and the
+manifest. Users still must verify model license/provider output-training terms.
 Native success and strict JSON-text exact accuracy are different endpoints: define
 both before inference; do not silently relabel metrics or relax the original gates.
 
@@ -77,11 +82,11 @@ p95 ratio≤1.25. Actual endpoint mapping/mix/hashes await new preregistration.
 | Run1 reproducible workflow |Merged; model rejected; base default |
 | Hardware-neutral provider rename |Done; eight-file alias-only invariance audit; no numeric changes |
 | Conservative recipe / format safeguards |Implemented; real remote base/cache checks NOT yet executed for new export |
-| Export consumer |Proposed versioned JSONL+manifest adapter; synthetic hash/privacy-attestation/rights/time/source-group tests only; not exporter privacy proof |
+| Export consumer |Actual PR361 real-teacher engineering export validates1/3/3 and preserves teacher_terms_decision; not a useful training cohort or independent exporter privacy proof |
 | Replay engine |Actual localhost working-tree router with synthetic upstreams created a file and continued with NEW tool result; recorded teacher-answer sentinel not sent |
 | Routed cost accounting |Synthetic tests include failed attempts, same task sets, missing/invalid costs and zero-success null handling; NOT measured model economics |
-| Real #358 export and mix/cohort |**PENDING**; no direct-download fallback |
-| Teacher identity/output training terms |**PENDING decision from traces agent/operator** |
+| Full #358 training export and mix/cohort |**PENDING**; tiny real-teacher engineering export exists; no direct-download fallback |
+| Teacher identity/output training terms |**CLEARED**: Fireworks gpt-oss-120b, scoped synthetic-test maintainer decision; model/license/provider-terms hashes recorded |
 | Actual run2 GPU / training / adapter |**NOT RENTED / NOT RUN / NONE** |
 | Candidate vs teacher vs base quality/latency |**NOT MEASURED** |
 | Cost per successful captured task |**NOT MEASURED** |

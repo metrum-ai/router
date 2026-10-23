@@ -17,6 +17,18 @@ support caller/project (redaction/PII policy, retention); other callers stay
 uncaptured. The #358 agent owns export authorization/audit/filtering, capture
 proofs, temporal splits and the collection/mock-backend interface.
 
+Teacher rights are CLEARED for this synthetic technical test by the maintainer:
+https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842.
+The Fireworks-hosted teacher is `accounts/fireworks/models/gpt-oss-120b`;
+`teacher_terms_decision` is preserved in export/derived manifests and dated evidence,
+including pinned license/provider-terms hashes. This is NOT customer-data permission.
+Users must choose a teacher whose license AND provider terms allow training on
+outputs, and verify that before enabling export. Collection cap remains about$20.
+
+PR361's real-teacher engineering export is consumer-compatible (1train/3val/3test),
+not a useful training cohort. Shared NVIDIA/AMD recipe/evaluation freeze is being
+coordinated through reports; no GPU rental on consumed debugging probes.
+
 FT consumes canonical chat/tool JSONL plus manifest, preserving complete native
 assistant/tool-result continuations and provenance. **All training rows, including
 general/letter-format anchors, must come from the router export.** Downloaded
@@ -28,12 +40,13 @@ The old 5,667/500/300 cohort and hashes are archival preparation, not current sp
 Coordination proposal:
 https://github.com/metrum-ai/router/issues/358#issuecomment-6365813193
 
-### Consumer contract — provisional, not yet exporter-confirmed
+### Consumer contract — matched by PR361's real-teacher engineering export
 
 `router_export.py` implements `metrum-router-ft-export-v1` as a proposed handoff:
 
 - `manifest.json`: source.kind=`router_capture`, export_id, filters,
   split_boundaries, audit_event_ref, teacher_terms.training_outputs_allowed=true,
+  teacher_terms_decision with scoped reference and pinned terms/license hashes,
   privacy capture_opt_in/redaction_applied/pii_filter_applied=true, and
   splits.{train,val,test}.{sha256,count}.
 - Each split JSONL envelope has canonical `messages`, `tools`, `provenance`
@@ -60,11 +73,12 @@ be resolved with the exporter, not silently coerced/dropped.
 ## Retained conservative recipe and real pre-checks
 
 Rank8/alpha16, one epoch, LR1e-5, effective batch16, no quantization/packing,
-BF16 pinned base. Only q_proj,v_proj,linear_attn.in_proj_qkv/out_proj; no
+BF16 pinned base, SDPA and TF32=false on both NVIDIA/AMD. Only q_proj,v_proj,linear_attn.in_proj_qkv/out_proj; no
 MLP/gate/vision/lm_head updates. Keep original base template bytes and explicit
 non-thinking mode. No hyperparameter/checkpoint search on consumed heldouts.
 
-After export/terms/backend agreement, freeze a NEW registration containing actual
+After useful-sized export and joint NVIDIA/AMD protocol agreement (teacher rights
+already cleared), freeze a NEW registration containing actual
 export/data/view/source/scorer/recipe hashes, mix/counts, source-group/time splits,
 replay contract, sampling, arms and unchanged numerical gates **before training or
 heldout inference**. `readiness.py` requires confirmed router-export provenance;

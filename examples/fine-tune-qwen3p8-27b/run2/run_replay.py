@@ -83,7 +83,8 @@ def main():
             headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
         with opener.open(req,timeout=120) as response:
             value=json.load(response)
-            return value['choices'][0]['message'],response.headers.get('X-Request-Id')
+            choice=value['choices'][0]
+            return {**choice['message'],'finish_reason':choice.get('finish_reason')},response.headers.get('X-Request-Id')
     # Exclusive, private, incrementally persisted metadata; no prompts/answers/args.
     fd=os.open(a.out,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     export_identity=sha(a.export/'manifest.json');protocol_identity=sha(a.preregistration)

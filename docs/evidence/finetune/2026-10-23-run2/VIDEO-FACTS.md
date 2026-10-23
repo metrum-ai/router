@@ -7,13 +7,15 @@
 
 - Maintainer requires run2 (#355) to train on **governed router-captured agent
   traces exported by #358**, not directly downloaded training data.
-- **No run2 GPU rented, deployment created, training or new model/heldout
-  inference performed; run2 paid spend$0.** Do not show a completed run2 demo yet.
+- **No FT GPU rented/student trained or qualification-heldout replay; FT paid
+  spend$0.** Producer has real-teacher engineering traffic, not a trained-model
+  result. Do not show a completed run2 demo yet.
 - Direct-download preparation/preregistration at`2bfd8de018` is **superseded**.
   Its5667/500/300 counts, hashes, CPU replay and Arrow checks are historical
   preparation ONLY, not the new run2 training/evaluation cohort.
 - Current `run2/preregistration.json` explicitly BLOCKS training. No rental until
-  #358 export, approved teacher-output training rights and new signed freeze.
+  useful-sized #358 export and new shared NVIDIA/AMD signed freeze. Teacher
+  rights are CLEARED, not a remaining blocker.
 - Keep recipe plan: one epoch, LR1e-5, rank8/alpha16, text-attention projections
   only; BF16 base/template unchanged. General/letter-format anchors must also
   be router-captured/exported. Actual mix/counts await the export.
@@ -40,8 +42,15 @@
    not strict JSON-text exact accuracy; freeze endpoints before inference.
 7. Accept/reject honestly; API-verify instance/key/vendor teardown.
 
-Exporter/backend contract coordination posted on #358, comment6365813193.
-Consumer/replay modules are preparatory/provisional, not proof this loop is done.
+Teacher: Fireworks`accounts/fireworks/models/gpt-oss-120b`, Apache-2.0. Maintainer
+approved this synthetic Acme/mock-tools technical test at comment6366186842;
+`teacher_terms_decision` and pinned model/provider-terms hashes are recorded in
+manifest/evidence. NOT general customer-data permission; users must independently
+choose/check a teacher whose terms permit output training. Collection cap~$20.
+PR361 engineering export1train/3val/3test is consumer-compatible, includes historical
+teacher failures, and is NOT a useful training cohort. Shared NVIDIA/AMD recipe
+now uses TF32=false, same BF16/SDPA/rank8/LR1e-5/one epoch. Full cohort/freeze and
+student measurements are still pending; do not imply the full loop is done.
 
 ## Provider-name correction / Run 1 facts that must remain true
 

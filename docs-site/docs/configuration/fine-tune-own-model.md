@@ -56,8 +56,13 @@ success, unchanged quality/general-regression gates, latency and total attempted
 routed model cost per successful task (failures included; unknown cost/zero
 successes explicit). Native success is not JSON-text exact accuracy; endpoints
 must be preregistered, not silently interchanged. Teacher output rights must
-permit training. Export/backend contract and real-model evidence are pending;
-this is not a claim the export feature or full loop has shipped.
+permit training and must be checked before enabling training export. The maintainer
+cleared Fireworks-hosted gpt-oss-120b for this synthetic Acme technical test only
+(issue358 comment6366186842); the scoped `teacher_terms_decision` and pinned terms
+hash are recorded in manifest/evidence. This is not customer-data permission.
+PR361 has a consumer-compatible real-teacher engineering sample, not a useful
+training cohort. Full export/shared NVIDIA-AMD freeze/student evidence remain
+pending; this is not a claim the full loop has shipped.
 
 See the source example's `run2/README.md` and dated `VIDEO-FACTS.md` for current
 blocking dependencies and validated versus still-unmeasured facts.

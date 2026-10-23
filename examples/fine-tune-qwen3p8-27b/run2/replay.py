@@ -26,7 +26,7 @@ def run_case(row, call_router, backend, max_turns=8):
     if len(schemas)!=len(tools):raise ValueError('duplicate tool definition')
     def no_references(value):
         if isinstance(value,dict):
-            if any(k in value for k in ('$ref','$dynamicRef')):
+            if any(k in value for k in ('$ref','$dynamicRef','$recursiveRef')):
                 raise ValueError('inline schemas only; no row-driven reference/URL resolution')
             for child in value.values():no_references(child)
         elif isinstance(value,list):
@@ -48,11 +48,13 @@ def run_case(row, call_router, backend, max_turns=8):
         if not identifier or identifier in request_ids:
             raise ValueError('unique router request identifiers required for cost joins')
         request_ids.append(identifier)
+        message=copy.deepcopy(message)
+        finish_reason=message.pop('finish_reason',None)
         if message.get('role')!='assistant':raise ValueError('assistant response required')
         calls = message.get('tool_calls',[])
         if not calls:
             if not isinstance(message.get('content'),str):return result
-            result['task_success'] = backend.success(state,copy.deepcopy(message)) is True
+            result['task_success'] = backend.success(state,{**message,'finish_reason':finish_reason}) is True
             return result
         messages.append(copy.deepcopy(message))
         for call in calls:

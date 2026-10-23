@@ -19,7 +19,12 @@ failure rates or claim production safety from a benchmark.
 
 ## 2. The router-centric solution
 
-Serve a licensed teacher → opt in ONE caller/key/project to governed capture
+Choose a teacher whose model license AND provider terms permit training on
+outputs; verify this before enabling training export. For this synthetic Acme
+technical test the maintainer cleared Fireworks-hosted gpt-oss-120b, recorded in
+`teacher_terms_decision` (comment6366186842); not general customer-data permission.
+
+Serve that teacher → opt in ONE caller/key/project to governed capture
 (redaction/PII policy, retention; others uncaptured) → attach deterministic outcome
 labels → audited admin export (canonical chat/tool JSONL+manifest, dedupe/provenance,
 frozen temporal split) → fine-tune → route back into the SAME `support-agent`
@@ -45,11 +50,13 @@ or post-hoc rescoring. See the dated run1 RESULTS for full arms, errors and cave
 Delivered: merged reproducible negative-result workflow; actual run1 router/native
 continuation, serving, controls and API-verified teardown. Provider IDs are now
 hardware-neutral; historical JSON label normalization changes no numerical result.
-New consumer/replay code is provisional and tested with synthetic data/localhost
-mock upstreams, NOT a trained-model result. **Run2 captured export, exact mix,
+Consumer/replay plumbing is tested with synthetic/localhost upstreams; PR361's
+real-teacher1/3/3 engineering export also validates, NOT a student-model result.
+**Run2 useful-sized captured cohort, exact mix,
 training, candidate-vs-teacher-vs-base quality, cost per successful task and
 promotion decision: PENDING.** Keep those placeholders until evidence exists.
-GPU cap$150, stop$120; no run2 paid resources or model inference yet.
+NVIDIA GPU cap$150, stop$120; no FT GPU/student training/qualification inference.
+Producer's separately metered real-teacher engineering collection is not student evidence.
 
 The technical commands below reproduce the historical run1 workflow; they are NOT
 permission to use direct-download training for run2. Follow `run2/README.md` for

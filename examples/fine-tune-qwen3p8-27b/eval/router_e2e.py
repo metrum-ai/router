@@ -139,7 +139,8 @@ def main():
             def routed(initial, tools):
                 assert all('RECORDED_TEACHER_ANSWER' not in json.dumps(m) for m in initial)
                 result = chat(initial)
-                return result['choices'][0]['message'],result['_router_request_id']
+                choice=result['choices'][0]
+                return {**choice['message'],'finish_reason':choice['finish_reason']},result['_router_request_id']
             case = {'provenance':{'task_sha256':'0'*64},'tools':[tool],
                     'messages':[{'role':'assistant','content':'RECORDED_TEACHER_ANSWER'}],
                     'replay':{'initial_messages':messages}}

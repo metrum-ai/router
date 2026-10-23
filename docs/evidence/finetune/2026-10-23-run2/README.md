@@ -4,7 +4,8 @@
 # Run 2 (#355) — re-scoped to router trace export #358; BLOCKED
 
 **No GPU rental until #358 produces the governed captured-trace export.**
-No GPU rented, paid deployment, training or new model/heldout inference; spend$0.
+No FT GPU rented, student training or qualification-heldout inference; FT spend$0.
+The traces track has a real-teacher engineering sample, not a training cohort.
 Cap remains$150, operational stop$120. Base stays default, no promotion claim.
 
 The maintainer superseded the direct-download preparation at signed commit
@@ -16,9 +17,13 @@ Current`run2/preregistration.json` fails closed. Do not resurrect the archived
 
 Retain conservative recipe/format-parity checks and the hardware-neutral provider
 rename. All new training, including general/letter-format mix, must come through
-the router export, with approved teacher-output training rights. Exact mix/cohort,
-backend/checker and replay/gate mapping await the #358 agent's export contract and
-new signed preregistration before training/heldout inference.
+the router export. Teacher rights are CLEARED for this synthetic technical test:
+see`teacher-terms-decision.json`, maintainer comment6366186842. Users must choose a
+teacher whose model license/provider terms permit output training and verify this
+before enabling export; the decision is not general customer-data permission.
+PR361's real-teacher engineering export validates with the FT consumer (1/3/3),
+but is too small/consumed for training. Full mix/cohort and shared NVIDIA/AMD
+replay/gate/source/data freeze remain pending useful-sized governed export.
 
 [Consumer/replay plan](../../../../examples/fine-tune-qwen3p8-27b/run2/README.md).
 Coordination: https://github.com/metrum-ai/router/issues/358#issuecomment-6365813193.

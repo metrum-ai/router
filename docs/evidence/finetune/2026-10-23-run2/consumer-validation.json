@@ -1,9 +1,9 @@
 {
   "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
-  "at": "2026-10-23T13:50:02.520718+00:00",
-  "contract_status": "proposed; #358 exporter/backend confirmation pending",
+  "at": "2026-10-23T15:36:30.438619+00:00",
+  "contract_status": "actual PR361 engineering export consumer-compatible; full cohort/joint freeze pending",
   "make_ft_example_test": "pass",
-  "python_tests": 55,
+  "python_tests": 56,
   "node_privacy_tests": 2,
   "promptfoo_mock_cases": 2,
   "scalar_gate_selftests": "pass",
@@ -14,8 +14,8 @@
     "tool_continuation": "pass",
     "created_file": true,
     "weighted_targets": {
-      "fireworks_ft": 19,
-      "vllm_onprem_ft": 26
+      "fireworks_ft": 24,
+      "vllm_onprem_ft": 21
     },
     "request_budget": "pass",
     "prompt_content_absent": "pass",
@@ -27,7 +27,8 @@
   "scope": "synthetic proposed-export/localhost mock proof only; NOT real captured export, teacher licensing, trained model, production privacy or model economics",
   "ft_worker_paid_resources_created": 0,
   "ft_worker_paid_spend_usd": 0,
-  "trace_agent_collection_costs": "not reported here",
+  "trace_agent_collection_costs": "separate producer ledger; engineering estimate0.03170595USD, not invoices",
   "router_binary_sha256": "531b772c454121fd0e0d3b09966fa94ec4f940c5c1338c3c49eb253b0f2bd338",
-  "privacy_child_environment_test": "pass"
+  "privacy_child_environment_test": "pass",
+  "teacher_terms_status": "cleared scoped maintainer decision6366186842, recorded in manifest/evidence"
 }

@@ -30,6 +30,7 @@ class ExportTests(unittest.TestCase):
         manifest = {'format':export.FORMAT,'source':{'kind':'router_capture'},'export_id':'synthetic',
             'filters':{'project':'synthetic-only'},'split_boundaries':{'method':'time'},
             'audit_event_ref':'synthetic-audit','teacher_terms':{'training_outputs_allowed':True},
+            'teacher_terms_decision':{'scope':'synthetic fixture only','reference':'synthetic','terms_sha256':'0'*64},
             'privacy':{k:True for k in ('capture_opt_in','redaction_applied','pii_filter_applied')},'splits':{}}
         for n,split in enumerate(('train','val','test'),1):
             row = {'messages':[{'role':'user','content':split},{'role':'assistant','content':'done'}],
@@ -47,6 +48,7 @@ class ExportTests(unittest.TestCase):
             path = Path(d);source=path/'source';source.mkdir();self.fixture(source)
             result = export.prepare(source,path/'output')
             self.assertFalse(result['training_authorized'])
+            self.assertEqual(result['teacher_terms_decision']['scope'],'synthetic fixture only')
             row = json.loads((path/'output/train.jsonl').read_text())
             self.assertEqual(set(row),{'messages','tools'})
             self.assertIn('provenance',json.loads((path/'output/replay-test.jsonl').read_text()))
@@ -158,6 +160,17 @@ class ReplayCostTests(unittest.TestCase):
         with self.assertRaises(ValueError):replay.summarize(rows)
         rows=self.records();rows[0]['request_ids']=rows[1]['request_ids']
         with self.assertRaises(ValueError):replay.summarize(rows)
+
+    def test_truncated_or_unknown_final_reason_is_not_success(self):
+        class Backend:
+            def initialize(self,descriptor):return {}
+            def success(self,state,message):return message.get('finish_reason')=='stop'
+        row={'tools':[],'provenance':{'task_sha256':'0'*64},
+             'replay':{'initial_messages':[{'role':'user','content':'fixture'}]}}
+        for reason,expected in (('length',False),(None,False),('stop',True)):
+            def call(messages,tools):
+                return {'role':'assistant','content':'ok','finish_reason':reason},'request'
+            self.assertEqual(replay.run_case(row,call,Backend())['task_success'],expected)
 
     def test_teacher_continuations_never_initial_inputs(self):
         with self.assertRaises(ValueError):replay.run_case({'replay':{'initial_messages':[

@@ -50,7 +50,7 @@ def load_export(directory):
     manifest = json.loads(manifest_path.read_text())
     if manifest.get('format') != FORMAT or manifest.get('source',{}).get('kind') != 'router_capture':
         raise ValueError('versioned router-capture export required; direct-download inputs refused')
-    for key in ('export_id','filters','split_boundaries','audit_event_ref','teacher_terms'):
+    for key in ('export_id','filters','split_boundaries','audit_event_ref','teacher_terms','teacher_terms_decision'):
         if not manifest.get(key):
             raise ValueError('export provenance/policy metadata incomplete')
     if manifest['teacher_terms'].get('training_outputs_allowed') is not True:
@@ -120,8 +120,9 @@ def prepare(directory, out):
     (out/'router-export-manifest.json').write_bytes((directory/'manifest.json').read_bytes())
     result = {'source':{'kind':'router_capture','export_id':manifest['export_id']},
         'router_export_manifest_sha256':sha(directory/'manifest.json'),
+        'teacher_terms_decision':manifest['teacher_terms_decision'],
         'sha256':hashes,'axolotl_view_sha256':views,'counts':{k:len(v) for k,v in rows.items()},
-        'contract_status':'proposed; exporter-agent confirmation and new preregistration required',
+        'contract_status':'consumer-compatible PR361 engineering schema; full cohort and new shared preregistration required',
         'training_authorized':False}
     (out/'manifest.json').write_text(json.dumps(result,indent=2)+'\n')
     return result

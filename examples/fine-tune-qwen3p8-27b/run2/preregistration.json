@@ -2,14 +2,15 @@
   "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
   "status": "blocked_awaiting_router_capture_export",
   "protocol": "metrum-qwen3p8-router-traces-run2-pending",
-  "reason": "Maintainer re-scoped #355 to governed agent traces exported by #358. No GPU rental, training or heldout inference until export, teacher-output terms decision and new signed preregistration.",
+  "reason": "Maintainer re-scoped #355 to governed agent traces exported by #358. Teacher-output decision is CLEARED for the synthetic Acme technical test. No GPU rental, training or heldout replay until the full useful-sized governed export and new shared NVIDIA/AMD signed preregistration; tiny engineering sample is not training authority.",
   "required_source_kind": "router_capture",
   "superseded_registration": "preregistration-direct-download-superseded.json",
   "superseded_commit": "2bfd8de018f527781074b68f58f30da3fc625bf4",
   "gpu_hard_cap_usd": 150,
   "operational_stop_usd": 120,
   "retained_recipe_plan": {"epochs": 1, "learning_rate": 0.00001, "lora_r": 8, "lora_alpha": 16, "bf16": true, "chat_template": "unchanged base tokenizer_default; enable_thinking=false"},
-  "export_contract_status": "proposal posted on #358, not yet confirmed",
+  "export_contract_status": "PR361 real-teacher engineering export is consumer-compatible; awaiting full cohort and joint freeze",
+  "teacher_terms_decision": {"status": "cleared_by_maintainer", "reference": "https://github.com/metrum-ai/router/issues/358#issuecomment-6366186842", "scope": "synthetic Acme technical loop only, not customer-data permission", "teacher": "accounts/fireworks/models/gpt-oss-120b", "terms_sha256": "78c0dfb857eb860d15cfc2dc7296f3b19950d3145b0e5a40bc46e28cfbd19d30"},
   "replay_comparison": ["candidate", "teacher", "base"],
   "required_reporting": "heldout task success, unchanged promotion/general-regression gates, latency, total measured routed cost / successful tasks; failed attempts included in cost"
 }

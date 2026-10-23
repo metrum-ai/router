@@ -1,0 +1,22 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "source_pr": 361,
+  "source_head_observed": "b9e467e31108f62f590b9d8c0a1a1099befac5e0",
+  "format": "metrum-router-ft-export-v1",
+  "dataset_hash": "e7ef76753b30f7030b4b4db6963cfacaf85c5ff5ee10ba1250d9d333fa62674d",
+  "manifest_file_sha256": "c72d2285d518edf195c6ce1510badb6fd64669feb0c59379b66fc36034a9968f",
+  "counts": {"train": 1, "val": 3, "test": 3},
+  "ft_consumer_validation": "pass, CPU only; no new teacher or student model call",
+  "teacher_terms_decision_preserved_verbatim_in_derived_manifest": true,
+  "teacher_terms_decision_evidence": "teacher-terms-decision.json",
+  "training_authorized": false,
+  "trusted_backend_sha256_observed": "0006956e414a35111d14e0dbc561cc6cea19844e3ea659e260cc76534c24f9ad",
+  "backend_status": "compatible interface; full-cohort checker/source hashes must be frozen after A-J anchor support",
+  "scope": "Consumed real-teacher engineering sample, not a useful training cohort or qualification heldout. No student quality, hardware, promotion or production claim.",
+  "remaining_dependency": "Useful-sized governed cohort and real-teacher E2E from traces track; joint NVIDIA/AMD input/scorer/recipe/image/sampling freeze. Teacher-output-rights gate is cleared for this synthetic technical test.",
+  "nvidia_gpu_cap_usd": 150,
+  "ft_worker_gpu_rentals": 0,
+  "ft_worker_paid_spend_usd": 0,
+  "producer_estimated_list_token_collection_debug_usd_reported": 0.03170595,
+  "producer_cost_caveat": "Separately reported by traces track; cache discounts ignored, not invoices or complete lifecycle totals. Collection cap remains about20USD."
+}
