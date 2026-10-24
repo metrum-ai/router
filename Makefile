@@ -287,9 +287,9 @@ ft-example-test:
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.
 test-fast: secret-contract capability-smoke-contracts
-	# Expanded rollup schemas add fresh-install DDL to the relational fixtures.
-	# Keep every assertion; bound the complete package suite above Go's 10m default.
-	go test ./... -timeout=15m
+	go test $$(go list ./... | grep -v '/internal/router$$') -timeout=15m
+	# Temporary while router-arc uses shared-CPU nodes; revert when dedicated c-8 capacity returns. Refs #367.
+	go test ./internal/router -timeout=30m
 	python3 scripts/outcome_calibrated_policy_test.py
 	"$${MAKE:-make}" d3-policy-test
 	python3 scripts/api_compat_bootstrap_test.py
