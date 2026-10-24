@@ -78,11 +78,23 @@ def assert_pull_request_cancellation() -> None:
             )
 
 
+def assert_go_timeout_headroom(text: str, *, make_recipe: bool = False) -> None:
+    # Only internal/router gets temporary shared-CPU headroom (Refs #367).
+    commands = [line.strip() for line in text.splitlines() if line.strip().startswith("go test ")]
+    other_packages = "go test $(go list ./... | grep -v '/internal/router$') -timeout=15m"
+    if make_recipe:
+        other_packages = other_packages.replace("$", "$$")
+    require(commands == [other_packages, "go test ./internal/router -timeout=30m"],
+            "Go coverage/timeouts drifted: only internal/router may use 30m; all other packages retain 15m")
+    require("shared-CPU" in text and "dedicated c-8" in text and "Refs #367" in text,
+            "temporary router timeout must retain its capacity/revert explanation")
+
+
 def assert_make_tiers() -> None:
     makefile = read(ROOT / "Makefile")
     fast = make_rule(makefile, "test-fast")
     full = make_rule(makefile, "test")
-    require("go test ./..." in fast, "test-fast dropped Go coverage")
+    assert_go_timeout_headroom(fast, make_recipe=True)
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
@@ -117,7 +129,7 @@ def assert_deterministic_gate() -> None:
     require("schedule:" not in text, "deterministic gate must not be scheduled")
     parsed = jobs(text)
     coverage = {
-        "go": ("gofmt -l .", "go vet ./...", "go test ./..."),
+        "go": ("gofmt -l .", "go vet ./...", "go test ./internal/router"),
         "contracts": ("make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test",
                       "scripts/outcome_calibrated_policy_test.py", "scripts/api_compat_bootstrap_test.py",
                       "scripts/ci_topology_test.py", "scripts/harbor_promotion_test.py",
@@ -129,6 +141,7 @@ def assert_deterministic_gate() -> None:
         "sbom": ("anchore/sbom-action", "anchore/scan-action", "actions/upload-artifact"),
     }
     require(set(parsed) == set(coverage) | {"changes", "test-full"}, "gate lane inventory drifted")
+    assert_go_timeout_headroom(parsed["go"])
     for lane, markers in coverage.items():
         for marker in markers:
             matched = [step for step in steps(parsed[lane]) if marker in step]

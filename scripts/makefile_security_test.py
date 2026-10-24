@@ -121,7 +121,9 @@ def main() -> int:
     # shared its recipe line with Python provisioning.
     default_dry_run = run_make("-n", environment={"PATH": no_uv_path})
     require(default_dry_run.returncode == 0, f"bare make dry-run failed without uv:\n{default_dry_run.stderr}")
-    require("go test ./..." in default_dry_run.stdout, "bare make must retain the test target")
+    require("go test $(go list ./... | grep -v '/internal/router$') -timeout=15m" in default_dry_run.stdout
+            and "go test ./internal/router -timeout=30m" in default_dry_run.stdout,
+            "bare make must retain every Go package with router-only timeout headroom")
 
     # The offline child deliberately scrubs Make override transport, but it
     # must remain a visible recursive `$(MAKE)` call. GNU Make encodes short
