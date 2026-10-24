@@ -10,6 +10,24 @@ The checked-in `Dockerfile` pins the Go builder image to a patched Go patch rele
 
 The Docker build installs the docs and admin dependencies with `npm ci` in layers keyed by their checked-in package manifests and lockfiles, before copying the rest of the source. Keep those dependency layers ahead of target-architecture arguments and source copies: amd64 and arm64 release packages can then share the verified dependency layers while still rebuilding embedded docs with the requested version, commit, and build date. Do not replace `npm ci` with an unlocked install mode.
 
+## Build a single image from source
+
+The root `Dockerfile` builds the router and embedded documentation and produces a `scratch` runtime image. To build and load one architecture-specific image from a source checkout, use the repository target (requires Docker Buildx and a working local Docker daemon):
+
+```bash
+VERSION=v4.3.0
+GOOS=linux GOARCH=amd64 DOCKER_PLATFORM=linux/amd64 \\
+  VERSION="$VERSION" COMMIT="$(git rev-parse HEAD)" \\
+  BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \\
+  make docker-image
+```
+
+For ARM64, set `GOARCH=arm64` and `DOCKER_PLATFORM=linux/arm64`. `make docker-image` builds with `docker buildx build --load`; with the defaults the local image tag is `metrum-ai-router:<version>-linux-<arch>`. Override `IMAGE_NAME` or `IMAGE_TAG` to change it. This target loads an image locally; it does not publish to a registry. The Dockerfile builds the five runtime binaries, includes the legal notices and embedded docs, runs as UID/GID `65532`, and starts with `/app/bin/metrum-ai-router --config /app/config/config.yaml`.
+
+GitHub release assets are binary archives, not Docker images. For example, v4.3.0 publishes `metrum-ai-router-v4.3.0-linux-amd64.tar.gz` and `metrum-ai-router-v4.3.0-linux-arm64.tar.gz`, plus Windows archives, `release-artifacts.json`, and `SHA256SUMS`; it does not publish a Linux image or a Docker-specific archive. To produce the supported Compose image packages, use `make package-docker` below from a source checkout. That path creates images and packages them with the Compose deployment files; there is no documented direct conversion from a binary release archive into a runtime image.
+
+A Docker daemon/buildx host is required to execute either image-building path. If Docker is unavailable, validate the Make target and Dockerfile statically, but do not report an image build or runtime test as successful.
+
 ## Build Package
 
 From the development machine:
