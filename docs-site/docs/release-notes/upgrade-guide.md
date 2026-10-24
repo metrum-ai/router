@@ -131,9 +131,22 @@ not permission for customer-data training. See
 [Fine-tune And Route Your Own Model](../configuration/fine-tune-own-model).
 
 The fine-tuning example is an operator-owned training/deployment recipe, not
-a default routing change or a quality promotion. Review evidence and the
-outcome gate before using an adapter; enforce rental spend limits and verify
-teardown independently of token billing.
+a default routing change or a quality promotion. Run 1, run 2 and AMD all
+**failed** the preregistered gate and were not promoted; the router kept the
+teacher in place. Training completion and quoted throughput/unit costs are not
+API parity or quality-equivalent savings evidence. Review the original gates
+and measured-comparison limits before using an adapter; enforce rental spend
+limits and verify teardown independently of token billing. The example's
+localhost proxies now validate allowlisted response headers against CRLF/header
+injection.
+
+For release acceptance, exercise a real client tool/result continuation on each
+enabled route, confirm count events leave inference spend/quota unchanged, and
+compare persisted usage, reports and metrics after queued writes drain. For
+optional training export, include an uncaptured caller control and validate the
+manifest and privacy/scope checks. For Bedrock, smoke the exact model/profile,
+region and capabilities granted by IAM. Retain the tested main SHA and build
+metadata with the operator's validation evidence.
 
 ### CI operations
 

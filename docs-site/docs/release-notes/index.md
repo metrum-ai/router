@@ -14,6 +14,80 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.3.0 - 2026-10-24
+
+### Highlights
+
+- Governed training datasets from explicitly captured traces: outcome labels,
+  privacy filters/redaction, deduplication, audited admin authorization,
+  provenance manifests and frozen splits. Heldout failures remain in cohort;
+  identical tool declarations normalize with manifest counts and conflicts
+  reject rather than silently choosing a schema.
+- Opt-in AWS Bedrock Converse/ConverseStream upstream with AWS default-chain
+  credentials, model/profile IDs, tools, streaming and usage accounting for
+  the validated capability matrix.
+- Reported-versus-estimated usage, corrected Gemini thinking and Anthropic
+  cache accounting, unbilled token counting, and reasoning/cache coverage
+  across rollups, admin reports, CLI and Prometheus.
+- Router-centric Qwen LoRA example with deterministic tools, key-scoped canary,
+  NVIDIA/AMD evidence and conservative gates. **Run 1, run 2 and AMD all failed
+  the preregistered gate and were not promoted; the router kept the teacher in
+  place.** No API parity or quality-equivalent savings claim follows from
+  training completion, throughput or quoted unit costs.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Database | Usage schema v7–v10 and control-plane cache-write pricing migration; back up and apply the required migration gate before serving |
+| Accounting | Historical provenance/coverage remains unknown; configure cache-write prices and review component/usage-source metric labels |
+| Training | Capture and deployment-wide `content:training` grants are opt-in; durable audit, privacy/rights review and independent export retention required |
+| Config | Empty legacy `modalities: []` means unset, not disabled; nonempty legacy metadata still overrides input metadata |
+| Bedrock | Opt-in AWS credentials, IAM, region and model/profile capability review; no change to existing providers |
+| CI | Ephemeral `router-arc` pods and Actions caches supersede active persistent-host workflows; strict parallel aggregate preserved, legacy host maintenance separate |
+
+### Caller Impact
+
+Native Anthropic `count_tokens` returns provider counts/errors; other transports
+return marked estimates. Both are unbilled and outside inference quotas, with
+separate visible count events. Usage preserves explicit zeros and stream totals;
+missing stream output uses observed text rather than requested maximums.
+Gemini thinking is included in output, not an extra billable token category.
+Anthropic inclusive input includes cache reads/writes without double-counting.
+
+### Upgrade
+
+Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide) for exact migration
+IDs, rollback backups, retained-history limits, pricing and metric changes.
+Training export and Bedrock are optional, not automatic deployment changes.
+Existing IR-only captures cannot be converted retroactively into canonical
+chat/tool histories; old exports and finalized history are not silently rewritten.
+
+### Validation
+
+Check `/readyz`, `/version` and authenticated `/v1/models`, then exercise real
+client tool/result continuations on enabled routes. Verify count calls do not
+increase inference spend/quota; compare usage/report/metric components after
+queued writes drain. For Bedrock, validate the exact region/profile and tool
+capabilities. For training, test capture scope with an uncaptured control key,
+admin authorization, privacy filtering and manifest validation before any export
+leaves the operator boundary. Example batches now require readiness and
+successful authenticated route/target/grader preflight; test callers have high
+limits and deliberate limiter tests are separate.
+
+These are deployment checks, not a claim that a release artifact has already
+passed final launch validation. Dated evidence and the exact tested SHA identify
+validation; this page's date does not identify the running build.
+
+### Security and Rollback
+
+Example localhost proxies reject CRLF/header injection in forwarded allowlisted
+headers. Keep the previous binary, reviewed configuration and restorable
+pre-upgrade databases: schema expansion rollback requires restoring the backup,
+not merely replacing the binary. Do not promote the example adapters; use the
+teacher and independently verify model-license and provider output-training
+rights for any new data.
+
 ## v4.2.0 - 2026-10-21
 
 ### Highlights
