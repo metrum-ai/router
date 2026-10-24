@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-10-24
+
+### Added
+
+- Governed trace export to canonical training/replay JSONL: opt-in encrypted
+  capture, outcome labels (`POST /admin/training/outcomes/{request_id}`),
+  `POST /admin/training/export`, filters, redaction/PII checks, explicit admin
+  authorization and durable audit, deduplication, provenance manifests and
+  frozen time splits. Heldout failures retain their full cohort; future exports
+  collapse identical tool declarations and reject conflicts with manifest
+  counts. Existing captures/exports are not retroactively rewritten
+  (#361, #368, #373; #358).
+- AWS Bedrock Converse/ConverseStream upstream for validated open-weight model
+  families, with IAM/default-chain credentials, region/inference-profile IDs,
+  tool/SSE bridging, usage accounting and throttle failover (#349).
+- Customer-owned Qwen BF16 LoRA fine-tuning/private-serving example: governed
+  router-centric capture/train/evaluate loop, deterministic tool harness,
+  key-scoped same-group canary, frozen gates, NVIDIA and AMD evidence and
+  teardown receipts. Run 1, run 2 and AMD all **failed** the preregistered gate
+  and were not promoted; the router kept the teacher in place. These results
+  establish neither API parity nor quality-equivalent savings. Teacher-output
+  rights are scoped to the synthetic example, not customer-data permission
+  (#354, #360, #369).
+
+### Changed
+
+- Empty legacy `modalities: []` is treated as unset and omitted on config
+  serialization; explicit nonempty legacy capabilities still override input
+  metadata. Disable a target explicitly instead of using an empty list (#372).
+- Native Anthropic `count_tokens` proxies upstream counts/errors without
+  inference billing or quota. Other transports return marked estimates; count
+  events remain visible separately from inference reports (#353).
+- Usage provenance distinguishes reported from estimated tokens; missing stream
+  usage settles from observed text, not the requested output ceiling. Native
+  Chat requests final usage unless explicitly configured otherwise; historical
+  provenance remains unknown (#348).
+- CI uses ephemeral `router-arc` ARC pods with Actions-backed caches. Independent
+  deterministic lanes retain the strict aggregate gate. Earlier persistent-host
+  cache tuning is superseded for active workflows; legacy weekly host cache
+  maintenance remains separate. No end-to-end CI performance parity is claimed
+  (#341, #342, #375).
+- Documentation consolidates Bedrock, accounting, migrations, governed training,
+  measured evidence and ARC operations (#356).
+
+### Fixed
+
+- Gemini thinking tokens contribute to output/reasoning usage and output cost;
+  tool-use prompt/image details are retained, and text-only Chat streaming can
+  be synthesized from unary generateContent (#351).
+- Anthropic input consistently includes uncached, cache-read and cache-write
+  tokens without double-counting. Optional cache-write pricing falls back to
+  base input pricing with a warning when absent (#352).
+- Usage parsing preserves explicit zero counts and alternate numeric decoders,
+  aligns reasoning with served output, retains stream totals and tolerates
+  private Anthropic thinking blocks (#347).
+- Reasoning/cache subsets, known reporting coverage and disjoint cost/savings
+  components survive rollups, reports, CLI/admin surfaces and `/metrics`.
+  Retained history accepts only complete closed UTC days finalized after the
+  window ended; unknown historical coverage is not fabricated (#357, #362).
+- Isolated SQLite test fixtures clone real initialized schemas without sharing
+  mutable state or weakening migration/startup assertions (#363).
+- Example harness waits for router readiness and requires authenticated route,
+  target and grader preflight before batches. Local trace/evaluation callers
+  have high limits; unexpected pre-route throttling aborts the whole run, with
+  tiny limiter tests explicitly isolated (#360, #369, #370, #374).
+
+### Security
+
+- Example localhost NVIDIA/AMD proxies validate allowlisted response headers
+  and reject CRLF/header injection (#360).
+
 ## [4.2.0] - 2026-10-21
 
 ### Fixed
