@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 
@@ -22,6 +23,19 @@ import (
 	"github.com/aws/smithy-go"
 )
 
+// bedrockMaxTokens converts a decoded token limit to int32 without
+// truncating: values outside the int32 range are clamped so a hostile or
+// malformed max_tokens can never wrap to a negative or small positive value.
+func bedrockMaxTokens(n int) *int32 {
+	if n < 0 {
+		n = 0
+	}
+	if n > math.MaxInt32 {
+		n = math.MaxInt32
+	}
+	return aws.Int32(int32(n))
+}
+
 // bedrockInput consumes the router's canonical Chat bridge, preserving tool IDs.
 func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 	var raw map[string]any
@@ -30,10 +44,10 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 	}
 	in := &bedrockruntime.ConverseInput{ModelId: aws.String(stringValue(raw["model"])), InferenceConfig: &bt.InferenceConfiguration{}}
 	if n, ok := numberAsInt(raw["max_tokens"]); ok {
-		in.InferenceConfig.MaxTokens = aws.Int32(int32(n))
+		in.InferenceConfig.MaxTokens = bedrockMaxTokens(n)
 	}
 	if n, ok := numberAsInt(raw["max_completion_tokens"]); ok {
-		in.InferenceConfig.MaxTokens = aws.Int32(int32(n))
+		in.InferenceConfig.MaxTokens = bedrockMaxTokens(n)
 	}
 	if n, ok := numberAsFloat(raw["temperature"]); ok {
 		in.InferenceConfig.Temperature = aws.Float32(float32(n))

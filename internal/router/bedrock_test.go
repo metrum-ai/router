@@ -4,6 +4,7 @@
 package router
 
 import (
+	"math"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -89,6 +90,36 @@ func TestBedrockOptionalToolDescription(t *testing.T) {
 	spec := in.ToolConfig.Tools[0].(*bt.ToolMemberToolSpec).Value
 	if spec.Description != nil || spec.InputSchema == nil {
 		t.Fatal("optional tool fields were not normalized")
+	}
+}
+
+func TestBedrockMaxTokensBounds(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want int32
+	}{
+		{"plain", `{"model":"m","messages":[],"max_tokens":16}`, 16},
+		{"string number", `{"model":"m","messages":[],"max_tokens":"64"}`, 64},
+		{"negative clamps to zero", `{"model":"m","messages":[],"max_tokens":-5}`, 0},
+		{"int32 max passes through", `{"model":"m","messages":[],"max_tokens":2147483647}`, math.MaxInt32},
+		{"int32 overflow clamps high", `{"model":"m","messages":[],"max_tokens":8589934592}`, math.MaxInt32},
+		{"large string clamps high", `{"model":"m","messages":[],"max_tokens":"17179869184"}`, math.MaxInt32},
+		{"completion tokens also clamped", `{"model":"m","messages":[],"max_completion_tokens":17179869184}`, math.MaxInt32},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in, err := bedrockInput([]byte(c.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if in.InferenceConfig.MaxTokens == nil || *in.InferenceConfig.MaxTokens != c.want {
+				t.Fatalf("MaxTokens = %v, want %d", in.InferenceConfig.MaxTokens, c.want)
+			}
+		})
+	}
+	if got := *bedrockMaxTokens(int(math.MaxInt32) + 1); got != math.MaxInt32 {
+		t.Fatalf("bedrockMaxTokens overflow: got %d, want %d", got, int32(math.MaxInt32))
 	}
 }
 
