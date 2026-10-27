@@ -1,12 +1,16 @@
 {
-  "livecodebench_revision": "28fef95ea8c9f7a547c8329f2cd3d32b92c1fa24",
-  "datasets_version": "3.5.0",
-  "dataset": "livecodebench/code_generation_lite",
-  "release_version": "release_v6",
-  "task_count": 40,
-  "sampling_seed": "smart-llmrouter-569",
-  "generation": {"n": 1, "temperature": 0.2, "max_output_tokens": 4096},
-  "request_timeout_seconds": 300,
-  "scorer_version": "lcb_runner.evaluation.codegen_metrics@28fef95e",
-  "prompt_formatter": "lcb_runner.prompts.code_generation.format_prompt_generation@28fef95e:OpenAIChat"
+ "livecodebench_revision": "28fef95ea8c9f7a547c8329f2cd3d32b92c1fa24",
+ "datasets_version": "5.0.1",
+ "dataset": "livecodebench/code_generation_lite",
+ "release_version": "release_v6",
+ "task_count": 40,
+ "sampling_seed": "smart-llmrouter-569",
+ "generation": {
+  "n": 1,
+  "temperature": 0.2,
+  "max_output_tokens": 4096
+ },
+ "request_timeout_seconds": 300,
+ "scorer_version": "lcb_runner.evaluation.codegen_metrics@28fef95e",
+ "prompt_formatter": "lcb_runner.prompts.code_generation.format_prompt_generation@28fef95e:OpenAIChat"
 }

@@ -1,3 +1,7 @@
 # The evaluator checkout is pinned by contract.json.  Install it with its
 # committed uv.lock (see docs/LIVECODEBENCH_EVALUATIONS.md), not editable main.
-datasets==3.5.0
+# datasets and its fsspec floor moved to the patched lines in 2026-W44
+# (GHSA-379c-qx7v-6h59 path traversal; unsafe fsspec reference-filesystem
+# template rendering). contract.json datasets_version tracks this pin.
+datasets==5.0.1
+fsspec>=2026.6.0
