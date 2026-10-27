@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Release workflow: Windows binaries are Authenticode-signed with Azure
+  Trusted Signing (RFC 3161 timestamped) when the signing secrets are
+  provisioned — the step is a logged no-op until then, so unsigned builds
+  keep working. Signing runs between the Windows `.exe` builds and the
+  deterministic zip packaging on tag builds only, so checksums and the
+  release inventory always hash the signed binaries; a sign or verify
+  failure fails the release once credentials exist (#332).
+
 ### Changed
 
 - Tenant provisioner RBAC: the Role no longer grants NetworkPolicy write

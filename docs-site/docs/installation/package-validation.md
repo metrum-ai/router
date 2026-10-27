@@ -47,9 +47,17 @@ metrum-ai-router-<version>-windows-<arch>/
 ```
 
 Windows ZIPs are named `metrum-ai-router-<version>-windows-amd64.zip` or
-`metrum-ai-router-<version>-windows-arm64.zip`. Windows binaries are not
-Authenticode-signed currently; the package does not install a Windows service,
-and the included Caddyfile is an example rather than a bundled Caddy service.
+`metrum-ai-router-<version>-windows-arm64.zip`. Starting with the first
+release built after the signing credentials were provisioned (#332), the
+`bin\*.exe` files are Authenticode-signed with Metrum AI's Azure Trusted
+Signing certificate and an RFC 3161 timestamp, and checksums/inventory are
+computed over the signed binaries. Verify on Windows with
+`Get-AuthenticodeSignature .\bin\metrum-ai-router.exe` (Status `Valid`,
+subject `Metrum AI`) or in Explorer under Properties > Digital Signatures.
+Releases built before that remain unsigned; apply your organization's
+executable approval controls for them. The package does not install a Windows
+service, and the included Caddyfile is an example rather than a bundled Caddy
+service.
 
 For Docker Compose packages:
 

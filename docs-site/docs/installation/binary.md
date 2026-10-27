@@ -63,8 +63,10 @@ Copy-Item .\config\env.example.json .\config\env.json
 Populate provider credentials through the protected environment or the
 operator's approved secret mechanism before startup. The package does not
 install or configure a Windows service, and its Caddyfile is an example only;
-Caddy is not bundled as a service. Windows binaries are not Authenticode-signed
-currently, so Windows may display publisher/security warnings. Apply the
+Caddy is not bundled as a service. Releases built after signing was
+provisioned (#332) ship Authenticode-signed Windows binaries (Metrum AI,
+RFC 3161 timestamped) — verify with `Get-AuthenticodeSignature` in PowerShell.
+Unsigned older releases may display publisher/security warnings. Apply the
 organization's executable approval and service-supervision controls before
 production use.
 
