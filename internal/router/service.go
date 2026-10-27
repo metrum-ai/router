@@ -2644,7 +2644,26 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if anthropicBridge {
 			proxy = anthropicBridgeProxy(callerDialect)
 		}
-		streamResult, streamErr := proxy(attemptCtx, w, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
+		// Experiment profiles (#379): scope-matched requests deliver through a
+		// pacing writer that injects the configured TTFT delay and output
+		// pacing. Every other request keeps the original writer untouched.
+		pw := w
+		var pacer *experimentPacer
+		if rc != nil {
+			callerID := ""
+			if rc.caller != nil {
+				callerID = rc.caller.cfg.ID
+			}
+			if profile, profileName, ok := resolveExperimentProfile(s.cfg.Server.ExperimentProfiles, callerID, groupName, target.Provider+"/"+target.Model); ok {
+				pacer = newExperimentPacer(profile, profileName, rc.id)
+				rc.trace("experiment_profile_applied", "profile="+profileName+" hash="+pacer.hash, target, attemptIndex, 0, "", false, 0)
+				pw = &experimentPacingWriter{ResponseWriter: w, ctx: attemptCtx, pacer: pacer}
+			}
+		}
+		streamResult, streamErr := proxy(attemptCtx, pw, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
+		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
+			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))
+		}
 		_ = httpResp.Body.Close()
 		if cancel != nil {
 			cancel()
@@ -3554,10 +3573,33 @@ func publicModelInputModalities(modalities []string) []string {
 
 func (s *Service) writeIR(w http.ResponseWriter, dialect string, resp *IRResponse, stream bool, rc *requestContext) {
 	start := time.Now()
+	// Experiment profiles (#379): hold and pace the delivered response for
+	// scope-matched requests; everything else writes exactly as before.
+	var pacer *experimentPacer
+	if rc != nil && len(s.cfg.Server.ExperimentProfiles) > 0 {
+		callerID := ""
+		if rc.caller != nil {
+			callerID = rc.caller.cfg.ID
+		}
+		targetKey := rc.rec.TargetProvider + "/" + rc.rec.TargetModel
+		if profile, profileName, ok := resolveExperimentProfile(s.cfg.Server.ExperimentProfiles, callerID, rc.rec.ResolvedGroup, targetKey); ok {
+			pacer = newExperimentPacer(profile, profileName, rc.id)
+			rc.trace("experiment_profile_applied", "profile="+profileName+" hash="+pacer.hash, Target{}, 0, 0, "", false, 0)
+		}
+	}
 	if stream {
+		if pacer != nil {
+			w = &experimentPacingWriter{ResponseWriter: w, ctx: rc.ctx, pacer: pacer}
+		}
 		s.writeIRStream(w, dialect, resp, rc)
 	} else {
+		if pacer != nil {
+			pacer.holdForResponse(rc.ctx, resp.Usage.OutputTokens)
+		}
 		s.writeIRResponse(w, dialect, resp, rc.publicModel())
+	}
+	if pacer != nil && pacer.injectedMS > 0 {
+		rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), Target{}, 0, 0, "", false, int64(pacer.injectedMS))
 	}
 	downstreamMS := durationMillis(time.Since(start))
 	rc.rec.DownstreamMS = &downstreamMS
