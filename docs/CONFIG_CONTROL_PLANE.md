@@ -263,6 +263,25 @@ replicas converge through the phase-2 revision poller (SQLite,
 requests finish on the target they started with; the group name and
 `/v1/models` identity never change across a swap.
 
+### Expected propagation window (Refs #411)
+
+- **SQLite:** replicas converge through the revision poller at
+  `configControlPlaneReloadInterval` (2 s). Worst-case propagation is one
+  poll interval plus a reload; expect about 2–4 s.
+- **PostgreSQL:** activation sends `NOTIFY router_config, '<runtime_scope>'`
+  after commit. Every replica LISTENs on that channel on a dedicated
+  connection (`StartConfigRevisionNotifier`) and reloads on a matching
+  payload, so replicas converge in about 1 s (measured by
+  `TestConfigRevisionNotifierReloadsOnActivate` and the `e2e/admin-api`
+  multi-replica notify-window cases, which assert <= 1.5 s on PostgreSQL).
+  Notifications whose payload names another scope are ignored.
+- **Fallback:** if the listener connection cannot be opened at startup the
+  router logs a line and starts anyway, and if the connection drops later
+  the notifier goroutine logs and exits — the revision poller keeps
+  running in both cases, so PostgreSQL replicas still converge within the
+  poll window (covered by
+  `TestConfigRevisionNotifierPollerFallbackAfterNotifierStop`).
+
 ## Phase 9: shadow runs (#395 §5)
 
 Phase 9 adds `router_config_shadow_runs`, the shared registry behind

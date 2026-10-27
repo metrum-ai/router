@@ -108,7 +108,7 @@ LOCAL_ROUTER_BASE_URL ?= http://$(subst 0.0.0.0,127.0.0.1,$(LOCAL_ROUTER_LISTEN)
 LOCAL_ROUTER_GROUP ?= big-coder
 LOCAL_ROUTER_MODEL_IDENTITY ?= requested_group
 
-.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo openjev-routing-demo d3-policy-test d3-policy-e2e secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-live-c e2e-live-full e2e-compose-live e2e-mock eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture local-router local-router-setup local-router-configure-pi local-router-pi-smoke clean
+.PHONY: help test test-fast test-full secret-contract capability-smoke-contracts test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-migration-operational-postgres test-migration-data-jobs-postgres test-migration-data-job-ownership-postgres test-reasoning-telemetry-postgres test-usage-schema-postgres-indexes capability-smoke capability-smoke-unit capability-smoke-live api-compat-bootstrap api-compat-bootstrap-go-provision api-compat-mock api-compat-mock-offline api-compat-ts api-compat-live harbor-local harbor-local-offline harbor-adapter-test outcome-calibrated-demo outcome-calibrated-synthetic-demo adaptive-signal-policy-demo openjev-routing-demo d3-policy-test d3-policy-e2e secret-check validate-build-metadata validate-release-clean release-validation-matrix release-artifact-inventory release-security-evidence launch-operational-readiness release-notes-from-git docs-diag-schema docs-diag-schema-check docs-qa docs-build docs-dev docs-clean admin-build admin-e2e build build-go-only build-package-binaries build-all package package-one package-one-no-docs package-all docker-image docker-image-no-docs package-docker package-docker-one package-docker-one-no-docs package-docker-all dist-backup package-dist-backup compose-security-check eks-session-bootstrap eks-session-recovery-status eks-identity-check eks-discovery-validate eks-discover eks-render-ingress-network-policy eks-validate-tenant-network-policies eks-apply-tenant-network-policies e2e-live-c e2e-live-full e2e-compose-live e2e-mock eval-humaneval eval-bigcodebench eval-report eval-ci-smoke eval-ci-full livecodebench-contract-test livecodebench-target-test livecodebench-validate livecodebench-run proof-routing sse-capture local-router local-router-setup local-router-configure-pi local-router-pi-smoke clean
 
 help:
 	@echo "Metrum AI Router make targets."
@@ -184,6 +184,13 @@ test-migration-data-job-ownership-postgres:
 
 test-usage-schema-postgres-indexes:
 	bash scripts/test_usage_schema_postgres_indexes.sh
+
+# TypeScript SDK API-compat suite (#271, #94 DoD 2): official OpenAI and
+# Anthropic TypeScript clients against a built router and the scripted fake
+# upstream. Offline; pinned npm lockfile.
+api-compat-ts:
+	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
+	$(PYTHON) tests/api_compat_ts/run_suite.py
 
 eval-humaneval:
 	$(PYTHON) scripts/inspect_coding_eval.py run --suite humaneval
@@ -289,7 +296,7 @@ ft-example-test:
 test-fast: secret-contract capability-smoke-contracts
 	go test $$(go list ./... | grep -v '/internal/router$$') -timeout=15m
 	# Temporary while router-arc uses shared-CPU nodes; revert when dedicated c-8 capacity returns. Refs #367.
-	go test ./internal/router -timeout=30m
+	bash -o pipefail -c "go test ./internal/router -timeout=30m -json | $(PYTHON) scripts/router_test_time_guard.py"
 	python3 scripts/outcome_calibrated_policy_test.py
 	"$${MAKE:-make}" d3-policy-test
 	python3 scripts/api_compat_bootstrap_test.py
@@ -297,6 +304,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
+	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
 # Full credential-free suite. Heavy targets stay behind shell Make invocations so

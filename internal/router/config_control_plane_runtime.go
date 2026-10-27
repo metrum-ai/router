@@ -17,10 +17,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -207,9 +210,13 @@ func StartConfigRevisionPoller(ctx context.Context, db *gorm.DB, runtimeScope st
 // of driver.
 //
 // On PostgreSQL it opens a background connection, issues LISTEN, and invokes
-// reload each time the channel receives a notification. If the dedicated
-// listener connection cannot be opened, the function returns an error so the
-// caller can fall back to polling.
+// reload each time the channel receives a notification whose payload matches
+// runtimeScope (the activator sends the scope as the payload). If the
+// dedicated listener connection cannot be opened, the function returns an
+// error so the caller can fall back to polling. If the connection drops
+// after LISTEN succeeded, the goroutine logs and exits: replicas then
+// converge through the revision poller, which remains the documented
+// fallback (#411).
 func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope string, reload func()) (func(), error) {
 	if db == nil {
 		return nil, errors.New("config control-plane database is required")
@@ -223,10 +230,63 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 		return func() {}, nil
 	}
 
-	// Phase two stubs the dedicated listener connection so the build does
-	// not depend on a driver-specific listener package. The poller continues
-	// to provide revision-change detection on PostgreSQL when used in
-	// combination with this stub; full LISTEN support will be added in a
-	// follow-up that owns the dedicated pgx connection lifecycle.
-	return func() {}, nil
+	// The listener needs its own connection: LISTEN is per-session and must
+	// not share the gorm pool. The DSN comes from the dialector, so no
+	// credential is copied or logged here.
+	var dsn string
+	if dialector, ok := db.Dialector.(postgres.Dialector); ok && dialector.Config != nil {
+		dsn = dialector.Config.DSN
+	}
+	if strings.TrimSpace(dsn) == "" {
+		return nil, errors.New("postgres config notifier requires the DSN in the gorm dialector")
+	}
+
+	listenCtx, cancel := context.WithCancel(ctx)
+	connCfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("postgres config notifier DSN parse: %w", err)
+	}
+	connCfg.OnNotification = func(_ *pgconn.PgConn, notification *pgconn.Notification) {
+		if notification.Channel != configControlPlaneNotifyChannel {
+			return
+		}
+		if notification.Payload != "" && notification.Payload != runtimeScope {
+			return
+		}
+		reload()
+	}
+	conn, err := pgconn.ConnectConfig(listenCtx, connCfg)
+	if err != nil {
+		cancel()
+		// The pgconn error may name the server endpoint; it never carries
+		// the DSN or password, and callers redact nothing further here.
+		return nil, fmt.Errorf("postgres config notifier connect: %w", err)
+	}
+
+	go func() {
+		if _, err := conn.Exec(listenCtx, "LISTEN "+configControlPlaneNotifyChannel).ReadAll(); err != nil {
+			if listenCtx.Err() == nil {
+				log.Printf("config control-plane notifier LISTEN failed for scope %q; poller remains the fallback", runtimeScope)
+			}
+			return
+		}
+		// WaitForNotification blocks until one notification (dispatched to
+		// OnNotification above) or an error, so loop it. When the connection
+		// drops the goroutine exits: replicas converge through the revision
+		// poller, which remains the documented fallback (#411).
+		for {
+			if err := conn.WaitForNotification(listenCtx); err != nil {
+				if listenCtx.Err() == nil {
+					log.Printf("config control-plane notifier connection dropped for scope %q; poller remains the fallback", runtimeScope)
+				}
+				return
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		_ = conn.Close(context.Background())
+	}, nil
 }
