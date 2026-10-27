@@ -4,4 +4,4 @@
 # (GHSA-379c-qx7v-6h59 path traversal; unsafe fsspec reference-filesystem
 # template rendering). contract.json datasets_version tracks this pin.
 datasets==5.0.1
-fsspec>=2026.6.0
+fsspec>=2026.9.0
