@@ -20,6 +20,68 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Compatibility and operations (v4.4.0)
+
+### Authorization matching and tenant RBAC
+
+Admin authorization policy objects now match by exact equality; the only
+wildcard is the standalone `*`. Actions are anchored patterns, and
+partial-wildcard objects (for example `admin:*`) are rejected at policy load
+time. A grant for one admin object no longer covers a different admin object:
+policies that relied on that implicit coverage must list each object
+explicitly (`admin:reports`, `admin:security_reports`, `admin:callers`, …).
+See `docs/AUTHORIZATION.md`.
+
+The tenant provisioner Role example is least-privilege: write access only to
+ResourceQuota, LimitRange, NetworkPolicy and namespace-scoped Linkerd
+Server/ServerAuthorization, read-only Ingress, no delete verbs, no wildcards.
+Re-apply `deploy/kubernetes/bootstrap/tenant-provisioner-rbac.yaml` and verify
+the `kubectl auth can-i` matrix in `docs/EKS_IDENTITY_BOOTSTRAP.md` (including
+explicit denials for secrets, deployments, serviceaccounts, clusterroles,
+other namespaces and `pods/exec`). Teardown removes the tenant namespace
+rather than granting delete verbs.
+
+### Admin Config API and group management (v4.4.0)
+
+Group swap/shadow/promote/rollback and config-set writes require
+database-backed configuration mode (`config_source_mode_file` deployments keep
+serving and answer writes with `409 config_source_mode_file`). Admin config
+sets and the shadow run registry are phase-9 tables in the config database:
+apply the config migrations, keep the `router_config_change_events` audit
+chain and back up the config database alongside the usage database. Promotions
+are copy-on-write; rollback restores the exact prior target set. Admin API
+calls require a dedicated admin API key with the matching permissions
+(`config:read`, `config:write`, `config:activate`, `config:force`,
+`shadow:write`, …); caller and provider keys are rejected.
+
+Validate with the `e2e/admin-api/` suite (builds the router, stands up a
+3-replica DB-backed deployment plus a file-mode router, and verifies
+swap/shadow/promote/rollback against real providers), or follow the worked
+example in the "Switch models when prices change" guide: dry-run, shadow,
+promote, rollback.
+
+### Admin API key (new configurations)
+
+New configurations use `server.admin_auth.api_keys` with hashed keys and
+fine-grained permissions; `metrum-ai-routerctl adminkeys generate` creates
+them. Caller and provider keys are rejected on `/admin/*`. Rotate keys without
+downtime by adding the new key, switching consumers, then removing the old
+one. See `docs/ADMIN_API_KEYS.md`.
+
+### Tooling and CI
+
+Dependency updates: docs site (body-parser, serialize-javascript, katex,
+postcss-selector-parser), learned routing policy (filelock 4.x, setuptools),
+test projects (pytest 9), LiveCodeBench evaluator (datasets 5.0.1 with an
+fsspec floor; `contract.json` tracks the pin). No router-service Go dependency
+changed. Dependabot version updates now observe a cooldown period and cover
+evaluator/test pip projects. Release workflow dispatch inputs are validated
+against a strict semver tag allowlist before any build step.
+
+Rollback: keep the previous binary and reviewed configuration; the hardening
+changes introduce no database migration. Restore the previous RBAC and
+authorization policy files if you must restore the previous matching behavior.
+
 ## Compatibility and operations (v4.3.0)
 
 ### Migrations and rollback

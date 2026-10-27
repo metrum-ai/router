@@ -14,6 +14,78 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.4.0 - 2026-10-27
+
+### Highlights
+
+- Swap the model behind a group with one API call: authenticated Admin API
+  target swap with dry-run validation, optimistic concurrency, per-target
+  eligibility reports and a full audit trail; one-call rollback restores the
+  exact prior targets. Shadow a candidate against live traffic, read the
+  cost/token/latency comparison and promote in one call. A `routerctl groups`
+  CLI, Admin API docs and a repeatable live-upstream e2e suite cover the
+  workflow end to end. Database-backed configuration mode is required for
+  these writes; file mode keeps serving.
+- The Admin API now has its own credential: dedicated admin API keys hashed at
+  rest, rotatable without downtime, with fine-grained permissions. Caller and
+  provider keys are rejected on admin routes.
+- Security hardening across CI, authorization policy and example infrastructure:
+  hardened release workflow input handling, exact admin authorization scope
+  matching, least-privilege tenant provisioner RBAC, and refreshed scanner
+  policy.
+- Patched dependency updates across docs tooling, the learned routing policy
+  service and test projects.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Authorization | Policy objects match exactly; a grant for one admin object no longer covers another. Re-apply tenant provisioner RBAC manifests; review policies that relied on implicit cross-object grants |
+| Admin API | Dedicated admin API keys required for `/admin/*` on new configurations; generate and rotate via `metrum-ai-routerctl adminkeys generate`. Group swap/shadow/config-set writes require database-backed configuration mode; file mode answers writes with 409 |
+| Database | Admin config sets and the shadow run registry are phase-9 tables in the config database; apply the config migrations and keep the audit event chain |
+| Tooling | Dependency updates in docs site, learned routing policy and test projects; Dependabot coverage now includes evaluator/test pip projects |
+| CI | Release workflow inputs validated before use; test timeout headroom on shared-CPU nodes |
+
+### Caller Impact
+
+Model group target swaps, shadow runs and promotions are caller-transparent:
+no restart, no client configuration change, and prior targets remain as
+fallback after promotion. No change to caller-facing request or billing
+semantics from the hardening items. Out-of-range Bedrock
+`max_tokens`/`max_completion_tokens` values clamp instead of erroring or
+wrapping.
+
+### Upgrade
+
+Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide). The
+authorization matcher change is behavior-affecting for policies that relied on
+one admin grant covering several admin objects; list each object explicitly.
+Tenant provisioner RBAC manifests must be re-applied to upgrade existing
+namespaces.
+
+### Validation
+
+Check `/readyz`, `/version` and authenticated `/v1/models`. Exercise admin
+authorization with scoped grants (one admin object must not open another),
+and for the tenant provisioner run the `kubectl auth can-i` verification matrix
+from `docs/EKS_IDENTITY_BOOTSTRAP.md`. For the Admin API, verify caller and
+provider keys are rejected on `/admin/*` and that key rotation does not
+interrupt admin sessions.
+
+These are deployment checks, not a claim that a release artifact has already
+passed final launch validation. Dated evidence and the exact tested SHA identify
+validation; this page's date does not identify the running build.
+
+### Security and Rollback
+
+Keep the previous binary, reviewed configuration and restorable config/usage
+database backups: the Admin Config API adds config-database migrations (admin
+config sets, shadow run registry, audit chain). The hardening changes alone
+introduce no usage-database migration; rollback of the hardening items is
+binary replacement plus re-applying the previous RBAC/authorization
+configuration. Scanner policy exceptions now carry owners and expiry
+conditions.
+
 ## v4.3.0 - 2026-10-24
 
 ### Highlights
