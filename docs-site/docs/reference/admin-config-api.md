@@ -37,7 +37,7 @@ The one-call swap. Replaces the group's ordered target list, and optionally its 
 PUT /admin/config/groups/agent-default/targets
 Authorization: Bearer ${ROUTER_ADMIN_KEY}
 If-Match: "12"
-Idempotency-Key: 3f2504e0-4f89-41d3-9a0c-0305e82c3301
+Idempotency-Key: terra-swap-2026-10-27-001
 Content-Type: application/json
 
 {
