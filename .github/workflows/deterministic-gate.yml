@@ -111,6 +111,7 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |-
           make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test
+          python3 scripts/release_provenance_test.py
           python3 scripts/outcome_calibrated_policy_test.py
           python3 scripts/api_compat_bootstrap_test.py
           python3 scripts/ci_topology_test.py

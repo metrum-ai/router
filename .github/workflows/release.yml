@@ -21,9 +21,10 @@ jobs:
     runs-on: router-arc
     timeout-minutes: 90
     permissions:
-      # Only this job creates the GitHub Release; the workflow needs no
-      # id-token or packages grants.
+      # This job creates the release and its OIDC-backed attestations.
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,6 +102,17 @@ jobs:
             --commit "$(git rev-parse HEAD)" \
             --build-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --set binary
+      # Attest the exact set published below, after packaging and inventory.
+      # A dispatch on a non-tag ref remains a build-only dry run.
+      - name: Attest release asset provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            dist/metrum-ai-router-*.tar.gz
+            dist/metrum-ai-router-*.zip
+            dist/SHA256SUMS
+            dist/release-artifacts.json
       - name: Upload inventory-validated release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

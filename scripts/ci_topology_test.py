@@ -108,6 +108,7 @@ def assert_make_tiers() -> None:
     assert_go_timeout_headroom(fast, make_recipe=True)
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
+    require("scripts/release_provenance_test.py" in fast, "test-fast dropped the release provenance contract")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")
@@ -145,6 +146,7 @@ def assert_deterministic_gate() -> None:
         "contracts": ("make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test",
                       "scripts/outcome_calibrated_policy_test.py", "scripts/api_compat_bootstrap_test.py",
                       "scripts/ci_topology_test.py", "scripts/harbor_promotion_test.py",
+                      "scripts/release_provenance_test.py",
                       "make docs-qa", "tsc --noEmit"),
         "api-compat": ("make api-compat-mock", "make api-compat-ts"),
         "harbor": ("make harbor-local",),
