@@ -61,6 +61,7 @@ type Service struct {
 	imageURLDNSTimeout time.Duration
 	callerAuth         *callerAuthState
 	adminBasic         map[string]adminBasicRuntime
+	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
 	adminSession       *adminSessionStore
 	authorizer         *authorizer
@@ -278,6 +279,7 @@ func newService(cfg *Config) (*Service, error) {
 		bridgeSessions.Close()
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
 	}
+	s.adminAPIKeys = buildAdminAPIKeyRuntimes(cfg, os.LookupEnv)
 	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage)
 	if err != nil {
 		_ = quota.Close()
@@ -444,11 +446,13 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	// Rebuild the authorizer so admin policies reflect the new caller
 	// directory. The authorizer is recreated with the latest callers map and
 	// the same admin authorization config.
+	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
 	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
 	s.cfg = newCfg
+	s.adminAPIKeys = newAdminKeys
 	s.authorizer = newAuthorizer
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
@@ -495,7 +499,7 @@ func (s *Service) routes() {
 				if !ok {
 					return false
 				}
-				return s.authorizeAdmin(subject, object, action)
+				return s.authorizeAdminObjectAction(subject, object, action)
 			},
 			AfterMutate: func(r *http.Request, callerID string) error {
 				_ = r
@@ -874,6 +878,23 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
+	// Admin API keys (#350) authenticate here as well; the basic-auth path
+	// below is unchanged for browser deployments.
+	if bearer := bearerTokenFromRequest(r); strings.HasPrefix(bearer, adminAPIKeyPrefix+"_") {
+		subject, ok := s.authenticateAdminSubject(w, r)
+		if !ok {
+			s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "admin-auth-failed", "admin:auth", authzActionRead)
+			return
+		}
+		if !s.authorizeAdminPermission(subject, adminPermissionAuthRead) {
+			s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "admin-forbidden", "admin:auth", authzActionRead)
+			writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "admin-forbidden", "message": "admin-forbidden"}})
+			return
+		}
+		s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", "admin:auth", authzActionRead)
+		writeJSON(w, http.StatusOK, safeAdminSubjectResponse(subject))
+		return
+	}
 	basic, ok := s.authenticateAdminBasic(w, r)
 	if !ok {
 		s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "admin-auth-failed", "admin:auth", authzActionRead)

@@ -95,8 +95,25 @@ type OpenAICompatibilityConfig struct {
 type AdminAuthConfig struct {
 	Basic         AdminBasicAuthConfig     `yaml:"basic" json:"basic"`
 	OIDC          AdminOIDCConfig          `yaml:"oidc" json:"oidc"`
+	APIKeys       []AdminAPIKeyConfig      `yaml:"api_keys" json:"api_keys"`
 	Sessions      AdminSessionConfig       `yaml:"sessions" json:"sessions"`
 	Authorization AdminAuthorizationConfig `yaml:"authorization" json:"authorization"`
+}
+
+// AdminAPIKeyConfig is one dedicated admin API key (#350). The raw key is a
+// bearer token of the form "rtr_admin_<key_id>_<secret>" shown to the
+// operator once at generation time; the router stores only the
+// PBKDF2-HMAC-SHA3-512 verifier named by KeyHashEnv. Admin keys authenticate
+// /admin/* routes only and are never caller or provider credentials. Rotate
+// by adding the replacement key, deploying, then removing or disabling the
+// old key (status: disabled).
+type AdminAPIKeyConfig struct {
+	KeyID       string   `yaml:"key_id" json:"key_id"`
+	KeyHashEnv  string   `yaml:"key_hash_env" json:"key_hash_env"`
+	Subject     string   `yaml:"subject" json:"subject"`
+	Domain      string   `yaml:"domain" json:"domain"`
+	Permissions []string `yaml:"permissions" json:"permissions"`
+	Status      string   `yaml:"status" json:"status"`
 }
 
 type AdminAuthorizationConfig struct {
@@ -1860,6 +1877,83 @@ func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
 	}
 	if err := validateAdminSessions(cfg.Sessions, cfg.OIDC.Enabled); err != nil {
 		return err
+	}
+	if err := validateAdminAPIKeys(cfg.APIKeys); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateAdminAPIKeys fails closed on malformed admin key configuration so a
+// typo can never widen or silently drop administrative access. Active keys
+// require a resolvable key_hash_env holding a well-formed token_hash
+// verifier; the raw key is never present in configuration.
+func validateAdminAPIKeys(keys []AdminAPIKeyConfig) error {
+	keyIDs := map[string]bool{}
+	subjects := map[string]bool{}
+	for i, key := range keys {
+		label := fmt.Sprintf("server admin_auth.api_keys[%d]", i)
+		keyID := strings.TrimSpace(key.KeyID)
+		if !validAdminKeyID(keyID) {
+			return fmt.Errorf("%s key_id %q is invalid: use 1-64 of [a-z0-9-]", label, key.KeyID)
+		}
+		if keyIDs[keyID] {
+			return fmt.Errorf("server admin_auth.api_keys duplicate key_id %q", keyID)
+		}
+		keyIDs[keyID] = true
+		status := strings.ToLower(strings.TrimSpace(key.Status))
+		switch status {
+		case "", "active", "disabled":
+		default:
+			return fmt.Errorf("%s status must be active or disabled", label)
+		}
+		envName := strings.TrimSpace(key.KeyHashEnv)
+		if envName == "" {
+			return fmt.Errorf("%s requires key_hash_env", label)
+		}
+		if !validEnvName(envName) {
+			return fmt.Errorf("%s key_hash_env is invalid", label)
+		}
+		subject := strings.TrimSpace(key.Subject)
+		if subject == "" {
+			subject = "adminkey:" + keyID
+		}
+		if !strings.HasPrefix(subject, "adminkey:") {
+			return fmt.Errorf("%s subject must start with adminkey:", label)
+		}
+		if strings.ContainsAny(subject, "\r\n") {
+			return fmt.Errorf("%s subject contains unsupported characters", label)
+		}
+		if subjects[subject] {
+			return fmt.Errorf("server admin_auth.api_keys duplicate subject %q", subject)
+		}
+		subjects[subject] = true
+		if strings.TrimSpace(key.Domain) == "" {
+			return fmt.Errorf("%s domain is required", label)
+		}
+		if len(key.Permissions) == 0 {
+			return fmt.Errorf("%s requires at least one permission", label)
+		}
+		for _, permission := range key.Permissions {
+			trimmed := strings.TrimSpace(permission)
+			if trimmed == "" || strings.ContainsAny(trimmed, " \t\r\n") {
+				return fmt.Errorf("%s permissions contains an invalid value", label)
+			}
+			if !knownAdminKeyPermissions[trimmed] {
+				return fmt.Errorf("%s permission %q is not a recognized admin permission", label, trimmed)
+			}
+		}
+		if status == "disabled" {
+			continue
+		}
+		hash, ok := os.LookupEnv(envName)
+		hash = strings.TrimSpace(hash)
+		if !ok || hash == "" {
+			return fmt.Errorf("%s key_hash_env %s is not set", label, envName)
+		}
+		if err := ValidateCallerTokenHash(hash); err != nil {
+			return fmt.Errorf("%s key_hash_env %s must hold a %s verifier: %w", label, envName, CallerTokenHashScheme, err)
+		}
 	}
 	return nil
 }

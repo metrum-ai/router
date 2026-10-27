@@ -42,6 +42,47 @@ func TestCallerGenerateWritesTokenOnceAndNeverPrintsIt(t *testing.T) {
 	}
 }
 
+func TestAdminKeyGenerateWritesKeyOnceAndNeverPrintsIt(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "admin.key")
+	run := func() ([]byte, error) {
+		return exec.Command("go", "run", ".", "adminkeys", "generate", "--key-id", "ops-primary", "--permissions", "config:read,config:write", "--token-out", keyPath).CombinedOutput()
+	}
+	output, err := run()
+	if err != nil {
+		t.Fatalf("generate: %v: %s", err, output)
+	}
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("key mode=%o, want 600", info.Mode().Perm())
+	}
+	key, err := os.ReadFile(keyPath)
+	if err != nil || !strings.HasPrefix(string(key), "rtr_admin_ops-primary_") {
+		t.Fatalf("key not written once: %v", err)
+	}
+	if strings.Contains(string(output), strings.TrimSpace(string(key))) {
+		t.Fatalf("raw admin key printed: %s", output)
+	}
+	var decoded struct {
+		KeyID     string `json:"key_id"`
+		TokenHash string `json:"token_hash"`
+	}
+	if err := json.Unmarshal(output, &decoded); err != nil {
+		t.Fatalf("output not JSON: %v: %s", err, output)
+	}
+	if decoded.KeyID != "ops-primary" || !strings.HasPrefix(decoded.TokenHash, "pbkdf2-sha3-512:") {
+		t.Fatalf("unexpected generate output: %s", output)
+	}
+	if matched, err := router.VerifyCallerTokenHash(decoded.TokenHash, strings.TrimSpace(string(key))); err != nil || !matched {
+		t.Fatalf("verifier does not match key: %v %v", matched, err)
+	}
+	if second, secondErr := run(); secondErr == nil || !strings.Contains(string(second), "file exists") {
+		t.Fatalf("second generate did not fail closed: %v %s", secondErr, second)
+	}
+}
+
 func TestCustomerConfigAndModelReadCommands(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"config.example.yaml", "env.example.json"} {
