@@ -605,6 +605,9 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 	// guarded runtime update and sees no busy errors.
 	err := withSQLiteBusyRetry(func() error {
 		return db.Transaction(func(tx *gorm.DB) error {
+			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
+				return err
+			}
 			if err := ensureConfigAdminWriteSchema(tx); err != nil {
 				return err
 			}
@@ -691,6 +694,11 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 		})
 	})
 	if err != nil {
+		// A concurrent writer using the same Idempotency-Key wins the
+		// partial unique index; map the race to the documented conflict.
+		if strings.Contains(err.Error(), "SQLSTATE 23505") && strings.TrimSpace(req.IdempotencyKey) != "" {
+			return nil, configAdminError(409, "idempotency-key-conflict", "Idempotency-Key is being used by a concurrent write; retry the request")
+		}
 		return nil, err
 	}
 	return result, nil
@@ -720,7 +728,28 @@ func isSQLiteBusyError(err error) bool {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "SQLITE_BUSY") || strings.Contains(text, "database is locked")
+	if strings.Contains(text, "SQLITE_BUSY") || strings.Contains(text, "database is locked") {
+		return true
+	}
+	// PostgreSQL deadlock/serialization errors are safe to retry: the
+	// transaction re-reads all state and the guarded revision update keeps
+	// exactly-one-winner semantics.
+	return strings.Contains(text, "SQLSTATE 40P01") || strings.Contains(text, "SQLSTATE 40001") || strings.Contains(text, "SQLSTATE 55P03")
+}
+
+// lockConfigRuntimeTx serializes writers within one runtime scope. On
+// PostgreSQL it takes a transaction-scoped advisory lock keyed by the scope
+// name before any DDL or DML, so concurrent group writes cannot deadlock on
+// lock ordering; it works before the runtime row exists. On SQLite it is a
+// no-op (single-writer WAL semantics plus the busy retry cover it).
+func lockConfigRuntimeTx(tx *gorm.DB, runtimeScope string) error {
+	if tx.Dialector.Name() != "postgres" {
+		return nil
+	}
+	if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "router-config:"+runtimeScope).Error; err != nil {
+		return fmt.Errorf("lock runtime scope: %w", err)
+	}
+	return nil
 }
 
 // prepareGroupWrite loads the canonical document, applies the requested group
@@ -930,6 +959,9 @@ func RollbackGroup(db *gorm.DB, runtimeScope, group, fromSetID, reason, actor st
 	}
 	var result *GroupTargetsWriteResult
 	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
+			return err
+		}
 		if err := ensureConfigAdminWriteSchema(tx); err != nil {
 			return err
 		}

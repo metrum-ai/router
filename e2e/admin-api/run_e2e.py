@@ -155,17 +155,23 @@ def build_binaries(workdir: Path) -> dict:
     bins = {}
     for name, pkg in [("router", "cmd/metrum-ai-router"),
                       ("routerctl", "cmd/metrum-ai-routerctl"),
-                      ("router-migrate", "cmd/metrum-ai-router-migrate")]:
+                      ("router-migrate", "cmd/metrum-ai-router-migrate"),
+                      ("pgschema", "e2e/admin-api/pgschema")]:
         out = workdir / name
         subprocess.run(["go", "build", "-o", str(out), "./" + pkg], cwd=REPO, check=True)
         bins[name] = out
     return bins
 
 
-def migrate_config_db(bins: dict, db_path: Path):
+def migrate_config_db(bins: dict, db_path: Path, pg_scoped_env: str = ""):
     def run(action, *extra):
-        cmd = [str(bins["router-migrate"]), "--scope", "router-config", "--action", action,
-               "--db", str(db_path), "--runner", "e2e-admin-api", *extra]
+        if pg_scoped_env:
+            cmd = [str(bins["router-migrate"]), "--scope", "router-config", "--action", action,
+                   "--driver", "postgres", "--dsn-env", pg_scoped_env, "--db", str(db_path),
+                   "--runner", "e2e-admin-api", *extra]
+        else:
+            cmd = [str(bins["router-migrate"]), "--scope", "router-config", "--action", action,
+                   "--db", str(db_path), "--runner", "e2e-admin-api", *extra]
         return subprocess.run(cmd, capture_output=True, text=True)
     r = run("apply")
     if r.returncode != 0 and "maintenance" not in r.stderr + r.stdout:
@@ -384,21 +390,28 @@ callers:
     path.write_text(doc)
 
 
-def write_bootstrap(path: Path, db_path: Path, scope: str, require_validation: bool, file_mode_doc: Path | None = None):
+def write_bootstrap(path: Path, db_path: Path, scope: str, require_validation: bool,
+                    file_mode_doc: Path | None = None, pg_scoped_env: str = ""):
     if file_mode_doc is not None:
         # File mode: the bootstrap IS the serving config.
         path.write_text(file_mode_doc.read_text())
         return
     policy = '\n    require_validation_status: passed' if require_validation else ''
+    if pg_scoped_env:
+        source = f"""driver: postgres
+    runtime_scope: {scope}
+    dsn_env: {pg_scoped_env}{policy}"""
+    else:
+        source = f"""driver: sqlite
+    runtime_scope: {scope}
+    path: {db_path}{policy}"""
     path.write_text(f"""server:
   listen: '127.0.0.1:0'
   identifiers:
     mode: passthrough
   config_source:
     mode: database
-    driver: sqlite
-    runtime_scope: {scope}
-    path: {db_path}{policy}
+    {source}
 providers:
   placeholder:
     base_url: https://placeholder.invalid/v1
@@ -458,6 +471,8 @@ def main():
     ap.add_argument("--workdir", default="")
     ap.add_argument("--evidence-dir", default="")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--pg", action="store_true",
+                    help="run the config control plane on PostgreSQL (ROUTER_TEST_PG_DSN), fresh schema per run")
     args = ap.parse_args()
 
     for var in ["OPENAI_API_KEY", "FIREWORKS_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"]:
@@ -494,25 +509,49 @@ def main():
 
     config_db = workdir / "config.sqlite"
     usage_db = workdir / "usage.sqlite"
+    pg_schema = ""
+    pg_scoped_env = ""
+    if args.pg:
+        if not os.environ.get("ROUTER_TEST_PG_DSN"):
+            print("--pg requires ROUTER_TEST_PG_DSN", file=sys.stderr)
+            sys.exit(2)
+        pg_schema = "r395e2e" + pysecrets.token_hex(4)
+        subprocess.run([str(bins["pgschema"]), "create", "--name", pg_schema], check=True,
+                       capture_output=True, text=True)
+        base_dsn = os.environ["ROUTER_TEST_PG_DSN"]
+        sep = "&" if "?" in base_dsn else "?"
+        os.environ["ROUTER_TEST_PG_DSN_SCOPED"] = base_dsn + sep + "search_path=" + pg_schema
+        pg_scoped_env = "ROUTER_TEST_PG_DSN_SCOPED"
+        log(f"PG mode: fresh schema {pg_schema}")
     canonical = workdir / "canonical.yaml"
     write_canonical_config(canonical, suite.caller_token,
                            {k: v for k, v in admin_defs.items()}, usage_db)
-    migrate_config_db(bins, config_db)
-    out = subprocess.run([str(bins["routerctl"]), "config", "import", "--yaml", str(canonical),
-                          "--name", "e2e-seed", "--driver", "sqlite", "--db", str(config_db),
-                          "--scope", "prod", "--actor", "e2e-seed"],
-                         capture_output=True, text=True, check=True)
+    migrate_config_db(bins, config_db, pg_scoped_env)
+    if pg_scoped_env:
+        out = subprocess.run([str(bins["routerctl"]), "config", "import", "--yaml", str(canonical),
+                              "--name", "e2e-seed", "--driver", "postgres", "--dsn-env", pg_scoped_env,
+                              "--scope", "prod", "--actor", "e2e-seed"],
+                             capture_output=True, text=True, check=True)
+    else:
+        out = subprocess.run([str(bins["routerctl"]), "config", "import", "--yaml", str(canonical),
+                              "--name", "e2e-seed", "--driver", "sqlite", "--db", str(config_db),
+                              "--scope", "prod", "--actor", "e2e-seed"],
+                             capture_output=True, text=True, check=True)
     seed_set = json.loads(out.stdout)["set_id"]
-    subprocess.run([str(bins["routerctl"]), "config", "activate", "--set-id", seed_set,
-                    "--driver", "sqlite", "--db", str(config_db), "--scope", "prod", "--actor", "e2e-seed"],
-                   capture_output=True, text=True, check=True)
+    activate_cmd = [str(bins["routerctl"]), "config", "activate", "--set-id", seed_set,
+                    "--scope", "prod", "--actor", "e2e-seed"]
+    if pg_scoped_env:
+        activate_cmd += ["--driver", "postgres", "--dsn-env", pg_scoped_env]
+    else:
+        activate_cmd += ["--driver", "sqlite", "--db", str(config_db)]
+    subprocess.run(activate_cmd, capture_output=True, text=True, check=True)
     log(f"seeded active set {seed_set}")
 
     # Start: R1/R2/R3 in DB mode on the shared config DB, RF in file mode.
     # Ports are allocated dynamically so a zombie from a crashed earlier run
     # can never impersonate a fresh replica.
     boot1 = workdir / "boot1.yaml"
-    write_bootstrap(boot1, config_db, "prod", require_validation=True)
+    write_bootstrap(boot1, config_db, "prod", require_validation=True, pg_scoped_env=pg_scoped_env)
     routers = []
     env = dict(admin_env)
     file_mode_doc = workdir / "file-mode.yaml"
@@ -568,17 +607,30 @@ def main():
                 leaks.append(f"{rp.log_path}: admin key material")
         if suite.caller_token in text:
             leaks.append(f"{rp.log_path}: caller token")
-    db_dump = config_db.read_bytes()
-    if CANARY_SECRET.encode() in db_dump:
-        leaks.append("config.sqlite contains canary")
-    for kf in admin_key_files.values():
-        if kf.encode() in db_dump:
-            leaks.append("config.sqlite contains raw admin key")
-    if suite.caller_token.encode() in db_dump:
-        leaks.append("config.sqlite contains raw caller token")
+    if pg_scoped_env:
+        for label, needle in [("canary", CANARY_SECRET)] +                              [(f"admin key {k}", v) for k, v in admin_key_files.items()] +                              [("caller token", suite.caller_token)]:
+            scan = subprocess.run([str(bins["pgschema"]), "scan", "--name", pg_schema],
+                                  env={**os.environ, "PGSCAN_NEEDLE": needle},
+                                  capture_output=True, text=True)
+            if scan.returncode != 0:
+                leaks.append(f"postgres schema contains {label}")
+    else:
+        db_dump = config_db.read_bytes()
+        if CANARY_SECRET.encode() in db_dump:
+            leaks.append("config.sqlite contains canary")
+        for kf in admin_key_files.values():
+            if kf.encode() in db_dump:
+                leaks.append("config.sqlite contains raw admin key")
+        if suite.caller_token.encode() in db_dump:
+            leaks.append("config.sqlite contains raw caller token")
     suite.record("secret-hygiene: canary and keys absent from logs and DB",
                  "grep logs + config DB for canary/token material", "no leaks", "leaks" if leaks else "no leaks",
                  note="; ".join(leaks) if leaks else "clean")
+
+    if pg_schema:
+        subprocess.run([str(bins["pgschema"]), "drop", "--name", pg_schema],
+                       capture_output=True, text=True)
+        log(f"PG schema {pg_schema} dropped")
 
     # Cost estimate from usage rows.
     conn = sqlite3.connect(f"file:{usage_db}?mode=ro", uri=True)
@@ -592,6 +644,7 @@ def main():
     total = len(suite.cases)
     report = {
         "suite": "admin-api-e2e", "started": ts, "passed": passed, "total": total,
+        "config_db_driver": "postgres" if args.pg else "sqlite",
         "upstreams": {k: [m for _, m in v] for k, v in UPSTREAM_MODELS.items()},
         "skipped_upstreams": {
             "bedrock": "key present; Bedrock Converse needs signing setup — covered by 4 other upstreams",

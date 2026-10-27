@@ -557,13 +557,18 @@ func addConfigDBFlags(fs *flag.FlagSet) *smartrouterctl.ConfigDBOptions {
 	opts := &smartrouterctl.ConfigDBOptions{}
 	fs.StringVar(&opts.Driver, "driver", "sqlite", "config control-plane driver")
 	fs.StringVar(&opts.Path, "db", "", "sqlite config control-plane path")
-	fs.StringVar(&opts.DSN, "dsn", "", "postgres config control-plane dsn")
+	fs.StringVar(&opts.DSN, "dsn", "", "postgres config control-plane dsn (prefer --dsn-env)")
+	fs.StringVar(&opts.DSNEnv, "dsn-env", "", "environment variable holding the postgres dsn")
 	fs.StringVar(&opts.RuntimeScope, "scope", "prod", "runtime scope")
 	fs.StringVar(&opts.Actor, "actor", "operator", "audit actor")
 	return opts
 }
 
 func openConfigDB(opts smartrouterctl.ConfigDBOptions) (*gorm.DB, func() error, error) {
+	// --dsn-env keeps the DSN out of the process argument list.
+	if opts.DSNEnv != "" {
+		opts.DSN = os.Getenv(opts.DSNEnv)
+	}
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
 	}
