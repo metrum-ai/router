@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Metrum AI. All rights reserved.
+// Copyright 2026 Metrum AI
+// SPDX-License-Identifier: Apache-2.0
 
 package router
 
