@@ -145,9 +145,18 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           enable-cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: github.event_name != 'pull_request'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tests/api_compat_ts/package-lock.json
       - name: Offline API compatibility
         if: github.event_name != 'pull_request'
         run: make api-compat-mock
+      - name: TypeScript SDK API compatibility (DoD 2)
+        if: github.event_name != 'pull_request'
+        run: make api-compat-ts
   harbor:
     runs-on: router-arc
     timeout-minutes: 90
