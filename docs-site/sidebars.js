@@ -83,6 +83,7 @@ const sidebars = {
         "configuration/model-groups",
         "configuration/caller-tokens",
         "configuration/caller-traffic-shaping",
+        "configuration/experiment-profiles",
         "configuration/cache-usage-store",
         "configuration/admin-authentication",
         "configuration/admin-authorization",
