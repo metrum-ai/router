@@ -40,7 +40,7 @@ Use the embedded `/docs/` site for the full product guide after the router start
 
 - Match the artifact architecture to the host CPU.
 - Choose a Linux or Windows binary install when the deployment already has a process supervisor, database, and TLS proxy; Windows packages do not install a service, and Caddy is not bundled as a service.
-- Windows binaries are not Authenticode-signed currently; apply your organization's executable approval controls.
+- Windows binaries are Authenticode-signed (Azure Trusted Signing, RFC 3161 timestamped) for releases built after signing was provisioned (#332); verify with `Get-AuthenticodeSignature`. For older unsigned releases, apply your organization's executable approval controls.
 - Choose Docker Compose when a packaged image tar and Compose-managed Postgres fit the operating model.
 - Use Kubernetes only with reviewed deployment manifests and the canonical Kubernetes install guide.
 - Confirm `/readyz`, `/docs/`, `/v1/models`, and one caller smoke before sending production traffic.

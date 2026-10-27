@@ -492,6 +492,7 @@ secret-check: secret-contract
 	python3 scripts/validate_package_contents_test.py
 	python3 scripts/check_compose_security_test.py
 	python3 scripts/make_release_zip_test.py
+	python3 scripts/sign_windows_exes_test.py
 	python3 scripts/release_artifact_inventory_test.py
 	python3 scripts/validate_release_clean_test.py
 	python3 scripts/compose_package_upgrade_test.py
@@ -643,6 +644,7 @@ package-one-no-docs: capability-smoke-unit
 	find "$$pkg_dir" -type f -exec chmod 0644 {} +; \
 	chmod 0755 "$$pkg_dir"/bin/*; \
 	if [ "$${GOOS}" = windows ]; then \
+		python3 scripts/sign_windows_exes.py "$$pkg_dir/bin"; \
 		python3 scripts/make_release_zip.py "$$pkg_dir" "$${DIST_DIR}/$$pkg_name.zip"; \
 	else \
 		$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
