@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- GitHub build-provenance attestations for every published release archive,
+  `SHA256SUMS`, and `release-artifacts.json` (#332). Windows archives are
+  unsigned by default; Authenticode remains an optional signing path.
+
 - Release workflow: Windows binaries are Authenticode-signed with Azure
   Trusted Signing (RFC 3161 timestamped) when the signing secrets are
   provisioned — the step is a logged no-op until then, so unsigned builds
