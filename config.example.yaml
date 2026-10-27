@@ -104,6 +104,20 @@ server:
         enabled: false
         max_wait_ms: 0
         max_depth: 0
+  # Opt-in experiment profiles for endpoint-bound agent studies (#379):
+  # injected TTFT delay and delivered-token (or explicitly labeled event)
+  # pacing, scoped to experiment callers/groups/targets. Off by default;
+  # a profile with no scope is rejected. Pacing only delays delivery.
+  experiment_profiles: {}
+  #   study-ttft-2s:
+  #     enabled: true
+  #     seed: study-a
+  #     callers: [bench-agent]
+  #     ttft_delay_ms: 2000
+  #     ttft_jitter_ms: 250
+  #     events_per_sec: 0          # or output_tokens_per_sec (estimated)
+  #     burst: 1
+  #     max_extra_delay_ms: 60000
   # Demo/reference login: admin/admin. Replace the bcrypt hash in env.json
   # before exposing this example outside a controlled demo network. Basic
   # establishes identity; the report grant below authorizes the dashboard.

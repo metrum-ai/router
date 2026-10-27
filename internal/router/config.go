@@ -86,6 +86,11 @@ type ServerConfig struct {
 	Retention           RetentionConfig           `yaml:"retention"`
 	DecisionTelemetry   DecisionTelemetryConfig   `yaml:"decision_telemetry"`
 	TrafficShape        ServerTrafficShapeConfig  `yaml:"traffic_shape" json:"traffic_shape"`
+	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
+	// pacing profiles for endpoint-bound agent studies (#379). They are off by
+	// default, must be scoped to experiment callers/groups/targets, and never
+	// change traffic that does not match a scope.
+	ExperimentProfiles map[string]ExperimentProfileConfig `yaml:"experiment_profiles" json:"experimentProfiles,omitempty"`
 }
 
 type OpenAICompatibilityConfig struct {
@@ -1325,6 +1330,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return fmt.Errorf("server retention requires usage_db enabled")
 	}
 	if err := validateServerTrafficShape(c.Server.TrafficShape); err != nil {
+		return err
+	}
+	if err := validateExperimentProfiles(c.Server.ExperimentProfiles); err != nil {
 		return err
 	}
 	if _, err := c.validateAccounts(); err != nil {
