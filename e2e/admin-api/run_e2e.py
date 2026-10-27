@@ -591,7 +591,7 @@ def main():
     ok = True
     try:
         ok &= run_cases(suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
-                        config_db, usage_db, suite_mark, workdir, admin_key_files)
+                        config_db, usage_db, suite_mark, workdir, admin_key_files, pg_mode=args.pg)
     finally:
         for rp in routers:
             rp.stop()
@@ -765,7 +765,7 @@ def wait_served_model(router, caller, group, want_prefix, timeout=25, stream=Fal
 
 
 def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
-              config_db, usage_db, suite_mark, workdir, admin_key_files):
+              config_db, usage_db, suite_mark, workdir, admin_key_files, pg_mode=False):
     ok = True
 
     # ---- baseline: caller chat works before any admin write ----
@@ -857,8 +857,16 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                            served=model1, note=f"{prop1:.2f}s from PUT")
         hit2, model2 = wait_served_model(r2, caller, group, want_prefix, timeout=25)
         prop2 = time.monotonic() - t0
-        ok &= suite.record(name + " / replica-2 propagation", "chat on r2 serves new target", True, hit2,
-                           served=model2, note=f"{prop2:.2f}s from PUT (poll interval 2s)")
+        note2 = f"{prop2:.2f}s from PUT (poll interval 2s)"
+        if pg_mode:
+            # LISTEN/NOTIFY: replicas must converge in about 1 s (#411); the
+            # poller remains the fallback when the notifier is unavailable.
+            ok &= suite.record(name + " / replica-2 notify window", "chat on r2 serves new target within 1.5s",
+                               True, hit2 and prop2 <= 1.5,
+                               served=model2, note=f"{prop2:.2f}s from PUT (LISTEN/NOTIFY window)")
+        else:
+            ok &= suite.record(name + " / replica-2 propagation", "chat on r2 serves new target", True, hit2,
+                               served=model2, note=note2)
 
     stop_loop.set()
     loop_thread.join(timeout=15)

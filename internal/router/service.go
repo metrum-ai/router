@@ -84,6 +84,7 @@ type Service struct {
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
 	configReloadStop   func()
+	configNotifyStop   func()
 	configInstanceID   string
 	configLoaded       atomic.Value // configLoadedState
 	shadows            *shadowRuntime
@@ -357,6 +358,10 @@ func (s *Service) Handler() http.Handler {
 }
 
 func (s *Service) Close() {
+	if s.configNotifyStop != nil {
+		s.configNotifyStop()
+		s.configNotifyStop = nil
+	}
 	if s.configReloadStop != nil {
 		s.configReloadStop()
 		s.configReloadStop = nil
@@ -407,10 +412,14 @@ func (s *Service) initConfigControlPlane() error {
 			return fmt.Errorf("start config control-plane revision poller: %w", err)
 		}
 		s.configReloadStop = stop
-		if _, err := StartConfigRevisionNotifier(context.Background(), db, scope, reload); err != nil {
-			// PostgreSQL notifier returns a no-op stub today; any real
-			// failure would surface here and fail service startup loudly.
-			return fmt.Errorf("start config control-plane revision notifier: %w", err)
+		stopNotify, err := StartConfigRevisionNotifier(context.Background(), db, scope, reload)
+		if err != nil {
+			// The notifier is an optimization: LISTEN/NOTIFY converges
+			// replicas in about a second, but a listener failure must not
+			// stop startup — the poller above remains the fallback (#411).
+			log.Printf("config control-plane notifier unavailable for scope %q; polling remains the refresh path", scope)
+		} else {
+			s.configNotifyStop = stopNotify
 		}
 		// The bootstrap already loaded the active document; record which
 		// revision this replica is serving for the status endpoint, and load
