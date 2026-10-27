@@ -26,14 +26,13 @@ CONTRACT_PATH = ROOT / "evaluators/livecodebench/contract.json"
 SAFE_FIELDS = ("status", "release_version", "selected", "completed", "scored", "errors", "pass_at_1")
 PROMPT_FORMATTER = "lcb_runner.prompts.code_generation.format_prompt_generation@28fef95e:OpenAIChat"
 
-
 class ContractError(ValueError):
     pass
 
 
 def contract() -> dict[str, Any]:
     value = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
-    required = {"livecodebench_revision", "datasets_version", "dataset", "release_version", "task_count", "sampling_seed", "generation", "request_timeout_seconds", "scorer_version", "prompt_formatter"}
+    required = {"livecodebench_revision", "datasets_version", "dataset", "dataset_files", "release_version", "task_count", "sampling_seed", "generation", "request_timeout_seconds", "scorer_version", "prompt_formatter"}
     if not isinstance(value, dict) or required - value.keys():
         raise ContractError("LiveCodeBench contract is incomplete")
     if value["release_version"] != "release_v6" or value["task_count"] != 40:
@@ -65,14 +64,41 @@ def select_tasks(tasks: Iterable[Any], *, seed: str, count: int) -> list[Any]:
 
 def load_official_tasks() -> list[Any]:
     values = contract()
+    # datasets 4+ removed dataset loading scripts, and
+    # livecodebench/code_generation_lite still ships code_generation_lite.py,
+    # so the checkout's load_code_generation_dataset (a load_dataset(...,
+    # trust_remote_code=True) call) cannot run on the pinned datasets 5 line
+    # (metrum-ai/router#415). Load the exact JSONL files the official script
+    # maps for the pinned release_version (contract dataset_files, copied from
+    # the script's ALLOWED_FILES) and construct rows with the checkout's
+    # official CodeGenerationProblem. Every field in those files is already a
+    # JSON string, so no script-side casting is involved. The prompt formatter
+    # and scorer identities remain pinned to the official checkout revision.
     try:
-        loader = importlib.import_module("lcb_runner.benchmarks.code_generation").load_code_generation_dataset
+        module = importlib.import_module("lcb_runner.benchmarks.code_generation")
+        problem_cls = module.CodeGenerationProblem
+        hub_download = importlib.import_module("huggingface_hub").hf_hub_download
     except (ImportError, AttributeError) as exc:
-        raise ContractError("LiveCodeBench runner/dataset contract unavailable before inference") from exc
-    with contextlib.redirect_stdout(io.StringIO()):
-        tasks = loader(values["release_version"])
-    if not isinstance(tasks, list):
-        raise ContractError("official LiveCodeBench loader returned an invalid dataset")
+        raise ContractError("official LiveCodeBench runner/dataset contract unavailable before inference") from exc
+    files = (values.get("dataset_files") or {}).get(values["release_version"])
+    if not isinstance(files, list) or not files or not all(isinstance(name, str) and "/" not in name for name in files):
+        raise ContractError("pinned release_version has no dataset file mapping")
+    tasks: list[Any] = []
+    seen_ids: set[str] = set()
+    for filename in files:
+        path = Path(hub_download(repo_id=values["dataset"], repo_type="dataset", filename=filename))
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                identifier = task_id(row)
+                if identifier in seen_ids:
+                    raise ContractError("dataset task IDs must be distinct before sampling")
+                seen_ids.add(identifier)
+                tasks.append(problem_cls(**row))
+    if not tasks:
+        raise ContractError("official LiveCodeBench dataset files returned no tasks")
     return tasks
 
 
