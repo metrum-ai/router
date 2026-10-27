@@ -1,0 +1,14 @@
+{
+  "name": "router-api-compat-ts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript SDK API-compat suite for the router (metrum-ai/router#271, #94 DoD 2). Metrum AI.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "openai": "7.45.1"
+  }
+}

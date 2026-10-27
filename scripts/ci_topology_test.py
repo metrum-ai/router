@@ -134,7 +134,7 @@ def assert_deterministic_gate() -> None:
                       "scripts/outcome_calibrated_policy_test.py", "scripts/api_compat_bootstrap_test.py",
                       "scripts/ci_topology_test.py", "scripts/harbor_promotion_test.py",
                       "make docs-qa", "tsc --noEmit"),
-        "api-compat": ("make api-compat-mock",),
+        "api-compat": ("make api-compat-mock", "make api-compat-ts"),
         "harbor": ("make harbor-local",),
         "d3": ("make d3-policy-e2e",),
         "lrp": ("scripts/ci_lrp_synthetic.sh",),
