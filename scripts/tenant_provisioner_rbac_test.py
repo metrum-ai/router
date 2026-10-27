@@ -24,11 +24,17 @@ MANIFEST = ROOT / "deploy" / "kubernetes" / "bootstrap" / "tenant-provisioner-rb
 APPROVED = {
     ("", "resourcequotas"): {"get", "list", "watch", "create", "update", "patch"},
     ("", "limitranges"): {"get", "list", "watch", "create", "update", "patch"},
-    ("networking.k8s.io", "networkpolicies"): {"get", "list", "watch", "create", "update", "patch"},
     ("networking.k8s.io", "ingresses"): {"get", "list", "watch"},
     ("policy.linkerd.io", "servers"): {"get", "list", "watch", "create", "update", "patch"},
     ("policy.linkerd.io", "serverauthorizations"): {"get", "list", "watch", "create", "update", "patch"},
 }
+
+# The tenant default-deny NetworkPolicy is applied once at namespace creation
+# by the platform administrator (tenant-default-network-policy.example.yaml,
+# Refs #414). The provisioner must hold no NetworkPolicy write access
+# (KSV-0056); read-only access is also unnecessary because discovery uses a
+# separate read-only binding.
+NO_NETWORKPOLICY_ACCESS = ("networking.k8s.io", "networkpolicies")
 
 FORBIDDEN_RESOURCES = {"secrets", "pods", "deployments", "serviceaccounts", "roles", "rolebindings", "clusterroles", "clusterrolebindings"}
 
@@ -84,6 +90,15 @@ def main() -> int:
     for key, verbs in APPROVED.items():
         require(key in seen, f"approved grant missing from Role: {key[0]}/{key[1]}")
         require(seen[key] >= verbs, f"Role lost required verbs for {key[0]}/{key[1]}: missing {sorted(verbs - seen[key])}")
+
+    require(NO_NETWORKPOLICY_ACCESS not in seen, "provisioner must have no NetworkPolicy access (KSV-0056, Refs #414)")
+
+    bootstrap = ROOT / "deploy" / "kubernetes" / "bootstrap"
+    require((bootstrap / "tenant-default-network-policy.example.yaml").exists(),
+            "tenant-default-network-policy.example.yaml must exist: the default-deny policy is applied by the platform administrator at namespace creation, not by the provisioner (Refs #414)")
+    bootstrap_docs = [d for d in yaml.safe_load_all((bootstrap / "tenant-bootstrap-resources.example.yaml").read_text(encoding="utf-8")) if d]
+    require(all(d.get("kind") != "NetworkPolicy" for d in bootstrap_docs),
+            "tenant-bootstrap-resources.example.yaml must not create NetworkPolicy objects (Refs #414)")
 
     print(f"ok: tenant provisioner Role matches the approved least-privilege matrix ({len(seen)} resource grants)")
     return 0

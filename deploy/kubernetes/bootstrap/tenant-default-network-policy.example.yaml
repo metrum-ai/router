@@ -1,0 +1,20 @@
+# One-time tenant NetworkPolicy template. Apply this reviewed template in the
+# approved tenant namespace at namespace creation, in the same
+# platform-administrator step that binds
+# `tenant-provisioner-rbac.yaml` (metrum-ai/router#414). The tenant
+# provisioner identity no longer has NetworkPolicy write access: applying the
+# namespace default-deny policy is a single, reviewed, one-time step, so it
+# stays with the platform administrator instead of a standing service-account
+# permission (KSV-0056). Apply it before any workload lands in the namespace;
+# the EKS ingress guard and the rendered tenant allow policies are applied
+# later through the separate validated deployment path
+# (make eks-validate-tenant-network-policies / eks-apply-tenant-network-policies).
+# It contains no Secret resource and does not grant cross-namespace authority.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-default-deny-ingress
+  namespace: replace-with-approved-tenant-namespace
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
