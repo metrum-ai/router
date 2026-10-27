@@ -9,13 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Release workflow: Windows binaries are Authenticode-signed with Azure
-  Trusted Signing (RFC 3161 timestamped) when the signing secrets are
-  provisioned — the step is a logged no-op until then, so unsigned builds
-  keep working. Signing runs between the Windows `.exe` builds and the
-  deterministic zip packaging on tag builds only, so checksums and the
-  release inventory always hash the signed binaries; a sign or verify
-  failure fails the release once credentials exist (#332).
+- Experiment profiles for endpoint-bound agent studies (#379): opt-in,
+  scope-required (callers/groups/targets) profiles inject an added TTFT
+  delay with seeded reproducible jitter and pace delivered output by an
+  estimated token rate (`output_tokens_per_sec`, calibrated via
+  `token_estimate_chars_per_token`) or an explicitly labeled event rate
+  (`events_per_sec`). Pacing only delays delivery, preserves streaming
+  frames byte-for-byte (tool-call, reasoning, usage and `[DONE]` events
+  included), honors cancellation and timeouts, and caps the total injected
+  delay per request. Every paced request records trace events with the
+  profile name and profile hash; upstream timing stays measured separately
+  from downstream pacing. See `docs-site/docs/configuration/experiment-profiles.md`.
 
 ### Changed
 
