@@ -11,10 +11,24 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
 	"github.com/metrum-ai/router/internal/router"
 )
+
+// migrationRunner is the unexported router migration runner surface this
+// command uses.
+type migrationRunner interface {
+	Status() (router.MigrationStatus, error)
+	Verify() (router.MigrationStatus, error)
+	ApplyPending(runner string) error
+	ApplyMaintenancePendingWithEvidence(runner, backupEvidenceRef string) error
+	ApplyNonTransactionalMaintenancePendingWithEvidence(runner, backupEvidenceRef string) error
+	RequestDataJobCancellation(jobKey string) error
+	RetryDataJob(jobKey, recoveryEvidenceRef string) error
+	RunDataJob(ctx context.Context, jobKey, runnerID string, checkpoint router.DataJobCheckpoint) (router.MigrationDataJobStatus, error)
+}
 
 func main() {
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
@@ -22,6 +36,7 @@ func main() {
 		return
 	}
 	action := flag.String("action", "status", "migration action: status, plan, verify, verify-serving, apply, maintenance, non-transactional-maintenance, cancel, retry, or resume")
+	scope := flag.String("scope", "usage", "migration scope: usage or router-config (the configuration control plane, #395)")
 	driver := flag.String("driver", "sqlite", "usage DB driver: sqlite or postgres")
 	dbPath := flag.String("db", "usage.sqlite", "path to usage SQLite database")
 	dsnEnv := flag.String("dsn-env", "ROUTER_USAGE_DB_DSN", "environment variable containing the Postgres DSN")
@@ -39,11 +54,36 @@ func main() {
 			die("Postgres migration scope requires non-empty --dsn-env %q", *dsnEnv)
 		}
 	}
-	r, closeDB, err := router.UsageMigrationRunner(router.UsageDBConfig{Driver: *driver, Path: *dbPath, DSN: dsn})
+	dbCfg := router.UsageDBConfig{Driver: *driver, Path: *dbPath, DSN: dsn}
+	var r migrationRunner
+	var closeDB func() error
+	var err error
+	configScope := false
+	switch strings.ToLower(strings.TrimSpace(*scope)) {
+	case "", "usage":
+		r, closeDB, err = router.UsageMigrationRunner(dbCfg)
+	case "router-config":
+		// The configuration control plane is migrated by a non-serving
+		// deployment job (docs/CONFIG_CONTROL_PLANE.md), never by router
+		// startup. This scope applies the online prefix; the phase 2-5
+		// maintenance batch still requires --action maintenance with a
+		// backup evidence reference.
+		configScope = true
+		r, closeDB, err = router.ConfigControlPlaneMigrationRunner(dbCfg)
+	default:
+		die("unsupported migration scope %q (want usage or router-config)", *scope)
+	}
 	if err != nil {
 		die("open migration scope: %v", err)
 	}
 	defer closeDB()
+	if configScope {
+		switch *action {
+		case "status", "plan", "verify", "apply", "maintenance":
+		default:
+			die("scope router-config supports only status, plan, verify, apply, and maintenance")
+		}
+	}
 	var status router.MigrationStatus
 	switch *action {
 	case "status", "plan":

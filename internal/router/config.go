@@ -296,6 +296,10 @@ type ConfigSourceConfig struct {
 	Driver            string `yaml:"driver" json:"driver"`
 	Path              string `yaml:"path" json:"path"`
 	RefreshIntervalMS int    `yaml:"refresh_interval_ms" json:"refresh_interval_ms"`
+	// RequireValidationStatus, when set (for example "passed"), makes Admin
+	// API group writes refuse targets whose validation.status does not match
+	// unless the caller holds config:force and sets force (#395).
+	RequireValidationStatus string `yaml:"require_validation_status" json:"require_validation_status"`
 }
 
 type DecisionTelemetryConfig struct {
@@ -1240,6 +1244,19 @@ func (c *Config) setDefaults() {
 }
 
 func (c *Config) Validate() error {
+	return c.validate(true)
+}
+
+// ValidateForImport validates a canonical document that stays unexpanded at
+// rest: admin key_hash_env references are checked for shape but not resolved,
+// because the importing operator need not hold the deployment's secrets.
+// Serving still fails closed: LoadConfig/LoadConfigForServe use Validate, and
+// an unresolved verifier never authenticates.
+func (c *Config) ValidateForImport() error {
+	return c.validate(false)
+}
+
+func (c *Config) validate(requireAdminKeyEnv bool) error {
 	switch c.Server.Streaming.Translator {
 	case "", "incremental", "synthesized":
 	default:
@@ -1286,7 +1303,7 @@ func (c *Config) Validate() error {
 	if err := validateConfigSource(c.Server.ConfigSource); err != nil {
 		return err
 	}
-	if err := validateAdminAuth(c.Server.AdminAuth, c.Server.UsageDB); err != nil {
+	if err := validateAdminAuthMode(c.Server.AdminAuth, c.Server.UsageDB, requireAdminKeyEnv); err != nil {
 		return err
 	}
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
@@ -1866,6 +1883,10 @@ func trafficBackoffEnabled(cfg TrafficBackoffConfig) bool {
 }
 
 func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
+	return validateAdminAuthMode(cfg, usage, true)
+}
+
+func validateAdminAuthMode(cfg AdminAuthConfig, usage UsageDBConfig, requireAdminKeyEnv bool) error {
 	if err := validateAdminAuthorization(cfg.Authorization, usage); err != nil {
 		return err
 	}
@@ -1878,7 +1899,7 @@ func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
 	if err := validateAdminSessions(cfg.Sessions, cfg.OIDC.Enabled); err != nil {
 		return err
 	}
-	if err := validateAdminAPIKeys(cfg.APIKeys); err != nil {
+	if err := validateAdminAPIKeys(cfg.APIKeys, requireAdminKeyEnv); err != nil {
 		return err
 	}
 	return nil
@@ -1888,7 +1909,7 @@ func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
 // typo can never widen or silently drop administrative access. Active keys
 // require a resolvable key_hash_env holding a well-formed token_hash
 // verifier; the raw key is never present in configuration.
-func validateAdminAPIKeys(keys []AdminAPIKeyConfig) error {
+func validateAdminAPIKeys(keys []AdminAPIKeyConfig, requireEnv bool) error {
 	keyIDs := map[string]bool{}
 	subjects := map[string]bool{}
 	for i, key := range keys {
@@ -1943,7 +1964,7 @@ func validateAdminAPIKeys(keys []AdminAPIKeyConfig) error {
 				return fmt.Errorf("%s permission %q is not a recognized admin permission", label, trimmed)
 			}
 		}
-		if status == "disabled" {
+		if status == "disabled" || !requireEnv {
 			continue
 		}
 		hash, ok := os.LookupEnv(envName)
@@ -2247,6 +2268,9 @@ func validateAdminAuthorization(cfg AdminAuthorizationConfig, usage UsageDBConfi
 }
 
 func validateConfigSource(cfg ConfigSourceConfig) error {
+	if err := validateConfigSourceValidationPolicy(cfg.RequireValidationStatus); err != nil {
+		return err
+	}
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		mode = "yaml"
@@ -2280,6 +2304,16 @@ func validateConfigSource(cfg ConfigSourceConfig) error {
 		return nil
 	default:
 		return fmt.Errorf("server config_source.mode must be yaml or database")
+	}
+}
+
+func validateConfigSourceValidationPolicy(status string) error {
+	status = strings.ToLower(strings.TrimSpace(status))
+	switch status {
+	case "", "passed":
+		return nil
+	default:
+		return fmt.Errorf("server config_source.require_validation_status must be empty or passed")
 	}
 }
 

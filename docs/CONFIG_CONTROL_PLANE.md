@@ -57,9 +57,9 @@ set in a runtime scope. For a provider with `api_key_env`, it resolves the
 named deployment environment variable only into the returned in-memory runtime
 configuration; it never writes or logs that value. An unset reference remains
 unconfigured so catalog-only providers can stay cataloged without an entitled
-credential. Runtime DB mode, YAML import/export, write APIs,
-activation/rollback actions, PostgREST, Caddy, secret persistence, and hot
-reload remain later issue #7 phases.
+credential. PostgREST, Caddy, and secret persistence remain later issue #7
+phases; the write APIs and activation/rollback actions landed in #395 (see
+"Phase 8" below), and hot reload is the phase-2 poller/notifier.
 
 ## Provider-model capability projection
 
@@ -215,3 +215,50 @@ These operations are available through the admin API and the
 `metrum-ai-routerctl callers` family. They are only meaningful in DB-backed
 mode; in file mode, caller changes remain a YAML edit plus reload/restart as
 documented in `docs-site/docs/operations/key-generation.md`.
+
+## Phase 8: Admin API write surface (#395)
+
+Phase 8 delivers the control-plane write APIs as authenticated Admin API
+endpoints (`/admin/config/*`), protected by the dedicated admin credential
+from #350 with the fine-grained permissions `config:read`, `config:write`,
+`config:activate`, and `config:force`. In file mode every write returns `409
+config_source_mode_file` and reads continue to work from the live
+configuration.
+
+Group writes (`PUT/POST/DELETE /admin/config/groups/{group}/targets…`,
+`POST …/rollback`) are copy-on-write: the active canonical document is
+loaded, patched for the one group, validated (`Config.Validate` plus a
+per-target catalog/contract eligibility report), imported as a new set, and
+activated in one transaction. The guarded `router_config_runtime` update
+makes concurrent writers safe (exactly one wins; the loser gets `409
+config-revision-conflict`); `If-Match` carries the revision precondition and
+`Idempotency-Key` makes retries return the recorded result without a second
+set. `dry_run` and `POST …/targets:validate` run every check without
+persisting anything. A change that would empty a group or leave a contract
+API shape without an eligible target is refused, and the optional
+`server.config_source.require_validation_status: passed` policy refuses
+unvalidated targets unless the caller holds `config:force` and sets `force`.
+
+The generic set flow is available over HTTP as well:
+`POST /admin/config/sets` (import a canonical document as a draft),
+`GET /admin/config/sets[/{set_id}]` (list/export; export never includes
+resolved secrets), `POST /admin/config/sets/{set_id}/activate`,
+`POST /admin/config/rollback`, and `GET /admin/config/diff?from=&to=`.
+`GET /admin/config/status` reports the runtime scope, driver, active set,
+current revision, and this replica's loaded revision.
+
+The phase-8 migration (online, transactional, idempotent) extends
+`router_config_change_events` with `group_name`, `prev_config_set_id`,
+`reason`, `forced`, `idempotency_key`, `request_hash`, and `detail`, adds
+`router_config_change_event_targets` (the before/after ordered target lists
+as one foreign-keyed row per target — no packed or JSON audit values), and
+adds a partial unique index making an idempotency key usable at most once
+per runtime scope. Group history is served from these tables at
+`GET /admin/config/groups/{group}/history`. Audit rows never contain raw
+tokens, provider credentials, or request content.
+
+Propagation: the writing replica reloads synchronously after commit; other
+replicas converge through the phase-2 revision poller (SQLite,
+`configControlPlaneReloadInterval`) or the PostgreSQL notifier. In-flight
+requests finish on the target they started with; the group name and
+`/v1/models` identity never change across a swap.

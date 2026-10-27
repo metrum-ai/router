@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
@@ -83,6 +84,16 @@ type Service struct {
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
 	configReloadStop   func()
+	configInstanceID   string
+	configLoaded       atomic.Value // configLoadedState
+}
+
+// configLoadedState records which control-plane revision this replica
+// currently serves, surfaced by GET /admin/config/status (#395).
+type configLoadedState struct {
+	Revision int64
+	SetID    string
+	At       time.Time
 }
 
 type adminBasicRuntime struct {
@@ -263,6 +274,7 @@ func newService(cfg *Config) (*Service, error) {
 		shaping:            newUpstreamShapeManager(),
 		contentCaptureKeys: contentCaptureKeys,
 		configSnapshot:     NewConfigSnapshot(),
+		configInstanceID:   newConfigAdminInstanceID(),
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -398,6 +410,10 @@ func (s *Service) initConfigControlPlane() error {
 			// failure would surface here and fail service startup loudly.
 			return fmt.Errorf("start config control-plane revision notifier: %w", err)
 		}
+		// The bootstrap already loaded the active document; record which
+		// revision this replica is serving for the status endpoint, and load
+		// any active shadow runs.
+		s.recordLoadedConfigRevision()
 	}
 	return nil
 }
@@ -458,8 +474,48 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
 	}
+	s.recordLoadedConfigRevision()
 	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
+}
+
+// newConfigAdminInstanceID returns a random non-secret replica identifier for
+// the Admin API status surface.
+func newConfigAdminInstanceID() string {
+	raw := make([]byte, 8)
+	if _, err := rand.Read(raw); err != nil {
+		return "unknown"
+	}
+	return "replica-" + hex.EncodeToString(raw)
+}
+
+// recordLoadedConfigRevision stores the revision this replica serves after a
+// successful load or reload. Read failures leave the previous state.
+func (s *Service) recordLoadedConfigRevision() {
+	if s == nil || s.configControlPlane == nil {
+		return
+	}
+	scope := strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope)
+	revision, err := currentRevisionForScope(s.configControlPlane, scope)
+	if err != nil {
+		return
+	}
+	var rows []configControlPlaneRuntimeRow
+	if err := s.configControlPlane.Where("runtime_scope = ?", scope).Limit(1).Find(&rows).Error; err != nil || len(rows) != 1 {
+		return
+	}
+	s.configLoaded.Store(configLoadedState{Revision: revision, SetID: rows[0].ActiveSetID, At: time.Now().UTC()})
+}
+
+// loadedConfigRevision reports the revision this replica currently serves.
+func (s *Service) loadedConfigRevision() (int64, string, time.Time) {
+	if s == nil {
+		return 0, "", time.Time{}
+	}
+	if state, ok := s.configLoaded.Load().(configLoadedState); ok {
+		return state.Revision, state.SetID, state.At
+	}
+	return 0, "", time.Time{}
 }
 
 func (s *Service) routes() {
@@ -508,6 +564,19 @@ func (s *Service) routes() {
 			},
 		})
 	}
+	RegisterConfigAdminAPI(s.mux, ConfigAdminDeps{
+		DB:                      s.configControlPlane,
+		RuntimeScope:            s.cfg.Server.ConfigSource.RuntimeScope,
+		FileMode:                s.configControlPlane == nil,
+		RequireValidationStatus: s.cfg.Server.ConfigSource.RequireValidationStatus,
+		InstanceID:              s.configInstanceID,
+		Authenticate:            s.authenticateAdminSubject,
+		Authorize:               s.authorizeAdminPermission,
+		CurrentConfig:           func() *Config { return s.configSnapshot.Load() },
+		LoadedRevision:          s.loadedConfigRevision,
+		Reload:                  s.reloadActiveConfigFromDB,
+		RecordAccess:            s.recordAdminSecurityAccess,
+	})
 	s.mux.HandleFunc("POST /admin/training/export", s.handleTrainingExport)
 	s.mux.HandleFunc("POST /admin/training/outcomes/{request_id}", s.handleTrainingOutcome)
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)

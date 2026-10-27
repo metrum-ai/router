@@ -110,7 +110,7 @@ func ImportCanonicalYAML(db *gorm.DB, runtimeScope, name string, yamlBytes []byt
 		return "", fmt.Errorf("parse canonical YAML: %w", err)
 	}
 	cfg.setDefaults()
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.ValidateForImport(); err != nil {
 		return "", fmt.Errorf("validate canonical YAML: %w", err)
 	}
 
