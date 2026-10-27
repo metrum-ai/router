@@ -352,9 +352,16 @@ it is never a CI role.
 A platform administrator binds/applies them only in an approved tenant namespace.
 The provisioner cannot read Secrets, bind roles, operate in another namespace,
 modify cluster-wide Linkerd policy, create/mutate Deployments, or create/mutate
-service accounts. It writes only ResourceQuota, LimitRange, NetworkPolicy, and
+service accounts. It writes only ResourceQuota, LimitRange, and
 namespace-scoped Linkerd Server/ServerAuthorization, reads Ingresses, and has
 no `delete` verb (teardown removes the tenant namespace).
+The namespace default-deny NetworkPolicy is not one of them: apply
+`tenant-default-network-policy.example.yaml` once at namespace creation, in the
+same platform-administrator step that binds the provisioner RBAC (Refs #414).
+NetworkPolicy write access was removed from the provisioner Role (KSV-0056):
+the default-deny policy is a single reviewed step, while the rendered ingress
+and guard policies are applied later through the separate validated deployment
+path below. The provisioner therefore holds no NetworkPolicy access at all.
 `scripts/tenant_provisioner_rbac_test.py` enforces this matrix in CI.
 Router workload manifests use a distinct release identity and
 must be constrained by admission policy to approved service accounts and Secret
@@ -366,12 +373,14 @@ namespaces, and `pods/exec`:
 SA=system:serviceaccount:<tenant>:tenant-provisioner
 kubectl auth can-i --as=$SA --list -n <tenant>
 # Must return yes: create/update/patch resourcequotas, limitranges,
-#   networkpolicies, servers.policy.linkerd.io, serverauthorizations.policy.linkerd.io
+#   servers.policy.linkerd.io, serverauthorizations.policy.linkerd.io
 # Must return no:
 kubectl auth can-i --as=$SA create secrets -n <tenant>
 kubectl auth can-i --as=$SA create deployments -n <tenant>
 kubectl auth can-i --as=$SA create serviceaccounts -n <tenant>
 kubectl auth can-i --as=$SA create ingresses -n <tenant>
+kubectl auth can-i --as=$SA create networkpolicies -n <tenant>
+kubectl auth can-i --as=$SA update networkpolicies -n <tenant>
 kubectl auth can-i --as=$SA delete networkpolicies -n <tenant>
 kubectl auth can-i --as=$SA list secrets -n <other-namespace>
 kubectl auth can-i --as=$SA create clusterroles

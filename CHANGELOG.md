@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Tenant provisioner RBAC: the Role no longer grants NetworkPolicy write
+  access (trivy KSV-0056). The namespace default-deny policy moved from
+  `tenant-bootstrap-resources.example.yaml` to
+  `tenant-default-network-policy.example.yaml`, applied once at namespace
+  creation by the platform administrator in the same reviewed step that binds
+  the provisioner RBAC. Re-apply
+  `deploy/kubernetes/bootstrap/tenant-provisioner-rbac.yaml` and apply the new
+  template when onboarding the next tenant (#414).
+
 ## [4.4.0] - 2026-10-27
 
 ### Added

@@ -1,5 +1,9 @@
 # Copy this reviewed template into one explicitly selected tenant namespace.
 # It contains no Secret resource and does not grant cross-namespace authority.
+# The namespace default-deny NetworkPolicy was moved to
+# tenant-default-network-policy.example.yaml (Refs #414): apply it once at
+# namespace creation as a platform-administrator step; the provisioner
+# identity no longer writes NetworkPolicy objects.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -27,12 +31,3 @@ spec:
       default:
         cpu: "1"
         memory: 1Gi
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: tenant-default-deny-ingress
-  namespace: replace-with-approved-tenant-namespace
-spec:
-  podSelector: {}
-  policyTypes: [Ingress]
