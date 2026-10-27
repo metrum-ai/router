@@ -289,7 +289,7 @@ ft-example-test:
 test-fast: secret-contract capability-smoke-contracts
 	go test $$(go list ./... | grep -v '/internal/router$$') -timeout=15m
 	# Temporary while router-arc uses shared-CPU nodes; revert when dedicated c-8 capacity returns. Refs #367.
-	go test ./internal/router -timeout=30m
+	bash -o pipefail -c "go test ./internal/router -timeout=30m -json | $(PYTHON) scripts/router_test_time_guard.py"
 	python3 scripts/outcome_calibrated_policy_test.py
 	"$${MAKE:-make}" d3-policy-test
 	python3 scripts/api_compat_bootstrap_test.py
@@ -297,6 +297,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
+	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
 # Full credential-free suite. Heavy targets stay behind shell Make invocations so

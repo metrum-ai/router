@@ -79,13 +79,24 @@ def assert_pull_request_cancellation() -> None:
 
 
 def assert_go_timeout_headroom(text: str, *, make_recipe: bool = False) -> None:
-    # Only internal/router gets temporary shared-CPU headroom (Refs #367).
-    commands = [line.strip() for line in text.splitlines() if line.strip().startswith("go test ")]
+    # Only internal/router gets temporary shared-CPU headroom (Refs #367), and
+    # it must run under the time guard so a slow package cannot reappear
+    # silently (Refs #367).
+    lines = [line.strip() for line in text.splitlines()]
     other_packages = "go test $(go list ./... | grep -v '/internal/router$') -timeout=15m"
     if make_recipe:
         other_packages = other_packages.replace("$", "$$")
-    require(commands == [other_packages, "go test ./internal/router -timeout=30m"],
-            "Go coverage/timeouts drifted: only internal/router may use 30m; all other packages retain 15m")
+        require([line for line in lines if line.startswith("go test ")] == [other_packages],
+                "Go coverage/timeouts drifted: all non-router packages retain 15m")
+        guard = [line for line in lines if "router_test_time_guard.py" in line]
+        require(len(guard) == 1 and "pipefail" in guard[0]
+                and "go test ./internal/router -timeout=30m -json" in guard[0],
+                "internal/router must keep 30m under the time guard in the Makefile")
+    else:
+        require([line for line in lines if line.startswith("go test ")] == [
+            other_packages,
+            "go test ./internal/router -timeout=30m -json | python3 scripts/router_test_time_guard.py",
+        ], "Go coverage/timeouts drifted: only internal/router may use 30m, under the time guard; all other packages retain 15m")
     require("shared-CPU" in text and "dedicated c-8" in text and "Refs #367" in text,
             "temporary router timeout must retain its capacity/revert explanation")
 
@@ -96,6 +107,7 @@ def assert_make_tiers() -> None:
     full = make_rule(makefile, "test")
     assert_go_timeout_headroom(fast, make_recipe=True)
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
+    require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")

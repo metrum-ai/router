@@ -73,7 +73,9 @@ jobs:
         run: |
           go test $(go list ./... | grep -v '/internal/router$') -timeout=15m
           # Temporary while router-arc uses shared-CPU nodes; revert when dedicated c-8 capacity returns. Refs #367.
-          go test ./internal/router -timeout=30m
+          # The guard reports the package wall time on every run and fails the
+          # gate once it nears the timeout again (#367).
+          go test ./internal/router -timeout=30m -json | python3 scripts/router_test_time_guard.py
   contracts:
     runs-on: router-arc
     timeout-minutes: 90
