@@ -30,6 +30,7 @@ package smartrouterctl
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/metrum-ai/router/internal/router"
@@ -42,9 +43,12 @@ import (
 // RuntimeScope names the config scope (e.g. "prod", "staging"). Actor is the
 // human or service identity recorded on mutations for audit.
 type ConfigDBOptions struct {
-	Driver       string
-	Path         string
-	DSN          string
+	Driver string
+	Path   string
+	DSN    string
+	// DSNEnv names an environment variable holding the postgres DSN; it wins
+	// over DSN and keeps credentials out of the process argument list.
+	DSNEnv       string
 	RuntimeScope string
 	Actor        string
 }
@@ -62,8 +66,8 @@ func (o ConfigDBOptions) Validate() error {
 			return fmt.Errorf("config db path is required for sqlite driver")
 		}
 	case "postgres":
-		if strings.TrimSpace(o.DSN) == "" {
-			return fmt.Errorf("config db dsn is required for postgres driver")
+		if strings.TrimSpace(o.DSN) == "" && strings.TrimSpace(o.DSNEnv) == "" {
+			return fmt.Errorf("config db dsn is required for postgres driver (or set --dsn-env)")
 		}
 	default:
 		return fmt.Errorf("unsupported config db driver %q (want sqlite or postgres)", o.Driver)
@@ -77,13 +81,19 @@ func (o ConfigDBOptions) Validate() error {
 	return nil
 }
 
+var getenv = os.Getenv
+
 // UsageDBConfig converts the options to the router DB config shape used by
 // ConfigControlPlaneMigrationRunner and other router DB entry points.
 func (o ConfigDBOptions) UsageDBConfig() router.UsageDBConfig {
+	dsn := o.DSN
+	if strings.TrimSpace(o.DSNEnv) != "" {
+		dsn = strings.TrimSpace(getenv(o.DSNEnv))
+	}
 	return router.UsageDBConfig{
 		Driver: o.Driver,
 		Path:   o.Path,
-		DSN:    o.DSN,
+		DSN:    dsn,
 	}
 }
 

@@ -11,9 +11,10 @@ Metrum AI Router separates caller API authentication from browser-admin authenti
 - Metrics-admin caller tokens read `/metrics`.
 - HTTP Basic can establish a simple browser-admin identity for `/admin/*` routes.
 - OIDC can establish browser-admin identity through an enterprise identity provider and a server-side session cookie.
+- Admin API keys (`rtr_admin_*` bearer tokens, hashed at rest) authenticate automation for `/admin/*` routes with fine-grained permissions such as `config:read`, `config:write`, and `shadow:write`; see the in-repo runbook `docs/ADMIN_API_KEYS.md` and the [Admin Config API](../reference/admin-config-api).
 - Policy-based authorization controls metrics and admin-report permissions. See [Admin Authorization](./admin-authorization).
 
-HTTP Basic and OIDC are disabled by default and can be enabled independently. Basic is useful for simple self-hosted deployments and bootstrap access. OIDC is intended for deployments that want browser administrators to authenticate through an identity provider such as Google Workspace.
+HTTP Basic, OIDC, and admin API keys are disabled by default and can be enabled independently. Basic is useful for simple self-hosted deployments and bootstrap access. OIDC is intended for deployments that want browser administrators to authenticate through an identity provider such as Google Workspace.
 
 ## Basic Auth Configuration
 

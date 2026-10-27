@@ -300,6 +300,31 @@ promotion.
 | Native shadow: LRP recommended `strong`; router served configured-first `cheap` | Single synthetic inference snapshot | [docs-site/docs/routing/lrp-train-and-serve.md](docs-site/docs/routing/lrp-train-and-serve.md) | 2026-09-09 |
 | Harbor Codex reward 1, Claude Code reward 0 on `big-coder` | One deterministic weighted-group run; not LRP | [docs/harbor-case-study.md](docs/harbor-case-study.md) | 2026-06-29 |
 
+## Swap the model behind a group with one API call
+
+When a provider cuts a price or ships a better model, an operator moves the
+group with one authenticated Admin API call — no restart, no YAML edit, no
+application change:
+
+```bash
+metrum-ai-routerctl groups set-targets agent-default \
+  --target openai/gpt-6.1-terra --target self-hosted-vllm/qwen3.8-27b \
+  --strategy failover --reason "Terra price cut" --dry-run
+metrum-ai-routerctl groups shadow start agent-default --target openai/gpt-6.1-terra --sample-rate 0.5 --max-requests 500
+metrum-ai-routerctl groups shadow promote agent-default --reason "shadow passed"
+metrum-ai-routerctl groups rollback agent-default --reason "revert"
+```
+
+Writes are copy-on-write configuration sets with `If-Match` optimistic
+concurrency, idempotency keys, per-target eligibility reports, and a full
+audit trail (`routerctl groups history`). They require the dedicated admin
+API key (`rtr_admin_*`, #350) and a database-backed configuration source;
+file-mode routers keep working and answer writes with a clear
+`config_source_mode_file` error. See
+[the Admin Config API reference](docs-site/docs/reference/admin-config-api.md)
+and the
+[price-change switching guide](docs-site/docs/operations/switch-models-price-change.md).
+
 ## What sets this router apart
 
 ### Budget enforcement before the upstream call
