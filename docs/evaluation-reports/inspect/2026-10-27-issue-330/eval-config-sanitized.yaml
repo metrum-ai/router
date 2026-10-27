@@ -1,0 +1,133 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+server:
+  listen: 127.0.0.1:18081
+  default_model_group: fixed
+  responses:
+    model_identity: requested_group
+  identifiers:
+    mode: passthrough
+  cache:
+    enabled: false
+    max_bytes: 134217728
+    default_ttl: 15m
+  logging:
+    path: /state/requests.jsonl
+    rotate_mb: 64
+    keep: 7
+  usage_db:
+    enabled: true
+    driver: sqlite
+    path: /state/usage.sqlite
+    migration_policy: auto-safe
+  diagnostics:
+    enabled: true
+    retention_days: 7
+    store_sanitized_upstream_errors: true
+    max_error_bytes: 2048
+  retention:
+    enabled: false
+  admin_auth:
+    basic:
+      enabled: false
+      users: []
+  admin_reports:
+    enabled: false
+state_path: /state/router-state.json
+users:
+- id: local-dev
+  name: Local Developer
+  type: service_account
+  status: active
+projects:
+- id: example-project
+  name: Example Project
+  status: active
+project_memberships:
+- user_id: local-dev
+  project: example-project
+  role: developer
+  status: active
+providers:
+  fireworks:
+    base_url: https://api.fireworks.ai/inference/v1
+    dialect: openai-chat
+    auth_scheme: bearer
+    api_key: ${FIREWORKS_API_KEY}
+    api_key_env: FIREWORKS_API_KEY
+    key_id: fireworks-local
+    models:
+      deepseek-v4p1-flash:
+        model: accounts/fireworks/models/deepseek-v4p1-flash
+        tier: coding
+        context_tokens: 1000000
+        input_modalities:
+        - text
+        output_modalities:
+        - text
+        input_price_per_million_usd: 0.3
+        output_price_per_million_usd: 1.2
+        pricing_source: https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash
+        pricing_updated_at: '2026-10-27'
+        request_shape_support: &id001
+          supported_inbound_dialects:
+          - openai-chat
+        tool_support: &id002
+          openai_chat:
+          - tools
+        cached_input_price_per_million_usd: 0.006
+      deepseek-v4p1-flash-1017:
+        model: accounts/fireworks/models/deepseek-v4p1-flash-1017
+        tier: coding
+        context_tokens: 1048576
+        input_modalities:
+        - text
+        output_modalities:
+        - text
+        input_price_per_million_usd: 0.3
+        cached_input_price_per_million_usd: 0.006
+        output_price_per_million_usd: 1.2
+        pricing_source: https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017
+        pricing_updated_at: '2026-10-19'
+        request_shape_support: *id001
+        tool_support: *id002
+models:
+  fixed:
+    strategy: static
+    targets:
+    - provider: fireworks
+      model_ref: deepseek-v4p1-flash
+  dynamic:
+    strategy: weighted
+    targets:
+    - provider: fireworks
+      model_ref: deepseek-v4p1-flash
+      weight: 70
+    - provider: fireworks
+      model_ref: deepseek-v4p1-flash-1017
+      weight: 30
+callers:
+- id: local-dev-example-project-dev
+  owner_user: local-dev
+  project: example-project
+  environment: dev
+  status: active
+  allow:
+  - fixed
+  - dynamic
+  rate:
+    rpm: 2400
+    tpm: 4000000
+    concurrent: 160
+  quota:
+    day:
+      requests: 100000
+      tokens: 400000000
+    month:
+      requests: 0
+      tokens: 8000000000
+    soft_pct: 80
+  key:
+    lifetime_tokens: 40000000000
+    soft_pct: 90
+    on_exhaust: disable

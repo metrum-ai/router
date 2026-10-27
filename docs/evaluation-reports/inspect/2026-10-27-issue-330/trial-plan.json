@@ -1,0 +1,18 @@
+{
+  "preregistered_matrix_commit": "5cb00518fc6c6adcd94826999f4c67bce97a3629",
+  "sample_ids": ["HumanEval/0", "HumanEval/1", "HumanEval/2", "HumanEval/3", "HumanEval/4", "HumanEval/5", "HumanEval/6", "HumanEval/7", "HumanEval/8", "HumanEval/9"],
+  "sample_selection": "first 10 ordered test samples, same IDs in all three modes",
+  "dataset_revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+  "modes": ["direct", "fixed-router", "dynamic-group"],
+  "direct_and_fixed_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+  "dynamic_group": "weighted 70% deepseek-v4p1-flash, 30% deepseek-v4p1-flash-1017 on Fireworks",
+  "max_completion_tokens": 4096,
+  "sample_token_limit": 8192,
+  "max_retries": 0,
+  "seed": 330,
+  "sandbox_image": "aisiuk/inspect-tool-support@sha256:bbaecf7a093cfe24703c97d562bb059899e272cd5d57f16d9916fe05e6614419",
+  "sandbox_network": "none",
+  "maximum_droplet_cost_projection_usd": 0.42858,
+  "budget_hard_stop_usd": 10,
+  "thresholds": "unchanged from preregistered matrix"
+}
