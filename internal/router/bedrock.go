@@ -27,11 +27,11 @@ import (
 // truncating: values outside the int32 range are clamped so a hostile or
 // malformed max_tokens can never wrap to a negative or small positive value.
 func bedrockMaxTokens(n int) *int32 {
-	if n < 0 {
-		n = 0
-	}
 	if n > math.MaxInt32 {
-		n = math.MaxInt32
+		return aws.Int32(math.MaxInt32)
+	}
+	if n < 0 {
+		return aws.Int32(0)
 	}
 	return aws.Int32(int32(n))
 }
