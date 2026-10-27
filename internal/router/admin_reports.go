@@ -2288,7 +2288,10 @@ func (s *Service) handleAdminReportMarkdown(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		_, _ = w.Write([]byte(md))
+		// Pre-rendered usage report markdown with an explicit text/markdown content
+		// type; setAdminReportHeaders already set X-Content-Type-Options: nosniff and
+		// a restrictive CSP on this response (metrum-ai/router#412).
+		_, _ = w.Write([]byte(md)) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 		return
 	default:
 		writeInvalidReportFilter(w, "unsupported markdown export mode")
@@ -2318,7 +2321,10 @@ func (s *Service) handleAdminReportMarkdown(w http.ResponseWriter, r *http.Reque
 	if page.HasMore {
 		md = strings.Replace(md, "\n\n", fmt.Sprintf("\n\n> Export scope: showing the most recent %d request rows for this filter; more rows matched the selected window. Use cursor-paged request APIs or narrower filters for row-by-row review.\n\n", len(rows)), 1)
 	}
-	_, _ = w.Write([]byte(md))
+	// Pre-rendered usage report markdown with an explicit text/markdown content type;
+	// setAdminReportHeaders already set X-Content-Type-Options: nosniff and a
+	// restrictive CSP on this response (metrum-ai/router#412).
+	_, _ = w.Write([]byte(md)) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 }
 
 type adminMarkdownSummarySection struct {

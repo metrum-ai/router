@@ -567,7 +567,10 @@ func (s *adminSessionStore) delete(cookieValue string) {
 }
 
 func (s *adminSessionStore) cookie(value string, expires time.Time) *http.Cookie {
-	return &http.Cookie{
+	// Secure is set dynamically (false positive): secureCookies() defaults to true and
+	// only permits cleartext cookies for explicitly configured non-TLS local admin
+	// deployments (metrum-ai/router#412).
+	return &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 		Name:     s.cookieName(),
 		Value:    value,
 		Path:     "/admin",
@@ -580,7 +583,10 @@ func (s *adminSessionStore) cookie(value string, expires time.Time) *http.Cookie
 }
 
 func (s *adminSessionStore) expiredCookie() *http.Cookie {
-	return &http.Cookie{
+	// Secure is set dynamically (false positive): secureCookies() defaults to true and
+	// only permits cleartext cookies for explicitly configured non-TLS local admin
+	// deployments (metrum-ai/router#412). This cookie clears the session, no value.
+	return &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 		Name:     s.cookieName(),
 		Value:    "",
 		Path:     "/admin",

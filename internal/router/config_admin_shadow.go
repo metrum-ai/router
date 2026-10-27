@@ -27,7 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
+	"math/rand/v2" // nosemgrep: go.lang.security.audit.crypto.math_random.math-random-used Non-cryptographic sampling of shadow replays only; no security-sensitive or identifier generation depends on it (metrum-ai/router#412).
 	"net/http"
 	"strings"
 	"sync/atomic"
