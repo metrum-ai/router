@@ -142,5 +142,3 @@ func TestConfigRevisionNotifierPollerFallbackAfterNotifierStop(t *testing.T) {
 		t.Fatal("no reload after notifier stop: poller fallback did not converge the replica")
 	}
 }
-
-
