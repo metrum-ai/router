@@ -234,8 +234,15 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 	// not share the gorm pool. The DSN comes from the dialector, so no
 	// credential is copied or logged here.
 	var dsn string
-	if dialector, ok := db.Dialector.(postgres.Dialector); ok && dialector.Config != nil {
-		dsn = dialector.Config.DSN
+	switch dialector := db.Dialector.(type) {
+	case *postgres.Dialector:
+		if dialector != nil && dialector.Config != nil {
+			dsn = dialector.Config.DSN
+		}
+	case postgres.Dialector:
+		if dialector.Config != nil {
+			dsn = dialector.Config.DSN
+		}
 	}
 	if strings.TrimSpace(dsn) == "" {
 		return nil, errors.New("postgres config notifier requires the DSN in the gorm dialector")
