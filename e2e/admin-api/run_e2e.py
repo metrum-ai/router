@@ -79,10 +79,12 @@ def http(method: str, url: str, body=None, headers=None, timeout=120, raw_header
         data = body if isinstance(body, (bytes, str)) else json.dumps(body).encode()
         if isinstance(data, str):
             data = data.encode()
+    # Test-only harness against the local router; scheme is always http(s) to a
+    # localhost/loopback base URL, never attacker-controlled (metrum-ai/router#412).
     req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
     start = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             payload = resp.read()
             status = resp.status
     except urllib.error.HTTPError as e:
@@ -102,7 +104,8 @@ def http_stream(url: str, body: dict, headers: dict, out_lines: list, timeout=18
                                  headers={"Content-Type": "application/json", **headers})
     start = time.monotonic()
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # Test-only harness, loopback base URL as above (metrum-ai/router#412).
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             status = resp.status
             for line in resp:
                 out_lines.append(line.decode(errors="replace").rstrip())
@@ -1084,7 +1087,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                                  data=b"{not json", method="PUT",
                                  headers={"Content-Type": "application/json", **ops})
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             st = resp.status
     except urllib.error.HTTPError as e:
         st = e.code

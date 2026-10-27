@@ -884,9 +884,13 @@ func (h *configAdminHandler) handleExportSet(w http.ResponseWriter, r *http.Requ
 	// The stored document is unexpanded: environment references appear
 	// verbatim and no resolved secret is ever returned.
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(raw)
+	// Stored canonical YAML config exported verbatim with an explicit application/yaml
+	// content type and X-Content-Type-Options: nosniff; it is never interpreted
+	// as HTML (metrum-ai/router#412).
+	_, _ = w.Write(raw) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 }
 
 func (h *configAdminHandler) handleActivateSet(w http.ResponseWriter, r *http.Request) {

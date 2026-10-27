@@ -56,15 +56,18 @@ func main() {
 
 	switch os.Args[1] {
 	case "create":
-		if _, err := db.Exec(`DROP SCHEMA IF EXISTS ` + *name + ` CASCADE`); err != nil {
+		// Schema identifiers cannot be bound as SQL parameters. *name passed
+		// validSchema (^[a-z][a-z0-9_]{0,40}$) above, so no untrusted text can
+		// reach the SQL text (metrum-ai/router#412).
+		if _, err := db.Exec(`DROP SCHEMA IF EXISTS ` + *name + ` CASCADE`); err != nil { // nosemgrep: go.lang.security.audit.database.string-formatted-query.string-formatted-query,go.lang.security.audit.sqli.gosql-sqli.gosql-sqli
 			die("preclean: %v", err)
 		}
-		if _, err := db.Exec(`CREATE SCHEMA ` + *name); err != nil {
+		if _, err := db.Exec(`CREATE SCHEMA ` + *name); err != nil { // nosemgrep: go.lang.security.audit.database.string-formatted-query.string-formatted-query,go.lang.security.audit.sqli.gosql-sqli.gosql-sqli
 			die("create schema: %v", err)
 		}
 		fmt.Println("created")
 	case "drop":
-		if _, err := db.Exec(`DROP SCHEMA IF EXISTS ` + *name + ` CASCADE`); err != nil {
+		if _, err := db.Exec(`DROP SCHEMA IF EXISTS ` + *name + ` CASCADE`); err != nil { // nosemgrep: go.lang.security.audit.database.string-formatted-query.string-formatted-query,go.lang.security.audit.sqli.gosql-sqli.gosql-sqli
 			die("drop schema: %v", err)
 		}
 		fmt.Println("dropped")
@@ -79,8 +82,11 @@ func main() {
 			var count int
 			// Row-to-text cast server-side; the needle is bound as a parameter
 			// and never interpolated into SQL.
-			query := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s AS rowref WHERE row_to_json(rowref)::text LIKE '%%' || $1 || '%%'`, *name, table)
-			if err := db.QueryRow(query, needle).Scan(&count); err != nil {
+			// *name passed validSchema above and table comes from the fixed
+			// allowlist; the needle is bound as $1, never interpolated
+			// (metrum-ai/router#412).
+			query := fmt.Sprintf(`SELECT COUNT(*) FROM %s.%s AS rowref WHERE row_to_json(rowref)::text LIKE '%%' || $1 || '%%'`, *name, table) // nosemgrep: go.lang.security.audit.database.string-formatted-query.string-formatted-query
+			if err := db.QueryRow(query, needle).Scan(&count); err != nil {                                                                    // nosemgrep: go.lang.security.audit.sqli.gosql-sqli.gosql-sqli
 				if strings.Contains(err.Error(), "does not exist") {
 					continue
 				}
