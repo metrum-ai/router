@@ -3,5 +3,5 @@
 # datasets and its fsspec floor moved to the patched lines in 2026-W44
 # (GHSA-379c-qx7v-6h59 path traversal; unsafe fsspec reference-filesystem
 # template rendering). contract.json datasets_version tracks this pin.
-datasets==5.0.1
+datasets==5.1.0
 fsspec>=2026.9.0
