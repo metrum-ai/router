@@ -53,6 +53,8 @@ type ConfigAdminDeps struct {
 	CurrentConfig           func() *Config
 	LoadedRevision          func() (revision int64, setID string, at time.Time)
 	Reload                  func() error
+	ReloadShadows           func()
+	UsageDB                 func() *gorm.DB
 	RecordAccess            func(r *http.Request, subject adminAuthSubject, status int, reason, object, action string)
 	Now                     func() time.Time
 }
@@ -68,6 +70,10 @@ func RegisterConfigAdminAPI(mux *http.ServeMux, deps ConfigAdminDeps) {
 	mux.HandleFunc("POST /admin/config/groups/{group}/targets:validate", h.handleValidateTargets)
 	mux.HandleFunc("POST /admin/config/groups/{group}/rollback", h.handleGroupRollback)
 	mux.HandleFunc("GET /admin/config/groups/{group}/history", h.handleGroupHistory)
+	mux.HandleFunc("POST /admin/config/groups/{group}/shadow", h.handleShadowStart)
+	mux.HandleFunc("GET /admin/config/groups/{group}/shadow", h.handleShadowStatus)
+	mux.HandleFunc("POST /admin/config/groups/{group}/shadow/promote", h.handleShadowPromote)
+	mux.HandleFunc("DELETE /admin/config/groups/{group}/shadow", h.handleShadowStop)
 	mux.HandleFunc("GET /admin/config/status", h.handleConfigStatus)
 	mux.HandleFunc("POST /admin/config/sets", h.handleImportSet)
 	mux.HandleFunc("GET /admin/config/sets", h.handleListSets)
@@ -939,6 +945,9 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, now time.Time) (int64, error) {
 	var revision int64
 	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
+			return err
+		}
 		if err := ensureConfigAdminWriteSchema(tx); err != nil {
 			return err
 		}

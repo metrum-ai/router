@@ -86,6 +86,7 @@ type Service struct {
 	configReloadStop   func()
 	configInstanceID   string
 	configLoaded       atomic.Value // configLoadedState
+	shadows            *shadowRuntime
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -275,6 +276,7 @@ func newService(cfg *Config) (*Service, error) {
 		contentCaptureKeys: contentCaptureKeys,
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
+		shadows:            newShadowRuntime(),
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -414,6 +416,7 @@ func (s *Service) initConfigControlPlane() error {
 		// revision this replica is serving for the status endpoint, and load
 		// any active shadow runs.
 		s.recordLoadedConfigRevision()
+		s.loadShadowRunsFromDB()
 	}
 	return nil
 }
@@ -475,8 +478,18 @@ func (s *Service) reloadActiveConfigFromDB() error {
 		s.configSnapshot.Store(newCfg)
 	}
 	s.recordLoadedConfigRevision()
+	s.loadShadowRunsFromDB()
 	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
+}
+
+// usageDBHandle exposes the usage store handle for admin read paths (shadow
+// comparison baseline). Nil when the usage store is disabled.
+func (s *Service) usageDBHandle() *gorm.DB {
+	if s == nil || s.usage == nil {
+		return nil
+	}
+	return s.usage.db
 }
 
 // newConfigAdminInstanceID returns a random non-secret replica identifier for
@@ -575,6 +588,8 @@ func (s *Service) routes() {
 		CurrentConfig:           func() *Config { return s.configSnapshot.Load() },
 		LoadedRevision:          s.loadedConfigRevision,
 		Reload:                  s.reloadActiveConfigFromDB,
+		ReloadShadows:           s.loadShadowRunsFromDB,
+		UsageDB:                 s.usageDBHandle,
 		RecordAccess:            s.recordAdminSecurityAccess,
 	})
 	s.mux.HandleFunc("POST /admin/training/export", s.handleTrainingExport)
@@ -1236,6 +1251,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	rc.rec.RequestedModel = req.Model
 	s.recordRoutingReproducibility(rc, req.Model, group)
+	// Shadow replay (#395): sampled requests are also sent to the group's
+	// shadow candidate off the critical path. Never blocks or fails the
+	// caller; replays are aggregate-only telemetry.
+	s.maybeShadowRequest(req.Model, dialect, body)
 	if group.Contract != nil {
 		rc.rec.ContractPresent = true
 		rc.rec.ContractBucket = "pending"
