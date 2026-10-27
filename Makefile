@@ -294,9 +294,9 @@ test-fast: secret-contract capability-smoke-contracts
 	"$${MAKE:-make}" d3-policy-test
 	python3 scripts/api_compat_bootstrap_test.py
 	"$${MAKE:-make}" harbor-adapter-test
+	python3 scripts/validate_release_tag_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
-	python3 scripts/validate_release_tag_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
 # Full credential-free suite. Heavy targets stay behind shell Make invocations so
