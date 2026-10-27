@@ -8,6 +8,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/casbin/casbin/v2"
@@ -28,7 +29,7 @@ g = _, _, _
 e = some(where (p.eft == allow))
 
 [matchers]
-m = (g(r.sub, p.sub, r.dom) || g(r.sub, p.sub, "*") || r.sub == p.sub) && (r.dom == p.dom || p.dom == "*") && keyMatch2(r.obj, p.obj) && regexMatch(r.act, p.act)
+m = (g(r.sub, p.sub, r.dom) || g(r.sub, p.sub, "*") || r.sub == p.sub) && (r.dom == p.dom || p.dom == "*") && (r.obj == p.obj || p.obj == "*") && actionMatch(r.act, p.act)
 `
 
 const (
@@ -51,17 +52,51 @@ type authorizationSubject struct {
 	source  string
 }
 
+// actionMatch anchors policy action patterns so an action like "read" cannot
+// silently match a different action such as "xreadx" (casbin's regexMatch is
+// unanchored). An invalid policy pattern never matches.
+func actionMatch(args ...any) (any, error) {
+	if len(args) != 2 {
+		return false, fmt.Errorf("actionMatch expects 2 arguments, got %d", len(args))
+	}
+	action, ok := args[0].(string)
+	if !ok {
+		return false, fmt.Errorf("actionMatch action must be a string")
+	}
+	pattern, ok := args[1].(string)
+	if !ok {
+		return false, fmt.Errorf("actionMatch pattern must be a string")
+	}
+	matched, err := regexp.MatchString("^(?:"+pattern+")$", action)
+	if err != nil {
+		return false, nil
+	}
+	return matched, nil
+}
+
+// newAuthzEnforcer builds an enforcer with the router's custom matcher
+// functions registered. Every enforcer using authzCasbinModel must be created
+// through this helper.
+func newAuthzEnforcer() (*casbin.Enforcer, error) {
+	m, err := model.NewModelFromString(authzCasbinModel)
+	if err != nil {
+		return nil, err
+	}
+	enforcer, err := casbin.NewEnforcer(m)
+	if err != nil {
+		return nil, err
+	}
+	enforcer.AddFunction("actionMatch", actionMatch)
+	return enforcer, nil
+}
+
 type authorizer struct {
 	enforcer        *casbin.Enforcer
 	activePolicySet string
 }
 
 func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore) (*authorizer, error) {
-	m, err := model.NewModelFromString(authzCasbinModel)
-	if err != nil {
-		return nil, err
-	}
-	enforcer, err := casbin.NewEnforcer(m)
+	enforcer, err := newAuthzEnforcer()
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +212,15 @@ func validateCasbinPolicyFields(fields []string, label string) error {
 		if len(fields) != 5 {
 			return fmt.Errorf("%s p lines require subject, domain, object, action", label)
 		}
+		// The matcher compares objects by exact equality (or the single
+		// wildcard "*"). Partial wildcards such as "admin:*" would never match
+		// and would hide a policy authoring mistake, so reject them here.
+		if strings.Contains(fields[3], "*") && fields[3] != "*" {
+			return fmt.Errorf("%s object %q uses a partial wildcard; only exact object names or the single wildcard %q are supported", label, fields[3], "*")
+		}
+		if _, err := regexp.Compile("^(?:" + fields[4] + ")$"); err != nil {
+			return fmt.Errorf("%s action %q is not a valid anchored action pattern: %w", label, fields[4], err)
+		}
 	case "g":
 		if len(fields) != 4 {
 			return fmt.Errorf("%s g lines require subject, role, domain", label)
@@ -212,11 +256,7 @@ func validateCasbinPolicyLines(lines []string) error {
 	if len(lines) == 0 {
 		return fmt.Errorf("authorization policy set has no policy rules or role links")
 	}
-	m, err := model.NewModelFromString(authzCasbinModel)
-	if err != nil {
-		return err
-	}
-	enforcer, err := casbin.NewEnforcer(m)
+	enforcer, err := newAuthzEnforcer()
 	if err != nil {
 		return err
 	}
