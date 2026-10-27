@@ -352,11 +352,31 @@ it is never a CI role.
 A platform administrator binds/applies them only in an approved tenant namespace.
 The provisioner cannot read Secrets, bind roles, operate in another namespace,
 modify cluster-wide Linkerd policy, create/mutate Deployments, or create/mutate
-service accounts. Router workload manifests use a distinct release identity and
+service accounts. It writes only ResourceQuota, LimitRange, NetworkPolicy, and
+namespace-scoped Linkerd Server/ServerAuthorization, reads Ingresses, and has
+no `delete` verb (teardown removes the tenant namespace).
+`scripts/tenant_provisioner_rbac_test.py` enforces this matrix in CI.
+Router workload manifests use a distinct release identity and
 must be constrained by admission policy to approved service accounts and Secret
 references. Verify with `kubectl auth can-i` for allowed resources and explicit
 denials for `secrets`, `deployments`, `serviceaccounts`, `clusterroles`, other
-namespaces, and `pods/exec`.
+namespaces, and `pods/exec`:
+
+```sh
+SA=system:serviceaccount:<tenant>:tenant-provisioner
+kubectl auth can-i --as=$SA --list -n <tenant>
+# Must return yes: create/update/patch resourcequotas, limitranges,
+#   networkpolicies, servers.policy.linkerd.io, serverauthorizations.policy.linkerd.io
+# Must return no:
+kubectl auth can-i --as=$SA create secrets -n <tenant>
+kubectl auth can-i --as=$SA create deployments -n <tenant>
+kubectl auth can-i --as=$SA create serviceaccounts -n <tenant>
+kubectl auth can-i --as=$SA create ingresses -n <tenant>
+kubectl auth can-i --as=$SA delete networkpolicies -n <tenant>
+kubectl auth can-i --as=$SA list secrets -n <other-namespace>
+kubectl auth can-i --as=$SA create clusterroles
+kubectl auth can-i --as=$SA create pods/exec -n <tenant>
+```
 
 Before rendering ingress access, deploy the router base resources and wait for
 the selected router Pods to be Ready. The generic base NetworkPolicy is
