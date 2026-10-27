@@ -38,9 +38,41 @@ def main() -> int:
     original_import, original_run = LCB.importlib.import_module, LCB.subprocess.run
     try:
         loaded=[]
-        fake_loader=lambda release: loaded.append(release) or tasks
-        LCB.importlib.import_module=lambda name: types.SimpleNamespace(load_code_generation_dataset=fake_loader) if name == "lcb_runner.benchmarks.code_generation" else types.SimpleNamespace(__version__=values["datasets_version"])
-        need(LCB.load_official_tasks() == tasks and loaded == ["release_v6"], "official loader contract did not select pinned release")
+        with tempfile.TemporaryDirectory() as data_dir:
+            # The six JSONL files the official code_generation_lite.py script
+            # maps for release_v6 and yields unmodified (every field is
+            # already a JSON string).
+            file_names=["test.jsonl", "test2.jsonl", "test3.jsonl", "test4.jsonl", "test5.jsonl", "test6.jsonl"]
+            paths=[]
+            built_ids=iter(range(85))
+            for index, name in enumerate(file_names):
+                count=80 if index == 0 else 1
+                rows=[{"question_id": f"task-{next(built_ids):03d}"} for _ in range(count)]
+                path=Path(data_dir) / name
+                path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+                paths.append(path)
+            built=[]
+            class FakeProblem(dict):
+                def __init__(self, **kwargs):
+                    super().__init__(**kwargs); built.append(kwargs["question_id"])
+            def fake_download(repo_id, repo_type, filename):
+                need(repo_id == values["dataset"] and repo_type == "dataset", "loader did not read the pinned official dataset repo")
+                loaded.append(filename)
+                return str(paths[file_names.index(filename)])
+            LCB.importlib.import_module=lambda name: types.SimpleNamespace(CodeGenerationProblem=FakeProblem) if name == "lcb_runner.benchmarks.code_generation" else (types.SimpleNamespace(hf_hub_download=fake_download) if name == "huggingface_hub" else types.SimpleNamespace(__version__=values["datasets_version"]))
+            official=LCB.load_official_tasks()
+            need(len(official) == 85 and built[0] == "task-000" and built[-1] == "task-084", "official loader did not build rows from the pinned dataset files")
+            need(loaded == file_names, "official loader did not read the contract file mapping")
+            # A duplicate question_id across files is rejected.
+            dupes=Path(data_dir) / "dup.jsonl"
+            dupes.write_text(json.dumps({"question_id": "task-000"}) + "\n", encoding="utf-8")
+            LCB.importlib.import_module=lambda name: types.SimpleNamespace(CodeGenerationProblem=FakeProblem) if name == "lcb_runner.benchmarks.code_generation" else (types.SimpleNamespace(hf_hub_download=lambda **kwargs: str(dupes)) if name == "huggingface_hub" else types.SimpleNamespace(__version__=values["datasets_version"]))
+            rejects(LCB.load_official_tasks, "distinct")
+            # A row without a question_id is rejected.
+            blanks=Path(data_dir) / "blank.jsonl"
+            blanks.write_text(json.dumps({"other": 1}) + "\n", encoding="utf-8")
+            LCB.importlib.import_module=lambda name: types.SimpleNamespace(CodeGenerationProblem=FakeProblem) if name == "lcb_runner.benchmarks.code_generation" else (types.SimpleNamespace(hf_hub_download=lambda **kwargs: str(blanks)) if name == "huggingface_hub" else types.SimpleNamespace(__version__=values["datasets_version"]))
+            rejects(LCB.load_official_tasks, "question_id")
         LCB.subprocess.run=lambda *args, **kwargs: subprocess.CompletedProcess(args, 0, values["livecodebench_revision"]+"\n", "")
         LCB.validate_environment(Path("/safe/lcb"))
         LCB.importlib.import_module=lambda name: types.SimpleNamespace(__version__="5.0.0")
