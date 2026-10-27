@@ -230,8 +230,20 @@ func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"type": "unauthorized", "message": "unauthorized"}})
 		return adminAuthSubject{}, false
 	}
-	if s.adminOIDC == nil && !s.cfg.Server.AdminAuth.Basic.Enabled {
+	if !s.hasAdminAuthMechanism() {
 		http.NotFound(w, r)
+		return adminAuthSubject{}, false
+	}
+	// Dedicated admin API keys (#350) are a distinct bearer credential
+	// namespace (rtr_admin_*). They are checked first; a bearer token that
+	// looks like an admin key but fails verification is rejected outright
+	// rather than falling through to another mechanism. Caller and provider
+	// tokens never authenticate here.
+	if bearer := bearerTokenFromRequest(r); strings.HasPrefix(bearer, adminAPIKeyPrefix+"_") {
+		if subject, ok := s.authenticateAdminAPIKey(bearer); ok {
+			return subject, true
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"type": "unauthorized", "message": "unauthorized"}})
 		return adminAuthSubject{}, false
 	}
 	if s.adminOIDC != nil {

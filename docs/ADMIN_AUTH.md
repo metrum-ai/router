@@ -2,9 +2,12 @@
 
 This runbook covers browser-admin authentication for `/admin/*` routes. HTTP Basic and OIDC sessions establish identity only. They do not grant permissions by themselves, and they do not replace router caller tokens for `/v1/*` model APIs.
 
+Automation should use the dedicated **admin API keys** instead of browser credentials: see [docs/ADMIN_API_KEYS.md](ADMIN_API_KEYS.md). Admin keys are bearer tokens (`rtr_admin_<key_id>_<secret>`, hashed at rest) with fine-grained permissions such as `config:read` and `config:write`, and they are accepted by every `/admin/*` route that browser-admin authentication protects. Caller and provider keys are never accepted on admin routes.
+
 ## Current Scope
 
-- HTTP Basic and OIDC are disabled by default and can be enabled independently.
+- HTTP Basic, OIDC, and admin API keys are disabled by default and can be enabled independently.
+- Admin API keys (`server.admin_auth.api_keys`) authenticate `/admin/*` routes with `Authorization: Bearer rtr_admin_<key_id>_<secret>`; see [docs/ADMIN_API_KEYS.md](ADMIN_API_KEYS.md).
 - Basic applies to browser/admin routes such as `GET /admin/auth/check`.
 - OIDC applies to `GET /admin/auth/login`, `GET /admin/auth/callback`, `GET /admin/auth/me`, and `POST /admin/auth/logout`.
 - Uses bcrypt password hashes from environment variables or deployment secrets.

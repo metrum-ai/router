@@ -30,7 +30,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|providers|models|status|usage|blueprint> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|providers|models|status|usage|blueprint> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -39,6 +39,8 @@ func main() {
 		configCommand(os.Args[2:])
 	case "callers":
 		callersCommand(os.Args[2:])
+	case "adminkeys":
+		adminkeysCommand(os.Args[2:])
 	case "providers":
 		providersCommand(os.Args[2:])
 	case "models":
@@ -418,6 +420,44 @@ func callersCommand(args []string) {
 	default:
 		die("unsupported callers command %q", args[0])
 	}
+}
+
+// adminkeysCommand provisions dedicated admin API keys (#350). The raw key
+// is written once to a new mode-0600 file; only the PBKDF2 verifier is
+// printed for the key_hash_env environment variable.
+func adminkeysCommand(args []string) {
+	if len(args) == 0 || args[0] != "generate" {
+		die("usage: metrum-ai-routerctl adminkeys <generate> [flags]")
+	}
+	fs := flag.NewFlagSet("adminkeys generate", flag.ExitOnError)
+	keyID := fs.String("key-id", "", "admin key id ([a-z0-9-], becomes rtr_admin_<key-id>_<secret>)")
+	tokenOut := fs.String("token-out", "", "new mode-0600 key file; must not already exist")
+	permissions := fs.String("permissions", "config:read", "comma-separated admin permissions")
+	domain := fs.String("domain", "default", "authorization domain for the admin key subject")
+	iterations := fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations")
+	fs.Parse(args[1:])
+	if strings.TrimSpace(*tokenOut) == "" {
+		die("token-out is required")
+	}
+	generated, err := router.GenerateAdminAPIKey(*keyID, nil, *iterations)
+	if err != nil {
+		die("generate admin key: %v", err)
+	}
+	if err := writeNewPrivateFile(*tokenOut, []byte(generated.Token+"\n")); err != nil {
+		die("write admin key: %v", err)
+	}
+	snippet := []string{"api_keys:", "  - key_id: " + generated.KeyID, "    key_hash_env: ROUTER_ADMIN_KEY_" + strings.ToUpper(strings.ReplaceAll(generated.KeyID, "-", "_")) + "_HASH", "    domain: " + strings.TrimSpace(*domain), "    permissions:"}
+	for _, permission := range splitCSV(*permissions) {
+		snippet = append(snippet, "      - "+permission)
+	}
+	writeJSON(map[string]any{
+		"schema":         "metrum.ai/router-admin-key-generate/v1",
+		"key_id":         generated.KeyID,
+		"token_hash":     generated.TokenHash,
+		"key_file":       filepath.Base(*tokenOut),
+		"config_snippet": strings.Join(snippet, "\n"),
+		"note":           "store token_hash in the key_hash_env environment variable; the raw key exists only in the key file",
+	})
 }
 
 func providersCommand(args []string) {
