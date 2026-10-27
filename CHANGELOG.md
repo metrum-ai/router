@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-10-27
+
+### Added
+
+- Admin Config API: swap, add, remove and roll back the models behind a
+  model group with one authenticated call
+  (`PUT /admin/config/groups/{group}/targets`), with dry-run validation,
+  `If-Match` optimistic concurrency, `Idempotency-Key` replay safety,
+  per-target eligibility reports, a full audit trail and
+  `config export/diff/rollback` parity. Requires database-backed
+  configuration mode; file mode keeps serving and answers writes with
+  `409 config_source_mode_file` (#406; #395).
+- Group shadow runs: `POST /admin/config/groups/{group}/shadow` shadows a
+  candidate target against a group's live traffic with a sample rate and
+  bounded run (requests, duration or cost cap), `GET …/shadow` reads the
+  cost/token/latency/error comparison from existing usage telemetry,
+  `POST …/shadow/promote` promotes in one call through the copy-on-write path
+  (prior targets stay as fallback; `shadow_promote` audit events link the run),
+  and `DELETE …/shadow` stops while keeping the run readable. Only aggregate
+  counters are recorded — no request content or caller identity (#407; #395).
+- `metrum-ai-routerctl groups` CLI (`list`, `show`, `set-targets`, `add-target`,
+  `remove-target`, `rollback`, `history`, `shadow start|status|promote|stop`)
+  over the Admin API with `--api` mode for `config import|export|activate|`
+  `rollback|diff`; admin credentials come from environment or key files,
+  never command-line flags, and mutations send generated idempotency keys.
+  Docs include the Admin Config API reference and the "Switch models when
+  prices change" guide (#408; #395).
+- `e2e/admin-api/`: a repeatable live-upstream validation suite for the Admin
+  Config API — one command builds the router, stands up a 3-replica DB-backed
+  deployment plus a file-mode router, and verifies swap/shadow/promote/rollback
+  against real providers with a per-case evidence report (#409; #395).
+- Dedicated admin API key for `/admin/*` routes: `server.admin_auth.api_keys`,
+  hashed at rest with PBKDF2-HMAC-SHA3-512, rotatable without downtime, with
+  fine-grained permissions; caller and provider keys are rejected on admin
+  routes. Generate keys with `metrum-ai-routerctl adminkeys generate`
+  (#396; #350).
+
+### Security
+
+- Hardened release workflow input handling: dispatch inputs reach shell steps
+  only through validated environment variables, the release tag is checked
+  against a strict semver allowlist before use, and release token permissions
+  are scoped to the single job that needs them (#388).
+- Tightened admin authorization scope matching: policy objects now compare by
+  exact equality (the only wildcard is the standalone `*`), actions are
+  anchored patterns, and partial-wildcard objects are rejected at policy load
+  time. A grant for one admin object no longer covers a different admin
+  object; deployments whose policies relied on that must list each object
+  explicitly (#389).
+- Least-privilege tenant provisioner RBAC: the namespace-scoped bootstrap Role
+  grants write access only to the resources the tenant templates create
+  (ResourceQuota, LimitRange, NetworkPolicy, namespace-scoped Linkerd
+  Server/ServerAuthorization), Ingress is read-only, and no delete verbs or
+  wildcards remain. Re-apply the manifests to upgrade existing tenants (#391;
+  #365).
+- Dependency updates for patched advisories: body-parser 1.20.9,
+  serialize-javascript 7.1.4, katex 0.18.10, postcss-selector-parser 7.1.7
+  (docs site); filelock 4.2.4, setuptools 84.2.1 (learned routing policy);
+  pytest 9.0.3 (api_compat and harbor test projects); datasets 5.0.1 with an
+  fsspec floor (LiveCodeBench evaluator contract) (#394, #398; #364).
+- Scanner policy refresh: withdrawn and stale grype exceptions were removed
+  and the single still-applying build-tool exception renewed with an owner and
+  an upstream-tied expiry (#390).
+- Bedrock bridge token limits are range-checked before conversion, so
+  out-of-range `max_tokens`/`max_completion_tokens` request values clamp
+  instead of wrapping (#392).
+
+### Changed
+
+- CI: temporary router-only test timeout headroom on shared-CPU runner nodes
+  (#377); Dependabot version updates observe a cooldown and now cover the
+  evaluator and test pip projects (#393); documentation clarifies building
+  router Docker images (#378).
+
 ## [4.3.0] - 2026-10-24
 
 ### Added
