@@ -304,6 +304,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
+	uv run --with pyyaml python scripts/legacy_caller_inventory_test.py
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 

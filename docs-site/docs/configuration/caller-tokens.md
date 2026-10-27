@@ -58,6 +58,8 @@ A `token_hash` caller needs a `token_id`, and the presented token must start wit
 
 `token_sha256` (unsalted SHA-256 hex) is deprecated and will be removed in a future major release (#281). It still authenticates, and the router logs `caller <id> uses deprecated token_sha256` at startup and on control-plane reload. Set exactly one of `token_hash` or `token_sha256` per caller. Use `metrum-ai-routerctl callers hash --token-file <file>` to convert a token you still hold (it prints both `token_hash` and `token_id`), or `callers rotate` to issue a new one. Only tokens of the form `<token_id>_<secret>` can be converted in place; any other token must be rotated. `callers verify --config <file> --id <caller>` passes only when the router would authenticate the token, including the `token_id` prefix check.
 
+To inventory legacy verifier fields in a local, unexpanded YAML file before migration, run `uv run --with pyyaml python scripts/legacy_caller_inventory.py config.yaml`. It prints caller IDs and a count, not verifier values. **This only inspects the specified file**; it does not inventory active or historical database-backed control-plane configurations. Use the control-plane's administrative records and deprecation logs to audit those separately.
+
 Disallowed model-group requests return `403 model-not-allowed`. Inactive caller tokens return status-specific safe errors such as `key-disabled`, `key-suspended`, `key-expired`, or `key-rotated`. `/metrics` remains global operational telemetry and is restricted to metrics-authorized subjects.
 
 ## Rollback
