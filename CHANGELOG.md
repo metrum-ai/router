@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Release workflow: Windows binaries are Authenticode-signed with Azure
+  Trusted Signing (RFC 3161 timestamped) when the signing secrets are
+  provisioned — the step is a logged no-op until then, so unsigned builds
+  keep working. Signing runs between the Windows `.exe` builds and the
+  deterministic zip packaging on tag builds only, so checksums and the
+  release inventory always hash the signed binaries; a sign or verify
+  failure fails the release once credentials exist (#332).
+
 - Experiment profiles for endpoint-bound agent studies (#379): opt-in,
   scope-required (callers/groups/targets) profiles inject an added TTFT
   delay with seeded reproducible jitter and pace delivered output by an
