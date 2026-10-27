@@ -9,7 +9,7 @@ dependencies = [
   "pytest==9.0.3",
   "PyYAML==6.0.2",
   "openai==1.109.1",
-  "anthropic==0.68.1",
+  "anthropic==1.13.0",
 ]
 
 [tool.pytest.ini_options]
