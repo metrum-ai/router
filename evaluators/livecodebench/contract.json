@@ -1,6 +1,6 @@
 {
  "livecodebench_revision": "28fef95ea8c9f7a547c8329f2cd3d32b92c1fa24",
- "datasets_version": "5.0.1",
+ "datasets_version": "5.1.0",
  "dataset": "livecodebench/code_generation_lite",
  "release_version": "release_v6",
  "task_count": 40,
