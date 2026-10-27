@@ -41,7 +41,7 @@ def make_pe(path: Path, *, with_signature: bool) -> None:
 
 
 def run_script(bin_dir: Path, env: dict[str, str]) -> tuple[int, str]:
-    merged = {k: v for k, v in os.environ.items() if k not in SW.REQUIRED_SECRETS and k != "ROUTER_SIGN_WINDOWS" and k != "JSIGN_JAR"}
+    merged = {k: v for k, v in os.environ.items() if k not in SW.REQUIRED_SECRETS and k not in ("ROUTER_SIGN_WINDOWS", "ROUTER_REQUIRE_WINDOWS_SIGNING", "JSIGN_JAR")}
     merged.update(env)
     proc = subprocess.run(
         [sys.executable, str(ROOT / "scripts/sign_windows_exes.py"), str(bin_dir)],
@@ -76,6 +76,15 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         code, out = run_script(Path(tmp), {"ROUTER_SIGN_WINDOWS": "1"})
         require(code == 0 and "secrets absent" in out, f"missing secrets must no-op: {code} {out}")
+
+    # Required mode (WINDOWS_SIGNING_REQUIRED provisioned): absent secrets fail.
+    with tempfile.TemporaryDirectory() as tmp:
+        code, out = run_script(Path(tmp), {"ROUTER_SIGN_WINDOWS": "1", "ROUTER_REQUIRE_WINDOWS_SIGNING": "1"})
+        require(code == 2 and "refusing to ship unsigned" in out, f"required mode with absent secrets must fail: {code} {out}")
+    # Required mode, partial secrets: still the partial-set failure.
+    with tempfile.TemporaryDirectory() as tmp:
+        code, out = run_script(Path(tmp), {"ROUTER_SIGN_WINDOWS": "1", "ROUTER_REQUIRE_WINDOWS_SIGNING": "1", "AZURE_TENANT_ID": "t"})
+        require(code == 2 and "missing" in out, f"required mode with partial secrets must fail: {code} {out}")
 
     # Gate on, partial secrets: fail with the missing names.
     with tempfile.TemporaryDirectory() as tmp:

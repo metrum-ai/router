@@ -75,6 +75,10 @@ jobs:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
           ROUTER_SIGN_WINDOWS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          # Once signing is provisioned, set the repository variable
+          # WINDOWS_SIGNING_REQUIRED=true: a tag build with missing or partial
+          # signing secrets then fails instead of shipping unsigned binaries.
+          ROUTER_REQUIRE_WINDOWS_SIGNING: ${{ vars.WINDOWS_SIGNING_REQUIRED == 'true' && '1' || '' }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}

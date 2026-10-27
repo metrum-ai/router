@@ -18,6 +18,10 @@ Behavior:
   and fails the release when any sign or verify step fails once all secrets
   are present: unsigned Windows assets must never ship from a signing-enabled
   run.
+- When ROUTER_REQUIRE_WINDOWS_SIGNING=1 (set from the repository variable
+  WINDOWS_SIGNING_REQUIRED in release.yml once signing is provisioned), a
+  missing or partial secret set on a tag build fails the release instead of
+  shipping unsigned binaries. The default stays a no-op.
 
 Required secrets (expected as environment variables, never on the command
 line; the client secret is passed to the token request body only):
@@ -180,8 +184,12 @@ def main() -> int:
     if os.environ.get("ROUTER_SIGN_WINDOWS", "") != "1":
         log("signing not requested (ROUTER_SIGN_WINDOWS != 1); leaving Windows binaries unsigned")
         return 0
+    required = os.environ.get("ROUTER_REQUIRE_WINDOWS_SIGNING", "") == "1"
     env = required_env()
     if env is None:
+        if required:
+            log("FATAL: WINDOWS_SIGNING_REQUIRED is set but the Trusted Signing secrets are absent; refusing to ship unsigned Windows binaries")
+            return 2
         log("Trusted Signing secrets absent; skipping Windows signing (no-op until provisioned, #332)")
         return 0
     jar = os.environ.get("JSIGN_JAR", "").strip()
