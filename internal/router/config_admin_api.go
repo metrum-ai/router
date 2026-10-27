@@ -945,6 +945,9 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, now time.Time) (int64, error) {
 	var revision int64
 	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
+			return err
+		}
 		if err := ensureConfigAdminWriteSchema(tx); err != nil {
 			return err
 		}

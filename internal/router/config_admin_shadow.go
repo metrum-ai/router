@@ -186,6 +186,9 @@ func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRe
 	var result *ShadowRun
 	err := withSQLiteBusyRetry(func() error {
 		return db.Transaction(func(tx *gorm.DB) error {
+			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
+				return err
+			}
 			if err := ensureConfigShadowSchema(tx); err != nil {
 				return err
 			}
@@ -280,6 +283,9 @@ func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, now
 	var result *ShadowRun
 	err := withSQLiteBusyRetry(func() error {
 		return db.Transaction(func(tx *gorm.DB) error {
+			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
+				return err
+			}
 			if err := ensureConfigShadowSchema(tx); err != nil {
 				return err
 			}
