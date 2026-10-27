@@ -296,6 +296,7 @@ test-fast: secret-contract capability-smoke-contracts
 	"$${MAKE:-make}" harbor-adapter-test
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
+	python3 scripts/tenant_provisioner_rbac_test.py
 
 # Full credential-free suite. Heavy targets stay behind shell Make invocations so
 # `make -n` does not execute them. test-full is the merge-queue name for `test`.
