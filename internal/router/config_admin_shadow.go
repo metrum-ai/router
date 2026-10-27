@@ -164,7 +164,12 @@ func bumpRevisionOnlyTx(tx *gorm.DB, runtimeScope string) (int64, error) {
 	default:
 		return 0, fmt.Errorf("unsupported control-plane database driver %q", tx.Dialector.Name())
 	}
-	return currentRevisionForScope(tx, runtimeScope)
+	revision, err := currentRevisionForScope(tx, runtimeScope)
+	if err != nil {
+		return 0, err
+	}
+	queueConfigRevisionNotification(tx, runtimeScope)
+	return revision, nil
 }
 
 // StartGroupShadow validates and registers a shadow run for the group. The

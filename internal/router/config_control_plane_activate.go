@@ -131,17 +131,8 @@ func activateConfigSetWithAction(db *gorm.DB, runtimeScope, configSetID, actor, 
 		).Error; err != nil {
 			return fmt.Errorf("append change event: %w", err)
 		}
+		queueConfigRevisionNotification(tx, runtimeScope)
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-
-	if db.Dialector.Name() == "postgres" {
-		// NOTIFY does not take parameters; the scope is escaped as a SQL
-		// string literal so an unusual scope name cannot break the statement.
-		payload := strings.ReplaceAll(runtimeScope, "'", "''")
-		_ = db.Exec(fmt.Sprintf(`NOTIFY %s, '%s'`, configControlPlaneNotifyChannel, payload)).Error
-	}
-	return nil
+	return err
 }

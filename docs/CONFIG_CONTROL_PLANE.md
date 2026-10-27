@@ -268,13 +268,15 @@ requests finish on the target they started with; the group name and
 - **SQLite:** replicas converge through the revision poller at
   `configControlPlaneReloadInterval` (2 s). Worst-case propagation is one
   poll interval plus a reload; expect about 2–4 s.
-- **PostgreSQL:** activation sends `NOTIFY router_config, '<runtime_scope>'`
-  after commit. Every replica LISTENs on that channel on a dedicated
-  connection (`StartConfigRevisionNotifier`) and reloads on a matching
-  payload, so replicas converge in about 1 s (measured by
-  `TestConfigRevisionNotifierReloadsOnActivate` and the `e2e/admin-api`
-  multi-replica notify-window cases, which assert <= 1.5 s on PostgreSQL).
-  Notifications whose payload names another scope are ignored.
+- **PostgreSQL:** configuration activation and revision changes queue a
+  scope-qualified notification in the same transaction; PostgreSQL delivers
+  it only on commit. This covers Admin group writes and rollbacks, set
+  activation and rollback, caller changes and shadow revision changes.
+  Each replica LISTENs on a dedicated connection and reloads on a matching
+  scope. Notification errors leave the poller as a fallback. The target is
+  about 1 s, but co-located three-replica commit-to-reload timing remains
+  unverified; an earlier WAN Admin-write measurement did not meet the
+  end-to-end 1.5 s threshold. Notifications for other scopes are ignored.
 - **Fallback:** if the listener connection cannot be opened at startup the
   router logs a line and starts anyway, and if the connection drops later
   the notifier goroutine logs and exits — the revision poller keeps
