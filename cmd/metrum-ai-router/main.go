@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to router YAML config")
+	listen := flag.String("listen", "", "override server.listen (for replicas sharing one database-backed configuration on one host)")
 	showVersion := flag.Bool("version", false, "print build version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -30,6 +32,9 @@ func main() {
 	cfg, err := router.LoadConfigForServe(*configPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
+	}
+	if strings.TrimSpace(*listen) != "" {
+		cfg.Server.Listen = strings.TrimSpace(*listen)
 	}
 
 	svc, err := router.New(cfg)

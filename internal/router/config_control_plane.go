@@ -40,7 +40,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 7, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 8, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -141,7 +141,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration())
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}
