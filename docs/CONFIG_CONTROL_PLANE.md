@@ -262,3 +262,22 @@ replicas converge through the phase-2 revision poller (SQLite,
 `configControlPlaneReloadInterval`) or the PostgreSQL notifier. In-flight
 requests finish on the target they started with; the group name and
 `/v1/models` identity never change across a swap.
+
+## Phase 9: shadow runs (#395 §5)
+
+Phase 9 adds `router_config_shadow_runs`, the shared registry behind
+`POST/GET/DELETE /admin/config/groups/{group}/shadow[/promote]`. A shadow run
+puts one catalog candidate in shadow against a group's served traffic at a
+bounded sample rate (`sample_rate`, with `max_requests`, `duration_seconds`,
+and `cost_cap_usd` bounds; one active run per group). Sampled requests are
+replayed to the candidate off the caller's critical path — non-streaming,
+no caller identity, no request content retained — and fold into aggregate
+counters (requests, errors, latency, tokens, estimated cost) on the run row.
+`GET …/shadow` compares those counters with the group's served baseline from
+the existing usage telemetry for the run window.
+
+Lifecycle changes bump the runtime revision (poller/notifier propagation,
+same as config writes) and are audited as `shadow_start`, `shadow_stop`, and
+`shadow_promote` change events; promotion goes through the copy-on-write
+group write path and its event links the run via `detail=shadow_run=<id>`.
+The migration is online, transactional, and idempotent, matching phase 8.
