@@ -1,0 +1,525 @@
+{
+  "cells": [
+    {
+      "allowed_error_rate": 0.1,
+      "allowed_score_delta": 0.05,
+      "attempts": 10,
+      "cell_id": "humaneval-direct",
+      "mode": "direct",
+      "observed_error_rate": 0,
+      "observed_score_delta": 0.0,
+      "paired_baseline": {
+        "losses": 0,
+        "wins": 0
+      },
+      "pass_rate_ci95": [
+        0.7224672,
+        1.0
+      ],
+      "passes": 10,
+      "provenance": {
+        "client_versions": {
+          "inspect-ai": "0.3.242",
+          "inspect-evals": "0.15.0",
+          "openai-python": "2.54.0",
+          "python": "3.12.3"
+        },
+        "dataset_revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+        "router_commit": "5cb00518fc6c6adcd94826999f4c67bce97a3629",
+        "router_local_image_id": "sha256:da57421f7aa6ca096239bf5baacd4199b43730b213d1a83f1f0e8c9b199a050e",
+        "seed": 330,
+        "task_image_digests": {
+          "inspect-tool-support": "sha256:bbaecf7a093cfe24703c97d562bb059899e272cd5d57f16d9916fe05e6614419"
+        }
+      },
+      "score_regression_gate_pass": true,
+      "task_results": [
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 5151.123,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.000573,
+          "input_tokens": 182,
+          "outcome": "pass",
+          "output_tokens": 432,
+          "task_id": "HumanEval/0",
+          "time_to_first_event_ms": 4458.072,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 4692.841,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0005025,
+          "input_tokens": 175,
+          "outcome": "pass",
+          "output_tokens": 375,
+          "task_id": "HumanEval/1",
+          "time_to_first_event_ms": 3854.379,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 6508.863,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0007125,
+          "input_tokens": 139,
+          "outcome": "pass",
+          "output_tokens": 559,
+          "task_id": "HumanEval/2",
+          "time_to_first_event_ms": 5754.329,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 3309.188,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0002523,
+          "input_tokens": 173,
+          "outcome": "pass",
+          "output_tokens": 167,
+          "task_id": "HumanEval/3",
+          "time_to_first_event_ms": 2527.404,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 7359.246,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0009524999999999999,
+          "input_tokens": 171,
+          "outcome": "pass",
+          "output_tokens": 751,
+          "task_id": "HumanEval/4",
+          "time_to_first_event_ms": 6303.871,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 5064.342,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.00046259999999999997,
+          "input_tokens": 150,
+          "outcome": "pass",
+          "output_tokens": 348,
+          "task_id": "HumanEval/5",
+          "time_to_first_event_ms": 4031.419,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 5098.267,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0005286,
+          "input_tokens": 170,
+          "outcome": "pass",
+          "output_tokens": 398,
+          "task_id": "HumanEval/6",
+          "time_to_first_event_ms": 4244.829,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 3417.371,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0002007,
+          "input_tokens": 149,
+          "outcome": "pass",
+          "output_tokens": 130,
+          "task_id": "HumanEval/7",
+          "time_to_first_event_ms": 2504.063,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 3342.533,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.0002127,
+          "input_tokens": 165,
+          "outcome": "pass",
+          "output_tokens": 136,
+          "task_id": "HumanEval/8",
+          "time_to_first_event_ms": 2593.015,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-direct",
+          "completion_latency_ms": 3865.198,
+          "cost_basis": "provider_usage_published_token_rates",
+          "cost_usd": 0.00031739999999999996,
+          "input_tokens": 154,
+          "outcome": "pass",
+          "output_tokens": 226,
+          "task_id": "HumanEval/9",
+          "time_to_first_event_ms": 3164.341,
+          "tool_turns": 0
+        }
+      ]
+    },
+    {
+      "allowed_error_rate": 0.1,
+      "allowed_score_delta": 0.05,
+      "attempts": 10,
+      "cell_id": "humaneval-fixed",
+      "mode": "fixed-router",
+      "observed_error_rate": 0,
+      "observed_score_delta": 0.0,
+      "paired_baseline": {
+        "losses": 0,
+        "wins": 0
+      },
+      "pass_rate_ci95": [
+        0.7224672,
+        1.0
+      ],
+      "passes": 10,
+      "provenance": {
+        "client_versions": {
+          "inspect-ai": "0.3.242",
+          "inspect-evals": "0.15.0",
+          "openai-python": "2.54.0",
+          "python": "3.12.3"
+        },
+        "dataset_revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+        "router_commit": "5cb00518fc6c6adcd94826999f4c67bce97a3629",
+        "router_local_image_id": "sha256:da57421f7aa6ca096239bf5baacd4199b43730b213d1a83f1f0e8c9b199a050e",
+        "seed": 330,
+        "task_image_digests": {
+          "inspect-tool-support": "sha256:bbaecf7a093cfe24703c97d562bb059899e272cd5d57f16d9916fe05e6614419"
+        }
+      },
+      "score_regression_gate_pass": true,
+      "task_results": [
+        {
+          "cached_input_tokens": 52,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 4959.777,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000539712,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 417,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/0",
+          "time_to_first_event_ms": 4250.742,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 46,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 3855.303,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000328176,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 241,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/1",
+          "time_to_first_event_ms": 2933.785,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 10,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 8727.616,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.00104316,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 837,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/2",
+          "time_to_first_event_ms": 7911.451,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 44,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 3508.526,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000245364,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 172,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/3",
+          "time_to_first_event_ms": 2510.764,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 42,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 7367.787,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000792552,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 628,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/4",
+          "time_to_first_event_ms": 6438.722,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 20,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 3843.091,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.00030792,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 224,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/5",
+          "time_to_first_event_ms": 3013.236,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 40,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 6780.167,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.00074844,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 591,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/6",
+          "time_to_first_event_ms": 5734.876,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 20,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 2502.171,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.00014562,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 89,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/7",
+          "time_to_first_event_ms": 1686.137,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 36,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 2998.611,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000150516,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 93,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/8",
+          "time_to_first_event_ms": 2140.788,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 24,
+          "cell_id": "humaneval-fixed",
+          "completion_latency_ms": 3353.071,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000210744,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 143,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/9",
+          "time_to_first_event_ms": 2196.162,
+          "tool_turns": 0
+        }
+      ]
+    },
+    {
+      "allowed_error_rate": 0.1,
+      "allowed_score_delta": 0.05,
+      "attempts": 10,
+      "cell_id": "humaneval-dynamic",
+      "mode": "dynamic-group",
+      "observed_error_rate": 0,
+      "observed_score_delta": 0.0,
+      "paired_baseline": {
+        "losses": 0,
+        "wins": 0
+      },
+      "pass_rate_ci95": [
+        0.7224672,
+        1.0
+      ],
+      "passes": 10,
+      "provenance": {
+        "client_versions": {
+          "inspect-ai": "0.3.242",
+          "inspect-evals": "0.15.0",
+          "openai-python": "2.54.0",
+          "python": "3.12.3"
+        },
+        "dataset_revision": "7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544",
+        "router_commit": "5cb00518fc6c6adcd94826999f4c67bce97a3629",
+        "router_local_image_id": "sha256:da57421f7aa6ca096239bf5baacd4199b43730b213d1a83f1f0e8c9b199a050e",
+        "seed": 330,
+        "task_image_digests": {
+          "inspect-tool-support": "sha256:bbaecf7a093cfe24703c97d562bb059899e272cd5d57f16d9916fe05e6614419"
+        }
+      },
+      "score_regression_gate_pass": true,
+      "task_results": [
+        {
+          "cached_input_tokens": 52,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 4883.182,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000514512,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 396,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/0",
+          "time_to_first_event_ms": 3909.762,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 46,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 6573.541,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000794976,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 630,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/1",
+          "time_to_first_event_ms": 5752.011,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 2723.901,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.0001569,
+          "input_tokens": 139,
+          "outcome": "pass",
+          "output_tokens": 96,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+          "task_id": "HumanEval/2",
+          "time_to_first_event_ms": 2077.209,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 44,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 2782.862,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000148164,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 91,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/3",
+          "time_to_first_event_ms": 1904.562,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 42,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 6221.417,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000649752,
+          "input_tokens": 129,
+          "outcome": "pass",
+          "output_tokens": 509,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/4",
+          "time_to_first_event_ms": 5250.17,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 20,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 5124.188,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.00049152,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 377,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/5",
+          "time_to_first_event_ms": 4363.525,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 40,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 3619.631,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.00031764,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 232,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/6",
+          "time_to_first_event_ms": 2896.6,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 3344.747,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.0001791,
+          "input_tokens": 149,
+          "outcome": "pass",
+          "output_tokens": 112,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+          "task_id": "HumanEval/7",
+          "time_to_first_event_ms": 2674.571,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 0,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 2814.782,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.0001683,
+          "input_tokens": 165,
+          "outcome": "pass",
+          "output_tokens": 99,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+          "task_id": "HumanEval/8",
+          "time_to_first_event_ms": 2077.017,
+          "tool_turns": 0
+        },
+        {
+          "cached_input_tokens": 24,
+          "cell_id": "humaneval-dynamic",
+          "completion_latency_ms": 3248.601,
+          "cost_basis": "router_request_time_usage",
+          "cost_usd": 0.000217944,
+          "input_tokens": 130,
+          "outcome": "pass",
+          "output_tokens": 149,
+          "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+          "task_id": "HumanEval/9",
+          "time_to_first_event_ms": 2385.147,
+          "tool_turns": 0
+        }
+      ]
+    }
+  ],
+  "run_id": "issue-330-20261027",
+  "schema_version": 1,
+  "started_utc": "2026-10-27T22:34:15.776891Z"
+}
