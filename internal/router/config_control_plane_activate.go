@@ -138,7 +138,10 @@ func activateConfigSetWithAction(db *gorm.DB, runtimeScope, configSetID, actor, 
 	}
 
 	if db.Dialector.Name() == "postgres" {
-		_ = db.Exec(fmt.Sprintf(`NOTIFY %s, '%s'`, configControlPlaneNotifyChannel, runtimeScope)).Error
+		// NOTIFY does not take parameters; the scope is escaped as a SQL
+		// string literal so an unusual scope name cannot break the statement.
+		payload := strings.ReplaceAll(runtimeScope, "'", "''")
+		_ = db.Exec(fmt.Sprintf(`NOTIFY %s, '%s'`, configControlPlaneNotifyChannel, payload)).Error
 	}
 	return nil
 }
