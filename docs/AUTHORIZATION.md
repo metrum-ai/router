@@ -22,6 +22,10 @@ act = action, for example read, export, drilldown, delete, or purge
 
 The built-in model is mirrored in `config/authz/model.example.conf`.
 
+Objects match by exact equality: a grant for `admin:reports` authorizes only `admin:reports`, never `admin:security_reports` or `admin:callers`. The only supported object wildcard is a policy object of exactly `*`, which matches every object; partial wildcards such as `admin:*` are rejected at config/policy load time. Policy actions are anchored patterns, so `read` matches only the action `read` (use `read|export` to grant several actions).
+
+> Behavior change (2026-W44): earlier releases compared objects with a URL-path matcher, which treated every `admin:<name>` object as equivalent. Policy sets that relied on one `admin:<x>` grant covering another `admin:<y>` object must now list each object explicitly.
+
 ## Configuration
 
 Static deployment-owned policy can be loaded from a CSV file:
@@ -164,6 +168,10 @@ p, user:global-reports@example.com, *, admin:security_reports, read|export
 ```
 
 Use `*` only for approved deployment-wide report administrators. Domain-scoped report admins should not receive `*` grants.
+
+## Admin Callers
+
+Caller administration uses object `admin:callers` with actions `list`, `issue`, `rotate`, `revoke`, and `read`. It is a distinct object from `admin:reports` and `admin:security_reports`; a grant on one never authorizes the others.
 
 ## Rollout
 

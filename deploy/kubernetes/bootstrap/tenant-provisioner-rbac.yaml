@@ -3,6 +3,19 @@
 # It intentionally cannot create or mutate workloads: a constrained platform
 # release identity applies router workloads after admission policy validation.
 # This prevents a bootstrap credential from mounting or impersonating Secrets.
+#
+# Least-privilege review (2026-W44, Refs #365): the Role grants write access
+# only to the exact resources the tenant bootstrap templates create
+# (tenant-bootstrap-resources.example.yaml, tenant-ingress-network-policy.example.yaml,
+# tenant-router-ingress-guard.example.yaml, tenant-linkerd-policy.example.yaml):
+# ResourceQuota, LimitRange, NetworkPolicy, and namespace-scoped Linkerd
+# Server/ServerAuthorization. Ingress access is read-only so bootstrap can
+# verify the selected tenant ingress before applying the guard policy; Ingress
+# objects are owned by the release identity. ConfigMap and Service writes were
+# removed because no bootstrap template creates them. There is no delete verb:
+# teardown removes the whole tenant namespace. Token automount stays enabled
+# because the provisioning job calls the API; workloads that do not call the
+# API must not use this account.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -17,11 +30,14 @@ metadata:
   namespace: replace-with-approved-tenant-namespace
 rules:
   - apiGroups: [""]
-    resources: ["configmaps", "resourcequotas", "limitranges", "services"]
+    resources: ["resourcequotas", "limitranges"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies", "ingresses"]
+    resources: ["networkpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["policy.linkerd.io"]
     resources: ["servers", "serverauthorizations"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
