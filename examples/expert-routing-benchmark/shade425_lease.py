@@ -15,6 +15,7 @@ import subprocess
 import time
 import uuid
 import shade425_watcher
+import shade425_storage
 import watcher
 
 
@@ -44,7 +45,7 @@ def create(state,cloud,kind,region,max_hourly):
     data=watcher.cloud.request('shadeform','/instances/types?available=true')
     selected=[x for x in data.get('instance_types',[]) if x.get('cloud')==cloud and x.get('shade_instance_type')==kind and x.get('num_gpus')==1
         and any(s in str(x.get('gpu_type','')).upper() for s in ('H100','H200'))
-        and float(x.get('configuration',{}).get('vram_per_gpu_in_gb') or 0)>=80 and float(x.get('storage_in_gb') or 0)>=300
+        and float(x.get('configuration',{}).get('vram_per_gpu_in_gb') or 0)>=80 and shade425_storage.offer_storage_ok(x)
         and any(a.get('region')==region and a.get('available') is True and a.get('rental_type')=='on_demand' for a in x.get('availability',[]))]
     if len(selected)!=1:raise RuntimeError('selected offer unavailable')
     offer=selected[0];hourly=float(offer['hourly_price'])/100;remaining=float(intent['deadline_unix'])-time.time()
