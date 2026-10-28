@@ -192,6 +192,20 @@ api-compat-ts:
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
+# Real agent clients against a loopback scripted upstream; no hosted calls.
+.PHONY: agent-tool-mock agent-tool-mock-codex
+agent-tool-mock:
+	go mod download
+	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
+	uv sync --locked --directory tests/agent_compat
+	$(PYTHON) tests/agent_compat/runtime_environment_test.py
+	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" || exit $$?; done
+	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+
+# Requires an OS that permits the Codex workspace sandbox; never disable it.
+agent-tool-mock-codex:
+	$(PYTHON) tests/agent_compat/codex_responses_smoke.py
+
 eval-humaneval:
 	$(PYTHON) scripts/inspect_coding_eval.py run --suite humaneval
 
