@@ -1,0 +1,38 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+name: Expert routing benchmark smoke
+on:
+  pull_request:
+    paths:
+      - 'examples/expert-routing-benchmark/**'
+      - 'examples/catalog/**'
+      - '.github/workflows/expert-routing-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: expert-routing-smoke-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  mock:
+    runs-on: router-arc
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Credential-free mock benchmark
+        run: |
+          node --test examples/expert-routing-benchmark/policy.test.mjs
+          go build -o "$RUNNER_TEMP/expert-router" ./cmd/metrum-ai-router
+          ROUTER_TEST_BINARY="$RUNNER_TEMP/expert-router" python3 -m unittest discover -s examples/expert-routing-benchmark -p 'test_*.py' -v
