@@ -1,0 +1,273 @@
+{
+  "backend": "fireworks",
+  "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+  "note": "both tiers use same model; no warmups, no quality ranking",
+  "summary": {
+    "metrum": {
+      "successes": 6,
+      "trials": 6,
+      "median_client_ms": 942.08,
+      "usage_cost_usd": 0.0002676
+    },
+    "lite": {
+      "successes": 6,
+      "trials": 6,
+      "median_client_ms": 958.118,
+      "usage_cost_usd": 0.000306
+    }
+  },
+  "results": [
+    {
+      "task": "E1",
+      "arm": "metrum",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 867.495,
+      "usage": {
+        "completion_tokens": 16,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 13,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens": 48,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 64
+      },
+      "usage_cost_usd": 3.36e-05
+    },
+    {
+      "task": "E1",
+      "arm": "lite",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 1034.047,
+      "usage": {
+        "prompt_tokens": 48,
+        "completion_tokens": 12,
+        "total_tokens": 60,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 9,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "usage_cost_usd": 2.88e-05
+    },
+    {
+      "task": "E2",
+      "arm": "lite",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 937.95,
+      "usage": {
+        "prompt_tokens": 52,
+        "completion_tokens": 28,
+        "total_tokens": 80,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 25,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "usage_cost_usd": 4.92e-05
+    },
+    {
+      "task": "E2",
+      "arm": "metrum",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 1372.566,
+      "usage": {
+        "completion_tokens": 25,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 22,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens": 52,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 77
+      },
+      "usage_cost_usd": 4.56e-05
+    },
+    {
+      "task": "H1",
+      "arm": "metrum",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 869.576,
+      "usage": {
+        "completion_tokens": 19,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 16,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens": 47,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 66
+      },
+      "usage_cost_usd": 3.69e-05
+    },
+    {
+      "task": "H1",
+      "arm": "lite",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 656.538,
+      "usage": {
+        "prompt_tokens": 47,
+        "completion_tokens": 21,
+        "total_tokens": 68,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 18,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "usage_cost_usd": 3.93e-05
+    },
+    {
+      "task": "H2",
+      "arm": "lite",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 640.687,
+      "usage": {
+        "prompt_tokens": 50,
+        "completion_tokens": 39,
+        "total_tokens": 89,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 36,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "usage_cost_usd": 6.18e-05
+    },
+    {
+      "task": "H2",
+      "arm": "metrum",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 1014.583,
+      "usage": {
+        "completion_tokens": 25,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 22,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens": 50,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 75
+      },
+      "usage_cost_usd": 4.5e-05
+    },
+    {
+      "task": "E3",
+      "arm": "metrum",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 722.696,
+      "usage": {
+        "completion_tokens": 24,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 21,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens": 49,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 73
+      },
+      "usage_cost_usd": 4.35e-05
+    },
+    {
+      "task": "E3",
+      "arm": "lite",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 1424.929,
+      "usage": {
+        "prompt_tokens": 49,
+        "completion_tokens": 25,
+        "total_tokens": 74,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 22,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "usage_cost_usd": 4.47e-05
+    },
+    {
+      "task": "H3",
+      "arm": "lite",
+      "tier": "cheap",
+      "passed": true,
+      "elapsed_ms": 978.286,
+      "usage": {
+        "prompt_tokens": 90,
+        "completion_tokens": 46,
+        "total_tokens": 136,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 43,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "usage_cost_usd": 8.22e-05
+    },
+    {
+      "task": "H3",
+      "arm": "metrum",
+      "tier": "strong",
+      "passed": true,
+      "elapsed_ms": 1596.575,
+      "usage": {
+        "completion_tokens": 30,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "reasoning_tokens": 27,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens": 90,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "total_tokens": 120
+      },
+      "usage_cost_usd": 6.3e-05
+    }
+  ]
+}

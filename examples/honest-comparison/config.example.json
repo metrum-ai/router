@@ -1,0 +1,11 @@
+{
+  "tasks": [
+    {"id":"E1", "required_tier":"cheap", "prompt":"Case E1: Summarize: rain."},
+    {"id":"E2", "required_tier":"cheap", "prompt":"Case E2: Classify color: blue."},
+    {"id":"H1", "required_tier":"strong", "prompt":"Case H1: Prove theorem about distributed consensus."},
+    {"id":"H2", "required_tier":"strong", "prompt":"Case H2: Analyze concurrency and security trade-offs."},
+    {"id":"E3", "required_tier":"cheap", "prompt":"Case E3: Translate hello."},
+    {"id":"H3", "required_tier":"strong", "prompt":"Case H3: Formally prove distributed consistency. Analyze concurrency and optimize worst-case complexity. Derive correctness invariants, explain trade-offs, design the algorithm, investigate failure modes, and verify every assumption. Include a proof of safety and liveness for each possible concurrent failure."}
+  ],
+  "lite_model_assumptions": {"cheap":{"cost_per_1000_tokens":0.1,"quality":0.1}, "strong":{"cost_per_1000_tokens":1.0,"quality":0.95}}
+}

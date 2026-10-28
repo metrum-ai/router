@@ -58,3 +58,9 @@ jobs:
         env:
           ROUTER_TEST_BINARY: ${{ runner.temp }}/tokenomics-router
         run: python3 -m unittest discover -s examples/decision-models -p 'test_*.py' -v
+      - name: Install pinned comparison library
+        run: python3 -m pip install --no-deps --require-hashes -r examples/honest-comparison/requirements.txt
+      - name: Exercise comparison against mock upstream
+        env:
+          ROUTER_TEST_BINARY: ${{ runner.temp }}/tokenomics-router
+        run: python3 -m unittest discover -s examples/honest-comparison -p 'test_*.py' -v

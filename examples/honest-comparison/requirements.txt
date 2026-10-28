@@ -1,0 +1,2 @@
+# MIT-licensed llm-router-lite source wheel; pinned to the reviewed wheel hash.
+llm-router-lite==0.1.0 --hash=sha256:98ca22ca56debf8a940550153f5a46c45b969770c763f8ce4c3f7bd07da75457
