@@ -122,3 +122,26 @@ not a hard provider billing cap, and posted charges can lag. `charges.py`
 queries per-instance posted charges, marked provisional; no matching rows means
 unknown, not zero. Storage, network or other charges not attributable to the
 instance must be disclosed separately.
+
+### Bounded SSH diagnostic before another four-GPU lease
+
+The first four-GPU setup failed: an instance-attached Ed25519 public key was
+reported associated, but the matching private key was rejected after bounded
+readiness attempts. No benchmark ran. Its instance was deleted and keys were
+removed. The latest posted charge is $6.378, still provisional (snapshot
+`61d738ba`). Do not treat the original $90 as unspent: reserve for delayed
+charges and for this diagnostic before any further lease.
+
+The `ssh-diagnostic` profile uses at most one low-cost GPU, a 12-minute
+independent deadline, a $1 estimated/billed stop threshold, and the same pinned
+image. It creates no account-level key: Vast documents that creating one adds
+it to all existing instances and does not document revocation on deletion.
+`diagnose_ssh.py` tests the initially attached Ed25519 key, then separately
+attaches fresh instance-only Ed25519 and RSA keys after the host reports running.
+It records key acceptance and timings only. The watcher deletes the intent
+instance and all local private key files; ambiguous instance creation never
+counts as verified cleanup without reconciliation. No model is downloaded or
+called; SSH host trust is first-use. This same-host comparison can distinguish
+some format or timing behaviors but cannot test account-wide key registration or
+prove the original four-GPU host's root cause. Reconcile charges and obtain
+review for any authentication flow changes before another four-GPU lease.

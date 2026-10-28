@@ -20,11 +20,14 @@ import watcher
 IMAGE='vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34'
 
 
-def init(state,minutes):
+def init(state,minutes,profile='expert'):
     repo=watcher.HERE.parents[1];state=state.resolve()
-    if state==repo or repo in state.parents or not (0<minutes<=150):raise ValueError('invalid state path or deadline')
+    if profile not in ('expert','ssh-diagnostic'):raise ValueError('invalid profile')
+    maximum=12 if profile=='ssh-diagnostic' else 150
+    if state==repo or repo in state.parents or not (0<minutes<=maximum):raise ValueError('invalid state path or deadline')
     state.mkdir(mode=0o700,parents=False,exist_ok=False)
-    intent={'label':'metrum-426-'+uuid.uuid4().hex,'deadline_unix':time.time()+minutes*60,'budget_usd':90,'reservation_limit_usd':75}
+    intent={'label':'metrum-426-'+uuid.uuid4().hex,'deadline_unix':time.time()+minutes*60,'budget_usd':90,
+            'reservation_limit_usd':1 if profile=='ssh-diagnostic' else 75,'profile':profile}
     watcher.atomic(state,'intent.json',intent)
     print('intent initialized; arm watcher in its own Herdr tab before create')
 
@@ -53,18 +56,23 @@ def create(state,offer_id,max_hourly):
     if state.stat().st_mode & 0o077 or (state/'lease.json').exists() or (state/'creation-started').exists():raise ValueError('state invalid or creation already attempted')
     if not isinstance(offer_id,int) or offer_id<=0 or not math.isfinite(max_hourly) or max_hourly<=0:raise ValueError('invalid offer or limit')
     assert_watcher(state,intent)
-    query={'gpu_name':{'eq':'H200'},'num_gpus':{'eq':4},'rentable':{'eq':True},'rented':{'eq':False},'disk_space':{'gte':500},
-        'allocated_storage':500,'inet_down':{'gte':1000},'inet_up':{'gte':500},'cuda_max_good':{'gte':12.8},'order':[['dph_total','asc']],'limit':25,'type':'on-demand'}
+    diagnostic=intent.get('profile')=='ssh-diagnostic'
+    disk=100 if diagnostic else 500
+    query={'num_gpus':{'eq':1 if diagnostic else 4},'rentable':{'eq':True},'rented':{'eq':False},'disk_space':{'gte':disk},
+        'allocated_storage':disk,'inet_down':{'gte':200 if diagnostic else 1000},'cuda_max_good':{'gte':12.8},
+        'order':[['dph_total','asc']],'limit':25,'type':'on-demand'}
+    if not diagnostic:query.update({'gpu_name':{'eq':'H200'},'inet_up':{'gte':500}})
     data=watcher.cloud.request('vast','/bundles/?'+urllib.parse.urlencode({'q':json.dumps(query)}))
     offers=[x for x in data.get('offers',[]) if x.get('id')==offer_id]
     if len(offers)!=1:raise RuntimeError('chosen offer not currently available')
     hourly=float(offers[0]['dph_total']);remaining=float(intent['deadline_unix'])-time.time()
-    if not math.isfinite(hourly) or hourly<=0 or hourly>max_hourly or remaining<60 or hourly*remaining/3600>intent['reservation_limit_usd']:
+    if not math.isfinite(hourly) or hourly<=0 or hourly>max_hourly or (diagnostic and hourly>1) or remaining<60 or hourly*remaining/3600>intent['reservation_limit_usd']:
         raise RuntimeError('offer or reservation outside approved budget')
     try:
         subprocess.run(['ssh-keygen','-q','-t','ed25519','-N','','-f',str(state/'instance-key')],check=True)
         assert_watcher(state,intent)
-        payload={'client_id':'me','image':IMAGE,'disk':500,'runtype':'ssh','env':{},'cancel_unavail':True,'onstart':'mkdir -p /workspace','label':intent['label']}
+        public=(state/'instance-key.pub').read_text().strip()
+        payload={'client_id':'me','image':IMAGE,'disk':disk,'runtype':'ssh','env':{},'cancel_unavail':True,'onstart':'mkdir -p /workspace','label':intent['label']}
         started=dt.datetime.now(dt.timezone.utc).isoformat()
         (state/'creation-started').write_text(started)
         response=watcher.cloud.request('vast',f'/asks/{offer_id}/','PUT',payload,True)
@@ -74,7 +82,6 @@ def create(state,offer_id,max_hourly):
             'created_at':started,'hourly_quote_usd':hourly,'deadline_unix':intent['deadline_unix']})
         (state/'creation-terminal').touch(mode=0o600)
         assert_watcher(state,intent)
-        public=(state/'instance-key.pub').read_text().strip()
         attach_key(identifier,public)
         print(json.dumps({'id':identifier,'state_dir':str(state),'status':'created'}))
     except Exception:
@@ -85,8 +92,9 @@ def create(state,offer_id,max_hourly):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('action',choices=['init','create']);p.add_argument('--state-dir',required=True,type=Path)
-    p.add_argument('--minutes',type=float,default=150);p.add_argument('--offer',type=int);p.add_argument('--max-hourly',type=float,default=30);a=p.parse_args()
-    if a.action=='init':init(a.state_dir,a.minutes)
+    p.add_argument('--minutes',type=float,default=150);p.add_argument('--offer',type=int);p.add_argument('--max-hourly',type=float,default=30)
+    p.add_argument('--profile',choices=['expert','ssh-diagnostic'],default='expert');a=p.parse_args()
+    if a.action=='init':init(a.state_dir,a.minutes,a.profile)
     else:create(a.state_dir,a.offer,a.max_hourly)
 
 

@@ -89,7 +89,7 @@ def watch(state,request=cloud.request,now=time.time,sleep=time.sleep):
                 if not settled and now()-started>=300 and consecutive==60:
                     print('URGENT: ambiguous create; manual reconciliation required; watcher remains active',flush=True)
                 if consecutive>=3 and settled:
-                    for key in ('instance-key','instance-key.pub'):(state/key).unlink(missing_ok=True)
+                    for key in ('instance-key','instance-key.pub','diagnostic-ed25519','diagnostic-ed25519.pub','diagnostic-rsa','diagnostic-rsa.pub'):(state/key).unlink(missing_ok=True)
                     atomic(state,'teardown.json',{'deletion_verified':True,'reason':reason,'ids':sorted(deleted_ids | ({int(identifier)} if identifier is not None else set())),
                         'verified_at':dt.datetime.now(dt.timezone.utc).isoformat(),'absence_checks':consecutive,'local_key_removed':True})
                     print('TEARDOWN VERIFIED: intent instance absent; local SSH key removed',flush=True);break
