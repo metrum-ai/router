@@ -193,7 +193,7 @@ api-compat-ts:
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
 # Real agent clients against a loopback scripted upstream; no hosted calls.
-.PHONY: agent-tool-mock agent-tool-mock-codex
+.PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
 agent-tool-mock:
 	go mod download
 	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
@@ -204,6 +204,14 @@ agent-tool-mock:
 # Requires an OS that permits the Codex workspace sandbox; never disable it.
 agent-tool-mock-codex:
 	$(PYTHON) tests/agent_compat/codex_responses_smoke.py
+
+# Initial deterministic chain matrix; does not claim live-provider coverage.
+agent-chain-mock:
+	go mod download
+	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
+	uv sync --locked --directory tests/agent_compat
+	$(PYTHON) tests/agent_compat/run_chain_matrix_test.py
+	tests/agent_compat/.venv/bin/python tests/agent_compat/run_chain_matrix.py --output "$${AGENT_CHAIN_REPORT:-tests/agent_compat/.out/chain-matrix.json}"
 
 eval-humaneval:
 	$(PYTHON) scripts/inspect_coding_eval.py run --suite humaneval

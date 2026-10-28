@@ -39,7 +39,19 @@ versions are in `package-lock.json` and `uv.lock`.
 | Claude Code 2.1.296 | Messages, streamed tool use, one hop, same dialect | 1/1 pass with allowed beta |
 | Codex 0.162.0 | Responses, streamed tool call, one hop, same dialect | blocked locally: namespace creation denied; CI must execute on a capable host |
 
+`make agent-chain-mock` extends the same fixtures to depths 0, 1, 2, 3 and
+5, collecting a JSON result for each of these four clients. Depth 0 connects
+the client directly to the scripted upstream; depth 5 is a limited stress
+case. `AGENT_CHAIN_REPORT` overrides the default output path
+`tests/agent_compat/.out/chain-matrix.json`. A case passes only when the agent
+executes its tool and the scripted upstream receives the continuation. The
+matrix runner records every selected case and exits nonzero if any fail. The
+mock-only nightly workflow retains the JSON artifact after the branch is merged.
+Operators must triage failed cells and file or update issues; automated issue
+filing and release-PR integration are not yet implemented.
+
 Other surface/client combinations, strict-schema and parallel-tool sweeps,
-reasoning/cache-control combinations, cross-dialect paths, hierarchy depths,
-nightly live checks, and release-updated pass-rate publication remain untested.
-Do not include those cells in a pass-rate denominator. See #429 and #430.
+reasoning/cache-control combinations, cross-dialect paths, chain error and
+accounting comparisons, hop protection, nightly live checks, and release-updated
+pass-rate publication remain untested. Do not include those cells in a pass-rate
+denominator. See #429 and #430.

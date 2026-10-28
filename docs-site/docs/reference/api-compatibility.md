@@ -141,9 +141,13 @@ context-management beta on its test target. A Codex Responses case is also
 provided, but on the local test host it was blocked by denied unprivileged
 user namespaces; see [the suite README](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md).
 
-Other clients/surfaces, cross-dialect paths, parallel calls, chain depths and
-live nightly evidence are not covered by these four cases. The remaining
-matrix and release-updated reporting are tracked in #429 and #430.
+An initial chain sweep also runs each of the same four clients directly and
+through one, two, three and five same-dialect hops. All 20 local deterministic
+cells passed once; `make agent-chain-mock` produces a per-cell JSON report.
+This checks successful streamed tool execution and continuation, not complete
+stream equivalence or per-hop accounting. Codex remains untested in that
+sweep. Other clients/surfaces, cross-dialect paths, parallel calls, loop
+protection and live nightly evidence remain open in #429 and #430.
 
 ### Validation evidence (offline)
 

@@ -229,6 +229,16 @@ def assert_provider_workflows() -> None:
     require("scripts/ci_lrp_synthetic.sh" in lrp, "LRP workflow drifted from the shared script")
 
 
+def assert_agent_chain_workflow() -> None:
+    text = read(WORKFLOWS / "agent-chain-nightly.yml")
+    require("schedule:" in text and "workflow_dispatch:" in text,
+            "agent chain mock needs nightly and manual triggers")
+    require("secrets." not in text and "make agent-chain-mock" in text,
+            "agent chain nightly must stay mock-only and credential-free")
+    require("if: always()" in text and "chain-matrix.json" in text,
+            "agent chain nightly must retain per-cell results on failure")
+
+
 def assert_arc_runners() -> None:
     for path in sorted(WORKFLOWS.glob("*.yml")):
         text = read(path)
@@ -258,6 +268,7 @@ def main() -> int:
     assert_fast_go_workflow()
     assert_deterministic_gate()
     assert_provider_workflows()
+    assert_agent_chain_workflow()
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")
