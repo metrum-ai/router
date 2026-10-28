@@ -26,13 +26,20 @@ the target allowlist for its Messages request. Without an allowed beta, a
 Claude request containing `context_management: null` was rejected; see #459.
 Its CLI runs with `Read` as the only allowed tool against one fixed synthetic
 file. The mock verifies the streamed tool input and actual read result in the
-continuation.
+continuation. A separate deterministic case streams a synthetic thinking block
+and opaque signature before the tool use; the client must send both back with
+the tool result. For depths 0, 1, 2 and 3, the mock compares the received
+thinking type/budget and cache-control type/TTL and locations against the
+direct case. The pinned client emitted adaptive thinking and three ephemeral
+cache annotations on each request in this fixture. This does not validate a
+real provider's signatures, caching or other thinking modes.
 
 ## Current coverage and limits
 
 This is an initial, partial #429 suite. The checks are one deterministic
-scenario per listed client and path, all at one router hop; they are not a
-provider certification or a statistical pass-rate estimate. The locked
+scenario per listed client and path, usually at one router hop; the separate
+Claude thinking/cache case spans depths 0–3. These are not a provider
+certification or a statistical pass-rate estimate. The locked
 versions are in `package-lock.json` and `uv.lock`.
 
 | Client | Surface and path | Local result |
@@ -47,6 +54,7 @@ versions are in `package-lock.json` and `uv.lock`.
 | LangGraph 1.2.18 | Chat caller → Responses upstream, streamed tool call, one hop | 1/1 pass |
 | OpenAI Agents SDK 0.24.0 | Chat caller → Responses upstream, streamed tool call with `strict` function flag, one hop | 1/1 pass |
 | Claude Code 2.1.296 | Messages, streamed tool use, one hop, same dialect | 1/1 pass with allowed beta |
+| Claude Code 2.1.296 | Messages thinking/signature + streamed tool continuation, cache controls, same dialect, depths 0–3 | 4/4 deterministic local cases with allowed beta |
 | Codex 0.162.0 | Responses, streamed tool call, one hop, same dialect | 1/1 pass on the sandbox-capable CI VM; blocked locally because namespace creation was denied |
 
 `make agent-chain-mock` extends the same fixtures to depths 0, 1, 2, 3 and
@@ -61,7 +69,7 @@ Operators must triage failed cells and file or update issues; automated issue
 filing and release-PR integration are not yet implemented.
 
 Other surface/client combinations, strict-schema and broader parallel-tool
-sweeps, reasoning/cache-control combinations, other cross-dialect paths, chain error
+sweeps, broader reasoning/cache-control combinations, other cross-dialect paths, chain error
 and accounting comparisons, hop protection, nightly live checks, and
 release-updated pass-rate publication remain untested. Do not include those
 cells in a pass-rate denominator. See #429 and #430.
