@@ -36,7 +36,7 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stderr);lines=log.read_text().splitlines();launch=[s for s in lines if s.startswith('run ')]
             self.assertEqual(len(launch),4)
             self.assertTrue(all('vllm/vllm-openai@sha256:' in s and 'readonly' in s and '--network host' in s for s in launch))
-            self.assertTrue(all(' --env' not in s and ' -e ' not in s for s in launch))
+            self.assertTrue(all(' --env' not in s and ' -e ' not in s and ' --rm ' not in s for s in launch))
 
     def test_download_manifest_is_pinned_and_avoids_remote_code(self):
         from unittest.mock import patch

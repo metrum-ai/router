@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- YAML-configured providers can opt in to `upstream_kind: router` for a
+  separately authenticated trusted router, preserving its rate-limit 429 or
+  typed 503 and valid `Retry-After` after fallbacks are exhausted (#496).
+  This does not trust `Via`; database-backed config-set projection rejects the
+  field until it can persist the setting safely.
+
 - Router chains append a sanitized router-only `Via` and stop at the configured
   hop limit (default 16) with HTTP 508; malformed entries are ignored, other
   proxy entries are not forwarded, and upstream 508 is not retried (#430).
@@ -42,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delay per request. Every paced request records trace events with the
   profile name and profile hash; upstream timing stays measured separately
   from downstream pacing. See `docs-site/docs/configuration/experiment-profiles.md`.
+
+### Security
+
+- Updated `github.com/go-jose/go-jose/v4` to 4.1.6 for
+  GHSA-mgcc-cww5-fp2q, a denial-of-service risk when parsing crafted RSA JWKs.
+  The dependency now rejects RSA JWK moduli over 4096 bits; OIDC deployments
+  using larger keys must rotate to supported keys before upgrading (#451).
 
 ### Changed
 
