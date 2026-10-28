@@ -307,7 +307,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
-	$(PYTHON) -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
+	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q

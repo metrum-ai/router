@@ -5,8 +5,10 @@
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 import secrets
+import subprocess
 import yaml
 
 
@@ -25,8 +27,14 @@ def main():
     spec = importlib.util.spec_from_file_location('local_pi_instance', repo / 'scripts/local_pi_instance.py')
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
     token = 'rtr_metrum_eval_support_dev_k423_' + secrets.token_urlsafe(32)
-    (args.state_dir/'caller').write_text(token+'\n')
+    token_path=args.state_dir/'caller'; token_path.write_text(token+'\n'); token_path.chmod(0o600)
     cfg = m.build_config(out_dir=args.state_dir, listen=settings['router_listen'], id_key_hex=secrets.token_hex(64), token=token)
+    # Use the router's CLI and a private token file; never pass secrets in argv.
+    env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','GOCACHE','GOMODCACHE','GOROOT','GOPATH','GOPROXY','GOTOOLCHAIN') if k in os.environ}
+    reply=subprocess.run(['go','run','./cmd/metrum-ai-routerctl','callers','hash','--token-file',str(token_path)],cwd=repo,env=env,capture_output=True,check=True,timeout=300)
+    fields=json.loads(reply.stdout); token_id=fields.get('token_id'); token_hash=fields.get('token_hash')
+    if not isinstance(token_id,str) or not token.startswith(token_id+'_') or not isinstance(token_hash,str) or not token_hash.startswith('pbkdf2-sha3-512:'): raise RuntimeError('invalid routerctl hash')
+    cfg['callers'][0].pop('token_sha256',None); cfg['callers'][0].update(token_id=token_id,token_hash=token_hash)
     cfg['server']['identifiers'] = {'mode': 'passthrough'}
     cfg['server']['admin_auth'] = {'basic': {'enabled': False, 'users': []}}
     cfg['server']['admin_reports'] = {'enabled': False}
