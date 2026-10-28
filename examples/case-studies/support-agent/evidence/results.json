@@ -1,0 +1,86 @@
+[
+  {
+    "arm": "frontier",
+    "error": null,
+    "passed": true,
+    "request_ids": [
+      "request-0001",
+      "request-0002",
+      "request-0003",
+      "request-0004",
+      "request-0005"
+    ],
+    "tool_calls": 4,
+    "trial_id": "ORD-101"
+  },
+  {
+    "arm": "frontier",
+    "error": null,
+    "passed": true,
+    "request_ids": [
+      "request-0006",
+      "request-0007",
+      "request-0008",
+      "request-0009",
+      "request-0010"
+    ],
+    "tool_calls": 4,
+    "trial_id": "ORD-102"
+  },
+  {
+    "arm": "frontier",
+    "error": null,
+    "passed": true,
+    "request_ids": [
+      "request-0011",
+      "request-0012",
+      "request-0013",
+      "request-0014",
+      "request-0015"
+    ],
+    "tool_calls": 4,
+    "trial_id": "ORD-103"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "passed": true,
+    "request_ids": [
+      "request-0016",
+      "request-0017",
+      "request-0018",
+      "request-0019",
+      "request-0020"
+    ],
+    "tool_calls": 4,
+    "trial_id": "ORD-101"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "passed": true,
+    "request_ids": [
+      "request-0021",
+      "request-0022",
+      "request-0023",
+      "request-0024",
+      "request-0025"
+    ],
+    "tool_calls": 4,
+    "trial_id": "ORD-102"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "passed": true,
+    "request_ids": [
+      "request-0026",
+      "request-0027",
+      "request-0028",
+      "request-0029",
+      "request-0030"
+    ],
+    "tool_calls": 4,
+    "trial_id": "ORD-103"
+  }
+]

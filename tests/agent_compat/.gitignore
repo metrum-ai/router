@@ -1,0 +1,6 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+node_modules/
+.venv/
+__pycache__/
+.out/

@@ -1,0 +1,15 @@
+{
+  "billing": "Usage-row tokens priced at request-time catalog rates; not provider invoice reconciliation.",
+  "first_request_utc": "2026-10-28T00:05:37.420080742Z",
+  "last_request_utc": "2026-10-28T00:06:16.669764455Z",
+  "latency": "Client-observed non-streaming request latency, nearest rank percentiles.",
+  "router_binary_sha256": "5e1ea1dc91601e1db424229b52e9d0539a511d07dadfdc515ec3485034125766",
+  "router_build_worktree_modified": true,
+  "router_git_revision": "2ecfd4407e0c4a71e62270d6dba59af0f4d89ebc",
+  "router_go_source_modified": false,
+  "router_go_version": "go1.27.3",
+  "source_sha256": {
+    "backend.py": "e8069a19efe875e8c526d32d9708f009395d57ca9857c8c2b6160a934c8b5a8b",
+    "run.py": "8be1278073c4461695ca7097fe73f3132c85a1723019848a4181ba945fd2a53e"
+  }
+}
