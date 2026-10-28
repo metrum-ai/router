@@ -41,6 +41,13 @@ def assert_watcher(state,intent):
         raise RuntimeError('watcher already triggered or deadline reached')
 
 
+def attach_key(identifier,public,request=None):
+    if request is None:request=watcher.cloud.request
+    result=request('vast',f'/instances/{identifier}/ssh/','POST',{'ssh_key':public},True)
+    if not isinstance(result,dict) or result.get('success') is not True:
+        raise RuntimeError('SSH key attachment not confirmed')
+
+
 def create(state,offer_id,max_hourly):
     state=state.resolve();intent=json.loads((state/'intent.json').read_text())
     if state.stat().st_mode & 0o077 or (state/'lease.json').exists() or (state/'creation-started').exists():raise ValueError('state invalid or creation already attempted')
@@ -68,7 +75,7 @@ def create(state,offer_id,max_hourly):
         (state/'creation-terminal').touch(mode=0o600)
         assert_watcher(state,intent)
         public=(state/'instance-key.pub').read_text().strip()
-        watcher.cloud.request('vast',f'/instances/{identifier}/ssh/','POST',{'ssh_key':public},True)
+        attach_key(identifier,public)
         print(json.dumps({'id':identifier,'state_dir':str(state),'status':'created'}))
     except Exception:
         if not (state/'creation-started').exists():(state/'creation-terminal').touch(mode=0o600)

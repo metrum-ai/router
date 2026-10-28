@@ -3,12 +3,39 @@
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 import watcher
 import charges
+import lease
 
 
 class TestWatcher(unittest.TestCase):
+    def test_attachment_must_return_explicit_success(self):
+        for response in ({'success':False,'msg':'untrusted'}, {}, None):
+            with self.assertRaisesRegex(RuntimeError,'attachment not confirmed'):
+                lease.attach_key(42,'test-public-key',request=lambda *a:response)
+        calls=[]
+        lease.attach_key(42,'test-public-key',request=lambda *a:(calls.append(a) or {'success':True}))
+        self.assertEqual(calls[0][1],'/instances/42/ssh/')
+        self.assertTrue(calls[0][-1])
+
+    def test_failed_attachment_triggers_teardown_intent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state=Path(directory);(state/'intent.json').write_text(json.dumps({'label':'metrum-426-'+'d'*32,
+                'deadline_unix':time.time()+3600,'reservation_limit_usd':75}))
+            def api(cloud,path,method='GET',payload=None,execute=False):
+                if path.startswith('/bundles/'):return {'offers':[{'id':123,'dph_total':10}]}
+                if path=='/asks/123/':return {'new_contract':42}
+                if path=='/instances/42/ssh/':return {'success':False}
+                raise AssertionError('unexpected API request')
+            def keygen(*args,**kwargs):(state/'instance-key.pub').write_text('public-test-key')
+            with patch.object(lease,'assert_watcher'),patch.object(lease.subprocess,'run',side_effect=keygen),patch.object(lease.watcher.cloud,'request',side_effect=api):
+                with self.assertRaisesRegex(RuntimeError,'attachment not confirmed'):lease.create(state,123,30)
+            self.assertEqual((state/'done.txt').read_text(),'GPU-DONE #426\n')
+            self.assertTrue((state/'creation-terminal').exists());self.assertEqual(json.loads((state/'lease.json').read_text())['id'],42)
+
     def test_billing_filters_instance_and_missing_is_unknown(self):
         def fake(cloud,path):
             return {'success':True,'results':[{'source':'instance-42','amount':1.25},
