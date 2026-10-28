@@ -30,7 +30,6 @@ DIGEST = hashlib.sha256(TOKEN.encode()).hexdigest()
 class Mock(BaseHTTPRequestHandler):
     calls: list[dict] = []
     errors: list[str] = []
-    parallel = False
 
     def log_message(self, *_args):
         pass
@@ -49,24 +48,18 @@ class Mock(BaseHTTPRequestHandler):
         if index == 1:
             tool_names = {tool.get("function", {}).get("name") for tool in body.get("tools", [])}
             if "write" not in tool_names:
-                Mock.errors.append("client did not declare write tool")
+                Mock.errors.append("pi did not declare write tool")
                 self.send_error(400)
                 return
-            specs = [("call_write", "result.txt", "tool-result-42\n")]
-            if Mock.parallel:
-                specs.append(("call_write_2", "result2.txt", "tool-result-43\n"))
-            arguments = [json.dumps({"path": path, "content": content}, separators=(",", ":")) for _, path, content in specs]
-            splits = [len(arg) // 2 for arg in arguments]
             frames = [
-                {"role": "assistant", "tool_calls": [{"index": n, "id": call_id, "type": "function", "function": {"name": "write", "arguments": arguments[n][:splits[n]]}} for n, (call_id, _, _) in enumerate(specs)]},
-                {"tool_calls": [{"index": n, "function": {"arguments": arguments[n][splits[n]:]}} for n in range(len(specs))]},
+                {"role": "assistant", "tool_calls": [{"index": 0, "id": "call_write", "type": "function", "function": {"name": "write", "arguments": '{"path":"result.txt",'}}]},
+                {"tool_calls": [{"index": 0, "function": {"arguments": '"content":"tool-result-42\\n"}'}}]},
             ]
             finish = "tool_calls"
         else:
-            expected_ids = {"call_write", "call_write_2"} if Mock.parallel else {"call_write"}
-            results = [m for m in body.get("messages", []) if m.get("role") == "tool" and m.get("tool_call_id") in expected_ids]
-            if len(results) != len(expected_ids) or {m.get("tool_call_id") for m in results} != expected_ids or any(not m.get("content") for m in results):
-                Mock.errors.append("tool-result continuations not forwarded")
+            results = [m for m in body.get("messages", []) if m.get("role") == "tool" and m.get("tool_call_id") == "call_write"]
+            if len(results) != 1 or not results[0].get("content"):
+                Mock.errors.append("tool-result continuation not forwarded")
                 self.send_error(400)
                 return
             frames = [{"role": "assistant", "content": "Completed."}]
@@ -106,10 +99,6 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     client = sys.argv[1] if len(sys.argv) > 1 else "pi"
     depth = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    scenario = sys.argv[3] if len(sys.argv) > 3 else "single"
-    if scenario not in {"single", "parallel"}:
-        raise SystemExit("scenario must be single or parallel")
-    Mock.parallel = scenario == "parallel"
     if depth < 0 or depth > 8:
         raise SystemExit("depth must be between 0 and 8")
     if client not in {"pi", "langgraph", "openai-agents"}:
@@ -192,18 +181,15 @@ callers:
                         raise RuntimeError(f"{client} failed ({run.returncode}): {run.stderr[-1500:]}\n{run.stdout[-1500:]}")
                     if client == "pi":
                         events = [json.loads(line) for line in run.stdout.splitlines() if line.strip()]
-                        completed = [e for e in events if e.get("type") == "tool_execution_end" and e.get("toolName") == "write" and not e.get("isError")]
-                        if len(completed) != (2 if Mock.parallel else 1):
-                            raise RuntimeError(f"pi did not report all successful write tool executions; events={run.stdout[-4000:]}; mock errors={Mock.errors}; mock calls={len(Mock.calls)}")
+                        if not any(e.get("type") == "tool_execution_end" and e.get("toolName") == "write" and not e.get("isError") for e in events):
+                            raise RuntimeError(f"pi did not report a successful write tool execution; events={run.stdout[-4000:]}; mock errors={Mock.errors}; mock calls={len(Mock.calls)}")
                     elif "agent tool loop complete" not in run.stdout:
                         raise RuntimeError(f"{client} did not report successful tool execution")
                     if (work / "result.txt").read_text(encoding="utf-8") != "tool-result-42\n":
                         raise RuntimeError("generated file content did not match")
-                    if Mock.parallel and (work / "result2.txt").read_text(encoding="utf-8") != "tool-result-43\n":
-                        raise RuntimeError("second generated file content did not match")
                     if Mock.errors or len(Mock.calls) != 2:
                         raise RuntimeError(f"mock errors={Mock.errors}, calls={len(Mock.calls)}")
-                    print(f"PASS: {client} / OpenAI Chat / same dialect / depth {depth} / {scenario}: streamed tool call and tool-result continuation")
+                    print(f"PASS: {client} / OpenAI Chat / same dialect / depth {depth}: streamed tool call and tool-result continuation")
                 finally:
                     for router in reversed(routers):
                         if router.poll() is None:

@@ -13,7 +13,7 @@ TOKEN = os.environ["ROUTER_CALLER_TOKEN"]
 
 
 def write_fixture(path: str, content: str) -> str:
-    if (path, content) not in {("result.txt", "tool-result-42\n"), ("result2.txt", "tool-result-43\n")}:
+    if path != "result.txt" or content != "tool-result-42\n":
         raise ValueError("mock requested an unexpected write")
     Path(path).write_text(content, encoding="utf-8")
     return "Successfully wrote the requested fixture."

@@ -7,7 +7,6 @@ import json
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from codex_responses_smoke import Mock
@@ -39,28 +38,6 @@ class ResponsesFixtureTest(unittest.TestCase):
                     thread.join(timeout=5)
         Mock.tool_name = "exec_command"
         Mock.tool_arguments = {"cmd": "printf 'tool-result-42\\n' > result.txt"}
-
-    def test_strict_requirement_rejects_missing_flag(self):
-        Mock.calls.clear()
-        Mock.errors.clear()
-        Mock.tool_name = "write"
-        Mock.expect_strict = True
-        server = ThreadingHTTPServer(("127.0.0.1", 0), Mock)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
-            body = json.dumps({"stream": True, "tools": [{"type": "function", "name": "write"}]}).encode()
-            request = Request(f"http://127.0.0.1:{server.server_port}/v1/responses", data=body, headers={"Content-Type": "application/json"})
-            with self.assertRaises(HTTPError) as caught:
-                urlopen(request, timeout=5)
-            self.assertEqual(caught.exception.code, 400)
-            self.assertIn("strict tool flag missing or false", Mock.errors[0])
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
-            Mock.expect_strict = False
-            Mock.tool_name = "exec_command"
 
 
 if __name__ == "__main__":

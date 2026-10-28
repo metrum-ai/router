@@ -34,7 +34,6 @@ def main():
     Mock.calls.clear()
     Mock.errors.clear()
     Mock.tool_name = "write"
-    Mock.expect_strict = client == "openai-agents"
     Mock.tool_arguments = {"path": "result.txt", "content": "tool-result-42\n"}
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), Mock)
     thread = threading.Thread(target=upstream.serve_forever, daemon=True)
@@ -92,7 +91,7 @@ callers:
                         command = [sys.executable, str(ROOT / "tests/agent_compat/sdk_client.py"), client]
                     run = subprocess.run(command, cwd=work, env=child_env, capture_output=True, text=True, timeout=90)
                     if run.returncode:
-                        raise RuntimeError(f"{client} failed ({run.returncode}), mock errors={Mock.errors}: {run.stderr[-1500:]}\n{run.stdout[-1500:]}")
+                        raise RuntimeError(f"{client} failed ({run.returncode}): {run.stderr[-1500:]}\n{run.stdout[-1500:]}")
                     if client == "pi":
                         events = [json.loads(line) for line in run.stdout.splitlines() if line.strip()]
                         if not any(e.get("type") == "tool_execution_end" and e.get("toolName") == "write" and not e.get("isError") for e in events):

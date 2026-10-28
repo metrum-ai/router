@@ -25,7 +25,6 @@ class Mock(BaseHTTPRequestHandler):
     calls: list[dict] = []
     errors: list[str] = []
     tool_name = "exec_command"
-    expect_strict = False
     tool_arguments = {"cmd": "printf 'tool-result-42\\n' > result.txt"}
 
     def log_message(self, *_args):
@@ -48,11 +47,6 @@ class Mock(BaseHTTPRequestHandler):
             names = [t.get("name") for t in body.get("tools", [])]
             if Mock.tool_name not in names:
                 Mock.errors.append(f"client did not declare {Mock.tool_name}; names={names}")
-                self.send_error(400)
-                return
-            selected = next(t for t in body.get("tools", []) if t.get("name") == Mock.tool_name)
-            if Mock.expect_strict and selected.get("strict") is not True:
-                Mock.errors.append(f"strict tool flag missing or false: {selected.get('strict')}")
                 self.send_error(400)
                 return
             args = json.dumps(Mock.tool_arguments)

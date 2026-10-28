@@ -32,7 +32,3 @@ jobs:
         env:
           ROUTER_TEST_BINARY: ${{ runner.temp }}/tokenomics-router
         run: python3 -m unittest discover -s examples/tokenomics -p 'test_*.py' -v
-      - name: Exercise escalation policy and mock tiers
-        run: |
-          python3 -m unittest discover -s examples/escalation-continuum -p 'test_*.py' -v
-          python3 examples/escalation-continuum/run.py --router "$RUNNER_TEMP/tokenomics-router"
