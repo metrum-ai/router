@@ -64,6 +64,8 @@ server:
     record_candidates: true
     record_cache_reasons: true
   upstream:
+    # Maximum Metrum AI Router hops per data-plane request (default 16; 1..128).
+    max_router_hops: 16
     timeout_ms: 600000
     default_attempt_timeout_ms: 0
     # Successful upstream responses larger than this are rejected before decode.
