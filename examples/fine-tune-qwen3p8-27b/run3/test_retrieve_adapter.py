@@ -1,9 +1,10 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 """Offline failure-path tests; no SSH, GPU or provider calls."""
-import contextlib,hashlib,io,subprocess,tempfile,unittest
+import contextlib,hashlib,io,json,subprocess,tempfile,unittest
 from pathlib import Path
 import retrieve_adapter as retrieve
+import finish_run
 
 class RetrievalTests(unittest.TestCase):
     def test_failed_retrieval_retries_and_never_requests_teardown(self):
@@ -31,5 +32,26 @@ class RetrievalTests(unittest.TestCase):
             self.assertEqual(set(manifest),set(retrieve.FILES))
             for name in retrieve.FILES:self.assertEqual((out/name).read_bytes(),payload);self.assertEqual(manifest[name]['sha256'],expected)
             self.assertTrue((out/'manifest.json').exists())
+
+    def test_finish_requires_both_gate_and_verified_adapter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            s=Path(tmp);r=s/'gate-results';r.mkdir();a=s/'final-adapter';a.mkdir()
+            names=['finalization.json','quality.summary.json','ifeval.summary.json','mmlu-pro.summary.json','sample1.summary.json','sample2.summary.json','sample3.summary.json','outcome.json']
+            hashes={}
+            for name in names:
+                value=b'{"status":"fail"}' if name=='outcome.json' else b'{}';(r/name).write_bytes(value);hashes[name]=hashlib.sha256(value).hexdigest()
+            (s/'gate-finalization.json').write_text(json.dumps({'instance_id':'vm','attempted':True,'status':{'gate':'fail','errors':[]},'verified_sha256':hashes}))
+            (s/'artifact-receipt.json').write_text(json.dumps({'instance_id':'vm','snapshot':'test'}))
+            with self.assertRaises(FileNotFoundError):finish_run.finish(s,'vm')
+            self.assertFalse((s/'done.txt').exists())
+            manifest={}
+            for name in retrieve.FILES:
+                data=name.encode();(a/name).write_bytes(data);manifest[name]={'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+            (a/'manifest.json').write_text(json.dumps(manifest))
+            (a/'adapter_model.safetensors').write_bytes(b'corrupt')
+            with self.assertRaisesRegex(ValueError,'adapter checksum'):finish_run.finish(s,'vm')
+            self.assertFalse((s/'done.txt').exists())
+            (a/'adapter_model.safetensors').write_bytes(b'adapter_model.safetensors')
+            finish_run.finish(s,'vm');self.assertEqual((s/'done.txt').read_text(),'GPU-DONE #425\n')
 
 if __name__=='__main__':unittest.main()
