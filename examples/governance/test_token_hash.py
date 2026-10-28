@@ -11,8 +11,8 @@ spec=importlib.util.spec_from_file_location('catalog_hash',ROOT/'examples/catalo
 
 class TokenHashTests(unittest.TestCase):
     def test_routerctl_replaces_legacy_and_removes_raw_token_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            state=Path(tmp);ctl=secure.build(ROOT,state)
+        with tempfile.TemporaryDirectory(dir='/dev/shm') as tmp:
+            state=Path(tmp);ctl=secure.prepare(ROOT)
             caller={'token_sha256':'obsolete'};token='rtr_metrum_demo_project_dev_k424_'+'x'*32
             secure.apply(caller,ctl,token,state)
             self.assertNotIn('token_sha256',caller)

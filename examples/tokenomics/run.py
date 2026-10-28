@@ -104,7 +104,7 @@ def main():
                              pricing_source='https://example.invalid/local-excludes-compute',pricing_updated_at=settings['mock_pricing_date'])
             provider['models']={'target':model}; cfg['providers']={'backend':provider}
             cfg['models']={'demo':{'strategy':'static','targets':[{'provider':'backend','model_ref':'target'}]}}
-            prototype=cfg['callers'][0]; cfg['callers']=[]; ctl=secure.build(ROOT,state)
+            prototype=cfg['callers'][0]; cfg['callers']=[]; ctl=secure.prepare(ROOT)
             for user in tokens:
                 caller=dict(prototype); caller.update(id=user,owner_user=user,project='project',environment='dev',allow=['demo'])
                 secure.apply(caller,ctl,tokens[user],state); caller['quota']={'day':{'requests':settings[user+'_daily_request_limit'],'tokens':100000},'month':{'requests':0,'tokens':100000},'soft_pct':80}
