@@ -137,8 +137,8 @@ on Chat, and Claude Code on Messages: one streamed tool use followed by a
 client-executed tool result at one same-dialect router hop. Each of these four
 local cases passed once (1/1); this is a deterministic smoke, not a statistical
 pass rate or a claim about live providers. The Claude case allows the
-context-management beta on its test target. A Codex Responses case is also
-provided, but on the local test host it was blocked by denied unprivileged
+context-management beta on its test target. A Codex Responses case passed
+once on a sandbox-capable CI VM, but was blocked locally by denied unprivileged
 user namespaces; see [the suite README](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md).
 
 Other clients/surfaces, cross-dialect paths, parallel calls, chain depths and

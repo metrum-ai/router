@@ -83,6 +83,14 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def runtime_environment():
+    env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
+    # setup-python on CI may need this to load its shared libpython.
+    if "LD_LIBRARY_PATH" in os.environ:
+        env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+    return env
+
+
 def main():
     # Let cancellation unwind subprocess and router cleanup.
     def interrupted(_signum, _frame):
@@ -102,7 +110,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix="router-agent-compat-") as tmp:
             work = Path(tmp)
-            env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
+            env = runtime_environment()
             binary = work / "router"
             subprocess.run(["go", "build", "-tags", "dev_no_license", "-o", str(binary), "./cmd/metrum-ai-router"], cwd=ROOT, env=env, check=True)
             port = free_port()
