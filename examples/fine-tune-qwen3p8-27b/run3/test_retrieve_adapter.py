@@ -33,6 +33,20 @@ class RetrievalTests(unittest.TestCase):
             for name in retrieve.FILES:self.assertEqual((out/name).read_bytes(),payload);self.assertEqual(manifest[name]['sha256'],expected)
             self.assertTrue((out/'manifest.json').exists())
 
+    def test_successful_copy_with_wrong_hash_is_not_promoted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);out=root/'out';calls=[];errors=io.StringIO();expected=hashlib.sha256(b'expected').hexdigest()
+            def runner(argv,**kwargs):
+                calls.append(argv)
+                if argv[0]=='ssh' and 'sha256sum' in argv[-1]:return subprocess.CompletedProcess(argv,0,(expected+'  /data/adapter/file\n').encode(),b'')
+                if argv[0]=='scp':Path(argv[-1]).write_bytes(b'wrong')
+                else:kwargs['stdout'].write(b'also wrong')
+                return subprocess.CompletedProcess(argv,0,b'',b'')
+            with contextlib.redirect_stderr(errors),self.assertRaisesRegex(RuntimeError,'hash mismatched'):
+                retrieve.retrieve('user@127.0.0.1',22,root/'key',root/'known','/data',out,runner=runner,sleep=lambda _:None)
+            self.assertEqual(sum(a[0]=='scp' for a in calls),3);self.assertIn('SHA-256 mismatch',errors.getvalue())
+            self.assertFalse((out/'adapter_config.json').exists());self.assertFalse((out/'manifest.json').exists());self.assertFalse((root/'done.txt').exists())
+
     def test_finish_requires_both_gate_and_verified_adapter(self):
         with tempfile.TemporaryDirectory() as tmp:
             s=Path(tmp);r=s/'gate-results';r.mkdir();a=s/'final-adapter';a.mkdir()
