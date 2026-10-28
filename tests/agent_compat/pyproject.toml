@@ -1,0 +1,12 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "router-agent-compat"
+version = "0.0.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "langgraph==1.2.18",
+  "langchain-openai==1.7.3",
+  "openai-agents==0.24.0",
+]

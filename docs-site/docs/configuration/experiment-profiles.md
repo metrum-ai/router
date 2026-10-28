@@ -81,19 +81,30 @@ sorted profile-name order applies, so resolution is deterministic.
 
 ## Telemetry and provenance
 
-Upstream timing is measured independently of pacing: the usage row keeps
-`upstream_duration_ms` / upstream token rates, while `ttfb_ms` /
-`downstream_duration_ms` include the injected delay. Every paced request
-records request-trace events:
+For native same-dialect streams, `ttfb_ms` is measured after the first
+frame is written and flushed by the router, including profile delay. It is a
+router-side observation, not a guarantee of when a remote client receives the
+frame. The trace event `upstream_first_byte` records when the router first
+reads bytes from the upstream body; `downstream_first_frame` records the first
+flushed downstream frame. Their `duration_ms` values are measured from router
+request start. `downstream_duration_ms` includes paced writes; for native
+Responses it starts after the first frame is flushed and therefore excludes
+the first-frame wait. Translated streams may emit a synthesized downstream
+frame before reading the first upstream byte.
 
-- `experiment_profile_applied` — profile name and profile hash (sha256 of
-  the canonical profile JSON) at stream start,
-- `experiment_profile_pacing` — profile name, hash, and total injected
-  milliseconds at completion.
+A synchronous proxy cannot independently measure provider generation time
+while pacing reads and writes: backpressure can slow or buffer the upstream.
+For a profile-paced upstream stream, `upstream_duration_ms` and derived
+upstream token rates are therefore **null**, not independent generation
+measurements. `paced_upstream_proxy_wall` records the elapsed upstream-call
+wall time, including injected waits and backpressure; subtracting the injected
+wait does not reliably recover provider generation time. Unpaced and
+non-streaming paths retain their existing timing semantics.
 
-Use these to separate injected delay from real upstream behavior in the
-analysis. Active concurrency, retries, and 429s remain in the existing
-attempt/trace telemetry.
+Every paced request also records `experiment_profile_applied` (profile name
+and versioned hash) and `experiment_profile_pacing` (total injected
+milliseconds) trace events. Active concurrency, retries, and 429s remain in
+the existing attempt/trace telemetry.
 
 ## Measurement tolerances
 
