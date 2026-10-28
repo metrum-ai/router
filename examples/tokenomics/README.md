@@ -15,6 +15,9 @@ independently reconciled provider invoice.
 
 ## How to run
 
+Go is required: the demo builds `routerctl` locally and uses `callers hash`
+to create PBKDF2 token verifiers in private state.
+
 Prerequisites: Go, Python 3 and `uv`. From the repository root:
 
 ```sh

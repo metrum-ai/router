@@ -1,0 +1,3 @@
+2026-10-28: bash examples/governance/oidc-smoke.sh
+PASS: router login/callback/logout and OIDC-session report authorization integration tests, with synthetic loopback OIDC issuer.
+No real identity provider or paid upstream was used.
