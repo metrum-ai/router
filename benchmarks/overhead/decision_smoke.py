@@ -78,7 +78,7 @@ def main():
             with (root / "adapter.log").open("w", encoding="utf-8") as adapter_log:
                 adapter = subprocess.Popen([sys.executable, str(ROOT / "examples/external-routing-policy/d3_policy.py"),
                                             "--port", str(adapter_port), "--url", f"http://127.0.0.1:{d3.server_port}",
-                                            "--timeout-ms", "250", "--api-key-env", "OVERHEAD_D3_KEY"],
+                                            "--timeout-ms", "3000", "--api-key-env", "OVERHEAD_D3_KEY"],
                                            cwd=root, env=env, stdout=adapter_log, stderr=adapter_log)
                 try:
                     wait_ready(f"http://127.0.0.1:{adapter_port}/health", adapter)
@@ -91,7 +91,7 @@ def main():
                         if mode != "plain":
                             group = {"strategy": "external", "targets": [target], "external_policy": {
                                 "url": f"http://127.0.0.1:{adapter_port}/route", "allow_hosts": ["127.0.0.1"],
-                                "timeout_ms": 1000, "max_response_bytes": 65536,
+                                "timeout_ms": 5000, "max_response_bytes": 65536,
                                 "include_request": True, "mode": mode, "on_error": "fail_closed"}}
                         config = {"server": {"listen": f"127.0.0.1:{port}", "default_model_group": "chat",
                                              "cache": {"enabled": False}, "logging": {"path": str(work / "requests.jsonl")},

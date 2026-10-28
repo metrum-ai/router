@@ -353,6 +353,7 @@ test-fast: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
