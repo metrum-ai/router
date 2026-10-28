@@ -1,0 +1,77 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Weekly document Q&A case study
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: weekly-document-qa
+  cancel-in-progress: false
+jobs:
+  rerun:
+    if: github.repository == 'metrum-ai/router' && github.ref == 'refs/heads/main'
+    runs-on: router-arc
+    environment: case-study-weekly
+    timeout-minutes: 30
+    steps:
+      - name: Check provider credentials
+        id: credentials
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: |
+          if [[ -n "$OPENAI_API_KEY" && -n "$FIREWORKS_API_KEY" ]]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo 'Weekly case study skipped: provider credentials unavailable.'
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.credentials.outputs.enabled == 'true'
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: steps.credentials.outputs.enabled == 'true'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.credentials.outputs.enabled == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install pinned YAML parser
+        if: steps.credentials.outputs.enabled == 'true'
+        run: python3 -m pip install 'PyYAML==6.0.3'
+      - name: Build router
+        if: steps.credentials.outputs.enabled == 'true'
+        run: go build -o "$RUNNER_TEMP/case-study-router" ./cmd/metrum-ai-router
+      - name: Run paid paired study
+        if: steps.credentials.outputs.enabled == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: python3 examples/case-studies/common/weekly.py --router "$RUNNER_TEMP/case-study-router" --out-dir "$RUNNER_TEMP/case-study-audit"
+      - name: Ensure sanitized failure audit exists
+        if: always() && steps.credentials.outputs.enabled == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/case-study-audit"
+          if [[ ! -f "$RUNNER_TEMP/case-study-audit/audit.md" ]]; then
+            printf '### Weekly document-Q&A rerun\nStatus: **incomplete**; no verified summary. Provider charges may be unknown; reconcile before retrying.\nhttps://github.com/metrum-ai/router/actions/runs/%s\n' "$GITHUB_RUN_ID" > "$RUNNER_TEMP/case-study-audit/audit.md"
+          fi
+      - name: Save sanitized audit evidence
+        if: always() && steps.credentials.outputs.enabled == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: weekly-document-qa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/case-study-audit/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Append audit entry to issue 423
+        if: always() && steps.credentials.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST repos/metrum-ai/router/issues/423/comments -F "body=@$RUNNER_TEMP/case-study-audit/audit.md" --silent

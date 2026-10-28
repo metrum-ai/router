@@ -192,6 +192,11 @@ api-compat-ts:
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
+# Local in-process concurrency proof; no providers or database resources.
+.PHONY: governance-load
+governance-load:
+	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
+
 # Real agent clients against a loopback scripted upstream; no hosted calls.
 .PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
 agent-tool-mock:
@@ -332,9 +337,10 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
-	$(PYTHON) -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
+	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
