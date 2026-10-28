@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- YAML-configured providers can opt in to `upstream_kind: router` for a
+  separately authenticated trusted router, preserving its rate-limit 429 or
+  typed 503 and valid `Retry-After` after fallbacks are exhausted (#496).
+  This does not trust `Via`; database-backed config-set projection rejects the
+  field until it can persist the setting safely.
+
 - Router chains append a sanitized router-only `Via` and stop at the configured
   hop limit (default 16) with HTTP 508; malformed entries are ignored, other
   proxy entries are not forwarded, and upstream 508 is not retried (#430).
