@@ -37,7 +37,7 @@ versions are in `package-lock.json` and `uv.lock`.
 | LangGraph 1.2.18 | Chat, streamed tool call, one hop, same dialect | 1/1 pass |
 | OpenAI Agents SDK 0.24.0 | Chat, streamed tool call, one hop, same dialect | 1/1 pass |
 | Claude Code 2.1.296 | Messages, streamed tool use, one hop, same dialect | 1/1 pass with allowed beta |
-| Codex 0.162.0 | Responses, streamed tool call, one hop, same dialect | blocked locally: namespace creation denied; CI must execute on a capable host |
+| Codex 0.162.0 | Responses, streamed tool call, one hop, same dialect | 1/1 pass on the sandbox-capable CI VM; blocked locally because namespace creation was denied |
 
 `make agent-chain-mock` extends the same fixtures to depths 0, 1, 2, 3 and
 5, collecting a JSON result for each of these four clients. Depth 0 connects
