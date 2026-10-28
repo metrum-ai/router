@@ -1,3 +1,6 @@
+<!-- Copyright 2026 Metrum AI -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Governance load: reservation baseline (#431)
 
 Run `make governance-load` to repeat the in-process reservation and caller
