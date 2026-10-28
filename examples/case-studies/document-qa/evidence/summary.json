@@ -1,0 +1,61 @@
+{
+  "arms": {
+    "frontier": {
+      "attempts": 5,
+      "billing_status": "unavailable",
+      "latency_ms": {
+        "p50": 1260.668,
+        "p95": 1503.168
+      },
+      "pass_rate": 1.0,
+      "passes": 5,
+      "provider_billed_usd": null,
+      "request_count": 5,
+      "router_recorded_cost_usd": "0.001050",
+      "routing_mix": {
+        "gpt-6.1-sol": {
+          "requests": 5,
+          "share": 1.0
+        }
+      },
+      "wilson_ci95": [
+        0.5655175352168251,
+        1.0
+      ]
+    },
+    "routed": {
+      "attempts": 5,
+      "billing_status": "unavailable",
+      "latency_ms": {
+        "p50": 1053.485,
+        "p95": 1864.055
+      },
+      "pass_rate": 1.0,
+      "passes": 5,
+      "provider_billed_usd": null,
+      "request_count": 5,
+      "router_recorded_cost_usd": "0.0006110",
+      "routing_mix": {
+        "accounts/fireworks/models/deepseek-v4p1-flash-1017": {
+          "requests": 3,
+          "share": 0.6
+        },
+        "gpt-6.1-sol": {
+          "requests": 2,
+          "share": 0.4
+        }
+      },
+      "wilson_ci95": [
+        0.5655175352168251,
+        1.0
+      ]
+    }
+  },
+  "billing_note": "Receipt authenticity, request attribution and invoice reconciliation require independent verification; missing receipts are not zero cost.",
+  "paired": {
+    "losses": 0,
+    "wins": 0
+  },
+  "verifier": "document-qa/independent-verifier",
+  "workload": "document-qa"
+}

@@ -1,0 +1,170 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Runtime copy with caller token fields omitted; not directly runnable.
+server:
+  listen: 127.0.0.1:18123
+  default_model_group: routed
+  responses:
+    model_identity: requested_group
+  identifiers:
+    mode: passthrough
+  cache:
+    enabled: false
+    max_bytes: 134217728
+    default_ttl: 15m
+  logging:
+    path: /state/requests.jsonl
+    rotate_mb: 64
+    keep: 7
+  usage_db:
+    enabled: true
+    driver: sqlite
+    path: /state/usage.sqlite
+    migration_policy: auto-safe
+  diagnostics:
+    enabled: true
+    retention_days: 7
+    store_sanitized_upstream_errors: true
+    max_error_bytes: 2048
+  retention:
+    enabled: false
+  admin_auth:
+    basic:
+      enabled: false
+      users: []
+  admin_reports:
+    enabled: false
+state_path: /state/router-state.json
+users:
+- id: local-dev
+  name: Local Developer
+  type: service_account
+  status: active
+projects:
+- id: example-project
+  name: Example Project
+  status: active
+project_memberships:
+- user_id: local-dev
+  project: example-project
+  role: developer
+  status: active
+providers:
+  fireworks:
+    base_url: https://api.fireworks.ai/inference/v1
+    dialect: openai-chat
+    auth_scheme: bearer
+    api_key: ${FIREWORKS_API_KEY}
+    api_key_env: FIREWORKS_API_KEY
+    key_id: fireworks-local
+    models:
+      deepseek-v4p1-flash-1017:
+        model: accounts/fireworks/models/deepseek-v4p1-flash-1017
+        tier: coding
+        context_tokens: 1048576
+        input_modalities:
+        - text
+        output_modalities:
+        - text
+        input_price_per_million_usd: 0.3
+        cached_input_price_per_million_usd: 0.006
+        output_price_per_million_usd: 1.2
+        pricing_source: https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017
+        pricing_updated_at: '2026-10-19'
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-chat
+        tool_support:
+          openai_chat:
+          - tools
+  openai:
+    base_url: https://api.openai.com/v1
+    dialect: openai-responses
+    api_key: ${OPENAI_API_KEY}
+    api_key_env: OPENAI_API_KEY
+    key_id: openai-local
+    models:
+      gpt-6.1-sol:
+        model: gpt-6.1-sol
+        tier: frontier
+        context_tokens: 1050000
+        input_modalities:
+        - text
+        output_modalities:
+        - text
+        input_price_per_million_usd: 2.0
+        cached_input_price_per_million_usd: 0.1
+        output_price_per_million_usd: 10.0
+        pricing_source: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+        pricing_updated_at: '2026-10-11'
+        pricing_notes: Standard rates. Prompts over 272K input tokens are 2x input
+          and cache rates and 1.5x output for the full request; cache writes are 1.25x
+          the uncached input rate. Default reasoning effort is medium; tool calling
+          needs the Responses API (chat_to_responses bridge).
+        force_store_false: true
+        tool_support:
+          openai_responses:
+          - function
+        request_shape_support:
+          supported_inbound_dialects:
+          - openai-responses
+          - openai-chat
+          validation_status: passed
+          validation_notes: local-pi chat_to_responses bridge for coding agent tools
+        reasoning:
+          supported: true
+          mode: opt_in
+          control: effort_enum
+          default_on: false
+models:
+  routed:
+    strategy: weighted
+    targets:
+    - provider: fireworks
+      model_ref: deepseek-v4p1-flash-1017
+      weight: 70
+    - provider: openai
+      model_ref: gpt-6.1-sol
+      weight: 30
+      bridges:
+        chat_to_responses:
+          enabled: true
+          tools: true
+          tool_choice: true
+          text: true
+  frontier:
+    strategy: static
+    targets:
+    - provider: openai
+      model_ref: gpt-6.1-sol
+      bridges:
+        chat_to_responses:
+          enabled: true
+          tools: true
+          tool_choice: true
+          text: true
+callers:
+- id: local-dev-example-project-dev
+  owner_user: local-dev
+  project: example-project
+  environment: dev
+  status: active
+  allow:
+  - routed
+  - frontier
+  rate:
+    rpm: 2400
+    tpm: 4000000
+    concurrent: 160
+  quota:
+    day:
+      requests: 100000
+      tokens: 400000000
+    month:
+      requests: 0
+      tokens: 8000000000
+    soft_pct: 80
+  key:
+    lifetime_tokens: 40000000000
+    soft_pct: 90
+    on_exhaust: disable
