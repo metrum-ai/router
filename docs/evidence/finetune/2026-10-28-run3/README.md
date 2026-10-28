@@ -18,4 +18,16 @@ These regressions stand; neither was rerun. See [IFEval](ifeval.summary.json) an
 - Three direct SCP attempts for the adapter failed with permission denied. A bounded read-only `sudo -n` fallback succeeded; host and local checksums matched. Adapter weights SHA-256: `40dd0512e702476564b5f863f072f46413aab90e59bbbe14e5fadddd7a7a7ed0`. Adapter and aggregate gate evidence: snapshot `aa354e18` (`router/v45-proof/425-run3-final`); server transport logs: `d7160d5d`. Raw held-out prompts and model outputs are not published here.
 - The completion barrier preceded teardown. The instance, exact provider key and local keys were independently verified absent. Provider `cost_estimate` was $7.1823922862 for this instance; judge usage-derived estimate was $1.2424275. Neither is an invoice, and lagged charges are not included.
 
-An authorized tool-only infrastructure-error rerun is being prepared using the saved adapter without retraining. Its results, when available, must identify the system-message normalization and remain separate from this original formal result.
+## Tool-only infrastructure-error rerun: incomplete
+
+A single-H100 rerun used the checksum-verified saved adapter, **without retraining**. It selected the original 200 frozen tool cases per arm, retained their labels and scorer, and joined the two leading system texts with two newlines at the local upstream boundary. This changes the wire representation; it is not a replacement for the original formal gate. No regression or sampling cohort was rerun, and no hosted judge was used.
+
+| Per arm | Count |
+|---|---:|
+| HTTP 200 model responses | 26 |
+| HTTP 502 `upstream-failed` | 8 |
+| HTTP 503 `quota-state-error` | 166 |
+
+The rerun attempted all 200 cases per arm, but **348 of 400 tool cases failed in transport**. Model responses were observed for 52 cases, unlike the original run, where all tool outcomes were unobserved. A complete telemetry join failed because request IDs were absent from the copied usage DB. Consequently, the rerun is **incomplete**, does not establish a valid tool-quality comparison and does not establish whether the +10-point criterion was met. The on-host partial summary scores missing outputs as zero and must not be interpreted as model quality.
+
+After the failure the local 64 MiB `/dev/shm` was full; the normalizer logged `no space left on device`, and the router returned `quota-state-error`. The prior combined evaluation state occupied 56 MiB. Pre-lease validation did not check free space on this shared tmpfs; the exhaustion is a strong infrastructure explanation, not a proven account of every individual error. No cases were retried. [Sanitized result and audit](tool-rerun-incomplete.json); partial aggregate and safety evidence snapshot `dbd3e554` (`router/v45-proof/425-tool-partial`). The last observed provider `cost_estimate` before teardown was $1.0886097082, not an actual charge or final invoice.
