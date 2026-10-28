@@ -3,12 +3,38 @@
 
 # Paired case-study evidence controls
 
-This is **partial infrastructure for #423**, not a live case study, billing
-receipt, quality certification or savings claim. It summarizes sanitized paired
-results for coding-agent, support-agent and document-Q&A workloads. It does not
-execute a model or the verifier. An operator must independently validate the
-workload, verifier, usage exports and provider billing evidence before making a
-claim. Failed attempts must not be removed from the planned denominator.
+This directory contains shared setup, extraction and evidence checks for #423.
+`analyze.py` summarizes paired results; it does not execute a model or a
+verifier. An operator must independently validate the workload, verifier and
+usage exports. Failed trials must not be removed from the denominator.
+
+## Local router setup
+
+Requires Python 3, `uv`, Go and approved provider credentials in environment
+variables `OPENAI_API_KEY` and `FIREWORKS_API_KEY`. Model calls cost money.
+Verify current prices and set a budget before running. Use a private tmpfs
+state directory; do not commit or publish it. From the repository root:
+
+```sh
+uv run --with pyyaml python examples/case-studies/common/setup.py \
+  --config examples/case-studies/common/config.example.json --state-dir /dev/shm/case423
+go build -o /tmp/case423-router ./cmd/metrum-ai-router
+/tmp/case423-router --config /dev/shm/case423/config.yaml
+```
+
+In a separate shell, check `curl -fsS http://127.0.0.1:18123/readyz` and follow
+the workload README. When done, stop the router and remove the private state.
+Never print, publish or copy provider credentials or the generated caller token.
+`config.example.json` has no keys; `evidence/router-config-sanitized.yaml` is
+the actual run's configuration with caller token fields removed (not runnable).
+Rates and source dates in the config must be verified and updated before a new run; `extract.py` checks the router's
+recorded costs against the request-time token counts and configured rates.
+Its output is a **usage-derived list-price calculation**, not a provider invoice.
+Invoices may not be attributable to a particular run. It rejects retries and
+fallbacks rather than pretending their costs are captured. The runners execute
+the frontier arm first and then the routed arm; they do not randomize order or
+control provider drift. The small fixture sets and confidence intervals cannot
+establish equivalence or generalize to production.
 
 Run the offline synthetic tests:
 
@@ -53,7 +79,7 @@ fabricating an exact receipt.
 
 Keep raw provider receipts, request IDs and task content private. Publish only
 reviewed, sanitized aggregates, configuration without credentials, and
-permission-cleared evidence. This partial utility does not yet implement the
-three agent workloads, the weekly paid rerun, or an external rerun.
+permission-cleared evidence. Weekly paid reruns and the required independent
+external reproduction must not be claimed until actually completed.
 
 Metrum AI

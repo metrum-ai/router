@@ -1,0 +1,122 @@
+[
+  {
+    "arm": "frontier",
+    "error": null,
+    "latency_ms": 1166.945,
+    "passed": true,
+    "request_ids": [
+      "request-0001"
+    ],
+    "retrieved_id": "leave",
+    "status": 200,
+    "trial_id": "leave"
+  },
+  {
+    "arm": "frontier",
+    "error": null,
+    "latency_ms": 1503.168,
+    "passed": true,
+    "request_ids": [
+      "request-0002"
+    ],
+    "retrieved_id": "refund",
+    "status": 200,
+    "trial_id": "refund"
+  },
+  {
+    "arm": "frontier",
+    "error": null,
+    "latency_ms": 1347.496,
+    "passed": true,
+    "request_ids": [
+      "request-0003"
+    ],
+    "retrieved_id": "security",
+    "status": 200,
+    "trial_id": "security"
+  },
+  {
+    "arm": "frontier",
+    "error": null,
+    "latency_ms": 1107.467,
+    "passed": true,
+    "request_ids": [
+      "request-0004"
+    ],
+    "retrieved_id": "shipping",
+    "status": 200,
+    "trial_id": "shipping"
+  },
+  {
+    "arm": "frontier",
+    "error": null,
+    "latency_ms": 1260.668,
+    "passed": true,
+    "request_ids": [
+      "request-0005"
+    ],
+    "retrieved_id": "invoice",
+    "status": 200,
+    "trial_id": "invoice"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "latency_ms": 1211.976,
+    "passed": true,
+    "request_ids": [
+      "request-0006"
+    ],
+    "retrieved_id": "leave",
+    "status": 200,
+    "trial_id": "leave"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "latency_ms": 1038.824,
+    "passed": true,
+    "request_ids": [
+      "request-0007"
+    ],
+    "retrieved_id": "refund",
+    "status": 200,
+    "trial_id": "refund"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "latency_ms": 755.703,
+    "passed": true,
+    "request_ids": [
+      "request-0008"
+    ],
+    "retrieved_id": "security",
+    "status": 200,
+    "trial_id": "security"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "latency_ms": 1864.055,
+    "passed": true,
+    "request_ids": [
+      "request-0009"
+    ],
+    "retrieved_id": "shipping",
+    "status": 200,
+    "trial_id": "shipping"
+  },
+  {
+    "arm": "routed",
+    "error": null,
+    "latency_ms": 1053.485,
+    "passed": true,
+    "request_ids": [
+      "request-0010"
+    ],
+    "retrieved_id": "invoice",
+    "status": 200,
+    "trial_id": "invoice"
+  }
+]
