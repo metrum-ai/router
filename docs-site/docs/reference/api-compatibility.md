@@ -143,15 +143,17 @@ user namespaces; see [the suite README](https://github.com/metrum-ai/router/blob
 
 Pi, LangGraph, and OpenAI Agents SDK also each passed one streamed tool loop
 with a Chat caller through a Chat-to-Responses bridge to a scripted Responses
-upstream.
+upstream. Each also passed one same-dialect Chat scenario with two streamed
+tool calls in one assistant turn and two results in the continuation; this
+proves neither simultaneous execution nor all parallel-tool shapes.
 
 An initial chain sweep runs each of the four native-dialect clients directly and
 through one, two, three and five same-dialect hops. All 20 local deterministic
 cells passed once; `make agent-chain-mock` produces a per-cell JSON report.
 This checks successful streamed tool execution and continuation, not complete
 stream equivalence or per-hop accounting. Codex remains untested in that
-sweep. Other clients/surfaces, other cross-dialect paths, parallel calls, loop
-protection and live nightly evidence remain open in #429 and #430.
+sweep. Other clients/surfaces, other cross-dialect paths, broader parallel-tool
+coverage, loop protection and live nightly evidence remain open in #429 and #430.
 
 ### Validation evidence (offline)
 
