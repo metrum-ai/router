@@ -1,0 +1,132 @@
+{
+  "suite_sha256": "894fdd2eb4989f75ad428a40e519200de8f066e6b0bc74db69501a060f52ee77",
+  "hardware": {
+    "gpu": "NVIDIA H200",
+    "count": 4,
+    "memory_mib_each": 143771
+  },
+  "baseline": {
+    "elapsed_seconds": 10.839316452038474,
+    "summary": {
+      "attempted": 88,
+      "completed_responses": 88,
+      "quality_passed": 56,
+      "by_domain": {
+        "biomedical": {
+          "attempted": 20,
+          "passed": 15
+        },
+        "coding": {
+          "attempted": 20,
+          "passed": 15
+        },
+        "finance": {
+          "attempted": 20,
+          "passed": 12
+        },
+        "math": {
+          "attempted": 20,
+          "passed": 6
+        },
+        "out-of-domain": {
+          "attempted": 8,
+          "passed": 8
+        }
+      },
+      "responses_per_second": 8.118593122488868,
+      "quality_passes_per_second": 5.166377441583825,
+      "latency_ms": {
+        "p50": 396.36148110730574,
+        "p99": 936.7057890712748,
+        "count": 88
+      },
+      "ttft_ms": {
+        "p50": 326.8785745021887,
+        "p99": 900.2915167307946,
+        "count": 88
+      },
+      "actual_gpu_cost_usd": null,
+      "actual_gpu_cost_per_quality_pass_usd": null
+    }
+  },
+  "experts": {
+    "elapsed_seconds": 13.064040947007015,
+    "summary": {
+      "attempted": 88,
+      "completed_responses": 88,
+      "quality_passed": 45,
+      "by_domain": {
+        "biomedical": {
+          "attempted": 20,
+          "passed": 11
+        },
+        "coding": {
+          "attempted": 20,
+          "passed": 13
+        },
+        "finance": {
+          "attempted": 20,
+          "passed": 13
+        },
+        "math": {
+          "attempted": 20,
+          "passed": 1
+        },
+        "out-of-domain": {
+          "attempted": 8,
+          "passed": 7
+        }
+      },
+      "responses_per_second": 6.736047472368103,
+      "quality_passes_per_second": 3.4445697301882343,
+      "latency_ms": {
+        "p50": 343.84005900938064,
+        "p99": 1514.6810312848493,
+        "count": 88
+      },
+      "ttft_ms": {
+        "p50": 304.23480150057003,
+        "p99": 909.0562946198031,
+        "count": 88
+      },
+      "actual_gpu_cost_usd": null,
+      "actual_gpu_cost_per_quality_pass_usd": null
+    }
+  },
+  "classifier": {
+    "attempted": 88,
+    "correct": 37,
+    "route_correct": 42,
+    "missing_decisions": 0,
+    "latency_ms": {
+      "p50": 0.0,
+      "p99": 1.0,
+      "count": 88
+    }
+  },
+  "expert_passes_by_routing": {
+    "provider_correct_true": {
+      "attempted": 42,
+      "passed": 26
+    },
+    "provider_correct_false": {
+      "attempted": 46,
+      "passed": 19
+    },
+    "classifier_correct_true": {
+      "attempted": 37,
+      "passed": 21
+    },
+    "classifier_correct_false": {
+      "attempted": 51,
+      "passed": 24
+    }
+  },
+  "paired": {
+    "expert_only_pass": 5,
+    "baseline_only_pass": 16,
+    "same_outcome": 67
+  },
+  "actual_cost_usd": null,
+  "oracle_routing": "unavailable: unselected expert outputs were not collected"
+}
