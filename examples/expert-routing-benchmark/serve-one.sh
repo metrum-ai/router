@@ -9,10 +9,10 @@ mode=${1:-}; root=${2:-}
 root=$(realpath "$root"); [[ $root =~ ^/[A-Za-z0-9_./-]+$ ]] || exit 2
 extra=()
 case "$mode" in
- baseline) gpu=all; port=8000; model=general; served=general-base; extra+=(--tensor-parallel-size 4) ;;
+ baseline) gpu=all; port=8000; model=general; served=general-base; extra+=(--tensor-parallel-size 4 --max-num-seqs 128) ;;
  biomedical) gpu=device=0; port=8001; model=medical-base; served=biomedical-base; extra+=(--enable-lora --max-lora-rank 64 --lora-modules biomedical-ft=/models/medical-adapter) ;;
- finance) gpu=device=1; port=8002; model=finance; served=finance-ft ;;
- math) gpu=device=2; port=8003; model=math; served=math-ft ;;
+ finance) gpu=device=1; port=8002; model=finance; served=finance-ft; extra+=(--max-num-seqs 128) ;;
+ math) gpu=device=2; port=8003; model=math; served=math-ft; extra+=(--max-num-seqs 128) ;;
  coding) gpu=device=3; port=8004; model=coding; served=coding-ft ;;
  *) echo 'usage: serve-one.sh baseline|biomedical|finance|math|coding /absolute/model-root' >&2; exit 2 ;;
 esac

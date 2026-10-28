@@ -31,11 +31,11 @@ start() {
 }
 if [[ $mode == experts ]]; then
   start biomedical 'device=0' 8001 medical-base biomedical-base --enable-lora --max-lora-rank 64 --lora-modules biomedical-ft=/models/medical-adapter
-  start finance 'device=1' 8002 finance finance-ft
-  start math 'device=2' 8003 math math-ft
+  start finance 'device=1' 8002 finance finance-ft --max-num-seqs 128
+  start math 'device=2' 8003 math math-ft --max-num-seqs 128
   start coding 'device=3' 8004 coding coding-ft
 else
-  start baseline all 8000 general general-base --tensor-parallel-size 4
+  start baseline all 8000 general general-base --tensor-parallel-size 4 --max-num-seqs 128
 fi
 trap - ERR
 printf '%s servers started; perform readiness and compatibility checks before measurement\n' "$mode"

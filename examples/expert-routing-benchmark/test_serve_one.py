@@ -26,6 +26,11 @@ exit 0
                 self.assertNotIn('--rm',run);self.assertNotIn('-e',run);self.assertNotIn('--env-file',run)
                 self.assertEqual(run[run.index('--gpus')+1],gpu)
                 self.assertIn('proof426-'+mode,run)
+                if mode in ('baseline','finance','math'):
+                    self.assertEqual(run[run.index('--max-num-seqs')+1],'128')
+                else:
+                    self.assertNotIn('--max-num-seqs',run)
+                if mode == 'baseline': self.assertEqual(run[run.index('--tensor-parallel-size')+1],'4')
                 self.assertTrue(any('sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34' in x for x in run))
 
     def test_stop_retains_labeled_containers(self):

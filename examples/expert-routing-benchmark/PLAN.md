@@ -19,7 +19,7 @@ before stopping or teardown. If the baseline cannot become ready, continue with
 the four single-GPU experts and report partial evidence, not parity. Four expert
 servers each get one GPU; the baseline serves the general base with tensor
 parallelism over all four. Use identical prompts, four caller keys, max-output limit, concurrency
-and decoding. Closed-loop concurrency four produces **matched concurrency and
+and decoding. Qwen3.8 baseline, finance and math launches use `--max-num-seqs 128`, including the four-GPU tensor-parallel baseline; the value is a proposed capacity fix and still requires readiness/compatibility smoke on the actual hardware. Closed-loop concurrency four produces **matched concurrency and
 case counts**, not a controlled equal arrival-rate workload. Measure actual
 elapsed rate. No hidden retries or score-based task replacement.
 

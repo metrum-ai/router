@@ -26,6 +26,7 @@ def command(mode, image):
                  '-m', 'vllm.entrypoints.openai.api_server', '--host', '0.0.0.0',
                  '--port', '8000', '--model', '/data/base', '--served-model-name',
                  'qwen-base', '--dtype', 'bfloat16', '--max-model-len', '8192',
+                 '--max-num-seqs', '128',
                  '--enable-lora', '--lora-modules', 'qwen-amd-ft=/data/adapter',
                  '--max-lora-rank', '8', '--gpu-memory-utilization', '0.90']
     else:

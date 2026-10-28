@@ -318,6 +318,8 @@ test-k8s-nvidia-llmd-compat:
 # Fine-tuning operator example: only tiny synthetic rows; never trains a model.
 .PHONY: ft-example-test
 ft-example-test:
+	python3 -m unittest discover -s examples/fine-tune-qwen3p8-27b/serve -p 'test_*.py' -v
+	bash -n examples/fine-tune-qwen3p8-27b/serve/run.sh examples/fine-tune-qwen3p8-27b/run3/serve_eval.sh
 	uv run --with pyyaml python -m unittest discover -s examples/fine-tune-qwen3p8-27b/amd -v
 	bash -n examples/fine-tune-qwen3p8-27b/amd/first-boot.sh
 	bash -n examples/fine-tune-qwen3p8-27b/amd/capture-env.sh
