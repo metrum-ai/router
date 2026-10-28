@@ -27,6 +27,8 @@ class DownloadTests(unittest.TestCase):
         if not executable:self.skipTest('pinned hf CLI dependency not installed')
         with tempfile.TemporaryDirectory() as home:
             env={'PATH':os.environ['PATH'],'HOME':home,'HF_HOME':home,'HF_HUB_OFFLINE':'1','HF_HUB_DISABLE_TELEMETRY':'1'}
+            # setup-python on CI needs its non-secret libpython search path.
+            if 'LD_LIBRARY_PATH' in os.environ:env['LD_LIBRARY_PATH']=os.environ['LD_LIBRARY_PATH']
             subprocess.run([executable,'download','--help'],env=env,check=True,stdout=subprocess.DEVNULL)
 
     def test_offline_host_wrapper_uses_uv_and_no_container(self):
