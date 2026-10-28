@@ -65,3 +65,15 @@ jobs:
           npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
       - name: Codex workspace sandbox tool continuation
         run: make agent-tool-mock-codex
+      - name: Codex sandbox chain matrix
+        run: |
+          python3 tests/agent_compat/run_codex_chain_test.py
+          python3 tests/agent_compat/run_codex_chain.py --output tests/agent_compat/.out/codex-chain-matrix.json
+      - name: Retain Codex chain results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codex-chain-pr-matrix
+          path: tests/agent_compat/.out/codex-chain-matrix.json
+          if-no-files-found: warn
+          retention-days: 14

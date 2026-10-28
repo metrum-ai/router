@@ -1,0 +1,78 @@
+{
+  "mode": "mock",
+  "note": "Provider-reported cached tokens; configured-price usage is not an invoice. Mock cache is simulated; local costs exclude compute.",
+  "requests": [
+    {
+      "arm": "pinned",
+      "group": "pinned",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "input_tokens": 10000,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.003024
+    },
+    {
+      "arm": "pinned",
+      "group": "pinned",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "input_tokens": 10000,
+      "cached_input_tokens": 8000,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.000672
+    },
+    {
+      "arm": "pinned",
+      "group": "pinned",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "input_tokens": 10000,
+      "cached_input_tokens": 8000,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.000672
+    },
+    {
+      "arm": "pinned",
+      "group": "pinned",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "input_tokens": 10000,
+      "cached_input_tokens": 8000,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.000672
+    },
+    {
+      "arm": "spread",
+      "group": "spread-a",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "input_tokens": 10000,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.003024
+    },
+    {
+      "arm": "spread",
+      "group": "spread-b",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash",
+      "input_tokens": 10000,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.003024
+    },
+    {
+      "arm": "spread",
+      "group": "spread-a",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "input_tokens": 10000,
+      "cached_input_tokens": 8000,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.000672
+    },
+    {
+      "arm": "spread",
+      "group": "spread-b",
+      "model": "accounts/fireworks/models/deepseek-v4p1-flash",
+      "input_tokens": 10000,
+      "cached_input_tokens": 8000,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.000672
+    }
+  ]
+}

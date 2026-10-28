@@ -102,7 +102,8 @@ pre-arm an independent deadline and spend teardown watcher in a separate Herdr
 tab before creating resources, and verify instance, keys and other resources
 are deleted. No container credentials via `-e` or `--env-file`; secrets, if
 needed, are mounted read-only from private tmpfs files. Use only the approved
-official serving image; no model inference or provider lease has occurred yet.
+official serving image; prior failed leases are documented below and no model
+inference has occurred.
 
 ### Lease safeguards (Vast)
 
@@ -145,3 +146,28 @@ called; SSH host trust is first-use. This same-host comparison can distinguish
 some format or timing behaviors but cannot test account-wide key registration or
 prove the original four-GPU host's root cause. Reconcile charges and obtain
 review for any authentication flow changes before another four-GPU lease.
+
+### Shadeform fallback
+
+After two inconclusive Vast diagnostics, Mac authorized the four-GPU fallback
+using a locally generated public key. Send **only the public half** to
+`/sshkeys/add` and pass its returned key ID explicitly at create time. Do not
+request the managed key, list SSH keys, or send a private key. Before even
+adding the public key, arm `shade_watcher.py` in another Herdr tab; it checks
+owner instance listing and simulates both instance and exact-key POST deletions.
+The instance request also includes provider auto-delete deadline and spend
+threshold. The watcher deletes only the unique intent instance and our exact
+key ID, then requires a successful key delete followed by the documented 404
+on the same delete endpoint. It never calls GET `/sshkeys`. It independently
+checks instance disappearance and removes local key files. An add or create
+with a lost response is not silently settled: the watcher continues, and an
+operator must reconcile its exact unique name/key fingerprint via an approved
+channel and supply the ID for deletion. Never mark an ambiguous operation
+terminal merely because it is not immediately visible.
+
+The $65 reservation/provider stop threshold leaves room within the $90
+budget after $6.382 observed on Vast, pending late charges. Elapsed-rate and
+Shadeform `cost_estimate` figures are not posted invoices or hard provider
+caps; report them separately from actual charges. The first SSH connection
+uses trust-on-first-use. No model or scoring work may start until the watcher
+and SSH are proven.

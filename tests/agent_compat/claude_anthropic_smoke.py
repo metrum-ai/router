@@ -39,6 +39,10 @@ class Mock(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         Mock.calls.append(body)
         index = len(Mock.calls)
+        if os.environ.get("AGENT_COMPAT_THINKING") == "1" and not isinstance(body.get("thinking"), dict):
+            Mock.errors.append("thinking config not forwarded")
+            self.send_error(400)
+            return
         if not body.get("stream") or index > 2:
             Mock.errors.append("unexpected stream flag or extra request")
             self.send_error(400)
@@ -56,11 +60,27 @@ class Mock(BaseHTTPRequestHandler):
                 ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": argument[len(argument)//2:]}}),
                 ("content_block_stop", {"type": "content_block_stop", "index": 0}),
             ]
+            if os.environ.get("AGENT_COMPAT_THINKING") == "1":
+                for _, event in events:
+                    event["index"] = 1
+                events = [
+                    ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}),
+                    ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "synthetic reasoning"}}),
+                    ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "synthetic-thinking-signature"}}),
+                    ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+                ] + events
             stop = "tool_use"
         else:
             blocks = [b for m in body.get("messages", []) if isinstance(m.get("content"), list) for b in m["content"] if isinstance(b, dict)]
             if not any(b.get("type") == "tool_result" and b.get("tool_use_id") == "toolu_read" and "tool-result-42" in json.dumps(b.get("content")) for b in blocks):
                 Mock.errors.append("tool_result continuation not forwarded")
+                self.send_error(400)
+                return
+            if os.environ.get("AGENT_COMPAT_THINKING") == "1" and not any(
+                b.get("type") == "thinking" and b.get("thinking") == "synthetic reasoning"
+                and b.get("signature") == "synthetic-thinking-signature" for b in blocks
+            ):
+                Mock.errors.append("thinking block or signature not forwarded")
                 self.send_error(400)
                 return
             events = [
@@ -183,6 +203,32 @@ callers:
                         raise RuntimeError("input file content changed")
                     if Mock.errors or len(Mock.calls) != 2:
                         raise RuntimeError(f"mock errors={Mock.errors}, calls={len(Mock.calls)}")
+                    report = os.environ.get("AGENT_COMPAT_METADATA_REPORT")
+                    if report:
+                        def controls(value, path=""):
+                            found = []
+                            if isinstance(value, dict):
+                                for key, item in value.items():
+                                    item_path = f"{path}.{key}" if path else key
+                                    if key == "cache_control":
+                                        found.append({"path": item_path, "type": item.get("type") if isinstance(item, dict) else None,
+                                                      "ttl": item.get("ttl") if isinstance(item, dict) else None})
+                                    else:
+                                        found.extend(controls(item, item_path))
+                            elif isinstance(value, list):
+                                for index, item in enumerate(value):
+                                    found.extend(controls(item, f"{path}[{index}]"))
+                            return found
+                        metadata = []
+                        for call in Mock.calls:
+                            thinking = call.get("thinking")
+                            if not isinstance(thinking, dict):
+                                thinking = {}
+                            metadata.append({"thinking": {key: thinking.get(key) for key in ("type", "budget_tokens")},
+                                             "cache_controls": sorted(controls(call), key=lambda item: item["path"])})
+                        fd = os.open(report, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                        with os.fdopen(fd, "w", encoding="utf-8") as output:
+                            json.dump(metadata, output, sort_keys=True)
                     print(f"PASS: claude-code / Anthropic Messages / same dialect / depth {depth}: streamed tool use and tool-result continuation")
                 finally:
                     for router in reversed(routers):

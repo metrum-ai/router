@@ -42,3 +42,9 @@ jobs:
         run: |
           python3 -m unittest discover -s examples/domain-experts -p 'test_*.py' -v
           python3 examples/domain-experts/run.py --router "$RUNNER_TEMP/tokenomics-router"
+      - name: Exercise simulated prefix caching
+        env:
+          ROUTER_TEST_BINARY: ${{ runner.temp }}/tokenomics-router
+        run: |
+          python3 examples/kv-cache-cost/run.py --router "$RUNNER_TEMP/tokenomics-router"
+          python3 -m unittest discover -s examples/kv-cache-cost -p 'test_*.py' -v

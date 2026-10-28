@@ -145,7 +145,11 @@ Pi, LangGraph, and OpenAI Agents SDK also each passed one streamed tool loop
 with a Chat caller through a Chat-to-Responses bridge to a scripted Responses
 upstream. Each also passed one same-dialect Chat scenario with two streamed
 tool calls in one assistant turn and two results in the continuation; this
-proves neither simultaneous execution nor all parallel-tool shapes.
+proves neither simultaneous execution nor all parallel-tool shapes. The OpenAI
+Agents SDK strict JSON response-format case additionally checks the schema's
+strict flag, fields and required list at depths 0, 1 and 3, while the SDK
+validates the returned typed output. These are mock cases, not arbitrary-schema
+or live-provider certification.
 
 An initial chain sweep runs each of the four native-dialect clients directly and
 through one, two, three and five same-dialect hops. All 20 local deterministic
