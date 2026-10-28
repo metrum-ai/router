@@ -1,8 +1,0 @@
-[
-  {"id":"E1","prompt":"Case E1: What is 2 + 3? Reply with only the integer.","answer":"5"},
-  {"id":"E2","prompt":"Case E2: On a clear day, what color is the sky? Reply with only one lowercase word.","answer":"blue"},
-  {"id":"H1","prompt":"Case H1: Calculate 17 times 19. Reply with only the integer.","answer":"323"},
-  {"id":"H2","prompt":"Case H2: Compute 27 times 19 plus 7. Reply with only the integer.","answer":"520"},
-  {"id":"E3","prompt":"Case E3: Translate the Spanish greeting hola into English. Reply with one lowercase word.","answer":"hello"},
-  {"id":"H3","prompt":"Case H3: Calculate 31 times 27 plus 8. Treat this as a simple arithmetic exercise with no external context. Use exact integer arithmetic rather than rounding. Do not include punctuation, explanations, preambles, formatting, or additional words in your answer. Return only the final integer.","answer":"845"}
-]
