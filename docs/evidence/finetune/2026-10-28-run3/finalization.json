@@ -1,0 +1,13 @@
+{
+  "summaries": [
+    "quality",
+    "ifeval",
+    "mmlu-pro",
+    "sample1",
+    "sample2",
+    "sample3",
+    "outcome"
+  ],
+  "errors": [],
+  "gate": "fail"
+}
