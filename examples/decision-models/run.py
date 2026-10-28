@@ -65,7 +65,7 @@ def main():
         targets=[{'provider':'cheapco','model_ref':'target','tier':'cheap','weight':1},{'provider':'strongco','model_ref':'target','tier':'strong','weight':1}]
         groups={f'{name}-{mode}':{'strategy':'external','targets':targets,'external_policy':{'url':f'http://127.0.0.1:{port}/route','allow_hosts':['127.0.0.1'],'timeout_ms':4000,'max_response_bytes':65536,'include_request':True,'mode':mode,'on_error':'fail_closed'}} for name,port in ports.items() for mode in ('shadow','enforce')}
         token='rtr_metrum_decision_demo_dev_k424_'+secrets.token_urlsafe(32);port=free_port();db=tmp/'usage.sqlite'
-        secure=load('catalog_hash',ROOT/'examples/catalog/token_hash.py');ctl=secure.build(ROOT,tmp)
+        secure=load('catalog_hash',ROOT/'examples/catalog/token_hash.py');ctl=secure.prepare(ROOT)
         caller={'id':'decision-demo','user':'test','project':'test','environment':'test','status':'active','allow':list(groups),'rate':{'rpm':10000,'tpm':1000000,'concurrent':8}}
         secure.apply(caller,ctl,token,tmp)
         if args.backend=='local':models=[args.local_model]*2

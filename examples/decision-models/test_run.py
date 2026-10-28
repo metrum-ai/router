@@ -27,7 +27,7 @@ class Integration(unittest.TestCase):
             self.assertEqual(p.returncode,0,p.stderr);return json.loads(p.stdout)
         result=run();self.assertEqual(len(result['results']),12);self.assertEqual(result['decisions'],'fake')
         d=load('d3_e2e',ROOT/'scripts/run_d3_policy_e2e.py');fake=d.load_fake();jev=load('jev',ROOT/'examples/external-routing-policy/fake_openjev.py');clef=load('clef_fake',HERE/'fake_clef.py')
-        with ExitStack() as stack,tempfile.TemporaryDirectory() as temp:
+        with ExitStack() as stack,tempfile.TemporaryDirectory(dir='/dev/shm') as temp:
             upstream=d.upstream_server(stack);d3=fake.start_in_thread(api_key='');stack.callback(d3.server_close);stack.callback(d3.shutdown)
             j=ThreadingHTTPServer(('127.0.0.1',0),jev.Handler);threading.Thread(target=j.serve_forever,daemon=True).start();stack.callback(j.server_close);stack.callback(j.shutdown)
             c,thread=clef.start();stack.callback(thread.join);stack.callback(c.server_close);stack.callback(c.shutdown)

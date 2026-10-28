@@ -75,7 +75,7 @@ def main():
                    'pii_filter':{'enabled':True,'mode':'redact_only','restore_response':False,'rules':[{'name':s['pii_rule_name'],'expression':s['pii_expression'],'placeholder_prefix':s['pii_placeholder_prefix']}]},
                    'targets':[{'provider':'mock','model_ref':'target','tier':'local','weight':1}]}
             cfg['models']={s['allowed_group']:group,s['restricted_group']:group}
-            prototype=cfg['callers'][0];cfg['callers']=[];ctl=secure.build(ROOT,state)
+            prototype=cfg['callers'][0];cfg['callers']=[];ctl=secure.prepare(ROOT)
             for user in tokens:
                 caller=dict(prototype);caller.update(id=user,allow=[s['allowed_group']]);secure.apply(caller,ctl,tokens[user],state)
                 caller['rate']={'rpm':1 if user=='rate' else s['rate_rpm'],'tpm':100000,'concurrent':10}

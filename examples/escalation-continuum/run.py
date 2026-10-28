@@ -60,7 +60,7 @@ def main():
             state=Path(temp); port=demo.port(); base=f'http://127.0.0.1:{port}'
             token='rtr_metrum_eval_escalation_dev_k424_'+secrets.token_urlsafe(24)
             cfg=m.build_config(out_dir=state,listen=f'127.0.0.1:{port}',id_key_hex=secrets.token_hex(64),token=token)
-            secure.apply(cfg['callers'][0],secure.build(ROOT,state),token,state)
+            secure.apply(cfg['callers'][0],secure.prepare(ROOT),token,state)
             cfg['server']['identifiers']={'mode':'passthrough'}; cfg['server']['admin_auth']={'basic':{'enabled':False,'users':[]}}
             cfg['server']['admin_reports']={'enabled':False}; cfg['server']['default_model_group']='escalation'
             names={tier:settings[tier+'_model'] for tier in ('local','datacenter','frontier')}
