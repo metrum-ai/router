@@ -48,6 +48,7 @@ def main():
         if not a.state_dir or not a.state_dir.is_absolute(): p.error('mixed mode requires a private absolute state-dir for reconciliation')
     if a.state_dir: a.state_dir.mkdir(mode=0o700,parents=False,exist_ok=False)
     m=module('local_pi',ROOT/'scripts/local_pi_instance.py')
+    secure=module('catalog_hash',ROOT/'examples/catalog/token_hash.py')
     demo=module('tokenomics',ROOT/'examples/tokenomics/run.py')
     upstream=ThreadingHTTPServer(('127.0.0.1',0),demo.Upstream)
     policy=ThreadingHTTPServer(('127.0.0.1',0),Handler)
@@ -59,6 +60,7 @@ def main():
             state=Path(temp); port=demo.port(); base=f'http://127.0.0.1:{port}'
             token='rtr_metrum_eval_escalation_dev_k424_'+secrets.token_urlsafe(24)
             cfg=m.build_config(out_dir=state,listen=f'127.0.0.1:{port}',id_key_hex=secrets.token_hex(64),token=token)
+            secure.apply(cfg['callers'][0],secure.prepare(ROOT),token,state)
             cfg['server']['identifiers']={'mode':'passthrough'}; cfg['server']['admin_auth']={'basic':{'enabled':False,'users':[]}}
             cfg['server']['admin_reports']={'enabled':False}; cfg['server']['default_model_group']='escalation'
             names={tier:settings[tier+'_model'] for tier in ('local','datacenter','frontier')}

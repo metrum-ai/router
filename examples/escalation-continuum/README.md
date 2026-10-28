@@ -19,6 +19,9 @@ to fail closed. The local policy service is trusted infrastructure.
 
 ## How to run
 
+Go is required: the demo builds `routerctl` locally and uses `callers hash`
+to create a PBKDF2 token verifier in private state.
+
 Requires Go, Python 3 and `uv`. The mock mode makes no paid calls:
 
 ```sh

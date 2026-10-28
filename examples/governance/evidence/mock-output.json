@@ -1,0 +1,33 @@
+{
+  "mode": "mock",
+  "statuses": [
+    200,
+    403,
+    429,
+    429,
+    200,
+    429
+  ],
+  "pii_applied_recorded": true,
+  "mock_upstream_redaction_verified": true,
+  "routing_reason": "length:local",
+  "audit_export": true,
+  "ordinary_export_status": 403,
+  "security_event_count": 6,
+  "usage": [
+    {
+      "caller": "rate",
+      "input_tokens": 100,
+      "cached_input_tokens": null,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "caller": "scoped",
+      "input_tokens": 100,
+      "cached_input_tokens": null,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    }
+  ]
+}
