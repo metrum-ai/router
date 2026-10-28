@@ -17,7 +17,7 @@ HERE=Path(__file__).resolve().parent
 
 class WeeklyTests(unittest.TestCase):
     def test_missing_credentials_skip_without_audit(self):
-        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT') if k in os.environ}
+        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','LD_LIBRARY_PATH') if k in os.environ}
         with tempfile.TemporaryDirectory() as temp:
             output=Path(temp)/'audit'
             result=subprocess.run([sys.executable,str(HERE/'weekly.py'),'--router',str(Path(temp)/'unused'),'--out-dir',str(output)],env=env,text=True,capture_output=True,timeout=30)
@@ -60,7 +60,7 @@ class WeeklyTests(unittest.TestCase):
             self.assertNotIn('https://github.com/metrum-ai/router/actions/runs/',weekly.audit_markdown({'status':'incomplete','ledger':ledger},'1\nsecret'))
 
     def test_mock_weekly_end_to_end(self):
-        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','GOCACHE','GOMODCACHE','GOROOT','GOPATH','GOPROXY','GOTOOLCHAIN') if k in os.environ}
+        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','LD_LIBRARY_PATH','GOCACHE','GOMODCACHE','GOROOT','GOPATH','GOPROXY','GOTOOLCHAIN') if k in os.environ}
         with tempfile.TemporaryDirectory() as temp:
             root=HERE.parents[2];binary=Path(temp)/'router';output=Path(temp)/'audit'
             subprocess.run(['go','build','-o',str(binary),'./cmd/metrum-ai-router'],cwd=root,env=env,check=True,timeout=300,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -72,7 +72,7 @@ class WeeklyTests(unittest.TestCase):
             self.assertEqual({p.name for p in output.iterdir()},{'audit.md','audit.json','summary.json','usage.json','results.json'})
 
     def test_setup_uses_routerctl_pbkdf_hash(self):
-        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','GOCACHE','GOMODCACHE','GOROOT','GOPATH','GOPROXY','GOTOOLCHAIN') if k in os.environ}
+        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','LD_LIBRARY_PATH','GOCACHE','GOMODCACHE','GOROOT','GOPATH','GOPROXY','GOTOOLCHAIN') if k in os.environ}
         with tempfile.TemporaryDirectory() as temp:
             state=Path(temp)/'state'
             p=subprocess.run([sys.executable,str(HERE/'setup.py'),'--config',str(HERE/'config.example.json'),'--state-dir',str(state)],env=env,text=True,capture_output=True,timeout=300)
