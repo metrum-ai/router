@@ -3,7 +3,12 @@
 # Run 3 single-GPU Shadeform fallback
 
 The approved #426 Shadeform safety mechanism is adapted here for #425: one
-H100/H200 with at least 80 GB GPU RAM and at least 300 GB storage. It generates
+H100/H200 with at least 80 GB GPU RAM and at least 300 GB advertised storage.
+Run `shade425_storage.py` on the VM before transferring data: it requires an
+existing, non-symlink mounted training filesystem with at least 300 GB total
+and 120 GB free. It does not format or mount devices. Check Docker image
+filesystem space separately. An advertised capacity is not proof that usable
+space is mounted. The guard generates
 an Ed25519 key locally, posts **only its public half** to `/sshkeys/add`, and
 passes the returned exact ID at create. It never calls GET `/sshkeys`, handles
 Shadeform-managed keys, or sends a private key or provider credential in an
