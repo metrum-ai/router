@@ -199,7 +199,9 @@ agent-tool-mock:
 	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
 	uv sync --locked --directory tests/agent_compat
 	$(PYTHON) tests/agent_compat/runtime_environment_test.py
+	$(PYTHON) tests/agent_compat/responses_fixture_test.py
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" || exit $$?; done
+	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
 	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
 
 # Requires an OS that permits the Codex workspace sandbox; never disable it.

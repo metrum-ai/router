@@ -141,12 +141,16 @@ context-management beta on its test target. A Codex Responses case passed
 once on a sandbox-capable CI VM, but was blocked locally by denied unprivileged
 user namespaces; see [the suite README](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md).
 
-An initial chain sweep also runs each of the same four clients directly and
+Pi, LangGraph, and OpenAI Agents SDK also each passed one streamed tool loop
+with a Chat caller through a Chat-to-Responses bridge to a scripted Responses
+upstream.
+
+An initial chain sweep runs each of the four native-dialect clients directly and
 through one, two, three and five same-dialect hops. All 20 local deterministic
 cells passed once; `make agent-chain-mock` produces a per-cell JSON report.
 This checks successful streamed tool execution and continuation, not complete
 stream equivalence or per-hop accounting. Codex remains untested in that
-sweep. Other clients/surfaces, cross-dialect paths, parallel calls, loop
+sweep. Other clients/surfaces, other cross-dialect paths, parallel calls, loop
 protection and live nightly evidence remain open in #429 and #430.
 
 ### Validation evidence (offline)
