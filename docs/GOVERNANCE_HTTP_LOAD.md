@@ -41,6 +41,31 @@ only because this fixture fixes every reported usage and holds all admissions
 until the race ends. It is **not a universal overspend bound**. Real input
 estimation, provider usage and the number of outstanding requests can differ.
 
+## Additional admission limits
+
+On 2026-10-28 UTC, an expanded fixture on router base
+`e216ac6351c0ceff16bf8954f59b83e478a0a1c1`, Go 1.27.3 on the same Linux
+x86_64 host (16 visible CPUs, AMD Ryzen 7 7730U), passed five race-detector
+repetitions of all six HTTP scenarios at concurrency 8, 32 and 128, followed
+by one `make governance-load` run. In addition to the four token limits above,
+it tests RPM and in-flight concurrency **separately**, using the same held,
+mixed-stream/unary admissions:
+
+| Workers | Limit | Admitted | Rejected |
+|---:|---:|---:|---:|
+| 8 | 2 | 2 | 6 |
+| 32 | 8 | 8 | 24 |
+| 128 | 32 | 32 | 96 |
+
+RPM rejections carried `Retry-After: 60`; concurrency rejections carried
+`Retry-After: 1`. After all admitted responses and deferred accounting settle,
+a new request in the concurrency case succeeds, proving slot release in this
+fixture. The 8-worker token cases admitted 2 and settled 40 against a
+26-token threshold (14 excess) for each token dimension. These are finite
+synthetic results, not a sustained-rate benchmark or universal overspend bound;
+the HTTP case does not cover a single worker. No hosted calls or cloud
+resources were used.
+
 This exercises one router process and its test quota store. It does not prove
 SQLite/PostgreSQL persistence, multiple replicas, dollar-denominated budgets,
 all key configurations, all error modes, or general rate-limit/PII/audit
