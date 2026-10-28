@@ -18,7 +18,9 @@ IP addresses and identities: only a summary, not the CSV, is printed.
 
 ## Run
 
-From the repository root (Go, Python 3 and PyYAML required):
+From the repository root (Go, Python 3 and PyYAML required). The demo builds
+`routerctl` and uses `callers hash` to create PBKDF2 token verifiers in private
+state:
 
 ```sh
 go build -o /tmp/router-governance ./cmd/metrum-ai-router
