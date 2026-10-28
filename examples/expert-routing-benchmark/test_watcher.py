@@ -79,7 +79,9 @@ class TestWatcher(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state=Path(directory);label='metrum-426-'+'a'*32
             (state/'intent.json').write_text(json.dumps({'label':label,'deadline_unix':1005,'reservation_limit_usd':75}))
-            (state/'lease.json').write_text(json.dumps({'id':42,'created_at':'1970-01-01T00:16:40+00:00','hourly_quote_usd':30}));(state/'creation-terminal').touch();(state/'instance-key').write_text('test')
+            (state/'lease.json').write_text(json.dumps({'id':42,'created_at':'1970-01-01T00:16:40+00:00','hourly_quote_usd':30}));(state/'creation-terminal').touch()
+            key_names=('instance-key','instance-key.pub','diagnostic-ed25519','diagnostic-ed25519.pub','diagnostic-rsa','diagnostic-rsa.pub')
+            for name in key_names:(state/name).write_text('test')
             now=[1000];calls=[];live=[False]
             def fake(cloud,path,method='GET',payload=None,execute=False):
                 calls.append((path,method,execute))
@@ -93,7 +95,7 @@ class TestWatcher(unittest.TestCase):
             def sleep(seconds):now[0]+=seconds
             watcher.watch(state,request=fake,now=lambda:now[0],sleep=sleep)
             result=json.loads((state/'teardown.json').read_text());self.assertTrue(result['deletion_verified']);self.assertEqual(result['reason'],'deadline')
-            self.assertFalse((state/'instance-key').exists())
+            self.assertTrue(all(not (state/name).exists() for name in key_names))
             self.assertIn(('/instances/0/','DELETE',False),calls)
             self.assertEqual([c for c in calls if c[2]], [('/instances/42/','DELETE',True)])
 
