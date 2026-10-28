@@ -319,6 +319,7 @@ type DecisionTelemetryConfig struct {
 type ProviderConfig struct {
 	BaseURL      string                   `yaml:"base_url"`
 	Dialect      string                   `yaml:"dialect"`
+	UpstreamKind string                   `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
 	APIKey       string                   `yaml:"api_key"`
 	APIKeyEnv    string                   `yaml:"api_key_env"`
 	KeyID        string                   `yaml:"key_id"`
@@ -1351,6 +1352,12 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 		if normalizeDialect(p.Dialect) == "" {
 			return fmt.Errorf("provider %s has unsupported dialect %q", name, p.Dialect)
+		}
+		if p.UpstreamKind != "" && p.UpstreamKind != "router" {
+			return fmt.Errorf("provider %s has unsupported upstream_kind %q", name, p.UpstreamKind)
+		}
+		if p.UpstreamKind == "router" && isBedrock(p) {
+			return fmt.Errorf("provider %s cannot use upstream_kind router with bedrock", name)
 		}
 		if isBedrock(p) && normalizeDialect(p.Dialect) != "openai-chat" {
 			return fmt.Errorf("provider %s bedrock requires dialect openai-chat for internal bridges", name)
