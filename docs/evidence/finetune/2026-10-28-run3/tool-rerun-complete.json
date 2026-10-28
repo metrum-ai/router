@@ -1,0 +1,18 @@
+{
+  "rerun_type": "infrastructure-error tool-only rerun",
+  "original_formal_gate": "fail (unchanged)",
+  "tool_threshold_met": true,
+  "status": "complete",
+  "reasons": [],
+  "base_exact": 0.0,
+  "adapter_exact": 0.375,
+  "delta": 0.375,
+  "instance_id": "37539293-dd5b-49cf-a9cb-2188ecebdc96",
+  "verified_host_sha256": {
+    "tool.summary.json": "a06fb75e1a1e042b76cfbf0f69f7a384f364c9d9eff83cabde5f4d594a45b6fd",
+    "tool.exit": "eea8254c7500ba3de996aa8ad6af399183f04e17d4a8102fde539dbc93a90012",
+    "tool.preflight.json": "10f4f0e20b08297f877162e1e45bb370cc9139bddc40ac1f5725e0e73f443bfd"
+  },
+  "tool_subset_sha256": "4fd8050e4379fca60e1b703bb03db2e02494817b646de8d71ff7097c1463b284",
+  "source_snapshot": "aa354e18"
+}
