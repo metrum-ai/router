@@ -1,0 +1,258 @@
+{
+  "arms": {
+    "frontier": {
+      "billing": null,
+      "tasks": [
+        {
+          "passed": true,
+          "trial_id": "leave"
+        },
+        {
+          "passed": true,
+          "trial_id": "refund"
+        },
+        {
+          "passed": true,
+          "trial_id": "security"
+        },
+        {
+          "passed": true,
+          "trial_id": "shipping"
+        },
+        {
+          "passed": true,
+          "trial_id": "invoice"
+        }
+      ],
+      "usage": [
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000222",
+          "cost_list_usd": "0.000222",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 86,
+          "latency_ms": 1166.945,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0001",
+          "router_cost_usd": "0.000222",
+          "status": 200,
+          "trial_id": "leave",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000212",
+          "cost_list_usd": "0.000212",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 81,
+          "latency_ms": 1503.168,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0002",
+          "router_cost_usd": "0.000212",
+          "status": 200,
+          "trial_id": "refund",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000206",
+          "cost_list_usd": "0.000206",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 78,
+          "latency_ms": 1347.496,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0003",
+          "router_cost_usd": "0.000206",
+          "status": 200,
+          "trial_id": "security",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000198",
+          "cost_list_usd": "0.000198",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 74,
+          "latency_ms": 1107.467,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0004",
+          "router_cost_usd": "0.000198",
+          "status": 200,
+          "trial_id": "shipping",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000212",
+          "cost_list_usd": "0.000212",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 81,
+          "latency_ms": 1260.668,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0005",
+          "router_cost_usd": "0.000212",
+          "status": 200,
+          "trial_id": "invoice",
+          "usage_source": "reported"
+        }
+      ]
+    },
+    "routed": {
+      "billing": null,
+      "tasks": [
+        {
+          "passed": true,
+          "trial_id": "leave"
+        },
+        {
+          "passed": true,
+          "trial_id": "refund"
+        },
+        {
+          "passed": true,
+          "trial_id": "security"
+        },
+        {
+          "passed": true,
+          "trial_id": "shipping"
+        },
+        {
+          "passed": true,
+          "trial_id": "invoice"
+        }
+      ],
+      "usage": [
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000222",
+          "cost_list_usd": "0.000222",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 86,
+          "latency_ms": 1211.976,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0006",
+          "router_cost_usd": "0.000222",
+          "status": 200,
+          "trial_id": "leave",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.006",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "5.91e-05",
+          "cost_list_usd": "5.91e-05",
+          "input_price_per_million_usd": "0.3",
+          "input_tokens": 105,
+          "latency_ms": 1038.824,
+          "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+          "output_price_per_million_usd": "1.2",
+          "output_tokens": 23,
+          "price_date": "2026-10-19",
+          "price_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
+          "request_id": "request-0007",
+          "router_cost_usd": "5.91e-05",
+          "status": 200,
+          "trial_id": "refund",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.006",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "5.7e-05",
+          "cost_list_usd": "5.7e-05",
+          "input_price_per_million_usd": "0.3",
+          "input_tokens": 98,
+          "latency_ms": 755.703,
+          "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+          "output_price_per_million_usd": "1.2",
+          "output_tokens": 23,
+          "price_date": "2026-10-19",
+          "price_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
+          "request_id": "request-0008",
+          "router_cost_usd": "5.7e-05",
+          "status": 200,
+          "trial_id": "security",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.006",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "6.09e-05",
+          "cost_list_usd": "6.09e-05",
+          "input_price_per_million_usd": "0.3",
+          "input_tokens": 95,
+          "latency_ms": 1864.055,
+          "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+          "output_price_per_million_usd": "1.2",
+          "output_tokens": 27,
+          "price_date": "2026-10-19",
+          "price_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
+          "request_id": "request-0009",
+          "router_cost_usd": "6.09e-05",
+          "status": 200,
+          "trial_id": "shipping",
+          "usage_source": "reported"
+        },
+        {
+          "cached_input_price_per_million_usd": "0.1",
+          "cached_input_tokens": 0,
+          "cost_billed_usd": "0.000212",
+          "cost_list_usd": "0.000212",
+          "input_price_per_million_usd": "2.0",
+          "input_tokens": 81,
+          "latency_ms": 1053.485,
+          "model": "gpt-6.1-sol",
+          "output_price_per_million_usd": "10.0",
+          "output_tokens": 5,
+          "price_date": "2026-10-11",
+          "price_source": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+          "request_id": "request-0010",
+          "router_cost_usd": "0.000212",
+          "status": 200,
+          "trial_id": "invoice",
+          "usage_source": "reported"
+        }
+      ]
+    }
+  },
+  "frontier_model": "gpt-6.1-sol",
+  "planned_trials": [
+    "invoice",
+    "leave",
+    "refund",
+    "security",
+    "shipping"
+  ],
+  "verifier": "document-qa/independent-verifier",
+  "workload": "document-qa"
+}
