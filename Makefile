@@ -197,6 +197,12 @@ api-compat-ts:
 governance-load:
 	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
 
+# Local driver tests and localhost router integration; not an overhead benchmark.
+.PHONY: overhead-load-smoke
+overhead-load-smoke:
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -v
+	$(PYTHON) benchmarks/overhead/integration_smoke.py
+
 # Real agent clients against a loopback scripted upstream; no hosted calls.
 .PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
 agent-tool-mock:
@@ -341,6 +347,7 @@ test-fast: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
