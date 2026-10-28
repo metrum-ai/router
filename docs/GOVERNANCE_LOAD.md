@@ -3,10 +3,13 @@
 
 # Governance load: reservation baseline (#431)
 
-Run `make governance-load` to repeat the in-process reservation and caller
-isolation tests with the Go race detector. These use synthetic callers, an
-in-memory quota store and no hosted requests; they do not require PostgreSQL.
-They are an initial baseline, not the complete #431 acceptance suite.
+Run `make governance-load` to repeat the local governance load tests with the
+Go race detector. They include this in-process reservation baseline, the
+[HTTP token-reservation probe](GOVERNANCE_HTTP_LOAD.md), the
+[PII/fallback probe](GOVERNANCE_PII_LOAD.md), and the
+[SQLite security-export probe](GOVERNANCE_AUDIT_LOAD.md). They use synthetic
+callers and no hosted requests; they do not require PostgreSQL. These bounded
+cases are not the complete #431 acceptance suite.
 
 ## Local baseline
 
