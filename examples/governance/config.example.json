@@ -1,0 +1,15 @@
+{
+  "allowed_group": "allowed",
+  "restricted_group": "restricted",
+  "daily_requests": 1,
+  "daily_tokens": 10000,
+  "rate_rpm": 60,
+  "pii_rule_name": "email",
+  "pii_expression": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}",
+  "pii_placeholder_prefix": "EMAIL",
+  "fireworks_input_per_million_usd": 0.30,
+  "fireworks_cached_input_per_million_usd": 0.006,
+  "fireworks_output_per_million_usd": 1.20,
+  "fireworks_pricing_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
+  "fireworks_pricing_date": "2026-10-28"
+}

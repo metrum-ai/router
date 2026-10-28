@@ -48,3 +48,9 @@ jobs:
         run: |
           python3 examples/kv-cache-cost/run.py --router "$RUNNER_TEMP/tokenomics-router"
           python3 -m unittest discover -s examples/kv-cache-cost -p 'test_*.py' -v
+      - name: Exercise mock governance and OIDC contracts
+        env:
+          ROUTER_TEST_BINARY: ${{ runner.temp }}/tokenomics-router
+        run: |
+          python3 -m unittest discover -s examples/governance -p 'test_*.py' -v
+          bash examples/governance/oidc-smoke.sh
