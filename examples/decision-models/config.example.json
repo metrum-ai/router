@@ -1,0 +1,13 @@
+{
+  "prompts": {
+    "easy": "Summarize the memo in one sentence.",
+    "hard": "Prove the theorem about distributed consensus."
+  },
+  "target_models": ["demo-cheap", "demo-strong"],
+  "fireworks_model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+  "fireworks_input_per_million_usd": 0.30,
+  "fireworks_cached_input_per_million_usd": 0.006,
+  "fireworks_output_per_million_usd": 1.20,
+  "fireworks_pricing_source": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
+  "fireworks_pricing_date": "2026-10-28"
+}

@@ -54,3 +54,7 @@ jobs:
         run: |
           python3 -m unittest discover -s examples/governance -p 'test_*.py' -v
           bash examples/governance/oidc-smoke.sh
+      - name: Exercise decision-model wiring with mock endpoints
+        env:
+          ROUTER_TEST_BINARY: ${{ runner.temp }}/tokenomics-router
+        run: python3 -m unittest discover -s examples/decision-models -p 'test_*.py' -v
