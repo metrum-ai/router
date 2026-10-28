@@ -6,6 +6,9 @@ on:
   pull_request:
   merge_group:
   workflow_dispatch:
+concurrency:
+  group: case-study-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 permissions:
   contents: read
 jobs:
