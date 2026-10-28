@@ -7,7 +7,6 @@
   "base_exact": 0.0,
   "adapter_exact": 0.375,
   "delta": 0.375,
-  "instance_id": "37539293-dd5b-49cf-a9cb-2188ecebdc96",
   "verified_host_sha256": {
     "tool.summary.json": "a06fb75e1a1e042b76cfbf0f69f7a384f364c9d9eff83cabde5f4d594a45b6fd",
     "tool.exit": "eea8254c7500ba3de996aa8ad6af399183f04e17d4a8102fde539dbc93a90012",
