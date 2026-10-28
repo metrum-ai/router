@@ -115,6 +115,13 @@ def assert_make_tiers() -> None:
     require("test-fast" in full.splitlines()[0] and "secret-check" in full.splitlines()[0], "test dropped a tier")
     require("api-compat-mock" in full and "harbor-local" in full, "full suite dropped an offline target")
     require(make_rule(makefile, "test-full").splitlines()[0] == "test-full: test", "test-full must alias test")
+    ts = make_rule(makefile, "api-compat-ts")
+    require("GOTOOLCHAIN=local go mod download" in ts and "tests/api_compat_ts/run_suite.py" in ts
+            and ts.index("go mod download") < ts.index("tests/api_compat_ts/run_suite.py"),
+            "TypeScript suite must provision Go modules before its offline build")
+    runner = read(ROOT / "tests/api_compat_ts/run_suite.py")
+    require('"GOPROXY": "off"' in runner and '"GOSUMDB": "off"' in runner,
+            "TypeScript runner must retain its fail-closed offline build")
 
 
 def assert_fast_go_workflow() -> None:
