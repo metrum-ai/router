@@ -9,11 +9,13 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 from run_chat_smoke import DIGEST, ROOT, TOKEN, free_port
@@ -31,7 +33,7 @@ class Mock(BaseHTTPRequestHandler):
         pass
 
     def do_POST(self):
-        if self.path != "/v1/messages":
+        if urlsplit(self.path).path != "/v1/messages":
             self.send_error(404)
             return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -83,6 +85,9 @@ def main():
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, interrupted)
+    depth = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    if depth < 0 or depth > 8:
+        raise SystemExit("depth must be between 0 and 8")
     if not CLAUDE.is_file():
         raise SystemExit("install pinned clients with npm ci --ignore-scripts --prefix tests/agent_compat")
     Mock.calls.clear()
@@ -98,19 +103,28 @@ def main():
             env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
             binary = work / "router"
             subprocess.run(["go", "build", "-tags", "dev_no_license", "-o", str(binary), "./cmd/metrum-ai-router"], cwd=ROOT, env=env, check=True)
-            port = free_port()
-            config = f'''server:
-  listen: "127.0.0.1:{port}"
+            ports = []
+            while len(ports) < depth:
+                candidate = free_port()
+                if candidate != upstream.server_port and candidate not in ports:
+                    ports.append(candidate)
+            port = ports[-1] if ports else upstream.server_port
+            env["AGENT_COMPAT_NEXT_TOKEN"] = TOKEN
+            for index, hop_port in enumerate(ports):
+                upstream_port = upstream.server_port if index == 0 else ports[index - 1]
+                target_model = "synthetic-messages" if index == 0 else "chat"
+                config = f'''server:
+  listen: "127.0.0.1:{hop_port}"
   identifiers: {{mode: passthrough}}
   default_model_group: chat
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
-  logging: {{path: "{work / 'router.jsonl'}"}}
-state_path: "{work / 'state.json'}"
+  logging: {{path: "{work / f'router-{index}.jsonl'}"}}
+state_path: "{work / f'state-{index}.json'}"
 providers:
-  mock: {{base_url: "http://127.0.0.1:{upstream.server_port}", dialect: anthropic}}
+  mock: {{base_url: "http://127.0.0.1:{upstream_port}", dialect: anthropic, api_key: "${{AGENT_COMPAT_NEXT_TOKEN}}", api_key_env: AGENT_COMPAT_NEXT_TOKEN}}
 models:
-  chat: {{strategy: static, targets: [{{provider: mock, model: synthetic-messages, tool_support: {{anthropic_messages: [client_tools]}}, reasoning: {{supported: true, mode: opt_in, control: token_budget}}, allowed_betas: [context-management-2025-06-27], request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
+  chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{anthropic_messages: [client_tools]}}, reasoning: {{supported: true, mode: opt_in, control: token_budget}}, allowed_betas: [context-management-2025-06-27], request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: agent-compat
     token_sha256: "{DIGEST}"
@@ -119,29 +133,34 @@ callers:
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
     key: {{lifetime_tokens: 40000000000}}
 '''
-            (work / "config.yaml").write_text(config, encoding="utf-8")
+                (work / f"config-{index}.yaml").write_text(config, encoding="utf-8")
             with (work / "router.stderr").open("w", encoding="utf-8") as stderr:
-                router = subprocess.Popen([str(binary), "-config", "config.yaml"], cwd=work, env=env, stdout=stderr, stderr=stderr)
+                routers = []
                 try:
-                    deadline = time.monotonic() + 60
-                    while time.monotonic() < deadline:
-                        if router.poll() is not None:
-                            raise RuntimeError("router exited before readiness")
-                        try:
-                            if urlopen(f"http://127.0.0.1:{port}/readyz", timeout=1).status == 200:
-                                break
-                        except OSError:
-                            time.sleep(0.05)
-                    else:
-                        raise RuntimeError("router did not become ready")
+                    for index, hop_port in enumerate(ports):
+                        router = subprocess.Popen([str(binary), "-config", f"config-{index}.yaml"], cwd=work, env=env, stdout=stderr, stderr=stderr)
+                        routers.append(router)
+                        deadline = time.monotonic() + 60
+                        while time.monotonic() < deadline:
+                            if router.poll() is not None:
+                                raise RuntimeError(f"router {index} exited before readiness")
+                            try:
+                                if urlopen(f"http://127.0.0.1:{hop_port}/readyz", timeout=1).status == 200:
+                                    break
+                            except OSError:
+                                time.sleep(0.05)
+                        else:
+                            raise RuntimeError(f"router {index} did not become ready")
                     child_env = {"PATH": env["PATH"], "HOME": str(work), "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}", "ANTHROPIC_API_KEY": TOKEN, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1"}
                     command = ["node", str(CLAUDE), "--bare", "--print", "--model", "chat", "--betas", "context-management-2025-06-27", "--tools", "Read", "--allowedTools", "Read", "--permission-mode", "acceptEdits", "--setting-sources", "", "--no-session-persistence", "--disable-slash-commands", "--output-format", "stream-json", "--verbose", "Read the requested file and finish."]
                     def router_errors():
-                        path = work / "router.jsonl"
-                        if not path.exists():
-                            return []
-                        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-                        return [{k: row.get(k) for k in ("status", "error_class", "error_message")} for row in records[-3:]]
+                        errors = []
+                        for index in range(depth):
+                            path = work / f"router-{index}.jsonl"
+                            if path.exists():
+                                records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                                errors.append({"hop": index, "recent": [{k: row.get(k) for k in ("status", "error_class", "error_message")} for row in records[-3:]]})
+                        return errors
 
                     process = subprocess.Popen(command, cwd=work, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
                     try:
@@ -164,14 +183,17 @@ callers:
                         raise RuntimeError("input file content changed")
                     if Mock.errors or len(Mock.calls) != 2:
                         raise RuntimeError(f"mock errors={Mock.errors}, calls={len(Mock.calls)}")
-                    print("PASS: claude-code / Anthropic Messages / same dialect / depth 1: streamed tool use and tool-result continuation")
+                    print(f"PASS: claude-code / Anthropic Messages / same dialect / depth {depth}: streamed tool use and tool-result continuation")
                 finally:
-                    router.terminate()
-                    try:
-                        router.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        router.kill()
-                        router.wait(timeout=5)
+                    for router in reversed(routers):
+                        if router.poll() is None:
+                            router.terminate()
+                    for router in reversed(routers):
+                        try:
+                            router.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            router.kill()
+                            router.wait(timeout=5)
     finally:
         upstream.shutdown()
         upstream.server_close()
