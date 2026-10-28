@@ -81,6 +81,19 @@ class ShadeGuardTests(unittest.TestCase):
             self.assertTrue((s/'key-started').exists());self.assertFalse((s/'key-terminal').exists())
             self.assertTrue((s/'creation-terminal').exists());self.assertTrue((s/'done.txt').exists())
 
+    def test_local_error_after_creation_does_not_signal_teardown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            s=Path(directory);intent={'name':'metrum-425-'+'f'*32,'deadline_unix':time.time()+600,'reservation_usd':130};(s/'intent.json').write_text(json.dumps(intent))
+            def api(cloud,path,method='GET',payload=None,execute=False):
+                if path=='/instances/types?available=true':return {'instance_types':[{'cloud':'provider','shade_instance_type':'H200x1','num_gpus':1,'gpu_type':'H200','configuration':{'vram_per_gpu_in_gb':141},'storage_in_gb':850,'hourly_price':1600,'availability':[{'region':'r','available':True,'rental_type':'on_demand'}]}]}
+                if path=='/sshkeys/add':return {'id':KEY}
+                if path=='/instances/create':return {'id':INSTANCE}
+                raise AssertionError('unexpected API request')
+            def keygen(*a,**k):(s/'instance-key.pub').write_text('ssh-ed25519 TEST')
+            with patch.object(shade_lease,'assert_watcher'),patch.object(shade_lease.subprocess,'run',side_effect=keygen),patch.object(shade_lease.watcher.cloud,'request',side_effect=api),patch.object(shade_lease,'print',create=True,side_effect=BrokenPipeError('local output')):
+                with self.assertRaises(BrokenPipeError):shade_lease.create(s,'provider','H200x1','r',20)
+            self.assertTrue((s/'creation-terminal').exists());self.assertTrue((s/'lease.json').exists());self.assertFalse((s/'done.txt').exists())
+
     def test_create_uses_own_key_and_no_private_material(self):
         with tempfile.TemporaryDirectory() as directory:
             s=Path(directory);intent={'name':'metrum-425-'+'c'*32,'deadline_unix':time.time()+600,'reservation_usd':130}

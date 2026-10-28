@@ -70,7 +70,12 @@ def create(state,cloud,kind,region,max_hourly):
     except Exception:
         if not (state/'key-started').exists():(state/'key-terminal').touch(mode=0o600)
         if not (state/'creation-started').exists():(state/'creation-terminal').touch(mode=0o600)
-        (state/'done.txt').write_text('GPU-DONE #425\n')
+        # Unknown mutation outcomes must never be retried or claimed absent.
+        # Purely local errors with settled mutation state do not tear down a
+        # paid lease; the operator can correct them before the watcher deadline.
+        ambiguous_key=(state/'key-started').exists() and not (state/'key-terminal').exists()
+        ambiguous_instance=(state/'creation-started').exists() and not (state/'creation-terminal').exists() and not (state/'lease.json').exists()
+        if ambiguous_key or ambiguous_instance:(state/'done.txt').write_text('GPU-DONE #425\n')
         raise
 
 
