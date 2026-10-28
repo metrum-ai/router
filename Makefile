@@ -187,8 +187,9 @@ test-usage-schema-postgres-indexes:
 
 # TypeScript SDK API-compat suite (#271, #94 DoD 2): official OpenAI and
 # Anthropic TypeScript clients against a built router and the scripted fake
-# upstream. Offline; pinned npm lockfile.
+# upstream. Provision dependencies first; the runner builds offline.
 api-compat-ts:
+	GOTOOLCHAIN=local go mod download
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
