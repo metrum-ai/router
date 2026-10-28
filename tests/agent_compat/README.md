@@ -8,7 +8,10 @@ For pi, LangGraph, and OpenAI Agents SDK, it also exercises a Chat caller
 through a Chat-to-Responses bridge to the Responses mock. They also receive
 two distinct streamed Chat tool calls in one assistant turn, execute both,
 and send both results in the continuation. This does not claim the tools run
-simultaneously. The mock checks request order and tool-result identifiers. Each test uses a
+simultaneously. The OpenAI Agents SDK additionally requests strict JSON output
+while using a tool at depths 0, 1 and 3; the mock validates both requests'
+`response_format` and the SDK validates the final typed output. The mock checks
+request order and tool-result identifiers. Each test uses a
 fresh temporary working directory, dummy caller token, scoped tool access,
 non-production router, and high caller limits. No hosted model calls are made.
 Dependencies are provisioned first; the test processes then have a restricted
@@ -30,8 +33,8 @@ continuation.
 
 ## Current coverage and limits
 
-This is an initial, partial #429 suite. The checks are one deterministic
-scenario per listed client and path, all at one router hop; they are not a
+This is an initial, partial #429 suite. The checks are deterministic
+scenarios per listed client and path, usually at one router hop; they are not a
 provider certification or a statistical pass-rate estimate. The locked
 versions are in `package-lock.json` and `uv.lock`.
 
@@ -43,6 +46,7 @@ versions are in `package-lock.json` and `uv.lock`.
 | pi 1.4.0 | Chat, two streamed tool calls in one turn, one hop | 1/1 pass |
 | LangGraph 1.2.18 | Chat, two streamed tool calls in one turn, one hop | 1/1 pass |
 | OpenAI Agents SDK 0.24.0 | Chat, two streamed tool calls in one turn, one hop | 1/1 pass |
+| OpenAI Agents SDK 0.24.0 | Chat, streamed tool continuation with strict JSON response schema, depths 0/1/3 | 3/3 mock passes |
 | pi 1.4.0 | Chat caller → Responses upstream, streamed tool call, one hop | 1/1 pass |
 | LangGraph 1.2.18 | Chat caller → Responses upstream, streamed tool call, one hop | 1/1 pass |
 | OpenAI Agents SDK 0.24.0 | Chat caller → Responses upstream, streamed tool call with `strict` function flag, one hop | 1/1 pass |
@@ -60,7 +64,7 @@ mock-only nightly workflow retains the JSON artifact after the branch is merged.
 Operators must triage failed cells and file or update issues; automated issue
 filing and release-PR integration are not yet implemented.
 
-Other surface/client combinations, strict-schema and broader parallel-tool
+Other surface/client combinations, other strict-schema and broader parallel-tool
 sweeps, reasoning/cache-control combinations, other cross-dialect paths, chain error
 and accounting comparisons, hop protection, nightly live checks, and
 release-updated pass-rate publication remain untested. Do not include those
