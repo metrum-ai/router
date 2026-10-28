@@ -222,6 +222,7 @@ agent-tool-mock:
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
 	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+	$(PYTHON) tests/agent_compat/claude_thinking_cache_smoke.py
 
 # Requires an OS that permits the Codex workspace sandbox; never disable it.
 agent-tool-mock-codex:
