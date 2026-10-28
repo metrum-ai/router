@@ -1,0 +1,45 @@
+# Real agent tool compatibility (partial #429)
+
+`make agent-tool-mock` installs the pinned npm and Python clients, builds a
+localhost router, and runs real pi, LangGraph, OpenAI Agents SDK, and Claude
+Code clients against deterministic loopback SSE upstreams. Each client must
+execute its declared tool and send the actual result in a second model request.
+The mock checks request order and the tool-result identifier. Each test uses a
+fresh temporary working directory, dummy caller token, scoped tool access,
+non-production router, and high caller limits. No hosted model calls are made.
+Dependencies are provisioned first; the test processes then have a restricted
+environment, and Go dependency resolution is disabled during the smoke.
+
+`make agent-tool-mock-codex` runs the pinned Codex CLI through the same style
+of Responses fixture, with `workspace-write` sandboxing and a fixed local tool
+command. The host must permit Codex's unprivileged user namespace; a denied
+namespace fails the check, not a pass. Never disable the sandbox to make it
+pass. Codex is configured with `web_search = "disabled"` because the router
+rejects provider-hosted tools; this does not certify default web-search mode.
+
+The Claude Code fixture supplies the `context-management-2025-06-27` beta in
+the target allowlist for its Messages request. Without an allowed beta, a
+Claude request containing `context_management: null` was rejected; see #459.
+Its CLI runs with `Read` as the only allowed tool against one fixed synthetic
+file. The mock verifies the streamed tool input and actual read result in the
+continuation.
+
+## Current coverage and limits
+
+This is an initial, partial #429 suite. The checks are one deterministic
+scenario per listed client, all at one router hop and same-dialect; they are
+not a provider certification or a statistical pass-rate estimate. The locked
+versions are in `package-lock.json` and `uv.lock`.
+
+| Client | Surface and path | Local result |
+|---|---|---|
+| pi 1.4.0 | Chat, streamed tool call, one hop, same dialect | 1/1 pass |
+| LangGraph 1.2.18 | Chat, streamed tool call, one hop, same dialect | 1/1 pass |
+| OpenAI Agents SDK 0.24.0 | Chat, streamed tool call, one hop, same dialect | 1/1 pass |
+| Claude Code 2.1.296 | Messages, streamed tool use, one hop, same dialect | 1/1 pass with allowed beta |
+| Codex 0.162.0 | Responses, streamed tool call, one hop, same dialect | blocked locally: namespace creation denied; CI must execute on a capable host |
+
+Other surface/client combinations, strict-schema and parallel-tool sweeps,
+reasoning/cache-control combinations, cross-dialect paths, hierarchy depths,
+nightly live checks, and release-updated pass-rate publication remain untested.
+Do not include those cells in a pass-rate denominator. See #429 and #430.
