@@ -60,6 +60,13 @@ not newly unseen benchmarks. Licensed public inputs and verifiers are snapshot
 
 ## Unchanged outcome gate
 
+Run the frozen gate on the GPU host before any teardown or dependence on adapter
+copying. After the gate, `retrieve_adapter.py` compares host SHA-256 values,
+tries SCP three times with backoff, and uses a bounded read-only sudo fallback
+for inaccessible files. It does not signal teardown on failure; keep the
+independent watcher active and retain the VM until verified retrieval plus gate
+results or the watcher deadline. Do not claim success for incomplete coverage.
+
 The [original preregistration](../eval/PREREGISTRATION.md) numerical gate and
 scorer remain unchanged: strict tool exact-match improvement at least 10
 percentage points; at most 2-point regression independently on IFEval and
