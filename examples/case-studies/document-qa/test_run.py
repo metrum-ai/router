@@ -9,7 +9,6 @@ import sys
 import tempfile
 import threading
 import unittest
-import uuid
 
 from run import retrieve
 
@@ -23,7 +22,7 @@ class Handler(BaseHTTPRequestHandler):
         text = body['messages'][1]['content']
         task = next(t for t in TASKS if t['question'] in text)
         response = json.dumps({'choices': [{'message': {'content': task['answer']}}]}).encode()
-        self.send_response(200); self.send_header('X-Request-Id', uuid.uuid4().hex)
+        self.send_response(200); self.send_header('X-Request-Id', body['model'] + '-' + task['id'])
         self.send_header('Content-Length', str(len(response))); self.end_headers(); self.wfile.write(response)
 
 

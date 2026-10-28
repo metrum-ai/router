@@ -48,22 +48,6 @@ func enableNativeUpstreamStream(raw []byte, req *IRRequest, dialect string, disa
 	return json.Marshal(body)
 }
 
-// firstByteReader records when bytes are first returned by the upstream body.
-// This is a router observation, not the provider's generation timestamp.
-type firstByteReader struct {
-	reader  io.Reader
-	onFirst func()
-}
-
-func (r *firstByteReader) Read(p []byte) (int, error) {
-	n, err := r.reader.Read(p)
-	if n > 0 && r.onFirst != nil {
-		r.onFirst()
-		r.onFirst = nil
-	}
-	return n, err
-}
-
 type nativeStreamResult struct {
 	Response  *IRResponse
 	Committed bool
@@ -87,11 +71,6 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 	}()
 	if maxBytes > 0 {
 		body = io.LimitReader(body, maxBytes+1)
-	}
-	if rc != nil {
-		body = &firstByteReader{reader: body, onFirst: func() {
-			rc.trace("upstream_first_byte", "", Target{}, 0, 0, "", false, durationMillis(time.Since(rc.start)))
-		}}
 	}
 	reader := bufio.NewReaderSize(body, 64<<10)
 	var frame bytes.Buffer
@@ -123,8 +102,7 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if terminal {
 				result.Terminal = true
 			}
-			firstFrame := !result.Committed
-			if firstFrame {
+			if !result.Committed {
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.Header().Set("Cache-Control", "no-cache")
 				w.Header().Set("X-Accel-Buffering", "no")
@@ -132,6 +110,10 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 				w.WriteHeader(http.StatusOK)
 				result.Committed = true
 				downstreamStart = time.Now()
+				if rc != nil {
+					ttfb := time.Since(rc.start).Milliseconds()
+					rc.rec.TTFBMS = &ttfb
+				}
 			}
 			rawFrame = rewriter.rewrite(rawFrame, dialect)
 			if _, writeErr := w.Write(rawFrame); writeErr != nil {
@@ -139,11 +121,6 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			}
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
-			}
-			if firstFrame && rc != nil {
-				ttfb := durationMillis(time.Since(rc.start))
-				rc.rec.TTFBMS = &ttfb
-				rc.trace("downstream_first_frame", "", Target{}, 0, 0, "", false, ttfb)
 			}
 			if result.Done {
 				return result, nil

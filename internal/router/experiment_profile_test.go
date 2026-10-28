@@ -209,26 +209,6 @@ func TestExperimentProfileStreamTTFTAndPacing(t *testing.T) {
 	if total < 330*time.Millisecond {
 		t.Fatalf("stream finished in %.0fms; pacing at 30 events/s should take longer", float64(total.Milliseconds()))
 	}
-	rec := lastJSONLRecord(t, svc.cfg.Server.Logging.Path)
-	upstreamFirst := findTrace(t, rec.TraceEvents, "upstream_first_byte")
-	downstreamFirst := findTrace(t, rec.TraceEvents, "downstream_first_frame")
-	proxyWall := findTrace(t, rec.TraceEvents, "paced_upstream_proxy_wall")
-	_ = findTrace(t, rec.TraceEvents, "experiment_profile_pacing")
-	if rec.TTFBMS == nil || *rec.TTFBMS != downstreamFirst.DurationMS {
-		t.Fatalf("TTFB = %v, downstream first frame = %dms", rec.TTFBMS, downstreamFirst.DurationMS)
-	}
-	if downstreamFirst.DurationMS-upstreamFirst.DurationMS < 130 {
-		t.Fatalf("upstream first byte=%dms, downstream first frame=%dms; missing TTFT delay", upstreamFirst.DurationMS, downstreamFirst.DurationMS)
-	}
-	if diff := firstChunkAt.Milliseconds() - *rec.TTFBMS; diff < -50 || diff > 250 {
-		t.Fatalf("client first chunk=%dms, router first frame=%dms", firstChunkAt.Milliseconds(), *rec.TTFBMS)
-	}
-	if rec.UpstreamMS != nil || rec.UpstreamOutputTPS != nil || rec.UpstreamTotalTPS != nil {
-		t.Fatalf("paced proxy timing must not masquerade as upstream generation timing: %+v", rec)
-	}
-	if proxyWall.DurationMS < 330 {
-		t.Fatalf("paced proxy wall time = %dms", proxyWall.DurationMS)
-	}
 	// Protocol fidelity: frames pass through unchanged (tool/reasoning shape
 	// is a passthrough here: every data line must appear verbatim upstream).
 	for _, f := range frames {
@@ -238,47 +218,6 @@ func TestExperimentProfileStreamTTFTAndPacing(t *testing.T) {
 			}
 		}
 	}
-}
-
-func TestExperimentProfileResponsesStreamTiming(t *testing.T) {
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, responseDelta+responseEnd)
-		w.(http.Flusher).Flush()
-	}))
-	defer up.Close()
-	svc := nativeStreamTestService(t, up.URL, "openai-responses", []Target{{Provider: "native", Model: "mock-model"}}, func(cfg *Config) {
-		cfg.Server.ExperimentProfiles = map[string]ExperimentProfileConfig{
-			"study": {Enabled: experimentProfileBool(true), Callers: []string{"alice"}, TTFTDelayMS: 150, EventsPerSec: 30, MaxExtraDelayMS: 5000},
-		}
-	})
-	server := httptest.NewServer(svc.Handler())
-	defer server.Close()
-	start := time.Now()
-	req, _ := http.NewRequest("POST", server.URL+"/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hi"}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	buf := make([]byte, 4096)
-	n, err := resp.Body.Read(buf)
-	first := time.Since(start)
-	if n == 0 || err != nil {
-		t.Fatalf("first read n=%d err=%v", n, err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	rec := lastJSONLRecord(t, svc.cfg.Server.Logging.Path)
-	upstream := findTrace(t, rec.TraceEvents, "upstream_first_byte")
-	downstream := findTrace(t, rec.TraceEvents, "downstream_first_frame")
-	if rec.TTFBMS == nil || *rec.TTFBMS != downstream.DurationMS || downstream.DurationMS-upstream.DurationMS < 130 || first < 130*time.Millisecond {
-		t.Fatalf("client=%v ttfb=%v upstream=%d downstream=%d", first, rec.TTFBMS, upstream.DurationMS, downstream.DurationMS)
-	}
-	if rec.UpstreamMS != nil || rec.UpstreamOutputTPS != nil {
-		t.Fatal("paced Responses proxy reported an independent upstream rate")
-	}
-	_ = findTrace(t, rec.TraceEvents, "paced_upstream_proxy_wall")
 }
 
 func TestExperimentProfileDoesNotAffectOtherCallers(t *testing.T) {
@@ -312,12 +251,6 @@ func TestExperimentProfileDoesNotAffectOtherCallers(t *testing.T) {
 	if took := time.Since(start); took > 500*time.Millisecond {
 		t.Fatalf("non-matching caller was paced (%v); profiles must not shape other traffic", took)
 	}
-	rec := lastJSONLRecord(t, svc.cfg.Server.Logging.Path)
-	if rec.UpstreamMS == nil || rec.TTFBMS == nil {
-		t.Fatalf("unpaced timing must remain available: %+v", rec)
-	}
-	_ = findTrace(t, rec.TraceEvents, "upstream_first_byte")
-	_ = findTrace(t, rec.TraceEvents, "downstream_first_frame")
 }
 
 func TestExperimentProfileCancelDuringPacing(t *testing.T) {

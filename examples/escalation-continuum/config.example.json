@@ -1,7 +1,0 @@
-{
-  "cheap_max_chars": 200,
-  "datacenter_max_chars": 1000,
-  "local_model": "local-mock",
-  "datacenter_model": "datacenter-mock",
-  "frontier_model": "frontier-mock"
-}

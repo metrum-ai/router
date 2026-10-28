@@ -150,7 +150,6 @@ type requestContext struct {
 	rec                  logRecord
 	bridgeSessionHeaders map[string]string
 	securityRecorded     bool
-	pacedUpstreamStream  bool
 	traceSeq             int
 	sanitizeTraceMessage func(string, string) string
 	conversationKey      string
@@ -1493,14 +1492,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	rc.trace("upstream_start", "", dec.Target, 0, 0, "", false, 0)
 	resp, attempts, fallbackUsed, err := s.callUpstreams(r.Context(), w, rc, dialect, req, dec)
 	upstreamMS := durationMillis(time.Since(upstreamStart))
-	if rc.pacedUpstreamStream {
-		// Synchronous proxy wall time includes injected waits and backpressure;
-		// it cannot be reported as independent upstream generation time.
-		rc.trace("paced_upstream_proxy_wall", "", dec.Target, 0, 0, "", false, upstreamMS)
-		rc.rec.UpstreamMS = nil
-	} else {
-		rc.rec.UpstreamMS = &upstreamMS
-	}
+	rc.rec.UpstreamMS = &upstreamMS
 	rc.rec.Attempts = attempts
 	rc.rec.FallbackUsed = fallbackUsed
 	if err != nil {
@@ -2673,7 +2665,6 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			}
 			if profile, profileName, ok := resolveExperimentProfile(s.cfg.Server.ExperimentProfiles, callerID, groupName, target.Provider+"/"+target.Model); ok {
 				pacer = newExperimentPacer(profile, profileName, rc.id)
-				rc.pacedUpstreamStream = true
 				rc.trace("experiment_profile_applied", "profile="+profileName+" hash="+pacer.hash, target, attemptIndex, 0, "", false, 0)
 				pw = &experimentPacingWriter{ResponseWriter: w, ctx: attemptCtx, pacer: pacer}
 			}

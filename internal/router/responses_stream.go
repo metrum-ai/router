@@ -29,11 +29,6 @@ func proxyResponsesSSE(ctx context.Context, w http.ResponseWriter, body io.Reade
 // runResponsesStream owns the lifecycle, including panic recovery and exactly one Finish.
 func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Reader, model string, maxBytes int64, rc *requestContext, t stream.StreamTranslator) (result nativeStreamResult, retErr error) {
 	result.Response = &IRResponse{Model: model, Streamed: true}
-	if rc != nil {
-		body = &firstByteReader{reader: body, onFirst: func() {
-			rc.trace("upstream_first_byte", "", Target{}, 0, 0, "", false, durationMillis(time.Since(rc.start)))
-		}}
-	}
 	f := stream.NewFramer(body, maxBytes)
 	reason := stream.StopError
 	var started time.Time
@@ -67,9 +62,8 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			if started.IsZero() {
 				started = time.Now()
 				if rc != nil {
-					ms := durationMillis(time.Since(rc.start))
+					ms := time.Since(rc.start).Milliseconds()
 					rc.rec.TTFBMS = &ms
-					rc.trace("downstream_first_frame", "", Target{}, 0, 0, "", false, ms)
 				}
 			}
 		}

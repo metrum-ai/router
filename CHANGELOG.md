@@ -9,11 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Native stream traces now distinguish the first observed upstream byte from
-  the first flushed downstream frame (#455). Profile-paced upstream streams
-  omit misleading independent upstream duration and throughput values; their
-  paced proxy wall time remains available in the trace.
-
 - GitHub build-provenance attestations for every published release archive,
   `SHA256SUMS`, and `release-artifacts.json` (#332). Windows archives are
   unsigned by default; Authenticode remains an optional signing path.

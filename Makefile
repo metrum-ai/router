@@ -192,31 +192,6 @@ api-compat-ts:
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
-# Real agent clients against a loopback scripted upstream; no hosted calls.
-.PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
-agent-tool-mock:
-	go mod download
-	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
-	uv sync --locked --directory tests/agent_compat
-	$(PYTHON) tests/agent_compat/runtime_environment_test.py
-	$(PYTHON) tests/agent_compat/responses_fixture_test.py
-	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" || exit $$?; done
-	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
-	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
-	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
-
-# Requires an OS that permits the Codex workspace sandbox; never disable it.
-agent-tool-mock-codex:
-	$(PYTHON) tests/agent_compat/codex_responses_smoke.py
-
-# Initial deterministic chain matrix; does not claim live-provider coverage.
-agent-chain-mock:
-	go mod download
-	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
-	uv sync --locked --directory tests/agent_compat
-	$(PYTHON) tests/agent_compat/run_chain_matrix_test.py
-	tests/agent_compat/.venv/bin/python tests/agent_compat/run_chain_matrix.py --output "$${AGENT_CHAIN_REPORT:-tests/agent_compat/.out/chain-matrix.json}"
-
 eval-humaneval:
 	$(PYTHON) scripts/inspect_coding_eval.py run --suite humaneval
 
@@ -335,6 +310,7 @@ test-fast: secret-contract capability-smoke-contracts
 	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
