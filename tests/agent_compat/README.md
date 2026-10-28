@@ -21,7 +21,11 @@ environment, and Go dependency resolution is disabled during the smoke.
 of Responses fixture, with `workspace-write` sandboxing and a fixed local tool
 command. The host must permit Codex's unprivileged user namespace; a denied
 namespace fails the check, not a pass. Never disable the sandbox to make it
-pass. Codex is configured with `web_search = "disabled"` because the router
+pass. The CI VM also runs a five-cell same-Responses chain matrix at depths 0,
+1, 2, 3 and 5 using `run_codex_chain.py`; it writes a separate JSON artifact
+and a denied sandbox or failed cell makes the job fail. The new matrix has not
+yet accumulated acceptance evidence; inspect the CI result rather than assuming
+a pass. Codex is configured with `web_search = "disabled"` because the router
 rejects provider-hosted tools; this does not certify default web-search mode.
 
 The Claude Code fixture supplies the `context-management-2025-06-27` beta in
