@@ -21,7 +21,8 @@ esac
 name=proof426-$mode
 if docker container inspect "$name" >/dev/null 2>&1; then echo 'container already exists; refusing to replace it' >&2; exit 1; fi
 # No --rm: stopped containers remain inspectable until the dedicated VM is deleted.
-docker run -d --network host --gpus "$gpu" --name "$name" --label metrum.task=issue-426 \
+# vLLM TP=4 needs >160 MiB IPC; Docker's default /dev/shm is only 64 MiB.
+docker run -d --network host --shm-size 2g --gpus "$gpu" --name "$name" --label metrum.task=issue-426 \
   --mount "type=bind,src=$root,dst=/models,readonly" "$image" \
   --model "/models/$model" --served-model-name "$served" --host 127.0.0.1 --port "$port" \
   --max-model-len 8192 "${extra[@]}" >/dev/null

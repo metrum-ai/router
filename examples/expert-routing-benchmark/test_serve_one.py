@@ -24,6 +24,7 @@ exit 0
                 calls=log.read_text().splitlines();runs=[x for x in calls if x.startswith('run ')]
                 self.assertEqual(len(runs),1);run=runs[0].split()
                 self.assertNotIn('--rm',run);self.assertNotIn('-e',run);self.assertNotIn('--env-file',run)
+                self.assertEqual(run[run.index('--shm-size')+1],'2g')
                 self.assertEqual(run[run.index('--gpus')+1],gpu)
                 self.assertIn('proof426-'+mode,run)
                 if mode in ('baseline','finance','math'):
