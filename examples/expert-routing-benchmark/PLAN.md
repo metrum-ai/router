@@ -6,9 +6,14 @@ This is an **unexecuted** plan and offline harness. No GPU deployment, model
 performance result or actual cost is claimed. Use one fresh dedicated four-GPU
 host, run the two arms sequentially on the same hardware class, and use the
 same pinned official `vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34`
-image for both, subject to an explicit model-compatibility smoke. Four expert servers each
-get one GPU; the baseline serves the general base with tensor parallelism over
-all four. Use identical prompts, four caller keys, max-output limit, concurrency
+image for both, subject to an explicit model-compatibility smoke. On a Vast
+SSH instance, the approved image is the instance container itself; use
+`serve-in-container.sh` to run four isolated GPU processes, not nested Docker.
+The router and client may stay local and use loopback SSH tunnels; record the
+same tunnel arrangement for both arms and include its overhead. Alternatively,
+`serve.sh` runs the pinned official image on a dedicated Docker-capable host.
+Four expert servers each get one GPU; the baseline serves the general base with
+tensor parallelism over all four. Use identical prompts, four caller keys, max-output limit, concurrency
 and decoding. Closed-loop concurrency four produces **matched concurrency and
 case counts**, not a controlled equal arrival-rate workload. Measure actual
 elapsed rate. No hidden retries or score-based task replacement.
@@ -98,3 +103,22 @@ tab before creating resources, and verify instance, keys and other resources
 are deleted. No container credentials via `-e` or `--env-file`; secrets, if
 needed, are mounted read-only from private tmpfs files. Use only the approved
 official serving image; no model inference or provider lease has occurred yet.
+
+### Lease safeguards (Vast)
+
+`lease.py init` creates a unique pre-creation intent in a new private directory
+outside Git, with a maximum 150-minute deadline. Start `watcher.py` in its own
+Herdr tab and verify its live listing and simulated DELETE readiness before
+`lease.py create` can proceed. The creator verifies the watcher process/tab,
+re-queries the selected four-H200 offer, and limits the quoted-rate reservation
+to $75 (below the $90 approval). It creates a fresh SSH key and attaches only the
+public key; no provider credentials are passed to the instance. Failure,
+`GPU-DONE #426`, deadline, estimated reservation threshold or observed billed
+threshold triggers teardown. The watcher deletes only the unique intent label
+or returned ID, retries failures, checks absence repeatedly, and removes local
+SSH key files. An ambiguous create never becomes verified absent automatically:
+reconcile it manually while the watcher keeps running. A quote/reservation is
+not a hard provider billing cap, and posted charges can lag. `charges.py`
+queries per-instance posted charges, marked provisional; no matching rows means
+unknown, not zero. Storage, network or other charges not attributable to the
+instance must be disclosed separately.
