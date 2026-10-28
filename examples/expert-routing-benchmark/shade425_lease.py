@@ -21,7 +21,7 @@ import watcher
 
 def init(state,minutes):
     state=state.resolve();repo=Path(__file__).resolve().parents[2]
-    if state==repo or repo in state.parents or not 0<minutes<=240:raise ValueError('invalid state or deadline')
+    if state==repo or repo in state.parents or not 0<minutes<=480:raise ValueError('invalid state or deadline')
     state.mkdir(mode=0o700,parents=False,exist_ok=False)
     watcher.atomic(state,'intent.json',{'name':'metrum-425-'+uuid.uuid4().hex,'deadline_unix':time.time()+60*minutes,'reservation_usd':130})
     print('intent initialized; arm the Shadeform watcher in another Herdr tab')

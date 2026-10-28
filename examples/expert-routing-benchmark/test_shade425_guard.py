@@ -17,6 +17,14 @@ OTHER='33333333-3333-4333-8333-333333333333'
 def not_found():return urllib.error.HTTPError('https://example.invalid',404,'missing',{},None)
 
 class ShadeGuardTests(unittest.TestCase):
+    def test_combined_training_gate_deadline_limit(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(shade_lease.time,'time',return_value=1000):
+            root=Path(directory);shade_lease.init(root/'ok',480)
+            intent=json.loads((root/'ok'/'intent.json').read_text())
+            self.assertEqual(intent['deadline_unix'],1000+480*60);self.assertEqual(intent['reservation_usd'],130)
+            for bad in (0,481,float('nan')):
+                with self.assertRaises(ValueError):shade_lease.init(root/str(bad),bad)
+
     def test_exact_key_and_instance_cleanup_without_key_listing(self):
         with tempfile.TemporaryDirectory() as directory:
             s=Path(directory);name='metrum-425-'+'a'*32
