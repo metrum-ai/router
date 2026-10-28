@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile name and profile hash; upstream timing stays measured separately
   from downstream pacing. See `docs-site/docs/configuration/experiment-profiles.md`.
 
+### Security
+
+- Updated `github.com/go-jose/go-jose/v4` to 4.1.6 for
+  GHSA-mgcc-cww5-fp2q, a denial-of-service risk when parsing crafted RSA JWKs.
+  The dependency now rejects RSA JWK moduli over 4096 bits; OIDC deployments
+  using larger keys must rotate to supported keys before upgrading (#451).
+
 ### Changed
 
 - Tenant provisioner RBAC: the Role no longer grants NetworkPolicy write
