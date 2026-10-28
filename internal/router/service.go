@@ -161,20 +161,22 @@ type requestContext struct {
 }
 
 type upstreamError struct {
-	Class        string
-	Message      string
-	StatusCode   int
-	Retryable    bool
-	Fallbackable bool
-	TimedOut     bool
-	Canceled     bool
-	Committed    bool
-	PartialUsage *Usage
-	PartialText  string
-	ResponseLen  int64
-	RetryAfter   time.Duration
-	Details      []upstreamErrorDetailLogRecord
-	Err          error
+	Class                   string
+	Message                 string
+	StatusCode              int
+	Retryable               bool
+	Fallbackable            bool
+	TimedOut                bool
+	Canceled                bool
+	Committed               bool
+	PartialUsage            *Usage
+	PartialText             string
+	ResponseLen             int64
+	RetryAfter              time.Duration
+	TrustedRouterRateLimit  bool
+	TrustedRetryAfterHeader string
+	Details                 []upstreamErrorDetailLogRecord
+	Err                     error
 }
 
 func (e upstreamError) Error() string {
@@ -2612,6 +2614,13 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}
 		upErr := classifyUpstreamStatus(httpResp.StatusCode, raw)
 		upErr.RetryAfter = parseRetryAfterHeader(httpResp.Header.Get("Retry-After"), time.Now().UTC())
+		if provider.UpstreamKind == "router" && trustedRouterRateLimit(httpResp.StatusCode, raw, upErr.Class) {
+			upErr.Class = "upstream_rate_limited"
+			upErr.TrustedRouterRateLimit = true
+			upErr.RetryAfter = trustedRouterRetryAfter(httpResp.Header.Get("Retry-After"), time.Now().UTC())
+			upErr.TrustedRetryAfterHeader = validTrustedRetryAfterHeader(httpResp.Header.Get("Retry-After"))
+			upErr.Message = "trusted upstream router rate limited the request"
+		}
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
@@ -4210,6 +4219,9 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 	}
 	classified := classifyError(err)
 	code, status := upstreamFailureResponse(classified, rc)
+	if code == "upstream-rate-limited" && classified.TrustedRouterRateLimit && classified.TrustedRetryAfterHeader != "" {
+		w.Header().Set("Retry-After", classified.TrustedRetryAfterHeader)
+	}
 	if rc != nil {
 		s.captureUpstreamErrorContent(rc, req, dec, attempts, classified, captureDecision, status)
 		rc.trace("upstream_exhausted", classified.Message, dec.Target, attempts, status, classified.Class, classified.Retryable, 0)
@@ -4379,6 +4391,9 @@ func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int
 	case attemptsAllClassOrLast(rc, err, "upstream_quota_exhausted"):
 		return "upstream-quota-exhausted", http.StatusServiceUnavailable
 	case attemptsAllClassOrLast(rc, err, "upstream_rate_limited"):
+		if err.TrustedRouterRateLimit && (err.StatusCode == http.StatusTooManyRequests || err.StatusCode == http.StatusServiceUnavailable) {
+			return "upstream-rate-limited", err.StatusCode
+		}
 		return "upstream-rate-limited", http.StatusServiceUnavailable
 	case attemptsAllAccessFailureOrLast(rc, err):
 		return "upstream-access-denied", http.StatusServiceUnavailable

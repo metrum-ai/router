@@ -197,6 +197,17 @@ api-compat-ts:
 governance-load:
 	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
 
+# Local d3-adapter/fake-model plain/shadow/enforce wiring; not a benchmark.
+.PHONY: overhead-decision-smoke
+overhead-decision-smoke:
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
+
+# Local driver tests and localhost router integration; not an overhead benchmark.
+.PHONY: overhead-load-smoke
+overhead-load-smoke:
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -v
+	$(PYTHON) benchmarks/overhead/integration_smoke.py
+
 # Real agent clients against a loopback scripted upstream; no hosted calls.
 .PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
 agent-tool-mock:
@@ -205,10 +216,13 @@ agent-tool-mock:
 	uv sync --locked --directory tests/agent_compat
 	$(PYTHON) tests/agent_compat/runtime_environment_test.py
 	$(PYTHON) tests/agent_compat/responses_fixture_test.py
+	$(PYTHON) tests/agent_compat/strict_json_fixture_test.py
+	for depth in 0 1 3; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py openai-agents "$$depth" strict-json || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
 	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+	$(PYTHON) tests/agent_compat/claude_thinking_cache_smoke.py
 
 # Requires an OS that permits the Codex workspace sandbox; never disable it.
 agent-tool-mock-codex:
@@ -310,6 +324,8 @@ test-k8s-nvidia-llmd-compat:
 # Fine-tuning operator example: only tiny synthetic rows; never trains a model.
 .PHONY: ft-example-test
 ft-example-test:
+	python3 -m unittest discover -s examples/fine-tune-qwen3p8-27b/serve -p 'test_*.py' -v
+	bash -n examples/fine-tune-qwen3p8-27b/serve/run.sh examples/fine-tune-qwen3p8-27b/run3/serve_eval.sh
 	uv run --with pyyaml python -m unittest discover -s examples/fine-tune-qwen3p8-27b/amd -v
 	bash -n examples/fine-tune-qwen3p8-27b/amd/first-boot.sh
 	bash -n examples/fine-tune-qwen3p8-27b/amd/capture-env.sh
@@ -341,6 +357,8 @@ test-fast: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
@@ -845,6 +863,20 @@ lrp-synthetic-demo:
 lrp-e2e: lrp-synthetic-demo
 	uv run --project $(LRP_PROJECT) --locked python scripts/run_lrp_synthetic_demo.py --out-dir $(LRP_DEMO_DIR) --e2e
 	ROUTER_NGINX_E2E=1 go test ./internal/router -run '^TestStreamPolicyE2E$$' -count=1 -v
+
+# Local guarded profiling at 32/128; not a performance measurement.
+.PHONY: overhead-profile-load-smoke
+overhead-profile-load-smoke:
+	go test -race ./benchmarks/overhead/profiled-router -count=1
+	$(PYTHON) benchmarks/overhead/profile_integration_smoke.py
+
+# Loopback-only profiling wrapper smoke; this is not the overhead benchmark.
+.PHONY: overhead-profile-smoke
+overhead-profile-smoke:
+	go mod download
+	uv sync --locked --directory tests/agent_compat
+	go test -race ./benchmarks/overhead/profiled-router -count=1
+	python3 benchmarks/overhead/profiled-router/smoke.py
 
 clean:
 	rm -rf router router-token router-token-gen router-usage-report examples/cli-e2e-c/cli-e2e "$${DIST_DIR}"

@@ -1,0 +1,30 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "status": "fail",
+  "failure_metrics": [
+    "tool_exact_improvement_below_10pt"
+  ],
+  "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v2",
+  "evaluated_provider_groups": {
+    "fixed_model": "openai:chat:qwen3p8-27b-base",
+    "candidate": "openai:chat:qwen3p8-27b-ft-onprem"
+  },
+  "scalar_gate": {
+    "baseline_error_rate": 0.6666666666666666,
+    "baseline_pass_rate": 0.32,
+    "candidate_error_rate": 0.6666666666666666,
+    "candidate_id": "qwen3p8-27b-ft",
+    "candidate_pass_rate": 0.32666666666666666,
+    "case_count": 300,
+    "cost_ratio": 1.0,
+    "error_rate_increase": 0.0,
+    "failure_metrics": [],
+    "fixed_model_id": "qwen3p8-27b-base",
+    "latency_ratio": 0.13529842875784281,
+    "pass_rate_regression": -0.006666666666666654,
+    "preregistration_id": "metrum-qwen3p8-text-lora-20261023-v2",
+    "schema_version": "fixed-model-outcome-gate/v1",
+    "status": "pass",
+    "workload_style": "tool"
+  }
+}

@@ -1,0 +1,38 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+name: Run 3 CPU schema validation
+on:
+  pull_request:
+    paths:
+      - 'examples/fine-tune-qwen3p8-27b/run3/**'
+      - '.github/workflows/run3-config-schema.yml'
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: run3-config-schema-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
+jobs:
+  schema:
+    runs-on: router-arc
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      # Dependencies may be fetched during setup; the validation itself is
+      # offline, CPU-only, and never downloads or evaluates a model.
+      - name: Install pinned CPU-only schema dependencies
+        run: |
+          python -m pip install 'torch==2.14.1' --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-deps 'axolotl @ git+https://github.com/axolotl-ai-cloud/axolotl.git@777990d36ab92dcdc8b62d5ad07dc30b9618ff25'
+          python -m pip install 'pydantic==2.13.5' 'PyYAML==6.0.3' 'packaging==26.0' 'accelerate==1.15.0' 'transformers==5.20.1' 'datasets==5.0.1' 'peft==0.21.2' 'trl==1.14.1' 'pillow==13.0.0' 'huggingface_hub==1.33.0' 'typer==0.25.1' 'typing-extensions==4.15.0' addict colorama einops fire safetensors
+      - name: Validate frozen and one-step smoke configs without network
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+        run: python examples/fine-tune-qwen3p8-27b/run3/schema_checks.py -v

@@ -162,6 +162,11 @@ func projectControlPlaneProviders(tx *gorm.DB, configSetID string, cfg *Config) 
 // environment-variable reference, the non-secret key identifier, and the
 // authentication scheme cross the relational boundary.
 func projectControlPlaneProvider(tx *gorm.DB, configSetID, name string, provider ProviderConfig) error {
+	// The relational provider schema does not yet persist upstream_kind. Never
+	// silently drop a trust-boundary setting when projecting a config set.
+	if provider.UpstreamKind != "" {
+		return fmt.Errorf("provider %q: upstream_kind is not supported in database-backed configuration", name)
+	}
 	row := map[string]any{
 		"config_set_id": configSetID,
 		"provider_name": name,

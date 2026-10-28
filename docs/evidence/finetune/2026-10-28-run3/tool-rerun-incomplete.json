@@ -1,0 +1,35 @@
+{
+  "status": "incomplete",
+  "rerun_type": "tool-only infrastructure-error rerun",
+  "original_formal_gate": "fail, unchanged",
+  "cohort_cases_per_arm": 200,
+  "promptfoo_results_per_arm": 200,
+  "tool_http_200_per_arm": 26,
+  "tool_http_502_per_arm": 8,
+  "tool_http_503_per_arm": 166,
+  "synthetic_admission_http_200": 2,
+  "http_502_type": "upstream-failed",
+  "http_503_type": "quota-state-error",
+  "normalizer_requests": {
+    "by_model": {
+      "metrum-ft": 27,
+      "qwen3p8-27b-base": 27
+    },
+    "normalized": 52,
+    "rejected": 0,
+    "requests": 54,
+    "statuses": {
+      "200": 54
+    },
+    "synthetic_admission": 2
+  },
+  "telemetry_join": "incomplete; router request ID absent from copied usage DB",
+  "system_storage_observation": "local /dev/shm 64 MiB full; normalizer log recorded no space left on device",
+  "limitations": "Tool outputs observed for only 26 cases per arm; full aggregate summary assigns failures zero and is not a valid quality comparison. No gate criterion or parity conclusion. No retries or regression inference.",
+  "original_tool_outcomes": "not observed: all 200 cases per arm returned infrastructure errors",
+  "trained_adapter_source_snapshot": "aa354e18",
+  "weights_sha256": "40dd0512e702476564b5f863f072f46413aab90e59bbbe14e5fadddd7a7a7ed0",
+  "frozen_gate_sha256": "4e0451e539de91ac6411c67ad8947f26e52ec95ef9dcac6616fed50d0d55e9b6",
+  "tool_subset_sha256": "4fd8050e4379fca60e1b703bb03db2e02494817b646de8d71ff7097c1463b284",
+  "partial_summary_sha256": "d9390c1197e99a4b0bb252b64f8c6a04a7753d154b014daf2a9e0b7deb09d234"
+}

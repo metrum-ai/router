@@ -1,0 +1,132 @@
+{
+  "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
+  "providers": {
+    "openai:chat:qwen3p8-27b-ft-onprem": {
+      "count": 200,
+      "metrics": {
+        "error": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 200,
+          "mean": 2135.975,
+          "ci95": [
+            1188.36,
+            3285.705
+          ]
+        },
+        "passed": {
+          "n": 200,
+          "mean": 0.605,
+          "ci95": [
+            0.535,
+            0.67
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 13784
+    },
+    "openai:chat:qwen3p8-27b-base": {
+      "count": 200,
+      "metrics": {
+        "error": {
+          "n": 200,
+          "mean": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "latency_ms": {
+          "n": 200,
+          "mean": 1600.835,
+          "ci95": [
+            835.985,
+            2563.18
+          ]
+        },
+        "passed": {
+          "n": 200,
+          "mean": 0.61,
+          "ci95": [
+            0.54,
+            0.675
+          ]
+        }
+      },
+      "total_cost_usd": 0.0,
+      "p95_latency_ms": 787
+    }
+  },
+  "paired": {
+    "openai:chat:qwen3p8-27b-base -> openai:chat:qwen3p8-27b-ft-onprem": {
+      "error": {
+        "n": 200,
+        "right_minus_left": 0.0,
+        "ci95": [
+          0.0,
+          0.0
+        ]
+      },
+      "latency_ms": {
+        "n": 200,
+        "right_minus_left": 535.14,
+        "ci95": [
+          106.815,
+          1062.075
+        ]
+      },
+      "passed": {
+        "n": 200,
+        "right_minus_left": -0.005,
+        "ci95": [
+          -0.03,
+          0.02
+        ]
+      }
+    }
+  },
+  "objective_audit": {
+    "method": "Retain original SDK scores (exported references may be redacted); apply unchanged frozen tools.score only to absent outputs whose SDK callback was skipped; zero, no new inference",
+    "sdk_skipped_callbacks": 0,
+    "scorer_sha256": "d70d15cd14ffeb8a923473ee9392783fd326155a03d3612c60dbd2debd1c35c6"
+  },
+  "cost_scope": "Model-request token estimates only; excludes grader calls and hourly GPU/deployment charges. Zero token price is not free serving.",
+  "router_join_audit": {
+    "complete_responses": 400,
+    "unique_request_ids": 400,
+    "joined_records_sha256": "a8dd4898ef227ee77fdaca0bd4ea8209a8530789f04bd2a002fc2fc7b05b19d8",
+    "by_eval_provider": {
+      "openai:chat:qwen3p8-27b-base": {
+        "responses": 200,
+        "observed_targets": {
+          "vllm_onprem_ft/qwen3p8-27b-base": 200
+        },
+        "status_counts": {
+          "200": 200
+        },
+        "input_tokens": 41587,
+        "output_tokens": 8224
+      },
+      "openai:chat:qwen3p8-27b-ft-onprem": {
+        "responses": 200,
+        "observed_targets": {
+          "vllm_onprem_ft/metrum-ft": 200
+        },
+        "status_counts": {
+          "200": 200
+        },
+        "input_tokens": 41587,
+        "output_tokens": 12141
+      }
+    },
+    "journal_sha256": "c35bf1098bb28dd68d2bf190643338c19938043e08d1ece26f4b3815e9281a18",
+    "privacy": "Full per-request rows private; provider account IDs redacted. Hashes commit to original joined rows and journal."
+  }
+}

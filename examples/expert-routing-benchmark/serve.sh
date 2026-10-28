@@ -23,7 +23,7 @@ cleanup_failed() { for name in "${started[@]}"; do docker stop "$name" >/dev/nul
 trap cleanup_failed ERR
 start() {
   local name=$1 gpu=$2 port=$3 model=$4 served=$5; shift 5
-  docker run -d --rm --network host --gpus "$gpu" --name "proof426-$name" --label metrum.task=issue-426 \
+  docker run -d --network host --gpus "$gpu" --name "proof426-$name" --label metrum.task=issue-426 \
     --mount "type=bind,src=$root,dst=/models,readonly" "$IMAGE" \
     --model "/models/$model" --served-model-name "$served" --host 127.0.0.1 --port "$port" \
     --max-model-len 8192 "$@" >/dev/null
@@ -31,11 +31,11 @@ start() {
 }
 if [[ $mode == experts ]]; then
   start biomedical 'device=0' 8001 medical-base biomedical-base --enable-lora --max-lora-rank 64 --lora-modules biomedical-ft=/models/medical-adapter
-  start finance 'device=1' 8002 finance finance-ft
-  start math 'device=2' 8003 math math-ft
+  start finance 'device=1' 8002 finance finance-ft --max-num-seqs 128
+  start math 'device=2' 8003 math math-ft --max-num-seqs 128
   start coding 'device=3' 8004 coding coding-ft
 else
-  start baseline all 8000 general general-base --tensor-parallel-size 4
+  start baseline all 8000 general general-base --tensor-parallel-size 4 --max-num-seqs 128
 fi
 trap - ERR
 printf '%s servers started; perform readiness and compatibility checks before measurement\n' "$mode"

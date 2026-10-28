@@ -26,11 +26,11 @@ start() {
 }
 if [[ $mode == experts ]]; then
   start 0 8001 medical-base biomedical-base --enable-lora --max-lora-rank 64 --lora-modules "biomedical-ft=$root/medical-adapter"
-  start 1 8002 finance finance-ft
-  start 2 8003 math math-ft
+  start 1 8002 finance finance-ft --max-num-seqs 128
+  start 2 8003 math math-ft --max-num-seqs 128
   start 3 8004 coding coding-ft
 else
-  start '0,1,2,3' 8000 general general-base --tensor-parallel-size 4
+  start '0,1,2,3' 8000 general general-base --tensor-parallel-size 4 --max-num-seqs 128
 fi
 printf '%s server processes started; verify readiness before measurement\n' "$mode"
 # If any server stops, tear down the entire arm; no silent partial expert set.

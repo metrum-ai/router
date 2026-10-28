@@ -1,0 +1,13 @@
+{
+  "by_model": {
+    "metrum-ft": 201,
+    "qwen3p8-27b-base": 201
+  },
+  "normalized": 400,
+  "rejected": 0,
+  "requests": 402,
+  "statuses": {
+    "200": 402
+  },
+  "synthetic_admission": 2
+}

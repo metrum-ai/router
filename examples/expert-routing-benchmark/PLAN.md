@@ -12,9 +12,14 @@ SSH instance, the approved image is the instance container itself; use
 The router and client may stay local and use loopback SSH tunnels; record the
 same tunnel arrangement for both arms and include its overhead. Alternatively,
 `serve.sh` runs the pinned official image on a dedicated Docker-capable host.
-Four expert servers each get one GPU; the baseline serves the general base with
-tensor parallelism over all four. Use identical prompts, four caller keys, max-output limit, concurrency
-and decoding. Closed-loop concurrency four produces **matched concurrency and
+The retry uses `serve-one.sh` to start the baseline and each expert separately,
+with a readiness and compatibility timeout before the next start. Containers are
+retained after exit; `capture.py` saves Docker logs and sanitized inspect records
+before stopping or teardown. If the baseline cannot become ready, continue with
+the four single-GPU experts and report partial evidence, not parity. Four expert
+servers each get one GPU; the baseline serves the general base with tensor
+parallelism over all four. Use identical prompts, four caller keys, max-output limit, concurrency
+and decoding. Qwen3.8 baseline, finance and math launches use `--max-num-seqs 128`, including the four-GPU tensor-parallel baseline. The same pinned base and image passed single-H100 base and non-held-out adapter health/chat with 128, without eager mode (snapshot `bd60453c`); the four-GPU topology and individual experts still require readiness/compatibility smoke. Closed-loop concurrency four produces **matched concurrency and
 case counts**, not a controlled equal arrival-rate workload. Measure actual
 elapsed rate. No hidden retries or score-based task replacement.
 
@@ -83,6 +88,15 @@ never executed, so it is **not** a functional coding benchmark. Strict scores
 require the correct single label or numeric answer; HTTP/parse/timeout failures
 remain in the denominator. No generated text or secrets enter result summaries.
 
+Download the six pinned public revisions on the host, not inside the serving
+image: place `download_models.py` and a trusted `uv` executable in a fresh
+private workspace, then run `bash download_host.sh /absolute/workspace` after
+watcher and disk preflight. The script installs pinned `hf` CLI dependencies,
+strips credential variables for each download, and verifies safetensor hashes,
+config and tokenizer files. Its explicit `--tiny-self-test` downloads only the
+pinned tiny public test model, not the benchmark models; it is not inference or
+a benchmark result. Offline CI exercises the wrapper with fake host tools.
+
 The router's TypeScript content classifier uses an interpretable fixed keyword
 vocabulary, not caller labels. Unknown or tied content routes to the coding
 expert as an explicit out-of-domain fallback; that fallback is **not** the
@@ -102,7 +116,8 @@ pre-arm an independent deadline and spend teardown watcher in a separate Herdr
 tab before creating resources, and verify instance, keys and other resources
 are deleted. No container credentials via `-e` or `--env-file`; secrets, if
 needed, are mounted read-only from private tmpfs files. Use only the approved
-official serving image; no model inference or provider lease has occurred yet.
+official serving image; prior failed leases are documented below and no model
+inference has occurred.
 
 ### Lease safeguards (Vast)
 
@@ -145,3 +160,28 @@ called; SSH host trust is first-use. This same-host comparison can distinguish
 some format or timing behaviors but cannot test account-wide key registration or
 prove the original four-GPU host's root cause. Reconcile charges and obtain
 review for any authentication flow changes before another four-GPU lease.
+
+### Shadeform fallback
+
+After two inconclusive Vast diagnostics, Mac authorized the four-GPU fallback
+using a locally generated public key. Send **only the public half** to
+`/sshkeys/add` and pass its returned key ID explicitly at create time. Do not
+request the managed key, list SSH keys, or send a private key. Before even
+adding the public key, arm `shade_watcher.py` in another Herdr tab; it checks
+owner instance listing and simulates both instance and exact-key POST deletions.
+The instance request also includes provider auto-delete deadline and spend
+threshold. The watcher deletes only the unique intent instance and our exact
+key ID, then requires a successful key delete followed by the documented 404
+on the same delete endpoint. It never calls GET `/sshkeys`. It independently
+checks instance disappearance and removes local key files. An add or create
+with a lost response is not silently settled: the watcher continues, and an
+operator must reconcile its exact unique name/key fingerprint via an approved
+channel and supply the ID for deletion. Never mark an ambiguous operation
+terminal merely because it is not immediately visible.
+
+The $65 reservation/provider stop threshold leaves room within the $90
+budget after $6.382 observed on Vast, pending late charges. Elapsed-rate and
+Shadeform `cost_estimate` figures are not posted invoices or hard provider
+caps; report them separately from actual charges. The first SSH connection
+uses trust-on-first-use. No model or scoring work may start until the watcher
+and SSH are proven.

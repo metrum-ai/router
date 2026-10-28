@@ -38,6 +38,11 @@ def langgraph():
 async def openai_agents():
     from agents import Agent, OpenAIChatCompletionsModel, RunConfig, Runner, function_tool
     from openai import AsyncOpenAI
+    from pydantic import BaseModel
+
+    class Outcome(BaseModel):
+        status: str
+        count: int
 
     @function_tool
     def write(path: str, content: str) -> str:
@@ -47,11 +52,16 @@ async def openai_agents():
     client = AsyncOpenAI(base_url=BASE, api_key=TOKEN, max_retries=0)
     try:
         model = OpenAIChatCompletionsModel(model="chat", openai_client=client)
-        agent = Agent(name="fixture-agent", model=model, tools=[write])
+        strict_output = os.environ.get("AGENT_COMPAT_SCENARIO") == "strict-json"
+        agent = Agent(name="fixture-agent", model=model, tools=[write], output_type=Outcome if strict_output else str)
         result = Runner.run_streamed(agent, "Write the requested file and finish.", max_turns=3, run_config=RunConfig(tracing_disabled=True))
         async for _ in result.stream_events():
             pass
-        assert result.final_output == "Completed."
+        if strict_output:
+            assert isinstance(result.final_output, Outcome)
+            assert result.final_output.status == "completed" and result.final_output.count == 42
+        else:
+            assert result.final_output == "Completed."
     finally:
         await client.close()
 
