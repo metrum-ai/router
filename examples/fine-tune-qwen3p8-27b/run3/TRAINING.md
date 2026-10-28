@@ -56,7 +56,7 @@ not newly unseen benchmarks. Licensed public inputs and verifiers are snapshot
 - Official Axolotl `axolotlai/axolotl@sha256:26a660139e62125256473dce660087786d68e23411c7013339deffa4141a8631`; serving uses official `vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34`.
 - Same run-2 recipe parameters: BF16, no quantization or packing; max sequence 8,192; LoRA rank 8, alpha 16, dropout 0; `q_proj`, `v_proj`, `linear_attn.in_proj_qkv`, `linear_attn.out_proj` only. Verify actual module names and trainable parameter inventory before training.
 - One epoch over the 2,987 captured training views; microbatch 1, gradient accumulation 16, LR 1e-5, AdamW, cosine schedule, warmup ratio 0.03, seed 355, SDPA, gradient checkpointing and TF32 disabled. Record actual steps rather than assuming the earlier run's fixed 75 steps. Do not add direct-download rehearsal labels or tune on test data.
-- Run a tiny non-held-out smoke and verify exact data, image, model, GPU, LoRA inventory and matching rendered recipe before full training. Stop on smoke failure; a smoke is not a quality result.
+- Run a tiny non-held-out smoke and verify exact data, image, model, GPU, LoRA inventory and matching rendered recipe before full training. Stop on smoke failure; a smoke is not a quality result. `smoke_config.py` renders the one-step configuration and retains the real nonempty validation split. Offline CPU schema checks use Axolotl source revision `777990d36ab92dcdc8b62d5ad07dc30b9618ff25` from the pinned image; they do not replace the GPU smoke.
 
 ## Unchanged outcome gate
 
