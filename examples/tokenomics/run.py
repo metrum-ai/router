@@ -69,6 +69,8 @@ def main():
         p.error('this demonstration requires its checked-in quota settings')
     spec=importlib.util.spec_from_file_location('local_pi_instance', ROOT/'scripts/local_pi_instance.py')
     m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    hash_spec=importlib.util.spec_from_file_location('catalog_hash', ROOT/'examples/catalog/token_hash.py')
+    secure=importlib.util.module_from_spec(hash_spec); hash_spec.loader.exec_module(secure)
     upstream=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
     thread=threading.Thread(target=upstream.serve_forever,daemon=True); thread.start()
     process=None
@@ -102,10 +104,10 @@ def main():
                              pricing_source='https://example.invalid/local-excludes-compute',pricing_updated_at=settings['mock_pricing_date'])
             provider['models']={'target':model}; cfg['providers']={'backend':provider}
             cfg['models']={'demo':{'strategy':'static','targets':[{'provider':'backend','model_ref':'target'}]}}
-            prototype=cfg['callers'][0]; cfg['callers']=[]
+            prototype=cfg['callers'][0]; cfg['callers']=[]; ctl=secure.prepare(ROOT)
             for user in tokens:
                 caller=dict(prototype); caller.update(id=user,owner_user=user,project='project',environment='dev',allow=['demo'])
-                caller.update(m.caller_token_fields(tokens[user])); caller['quota']={'day':{'requests':settings[user+'_daily_request_limit'],'tokens':100000},'month':{'requests':0,'tokens':100000},'soft_pct':80}
+                secure.apply(caller,ctl,tokens[user],state); caller['quota']={'day':{'requests':settings[user+'_daily_request_limit'],'tokens':100000},'month':{'requests':0,'tokens':100000},'soft_pct':80}
                 cfg['callers'].append(caller)
             config=state/'config.yaml'; config.write_text(yaml.safe_dump(cfg,sort_keys=False)); config.chmod(0o600)
             with (state/'router.log').open('wb') as log, ExitStack() as cleanup:

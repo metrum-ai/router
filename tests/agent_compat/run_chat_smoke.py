@@ -27,10 +27,34 @@ TOKEN = "agent-compat-local-test-token"
 DIGEST = hashlib.sha256(TOKEN.encode()).hexdigest()
 
 
+def has_strict_json_schema(body: dict) -> bool:
+    """Check the bounded fixture's response format, not unrelated metadata."""
+    output = body.get("response_format")
+    if not isinstance(output, dict) or not isinstance(output.get("json_schema"), dict):
+        return False
+    spec = output["json_schema"]
+    schema = spec.get("schema")
+    if not isinstance(schema, dict) or not isinstance(schema.get("properties"), dict):
+        return False
+    fields = schema["properties"]
+    if not all(isinstance(fields.get(name), dict) for name in ("status", "count")):
+        return False
+    required = schema.get("required")
+    if not isinstance(required, list) or not all(isinstance(item, str) for item in required):
+        return False
+    return (output.get("type") == "json_schema" and spec.get("strict") is True
+            and schema.get("type") == "object" and schema.get("additionalProperties") is False
+            and set(required) == {"status", "count"}
+            and set(fields) == {"status", "count"}
+            and fields.get("status", {}).get("type") == "string"
+            and fields.get("count", {}).get("type") == "integer")
+
+
 class Mock(BaseHTTPRequestHandler):
     calls: list[dict] = []
     errors: list[str] = []
     parallel = False
+    strict_json = False
 
     def log_message(self, *_args):
         pass
@@ -44,6 +68,10 @@ class Mock(BaseHTTPRequestHandler):
         index = len(Mock.calls)
         if not body.get("stream") or index > 2:
             Mock.errors.append("unexpected stream flag or extra request")
+            self.send_error(400)
+            return
+        if Mock.strict_json and not has_strict_json_schema(body):
+            Mock.errors.append("strict JSON response schema was not preserved")
             self.send_error(400)
             return
         if index == 1:
@@ -69,7 +97,11 @@ class Mock(BaseHTTPRequestHandler):
                 Mock.errors.append("tool-result continuations not forwarded")
                 self.send_error(400)
                 return
-            frames = [{"role": "assistant", "content": "Completed."}]
+            if Mock.strict_json:
+                frames = [{"role": "assistant", "content": '{"status":"comp'},
+                          {"content": 'leted","count":42}'}]
+            else:
+                frames = [{"role": "assistant", "content": "Completed."}]
             finish = "stop"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -107,9 +139,12 @@ def main():
     client = sys.argv[1] if len(sys.argv) > 1 else "pi"
     depth = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     scenario = sys.argv[3] if len(sys.argv) > 3 else "single"
-    if scenario not in {"single", "parallel"}:
-        raise SystemExit("scenario must be single or parallel")
+    if scenario not in {"single", "parallel", "strict-json"}:
+        raise SystemExit("scenario must be single, parallel, or strict-json")
+    if scenario == "strict-json" and client != "openai-agents":
+        raise SystemExit("strict-json currently supports openai-agents only")
     Mock.parallel = scenario == "parallel"
+    Mock.strict_json = scenario == "strict-json"
     if depth < 0 or depth > 8:
         raise SystemExit("depth must be between 0 and 8")
     if client not in {"pi", "langgraph", "openai-agents"}:
@@ -148,7 +183,7 @@ state_path: "{work / f'state-{index}.json'}"
 providers:
   mock: {{base_url: "http://127.0.0.1:{upstream_port}/v1", dialect: openai-chat, api_key: "${{AGENT_COMPAT_NEXT_TOKEN}}", api_key_env: AGENT_COMPAT_NEXT_TOKEN}}
 models:
-  chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{openai_chat: [tools, tool_choice]}}}}]}}
+  chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{openai_chat: [tools, tool_choice, structured_outputs]}}}}]}}
 callers:
   - id: agent-compat
     token_sha256: "{DIGEST}"
@@ -182,7 +217,7 @@ callers:
                                 time.sleep(0.05)
                         else:
                             raise RuntimeError(f"router {index} did not become ready")
-                    child_env = env | {"HOME": str(work), "PI_CODING_AGENT_DIR": str(agent_dir), "ROUTER_BASE_URL": f"http://127.0.0.1:{port}/v1", "ROUTER_CALLER_TOKEN": TOKEN}
+                    child_env = env | {"HOME": str(work), "PI_CODING_AGENT_DIR": str(agent_dir), "ROUTER_BASE_URL": f"http://127.0.0.1:{port}/v1", "ROUTER_CALLER_TOKEN": TOKEN, "AGENT_COMPAT_SCENARIO": scenario}
                     if client == "pi":
                         command = [str(PI), "--provider", "router-compat", "--model", "chat", "--mode", "json", "--tools", "write", "--no-extensions", "--no-mcp", "--no-context-files", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-session", "--no-approve", "--offline", "Write the requested file and finish."]
                     else:

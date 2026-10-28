@@ -79,7 +79,8 @@ fabricating an exact receipt.
 
 Keep raw provider receipts, request IDs and task content private. Publish only
 reviewed, sanitized aggregates, configuration without credentials, and
-permission-cleared evidence. Weekly paid reruns and the required independent
-external reproduction must not be claimed until actually completed.
+permission-cleared evidence. See [WEEKLY.md](WEEKLY.md) for the scheduled rerun and audit procedure. Weekly
+paid reruns and the required independent external reproduction must not be
+claimed until actually completed.
 
 Metrum AI

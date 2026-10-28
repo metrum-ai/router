@@ -1,0 +1,33 @@
+{
+  "mode": "fireworks",
+  "statuses": [
+    200,
+    403,
+    429,
+    429,
+    200,
+    429
+  ],
+  "pii_applied_recorded": true,
+  "mock_upstream_redaction_verified": false,
+  "routing_reason": "length:local",
+  "audit_export": true,
+  "ordinary_export_status": 403,
+  "security_event_count": 6,
+  "usage": [
+    {
+      "caller": "rate",
+      "input_tokens": 33,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 3.39e-05
+    },
+    {
+      "caller": "scoped",
+      "input_tokens": 35,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 3.45e-05
+    }
+  ]
+}

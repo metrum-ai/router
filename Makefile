@@ -216,6 +216,8 @@ agent-tool-mock:
 	uv sync --locked --directory tests/agent_compat
 	$(PYTHON) tests/agent_compat/runtime_environment_test.py
 	$(PYTHON) tests/agent_compat/responses_fixture_test.py
+	$(PYTHON) tests/agent_compat/strict_json_fixture_test.py
+	for depth in 0 1 3; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py openai-agents "$$depth" strict-json || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
@@ -348,7 +350,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
-	$(PYTHON) -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
+	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
