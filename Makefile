@@ -840,6 +840,14 @@ lrp-e2e: lrp-synthetic-demo
 	uv run --project $(LRP_PROJECT) --locked python scripts/run_lrp_synthetic_demo.py --out-dir $(LRP_DEMO_DIR) --e2e
 	ROUTER_NGINX_E2E=1 go test ./internal/router -run '^TestStreamPolicyE2E$$' -count=1 -v
 
+# Loopback-only profiling wrapper smoke; this is not the overhead benchmark.
+.PHONY: overhead-profile-smoke
+overhead-profile-smoke:
+	go mod download
+	uv sync --locked --directory tests/agent_compat
+	go test -race ./benchmarks/overhead/profiled-router -count=1
+	python3 benchmarks/overhead/profiled-router/smoke.py
+
 clean:
 	rm -rf router router-token router-token-gen router-usage-report examples/cli-e2e-c/cli-e2e "$${DIST_DIR}"
 	rm -rf "$(DOCS_SITE_DIR)/build" "$(DOCS_SITE_DIR)/.docusaurus"
