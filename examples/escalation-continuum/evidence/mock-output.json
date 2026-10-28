@@ -1,0 +1,30 @@
+{
+  "mode": "mock",
+  "note": "length heuristic only; local token costs exclude compute, not provider invoices",
+  "routes": [
+    {
+      "prompt_chars": 50,
+      "tier": "local",
+      "target_model": "local-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "prompt_chars": 500,
+      "tier": "datacenter",
+      "target_model": "datacenter-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "prompt_chars": 1500,
+      "tier": "frontier",
+      "target_model": "frontier-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    }
+  ]
+}
