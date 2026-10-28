@@ -17,6 +17,7 @@ elif [[ "$*" == *"docker logs"* ]]; then
 else exit 1; fi
 ''');ssh.chmod(0o755)
             env={'PATH':str(binpath)+':'+os.environ['PATH'],'HOME':str(root)}
+            if 'LD_LIBRARY_PATH' in os.environ:env['LD_LIBRARY_PATH']=os.environ['LD_LIBRARY_PATH']
             subprocess.run([sys.executable,str(HERE/'capture.py'),str(state),str(evidence),'once','baseline'],env=env,check=True,stdout=subprocess.DEVNULL)
             inspect=(evidence/'baseline.inspect.json').read_text();self.assertNotIn('private-placeholder',inspect)
             self.assertEqual(json.loads(inspect)[0]['State']['ExitCode'],1)
@@ -36,6 +37,7 @@ elif [[ "$*" == *"docker stop"* ]]; then exit 0
 else exit 1; fi
 '''.replace('TRACE_PLACEHOLDER',str(trace)));ssh.chmod(0o755)
             env={'PATH':str(binpath)+':'+os.environ['PATH'],'HOME':str(root)}
+            if 'LD_LIBRARY_PATH' in os.environ:env['LD_LIBRARY_PATH']=os.environ['LD_LIBRARY_PATH']
             subprocess.run([sys.executable,str(HERE/'stop_one.py'),str(state),str(evidence),'baseline'],env=env,check=True,stdout=subprocess.DEVNULL)
             commands=trace.read_text();self.assertEqual(commands.count('docker logs proof426-baseline'),2)
             self.assertIn('{{ index .Config.Labels "metrum.task" }}',commands)
