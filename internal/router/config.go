@@ -198,6 +198,7 @@ type AdminSessionConfig struct {
 }
 
 type UpstreamConfig struct {
+	MaxRouterHops           int  `yaml:"max_router_hops"`
 	TimeoutMS               int  `yaml:"timeout_ms"`
 	DefaultAttemptTimeoutMS int  `yaml:"default_attempt_timeout_ms"`
 	MaxResponseBytes        int  `yaml:"max_response_bytes"`
@@ -1185,6 +1186,9 @@ func (c *Config) setDefaults() {
 	if strings.TrimSpace(c.Server.ConfigSource.Driver) == "" {
 		c.Server.ConfigSource.Driver = c.Server.UsageDB.Driver
 	}
+	if c.Server.Upstream.MaxRouterHops == 0 {
+		c.Server.Upstream.MaxRouterHops = 16
+	}
 	if c.Server.Upstream.TimeoutMS == 0 {
 		c.Server.Upstream.TimeoutMS = int((10 * time.Minute).Milliseconds())
 	}
@@ -1277,6 +1281,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if len(c.Provider) == 0 {
 		return fmt.Errorf("at least one provider is required")
+	}
+	if c.Server.Upstream.MaxRouterHops < 0 || c.Server.Upstream.MaxRouterHops > 128 {
+		return fmt.Errorf("server upstream max_router_hops must be between 1 and 128")
 	}
 	if c.Server.Upstream.TimeoutMS < 0 {
 		return fmt.Errorf("server upstream timeout_ms cannot be negative")
