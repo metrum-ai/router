@@ -123,6 +123,7 @@ func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor st
 	).Error; err != nil {
 		return 0, fmt.Errorf("append change event: %w", err)
 	}
+	queueConfigRevisionNotification(tx, runtimeScope)
 	return revision, nil
 }
 

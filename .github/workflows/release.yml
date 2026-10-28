@@ -21,9 +21,10 @@ jobs:
     runs-on: router-arc
     timeout-minutes: 90
     permissions:
-      # Only this job creates the GitHub Release; the workflow needs no
-      # id-token or packages grants.
+      # This job creates the release and its OIDC-backed attestations.
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,9 +55,37 @@ jobs:
           # later shell step or output.
           tag="$(python3 scripts/validate_release_tag.py "${candidate}")"
           printf 'tag=%s\n' "${tag}" >> "${GITHUB_OUTPUT}"
+      # Authenticode signing (#332) is enabled only for real tag builds. The
+      # pinned, checksum-verified jsign fat jar is fetched only then. When the
+      # Trusted Signing secrets are absent the sign step is a logged no-op, so
+      # this workflow keeps working until the credentials are provisioned.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch pinned jsign (checksum-verified)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/signing"
+          curl -fsSL -o "${RUNNER_TEMP}/signing/jsign.jar" https://github.com/ebourg/jsign/releases/download/7.6/jsign-7.6.jar
+          echo "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5  ${RUNNER_TEMP}/signing/jsign.jar" | sha256sum -c -
       - name: Build packages
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
+          ROUTER_SIGN_WINDOWS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          # Once signing is provisioned, set the repository variable
+          # WINDOWS_SIGNING_REQUIRED=true: a tag build with missing or partial
+          # signing secrets then fails instead of shipping unsigned binaries.
+          ROUTER_REQUIRE_WINDOWS_SIGNING: ${{ vars.WINDOWS_SIGNING_REQUIRED == 'true' && '1' || '' }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_CERT_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERT_PROFILE }}
         run: |
           # Binary packages only: the ephemeral router-arc pods have no
           # Docker daemon (and must not mount the host socket). Build customer
@@ -73,6 +102,17 @@ jobs:
             --commit "$(git rev-parse HEAD)" \
             --build-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --set binary
+      # Attest the exact set published below, after packaging and inventory.
+      # A dispatch on a non-tag ref remains a build-only dry run.
+      - name: Attest release asset provenance
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: |
+            dist/metrum-ai-router-*.tar.gz
+            dist/metrum-ai-router-*.zip
+            dist/SHA256SUMS
+            dist/release-artifacts.json
       - name: Upload inventory-validated release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

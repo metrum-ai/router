@@ -1,0 +1,9 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+services:
+  default:
+    image: aisiuk/inspect-tool-support@sha256:bbaecf7a093cfe24703c97d562bb059899e272cd5d57f16d9916fe05e6614419
+    command: tail -f /dev/null
+    init: true
+    network_mode: none
+    stop_grace_period: 1s

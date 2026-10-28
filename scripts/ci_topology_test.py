@@ -108,6 +108,7 @@ def assert_make_tiers() -> None:
     assert_go_timeout_headroom(fast, make_recipe=True)
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
+    require("scripts/release_provenance_test.py" in fast, "test-fast dropped the release provenance contract")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")
@@ -145,6 +146,7 @@ def assert_deterministic_gate() -> None:
         "contracts": ("make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test",
                       "scripts/outcome_calibrated_policy_test.py", "scripts/api_compat_bootstrap_test.py",
                       "scripts/ci_topology_test.py", "scripts/harbor_promotion_test.py",
+                      "scripts/release_provenance_test.py",
                       "make docs-qa", "tsc --noEmit"),
         "api-compat": ("make api-compat-mock", "make api-compat-ts"),
         "harbor": ("make harbor-local",),
@@ -227,6 +229,16 @@ def assert_provider_workflows() -> None:
     require("scripts/ci_lrp_synthetic.sh" in lrp, "LRP workflow drifted from the shared script")
 
 
+def assert_agent_chain_workflow() -> None:
+    text = read(WORKFLOWS / "agent-chain-nightly.yml")
+    require("schedule:" in text and "workflow_dispatch:" in text,
+            "agent chain mock needs nightly and manual triggers")
+    require("secrets." not in text and "make agent-chain-mock" in text,
+            "agent chain nightly must stay mock-only and credential-free")
+    require("if: always()" in text and "chain-matrix.json" in text,
+            "agent chain nightly must retain per-cell results on failure")
+
+
 def assert_arc_runners() -> None:
     for path in sorted(WORKFLOWS.glob("*.yml")):
         text = read(path)
@@ -235,6 +247,17 @@ def assert_arc_runners() -> None:
                     "pikachu cache maintenance must stay on its original host")
             continue
         for name, body in jobs(text).items():
+            if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
+                    (path.name == "agent-chain-nightly.yml" and name == "codex-chain-sandbox")):
+                # Codex needs unprivileged namespaces absent from ARC. These VM
+                # jobs are credential-free and execute only local mock fixtures.
+                require(re.search(r"(?m)^    runs-on: ubuntu-22\.04$", body) is not None,
+                        "Codex sandbox must use the VM runner reserved for this test")
+                require("run_codex_chain.py" in body and "secrets." not in body,
+                        "Codex VM exception is only for the offline sandbox matrix")
+                if path.name == "agent-tool-compat.yml":
+                    require("make agent-tool-mock-codex" in body, "Codex PR smoke was removed")
+                continue
             require(re.search(r"(?m)^    runs-on: router-arc$", body) is not None,
                     f"{path.name}/{name} must use router-arc")
         require("cache: false" not in text, f"{path.name} must not rely on warm host Go caches")
@@ -248,6 +271,7 @@ def main() -> int:
     assert_fast_go_workflow()
     assert_deterministic_gate()
     assert_provider_workflows()
+    assert_agent_chain_workflow()
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")

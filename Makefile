@@ -192,6 +192,44 @@ api-compat-ts:
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
+# Local in-process concurrency proof; no providers or database resources.
+.PHONY: governance-load
+governance-load:
+	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
+
+# Local driver tests and localhost router integration; not an overhead benchmark.
+.PHONY: overhead-load-smoke
+overhead-load-smoke:
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -v
+	$(PYTHON) benchmarks/overhead/integration_smoke.py
+
+# Real agent clients against a loopback scripted upstream; no hosted calls.
+.PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
+agent-tool-mock:
+	go mod download
+	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
+	uv sync --locked --directory tests/agent_compat
+	$(PYTHON) tests/agent_compat/runtime_environment_test.py
+	$(PYTHON) tests/agent_compat/responses_fixture_test.py
+	$(PYTHON) tests/agent_compat/strict_json_fixture_test.py
+	for depth in 0 1 3; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py openai-agents "$$depth" strict-json || exit $$?; done
+	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" || exit $$?; done
+	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
+	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
+	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+
+# Requires an OS that permits the Codex workspace sandbox; never disable it.
+agent-tool-mock-codex:
+	$(PYTHON) tests/agent_compat/codex_responses_smoke.py
+
+# Initial deterministic chain matrix; does not claim live-provider coverage.
+agent-chain-mock:
+	go mod download
+	npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
+	uv sync --locked --directory tests/agent_compat
+	$(PYTHON) tests/agent_compat/run_chain_matrix_test.py
+	tests/agent_compat/.venv/bin/python tests/agent_compat/run_chain_matrix.py --output "$${AGENT_CHAIN_REPORT:-tests/agent_compat/.out/chain-matrix.json}"
+
 eval-humaneval:
 	$(PYTHON) scripts/inspect_coding_eval.py run --suite humaneval
 
@@ -302,8 +340,16 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/api_compat_bootstrap_test.py
 	"$${MAKE:-make}" harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
+	uv run --with pyyaml python scripts/release_provenance_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
+	uv run --with pyyaml python scripts/eval_infra_test.py
+	uv run --with pyyaml python scripts/eval_infra_matrix.py
+	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
@@ -490,6 +536,7 @@ secret-check: secret-contract
 	python3 scripts/validate_package_contents_test.py
 	python3 scripts/check_compose_security_test.py
 	python3 scripts/make_release_zip_test.py
+	python3 scripts/sign_windows_exes_test.py
 	python3 scripts/release_artifact_inventory_test.py
 	python3 scripts/validate_release_clean_test.py
 	python3 scripts/compose_package_upgrade_test.py
@@ -641,6 +688,7 @@ package-one-no-docs: capability-smoke-unit
 	find "$$pkg_dir" -type f -exec chmod 0644 {} +; \
 	chmod 0755 "$$pkg_dir"/bin/*; \
 	if [ "$${GOOS}" = windows ]; then \
+		python3 scripts/sign_windows_exes.py "$$pkg_dir/bin"; \
 		python3 scripts/make_release_zip.py "$$pkg_dir" "$${DIST_DIR}/$$pkg_name.zip"; \
 	else \
 		$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
@@ -806,6 +854,20 @@ lrp-synthetic-demo:
 lrp-e2e: lrp-synthetic-demo
 	uv run --project $(LRP_PROJECT) --locked python scripts/run_lrp_synthetic_demo.py --out-dir $(LRP_DEMO_DIR) --e2e
 	ROUTER_NGINX_E2E=1 go test ./internal/router -run '^TestStreamPolicyE2E$$' -count=1 -v
+
+# Local guarded profiling at 32/128; not a performance measurement.
+.PHONY: overhead-profile-load-smoke
+overhead-profile-load-smoke:
+	go test -race ./benchmarks/overhead/profiled-router -count=1
+	$(PYTHON) benchmarks/overhead/profile_integration_smoke.py
+
+# Loopback-only profiling wrapper smoke; this is not the overhead benchmark.
+.PHONY: overhead-profile-smoke
+overhead-profile-smoke:
+	go mod download
+	uv sync --locked --directory tests/agent_compat
+	go test -race ./benchmarks/overhead/profiled-router -count=1
+	python3 benchmarks/overhead/profiled-router/smoke.py
 
 clean:
 	rm -rf router router-token router-token-gen router-usage-report examples/cli-e2e-c/cli-e2e "$${DIST_DIR}"

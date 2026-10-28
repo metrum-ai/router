@@ -32,7 +32,10 @@ jobs:
           cache: npm
           cache-dependency-path: examples/fine-tune-qwen3p8-27b/eval/package-lock.json
       - run: make ft-example-test
-      - name: Synthetic router tool continuation
+      - name: Run 3 source, split and mock collection
         run: |
           go build -o "$RUNNER_TEMP/ft-example-router" ./cmd/metrum-ai-router
+          ROUTER_TEST_BINARY="$RUNNER_TEMP/ft-example-router" uv run --with bcrypt --with jsonschema==4.26.0 python -m unittest discover -s examples/fine-tune-qwen3p8-27b/run3 -p 'test_*.py' -v
+      - name: Synthetic router tool continuation
+        run: |
           uv run --with pyyaml --with jsonschema==4.26.0 python examples/fine-tune-qwen3p8-27b/eval/router_e2e.py --router-bin "$RUNNER_TEMP/ft-example-router"

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Router chains append a sanitized router-only `Via` and stop at the configured
+  hop limit (default 16) with HTTP 508; malformed entries are ignored, other
+  proxy entries are not forwarded, and upstream 508 is not retried (#430).
+  Intermediate proxies must preserve `Via` for protection.
+
+- Native stream traces now distinguish the first observed upstream byte from
+  the first flushed downstream frame (#455). Profile-paced upstream streams
+  omit misleading independent upstream duration and throughput values; their
+  paced proxy wall time remains available in the trace.
+
+- GitHub build-provenance attestations for every published release archive,
+  `SHA256SUMS`, and `release-artifacts.json` (#332). Windows archives are
+  unsigned by default; Authenticode remains an optional signing path.
+
+- Release workflow: Windows binaries are Authenticode-signed with Azure
+  Trusted Signing (RFC 3161 timestamped) when the signing secrets are
+  provisioned — the step is a logged no-op until then, so unsigned builds
+  keep working. Signing runs between the Windows `.exe` builds and the
+  deterministic zip packaging on tag builds only, so checksums and the
+  release inventory always hash the signed binaries; a sign or verify
+  failure fails the release once credentials exist (#332).
+
 - Experiment profiles for endpoint-bound agent studies (#379): opt-in,
   scope-required (callers/groups/targets) profiles inject an added TTFT
   delay with seeded reproducible jitter and pace delivered output by an

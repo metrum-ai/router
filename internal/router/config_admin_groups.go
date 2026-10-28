@@ -307,6 +307,7 @@ func activateConfigSetGuardedTx(tx *gorm.DB, runtimeScope, newSetID string, guar
 			).Error; err != nil {
 				return 0, fmt.Errorf("insert runtime revision: %w", err)
 			}
+			queueConfigRevisionNotification(tx, runtimeScope)
 			return 1, nil
 		}
 		current, err := currentRevisionForScope(tx, runtimeScope)
@@ -315,6 +316,7 @@ func activateConfigSetGuardedTx(tx *gorm.DB, runtimeScope, newSetID string, guar
 		}
 		return 0, &ConfigAdminError{Status: 409, Type: "config-revision-conflict", Message: "the active configuration changed concurrently; retry with the current revision", Revision: current}
 	}
+	queueConfigRevisionNotification(tx, runtimeScope)
 	return guardRevision + 1, nil
 }
 

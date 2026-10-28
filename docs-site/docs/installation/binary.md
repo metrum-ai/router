@@ -37,14 +37,30 @@ Router process; it neither provisions nor binds RDS.
 
 ## Windows ZIP Install
 
-Download the ZIP matching the Windows host architecture and verify its SHA-256
-against the release's `SHA256SUMS` before extracting. In PowerShell:
+Download the ZIP matching the Windows host architecture and `SHA256SUMS` from
+the official GitHub release. Install the [GitHub CLI](https://cli.github.com/)
+and verify both downloaded files before extracting. In PowerShell, replace
+`vX.Y.Z` and the architecture with the downloaded filename:
 
 ```powershell
-Get-FileHash .\metrum-ai-router-<version>-windows-amd64.zip -Algorithm SHA256
+$zip = ".\metrum-ai-router-vX.Y.Z-windows-amd64.zip"
+gh attestation verify $zip -R metrum-ai/router
+gh attestation verify .\SHA256SUMS -R metrum-ai/router
+Get-FileHash $zip -Algorithm SHA256
 ```
 
-Compare the displayed hash with the matching filename entry in `SHA256SUMS`.
+Compare the displayed hash with the matching filename entry in the verified
+`SHA256SUMS`. Stop if either attestation verification or the checksum
+comparison fails. Attestations are available for releases produced after the
+attestation workflow was introduced, not retroactively for earlier releases.
+
+The default Windows binaries are unsigned, so SmartScreen may display an
+**unknown publisher** warning. Only after verifying the download and following
+your organization's executable-approval policy, you can select **More info**
+then **Run anyway** when that option is offered. An attestation identifies the
+build provenance; it does not turn an unsigned executable into an
+Authenticode-signed one or override organizational policy.
+
 Extract the archive; it contains a top-level
 `metrum-ai-router-<version>-windows-<arch>\` directory with `bin\`, `config\`,
 `docs\`, `caddy\`, and the package legal files. The executables are named, for
@@ -63,10 +79,9 @@ Copy-Item .\config\env.example.json .\config\env.json
 Populate provider credentials through the protected environment or the
 operator's approved secret mechanism before startup. The package does not
 install or configure a Windows service, and its Caddyfile is an example only;
-Caddy is not bundled as a service. Windows binaries are not Authenticode-signed
-currently, so Windows may display publisher/security warnings. Apply the
-organization's executable approval and service-supervision controls before
-production use.
+Caddy is not bundled as a service. Authenticode signing is an optional,
+separately provisioned release path, not the default. Apply the organization's
+executable approval and service-supervision controls before production use.
 
 Create a dedicated service account, then create deployment-owned directories:
 

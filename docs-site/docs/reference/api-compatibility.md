@@ -129,6 +129,36 @@ shape can be rejected. This suite is router compatibility evidence, not
 provider capability certification; live providers require `make api-compat-live`
 with an approved non-production matrix.
 
+### Real-agent tool-loop smoke (initial coverage)
+
+`make agent-tool-mock` exercises pinned real agents through a local router and
+a scripted upstream. It currently covers pi, LangGraph and OpenAI Agents SDK
+on Chat, and Claude Code on Messages: one streamed tool use followed by a
+client-executed tool result at one same-dialect router hop. Each of these four
+local cases passed once (1/1); this is a deterministic smoke, not a statistical
+pass rate or a claim about live providers. The Claude case allows the
+context-management beta on its test target. A Codex Responses case passed
+once on a sandbox-capable CI VM, but was blocked locally by denied unprivileged
+user namespaces; see [the suite README](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md).
+
+Pi, LangGraph, and OpenAI Agents SDK also each passed one streamed tool loop
+with a Chat caller through a Chat-to-Responses bridge to a scripted Responses
+upstream. Each also passed one same-dialect Chat scenario with two streamed
+tool calls in one assistant turn and two results in the continuation; this
+proves neither simultaneous execution nor all parallel-tool shapes. The OpenAI
+Agents SDK strict JSON response-format case additionally checks the schema's
+strict flag, fields and required list at depths 0, 1 and 3, while the SDK
+validates the returned typed output. These are mock cases, not arbitrary-schema
+or live-provider certification.
+
+An initial chain sweep runs each of the four native-dialect clients directly and
+through one, two, three and five same-dialect hops. All 20 local deterministic
+cells passed once; `make agent-chain-mock` produces a per-cell JSON report.
+This checks successful streamed tool execution and continuation, not complete
+stream equivalence or per-hop accounting. Codex remains untested in that
+sweep. Other clients/surfaces, other cross-dialect paths, broader parallel-tool
+coverage, loop protection and live nightly evidence remain open in #429 and #430.
+
 ### Validation evidence (offline)
 
 | Item | Value |

@@ -1,0 +1,78 @@
+# Preregistered evaluation matrix (metrum-ai/router#330).
+#
+# This file is the preregistration: sample sizes and allowed regression
+# deltas are chosen BEFORE any evaluation run. A single trial of any cell is
+# a smoke gate, never broad statistical certification (EVAL-03). Cells marked
+# offline run on the merge-queue gate; cells marked nightly/live require a
+# bounded-spend approval and are tracked on the issue (NEEDS CHETAN #330).
+version: 1
+
+# EVAL-01: three recording modes for an identical eligible workload. The
+# direct mode isolates provider/model quality, fixed-router isolates adapter
+# fidelity, and dynamic-group isolates routing policy.
+modes: [direct, fixed-router, dynamic-group]
+
+# Regression gates reused from config/evaluation-policy.example.json.
+policy_file: config/evaluation-policy.example.json
+
+cells:
+  - id: humaneval-direct
+    suite: humaneval
+    mode: direct
+    environment: nightly-live
+    sample_size: 10          # repeated trials per cell
+    allowed_score_delta: 0.05
+    allowed_error_rate: 0.10
+  - id: humaneval-fixed
+    suite: humaneval
+    mode: fixed-router
+    environment: nightly-live
+    sample_size: 10
+    allowed_score_delta: 0.05
+    allowed_error_rate: 0.10
+  - id: humaneval-dynamic
+    suite: humaneval
+    mode: dynamic-group
+    environment: nightly-live
+    sample_size: 10
+    allowed_score_delta: 0.05
+    allowed_error_rate: 0.10
+  - id: api-compat-dynamic
+    suite: api-compat
+    mode: dynamic-group
+    environment: offline     # merge-queue gate; deterministic
+    sample_size: 1
+    allowed_score_delta: 0.0
+    allowed_error_rate: 0.0
+
+# ARCH-06: pairwise coverage of the supported request-shape matrix plus
+# mandatory high-risk triples. Excluded combinations are enumerated
+# explicitly; nothing is silently untested.
+factors:
+  transport: [unary, stream]
+  tools: [no-tools, tools]
+  reasoning: [no-reasoning, reasoning]
+  media: [text-only, image]
+  fallback: [no-fallback, fallback]
+  continuation: [no-continuation, continuation]
+
+mandatory_triples:
+  - [stream, tools, reasoning]       # covered by manifest rows (e.g. ANTH/CHAT tool streams)
+  - [image, tools, fallback]         # ANTH-11 family
+  - [continuation, restart, caller-isolation]  # ROUTE-06/08 family (restart and caller-isolation are harness axes)
+
+# Explicitly excluded pairings, with reasons. Extend only with a reason.
+excluded:
+  - combo: [image, reasoning]
+    reason: "no image-capable reasoning target in the current catalog"
+  - combo: [stream, continuation]
+    reason: "stateful continuation streams are covered by the dedicated bridge-session suite, not the pairwise generator"
+
+# EVAL-05 task-level gates evaluated per report row (see
+# scripts/eval_report_schema.py). Latency and cost gates gate at task level,
+# not per-request.
+task_gates:
+  max_time_to_first_event_ms: 15000
+  max_completion_latency_ms: 600000
+  max_tool_turns: 40
+  max_cost_per_verified_task_usd: 0.50   # includes failed attempts
