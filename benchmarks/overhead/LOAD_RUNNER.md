@@ -19,7 +19,9 @@ For an operator-controlled environment, the driver accepts direct and routed
 OpenAI Chat completion URLs and one model name, sent identically on both paths.
 Use a synthetic prompt, and provide credentials only via environment variables
 named with `--direct-token-env` and `--router-token-env`. URLs must not contain
-user information, query strings or fragments. Output goes to a **new**, private
+user information, query strings or fragments. Credential-bearing requests require
+HTTPS or a loopback HTTP endpoint; credentials are never sent to non-loopback
+cleartext endpoints. Output goes to a **new**, private
 directory; credentials, endpoint URLs, prompt text, and response content are
 not included in its manifest, summaries or per-request samples. Verify and
 redact all generated artifacts and router logs before sharing.

@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import hashlib
 import http.client
+import ipaddress
 import json
 import math
 import os
@@ -32,6 +33,15 @@ def parse_endpoint(url):
     # Access validates a malformed port before any requests start.
     _ = p.port
     return p
+
+
+def safe_auth_endpoint(endpoint):
+    if endpoint.scheme == "https" or endpoint.hostname.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(endpoint.hostname).is_loopback
+    except ValueError:
+        return False
 
 
 def connection(endpoint, timeout):
@@ -231,6 +241,9 @@ def main():
             parser.error("specified credential environment variable is unset or empty")
         return os.environ[name]
     tokens = {"direct": token_from(args.direct_token_env), "router": token_from(args.router_token_env)}
+    for route, endpoint in (("direct", direct), ("router", routed)):
+        if tokens[route] and not safe_auth_endpoint(endpoint):
+            parser.error("credential-bearing endpoints require HTTPS or loopback HTTP")
     prompt_bytes = pathlib.Path(args.prompt_file).read_bytes()
     prompt = prompt_bytes.decode("utf-8")
     if not prompt or not args.model:

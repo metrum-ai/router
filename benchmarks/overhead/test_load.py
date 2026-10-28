@@ -128,9 +128,26 @@ class LoadTests(unittest.TestCase):
         self.assertIn("no complete summary", result.stderr)
         self.assertFalse((self.root / "results" / "summary.json").exists())
 
+    def test_credentials_rejected_for_remote_http_before_requests(self):
+        env = dict(os.environ, LOAD_TEST_DIRECT="synthetic-direct-key")
+        result = subprocess.run([
+            sys.executable, str(HERE / "load.py"), "--direct-url", "http://192.0.2.1/chat",
+            "--router-url", "http://127.0.0.1:1/chat", "--direct-token-env", "LOAD_TEST_DIRECT",
+            "--prompt-file", str(self.prompt), "--model", "mock-model",
+            "--output-dir", str(self.root / "results"), "--output-tokens", "3",
+        ], env=env, text=True, capture_output=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("require HTTPS or loopback HTTP", result.stderr)
+        self.assertNotIn("synthetic-direct-key", result.stderr)
+        self.assertFalse((self.root / "results").exists())
+
     def test_url_and_percentiles(self):
         self.assertEqual(load.percentile([1, 2, 3, 4], .5), 2)
         self.assertEqual(load.percentile([1, 2, 3, 4], .99), 4)
+        for url in ["https://example.org/path", "http://localhost/path", "http://127.0.0.2/path", "http://[::1]/path"]:
+            self.assertTrue(load.safe_auth_endpoint(load.parse_endpoint(url)))
+        for url in ["http://example.org/path", "http://192.0.2.1/path"]:
+            self.assertFalse(load.safe_auth_endpoint(load.parse_endpoint(url)))
         for url in ["http://user:secret@localhost/path", "http://localhost/path?key=secret", "file:///tmp/foo", "http://localhost/path#fragment"]:
             with self.assertRaises(ValueError):
                 load.parse_endpoint(url)
