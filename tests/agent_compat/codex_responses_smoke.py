@@ -9,6 +9,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -88,6 +89,9 @@ def main():
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, interrupted)
+    depth = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+    if depth < 0 or depth > 8:
+        raise SystemExit("depth must be between 0 and 8")
     if not CODEX.is_file():
         raise SystemExit("install pinned clients with npm ci --ignore-scripts --prefix tests/agent_compat")
     Mock.calls.clear()
@@ -101,19 +105,28 @@ def main():
             env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
             binary = work / "router"
             subprocess.run(["go", "build", "-tags", "dev_no_license", "-o", str(binary), "./cmd/metrum-ai-router"], cwd=ROOT, env=env, check=True)
-            port = free_port()
-            config = f'''server:
-  listen: "127.0.0.1:{port}"
+            ports = []
+            while len(ports) < depth:
+                candidate = free_port()
+                if candidate != upstream.server_port and candidate not in ports:
+                    ports.append(candidate)
+            port = ports[-1] if ports else upstream.server_port
+            env["AGENT_COMPAT_NEXT_TOKEN"] = TOKEN
+            for index, hop_port in enumerate(ports):
+                upstream_port = upstream.server_port if index == 0 else ports[index - 1]
+                target_model = "synthetic-responses" if index == 0 else "chat"
+                config = f'''server:
+  listen: "127.0.0.1:{hop_port}"
   identifiers: {{mode: passthrough}}
   default_model_group: chat
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
-  logging: {{path: "{work / 'router.jsonl'}"}}
-state_path: "{work / 'state.json'}"
+  logging: {{path: "{work / f'router-{index}.jsonl'}"}}
+state_path: "{work / f'state-{index}.json'}"
 providers:
-  mock: {{base_url: "http://127.0.0.1:{upstream.server_port}/v1", dialect: openai-responses}}
+  mock: {{base_url: "http://127.0.0.1:{upstream_port}/v1", dialect: openai-responses, api_key: "${{AGENT_COMPAT_NEXT_TOKEN}}", api_key_env: AGENT_COMPAT_NEXT_TOKEN}}
 models:
-  chat: {{strategy: static, targets: [{{provider: mock, model: synthetic-responses, tool_support: {{openai_responses: [function, tool_choice]}}, reasoning: {{supported: true, mode: opt_in, control: effort_enum}}}}]}}
+  chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{openai_responses: [function, tool_choice]}}, reasoning: {{supported: true, mode: opt_in, control: effort_enum}}}}]}}
 callers:
   - id: agent-compat
     token_sha256: "{DIGEST}"
@@ -122,7 +135,7 @@ callers:
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
     key: {{lifetime_tokens: 40000000000}}
 '''
-            (work / "config.yaml").write_text(config, encoding="utf-8")
+                (work / f"config-{index}.yaml").write_text(config, encoding="utf-8")
             codex_home = work / "codex-home"
             codex_home.mkdir()
             (codex_home / "config.toml").write_text(f'''model_provider = "router-compat"
@@ -137,19 +150,22 @@ request_max_retries = 0
 stream_max_retries = 0
 ''', encoding="utf-8")
             with (work / "router.stderr").open("w", encoding="utf-8") as stderr:
-                router = subprocess.Popen([str(binary), "-config", "config.yaml"], cwd=work, env=env, stdout=stderr, stderr=stderr)
+                routers = []
                 try:
-                    deadline = time.monotonic() + 60
-                    while time.monotonic() < deadline:
-                        if router.poll() is not None:
-                            raise RuntimeError("router exited before readiness")
-                        try:
-                            if urlopen(f"http://127.0.0.1:{port}/readyz", timeout=1).status == 200:
-                                break
-                        except OSError:
-                            time.sleep(0.05)
-                    else:
-                        raise RuntimeError("router did not become ready")
+                    for index, hop_port in enumerate(ports):
+                        router = subprocess.Popen([str(binary), "-config", f"config-{index}.yaml"], cwd=work, env=env, stdout=stderr, stderr=stderr)
+                        routers.append(router)
+                        deadline = time.monotonic() + 60
+                        while time.monotonic() < deadline:
+                            if router.poll() is not None:
+                                raise RuntimeError(f"router {index} exited before readiness")
+                            try:
+                                if urlopen(f"http://127.0.0.1:{hop_port}/readyz", timeout=1).status == 200:
+                                    break
+                            except OSError:
+                                time.sleep(0.05)
+                        else:
+                            raise RuntimeError(f"router {index} did not become ready")
                     child_env = {"PATH": env["PATH"], "HOME": str(work), "CODEX_HOME": str(codex_home), "ROUTER_CALLER_TOKEN": TOKEN}
                     command = [str(CODEX), "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "workspace-write", "--json", "Write the requested file and finish."]
                     process = subprocess.Popen(command, cwd=work, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
@@ -175,14 +191,17 @@ stream_max_retries = 0
                         raise RuntimeError(f"generated file missing or incorrect; tool output={results}; stderr={stderr[-1500:]}; events={stdout[-3000:]}")
                     if Mock.errors or len(Mock.calls) != 2:
                         raise RuntimeError(f"mock errors={Mock.errors}, calls={len(Mock.calls)}")
-                    print("PASS: codex / OpenAI Responses / same dialect / depth 1: streamed tool call and tool-result continuation")
+                    print(f"PASS: codex / OpenAI Responses / same dialect / depth {depth}: streamed tool call and tool-result continuation")
                 finally:
-                    router.terminate()
-                    try:
-                        router.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        router.kill()
-                        router.wait(timeout=5)
+                    for router in reversed(routers):
+                        if router.poll() is None:
+                            router.terminate()
+                    for router in reversed(routers):
+                        try:
+                            router.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            router.kill()
+                            router.wait(timeout=5)
     finally:
         upstream.shutdown()
         upstream.server_close()

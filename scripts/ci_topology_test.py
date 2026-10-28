@@ -247,13 +247,16 @@ def assert_arc_runners() -> None:
                     "pikachu cache maintenance must stay on its original host")
             continue
         for name, body in jobs(text).items():
-            if path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox":
-                # Codex's workspace sandbox needs unprivileged namespaces that
-                # router-arc containers do not provide; keep this VM exception narrow.
+            if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
+                    (path.name == "agent-chain-nightly.yml" and name == "codex-chain-sandbox")):
+                # Codex needs unprivileged namespaces absent from ARC. These VM
+                # jobs are credential-free and execute only local mock fixtures.
                 require(re.search(r"(?m)^    runs-on: ubuntu-22\.04$", body) is not None,
                         "Codex sandbox must use the VM runner reserved for this test")
-                require("make agent-tool-mock-codex" in body and "secrets." not in body,
-                        "Codex VM exception is only for the offline sandbox smoke")
+                require("run_codex_chain.py" in body and "secrets." not in body,
+                        "Codex VM exception is only for the offline sandbox matrix")
+                if path.name == "agent-tool-compat.yml":
+                    require("make agent-tool-mock-codex" in body, "Codex PR smoke was removed")
                 continue
             require(re.search(r"(?m)^    runs-on: router-arc$", body) is not None,
                     f"{path.name}/{name} must use router-arc")
