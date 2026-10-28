@@ -12,8 +12,13 @@ SSH instance, the approved image is the instance container itself; use
 The router and client may stay local and use loopback SSH tunnels; record the
 same tunnel arrangement for both arms and include its overhead. Alternatively,
 `serve.sh` runs the pinned official image on a dedicated Docker-capable host.
-Four expert servers each get one GPU; the baseline serves the general base with
-tensor parallelism over all four. Use identical prompts, four caller keys, max-output limit, concurrency
+The retry uses `serve-one.sh` to start the baseline and each expert separately,
+with a readiness and compatibility timeout before the next start. Containers are
+retained after exit; `capture.py` saves Docker logs and sanitized inspect records
+before stopping or teardown. If the baseline cannot become ready, continue with
+the four single-GPU experts and report partial evidence, not parity. Four expert
+servers each get one GPU; the baseline serves the general base with tensor
+parallelism over all four. Use identical prompts, four caller keys, max-output limit, concurrency
 and decoding. Closed-loop concurrency four produces **matched concurrency and
 case counts**, not a controlled equal arrival-rate workload. Measure actual
 elapsed rate. No hidden retries or score-based task replacement.

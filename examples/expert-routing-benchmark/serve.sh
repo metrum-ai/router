@@ -23,7 +23,7 @@ cleanup_failed() { for name in "${started[@]}"; do docker stop "$name" >/dev/nul
 trap cleanup_failed ERR
 start() {
   local name=$1 gpu=$2 port=$3 model=$4 served=$5; shift 5
-  docker run -d --rm --network host --gpus "$gpu" --name "proof426-$name" --label metrum.task=issue-426 \
+  docker run -d --network host --gpus "$gpu" --name "proof426-$name" --label metrum.task=issue-426 \
     --mount "type=bind,src=$root,dst=/models,readonly" "$IMAGE" \
     --model "/models/$model" --served-model-name "$served" --host 127.0.0.1 --port "$port" \
     --max-model-len 8192 "$@" >/dev/null
