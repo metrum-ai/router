@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Router chains append `Via` and stop at the configured hop limit (default 16)
+  with HTTP 508; some malformed `Via` entries are rejected, and upstream 508 is not retried
+  (#430). Intermediate proxies must preserve `Via` for protection.
+
 - Native stream traces now distinguish the first observed upstream byte from
   the first flushed downstream frame (#455). Profile-paced upstream streams
   omit misleading independent upstream duration and throughput values; their

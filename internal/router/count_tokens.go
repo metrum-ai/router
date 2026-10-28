@@ -101,6 +101,7 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	for name, value := range provider.Headers {
 		upstream.Header.Set(name, value)
 	}
+	forwardRouterVia(upstream.Header, rc.via)
 	if upstream.Header.Get("Anthropic-Version") == "" {
 		upstream.Header.Set("Anthropic-Version", "2023-06-01")
 	}
