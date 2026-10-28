@@ -88,6 +88,15 @@ never executed, so it is **not** a functional coding benchmark. Strict scores
 require the correct single label or numeric answer; HTTP/parse/timeout failures
 remain in the denominator. No generated text or secrets enter result summaries.
 
+Download the six pinned public revisions on the host, not inside the serving
+image: place `download_models.py` and a trusted `uv` executable in a fresh
+private workspace, then run `bash download_host.sh /absolute/workspace` after
+watcher and disk preflight. The script installs pinned `hf` CLI dependencies,
+strips credential variables for each download, and verifies safetensor hashes,
+config and tokenizer files. Its explicit `--tiny-self-test` downloads only the
+pinned tiny public test model, not the benchmark models; it is not inference or
+a benchmark result. Offline CI exercises the wrapper with fake host tools.
+
 The router's TypeScript content classifier uses an interpretable fixed keyword
 vocabulary, not caller labels. Unknown or tied content routes to the coding
 expert as an explicit out-of-domain fallback; that fallback is **not** the

@@ -31,7 +31,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-      - name: Credential-free mock benchmark
+      - name: Install pinned host download CLI
+        run: python -m pip install 'huggingface_hub==1.14.0' 'click==8.3.1'
+      - name: Credential-free offline mock benchmark
         run: |
           node --test examples/expert-routing-benchmark/policy.test.mjs
           go build -o "$RUNNER_TEMP/expert-router" ./cmd/metrum-ai-router

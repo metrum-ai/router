@@ -46,6 +46,32 @@ CLI does not emit the AMD overlay.
 
 If the internal service requires a bearer token, set `auth_scheme: bearer` and load `api_key` from the deployment environment. If access is enforced entirely by network policy, mTLS, or a service mesh, omit `api_key`; the router will not add an upstream authorization header.
 
+## Trusted router upstreams
+
+For a downstream Metrum AI Router that your deployment authenticates and
+trusts, YAML config may opt in per provider:
+
+```yaml
+providers:
+  regional_router:
+    base_url: https://router.internal.example/v1
+    dialect: openai-chat
+    api_key_env: REGIONAL_ROUTER_TOKEN
+    upstream_kind: router
+```
+
+The default is off. For a flagged upstream, a pre-stream rate-limited HTTP 429
+or a 503 with `error.type: upstream-rate-limited` keeps its status and the
+`upstream-rate-limited` classification after eligible fallback attempts are
+exhausted. Valid `Retry-After` delta-seconds (at most 18 digits) or HTTP dates
+(at most 64 characters) are preserved; invalid values are omitted. Other 503s and all unflagged
+providers retain existing behavior. If an unflagged model-provider hop already
+normalized a 429 and dropped the header, a later router cannot reconstruct it.
+This flag does not authenticate the upstream. Protect and authenticate the hop;
+never infer trust from `Via` or arbitrary provider bodies. Database-backed
+config-set projection currently rejects this field rather than silently dropping
+it; use YAML mode only.
+
 ## Upstream Server Requirements
 
 The upstream service must expose an OpenAI-compatible endpoint matching the configured router dialect:

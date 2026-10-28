@@ -23,6 +23,13 @@ Agents SDK streaming tool continuation, and parses the generated CPU and heap
 profiles. It uses the `dev_no_license` build tag solely for this offline smoke.
 It makes no hosted model calls and is not a performance benchmark.
 
+`make overhead-decision-smoke` exercises the paired load driver against the
+same synthetic backend with plain, shadow and enforce configs. The latter two
+use the real d3 adapter and a **fake** d3 service, not a real decision model.
+The test verifies upstream model/prompt/output settings and per-request policy
+telemetry at concurrency 2. It does not establish decision accuracy, real model
+cost/latency, high-concurrency behavior or evidence for #422 acceptance.
+
 ## Profiling a load phase
 
 `profiled-router` instantiates the same router service and HTTP timeout defaults

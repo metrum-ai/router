@@ -324,6 +324,21 @@ callers:
 
 Roll out by enabling one non-critical caller first, sending a controlled burst with realistic `max_tokens`, and confirming brief bursts queue and complete within `max_wait_ms` while bursts beyond `max_depth` return deterministic `429 traffic-shaped` responses with `Retry-After`, `request_id`, and `bucket` without upstream attempts for rejected requests. Then compare shaped requests, queued count, queue wait p50/p95/max, upstream provider 429s, latency, cancellations, and user-visible errors in usage reports. Roll back by setting the caller `traffic_shape.queue.enabled: false` to keep fail-fast shaping, setting the caller `traffic_shape.enabled: false`, or setting `server.traffic_shape.enabled: false` for inherited defaults, then restart/reload through the normal config process and verify new queued events stop while hard quota behavior remains.
 
+For a separately authenticated, trusted router upstream in **YAML configuration**,
+set `providers.<name>.upstream_kind: router` to preserve a rate-limited router's
+HTTP 429 or 503 and its `upstream-rate-limited` classification across that hop.
+Valid `Retry-After` delta-seconds (up to 18 digits) or HTTP dates (up to 64
+characters) are preserved; invalid values are omitted. A 503 is recognized only when its
+JSON error type is `upstream-rate-limited`; other upstream 5xx responses retain
+normal behavior. Without the flag, behavior is unchanged. A directly connected
+unflagged model provider may already have normalized its 429 and discarded its
+retry header before the response reaches a flagged hop. The flag does not
+authenticate the upstream or make `Via` a trust signal: operators must secure
+the connection and configure the flag only for a router they trust. Failover
+still occurs before a final error is returned. Database-backed config-set
+projection does not yet support this field and rejects it rather than silently
+dropping it.
+
 Upstream request safety is controlled under `server.upstream`. `max_router_hops` limits Metrum AI Router hops per inference or Anthropic count-tokens request (default 16, range 1–128). Each router returns HTTP 508 when the limit is reached. HTTP inference and Anthropic count-token forwarding retain only parseable `metrum-ai-router` entries, stripped of comments, and append the current router's standard `Via` entry. Other proxy entries, including entries in provider headers, are not forwarded. Malformed or unusual entries are ignored, not rejected. The separate Bedrock transport does not forward `Via`. Upstream HTTP 508 is propagated without retry. This best-effort guard relies on intermediary routers preserving `Via`; it is not an authorization mechanism, and callers can supply entries. `timeout_ms` bounds the shared upstream HTTP client, `default_attempt_timeout_ms` provides a default per-target cap when no group or target override is set, and `max_response_bytes` bounds successful upstream bodies before decode or synthesized streaming. The router does not follow upstream API redirects. Image URL requests reject literal or initially resolved loopback, link-local, RFC1918/private, multicast, and unspecified destinations by default, with one bounded 500 ms DNS budget per request. The router forwards accepted image URLs without dereferencing or probing redirects, so deployment egress controls must independently block redirect targets and DNS rebinding to private, metadata, and administrative destinations.
 
 Keep `allow_private_image_urls: false` unless a reviewed private VLM

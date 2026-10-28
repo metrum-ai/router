@@ -197,6 +197,11 @@ api-compat-ts:
 governance-load:
 	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
 
+# Local d3-adapter/fake-model plain/shadow/enforce wiring; not a benchmark.
+.PHONY: overhead-decision-smoke
+overhead-decision-smoke:
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
+
 # Local driver tests and localhost router integration; not an overhead benchmark.
 .PHONY: overhead-load-smoke
 overhead-load-smoke:
@@ -217,6 +222,7 @@ agent-tool-mock:
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
 	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+	$(PYTHON) tests/agent_compat/claude_thinking_cache_smoke.py
 
 # Requires an OS that permits the Codex workspace sandbox; never disable it.
 agent-tool-mock-codex:
@@ -352,6 +358,7 @@ test-fast: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 

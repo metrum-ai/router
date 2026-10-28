@@ -18,8 +18,8 @@ import (
 // This is a bounded single-router HTTP test with synthetic provider usage.
 // It is not a bound for arbitrary upstream usage or distributed deployments.
 func TestGovernanceLoadHTTPTokenReservations(t *testing.T) {
-	for _, workers := range []int{32, 128} {
-		for _, dimension := range []string{"day", "month", "lifetime", "tpm"} {
+	for _, workers := range []int{8, 32, 128} {
+		for _, dimension := range []string{"day", "month", "lifetime", "tpm", "rpm", "concurrent"} {
 			t.Run(fmt.Sprintf("%s/concurrency-%d", dimension, workers), func(t *testing.T) {
 				const actual = 20 // synthetic provider: 12 input + 8 output tokens
 				acceptedLimit := workers / 4
@@ -93,6 +93,12 @@ func TestGovernanceLoadHTTPTokenReservations(t *testing.T) {
 				case "tpm":
 					caller.Rate.TPM = budget
 					expectedReason = "tpm-exceeded"
+				case "rpm":
+					caller.Rate.RPM = acceptedLimit
+					expectedReason = "rpm-exceeded"
+				case "concurrent":
+					caller.Rate.Concurrent = acceptedLimit
+					expectedReason = "concurrency-exceeded"
 				}
 				svc, err := New(cfg)
 				if err != nil {
@@ -104,9 +110,10 @@ func TestGovernanceLoadHTTPTokenReservations(t *testing.T) {
 				client := &http.Client{Timeout: 60 * time.Second}
 				defer client.CloseIdleConnections()
 				type result struct {
-					status int
-					body   []byte
-					err    error
+					status     int
+					body       []byte
+					retryAfter string
+					err        error
 				}
 				results := make(chan result, workers)
 				request := func(b []byte) {
@@ -124,7 +131,7 @@ func TestGovernanceLoadHTTPTokenReservations(t *testing.T) {
 					}
 					defer resp.Body.Close()
 					data, err := io.ReadAll(resp.Body)
-					results <- result{status: resp.StatusCode, body: data, err: err}
+					results <- result{status: resp.StatusCode, body: data, retryAfter: resp.Header.Get("Retry-After"), err: err}
 				}
 				// An invalid caller token must be rejected without reaching upstream.
 				badReq, err := http.NewRequest(http.MethodPost, server.URL+"/v1/chat/completions", bytes.NewReader(unary))
@@ -190,6 +197,10 @@ func TestGovernanceLoadHTTPTokenReservations(t *testing.T) {
 							unblock()
 							t.Fatalf("unexpected pre-release rejection: status=%d err=%v body=%s", r.status, r.err, r.body)
 						}
+						if (dimension == "rpm" && r.retryAfter != "60") || (dimension == "concurrent" && r.retryAfter != "1") {
+							unblock()
+							t.Fatalf("dimension=%s Retry-After=%q", dimension, r.retryAfter)
+						}
 						rejected++
 					case <-deadline:
 						unblock()
@@ -228,7 +239,19 @@ func TestGovernanceLoadHTTPTokenReservations(t *testing.T) {
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
-				t.Logf("dimension=%s workers=%d admitted=%d rejected=%d reservation=%d actual=%d quota=%d settled=%d overshoot=%d", dimension, workers, arrived, rejected, estimate, actual, budget, want, want-int64(budget))
+				if dimension == "concurrent" {
+					// Completion releases the in-flight slot; a fresh request can enter.
+					request(unary)
+					r := <-results
+					if r.err != nil || r.status != http.StatusOK || !bytes.Contains(r.body, []byte("ok")) {
+						t.Fatalf("request after concurrency release: status=%d err=%v", r.status, r.err)
+					}
+				}
+				if dimension == "rpm" || dimension == "concurrent" {
+					t.Logf("dimension=%s workers=%d limit=%d admitted=%d rejected=%d settled_tokens=%d", dimension, workers, acceptedLimit, arrived, rejected, want)
+				} else {
+					t.Logf("dimension=%s workers=%d admitted=%d rejected=%d reservation=%d actual=%d quota=%d settled=%d overshoot=%d", dimension, workers, arrived, rejected, estimate, actual, budget, want, want-int64(budget))
+				}
 			})
 		}
 	}
