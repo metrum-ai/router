@@ -197,6 +197,11 @@ api-compat-ts:
 governance-load:
 	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
 
+# Local d3-adapter/fake-model plain/shadow/enforce wiring; not a benchmark.
+.PHONY: overhead-decision-smoke
+overhead-decision-smoke:
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
+
 # Local driver tests and localhost router integration; not an overhead benchmark.
 .PHONY: overhead-load-smoke
 overhead-load-smoke:
