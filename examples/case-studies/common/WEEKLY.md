@@ -12,8 +12,12 @@ The workflow uses issue-write permission solely to post an audit comment to
 [#423](https://github.com/metrum-ai/router/issues/423); checkout credentials are
 not persisted. These permissions and secret references require security review.
 
-Each execution adds a new issue comment and uploads sanitized summary, per-task
-results and usage evidence as a 90-day Actions artifact. The issue comment thread
+If either provider secret is absent, the job logs one skip line, succeeds and
+posts **no issue comment** or artifact. It does not count as a scheduled result.
+No secrets are configured by this workflow; Chetan decides whether to add them.
+When both secrets are present, each execution adds a new issue comment and uploads
+sanitized summary, per-task results and usage evidence as a 90-day Actions artifact.
+The issue comment thread
 is the chronological audit log, **not an immutable or cryptographically signed
 ledger**. If a step fails before the runner can write a summary, a fallback
 comment marks the run incomplete and cost unknown. If comment posting fails,

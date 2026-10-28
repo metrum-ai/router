@@ -16,6 +16,28 @@ HERE=Path(__file__).resolve().parent
 
 
 class WeeklyTests(unittest.TestCase):
+    def test_missing_credentials_skip_without_audit(self):
+        env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT') if k in os.environ}
+        with tempfile.TemporaryDirectory() as temp:
+            output=Path(temp)/'audit'
+            result=subprocess.run([sys.executable,str(HERE/'weekly.py'),'--router',str(Path(temp)/'unused'),'--out-dir',str(output)],env=env,text=True,capture_output=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(result.stdout,'Weekly case study skipped: provider credentials unavailable.\n')
+            self.assertFalse(output.exists())
+
+    def test_workflow_gates_all_later_steps(self):
+        root=HERE.parents[2];wf=yaml.load((root/'.github/workflows/weekly-case-study.yml').read_text(),Loader=yaml.BaseLoader)
+        steps=wf['jobs']['rerun']['steps'];self.assertEqual(steps[0]['id'],'credentials')
+        for step in steps[1:]:self.assertIn("steps.credentials.outputs.enabled == 'true'",step.get('if',''))
+        with tempfile.TemporaryDirectory() as temp:
+            for openai,fireworks in (('',''),('x',''),('','x'),('x','y')):
+                out=Path(temp)/'output';out.write_text('')
+                env={'PATH':os.environ['PATH'],'GITHUB_OUTPUT':str(out),'OPENAI_API_KEY':openai,'FIREWORKS_API_KEY':fireworks}
+                result=subprocess.run(['bash','-e','-c',steps[0]['run']],env=env,text=True,capture_output=True,timeout=10)
+                self.assertEqual(result.returncode,0,result.stderr)
+                if openai and fireworks:self.assertEqual(out.read_text(),'enabled=true\n');self.assertEqual(result.stdout,'')
+                else:self.assertEqual(out.read_text(),'enabled=false\n');self.assertEqual(result.stdout,'Weekly case study skipped: provider credentials unavailable.\n')
+
     def test_preflight_rejects_stale_future_and_expensive_prices(self):
         settings=json.loads((HERE/'config.example.json').read_text());day=datetime.date.fromisoformat('2026-10-28')
         weekly.preflight(settings,day)

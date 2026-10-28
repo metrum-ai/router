@@ -31,6 +31,7 @@ def main():
     cfg = m.build_config(out_dir=args.state_dir, listen=settings['router_listen'], id_key_hex=secrets.token_hex(64), token=token)
     # Use the router's CLI and a private token file; never pass secrets in argv.
     env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','GOCACHE','GOMODCACHE','GOROOT','GOPATH','GOPROXY','GOTOOLCHAIN') if k in os.environ}
+    env['TMPDIR']='/tmp'  # go run needs an executable build temp; token remains in private state.
     reply=subprocess.run(['go','run','./cmd/metrum-ai-routerctl','callers','hash','--token-file',str(token_path)],cwd=repo,env=env,capture_output=True,check=True,timeout=300)
     fields=json.loads(reply.stdout); token_id=fields.get('token_id'); token_hash=fields.get('token_hash')
     if not isinstance(token_id,str) or not token.startswith(token_id+'_') or not isinstance(token_hash,str) or not token_hash.startswith('pbkdf2-sha3-512:'): raise RuntimeError('invalid routerctl hash')

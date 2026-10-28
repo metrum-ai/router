@@ -76,6 +76,9 @@ def run_cmd(args, log, env):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--router',required=True,type=Path);p.add_argument('--out-dir',required=True,type=Path);p.add_argument('--mock',action='store_true',help='offline synthetic CI only');a=p.parse_args()
+    if not a.mock and not all(os.environ.get(k) for k in ('OPENAI_API_KEY','FIREWORKS_API_KEY')):
+        print('Weekly case study skipped: provider credentials unavailable.')
+        return
     os.umask(0o077);a.out_dir.mkdir(mode=0o700,parents=False,exist_ok=False)
     result={'status':'incomplete','ledger':{'request_rows':0,'attempt_rows':0,'known_successful_usage_cost_usd':None}}
     process=None;server=None;thread=None
