@@ -1,0 +1,41 @@
+{
+  "mode": "mock",
+  "note": "Explicit tags, not classification or quality evidence. Local and mock costs exclude compute.",
+  "routes": [
+    {
+      "declared_domain": "medical",
+      "target_model": "medical-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "declared_domain": "legal",
+      "target_model": "legal-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "declared_domain": "finance",
+      "target_model": "finance-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "declared_domain": "code",
+      "target_model": "code-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    },
+    {
+      "declared_domain": "general",
+      "target_model": "general-mock",
+      "input_tokens": 100,
+      "output_tokens": 20,
+      "usage_cost_usd": 0.0
+    }
+  ]
+}
