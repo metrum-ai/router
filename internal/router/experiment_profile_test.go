@@ -240,6 +240,28 @@ func TestExperimentProfileStreamTTFTAndPacing(t *testing.T) {
 	}
 }
 
+// A Reader may return both data and io.EOF in the same call.
+func validFirstResponseRead(n int, err error) bool {
+	return n > 0 && (err == nil || err == io.EOF)
+}
+
+func TestValidFirstResponseRead(t *testing.T) {
+	for _, tc := range []struct {
+		n    int
+		err  error
+		want bool
+	}{
+		{1, nil, true},
+		{1, io.EOF, true},
+		{0, io.EOF, false},
+		{1, io.ErrUnexpectedEOF, false},
+	} {
+		if got := validFirstResponseRead(tc.n, tc.err); got != tc.want {
+			t.Errorf("n=%d err=%v: got %v, want %v", tc.n, tc.err, got, tc.want)
+		}
+	}
+}
+
 func TestExperimentProfileResponsesStreamTiming(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -265,7 +287,7 @@ func TestExperimentProfileResponsesStreamTiming(t *testing.T) {
 	buf := make([]byte, 4096)
 	n, err := resp.Body.Read(buf)
 	first := time.Since(start)
-	if n == 0 || err != nil {
+	if !validFirstResponseRead(n, err) {
 		t.Fatalf("first read n=%d err=%v", n, err)
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
