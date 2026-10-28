@@ -9,10 +9,10 @@ mode=${1:-}; root=${2:-}
 root=$(realpath "$root"); [[ $root =~ ^/[A-Za-z0-9_./-]+$ ]] || exit 2
 extra=()
 case "$mode" in
- baseline) gpu=all; port=8000; model=general; served=general-base; extra+=(--tensor-parallel-size 4) ;;
+ baseline) gpu=all; port=8000; model=general; served=general-base; extra+=(--tensor-parallel-size 4 --max-num-seqs 128) ;;
  biomedical) gpu=device=0; port=8001; model=medical-base; served=biomedical-base; extra+=(--enable-lora --max-lora-rank 64 --lora-modules biomedical-ft=/models/medical-adapter) ;;
- finance) gpu=device=1; port=8002; model=finance; served=finance-ft ;;
- math) gpu=device=2; port=8003; model=math; served=math-ft ;;
+ finance) gpu=device=1; port=8002; model=finance; served=finance-ft; extra+=(--max-num-seqs 128) ;;
+ math) gpu=device=2; port=8003; model=math; served=math-ft; extra+=(--max-num-seqs 128) ;;
  coding) gpu=device=3; port=8004; model=coding; served=coding-ft ;;
  *) echo 'usage: serve-one.sh baseline|biomedical|finance|math|coding /absolute/model-root' >&2; exit 2 ;;
 esac
@@ -21,7 +21,8 @@ esac
 name=proof426-$mode
 if docker container inspect "$name" >/dev/null 2>&1; then echo 'container already exists; refusing to replace it' >&2; exit 1; fi
 # No --rm: stopped containers remain inspectable until the dedicated VM is deleted.
-docker run -d --network host --gpus "$gpu" --name "$name" --label metrum.task=issue-426 \
+# vLLM TP=4 needs >160 MiB IPC; Docker's default /dev/shm is only 64 MiB.
+docker run -d --network host --shm-size 2g --gpus "$gpu" --name "$name" --label metrum.task=issue-426 \
   --mount "type=bind,src=$root,dst=/models,readonly" "$image" \
   --model "/models/$model" --served-model-name "$served" --host 127.0.0.1 --port "$port" \
   --max-model-len 8192 "${extra[@]}" >/dev/null

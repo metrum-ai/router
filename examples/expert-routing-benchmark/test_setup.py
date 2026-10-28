@@ -37,6 +37,13 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(len(launch),4)
             self.assertTrue(all('vllm/vllm-openai@sha256:' in s and 'readonly' in s and '--network host' in s for s in launch))
             self.assertTrue(all(' --env' not in s and ' -e ' not in s and ' --rm ' not in s for s in launch))
+            for model in ('finance','math'):
+                self.assertIn('--max-num-seqs 128',next(s for s in launch if 'proof426-'+model in s))
+            log.write_text('')
+            result=subprocess.run(['bash',str(setup.HERE/'serve.sh'),'baseline',str(models)],env=env,text=True,capture_output=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr)
+            baseline=next(s for s in log.read_text().splitlines() if s.startswith('run '))
+            self.assertIn('--tensor-parallel-size 4',baseline);self.assertIn('--max-num-seqs 128',baseline)
 
     def test_download_manifest_is_pinned_and_avoids_remote_code(self):
         from unittest.mock import patch
@@ -60,6 +67,12 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(result.returncode,1);self.assertIn('server exited unexpectedly',result.stderr)
             lines=log.read_text().splitlines();self.assertEqual({s.split()[0] for s in lines},{'0','1','2','3'})
             self.assertTrue(all('--host 127.0.0.1' in s for s in lines))
+            for model in ('finance','math'):
+                self.assertIn('--max-num-seqs 128',next(s for s in lines if '/'+model+' ' in s))
+            log.write_text('')
+            result=subprocess.run(['bash',str(setup.HERE/'serve-in-container.sh'),'baseline',str(models)],env=env,text=True,capture_output=True,timeout=30)
+            self.assertEqual(result.returncode,1)
+            baseline=log.read_text();self.assertIn('--tensor-parallel-size 4',baseline);self.assertIn('--max-num-seqs 128',baseline)
 
 
 if __name__=='__main__':unittest.main()

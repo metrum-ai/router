@@ -89,6 +89,7 @@ class AMDTests(unittest.TestCase):
         self.assertNotIn('--privileged', args)
         self.assertNotIn('--network=host', args)
         self.assertIn('--device=/dev/kfd', args)
+        self.assertEqual(args[args.index('--max-num-seqs')+1], '128')
 
     def test_training_offline(self):
         args = plan.command('smoke', 'rocm/pytorch@sha256:'+'b'*64)

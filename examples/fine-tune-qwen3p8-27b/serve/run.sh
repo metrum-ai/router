@@ -24,7 +24,7 @@ if [[ ${DRY_RUN:-1} == 1 ]]; then
 fi
 exec sudo docker run --name metrum-ft-vllm --rm --gpus all --ipc=host \
   -p 127.0.0.1:8000:8000 "${VOLUMES[@]}" "$IMAGE" "${ARGS[@]}" \
-  --dtype bfloat16 --max-model-len 8192 --max-num-seqs 32 --max-num-batched-tokens 8192 \
+  --dtype bfloat16 --max-model-len 8192 --max-num-seqs 128 --max-num-batched-tokens 8192 \
   --gpu-memory-utilization 0.88 --host 0.0.0.0 --port 8000 \
   --default-chat-template-kwargs '{"enable_thinking":false}' \
   --enable-auto-tool-choice --tool-call-parser qwen3_coder
