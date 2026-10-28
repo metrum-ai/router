@@ -10,7 +10,8 @@ can disagree with the toy classifications and still satisfy the wiring check.
 
 ## Run the mock
 
-From the repository root (Go, Python 3, PyYAML):
+From the repository root (Go, Python 3, PyYAML). The demo builds `routerctl`
+and uses `callers hash` for its private PBKDF2 caller verifier:
 
 ```sh
 go build -o /tmp/router-decision ./cmd/metrum-ai-router

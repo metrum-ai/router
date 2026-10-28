@@ -56,13 +56,14 @@ def main():
     if a.backend=='fireworks' and not os.environ.get('FIREWORKS_API_KEY'): p.error('FIREWORKS_API_KEY required')
     if a.backend!='mock' and (not a.state_dir or not a.state_dir.is_absolute()): p.error('non-mock run requires private absolute state-dir')
     if a.state_dir: a.state_dir.mkdir(mode=0o700,parents=False,exist_ok=False)
-    m=module('local_pi',ROOT/'scripts/local_pi_instance.py');demo=module('tokenomics',ROOT/'examples/tokenomics/run.py')
+    m=module('local_pi',ROOT/'scripts/local_pi_instance.py');demo=module('tokenomics',ROOT/'examples/tokenomics/run.py');secure=module('catalog_hash',ROOT/'examples/catalog/token_hash.py')
     FakeUpstream.cache=set();upstream=ThreadingHTTPServer(('127.0.0.1',0),FakeUpstream);thread=threading.Thread(target=upstream.serve_forever,daemon=True);thread.start();process=None
     try:
         with (nullcontext(a.state_dir) if a.state_dir else tempfile.TemporaryDirectory(prefix='router-kv-')) as temp:
             state=Path(temp);port=demo.port();base=f'http://127.0.0.1:{port}'
             token='rtr_metrum_eval_cache_dev_k424_'+secrets.token_urlsafe(24)
             cfg=m.build_config(out_dir=state,listen=f'127.0.0.1:{port}',id_key_hex=secrets.token_hex(64),token=token)
+            secure.apply(cfg['callers'][0],secure.build(ROOT,state),token,state)
             cfg['server']['identifiers']={'mode':'passthrough'};cfg['server']['admin_auth']={'basic':{'enabled':False,'users':[]}};cfg['server']['admin_reports']={'enabled':False};cfg['server']['default_model_group']='pinned'
             metadata={}
             for key in ('a','b'):

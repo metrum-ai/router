@@ -4,7 +4,6 @@
 """Compare three deterministic fakes through router shadow/enforce wiring."""
 import argparse
 from contextlib import ExitStack, nullcontext
-import hashlib
 import importlib.util
 import json
 import os
@@ -65,7 +64,10 @@ def main():
             d.ready(f'http://127.0.0.1:{port}/health',proc,name);ports[name]=port
         targets=[{'provider':'cheapco','model_ref':'target','tier':'cheap','weight':1},{'provider':'strongco','model_ref':'target','tier':'strong','weight':1}]
         groups={f'{name}-{mode}':{'strategy':'external','targets':targets,'external_policy':{'url':f'http://127.0.0.1:{port}/route','allow_hosts':['127.0.0.1'],'timeout_ms':4000,'max_response_bytes':65536,'include_request':True,'mode':mode,'on_error':'fail_closed'}} for name,port in ports.items() for mode in ('shadow','enforce')}
-        token=secrets.token_urlsafe(32);port=free_port();db=tmp/'usage.sqlite'
+        token='rtr_metrum_decision_demo_dev_k424_'+secrets.token_urlsafe(32);port=free_port();db=tmp/'usage.sqlite'
+        secure=load('catalog_hash',ROOT/'examples/catalog/token_hash.py');ctl=secure.build(ROOT,tmp)
+        caller={'id':'decision-demo','user':'test','project':'test','environment':'test','status':'active','allow':list(groups),'rate':{'rpm':10000,'tpm':1000000,'concurrent':8}}
+        secure.apply(caller,ctl,token,tmp)
         if args.backend=='local':models=[args.local_model]*2
         if args.backend=='fireworks':models=[cfg['fireworks_model']]*2
         providers={}
@@ -78,7 +80,7 @@ def main():
             provider['models']={'target':meta};providers[name]=provider
         router={'server':{'listen':f'127.0.0.1:{port}','default_model_group':'d3-enforce','logging':{'path':str(tmp/'requests.jsonl')},'cache':{'enabled':False},'decision_telemetry':{'enabled':True},'upstream':{'timeout_ms':5000},'identifiers':{'mode':'passthrough'},'usage_db':{'enabled':True,'driver':'sqlite','path':str(db),'migration_policy':'auto-safe'}},
             'state_path':str(tmp/'state.json'),'providers':providers,
-            'models':groups,'callers':[{'id':'decision-demo','user':'test','project':'test','environment':'test','status':'active','token_sha256':hashlib.sha256(token.encode()).hexdigest(),'token_id':'rtr_metrum_demo_test','allow':list(groups),'rate':{'rpm':10000,'tpm':1000000,'concurrent':8}}]}
+            'models':groups,'callers':[caller]}
         file=tmp/'router.json';file.write_text(json.dumps(router));file.chmod(0o600)
         proc=d.start(stack,[str(args.router.resolve()),'-config',str(file)],tmp/'router.log',env);base=f'http://127.0.0.1:{port}';d.ready(base+'/readyz',proc,'router')
         results=[]

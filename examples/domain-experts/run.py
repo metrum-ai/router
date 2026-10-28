@@ -58,7 +58,7 @@ def main():
             reserve+=(4000*v['input_per_million_usd']+20*v['output_per_million_usd'])/1_000_000
         if reserve>1: p.error('conservative token-price reservation exceeds $1')
     if a.state_dir: a.state_dir.mkdir(mode=0o700,parents=False,exist_ok=False)
-    m=module('local_pi',ROOT/'scripts/local_pi_instance.py'); demo=module('tokenomics',ROOT/'examples/tokenomics/run.py')
+    m=module('local_pi',ROOT/'scripts/local_pi_instance.py'); demo=module('tokenomics',ROOT/'examples/tokenomics/run.py'); secure=module('catalog_hash',ROOT/'examples/catalog/token_hash.py')
     upstream=ThreadingHTTPServer(('127.0.0.1',0),demo.Upstream); policy=ThreadingHTTPServer(('127.0.0.1',0),Handler)
     threads=[threading.Thread(target=s.serve_forever,daemon=True) for s in (upstream,policy)]
     for t in threads: t.start()
@@ -68,6 +68,7 @@ def main():
             state=Path(temp); port=demo.port(); base=f'http://127.0.0.1:{port}'
             token='rtr_metrum_eval_domains_dev_k424_'+secrets.token_urlsafe(24)
             cfg=m.build_config(out_dir=state,listen=f'127.0.0.1:{port}',id_key_hex=secrets.token_hex(64),token=token)
+            secure.apply(cfg['callers'][0],secure.build(ROOT,state),token,state)
             cfg['server']['identifiers']={'mode':'passthrough'}; cfg['server']['admin_auth']={'basic':{'enabled':False,'users':[]}}; cfg['server']['admin_reports']={'enabled':False}; cfg['server']['default_model_group']='domains'
             providers={};targets=[]
             for tier in TIERS:

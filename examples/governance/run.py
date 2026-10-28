@@ -50,7 +50,7 @@ def main():
         if u.scheme!='http' or u.hostname!='127.0.0.1' or u.username or u.password or u.path!='/v1' or u.query or u.fragment or not a.local_model:p.error('local mode needs a model and loopback /v1 server')
     if a.state_dir:a.state_dir.mkdir(mode=0o700,parents=False,exist_ok=False)
     if s['daily_requests']!=1 or s['daily_tokens']!=10000 or s['rate_rpm']!=60:p.error('use the checked-in bounded demo limits')
-    m=module('local_pi',ROOT/'scripts/local_pi_instance.py');demo=module('tokenomics',ROOT/'examples/tokenomics/run.py');policy_module=module('policy',ROOT/'examples/escalation-continuum/policy.py')
+    m=module('local_pi',ROOT/'scripts/local_pi_instance.py');demo=module('tokenomics',ROOT/'examples/tokenomics/run.py');policy_module=module('policy',ROOT/'examples/escalation-continuum/policy.py');secure=module('catalog_hash',ROOT/'examples/catalog/token_hash.py')
     Upstream.seen=[];upstream=ThreadingHTTPServer(('127.0.0.1',0),Upstream);policy=ThreadingHTTPServer(('127.0.0.1',0),policy_module.Handler)
     threads=[threading.Thread(target=x.serve_forever,daemon=True) for x in (upstream,policy)]
     for t in threads:t.start()
@@ -75,9 +75,9 @@ def main():
                    'pii_filter':{'enabled':True,'mode':'redact_only','restore_response':False,'rules':[{'name':s['pii_rule_name'],'expression':s['pii_expression'],'placeholder_prefix':s['pii_placeholder_prefix']}]},
                    'targets':[{'provider':'mock','model_ref':'target','tier':'local','weight':1}]}
             cfg['models']={s['allowed_group']:group,s['restricted_group']:group}
-            prototype=cfg['callers'][0];cfg['callers']=[]
+            prototype=cfg['callers'][0];cfg['callers']=[];ctl=secure.build(ROOT,state)
             for user in tokens:
-                caller=dict(prototype);caller.update(id=user,allow=[s['allowed_group']]);caller.update(m.caller_token_fields(tokens[user]))
+                caller=dict(prototype);caller.update(id=user,allow=[s['allowed_group']]);secure.apply(caller,ctl,tokens[user],state)
                 caller['rate']={'rpm':1 if user=='rate' else s['rate_rpm'],'tpm':100000,'concurrent':10}
                 caller['quota']={'day':{'requests':s['daily_requests'] if user=='scoped' else 100,'tokens':10 if user=='tokenlimited' else s['daily_tokens']},'month':{'requests':0,'tokens':100000},'soft_pct':80}
                 cfg['callers'].append(caller)
