@@ -149,6 +149,7 @@ type requestContext struct {
 	pathTemplate         string
 	rec                  logRecord
 	bridgeSessionHeaders map[string]string
+	via                  []string
 	securityRecorded     bool
 	pacedUpstreamStream  bool
 	traceSeq             int
@@ -1091,6 +1092,9 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rc.rec.RequestKind = "count_tokens"
+	if !s.prepareRouterVia(w, r, rc) {
+		return
+	}
 	// Counting is a free control-plane operation: hold concurrency only, never
 	// reserve or settle inference tokens (even for a heuristic fallback).
 	conc := s.quota.AcquireConcurrency(rc.caller)
@@ -1152,6 +1156,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	endpointDialect := dialect
 	rc, ok := s.begin(w, r, dialect)
 	if !ok {
+		return
+	}
+	if !s.prepareRouterVia(w, r, rc) {
 		return
 	}
 	// Bound concurrent body buffering before ReadAll. Full request-count Admit
@@ -2532,6 +2539,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	for name, value := range provider.Headers {
 		httpReq.Header.Set(name, value)
 	}
+	forwardRouterVia(httpReq.Header, rc.via)
 	httpReq.Header.Del("Anthropic-Beta")
 	if outDialect == "anthropic" {
 		if beta := permittedBetas(req.CallerBetas, target.AllowedBetas); beta != "" {
@@ -2989,13 +2997,15 @@ func classifyUpstreamStatus(status int, raw []byte) upstreamError {
 		Class:        class,
 		Message:      upstreamStatusMessage(status, raw, class),
 		StatusCode:   status,
-		Retryable:    class == "upstream_quota_exhausted" || class == "upstream_rate_limited" || class == "upstream_timeout" || status >= 500,
+		Retryable:    class == "upstream_quota_exhausted" || class == "upstream_rate_limited" || class == "upstream_timeout" || (status >= 500 && status != http.StatusLoopDetected),
 		Fallbackable: upstreamAccessFailureFallbackable(class),
 	}
 }
 
 func statusErrorClass(status int, raw []byte) string {
 	switch {
+	case status == http.StatusLoopDetected:
+		return "upstream_loop_detected"
 	case upstreamBodyIndicatesQuotaExhausted(status, raw):
 		return "upstream_quota_exhausted"
 	case status == http.StatusTooManyRequests:
@@ -4358,6 +4368,8 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 
 func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int) {
 	switch {
+	case err.Class == "upstream_loop_detected":
+		return "upstream-loop-detected", http.StatusLoopDetected
 	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large":
 		return err.Class, http.StatusBadGateway
 	case err.Canceled:
@@ -4442,6 +4454,8 @@ func callerUpstreamFailureReason(class string) (string, string) {
 		return class, "upstream provider quota, credits, or billing were exhausted"
 	case "upstream_timeout":
 		return class, "upstream timed out"
+	case "upstream_loop_detected":
+		return class, "an upstream loop was detected"
 	case "image_url_dns_timeout":
 		return class, "image URL hostname resolution timed out"
 	case "image_url_dns_failure":
