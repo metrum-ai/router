@@ -1,0 +1,30 @@
+{
+  "mode": "hosted-usage-derived-not-invoice",
+  "statuses": [
+    200,
+    200,
+    429
+  ],
+  "attribution": [
+    {
+      "owner": "alice",
+      "project": "project",
+      "key_id": "rtr_metrum_alice_project_dev_k424",
+      "model_group": "demo",
+      "input_tokens": 33,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 3.39e-05
+    },
+    {
+      "owner": "bob",
+      "project": "project",
+      "key_id": "rtr_metrum_bob_project_dev_k424",
+      "model_group": "demo",
+      "input_tokens": 33,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "usage_cost_usd": 3.39e-05
+    }
+  ]
+}
