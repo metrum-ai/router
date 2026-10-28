@@ -68,6 +68,20 @@ class TestWatcher(unittest.TestCase):
             result=json.loads((state/'diagnostic-result.json').read_text());self.assertTrue(result['initial_ed25519']);self.assertFalse(result['late_ed25519']);self.assertTrue(result['late_rsa'])
             self.assertEqual((state/'done.txt').read_text(),'GPU-DONE #426\n')
 
+    def test_diagnostic_records_sanitized_unready_metadata(self):
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            state=Path(directory);now=[0]
+            (state/'intent.json').write_text(json.dumps({'profile':'ssh-diagnostic'}));(state/'lease.json').write_text(json.dumps({'id':42}))
+            def api(*a,**k):return {'instances':{'actual_status':'loading','ssh_host':'untrusted.host','ssh_port':'bad'}}
+            def sleep(seconds):now[0]+=seconds
+            with patch.object(sys,'argv',['diagnose_ssh','--state-dir',str(state)]),patch.object(lease,'assert_watcher'),patch.object(watcher.cloud,'request',side_effect=api),patch.object(diagnose_ssh.time,'monotonic',side_effect=lambda:now[0]),patch.object(diagnose_ssh.time,'sleep',side_effect=sleep),patch.object(diagnose_ssh.signal,'signal'):
+                diagnose_ssh.main()
+            result=json.loads((state/'diagnostic-result.json').read_text())
+            self.assertEqual(result['stage'],'ssh-metadata-timeout');self.assertEqual(result['metadata_counts'],{'loading':30})
+            self.assertEqual(result['host_category'],'other');self.assertFalse(result['port_valid']);self.assertNotIn('untrusted.host',json.dumps(result))
+            self.assertTrue((state/'done.txt').exists())
+
     def test_billing_filters_instance_and_missing_is_unknown(self):
         def fake(cloud,path):
             return {'success':True,'results':[{'source':'instance-42','amount':1.25},

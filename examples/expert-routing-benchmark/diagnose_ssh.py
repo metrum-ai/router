@@ -36,15 +36,24 @@ def main():
         if intent.get('profile')!='ssh-diagnostic':raise ValueError('diagnostic lease required')
         lease.assert_watcher(state,intent);result['instance_id']=int(info['id'])
         started=time.monotonic();host=None;port=None
+        result['metadata_counts']={};result['host_category']='missing';result['port_valid']=False
         while time.monotonic()-started<300:
             data=watcher.cloud.request('vast',f"/instances/{int(info['id'])}/")
             item=data.get('instances',{})
             if isinstance(item,dict):
-                h=item.get('ssh_host');q=item.get('ssh_port')
-                if item.get('actual_status')=='running' and isinstance(h,str) and re.fullmatch(r'ssh[0-9]+\.vast\.ai',h) and isinstance(q,int) and 0<q<65536:
+                h=item.get('ssh_host');q=item.get('ssh_port');status=item.get('actual_status')
+                status=status if status in ('running','loading','created','exited','error','starting','restarting','stopped','offline') else 'other'
+                counts=result['metadata_counts'];counts[status]=counts.get(status,0)+1
+                result['host_category']='vast-proxy' if isinstance(h,str) and re.fullmatch(r'ssh[0-9]+\.vast\.ai',h) else ('other' if h else 'missing')
+                result['port_valid']=isinstance(q,int) and not isinstance(q,bool) and 0<q<65536
+                if status=='running' and result['host_category']=='vast-proxy' and result['port_valid']:
                     host,port=h,q;break
+            else:
+                counts=result['metadata_counts'];counts['no-instance']=counts.get('no-instance',0)+1
             time.sleep(10)
-        if host is None:raise RuntimeError('instance did not reach SSH-ready metadata')
+        if host is None:
+            result['stage']='ssh-metadata-timeout'
+            raise RuntimeError('instance did not reach SSH-ready metadata')
         early=time.monotonic()
         while time.monotonic()-early<90:
             result['attempts']['initial_ed25519']=result['attempts'].get('initial_ed25519',0)+1
