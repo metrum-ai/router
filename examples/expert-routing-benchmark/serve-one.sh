@@ -25,4 +25,7 @@ docker run -d --network host --gpus "$gpu" --name "$name" --label metrum.task=is
   --mount "type=bind,src=$root,dst=/models,readonly" "$image" \
   --model "/models/$model" --served-model-name "$served" --host 127.0.0.1 --port "$port" \
   --max-model-len 8192 "${extra[@]}" >/dev/null
+# Keep an on-host copy even if the SSH connection or collector is interrupted.
+# The container is retained; tee contains logs only, never inspect/env values.
+nohup bash -c 'docker logs --follow --timestamps "$1" 2>&1 | tee "$2" >/dev/null' _ "$name" "$root/$name.host.log" >/dev/null 2>&1 </dev/null &
 printf '%s server started; check readiness before the next server\n' "$mode"
