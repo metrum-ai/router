@@ -166,7 +166,7 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     os.umask(0o077); args.out = args.out.resolve(); args.out.mkdir(mode=0o700, parents=False, exist_ok=False)
     selected = freeze.freeze(args.pool, args.out/'plan')
-    env = dict(os.environ)
+    env = secure.minimal_env(); env['FIREWORKS_API_KEY'] = os.environ['FIREWORKS_API_KEY']
     with tempfile.TemporaryDirectory(prefix='run3-caller-', dir='/dev/shm') as temp:
         cfg = configure(args.out, env, Path(temp))
     full.private_json(args.out/'config.json', cfg)
