@@ -141,9 +141,10 @@ context-management beta on its test target. A Codex Responses case passed
 once on a sandbox-capable CI VM, but was blocked locally by denied unprivileged
 user namespaces; see [the suite README](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md).
 
-Other clients/surfaces, cross-dialect paths, parallel calls, chain depths and
-live nightly evidence are not covered by these four cases. The remaining
-matrix and release-updated reporting are tracked in #429 and #430.
+Pi, LangGraph, and OpenAI Agents SDK also each passed one streamed tool loop
+with a Chat caller through a Chat-to-Responses bridge to a scripted Responses
+upstream. Other clients/surfaces, other cross-dialect paths, parallel calls,
+chain depths and live nightly evidence remain open in #429 and #430.
 
 ### Validation evidence (offline)
 

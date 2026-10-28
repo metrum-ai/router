@@ -24,6 +24,9 @@ CODEX = ROOT / "tests/agent_compat/node_modules/.bin/codex"
 class Mock(BaseHTTPRequestHandler):
     calls: list[dict] = []
     errors: list[str] = []
+    tool_name = "exec_command"
+    expect_strict = False
+    tool_arguments = {"cmd": "printf 'tool-result-42\\n' > result.txt"}
 
     def log_message(self, *_args):
         pass
@@ -43,12 +46,17 @@ class Mock(BaseHTTPRequestHandler):
         events = [("response.created", {"type": "response.created", "response": response})]
         if index == 1:
             names = [t.get("name") for t in body.get("tools", [])]
-            if "exec_command" not in names:
-                Mock.errors.append(f"Codex did not declare exec_command; names={names}")
+            if Mock.tool_name not in names:
+                Mock.errors.append(f"client did not declare {Mock.tool_name}; names={names}")
                 self.send_error(400)
                 return
-            args = json.dumps({"cmd": "printf 'tool-result-42\\n' > result.txt"})
-            item = {"id": "fc_write", "type": "function_call", "status": "in_progress", "call_id": "call_write", "name": "exec_command", "arguments": ""}
+            selected = next(t for t in body.get("tools", []) if t.get("name") == Mock.tool_name)
+            if Mock.expect_strict and selected.get("strict") is not True:
+                Mock.errors.append(f"strict tool flag missing or false: {selected.get('strict')}")
+                self.send_error(400)
+                return
+            args = json.dumps(Mock.tool_arguments)
+            item = {"id": "fc_write", "type": "function_call", "status": "in_progress", "call_id": "call_write", "name": Mock.tool_name, "arguments": ""}
             events.extend([
                 ("response.output_item.added", {"type": "response.output_item.added", "output_index": 0, "item": item}),
                 ("response.function_call_arguments.delta", {"type": "response.function_call_arguments.delta", "item_id": "fc_write", "output_index": 0, "delta": args}),
