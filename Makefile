@@ -192,6 +192,11 @@ api-compat-ts:
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
+# Local in-process concurrency proof; no providers or database resources.
+.PHONY: governance-load
+governance-load:
+	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
+
 # Real agent clients against a loopback scripted upstream; no hosted calls.
 .PHONY: agent-tool-mock agent-tool-mock-codex agent-chain-mock
 agent-tool-mock:
