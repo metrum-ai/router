@@ -29,28 +29,26 @@ func TestMaxRouterHopsDefaultAndBounds(t *testing.T) {
 	}
 }
 
-func TestRouterViaHops(t *testing.T) {
+func TestRouterViaEntries(t *testing.T) {
 	tests := []struct {
 		values []string
-		hops   int
-		valid  bool
+		want   string
 	}{
-		{nil, 0, true},
-		{[]string{"1.1 proxy (a, b)", "2.0 METRUM-AI-ROUTER, 1.1 metrum-ai-router (nested (comment\\) with comma, x))"}, 2, true},
-		{[]string{"1.1 proxy (metrum-ai-router)"}, 0, true},
-		{[]string{"1.1 proxy (bad"}, 0, false},
-		{[]string{"1.1 proxy,, 1.1 other"}, 0, false},
-		{[]string{"1.1 proxy)"}, 0, false},
+		{nil, ""},
+		{[]string{"1.1 proxy (a, b)", "HTTP/2.0 METRUM-AI-ROUTER, 1.1 metrum-ai-router (nested (comment\\) with comma, x))"}, "2.0 metrum-ai-router|1.1 metrum-ai-router"},
+		{[]string{"1.1 proxy (metrum-ai-router)"}, ""},
+		{[]string{"1.1 proxy (bad", "1.1 metrum-ai-router"}, "1.1 metrum-ai-router"},
+		{[]string{"1.1 proxy,, nonsense, 1.1 metrum-ai-router, 1.1 proxy)"}, "1.1 metrum-ai-router"},
+		{[]string{"private-name metrum-ai-router", "1.1 metrum-ai-router (private) trailing"}, ""},
 	}
 	for _, tt := range tests {
-		got, valid := routerViaHops(tt.values)
-		if got != tt.hops || valid != tt.valid {
-			t.Errorf("routerViaHops(%q) = %d, %v; want %d, %v", tt.values, got, valid, tt.hops, tt.valid)
+		if got := strings.Join(routerViaEntries(tt.values), "|"); got != tt.want {
+			t.Errorf("routerViaEntries(%q) = %q; want %q", tt.values, got, tt.want)
 		}
 	}
 }
 
-func TestRouterViaPropagatesAndRejectsMalformed(t *testing.T) {
+func TestRouterViaAcceptsMessyAndForwardsOnlyRouterEntries(t *testing.T) {
 	var got []string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = append([]string(nil), r.Header.Values("Via")...)
@@ -59,6 +57,10 @@ func TestRouterViaPropagatesAndRejectsMalformed(t *testing.T) {
 	}))
 	defer upstream.Close()
 	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	cfg.Server.Cache.Enabled = false
+	provider := cfg.Provider["mock"]
+	provider.Headers = map[string]string{"Via": "1.1 private-provider-proxy"}
+	cfg.Provider["mock"] = provider
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -66,22 +68,23 @@ func TestRouterViaPropagatesAndRejectsMalformed(t *testing.T) {
 	defer svc.Close()
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
-	req.Header.Add("Via", "1.1 example (edge, one)")
+	req.Header.Add("Via", "1.1 example (edge, one), 2.0 METRUM-AI-ROUTER (private info)")
+	req.Header.Add("Via", "1.1 broken (unterminated")
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if len(got) != 2 || got[0] != "1.1 example (edge, one)" || got[1] != "1.1 metrum-ai-router" {
+	if len(got) != 2 || got[0] != "2.0 metrum-ai-router" || got[1] != "1.1 metrum-ai-router" {
 		t.Fatalf("Via=%q", got)
 	}
 	got = nil
-	req = httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{}`))
+	req = httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Via", "1.1 proxy (unterminated")
 	rr = httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "invalid-via") || len(got) != 0 {
+	if rr.Code != http.StatusOK || len(got) != 1 || got[0] != "1.1 metrum-ai-router" {
 		t.Fatalf("status=%d body=%s upstream=%q", rr.Code, rr.Body.String(), got)
 	}
 }
@@ -158,6 +161,7 @@ func TestRouterViaStopsSelfLoopWithoutRetry(t *testing.T) {
 	}
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Via", "1.1 private-proxy (unterminated")
 	resp, err := server.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

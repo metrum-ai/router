@@ -11,34 +11,33 @@ import (
 
 const routerViaName = "metrum-ai-router"
 
-// routerViaHops counts our received-by pseudonym in Via entries. A comma in
-// an RFC comment is not a field separator; nested and escaped comments are
-// accepted. Malformed comments fail closed rather than hiding a router hop.
-func routerViaHops(values []string) (int, bool) {
-	count := 0
+// routerViaEntries retains only parseable entries bearing our received-by
+// pseudonym. It never forwards comments or third-party proxy identifiers.
+// Unparseable entries are ignored; Via is not a trusted security boundary.
+func routerViaEntries(values []string) []string {
+	var entries []string
 	for _, value := range values {
-		start, depth := 0, 0
-		escaped := false
-		for i := 0; i <= len(value); i++ {
-			if i == len(value) || (value[i] == ',' && depth == 0) {
-				if depth != 0 || escaped {
-					return 0, false
+		var plain strings.Builder
+		depth := 0
+		escaped, malformed := false, false
+		finish := func() {
+			if !malformed && depth == 0 && !escaped {
+				fields := strings.Fields(plain.String())
+				if len(fields) == 2 && strings.EqualFold(fields[1], routerViaName) {
+					if version, ok := routerViaVersion(fields[0]); ok {
+						entries = append(entries, version+" "+routerViaName)
+					}
 				}
-				entry := value[start:i]
-				if pos := strings.IndexByte(entry, '('); pos >= 0 {
-					entry = entry[:pos]
-				}
-				fields := strings.Fields(entry)
-				if len(fields) != 2 {
-					return 0, false
-				}
-				if strings.EqualFold(fields[1], routerViaName) {
-					count++
-				}
-				start = i + 1
+			}
+			plain.Reset()
+			malformed = false
+		}
+		for i := 0; i < len(value); i++ {
+			c := value[i]
+			if depth == 0 && c == ',' {
+				finish()
 				continue
 			}
-			c := value[i]
 			if escaped {
 				escaped = false
 				continue
@@ -47,29 +46,58 @@ func routerViaHops(values []string) (int, bool) {
 				escaped = true
 				continue
 			}
-			if c == '(' {
+			switch c {
+			case '(':
+				if depth == 0 {
+					plain.WriteByte(' ')
+				}
 				depth++
-			} else if c == ')' {
-				depth--
-				if depth < 0 {
-					return 0, false
+			case ')':
+				if depth == 0 {
+					malformed = true
+				} else {
+					depth--
+				}
+			default:
+				if depth == 0 {
+					plain.WriteByte(c)
 				}
 			}
 		}
+		finish()
 	}
-	return count, true
+	return entries
+}
+
+// Router-generated received-protocols are HTTP versions. Restricting this
+// field to short numeric versions prevents forwarding client-provided data as
+// a forged protocol name. HTTP/ is optional in the Via grammar.
+func routerViaVersion(protocol string) (string, bool) {
+	if len(protocol) >= 5 && strings.EqualFold(protocol[:5], "HTTP/") {
+		protocol = protocol[5:]
+	}
+	if len(protocol) == 0 || len(protocol) > 16 {
+		return "", false
+	}
+	dots := 0
+	for i := 0; i < len(protocol); i++ {
+		if protocol[i] == '.' {
+			dots++
+			if i == 0 || i == len(protocol)-1 || dots > 1 {
+				return "", false
+			}
+		} else if protocol[i] < '0' || protocol[i] > '9' {
+			return "", false
+		}
+	}
+	return protocol, true
 }
 
 // prepareRouterVia enforces the limit on authenticated data-plane requests.
-// Do not log the incoming Via value: it can contain client-controlled data.
+// Do not log incoming Via values: they can contain client-controlled data.
 func (s *Service) prepareRouterVia(w http.ResponseWriter, r *http.Request, rc *requestContext) bool {
-	values := r.Header.Values("Via")
-	hops, valid := routerViaHops(values)
-	if !valid {
-		s.writeError(w, rc, http.StatusBadRequest, "invalid-via")
-		return false
-	}
-	if hops >= s.cfg.Server.Upstream.MaxRouterHops {
+	entries := routerViaEntries(r.Header.Values("Via"))
+	if len(entries) >= s.cfg.Server.Upstream.MaxRouterHops {
 		s.writeError(w, rc, http.StatusLoopDetected, "router-hop-limit")
 		return false
 	}
@@ -77,11 +105,14 @@ func (s *Service) prepareRouterVia(w http.ResponseWriter, r *http.Request, rc *r
 	if r.ProtoMajor > 0 {
 		version = fmt.Sprintf("%d.%d", r.ProtoMajor, r.ProtoMinor)
 	}
-	rc.via = append(append([]string(nil), values...), version+" "+routerViaName)
+	rc.via = append(entries, version+" "+routerViaName)
 	return true
 }
 
 func forwardRouterVia(header http.Header, via []string) {
+	// Do not leak third-party entries from either the client or static provider
+	// headers. Only sanitized router entries prepared above are forwarded.
+	header.Del("Via")
 	for _, entry := range via {
 		header.Add("Via", entry)
 	}
