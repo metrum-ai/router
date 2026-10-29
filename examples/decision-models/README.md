@@ -73,6 +73,14 @@ Labeled benchmark mode rejects the paid Fireworks backend; the original bounded
 12-request demo remains available separately. Local model/API compatibility, licensing, GPU provisioning and actual costs
 must be established separately. The benchmark does not create GPU resources.
 
+## Partial A6000 observation
+
+A [bounded real d3-lite / Clef-flash observation](evidence/a6000-2026-10-29/README.md)
+includes raw synthetic decision rows and explicit limitations. It uses different
+adapter questions/rules, fake generation and an SSH tunnel; it is not a
+representative accuracy ranking, co-located added-latency benchmark, or
+misroute quality/cost evaluation. OpenJev and edge results are missing.
+
 ## Real endpoints and backends
 
 The adapters send prompt content to the decision endpoints (`include_request`
