@@ -32,7 +32,7 @@ def pick(payload,answer,floor=0.7):
     return {'targetIndex':indices[0],'classLabel':'clef:'+choice}
 
 
-def make_handler(endpoint):
+def make_handler(endpoint, model='clef', timeout_s=2):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*_):pass
         def do_GET(self):
@@ -44,9 +44,9 @@ def make_handler(endpoint):
                 length=int(self.headers.get('Content-Length','0'))
                 if length<1 or length>MAX_BYTES:raise ValueError('bad request size')
                 payload=json.loads(self.rfile.read(length));state=openjev.extract_text(payload)
-                raw=json.dumps({'model':'clef','state':state,'questions':QUESTIONS}).encode()
+                raw=json.dumps({'model':model,'state':state,'questions':QUESTIONS}).encode()
                 req=Request(endpoint,data=raw,headers={'Content-Type':'application/json'},method='POST')
-                with build_opener(ProxyHandler({})).open(req,timeout=2) as r:reply=r.read(MAX_BYTES+1)
+                with build_opener(ProxyHandler({})).open(req,timeout=timeout_s) as r:reply=r.read(MAX_BYTES+1)
                 if len(reply)>MAX_BYTES:raise ValueError('oversized answer')
                 result=pick(payload,json.loads(reply));code=200
             except Exception:
@@ -57,9 +57,11 @@ def make_handler(endpoint):
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',required=True,type=int);p.add_argument('--clef-url',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--port',required=True,type=int);p.add_argument('--clef-url',required=True)
+    p.add_argument('--model',default='clef');p.add_argument('--timeout-s',type=float,default=2);a=p.parse_args()
+    if not a.model or not math.isfinite(a.timeout_s) or not 0<a.timeout_s<=3.8:p.error('invalid model or timeout')
     url=urlparse(a.clef_url)
     if url.scheme!='http' or url.hostname!='127.0.0.1' or url.username or url.password or url.query or url.fragment:p.error('Clef shim must be loopback HTTP with no credentials')
-    ThreadingHTTPServer(('127.0.0.1',a.port),make_handler(a.clef_url)).serve_forever()
+    ThreadingHTTPServer(('127.0.0.1',a.port),make_handler(a.clef_url,a.model,a.timeout_s)).serve_forever()
 
 if __name__=='__main__':main()

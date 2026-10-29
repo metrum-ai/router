@@ -24,6 +24,55 @@ Expect 12 successful combinations and structured `recommended_index`,
 `fake_clef.py`. `config.example.json` contains only synthetic prompts and model
 names, no keys. `evidence/` contains sanitized execution results.
 
+## Labeled routing probe (mock by default)
+
+A small original hand-authored dataset is in `benchmark_dataset.json` under
+this repository's Apache-2.0 license. The cheap/strong labels represent an
+illustrative routing policy, **not independently validated ground-truth task
+quality**, and the data is too small and artificial for production claims.
+Run the same cases in shadow and enforce and retain raw decisions:
+
+```sh
+python3 examples/decision-models/run.py --router /tmp/router-decision \
+  --benchmark-dataset examples/decision-models/benchmark_dataset.json \
+  --policies d3,openjev,clef --repetitions 9 > /tmp/decision-benchmark.json
+```
+
+This command uses only fakes and a fake generation backend. It proves harness
+wiring, not real accuracy or latency. The report gives two-tier confusion
+matrices, policy-label agreement among successful decisions, correct fraction
+among all requests, and explicit error counts. Policy-duration p50/p99 uses
+successful router telemetry only; p99 is omitted below 100 successful timings,
+and repeated examples are correlated. These times are **not** added
+end-to-end latency. Raw output retains the original policy outcome. Shadow
+serves the default tier; enforce serves the selected tier. Both generation tiers
+still point to the same backend, so this cannot measure misroute quality or
+savings. No model-selection recommendation follows from this probe.
+
+Select a subset using `--policies d3` (or `openjev`, `clef`, or a comma-separated
+combination). In external mode supply URLs for the selected policies only. For
+example, to probe an independently served real d3 endpoint on loopback:
+
+```sh
+python3 examples/decision-models/run.py --router /tmp/router-decision \
+  --benchmark-dataset examples/decision-models/benchmark_dataset.json \
+  --policies d3 --repetitions 9 --decisions external \
+  --d3-url http://127.0.0.1:18300 --d3-model d3-lite \
+  --d3-revision YOUR_PINNED_REVISION --d3-timeout-ms 3500 \
+  --state-dir /dev/shm/decision-private-new
+```
+
+`--d3-revision` records an operator declaration; the adapter does not verify
+server weights. `--clef-model` allows a real compatible server's model ID; the shipped fake
+requires its default `clef`. `--d3-timeout-ms` and `--clef-timeout-s` configure
+adapter deadlines below the router's 4s policy deadline. A timeout or missing
+telemetry is reported as an error, not dropped or labeled correct. External
+mode still uses fake generation by default, unless `--backend local` is also
+set; private state contains a caller credential and must not be published.
+Labeled benchmark mode rejects the paid Fireworks backend; the original bounded
+12-request demo remains available separately. Local model/API compatibility, licensing, GPU provisioning and actual costs
+must be established separately. The benchmark does not create GPU resources.
+
 ## Real endpoints and backends
 
 The adapters send prompt content to the decision endpoints (`include_request`

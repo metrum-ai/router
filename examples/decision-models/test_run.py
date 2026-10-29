@@ -10,7 +10,7 @@ import tempfile
 import threading
 import unittest
 from contextlib import ExitStack
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 
 ROOT=Path(__file__).resolve().parents[2];HERE=Path(__file__).resolve().parent
 
@@ -26,6 +26,26 @@ class Integration(unittest.TestCase):
             p=subprocess.run([sys.executable,str(HERE/'run.py'),'--router',binary,*args],capture_output=True,text=True,env=env,timeout=120)
             self.assertEqual(p.returncode,0,p.stderr);return json.loads(p.stdout)
         result=run();self.assertEqual(len(result['results']),12);self.assertEqual(result['decisions'],'fake')
+        benchmark=run('--benchmark-dataset',str(HERE/'benchmark_dataset.json'),'--policies','d3')
+        self.assertEqual(len(benchmark['results']),24)
+        self.assertEqual({(r['decision'],r['mode']) for r in benchmark['results']},{('d3','shadow'),('d3','enforce')})
+        for policy in ('openjev','clef'):
+            single=run('--benchmark-dataset',str(HERE/'benchmark_dataset.json'),'--policies',policy)
+            self.assertEqual(len(single['results']),24)
+            self.assertEqual({r['decision'] for r in single['results']},{policy})
+        for row in benchmark['benchmark']['summary']:
+            self.assertEqual(row['count'],12);self.assertEqual(row['count'],row['successes']+row['errors'])
+            self.assertIsNone(row['policy_p99_ms'])
+        class Broken(BaseHTTPRequestHandler):
+            def log_message(self,*_):pass
+            def do_POST(self):self.send_response(503);self.send_header('Content-Length','0');self.end_headers()
+        with ExitStack() as broken_stack,tempfile.TemporaryDirectory(dir='/dev/shm') as temp:
+            server=ThreadingHTTPServer(('127.0.0.1',0),Broken)
+            threading.Thread(target=server.serve_forever,daemon=True).start();broken_stack.callback(server.server_close);broken_stack.callback(server.shutdown)
+            failed=run('--benchmark-dataset',str(HERE/'benchmark_dataset.json'),'--policies','d3','--decisions','external',
+                '--d3-url',f'http://127.0.0.1:{server.server_port}','--state-dir',str(Path(temp)/'state'))
+            self.assertTrue(all(r['errors']==12 and r['successes']==0 for r in failed['benchmark']['summary']))
+            self.assertEqual({r['policy_outcome'] for r in failed['results']},{'error','shadow_error'})
         d=load('d3_e2e',ROOT/'scripts/run_d3_policy_e2e.py');fake=d.load_fake();jev=load('jev',ROOT/'examples/external-routing-policy/fake_openjev.py');clef=load('clef_fake',HERE/'fake_clef.py')
         with ExitStack() as stack,tempfile.TemporaryDirectory(dir='/dev/shm') as temp:
             upstream=d.upstream_server(stack);d3=fake.start_in_thread(api_key='');stack.callback(d3.server_close);stack.callback(d3.shutdown)
