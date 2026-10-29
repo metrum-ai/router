@@ -2,7 +2,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run bounded same-dialect agent chain cases and report every tested cell."""
+"""Run bounded agent chain cases and report every tested cell."""
 from __future__ import annotations
 
 import argparse
@@ -19,7 +19,13 @@ DEPTHS = (0, 1, 2, 3, 5)
 CLIENTS = ("pi", "langgraph", "openai-agents", "claude-code")
 
 
-def run_case(client: str, depth: int) -> dict:
+def run_case(client: str, depth: int, path: str = "same-dialect") -> dict:
+    if path not in ("same-dialect", "anthropic-to-openai-chat") or (path != "same-dialect" and (client != "claude-code" or depth < 1)):
+        raise ValueError("unsupported chain cell")
+    env = os.environ.copy()
+    env.pop("AGENT_COMPAT_CROSS_CHAT", None)
+    if path == "anthropic-to-openai-chat":
+        env["AGENT_COMPAT_CROSS_CHAT"] = "1"
     if client == "claude-code":
         command = [sys.executable, str(HERE / "claude_anthropic_smoke.py"), str(depth)]
         surface = "anthropic-messages"
@@ -27,9 +33,9 @@ def run_case(client: str, depth: int) -> dict:
         command = [sys.executable, str(HERE / "run_chat_smoke.py"), client, str(depth)]
         surface = "openai-chat"
     try:
-        process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
     except OSError as exc:
-        return {"client": client, "surface": surface, "path": "same-dialect", "depth": depth, "status": "fail", "diagnostic": f"client launch failed: {exc}"}
+        return {"client": client, "surface": surface, "path": path, "depth": depth, "status": "fail", "diagnostic": f"client launch failed: {exc}"}
     timed_out = False
     try:
         try:
@@ -56,7 +62,7 @@ def run_case(client: str, depth: int) -> dict:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
     passed = process.returncode == 0 and not timed_out
-    result = {"client": client, "surface": surface, "path": "same-dialect", "depth": depth, "status": "pass" if passed else "fail"}
+    result = {"client": client, "surface": surface, "path": path, "depth": depth, "status": "pass" if passed else "fail"}
     if not passed:
         # Only synthetic fixture data is sent to the processes; cap diagnostics.
         result["diagnostic"] = ("timeout\n" if timed_out else "") + (stderr + stdout)[-2000:]
@@ -78,6 +84,10 @@ def main() -> int:
             result = run_case(client, depth)
             results.append(result)
             print(f"{result['status'].upper()}: {client}, {result['surface']}, depth {depth}", flush=True)
+    for depth in (1, 2, 3, 5):
+        result = run_case("claude-code", depth, "anthropic-to-openai-chat")
+        results.append(result)
+        print(f"{result['status'].upper()}: claude-code, anthropic-to-openai-chat, depth {depth}", flush=True)
     report = {"schema": "router-agent-chain-smoke-v1", "fixture": "local-scripted-sse", "hosted_model_calls": 0, "results": results}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
