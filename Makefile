@@ -335,6 +335,7 @@ ft-example-test:
 	mkdir -p examples/fine-tune-qwen3p8-27b/.cache/promptfoo
 	cp examples/fine-tune-qwen3p8-27b/eval/package*.json examples/fine-tune-qwen3p8-27b/.cache/promptfoo/
 	npm ci --prefix examples/fine-tune-qwen3p8-27b/.cache/promptfoo --ignore-scripts --no-audit --no-fund
+	NODE_FORGE_PATH="$(CURDIR)/examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules/node-forge" node examples/fine-tune-qwen3p8-27b/eval/test_node_forge.cjs
 	PROMPTFOO_DISABLE_TELEMETRY=1 examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules/.bin/promptfoo eval -c examples/fine-tune-qwen3p8-27b/eval/mock.yaml --no-cache
 	python3 scripts/fixed_model_outcome_gate_test.py
 
