@@ -39,7 +39,11 @@ the tool result. For depths 0, 1, 2 and 3, the mock compares the received
 thinking type/budget and cache-control type/TTL and locations against the
 direct case. The pinned client emitted adaptive thinking and three ephemeral
 cache annotations on each request in this fixture. This does not validate a
-real provider's signatures, caching or other thinking modes.
+real provider's signatures, caching or other thinking modes. A separate
+non-thinking Claude Code fixture translates Anthropic Messages into an OpenAI
+Chat mock and checks split streamed `Read` arguments and the actual tool-result
+continuation. It explicitly disables thinking; it does not claim thinking,
+signature or cache-control preservation across dialects.
 
 ## Current coverage and limits
 
@@ -63,12 +67,14 @@ versions are in `package-lock.json` and `uv.lock`.
 | OpenAI Agents SDK 0.24.0 | Chat caller → Responses upstream, streamed tool call with `strict` function flag, one hop | 1/1 pass |
 | Claude Code 2.1.296 | Messages, streamed tool use, one hop, same dialect | 1/1 pass with allowed beta |
 | Claude Code 2.1.296 | Messages thinking/signature + streamed tool continuation, cache controls, same dialect, depths 0–3 | 4/4 deterministic local cases with allowed beta |
+| Claude Code 2.1.296 | Messages → Chat, streamed tool continuation, thinking disabled, depths 1/2/3/5 | 4/4 deterministic local cases |
 | Codex 0.162.0 | Responses, streamed tool call, one hop, same dialect | 1/1 pass on the sandbox-capable CI VM; blocked locally because namespace creation was denied |
 
 `make agent-chain-mock` extends the same fixtures to depths 0, 1, 2, 3 and
 5, collecting a JSON result for each of these four clients. Depth 0 connects
 the client directly to the scripted upstream; depth 5 is a limited stress
-case. `AGENT_CHAIN_REPORT` overrides the default output path
+case. It also runs the Claude Messages → Chat fixture at depths 1, 2, 3 and 5;
+there is no direct depth-0 cross-dialect cell. `AGENT_CHAIN_REPORT` overrides the default output path
 `tests/agent_compat/.out/chain-matrix.json`. A case passes only when the agent
 executes its tool and the scripted upstream receives the continuation. The
 matrix runner records every selected case and exits nonzero if any fail. The
