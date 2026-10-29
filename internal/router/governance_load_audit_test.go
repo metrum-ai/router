@@ -6,6 +6,7 @@ package router
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -14,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,10 +24,51 @@ import (
 	"time"
 )
 
-// Test the bounded SQLite security CSV export under concurrent completed
-// requests and pre-response fallback, including deliberately cut-off streams.
-// This is not a PostgreSQL test; the security CSV is not usage billing.
+// Exercise bounded security CSV exports under completed requests, fallback,
+// and deliberately cut-off streams. The security CSV is not usage billing.
 func TestGovernanceLoadAuditExport(t *testing.T) {
+	runGovernanceLoadAuditExport(t, nil)
+}
+
+// Use a disposable, schema-isolated PostgreSQL database. Never point this
+// destructive schema test at production data.
+func TestGovernanceLoadAuditExportPostgres(t *testing.T) {
+	base := strings.TrimSpace(os.Getenv("GOVERNANCE_LOAD_POSTGRES_DSN"))
+	if base == "" {
+		t.Skip("set GOVERNANCE_LOAD_POSTGRES_DSN to a disposable PostgreSQL database")
+	}
+	// The shared helper uses this variable; the dedicated opt-in above keeps
+	// this load test from running against an unrelated PostgreSQL test DSN.
+	t.Setenv("ROUTER_TEST_PG_DSN", base)
+	_, cleanup, schema := configAdminPostgresTestDB(t)
+	defer cleanup()
+	cfg := UsageDBConfig{Driver: "postgres", DSN: pgDSNWithSearchPath(base, schema), MigrationPolicy: usageDBMigrationPolicyDeploymentJob}
+	runner, closeUsageDB, err := UsageMigrationRunner(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeUsageDB()
+	if err := runner.ApplyPending("governance-load-test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.ApplyMaintenancePendingWithEvidence("governance-load-test", "empty-disposable-test-schema"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.ApplyPending("governance-load-test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.RunDataJob(context.Background(), "historical-usage-validation-v1", "governance-load-test", DataJobCheckpoint{Ordinal: 0}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := runner.Verify()
+	if err != nil || !UsageMigrationServingCompatible(status) {
+		t.Fatalf("usage schema not serving-compatible: state=%s err=%v", status.State, err)
+	}
+	runGovernanceLoadAuditExport(t, &cfg)
+}
+
+func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
+	t.Helper()
 	const workers = 64
 	const secondToken = "synthetic-audit-second-token"
 	t.Setenv("GOVERNANCE_TEST_ADMIN_HASH", mustBcryptHash(t, "synthetic-password"))
@@ -72,6 +115,9 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.Cache.Enabled = false
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+	if usageCfg != nil {
+		cfg.Server.UsageDB = *usageCfg
+	}
 	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, Realm: "Synthetic", AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "GOVERNANCE_TEST_ADMIN_HASH", Subject: "basic:admin", Domain: "local/test"}}}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, *, admin:security_reports, read|export", "p, basic:admin, *, admin:reports, read|export|drilldown"}}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 256, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 30}}
