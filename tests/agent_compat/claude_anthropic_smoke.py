@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 from run_chat_smoke import DIGEST, ROOT, TOKEN, free_port
+from claude_chat_fixture import ChatMock
 
 # Official wrapper supports npm --ignore-scripts without a postinstall.
 CLAUDE = ROOT / "tests/agent_compat/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs"
@@ -100,14 +101,20 @@ class Mock(BaseHTTPRequestHandler):
 
 
 def main():
+    global Mock
+    cross_chat = os.environ.get("AGENT_COMPAT_CROSS_CHAT") == "1"
+    if cross_chat:
+        Mock = ChatMock
+        if os.environ.get("AGENT_COMPAT_METADATA_REPORT"):
+            raise SystemExit("metadata comparison only applies to the same-dialect fixture")
     # CI cancellation must unwind the router and the separately grouped CLI.
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGTERM, interrupted)
     depth = int(sys.argv[1]) if len(sys.argv) > 1 else 1
-    if depth < 0 or depth > 8:
-        raise SystemExit("depth must be between 0 and 8")
+    if depth < (1 if cross_chat else 0) or depth > 8:
+        raise SystemExit("depth must be 1..8 for cross-dialect, otherwise 0..8")
     if not CLAUDE.is_file():
         raise SystemExit("install pinned clients with npm ci --ignore-scripts --prefix tests/agent_compat")
     Mock.calls.clear()
@@ -132,7 +139,9 @@ def main():
             env["AGENT_COMPAT_NEXT_TOKEN"] = TOKEN
             for index, hop_port in enumerate(ports):
                 upstream_port = upstream.server_port if index == 0 else ports[index - 1]
-                target_model = "synthetic-messages" if index == 0 else "chat"
+                target_model = ("synthetic-chat" if cross_chat else "synthetic-messages") if index == 0 else "chat"
+                out_dialect = "openai-chat" if cross_chat and index == 0 else "anthropic"
+                suffix = "/v1" if out_dialect == "openai-chat" else ""
                 config = f'''server:
   listen: "127.0.0.1:{hop_port}"
   identifiers: {{mode: passthrough}}
@@ -142,9 +151,9 @@ def main():
   logging: {{path: "{work / f'router-{index}.jsonl'}"}}
 state_path: "{work / f'state-{index}.json'}"
 providers:
-  mock: {{base_url: "http://127.0.0.1:{upstream_port}", dialect: anthropic, api_key: "${{AGENT_COMPAT_NEXT_TOKEN}}", api_key_env: AGENT_COMPAT_NEXT_TOKEN}}
+  mock: {{base_url: "http://127.0.0.1:{upstream_port}{suffix}", dialect: {out_dialect}, api_key: "${{AGENT_COMPAT_NEXT_TOKEN}}", api_key_env: AGENT_COMPAT_NEXT_TOKEN}}
 models:
-  chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{anthropic_messages: [client_tools]}}, reasoning: {{supported: true, mode: opt_in, control: token_budget}}, allowed_betas: [context-management-2025-06-27], request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
+  chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{anthropic_messages: [client_tools, tool_choice], openai_chat: [tools, tool_choice]}}, reasoning: {{supported: true, mode: opt_in, control: token_budget}}, allowed_betas: [context-management-2025-06-27], request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: agent-compat
     token_sha256: "{DIGEST}"
@@ -172,6 +181,9 @@ callers:
                         else:
                             raise RuntimeError(f"router {index} did not become ready")
                     child_env = {"PATH": env["PATH"], "HOME": str(work), "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}", "ANTHROPIC_API_KEY": TOKEN, "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1"}
+                    if cross_chat:
+                        # The bridge intentionally rejects thinking/signatures rather than silently losing them.
+                        child_env["MAX_THINKING_TOKENS"] = "0"
                     command = ["node", str(CLAUDE), "--bare", "--print", "--model", "chat", "--betas", "context-management-2025-06-27", "--tools", "Read", "--allowedTools", "Read", "--permission-mode", "acceptEdits", "--setting-sources", "", "--no-session-persistence", "--disable-slash-commands", "--output-format", "stream-json", "--verbose", "Read the requested file and finish."]
                     def router_errors():
                         errors = []
@@ -229,7 +241,8 @@ callers:
                         fd = os.open(report, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                         with os.fdopen(fd, "w", encoding="utf-8") as output:
                             json.dump(metadata, output, sort_keys=True)
-                    print(f"PASS: claude-code / Anthropic Messages / same dialect / depth {depth}: streamed tool use and tool-result continuation")
+                    path = "Anthropic-to-OpenAI Chat" if cross_chat else "same dialect"
+                    print(f"PASS: claude-code / Anthropic Messages / {path} / depth {depth}: streamed tool use and tool-result continuation")
                 finally:
                     for router in reversed(routers):
                         if router.poll() is None:

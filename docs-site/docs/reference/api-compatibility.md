@@ -154,10 +154,14 @@ or live-provider certification.
 An initial chain sweep runs each of the four native-dialect clients directly and
 through one, two, three and five same-dialect hops. All 20 local deterministic
 cells passed once; `make agent-chain-mock` produces a per-cell JSON report.
-This checks successful streamed tool execution and continuation, not complete
-stream equivalence or per-hop accounting. Codex remains untested in that
-sweep. Other clients/surfaces, other cross-dialect paths, broader parallel-tool
-coverage, loop protection and live nightly evidence remain open in #429 and #430.
+The same report includes four additional Claude Code Messages → OpenAI Chat
+cases at depths 1, 2, 3 and 5. These use a scripted upstream with thinking
+disabled and verify split streamed tool arguments and actual tool-result
+continuation; they do not establish thinking/signature or cache-control
+preservation across dialects. This checks successful streamed tool execution
+and continuation, not complete stream equivalence or per-hop accounting.
+Codex remains untested in that sweep. Other clients/surfaces, other cross-dialect paths, broader parallel-tool
+coverage, loop-protection validation across intermediaries and live nightly evidence remain open in #429 and #430.
 
 ### Validation evidence (offline)
 
