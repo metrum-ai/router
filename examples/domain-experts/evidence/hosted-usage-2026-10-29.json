@@ -1,0 +1,74 @@
+{
+  "rows": [
+    {
+      "target_provider": "medical",
+      "target_model": "accounts/fireworks/models/glm-5p3-flash",
+      "status": 200,
+      "attempts": 1,
+      "fallback_used": 0,
+      "input_tokens": 20,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "total_cost_usd": 1.3e-05,
+      "usage_source": "reported",
+      "pricing_source": "https://docs.fireworks.ai/serverless/pricing",
+      "pricing_updated_at": "2026-10-29"
+    },
+    {
+      "target_provider": "legal",
+      "target_model": "accounts/fireworks/models/gpt-oss-120b",
+      "status": 200,
+      "attempts": 1,
+      "fallback_used": 0,
+      "input_tokens": 80,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "total_cost_usd": 2.4e-05,
+      "usage_source": "reported",
+      "pricing_source": "https://docs.fireworks.ai/serverless/pricing",
+      "pricing_updated_at": "2026-10-29"
+    },
+    {
+      "target_provider": "finance",
+      "target_model": "accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b",
+      "status": 200,
+      "attempts": 1,
+      "fallback_used": 0,
+      "input_tokens": 26,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "total_cost_usd": 5.3e-06,
+      "usage_source": "reported",
+      "pricing_source": "https://docs.fireworks.ai/serverless/pricing",
+      "pricing_updated_at": "2026-10-29"
+    },
+    {
+      "target_provider": "code",
+      "target_model": "accounts/fireworks/models/deepseek-v4p1-flash",
+      "status": 200,
+      "attempts": 1,
+      "fallback_used": 0,
+      "input_tokens": 38,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "total_cost_usd": 3.54e-05,
+      "usage_source": "reported",
+      "pricing_source": "https://docs.fireworks.ai/serverless/pricing",
+      "pricing_updated_at": "2026-10-29"
+    },
+    {
+      "target_provider": "general",
+      "target_model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
+      "status": 200,
+      "attempts": 1,
+      "fallback_used": 0,
+      "input_tokens": 35,
+      "cached_input_tokens": 0,
+      "output_tokens": 20,
+      "total_cost_usd": 3.45e-05,
+      "usage_source": "reported",
+      "pricing_source": "https://docs.fireworks.ai/serverless/pricing",
+      "pricing_updated_at": "2026-10-29"
+    }
+  ]
+}
