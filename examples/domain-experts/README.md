@@ -64,8 +64,21 @@ This makes paid requests. The preflight is a conservative token-price
 reservation, not an invoice or a guarantee about retries, provider policy or
 unpriced services. Monitor spend, and reconcile any errors before retrying.
 Delete private state after the run. Do not place credentials in the config.
-The hosted and real self-hosted variants have not been independently run as
-part of this mock evidence.
+The real self-hosted variant has not been independently exercised against
+deployed expert servers. A [2026-10-29 hosted smoke](evidence/hosted-summary-2026-10-29.json)
+selected five distinct Fireworks model IDs with 5/5 HTTP 200 responses, each
+with a single attempt and no fallback. This is tag-routing and transport
+coverage, not classification or domain-expertise evidence: the chosen models
+were not validated as specialists. All five reported 20 output tokens, equal
+to the configured limit; the runner did not inspect response bodies or finish
+reasons, so complete or useful answers are not established. The provider-reported token counts and
+published prices give a usage-derived total of $0.0001122, **not an invoice**;
+actual attributable charges remain unknown. The [sanitized usage rows](evidence/hosted-usage-2026-10-29.json)
+and [dated configuration](evidence/hosted-config-2026-10-29.json) record the
+model IDs and [price source](https://docs.fireworks.ai/serverless/pricing).
+The sanitized run and dated pricing page are retained in snapshot `81525a7e`
+(`router/v45-proof/424-domain-hosted`). Refresh prices before reproducing;
+these historical rates are not live quotes.
 
 ## What you should see
 

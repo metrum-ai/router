@@ -1,0 +1,46 @@
+{
+  "models": {
+    "medical": "accounts/fireworks/models/glm-5p3-flash",
+    "legal": "accounts/fireworks/models/gpt-oss-120b",
+    "finance": "accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b",
+    "code": "accounts/fireworks/models/deepseek-v4p1-flash",
+    "general": "accounts/fireworks/models/deepseek-v4p1-flash-1017"
+  },
+  "pricing": {
+    "medical": {
+      "input_per_million_usd": 0.15,
+      "cached_input_per_million_usd": 0.03,
+      "output_per_million_usd": 0.5,
+      "source": "https://docs.fireworks.ai/serverless/pricing",
+      "date": "2026-10-29"
+    },
+    "legal": {
+      "input_per_million_usd": 0.15,
+      "cached_input_per_million_usd": 0.015,
+      "output_per_million_usd": 0.6,
+      "source": "https://docs.fireworks.ai/serverless/pricing",
+      "date": "2026-10-29"
+    },
+    "finance": {
+      "input_per_million_usd": 0.05,
+      "cached_input_per_million_usd": 0.01,
+      "output_per_million_usd": 0.2,
+      "source": "https://docs.fireworks.ai/serverless/pricing",
+      "date": "2026-10-29"
+    },
+    "code": {
+      "input_per_million_usd": 0.3,
+      "cached_input_per_million_usd": 0.006,
+      "output_per_million_usd": 1.2,
+      "source": "https://docs.fireworks.ai/serverless/pricing",
+      "date": "2026-10-29"
+    },
+    "general": {
+      "input_per_million_usd": 0.3,
+      "cached_input_per_million_usd": 0.006,
+      "output_per_million_usd": 1.2,
+      "source": "https://docs.fireworks.ai/serverless/pricing",
+      "date": "2026-10-29"
+    }
+  }
+}
