@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-29",
+  "mode": "hosted Fireworks",
+  "route_coverage": "5/5",
+  "http_200": "5/5",
+  "requests": 5,
+  "total_input_tokens": 199,
+  "total_output_tokens": 100,
+  "usage_derived_usd": 0.0001122,
+  "invoice_charge_usd": null,
+  "limitations": [
+    "Synthetic prompts and explicit caller tags; not classifier, specialist quality or safety evidence.",
+    "All five responses reported the 20-token limit; bodies and finish reasons were not assessed.",
+    "Usage-derived token prices are not reconciled provider charges."
+  ]
+}
