@@ -1,10 +1,11 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Governance load: SQLite security export (#431)
+# Governance load: security export (#431)
 
-This bounded localhost test covers SQLite security-CSV export. It is not a
-usage-billing export or a PostgreSQL/distributed acceptance test. Run it with
+This bounded localhost test covers SQLite and optional PostgreSQL security-CSV
+export. It is not a usage-billing export or a distributed acceptance test. Run
+the SQLite case with
 `go test ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=1 -v`.
 
 ## Local observation
@@ -35,8 +36,30 @@ make governance-load
 
 Both passed on the original stacked test branch; `make governance-load` is
 available once the separate reservation-baseline work is merged. This test can
-run independently with the `go test` command above. These tests use SQLite and
-synthetic Basic admin credentials.
-They do not cover PostgreSQL, multiple router processes, durable crash/restart,
-provider failures after response commitment, retention, or audit event
-completeness for all endpoint/error types. #431 remains open.
+run independently with the `go test` command above. The SQLite case uses synthetic Basic admin credentials.
+
+## PostgreSQL observation
+
+On 2026-10-29 UTC, the same 64-worker scenario passed three times under the
+race detector against a disposable local PostgreSQL 16.15 UTF-8 cluster using a
+private Unix socket and synthetic credentials. Each run observed all eight
+upstream cancellations; the two filtered exports each contained exactly 32
+unique request IDs, with no cross-key rows, synthetic bearer tokens or prompt
+text. The tests used a fresh isolated schema, explicitly applied maintenance
+migrations and the historical-validation job, and verified serving
+compatibility before starting the router. This is a bounded security CSV result,
+not usage-billing reconciliation.
+
+To reproduce, provide a **disposable database** on a trusted local server; the
+test creates and drops a schema and must never target production:
+
+```sh
+GOVERNANCE_LOAD_POSTGRES_DSN='host=/path/to/private/socket port=5432 user=test dbname=disposable sslmode=disable' \
+  go test -race ./internal/router -run '^TestGovernanceLoadAuditExportPostgres$' -count=1 -v
+```
+
+With no `GOVERNANCE_LOAD_POSTGRES_DSN` the PostgreSQL case skips; CI without an
+explicit disposable database does not establish PostgreSQL coverage. Neither
+case covers multiple router processes, durable crash/restart, provider failures
+after response commitment, retention, or audit-event completeness for all
+endpoint/error types. #431 remains open.
