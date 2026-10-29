@@ -230,6 +230,18 @@ package inventory in `requirements.lock`. This inventory includes the image's
 Axolotl 0.21.1.dev0 and is not a pip-installable PyPI lock. Use the pinned image
 to reproduce it. `requirements.in` names the released 0.21.0 alternative for
 operators, but that alternative is not claimed to be hardware-tested.
+
+**Security warning:** the frozen image inventory contains packages affected by
+published high and critical advisories; see [#509](https://github.com/metrum-ai/router/issues/509).
+The digest preserves the historical environment; it does not remediate it. Do
+not use this image for production or with untrusted inputs while these findings
+are unresolved. In particular, `sqlitedict` deserializes stored values with
+pickle, so an untrusted database can execute code. Trusted database provenance
+alone does not address the other image advisories. The recorded `trackio==0.40.0`
+requires Pillow below 13, so simply editing the inventory to say Pillow 13 would
+neither fix the image nor satisfy that dependency. A replacement image needs its
+own dependency and runtime validation.
+
 If the real hardware smoke shows unsupported architecture, use Unsloth only
 after verifying its exact Qwen3.8 recipe/version; record why, never silently
 change quantization or training parameters.
