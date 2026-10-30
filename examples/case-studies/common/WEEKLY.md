@@ -53,6 +53,7 @@ The output directory must not exist. The mock uses synthetic upstream responses
 and labels its cost figures as non-billed. A mock run is **not** a scheduled
 result. For an independent paid reproduction, follow
 [`document-qa/README.md`](../document-qa/README.md) and the setup guide, obtain
-approval for the provider costs, verify current prices, and record independent
-reproduction notes. Do not claim the #423 acceptance gate until two consecutive
+approval for the provider costs, verify current prices, and use the
+[external reproduction checklist](REPRODUCTION.md) to record independent notes.
+Do not claim the #423 acceptance gate until two consecutive
 actual scheduled results and an external engineer's reproduction exist.

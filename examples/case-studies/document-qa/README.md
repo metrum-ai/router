@@ -26,7 +26,9 @@ per-task outcomes and the calculation are in `evidence/`. The confidence
 intervals are wide and do not establish quality parity.
 
 See [`../common/README.md`](../common/README.md) for router setup, credentials,
-usage extraction and cost interpretation. After preparing the private state:
+usage extraction and cost interpretation. An engineer outside Metrum can use the
+[external reproduction checklist](../common/REPRODUCTION.md) to record notes.
+After preparing the private state:
 
 ```sh
 python3 examples/case-studies/document-qa/run.py \
