@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -101,7 +102,14 @@ def main():
             stage='setup'
             run_cmd([sys.executable,str(COMMON/'setup.py'),'--config',str(COMMON/'config.example.json'),'--state-dir',str(state)],log,env)
             config=state/'config.yaml';cfg=yaml.safe_load(config.read_text());cfg['callers'][0]['quota']={'day':{'requests':10,'tokens':25000},'month':{'requests':10,'tokens':25000}}
+            router_url='http://127.0.0.1:18123'
             if a.mock:
+                # Concurrent CI and other local mock runs must not share the
+                # fixed port used by the separately approved paid workflow.
+                with socket.socket() as listener:
+                    listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+                cfg['server']['listen']=f'127.0.0.1:{port}'
+                router_url=f'http://127.0.0.1:{port}'
                 for name in ('openai','fireworks'):
                     provider=cfg['providers'][name];provider.update(base_url=f'http://127.0.0.1:{server.server_port}/v1',dialect='openai-chat',api_key='mock-only');provider.pop('api_key_env',None)
                 cfg['models']={'frontier':{'strategy':'static','targets':[{'provider':'openai','model_ref':'gpt-6.1-sol','weight':1}]},'routed':{'strategy':'weighted','targets':[{'provider':'fireworks','model_ref':'deepseek-v4p1-flash-1017','weight':70},{'provider':'openai','model_ref':'gpt-6.1-sol','weight':30}]}}
@@ -109,16 +117,16 @@ def main():
             stage='router-start'
             with log.open('ab') as output:
                 process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],cwd=ROOT,env=env,stdout=output,stderr=output)
-            for _ in range(150):
+            for _ in range(600 if a.mock else 150):
                 if process.poll() is not None:raise RuntimeError('router startup failed')
                 try:
-                    with urlopen('http://127.0.0.1:18123/readyz',timeout=1) as r:
+                    with urlopen(router_url+'/readyz',timeout=1) as r:
                         if r.status==200:break
                 except (URLError,TimeoutError):pass
                 time.sleep(.1)
             else:raise RuntimeError('router readiness timeout')
             stage='requests';results=state/'results.jsonl'
-            run_cmd([sys.executable,str(WORKLOAD/'run.py'),'--url','http://127.0.0.1:18123','--token-file',str(state/'caller'),'--output',str(results)],log,env)
+            run_cmd([sys.executable,str(WORKLOAD/'run.py'),'--url',router_url,'--token-file',str(state/'caller'),'--output',str(results)],log,env)
             for _ in range(100):
                 ledger=failure_ledger(state/'usage.sqlite')
                 if ledger['request_rows']==10:break
@@ -139,6 +147,6 @@ def main():
                 server.shutdown();server.server_close();thread.join()
         (a.out_dir/'audit.json').write_text(json.dumps(result,indent=2,sort_keys=True)+'\n')
         (a.out_dir/'audit.md').write_text(audit_markdown(result,os.environ.get('GITHUB_RUN_ID','unknown')))
-    if result['status']!='complete':raise SystemExit('weekly run incomplete; see sanitized audit and reconcile before retrying')
+    if result['status']!='complete':raise SystemExit(f"weekly run incomplete at {result.get('stage', 'unknown')}; see sanitized audit and reconcile before retrying")
 
 if __name__=='__main__':main()

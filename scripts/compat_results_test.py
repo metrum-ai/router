@@ -2,8 +2,11 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
+import io
 import unittest
 
+from compat_mock import report_differences
 from compat_results import compare
 
 
@@ -23,6 +26,16 @@ class ResultsTest(unittest.TestCase):
     def test_new_failure_and_stale_expected(self):
         self.assertEqual(compare(self.mixed, 1, self.suites, {}), ["new failure: messages"])
         self.assertEqual(compare(self.passed, 0, self.suites, self.expected), ["expected failure now passes: messages"])
+
+    def test_difference_verdicts_are_visible(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report_differences('openai', compare(self.mixed, 1, self.suites, {}))
+            report_differences('anthropic', compare(self.passed, 0, self.suites, self.expected))
+            report_differences('openai', compare(self.mixed, 1, self.suites, self.expected))
+        self.assertIn('openai compatibility differences:\n  new failure: messages', out.getvalue())
+        self.assertIn('anthropic compatibility differences:\n  expected failure now passes: messages', out.getvalue())
+        self.assertIn('openai compatibility: all suites match expected failures', out.getvalue())
 
     def test_bad_reports_fail_closed(self):
         for output, code in [(self.mixed, 2), (self.mixed, 0), (self.passed, 1),

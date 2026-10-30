@@ -345,10 +345,22 @@ ft-example-test:
 .PHONY: ci ci-go ci-router ci-python ci-windows compat-mock
 CI_RUN_GO ?= 1
 CI_RUN_EXAMPLES ?= 1
+CI_LANES := $(if $(filter 1,$(CI_RUN_GO)),ci-go ci-router ci-windows) ci-python compat-mock $(if $(filter 1,$(CI_RUN_EXAMPLES)),ci-examples)
+CI_REPORTS := $(addprefix report-,$(CI_LANES))
+.PHONY: $(CI_REPORTS)
 ci:
-	# Do not let a developer's Bedrock bearer token override the test fixture's
-	# synthetic AWS signing credentials (and never send it to a mock).
-	env -u AWS_BEARER_TOKEN_BEDROCK $(MAKE) -j5 $(if $(filter 1,$(CI_RUN_GO)),ci-go ci-router ci-windows) ci-python compat-mock $(if $(filter 1,$(CI_RUN_EXAMPLES)),ci-examples)
+	# Never expose a developer's Bedrock bearer token to synthetic fixtures.
+	@failures=$$(mktemp); trap 'rm -f "$$failures"' EXIT; \
+	export CI_FAILURES="$$failures"; \
+	env -u AWS_BEARER_TOKEN_BEDROCK $(MAKE) -k -j5 $(CI_REPORTS); result=$$?; \
+	if [ -s "$$failures" ]; then \
+	  echo 'CI failed lanes:' >&2; sort -u "$$failures" >&2; \
+	elif [ "$$result" -eq 0 ]; then echo 'CI: all selected lanes passed'; \
+	else echo 'CI failed before lane results were recorded' >&2; fi; \
+	exit "$$result"
+
+$(CI_REPORTS): report-%:
+	@$(MAKE) $* || { printf '%s\n' '$*' >> "$$CI_FAILURES"; exit 1; }
 
 ci-go:
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }

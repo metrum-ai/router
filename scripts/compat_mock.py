@@ -81,6 +81,15 @@ def wait_ready(url, process):
     raise RuntimeError(f'timeout waiting for {url}')
 
 
+def report_differences(kind, differences):
+    if differences:
+        print(f'{kind} compatibility differences:', flush=True)
+        for difference in differences:
+            print(f'  {difference}', flush=True)
+    else:
+        print(f'{kind} compatibility: all suites match expected failures', flush=True)
+
+
 def main():
     record = sys.argv[1:] == ['--record-main']
     if sys.argv[1:] and not record:
@@ -149,7 +158,12 @@ callers:
                     path.write_text(json.dumps(expected, indent=2) + '\n')
                 else:
                     expected = json.loads(path.read_text())
-                    errors.extend(f'{kind}: {x}' for x in compare(result.stdout, result.returncode, suite_string.split(','), expected))
+                    try:
+                        differences = compare(result.stdout, result.returncode, suite_string.split(','), expected)
+                    except ValueError as exc:
+                        raise ValueError(f'{kind} result validation: {exc}') from exc
+                    report_differences(kind, differences)
+                    errors.extend(f'{kind}: {x}' for x in differences)
                     summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
                     if summary_path:
                         rows = re.findall(r'^  \[(PASS|FAIL)\] ([a-z][a-z0-9_]*)(?:: .*)?$', result.stdout, re.M)
@@ -161,7 +175,9 @@ callers:
                                 reason = '' if not entry else entry['reason'].replace('|', '&#124;').replace('\n', ' ') + ' (' + entry['issue'] + ')'
                                 summary.write(f'| `{name}` | {label} | {reason} |\n')
             if errors:
-                raise RuntimeError('\n'.join(errors))
+                raise RuntimeError('compatibility differences:\n' + '\n'.join(errors))
+            if not record:
+                print('compat-mock: both tester baselines matched', flush=True)
         finally:
             for proc in reversed(processes):
                 proc.terminate()

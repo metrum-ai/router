@@ -3,6 +3,7 @@
 import datetime
 import json
 import os
+import socket
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -64,8 +65,13 @@ class WeeklyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root=HERE.parents[2];binary=Path(temp)/'router';output=Path(temp)/'audit'
             subprocess.run(['go','build','-o',str(binary),'./cmd/metrum-ai-router'],cwd=root,env=env,check=True,timeout=300,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            result=subprocess.run([sys.executable,str(HERE/'weekly.py'),'--router',str(binary),'--out-dir',str(output),'--mock'],cwd=root,env=env,text=True,capture_output=True,timeout=180)
-            self.assertEqual(result.returncode,0,result.stderr);report=json.loads((output/'audit.json').read_text())
+            # Mock mode must work even if the paid workflow's fixed port is busy.
+            with socket.socket() as occupied:
+                try: occupied.bind(('127.0.0.1',18123));occupied.listen()
+                except OSError: pass  # Already occupied also exercises this case.
+                result=subprocess.run([sys.executable,str(HERE/'weekly.py'),'--router',str(binary),'--out-dir',str(output),'--mock'],cwd=root,env=env,text=True,capture_output=True,timeout=240)
+            report=json.loads((output/'audit.json').read_text())
+            self.assertEqual(result.returncode,0,f"{result.stderr} stage={report.get('stage', 'unknown')}")
             self.assertEqual(report['status'],'complete');self.assertEqual(report['mode'],'mock')
             self.assertEqual(report['summary']['arms']['frontier']['passes'],5);self.assertEqual(report['summary']['arms']['routed']['passes'],5)
             self.assertIn('MOCK ONLY',(output/'audit.md').read_text())
