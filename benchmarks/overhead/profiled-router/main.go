@@ -167,11 +167,8 @@ func serveControl(listener net.Listener, p *profiler, g *loadGauge) error {
 				case "stop\n":
 					err = p.stop()
 				case "status\n":
-				case "stop32\n", "stop128\n":
-					minimum := 32
-					if line == "stop128\n" {
-						minimum = 128
-					}
+				case "stop29\n", "stop32\n", "stop116\n", "stop128\n":
+					minimum := map[string]int{"stop29\n": 29, "stop32\n": 32, "stop116\n": 116, "stop128\n": 128}[line]
 					if !g.begin(minimum) {
 						err = errors.New("insufficient active chat requests")
 					} else {
