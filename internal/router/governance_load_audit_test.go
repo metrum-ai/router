@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -121,7 +122,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, Realm: "Synthetic", AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "GOVERNANCE_TEST_ADMIN_HASH", Subject: "basic:admin", Domain: "local/test"}}}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, *, admin:security_reports, read|export", "p, basic:admin, *, admin:reports, read|export|drilldown"}}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 256, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 30}}
-	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "primary-model"}, {Provider: "mock", Model: "fallback-model"}}}
+	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "primary-model"}, {Provider: "mock", Model: "fallback-model", InputPricePerMillionUSD: 2, OutputPricePerMillionUSD: 5}}}
 	cfg.Callers[0].Rate = RateConfig{RPM: 10000, TPM: 10000000, Concurrent: workers + 10}
 	second := cfg.Callers[0]
 	second.ID, second.TokenID = "audit-second", "rtr_audit_second"
@@ -138,6 +139,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 	client := &http.Client{Timeout: 90 * time.Second}
 	type result struct {
 		key, id string
+		aborted bool
 		err     error
 	}
 	results := make(chan result, workers)
@@ -182,7 +184,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			if err == nil && resp.StatusCode != http.StatusOK {
 				err = fmt.Errorf("worker %d status %d", i, resp.StatusCode)
 			}
-			results <- result{key: key, id: resp.Header.Get("X-Request-Id"), err: err}
+			results <- result{key: key, id: resp.Header.Get("X-Request-Id"), aborted: i%8 == 0, err: err}
 		}(i)
 	}
 	close(start)
@@ -202,6 +204,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 		}
 	}
 	want := map[string]map[string]bool{cfg.Callers[0].TokenID: {}, second.TokenID: {}}
+	aborted := make(map[string]bool)
 	for result := range results {
 		if result.err != nil {
 			t.Error(result.err)
@@ -212,6 +215,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			continue
 		}
 		want[result.key][result.id] = true
+		aborted[result.id] = result.aborted
 	}
 	if primaryCalls.Load() != workers || fallbackCalls.Load() != workers {
 		t.Fatalf("primary=%d fallback=%d, want %d each", primaryCalls.Load(), fallbackCalls.Load(), workers)
@@ -274,6 +278,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			t.Fatalf("key %s request report got %d rows, want %d", key, len(report.Requests), len(ids))
 		}
 		usageSeen := make(map[string]bool, len(ids))
+		completed := 0
 		for _, row := range report.Requests {
 			if row.TokenID != key || !ids[row.RequestID] || usageSeen[row.RequestID] {
 				t.Fatalf("unexpected or duplicate usage row: key=%s request=%s", row.TokenID, row.RequestID)
@@ -282,7 +287,24 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			if row.Attempts != 2 || !row.Fallback {
 				t.Errorf("request %s: attempts=%d fallback=%v, want 2 and true", row.RequestID, row.Attempts, row.Fallback)
 			}
+			// Cut streams intentionally do not receive the upstream's terminal
+			// usage. Reconcile only completed responses with that usage frame.
+			if !aborted[row.RequestID] {
+				completed++
+				const cost = 0.000016 // 3 input at $2/M + 2 output at $5/M.
+				if row.InputTokens != 3 || row.OutputTokens != 2 || row.TotalTokens != 5 || math.Abs(row.TotalCostUSD-cost) > 1e-12 {
+					t.Errorf("request %s usage=(%d,%d,%d,$%.9f), want (3,2,5,$%.9f)", row.RequestID, row.InputTokens, row.OutputTokens, row.TotalTokens, row.TotalCostUSD, cost)
+				}
+			}
 		}
+		expectedCompleted := workers / 2
+		if key == cfg.Callers[0].TokenID {
+			expectedCompleted -= workers / 8
+		}
+		if completed != expectedCompleted {
+			t.Fatalf("key %s reconciled %d completed rows, want %d", key, completed, expectedCompleted)
+		}
+		t.Logf("token_id=%s completed_usage_reconciled=%d", key, completed)
 		req := httptest.NewRequest("GET", "/admin/reports/security/export.csv?since=24h&limit=256&token_id="+key, nil)
 		req.SetBasicAuth("admin", "synthetic-password")
 		rr := httptest.NewRecorder()
