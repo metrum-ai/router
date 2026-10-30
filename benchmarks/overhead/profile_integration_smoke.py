@@ -54,9 +54,11 @@ def main():
             env = os.environ.copy()
             env["PROFILE_SMOKE_TOKEN"] = TOKEN
             subprocess.run(["go", "build", "-tags", "dev_no_license", "-o", str(binary), "./benchmarks/overhead/profiled-router"], cwd=ROOT, env=env, check=True, timeout=300)
-            for concurrency, streaming, valid in ((32, True, True), (128, False, True), (32, False, False)):
+            for concurrency, streaming, valid, percent in ((32, True, True, 100), (128, False, True, 100),
+                                                             (32, False, True, 90), (128, False, True, 90),
+                                                             (32, False, False, 100)):
                 backend.delay = 2.5 if valid else .001
-                work = root / f"case-{concurrency}-{valid}"
+                work = root / f"case-{concurrency}-{valid}-{percent}"
                 work.mkdir()
                 port = free_port()
                 (work / "config.yaml").write_text(f'''server:
@@ -102,7 +104,7 @@ callers:
                                "--model", "chat", "--path-kind", "plain", "--prompt-file", str(work / "prompt.txt"),
                                "--output-tokens", "3", "--concurrency", str(concurrency), "--requests-per-worker", "1",
                                "--minimum-sampling-seconds", ".25", "--deadline-seconds", "30", "--socket-timeout", "15",
-                               "--output-dir", str(work / "result")]
+                               "--output-dir", str(work / "result"), "--minimum-active-percent", str(percent)]
                         if streaming:
                             cmd.append("--streaming")
                         result = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
@@ -110,12 +112,14 @@ callers:
                             if result.returncode:
                                 raise RuntimeError(f"guarded capture failed at {concurrency}: {result.stderr}")
                             metadata = json.loads((work / "result/profile-phase.json").read_text())
-                            if metadata["concurrency"] != concurrency or metadata["timed_requests"] != concurrency:
+                            if (metadata["concurrency"] != concurrency or metadata["timed_requests"] != concurrency
+                                    or metadata["minimum_active_percent"] != percent
+                                    or metadata["guard_min_active_during_capture"] != (concurrency * percent + 99) // 100):
                                 raise RuntimeError("profile metadata mismatch")
                             for name in ("cpu.pprof", "heap.pprof"):
                                 subprocess.run(["go", "tool", "pprof", "-top", str(work / "profiles" / name)], cwd=ROOT,
                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=30)
-                            print(f"PASS: synthetic guarded CPU/heap capture at {concurrency}, not a performance result")
+                            print(f"PASS: synthetic guarded CPU/heap capture at {concurrency} clients with {percent}% floor, not a performance result")
                         else:
                             if result.returncode == 0 or (work / "result/profile-phase.json").exists():
                                 raise RuntimeError("too-short load incorrectly accepted a profile")
