@@ -1,4 +1,5 @@
 {
+  "router_source_commit": "13b6c9c2948c26cde995b225a14db349bb2247d7",
   "serving": {"project": "ggml-org/llama.cpp", "release": "v0.8.0", "commit": "8642541b255bfb5dc39cd351a178be09013a55d6", "build": "CPU, GGML_CUDA=OFF, LLAMA_CURL=OFF"},
   "models": {
     "medical": {"repo":"mradermacher/Cognitapp-Med-Nano-v1-GGUF", "revision":"b1c6c504b151d86c1e7b3e8457b4efb12bb116b9", "filename":"Cognitapp-Med-Nano-v1.Q4_K_M.gguf", "sha256":"01119514e0f1562c03eb19cc3bef6b68192a3ddc286381193d9c304ddc91acee", "model_card_license_tag":"apache-2.0", "scope":"medical coding, not diagnostic advice"},

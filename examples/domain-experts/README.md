@@ -76,7 +76,7 @@ reported the full 20-token limit. The small, narrow models and synthetic tags
 show local routing and transport only—not classification, specialist quality,
 independent external reproduction or production readiness. No GPU or hosted
 calls were used; local CPU and infrastructure costs were not measured. The
-sanitized result and procedure are in snapshot `4e73051e`
+sanitized result and procedure are in snapshot `4533b232`
 (`router/v45-proof/424-domain-cpu`).
 
 A [2026-10-29 hosted smoke](evidence/hosted-summary-2026-10-29.json)
