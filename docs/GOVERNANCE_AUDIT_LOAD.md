@@ -4,7 +4,8 @@
 # Governance load: security export (#431)
 
 This bounded localhost test covers SQLite and optional PostgreSQL security-CSV
-export. It is not a usage-billing export or a distributed acceptance test. Run
+export and per-key request-usage reports. It is not a usage-billing export or a
+distributed acceptance test. Run
 the SQLite case with
 `go test ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=1 -v`.
 
@@ -37,6 +38,29 @@ make governance-load
 Both passed on the original stacked test branch; `make governance-load` is
 available once the separate reservation-baseline work is merged. This test can
 run independently with the `go test` command above. The SQLite case uses synthetic Basic admin credentials.
+
+## Per-key request-usage observation
+
+On 2026-10-30 UTC, production-code base
+`566fd81edf9f790c31e24abfb9630a29b3c2d4e5` on Linux x86_64, 16 visible
+CPUs (AMD Ryzen 7 7730U), Go 1.27.3, passed the expanded scenario four times
+under the race detector with SQLite and four times with disposable local
+PostgreSQL 16.15 UTF-8 over a private Unix socket. Each run matched all 64
+client request IDs once in the per-key admin request report: 32 per synthetic
+key, no duplicates or cross-key rows, each with two attempts and fallback
+recorded. That includes eight deliberately cut streams whose upstreams observed
+cancellation. The existing security CSV checks also passed. PostgreSQL test
+schemas were absent afterward and the private server was stopped.
+
+This verifies bounded request-row/accounting presence, not usage-token
+correctness, provider charges or billing settlement: no monetary totals were
+reconciled. It also does not establish at-most-once behavior across multiple
+router processes or crashes. The PostgreSQL test remains opt-in.
+
+```sh
+go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=4 -v
+# With a disposable PostgreSQL DSN, use the PostgreSQL command below with -count=4.
+```
 
 ## PostgreSQL observation
 

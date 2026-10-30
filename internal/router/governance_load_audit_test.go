@@ -233,9 +233,55 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	// Security events are not billing rows. Independently wait for the usage
+	// writer and compare the per-key request report, including cut streams.
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		flushUsageForTest(t, svc)
+		var count int64
+		if err := svc.usage.db.Model(&usageRecord{}).Where("token_id IN ?", []string{cfg.Callers[0].TokenID, second.TokenID}).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count >= workers {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d request usage rows persisted", count, workers)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	for key, ids := range want {
 		if len(ids) != workers/2 {
 			t.Fatalf("key %s generated %d IDs", key, len(ids))
+		}
+		reportReq := httptest.NewRequest("GET", "/admin/reports/api/requests?since=24h&limit=256&token_id="+key, nil)
+		reportReq.SetBasicAuth("admin", "synthetic-password")
+		reportRR := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(reportRR, reportReq)
+		if reportRR.Code != http.StatusOK {
+			t.Fatalf("request report status=%d", reportRR.Code)
+		}
+		for _, forbidden := range []string{testToken, secondToken, "synthetic audit request", "abort-stream"} {
+			if strings.Contains(reportRR.Body.String(), forbidden) {
+				t.Fatal("request report exposed synthetic credential or request content")
+			}
+		}
+		var report adminReportResponse
+		if err := json.Unmarshal(reportRR.Body.Bytes(), &report); err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Requests) != len(ids) {
+			t.Fatalf("key %s request report got %d rows, want %d", key, len(report.Requests), len(ids))
+		}
+		usageSeen := make(map[string]bool, len(ids))
+		for _, row := range report.Requests {
+			if row.TokenID != key || !ids[row.RequestID] || usageSeen[row.RequestID] {
+				t.Fatalf("unexpected or duplicate usage row: key=%s request=%s", row.TokenID, row.RequestID)
+			}
+			usageSeen[row.RequestID] = true
+			if row.Attempts != 2 || !row.Fallback {
+				t.Errorf("request %s: attempts=%d fallback=%v, want 2 and true", row.RequestID, row.Attempts, row.Fallback)
+			}
 		}
 		req := httptest.NewRequest("GET", "/admin/reports/security/export.csv?since=24h&limit=256&token_id="+key, nil)
 		req.SetBasicAuth("admin", "synthetic-password")
@@ -263,6 +309,6 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 		if len(seen) != len(ids) {
 			t.Fatalf("key %s got %d events want %d", key, len(seen), len(ids))
 		}
-		t.Logf("token_id=%s requests=%d csv_events=%d duplicates=0", key, len(ids), len(seen))
+		t.Logf("token_id=%s requests=%d usage_rows=%d csv_events=%d duplicates=0", key, len(ids), len(usageSeen), len(seen))
 	}
 }
