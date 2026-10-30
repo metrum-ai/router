@@ -1,5 +1,6 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -35,6 +36,22 @@ class BenchmarkReportTests(unittest.TestCase):
         self.assertEqual(result['confusion']['strong']['cheap'],1)
         self.assertEqual(result['policy_p50_ms'],5)
         self.assertIsNone(result['policy_p99_ms'])
+
+    def test_checked_in_real_result_summary_and_scope(self):
+        evidence=HERE/'evidence/a6000-2026-10-29'
+        dataset_path=evidence/'benchmark_dataset.json'
+        digest=hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+        ids={r['id'] for r in report.dataset(dataset_path)}
+        self.assertEqual(len(ids),12)
+        for model in ('d3','clef'):
+            data=json.loads((evidence/f'{model}-result.json').read_text())
+            self.assertEqual((data['decisions'],data['backend']),('external','mock'))
+            self.assertEqual(data['benchmark']['dataset_sha256'],digest)
+            self.assertEqual(len(data['results']),216)
+            self.assertEqual({r['input'] for r in data['results']},ids)
+            self.assertEqual(report.summarize(data['results']),data['benchmark']['summary'])
+            for row in data['benchmark']['summary']:
+                self.assertEqual((row['count'],row['successes'],row['errors']),(108,108,0))
 
     def test_paid_backend_rejected_before_credential_or_network_use(self):
         result=subprocess.run([sys.executable,str(HERE/'run.py'),'--router','/nonexistent',
