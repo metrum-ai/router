@@ -104,14 +104,17 @@ class IsolatedBillingTests(unittest.TestCase):
                 process = subprocess.Popen([str(binary),'--config',str(cfg_path)], cwd=ROOT, env=env,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 base = f'http://127.0.0.1:{router_port}'
-                for _ in range(150):
+                # CI runs multiple Go builds and test shards concurrently; use a
+                # wall-clock deadline rather than a fixed number of attempts.
+                deadline = time.monotonic() + 90
+                while time.monotonic() < deadline:
                     if process.poll() is not None: self.fail('router exited before readiness')
                     try:
                         with urlopen(base+'/readyz', timeout=1) as response:
                             if response.status == 200: break
                     except (URLError, TimeoutError): pass
                     time.sleep(.1)
-                else: self.fail('router did not become ready')
+                else: self.fail('router did not become ready within 90 seconds')
                 token = (state/'caller').read_text().strip()
                 for group in ('frontier','routed','cheap-test'):
                     data = json.dumps({'model':group,'messages':[{'role':'user','content':'synthetic'}],'max_tokens':2}).encode()
