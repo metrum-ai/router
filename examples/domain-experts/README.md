@@ -64,8 +64,22 @@ This makes paid requests. The preflight is a conservative token-price
 reservation, not an invoice or a guarantee about retries, provider policy or
 unpriced services. Monitor spend, and reconcile any errors before retrying.
 Delete private state after the run. Do not place credentials in the config.
-The real self-hosted variant has not been independently exercised against
-deployed expert servers. A [2026-10-29 hosted smoke](evidence/hosted-summary-2026-10-29.json)
+
+A [2026-10-30 CPU local smoke](evidence/local-cpu-summary-2026-10-30.json)
+ran five loopback inference servers with distinct pinned GGUF weights listed in
+the [manifest](evidence/local-cpu-manifest-2026-10-30.json). The domain runner
+verified all five routes returned HTTP 200 in one attempt without fallback.
+Separate direct greeting checks returned nonempty responses with `stop` finish
+reasons on all five servers; these were not the routed requests. The runner did
+not inspect routed response bodies or finish reasons, and three routed calls
+reported the full 20-token limit. The small, narrow models and synthetic tags
+show local routing and transport only—not classification, specialist quality,
+independent external reproduction or production readiness. No GPU or hosted
+calls were used; local CPU and infrastructure costs were not measured. The
+sanitized result and procedure are in snapshot `4533b232`
+(`router/v45-proof/424-domain-cpu`).
+
+A [2026-10-29 hosted smoke](evidence/hosted-summary-2026-10-29.json)
 selected five distinct Fireworks model IDs with 5/5 HTTP 200 responses, each
 with a single attempt and no fallback. This is tag-routing and transport
 coverage, not classification or domain-expertise evidence: the chosen models
