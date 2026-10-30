@@ -1,7 +1,8 @@
 # Governance: scoped callers, redaction, quotas and audit
 
 This loopback demonstration runs the real router and existing escalation policy
-against a fake upstream. It checks a scoped caller's allow/deny (200/403), daily
+against a fake upstream. The [recorded mock result](evidence/mock-output.json)
+checks a scoped caller's allow/deny (200/403), daily
 request cap (429), a separate caller's token reservation rejection (429), RPM
 limit (200 then 429), an authorized security CSV export and denial of that export
 to a normal caller. A synthetic email is redacted before it reaches the fake
@@ -54,8 +55,10 @@ Do not print or publish the state directory or CSV.
 
 ## Evidence and limits
 
-`evidence/` contains sanitized mock, OIDC and hosted smoke results, including
-usage-derived cost and its limitations. The mock upstream checks
+The [evidence index](evidence/README.md) links the sanitized
+[mock](evidence/mock-output.json), [OIDC](evidence/oidc-smoke.txt) and
+[hosted](evidence/fireworks-output.json) results, including usage-derived cost
+and its limitations. The mock upstream checks
 that the sample email is absent and a placeholder is present; this does not prove
 all PII is removed. The local test replaces the upstream with a loopback fake,
 not an actual local model. OIDC and demo are two separate processes. The route
