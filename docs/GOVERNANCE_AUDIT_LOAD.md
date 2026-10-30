@@ -62,6 +62,32 @@ go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=4 
 # With a disposable PostgreSQL DSN, use the PostgreSQL command below with -count=4.
 ```
 
+## Completed-response token and price fixture
+
+The audit workload also supplies a synthetic fallback price of $2 per million
+input tokens and $5 per million output tokens. For each of the 56 completed
+requests per run, the request report must match the mock upstream's terminal
+usage: three input tokens, two output tokens, five total, and $0.000016 in
+configured-price cost. The failed primary returns no usage. Eight intentionally
+cut streams are excluded from this token/cost assertion because they do not
+receive a terminal usage frame; their report-row isolation and fallback metadata
+are still checked. This is deterministic synthetic price arithmetic, not a
+provider invoice, a reconciliation of canceled streams, or proof for other
+pricing shapes.
+
+On 2026-10-30 UTC, the expanded test passed twice under the race
+detector on SQLite and twice on disposable local PostgreSQL 16.15 UTF-8, on
+production-code base `6ab2d35822d2004271a24c4f3aa56e5212514dbd`. The 56
+asserted rows split into 24 for the first key and 32 for the second. PostgreSQL
+schemas were absent afterward and its private server stopped. No hosted or
+paid services were used.
+
+```sh
+go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=2 -v
+# With the disposable PostgreSQL DSN below:
+go test -race ./internal/router -run '^TestGovernanceLoadAuditExportPostgres$' -count=2 -v
+```
+
 ## PostgreSQL observation
 
 On 2026-10-29 UTC, the same 64-worker scenario passed three times under the

@@ -100,10 +100,10 @@ D3 and OpenJev use their existing `/v1/systemone` decision protocol. The Clef
 adapter expects a **user-supplied local shim** that accepts a Clef-style
 `{model,state,questions}` request and responds with
 `{answers:{tier:{choice,confidence}}}`. It is not Cloudflare Workers AI REST
-and this repository does not ship a Clef inference server. No actual Clef model
-or external decision endpoints were run for this example; model deployment,
-protocol compatibility, licensing and decision-server cost are the operator's
-responsibility. OpenJev's weights are CC BY-NC 4.0: this demo does not grant
+and this repository does not ship a Clef inference server. The linked partial
+A6000 observation above used real d3 and Clef endpoints; it did not run OpenJev.
+For an operator's own run, model deployment, protocol compatibility, licensing
+and decision-server cost remain the operator's responsibility. OpenJev's weights are CC BY-NC 4.0: this demo does not grant
 commercial usage rights. See `examples/external-routing-policy/README.md`.
 
 To serve generation from an OpenAI-compatible loopback service instead of the
@@ -124,7 +124,9 @@ contains router credentials, request logs and the SQLite usage database. Keep
 it private, reconcile all attempts including failures, then remove it. For mock
 mode only, the script automatically cleans its temporary directory.
 
-Routing decisions are not a safety filter. This example makes no claims about
-actual model inference, model quality, calibrated probabilities, independent
-reproduction or savings; any production deployment needs its own dataset,
-latency, failure-mode, security and cost evaluation.
+Routing decisions are not a safety filter. The default mock makes no claims
+about actual model inference or model quality. The partial real-model observation
+is subject to the limitations in its linked evidence; neither establishes
+calibrated probabilities, independent reproduction or savings. Any production
+deployment needs its own dataset, latency, failure-mode, security and cost
+evaluation.

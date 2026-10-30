@@ -160,8 +160,24 @@ disabled and verify split streamed tool arguments and actual tool-result
 continuation; they do not establish thinking/signature or cache-control
 preservation across dialects. This checks successful streamed tool execution
 and continuation, not complete stream equivalence or per-hop accounting.
-Codex remains untested in that sweep. Other clients/surfaces, other cross-dialect paths, broader parallel-tool
+Codex is a separate sandboxed Responses chain matrix, not part of that sweep.
+Other clients/surfaces, other cross-dialect paths, broader parallel-tool
 coverage, loop-protection validation across intermediaries and live nightly evidence remain open in #429 and #430.
+
+The scheduled mock workflow produced these bounded per-cell results. Each run
+used a local scripted SSE upstream and reports zero hosted-model calls:
+
+| Scheduled run (UTC) | Agent chain cells | Sandboxed Codex Responses cells |
+|---|---:|---:|
+| [2026-10-28](https://github.com/metrum-ai/router/actions/runs/40673999064) | 20/20 | 5/5 |
+| [2026-10-29](https://github.com/metrum-ai/router/actions/runs/40861651773) | 20/20 | 5/5 |
+| [2026-10-30](https://github.com/metrum-ai/router/actions/runs/41044327781) | 24/24 | 5/5 |
+
+The four added cells on October 30 are the Claude Messages → Chat probes
+described above. These are three scheduled observations, not a seven-day
+acceptance streak or live-provider certification. Artifacts cover only the
+specified cells; token and cost reconciliation and the other #430 acceptance
+criteria remain open.
 
 ### Validation evidence (offline)
 

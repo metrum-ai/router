@@ -22,6 +22,18 @@ go build -o /tmp/case423-router ./cmd/metrum-ai-router
 /tmp/case423-router --config /dev/shm/case423/config.yaml
 ```
 
+For an **optional** future billing-attribution experiment, provision approved,
+exclusive credentials and set `OPENAI_FRONTIER_API_KEY`,
+`OPENAI_ROUTED_API_KEY`, and `FIREWORKS_ROUTED_API_KEY` privately instead.
+Add `--isolate-billing-arms` to the setup command. The two OpenAI keys must
+be distinct; the generated config contains only environment references. This
+separates provider credentials by arm, but it is **not an authorization or
+privacy boundary**: the same caller can access both groups, and the router
+process holds all three credentials. It does not prove billing attribution:
+confirm each key's billing scope is exclusive, include failures and retries,
+and reconcile provider charges before claiming billed cost. The scheduled
+workflow does not use this option.
+
 In a separate shell, check `curl -fsS http://127.0.0.1:18123/readyz` and follow
 the workload README. When done, stop the router and remove the private state.
 Never print, publish or copy provider credentials or the generated caller token.
@@ -76,6 +88,27 @@ frontier model is actually frontier, or that a verifier assesses the intended
 quality. Those are review obligations. Provider invoices may be delayed,
 aggregated or lack per-request attribution; retain that limitation instead of
 fabricating an exact receipt.
+
+## Planning billing attribution for a future run
+
+The current setup and scheduled workflow use one credential per provider for
+both arms. Their existing aggregate provider charges therefore cannot, by
+that fact alone, be assigned to an arm or request set. Do not retrospectively
+allocate a shared invoice or relabel token-price estimates as billed costs.
+
+For a future approved reproduction, an operator can investigate separately
+scoped, exclusive billing identities for each arm and provider, while keeping
+all keys private. For example, OpenAI's [Costs API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage/methods/costs)
+provides project-grouped daily cost buckets, and Fireworks documents
+[usage and cost breakdowns](https://docs.fireworks.ai/accounts/exporting-usage-and-costs),
+including a rated-cost query with API-key grouping. These are aggregated views,
+not automatically per-request invoices. Access, granularity, availability,
+rounding, retries, adjustments and credits must be verified with the provider.
+Use identities exclusively for the relevant arm over the covered period, account
+for every attempt, and reconcile rated totals with actual charges before claiming
+billed cost. If any of that cannot be established, report billing as unknown.
+The current example does not provision identities or perform this reconciliation;
+a change to isolate arms would need separate implementation and review.
 
 Keep raw provider receipts, request IDs and task content private. Publish only
 reviewed, sanitized aggregates, configuration without credentials, and

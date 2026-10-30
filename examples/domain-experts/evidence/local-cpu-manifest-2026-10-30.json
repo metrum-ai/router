@@ -1,0 +1,12 @@
+{
+  "router_source_commit": "13b6c9c2948c26cde995b225a14db349bb2247d7",
+  "serving": {"project": "ggml-org/llama.cpp", "release": "v0.8.0", "commit": "8642541b255bfb5dc39cd351a178be09013a55d6", "build": "CPU, GGML_CUDA=OFF, LLAMA_CURL=OFF"},
+  "models": {
+    "medical": {"repo":"mradermacher/Cognitapp-Med-Nano-v1-GGUF", "revision":"b1c6c504b151d86c1e7b3e8457b4efb12bb116b9", "filename":"Cognitapp-Med-Nano-v1.Q4_K_M.gguf", "sha256":"01119514e0f1562c03eb19cc3bef6b68192a3ddc286381193d9c304ddc91acee", "model_card_license_tag":"apache-2.0", "scope":"medical coding, not diagnostic advice"},
+    "legal": {"repo":"mradermacher/EUAIAct-Qwen2.5-0.5B-Edge-GGUF", "revision":"c9235c1fd9ec6fa477c36d2421e38fa867f06450", "filename":"EUAIAct-Qwen2.5-0.5B-Edge.Q4_K_M.gguf", "sha256":"19685e651145462a440b0e05c786e6fca6c87eaf5786bbda86c534a5554fcfbf", "model_card_license_tag":"apache-2.0", "scope":"EU AI Act and GDPR, not general legal advice"},
+    "finance": {"repo":"pablitoelpeligro/aibudget-intent-05b-GGUF", "revision":"3e2f205b378f501253608740fa3b9b841aa41f5e", "filename":"aibudget-intent-05b-v5-Q4_K_M.gguf", "sha256":"d3d6fc0780359cd4d198e9354b9ecfc0ff9cfb0fb729f040326fa6e2f02c693a", "model_card_license_tag":"apache-2.0", "scope":"budget intent parsing, not general financial advice"},
+    "code": {"repo":"Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF", "revision":"ebb2015119c907b064c512bf053e945850b5875f", "filename":"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "sha256":"1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32", "model_card_license_tag":"apache-2.0", "scope":"coding"},
+    "general": {"repo":"Qwen/Qwen2.5-0.5B-Instruct-GGUF", "revision":"9217f5db79a29953eb74d5343926648285ec7e67", "filename":"qwen2.5-0.5b-instruct-q4_k_m.gguf", "sha256":"74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db", "model_card_license_tag":"apache-2.0", "scope":"general"}
+  },
+  "note":"Model card tags and declared specialization are not independent verification, legal advice, quality evidence or production suitability."
+}
