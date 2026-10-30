@@ -106,7 +106,7 @@ jobs:
       # A dispatch on a non-tag ref remains a build-only dry run.
       - name: Attest release asset provenance
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/metrum-ai-router-*.tar.gz
