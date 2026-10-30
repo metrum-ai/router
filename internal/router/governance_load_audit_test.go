@@ -74,7 +74,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 	const secondToken = "synthetic-audit-second-token"
 	t.Setenv("GOVERNANCE_TEST_ADMIN_HASH", mustBcryptHash(t, "synthetic-password"))
 	var primaryCalls, fallbackCalls atomic.Int64
-	canceledUpstreams := make(chan struct{}, workers/8)
+	canceledUpstreams := make(chan struct{}, workers/4)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		if json.NewDecoder(r.Body).Decode(&body) != nil {
@@ -154,8 +154,11 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			if i%2 != 0 {
 				token, key = secondToken, second.TokenID
 			}
+			// Both token IDs cut streams: i%8==0 is the first key, 5 is
+			// the second, and both are in the streaming half of the mix.
+			cut := i%8 == 0 || i%8 == 5
 			content := "synthetic audit request"
-			if i%8 == 0 {
+			if cut {
 				content = "abort-stream"
 			}
 			body, _ := json.Marshal(map[string]any{"model": "default", "stream": (i/2)%2 == 0, "max_tokens": 64, "messages": []any{map[string]any{"role": "user", "content": content}}})
@@ -171,7 +174,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 				return
 			}
 			defer resp.Body.Close()
-			if i%8 == 0 {
+			if cut {
 				var firstLine string
 				firstLine, err = bufio.NewReader(resp.Body).ReadString('\n')
 				if err == nil && !strings.HasPrefix(firstLine, "data:") {
@@ -184,7 +187,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			if err == nil && resp.StatusCode != http.StatusOK {
 				err = fmt.Errorf("worker %d status %d", i, resp.StatusCode)
 			}
-			results <- result{key: key, id: resp.Header.Get("X-Request-Id"), aborted: i%8 == 0, err: err}
+			results <- result{key: key, id: resp.Header.Get("X-Request-Id"), aborted: cut, err: err}
 		}(i)
 	}
 	close(start)
@@ -196,7 +199,7 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 		t.Fatal("audit load timeout")
 	}
 	close(results)
-	for i := 0; i < workers/8; i++ {
+	for i := 0; i < workers/4; i++ {
 		select {
 		case <-canceledUpstreams:
 		case <-time.After(15 * time.Second):
@@ -279,6 +282,8 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 		}
 		usageSeen := make(map[string]bool, len(ids))
 		completed := 0
+		cutSources := map[string]int{}
+		cutStatuses := map[int]int{}
 		for _, row := range report.Requests {
 			if row.TokenID != key || !ids[row.RequestID] || usageSeen[row.RequestID] {
 				t.Fatalf("unexpected or duplicate usage row: key=%s request=%s", row.TokenID, row.RequestID)
@@ -291,20 +296,26 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 			// usage. Reconcile only completed responses with that usage frame.
 			if !aborted[row.RequestID] {
 				completed++
+				if row.UsageSource != "reported" {
+					t.Errorf("completed request %s usage source %q, want reported", row.RequestID, row.UsageSource)
+				}
 				const cost = 0.000016 // 3 input at $2/M + 2 output at $5/M.
 				if row.InputTokens != 3 || row.OutputTokens != 2 || row.TotalTokens != 5 || math.Abs(row.TotalCostUSD-cost) > 1e-12 {
 					t.Errorf("request %s usage=(%d,%d,%d,$%.9f), want (3,2,5,$%.9f)", row.RequestID, row.InputTokens, row.OutputTokens, row.TotalTokens, row.TotalCostUSD, cost)
 				}
+			} else {
+				cutSources[row.UsageSource]++
+				cutStatuses[row.Status]++
+				if row.UsageSource == "reported" {
+					t.Errorf("cut request %s claims reported usage without terminal usage", row.RequestID)
+				}
 			}
 		}
-		expectedCompleted := workers / 2
-		if key == cfg.Callers[0].TokenID {
-			expectedCompleted -= workers / 8
-		}
+		expectedCompleted := workers/2 - workers/8
 		if completed != expectedCompleted {
 			t.Fatalf("key %s reconciled %d completed rows, want %d", key, completed, expectedCompleted)
 		}
-		t.Logf("token_id=%s completed_usage_reconciled=%d", key, completed)
+		t.Logf("token_id=%s completed_usage_reconciled=%d cut_sources=%v cut_statuses=%v", key, completed, cutSources, cutStatuses)
 		req := httptest.NewRequest("GET", "/admin/reports/security/export.csv?since=24h&limit=256&token_id="+key, nil)
 		req.SetBasicAuth("admin", "synthetic-password")
 		rr := httptest.NewRecorder()

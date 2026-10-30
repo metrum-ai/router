@@ -100,11 +100,80 @@ func TestControlSocketRejectsUnknownCommands(t *testing.T) {
 	if got := command("status\n"); got["ok"] != true || got["active"] != float64(0) {
 		t.Fatalf("unexpected initial status: %v", got)
 	}
-	if command("stop32\n")["ok"] != false {
-		t.Fatal("stop32 accepted without load")
+	for _, name := range []string{"stop29\n", "stop32\n", "stop116\n", "stop128\n"} {
+		if command(name)["ok"] != false {
+			t.Fatalf("%s accepted without load", strings.TrimSpace(name))
+		}
 	}
-	if command("stop\n")["ok"] != true {
-		t.Fatal("stop rejected")
+	for i := 0; i < 29; i++ {
+		g.enter()
+	}
+	if command("stop32\n")["ok"] != false {
+		t.Fatal("strict stop32 accepted only 29 active requests")
+	}
+	if command("stop29\n")["ok"] != true {
+		t.Fatal("opt-in stop29 rejected 29 active requests")
+	}
+	if command("stop\n")["ok"] != false {
+		t.Fatal("second stop accepted")
+	}
+}
+
+func TestControlStop116AtFloor(t *testing.T) {
+	dir := t.TempDir()
+	listener, err := net.Listen("unix", filepath.Join(dir, "control.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, g := &profiler{dir: dir}, &loadGauge{}
+	done := make(chan error, 1)
+	go func() { done <- serveControl(listener, p, g) }()
+	t.Cleanup(func() {
+		listener.Close()
+		p.close()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	if err := p.start(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 116; i++ {
+		g.enter()
+	}
+	conn, err := net.DialTimeout("unix", listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("stop116\n")); err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.NewDecoder(conn).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if result["ok"] != true {
+		t.Fatalf("stop116 rejected floor: %v", result)
+	}
+}
+
+func TestOptInStop116RequiresAndTracksItsFloor(t *testing.T) {
+	g := &loadGauge{}
+	for i := 0; i < 115; i++ {
+		g.enter()
+	}
+	if g.begin(116) {
+		t.Fatal("accepted fewer than 116 active requests")
+	}
+	g.enter()
+	if !g.begin(116) {
+		t.Fatal("rejected 116 active requests")
+	}
+	g.leave()
+	g.enter()
+	if got := g.end(); got != 115 {
+		t.Fatalf("minimum active = %d, want 115", got)
 	}
 }
 
