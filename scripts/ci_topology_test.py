@@ -105,6 +105,8 @@ def assert_make_tiers() -> None:
     makefile = read(ROOT / "Makefile")
     fast = make_rule(makefile, "test-fast")
     full = make_rule(makefile, "test")
+    require("$(MAKE) validate-build-metadata" in make_rule(makefile, "ci-python"),
+            "consolidated CI must validate build metadata before the merge group")
     assert_go_timeout_headroom(fast, make_recipe=True)
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")

@@ -375,11 +375,12 @@ ci-windows:
 	for arch in amd64 arm64; do \
 	  CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go vet ./...; \
 	  for bin in $(PACKAGE_BINARIES); do \
-	    CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -buildvcs=false -o "$$tmp/$$arch-$$bin.exe" "./cmd/$$bin"; \
+	    CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/$$arch-$$bin.exe" "./cmd/$$bin"; \
 	  done; \
 	done
 
 ci-python: secret-contract capability-smoke-contracts
+	$(MAKE) validate-build-metadata
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
