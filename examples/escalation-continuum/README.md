@@ -96,7 +96,10 @@ is far too small and narrow for general quality claims. Local and GPU cost
 excludes hardware and energy. Provider costs are configured token-price
 estimates, not reconciled billing. Network/tunnel topology is part of timing;
 do not treat it as co-located overhead. AMD and NVIDIA must be independently
-measured before claiming vendor-neutral results.
+measured before claiming vendor-neutral results. A single
+[synthetic MI300X measurement](evidence/mi300x-2026-10-30/README.md)
+records CPU, AMD GPU and hosted frontier routing and the illustrative latency
+target it missed; it does not establish provider billing or production parity.
 
 The isolated fake Responses integration can also be exercised without any
 network traffic or real key by setting `ROUTER_TEST_BINARY=/tmp/escalation-router`
