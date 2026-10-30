@@ -1,0 +1,79 @@
+{
+  "enforce-latency": [
+    {
+      "count": 3,
+      "error_class": "external-policy-http-error",
+      "outcome": "error"
+    },
+    {
+      "count": 3350,
+      "error_class": "",
+      "outcome": "selected"
+    }
+  ],
+  "enforce-profile-128": [
+    {
+      "count": 10,
+      "error_class": "external-policy-http-error",
+      "outcome": "error"
+    },
+    {
+      "count": 4044,
+      "error_class": "",
+      "outcome": "selected"
+    }
+  ],
+  "enforce-profile-32": [
+    {
+      "count": 2080,
+      "error_class": "",
+      "outcome": "selected"
+    }
+  ],
+  "plain-latency": [],
+  "plain-profile-128": [],
+  "plain-profile-32": [],
+  "shadow-latency": [
+    {
+      "count": 20,
+      "error_class": "external-policy-http-error",
+      "outcome": "shadow_error"
+    },
+    {
+      "count": 20,
+      "error_class": "external-policy-timeout",
+      "outcome": "shadow_error"
+    },
+    {
+      "count": 9086,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ],
+  "shadow-profile-128": [
+    {
+      "count": 17,
+      "error_class": "external-policy-http-error",
+      "outcome": "shadow_error"
+    },
+    {
+      "count": 4207,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ],
+  "shadow-profile-32": [
+    {
+      "count": 2080,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ],
+  "shadow-qualification": [
+    {
+      "count": 1536,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ]
+}

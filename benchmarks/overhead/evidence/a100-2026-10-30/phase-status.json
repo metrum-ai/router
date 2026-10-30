@@ -1,0 +1,44 @@
+{
+  "enforce-latency": {
+    "error": "Command '['/usr/bin/python3', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/src/load.py', '--direct-url', 'http://127.0.0.1:18000/v1/chat/completions', '--router-url', 'http://127.0.0.1:18080/v1/chat/completions', '--router-token-env', 'BENCH_ROUTER_TOKEN', '--model', 'chat', '--prompt-file', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/enforce-latency/prompt.txt', '--output-dir', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/enforce-latency/results', '--output-tokens', '32', '--concurrency', '1,8,32,128', '--requests-per-worker', '8', '--repetitions', '3', '--timeout', '120']' returned non-zero exit status 1.",
+    "error_type": "CalledProcessError",
+    "status": "failed"
+  },
+  "enforce-profile-128": {
+    "error": "Command '['/usr/bin/python3', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/src/profile_phase.py', '--router-url', 'http://127.0.0.1:18080/v1/chat/completions', '--router-token-env', 'BENCH_ROUTER_TOKEN', '--control-socket', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/enforce-profile-128/control/control.sock', '--model', 'chat', '--path-kind', 'decision-enforce', '--prompt-file', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/enforce-profile-128/prompt.txt', '--output-tokens', '32', '--concurrency', '128', '--requests-per-worker', '32', '--minimum-sampling-seconds', '8', '--deadline-seconds', '360', '--output-dir', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/enforce-profile-128/capture']' returned non-zero exit status 1.",
+    "error_type": "CalledProcessError",
+    "status": "failed"
+  },
+  "enforce-profile-32": {
+    "status": "passed"
+  },
+  "plain-latency": {
+    "status": "passed"
+  },
+  "plain-profile-128": {
+    "error": "Command '['/usr/bin/python3', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/src/profile_phase.py', '--router-url', 'http://127.0.0.1:18080/v1/chat/completions', '--router-token-env', 'BENCH_ROUTER_TOKEN', '--control-socket', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/plain-profile-128/control/control.sock', '--model', 'chat', '--path-kind', 'plain', '--prompt-file', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/plain-profile-128/prompt.txt', '--output-tokens', '32', '--concurrency', '128', '--requests-per-worker', '128', '--minimum-sampling-seconds', '8', '--deadline-seconds', '360', '--output-dir', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/plain-profile-128/capture']' returned non-zero exit status 1.",
+    "error_type": "CalledProcessError",
+    "status": "failed"
+  },
+  "plain-profile-32": {
+    "error": "Command '['/usr/bin/python3', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/src/profile_phase.py', '--router-url', 'http://127.0.0.1:18080/v1/chat/completions', '--router-token-env', 'BENCH_ROUTER_TOKEN', '--control-socket', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/plain-profile-32/control/control.sock', '--model', 'chat', '--path-kind', 'plain', '--prompt-file', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/plain-profile-32/prompt.txt', '--output-tokens', '32', '--concurrency', '32', '--requests-per-worker', '256', '--minimum-sampling-seconds', '8', '--deadline-seconds', '360', '--output-dir', '/tmp/metrum-422-c88c299ade4d4473bd77df4cd2057e3c/results/plain-profile-32/capture']' returned non-zero exit status 1.",
+    "error_type": "CalledProcessError",
+    "status": "failed"
+  },
+  "shadow-latency": {
+    "error": "decision telemetry count or outcome mismatch: expected shadow_recommended=9126, observed {'shadow_error': 40, 'shadow_recommended': 9086}",
+    "error_type": "RuntimeError",
+    "status": "failed"
+  },
+  "shadow-profile-128": {
+    "error": "decision telemetry count or outcome mismatch: expected shadow_recommended=4224, observed {'shadow_error': 17, 'shadow_recommended': 4207}",
+    "error_type": "RuntimeError",
+    "status": "failed"
+  },
+  "shadow-profile-32": {
+    "status": "passed"
+  },
+  "shadow-qualification": {
+    "status": "passed"
+  }
+}
