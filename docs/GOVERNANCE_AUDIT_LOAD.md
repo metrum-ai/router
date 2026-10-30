@@ -64,9 +64,9 @@ go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=4 
 
 ## Completed-response token and price fixture
 
-The audit workload also supplies a synthetic fallback price of $2 per million
-input tokens and $5 per million output tokens. For each of the 56 completed
-requests per run, the request report must match the mock upstream's terminal
+In the earlier observation below, the audit workload supplied a synthetic
+fallback price of $2 per million input tokens and $5 per million output tokens.
+For each of the 56 completed requests per run, the request report must match the mock upstream's terminal
 usage: three input tokens, two output tokens, five total, and $0.000016 in
 configured-price cost. The failed primary returns no usage. Eight intentionally
 cut streams are excluded from this token/cost assertion because they do not
@@ -87,6 +87,25 @@ go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=2 
 # With the disposable PostgreSQL DSN below:
 go test -race ./internal/router -run '^TestGovernanceLoadAuditExportPostgres$' -count=2 -v
 ```
+
+## Cut streams across both keys
+
+The current 64-worker fixture cuts 16 streams: eight per key. Each key has
+32 unique request and security-export rows, with two attempts and fallback;
+24 completed responses per key are reconciled to the mock's reported tokens
+and configured price. Cut requests lack terminal provider usage; the test
+rejects a `reported` source for those rows but does not claim actual billing
+settlement or assert their token/cost totals. The scenario remains synthetic,
+single-process and restricted to this controlled cancellation timing.
+
+On 2026-10-30 UTC, this version passed twice under the race detector with
+SQLite and twice with disposable PostgreSQL 16.15 UTF-8. In those four runs,
+each key's eight cut rows were recorded with status 499 and estimated usage;
+that is an observation, not a guarantee for all stream races. A follow-up
+checked the actual disposable schema prefix after the initial cleanup check
+used the wrong prefix; no test schemas remained and the private server stopped.
+Full results are not provider billing or distributed/crash proof. The following earlier
+PostgreSQL observation describes the prior eight-cut, first-key-only fixture.
 
 ## PostgreSQL observation
 
