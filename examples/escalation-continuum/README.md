@@ -104,6 +104,9 @@ when running the tests below.
 
 ## What you should see
 
+Published bounded examples, including the synthetic NVIDIA run, are indexed in
+[the evidence directory](evidence/README.md). They are not production claims.
+
 The output identifies the selected tier and model for each prompt, using the
 stored request-usage rows. The runner fails if a route, status, retry count or
 reported usage does not match its expectations. Run the boundary controls with:
