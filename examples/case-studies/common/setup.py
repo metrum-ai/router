@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Create a private loopback router config for the case-study workloads."""
 import argparse
+import copy
 import importlib.util
 import json
 import os
@@ -16,12 +17,17 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--config', required=True, type=Path)
     p.add_argument('--state-dir', required=True, type=Path, help='new private directory, preferably tmpfs')
+    p.add_argument('--isolate-billing-arms', action='store_true', help='use separately provisioned provider credentials per arm')
     args = p.parse_args()
     if not args.state_dir.is_absolute(): p.error('state-dir must be absolute')
     settings = json.loads(args.config.read_text())
     if settings['router_listen'] != '127.0.0.1:18123': p.error('only the example loopback listen is supported')
     if settings['routed'] != {'strategy': 'weighted', 'cheap_model': 'deepseek-v4p1-flash-1017', 'cheap_weight': 70, 'frontier_model': 'gpt-6.1-sol', 'frontier_weight': 30} or settings['frontier'] != {'strategy': 'static', 'model': 'gpt-6.1-sol'}:
         p.error('unsupported model configuration; update the budget and verification first')
+    if args.isolate_billing_arms:
+        keys = [os.environ.get(name, '') for name in ('OPENAI_FRONTIER_API_KEY', 'OPENAI_ROUTED_API_KEY', 'FIREWORKS_ROUTED_API_KEY')]
+        if any(not key or key != key.strip() for key in keys) or keys[0] == keys[1]:
+            p.error('isolated mode requires three nonempty keys and different OpenAI keys for each arm')
     args.state_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
     repo = Path(__file__).resolve().parents[3]
     spec = importlib.util.spec_from_file_location('local_pi_instance', repo / 'scripts/local_pi_instance.py')
@@ -46,6 +52,14 @@ def main():
             metadata[dst] = price[src]
         cfg['providers'][provider]['models'] = {model: metadata}
     cfg['models'] = {'routed': {'strategy': 'weighted', 'targets': [m.tier_target('deepseek-v4p1-flash-1017', weight=70), m.tier_target('gpt-6.1-sol', weight=30)]}, 'frontier': {'strategy': 'static', 'targets': [m.tier_target('gpt-6.1-sol')]}}
+    if args.isolate_billing_arms:
+        frontier = cfg['providers'].pop('openai')
+        routed = copy.deepcopy(frontier)
+        for name, provider, env_name in [('openai-frontier', frontier, 'OPENAI_FRONTIER_API_KEY'), ('openai-routed', routed, 'OPENAI_ROUTED_API_KEY'), ('fireworks', cfg['providers']['fireworks'], 'FIREWORKS_ROUTED_API_KEY')]:
+            provider.update(api_key='${'+env_name+'}', api_key_env=env_name, key_id=name+'-isolated')
+        cfg['providers'].update({'openai-frontier': frontier, 'openai-routed': routed})
+        cfg['models']['frontier']['targets'][0]['provider'] = 'openai-frontier'
+        cfg['models']['routed']['targets'][1]['provider'] = 'openai-routed'
     cfg['callers'][0]['allow'] = ['routed', 'frontier']
     (args.state_dir/'config.yaml').write_text(yaml.safe_dump(cfg, sort_keys=False))
     print('Created private router configuration and caller token; do not publish this directory.')
