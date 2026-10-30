@@ -1,5 +1,6 @@
 ---
 title: Performance and overhead
+doc_type: explanation
 ---
 
 # Performance and overhead
