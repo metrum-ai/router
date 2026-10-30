@@ -22,6 +22,18 @@ go build -o /tmp/case423-router ./cmd/metrum-ai-router
 /tmp/case423-router --config /dev/shm/case423/config.yaml
 ```
 
+For an **optional** future billing-attribution experiment, provision approved,
+exclusive credentials and set `OPENAI_FRONTIER_API_KEY`,
+`OPENAI_ROUTED_API_KEY`, and `FIREWORKS_ROUTED_API_KEY` privately instead.
+Add `--isolate-billing-arms` to the setup command. The two OpenAI keys must
+be distinct; the generated config contains only environment references. This
+separates provider credentials by arm, but it is **not an authorization or
+privacy boundary**: the same caller can access both groups, and the router
+process holds all three credentials. It does not prove billing attribution:
+confirm each key's billing scope is exclusive, include failures and retries,
+and reconcile provider charges before claiming billed cost. The scheduled
+workflow does not use this option.
+
 In a separate shell, check `curl -fsS http://127.0.0.1:18123/readyz` and follow
 the workload README. When done, stop the router and remove the private state.
 Never print, publish or copy provider credentials or the generated caller token.
