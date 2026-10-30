@@ -24,7 +24,7 @@ import (
 // Only timestamps are shifted to a completed UTC day for finalization/retention.
 func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	var chatCalls atomic.Int32
-	upstreamListener, err := net.Listen("tcp", "127.0.0.1:18454")
+	upstreamListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,8 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	go upstream.Serve(upstreamListener)
 	defer upstream.Close()
 	dir := t.TempDir()
-	cfg := testConfig(t, "http://127.0.0.1:18454", "mock-key", dir)
+	upstreamURL := "http://" + upstreamListener.Addr().String()
+	cfg := testConfig(t, upstreamURL, "mock-key", dir)
 	configureDocsSmokeCapacity(cfg)
 	cfg.Server.Cache.Enabled = false
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
@@ -66,7 +67,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "USAGE_B_339_ADMIN_HASH", Subject: "basic:admin", Domain: "local/test"}}}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, local/test, admin:reports, read|export|drilldown"}}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
-	cfg.Provider["anthropic"] = ProviderConfig{BaseURL: "http://127.0.0.1:18454", Dialect: "anthropic", APIKey: "mock-key"}
+	cfg.Provider["anthropic"] = ProviderConfig{BaseURL: upstreamURL, Dialect: "anthropic", APIKey: "mock-key"}
 	cachedPrice, writePrice := 2.0, 12.5
 	cfg.Models["reasoning"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-reasoner", InputPricePerMillionUSD: 10, OutputPricePerMillionUSD: 20, CachedInputPricePerMillionUSD: &cachedPrice, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}}}}
 	cfg.Models["cache"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "anthropic", Model: "mock-cache", InputPricePerMillionUSD: 10, OutputPricePerMillionUSD: 20, CachedInputPricePerMillionUSD: &cachedPrice, CacheWritePricePerMillionUSD: &writePrice}}}
@@ -75,16 +76,17 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	listener, err := net.Listen("tcp", "127.0.0.1:18455")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	routerURL := "http://" + listener.Addr().String()
 	server := &http.Server{Handler: svc.Handler()}
 	go server.Serve(listener)
 	defer server.Close()
 	post := func(path string, body map[string]any) {
 		raw, _ := json.Marshal(body)
-		req, _ := http.NewRequest("POST", "http://127.0.0.1:18455"+path, strings.NewReader(string(raw)))
+		req, _ := http.NewRequest("POST", routerURL+path, strings.NewReader(string(raw)))
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -109,7 +111,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	}
 	query := "?from=" + url.QueryEscape(day.Format(time.RFC3339)) + "&to=" + url.QueryEscape(day.Add(24*time.Hour).Format(time.RFC3339))
 	get := func(path string, dest any) {
-		req, _ := http.NewRequest("GET", "http://127.0.0.1:18455/admin/reports/api/"+path, nil)
+		req, _ := http.NewRequest("GET", routerURL+"/admin/reports/api/"+path, nil)
 		req.SetBasicAuth("admin", "usage-b-password")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -146,7 +148,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 			t.Fatalf("%s requests=%d want=%d", filter, filtered.Summary.Requests, want)
 		}
 	}
-	metricsReq, _ := http.NewRequest("GET", "http://127.0.0.1:18455/metrics", nil)
+	metricsReq, _ := http.NewRequest("GET", routerURL+"/metrics", nil)
 	metricsReq.Header.Set("Authorization", "Bearer "+testToken)
 	metricsResp, err := http.DefaultClient.Do(metricsReq)
 	if err != nil {
@@ -203,7 +205,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	}
 	t.Logf("localhost raw/rollup/retained parity: input=400 output=160 reasoning=20 reported=2/4 cached=120 reported=3/4 writes=20 reported=1/4; billed cost=%g; /metrics matches DB", retained.Summary.TotalCostUSD)
 	if hold, _ := strconv.Atoi(os.Getenv("USAGE_B_339_E2E_HOLD_SECONDS")); hold > 0 && hold <= 300 {
-		fmt.Println("USAGE_B_339_BROWSER_READY http://127.0.0.1:18455/admin/reports/?tab=overview&history_source=rollup&since=48h")
+		fmt.Println("USAGE_B_339_BROWSER_READY " + routerURL + "/admin/reports/?tab=overview&history_source=rollup&since=48h")
 		time.Sleep(time.Duration(hold) * time.Second)
 	}
 }
