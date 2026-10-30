@@ -120,6 +120,10 @@ orchestration at 32 and 128 clients with both strict and opt-in 90% floors
 against one delayed localhost mock, parses both profiles, and checks that short
 load is rejected. It is not a measurement.
 
+A [partial A100 observation](evidence/a100-2026-10-30/README.md) contains
+plain-path latency and sparse 32-client decision profiles, alongside explicit
+failed phases and limitations. It is not a complete #422 measurement.
+
 #422 still requires CPU and heap profiles under **32 and 128** concurrent
 requests for both plain and decision-model paths, plus the specified shadow and
 enforce comparisons, host details, repeated direct/routed vLLM results, and a

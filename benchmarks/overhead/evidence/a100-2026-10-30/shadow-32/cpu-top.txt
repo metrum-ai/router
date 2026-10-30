@@ -1,0 +1,28 @@
+File: profiled-router
+Build ID: 5027b0fc9deb8b8d24c8ad387e44b2c9f128702e
+Type: cpu
+Time: 2026-10-30 21:07:02 UTC
+Duration: 8.03s, Total samples = 730ms ( 9.10%)
+Showing nodes accounting for 380ms, 52.05% of 730ms total
+Showing top 20 nodes out of 370
+      flat  flat%   sum%        cum   cum%
+     130ms 17.81% 17.81%      130ms 17.81%  internal/runtime/syscall/linux.Syscall6
+      40ms  5.48% 23.29%       50ms  6.85%  github.com/glebarez/go-sqlite.(*conn).bind
+      20ms  2.74% 26.03%       30ms  4.11%  regexp.(*Regexp).tryBacktrack
+      20ms  2.74% 28.77%       80ms 10.96%  runtime.gcDrain
+      20ms  2.74% 31.51%       20ms  2.74%  runtime.mallocgcTinySC2
+      10ms  1.37% 32.88%       10ms  1.37%  database/sql.defaultCheckNamedValue
+      10ms  1.37% 34.25%       10ms  1.37%  encoding/json/jsontext.(*decoderState).ReadValue
+      10ms  1.37% 35.62%       10ms  1.37%  encoding/json/jsontext.(*encoderState).AppendIndent
+      10ms  1.37% 36.99%       10ms  1.37%  encoding/json/v2.makeIntArshaler.func1
+      10ms  1.37% 38.36%       20ms  2.74%  encoding/json/v2.makeStructArshaler.func2
+      10ms  1.37% 39.73%       10ms  1.37%  github.com/metrum-ai/router/internal/router.(*Service).recordRoutingDecisionTelemetry
+      10ms  1.37% 41.10%       20ms  2.74%  github.com/metrum-ai/router/internal/router.routingConfigFingerprint
+      10ms  1.37% 42.47%       10ms  1.37%  internal/abi.TypeFor[go.shape.interface { UnmarshalJSON error }]
+      10ms  1.37% 43.84%       10ms  1.37%  internal/poll.(*fdMutex).rwunlock
+      10ms  1.37% 45.21%       10ms  1.37%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+      10ms  1.37% 46.58%       10ms  1.37%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+      10ms  1.37% 47.95%       10ms  1.37%  internal/runtime/maps.memHashAES
+      10ms  1.37% 49.32%       10ms  1.37%  internal/strconv.fmtEFG
+      10ms  1.37% 50.68%       10ms  1.37%  internal/sync.(*HashTrieMap[go.shape.interface {},go.shape.interface {}]).Load
+      10ms  1.37% 52.05%       10ms  1.37%  modernc.org/libc.AtomicLoadNInt32

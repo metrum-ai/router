@@ -108,6 +108,7 @@ const sidebars = {
         "usage-cost-reports/overview",
         "security-governance/overview",
         "evaluation/overview",
+        "evaluation/performance-overhead",
         "evaluation/evaluate-smart-router",
         "evaluation/prove-router-quality",
         "evaluation/model-group-quality",
