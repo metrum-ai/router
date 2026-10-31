@@ -39,11 +39,11 @@ func TestChatAudioOutputSelectsAudioTarget(t *testing.T) {
 
 func TestChatAudioOutputIneligibleTargets(t *testing.T) {
 	for _, tc := range []struct {
-		name, dialect string
-		targets       []Target
+		name, dialect, code, param string
+		targets                    []Target
 	}{
-		{"tool-only-audio", "openai-chat", []Target{{Provider: "native", Model: "tool-audio", ToolOnly: true, OutputModalities: []string{"audio"}}, {Provider: "native", Model: "text", OutputModalities: []string{"text"}}}},
-		{"responses-without-bridge", "openai-responses", []Target{{Provider: "native", Model: "responses", OutputModalities: []string{"text", "audio"}}}},
+		{"tool-only-audio", "openai-chat", "unsupported_capability", "modalities", []Target{{Provider: "native", Model: "tool-audio", ToolOnly: true, OutputModalities: []string{"audio"}}, {Provider: "native", Model: "text", OutputModalities: []string{"text"}}}},
+		{"responses-without-bridge", "openai-responses", "unsupported_endpoint_for_model", "model", []Target{{Provider: "native", Model: "responses", OutputModalities: []string{"text", "audio"}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var hits atomic.Int32
@@ -54,10 +54,48 @@ func TestChatAudioOutputIneligibleTargets(t *testing.T) {
 			r.Header.Set("Authorization", "Bearer "+testToken)
 			w := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(w, r)
-			if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(w.Body.String(), `"param":"modalities"`) {
+			if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"code":"`+tc.code+`"`) || !strings.Contains(w.Body.String(), `"param":"`+tc.param+`"`) {
 				t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 			}
 		})
+	}
+}
+
+func TestChatNativeAudioStreamPassthrough(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["audio"] == nil || body["stream"] != true {
+			t.Errorf("audio stream request not preserved: %v %#v", err, body)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_audio\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"audio\":{\"id\":\"audio_1\",\"data\":\"d2F2\"}},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl_audio\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+	}))
+	defer up.Close()
+	target := Target{Provider: "native", Model: "audio", OutputModalities: []string{"text", "audio"}}
+	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target})
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"native-stream","messages":[{"role":"user","content":"hello"}],"modalities":["text","audio"],"audio":{"format":"wav","voice":"alloy"},"stream":true}`))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || hits.Load() != 1 || !strings.Contains(w.Body.String(), `"id":"audio_1"`) || !strings.Contains(w.Body.String(), `"data":"d2F2"`) || !strings.Contains(w.Body.String(), "[DONE]") {
+		t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+	}
+}
+
+func TestAudioTargetMissingToolsReportsTools(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer up.Close()
+	target := Target{Provider: "native", Model: "audio", OutputModalities: []string{"text", "audio"}}
+	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target})
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"native-stream","messages":[{"role":"user","content":"hello"}],"modalities":["text","audio"],"tools":[{"type":"function","function":{"name":"read","parameters":{"type":"object"}}}]}`))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(w.Body.String(), `"param":"tools"`) {
+		t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 	}
 }
 
