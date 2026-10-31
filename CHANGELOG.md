@@ -97,13 +97,7 @@ partial results are published as such, not dropped.
 
 - `GET /v1/models/{id}` serves caller-filtered model lookup, including IDs that
   contain slashes; unknown and unauthorized IDs both return an indistinguishable
-  `model_not_found` 404 (#529). Anthropic clients get an Anthropic-format model
-  list and lookup (#538).
-
-- Cross-dialect translation gaps found with real models are fixed: streamed
-  usage, JSON schema to Claude, Responses event fields and logprobs, and
-  Anthropic PDF document input is declared and routed as a modality
-  (#539, #537).
+  `model_not_found` 404 (#529).
 
 - The starter configuration passes the core OpenAI compatibility suites as
   shipped (#534).

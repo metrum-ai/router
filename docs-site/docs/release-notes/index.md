@@ -55,10 +55,8 @@ infer the running version from a date written in documentation.
 Routed model groups, request shapes, tool support and usage accounting are
 unchanged. Two response-shape changes matter to clients: chat streams no longer
 carry a usage-only chunk unless the caller opts in, and unsupported endpoints
-return `501` with an OpenAI-style error body instead of `405`. Anthropic clients
-gain a model list and model lookup in their own format, and PDF document input
-is declared and routed as a modality. Nothing in this release changes routing
-policy, model groups or prices on its own.
+return `501` with an OpenAI-style error body instead of `405`. Nothing in this
+release changes routing policy, model groups or prices on its own.
 
 ### Proof and Evidence
 
