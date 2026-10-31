@@ -120,6 +120,7 @@ const sidebars = {
         "evaluation/security-and-trust",
         "evaluation/competitive-landscape",
         "evaluation/harbor-case-study",
+        "evaluation/savings-case-studies",
         "evaluation/lrp-coding-mix-example",
         "evaluation/learned-routing-case-study",
         "solution-brief",
