@@ -380,7 +380,7 @@ installs.
   stores canonical YAML in the control plane with import/export/activate/
   rollback and caller issue/rotate/revoke against the active set. Default
   file-mode installs are unchanged.
-- Docs include an OpenJev task-class external routing example and evidence.
+- Docs include an OpenJev task-class external routing example. OpenJev is excluded from the v4.5 comparison for licensing; its prior result artifacts were removed.
 
 ### Operator Impact
 

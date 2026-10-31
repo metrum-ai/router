@@ -23,7 +23,7 @@ func TestTrainingToolDeclarationArchiveCounts(t *testing.T) {
 		{"invalid", `[{}]`, 0, 0, 0, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store, err := OpenUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+			store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 			if err != nil {
 				t.Fatal(err)
 			}

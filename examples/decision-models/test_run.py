@@ -25,11 +25,13 @@ class Integration(unittest.TestCase):
         def run(*args):
             p=subprocess.run([sys.executable,str(HERE/'run.py'),'--router',binary,*args],capture_output=True,text=True,env=env,timeout=120)
             self.assertEqual(p.returncode,0,p.stderr);return json.loads(p.stdout)
-        result=run();self.assertEqual(len(result['results']),12);self.assertEqual(result['decisions'],'fake')
+        result=run();self.assertEqual(len(result['results']),8);self.assertEqual(result['decisions'],'fake')
+        excluded=subprocess.run([sys.executable,str(HERE/'run.py'),'--router',binary,'--policies','openjev'],capture_output=True,text=True,env=env,timeout=30)
+        self.assertNotEqual(excluded.returncode,0);self.assertIn('invalid policies',excluded.stderr)
         benchmark=run('--benchmark-dataset',str(HERE/'benchmark_dataset.json'),'--policies','d3')
         self.assertEqual(len(benchmark['results']),24)
         self.assertEqual({(r['decision'],r['mode']) for r in benchmark['results']},{('d3','shadow'),('d3','enforce')})
-        for policy in ('openjev','clef'):
+        for policy in ('clef',):
             single=run('--benchmark-dataset',str(HERE/'benchmark_dataset.json'),'--policies',policy)
             self.assertEqual(len(single['results']),24)
             self.assertEqual({r['decision'] for r in single['results']},{policy})
@@ -46,15 +48,14 @@ class Integration(unittest.TestCase):
                 '--d3-url',f'http://127.0.0.1:{server.server_port}','--state-dir',str(Path(temp)/'state'))
             self.assertTrue(all(r['errors']==12 and r['successes']==0 for r in failed['benchmark']['summary']))
             self.assertEqual({r['policy_outcome'] for r in failed['results']},{'error','shadow_error'})
-        d=load('d3_e2e',ROOT/'scripts/run_d3_policy_e2e.py');fake=d.load_fake();jev=load('jev',ROOT/'examples/external-routing-policy/fake_openjev.py');clef=load('clef_fake',HERE/'fake_clef.py')
+        d=load('d3_e2e',ROOT/'scripts/run_d3_policy_e2e.py');fake=d.load_fake();clef=load('clef_fake',HERE/'fake_clef.py')
         with ExitStack() as stack,tempfile.TemporaryDirectory(dir='/dev/shm') as temp:
             upstream=d.upstream_server(stack);d3=fake.start_in_thread(api_key='');stack.callback(d3.server_close);stack.callback(d3.shutdown)
-            j=ThreadingHTTPServer(('127.0.0.1',0),jev.Handler);threading.Thread(target=j.serve_forever,daemon=True).start();stack.callback(j.server_close);stack.callback(j.shutdown)
             c,thread=clef.start();stack.callback(thread.join);stack.callback(c.server_close);stack.callback(c.shutdown)
             result=run('--backend','local','--local-url',f'http://127.0.0.1:{upstream.server_port}/v1','--local-model','fake-model',
-                '--decisions','external','--d3-url',f'http://127.0.0.1:{d3.server_port}','--openjev-url',f'http://127.0.0.1:{j.server_port}',
+                '--decisions','external','--d3-url',f'http://127.0.0.1:{d3.server_port}',
                 '--clef-url',f'http://127.0.0.1:{c.server_port}/v1/systemone','--state-dir',str(Path(temp)/'state'))
-            self.assertEqual(result['decisions'],'external');self.assertEqual(result['backend'],'local');self.assertEqual(len(result['results']),12)
-            self.assertEqual(len(upstream.calls),12)
+            self.assertEqual(result['decisions'],'external');self.assertEqual(result['backend'],'local');self.assertEqual(len(result['results']),8)
+            self.assertEqual(len(upstream.calls),8)
 
 if __name__=='__main__':unittest.main()

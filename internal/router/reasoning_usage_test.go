@@ -169,7 +169,7 @@ func TestReasoningUsageResponseEncodingAndAttemptCoverage(t *testing.T) {
 		t.Fatalf("absence was not preserved: total=%v reported=%d", absent, count)
 	}
 	stream := httptest.NewRecorder()
-	writeChatTextSSE(func(_ string, v any) { _ = json.NewEncoder(stream).Encode(v) }, stream, &IRResponse{ID: "id", Model: "model", Usage: usage}, "")
+	writeChatTextSSE(func(_ string, v any) { _ = json.NewEncoder(stream).Encode(v) }, stream, &IRResponse{ID: "id", Model: "model", Usage: usage}, "", true)
 	if !bytes.Contains(stream.Body.Bytes(), []byte("reasoning_tokens")) {
 		t.Fatalf("streaming usage lost reasoning tokens: %s", stream.Body.String())
 	}
