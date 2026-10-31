@@ -27,14 +27,6 @@
     "reason": "Stored response lookup or continuation is not implemented",
     "issue": "https://github.com/metrum-ai/router/issues/533"
   },
-  "responses_input_tokens": {
-    "reason": "Responses input token counting is not yet offered (501)",
-    "issue": "https://github.com/metrum-ai/router/issues/531"
-  },
-  "responses_compact": {
-    "reason": "Responses compaction is not yet offered (501)",
-    "issue": "https://github.com/metrum-ai/router/issues/531"
-  },
   "responses_multi_turn": {
     "reason": "Stored response lookup or continuation is not implemented",
     "issue": "https://github.com/metrum-ai/router/issues/533"

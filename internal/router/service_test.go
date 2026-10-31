@@ -6366,7 +6366,6 @@ func TestUnsupportedOpenAIEndpoints(t *testing.T) {
 	defer svc.Close()
 	for _, tc := range []struct{ method, path string }{
 		{"POST", "/v1/completions"}, {"POST", "/v1/moderations"}, {"POST", "/v1/embeddings"},
-		{"POST", "/v1/responses/input_tokens"}, {"POST", "/v1/responses/compact"},
 		{"GET", "/v1/responses/resp_1"}, {"DELETE", "/v1/responses/resp_1"}, {"GET", "/v1/responses/resp_1/input_items"}, {"POST", "/v1/responses/resp_1/cancel"},
 		{"POST", "/v1/files"}, {"GET", "/v1/files/file_1"}, {"POST", "/v1/uploads"}, {"POST", "/v1/batches"}, {"POST", "/v1/images/generations"}, {"POST", "/v1/audio/speech"}, {"POST", "/v1/vector_stores"}, {"POST", "/v1/assistants"}, {"POST", "/v1/threads"}, {"POST", "/v1/fine_tuning/jobs"}, {"GET", "/v1/realtime"},
 	} {
