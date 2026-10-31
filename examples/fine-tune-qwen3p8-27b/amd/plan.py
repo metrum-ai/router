@@ -15,30 +15,25 @@ def image_ref(value, repository):
 
 
 def command(mode, image):
-    image_ref(image, 'rocm/vllm' if mode == 'serve' else 'rocm/pytorch')
-    if mode not in ('smoke', 'train', 'serve'):
-        raise ValueError('unknown mode')
+    if mode != 'serve':
+        raise ValueError('Axolotl training is retired in v4.5; replacement deferred to v4.6')
+    image_ref(image, 'rocm/vllm')
     args = ['docker', 'run', '--rm', '--name', 'amd359-' + mode,
             '--device=/dev/kfd', '--device=/dev/dri', '--group-add=video',
             '--shm-size=32g', '-v', '/workspace/amd359:/data']
-    if mode == 'serve':
-        args += ['-p', '127.0.0.1:18590:8000', '--entrypoint', 'python', image,
-                 '-m', 'vllm.entrypoints.openai.api_server', '--host', '0.0.0.0',
-                 '--port', '8000', '--model', '/data/base', '--served-model-name',
-                 'qwen-base', '--dtype', 'bfloat16', '--max-model-len', '8192',
-                 '--max-num-seqs', '128',
-                 '--enable-lora', '--lora-modules', 'qwen-amd-ft=/data/adapter',
-                 '--max-lora-rank', '8', '--gpu-memory-utilization', '0.90']
-    else:
-        # No --privileged, host networking, credentials, or writable host-root mount.
-        args += ['--network=none', '--entrypoint', 'axolotl', image,
-                 'train', '/data/' + mode + '.yaml']
+    args += ['-p', '127.0.0.1:18590:8000', '--entrypoint', 'python', image,
+             '-m', 'vllm.entrypoints.openai.api_server', '--host', '0.0.0.0',
+             '--port', '8000', '--model', '/data/base', '--served-model-name',
+             'qwen-base', '--dtype', 'bfloat16', '--max-model-len', '8192',
+             '--max-num-seqs', '128',
+             '--enable-lora', '--lora-modules', 'qwen-amd-ft=/data/adapter',
+             '--max-lora-rank', '8', '--gpu-memory-utilization', '0.90']
     return args
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['smoke', 'train', 'serve'])
+    parser.add_argument('mode', choices=['serve'])
     parser.add_argument('--image', required=True)
     parser.add_argument('--json', action='store_true')
     a = parser.parse_args()
