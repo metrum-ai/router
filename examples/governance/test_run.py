@@ -25,7 +25,7 @@ class TestGovernance(unittest.TestCase):
             self.assertEqual(p.returncode,0,p.stderr);return json.loads(p.stdout)
         mock=invoke()
         self.assertTrue(mock['mock_upstream_redaction_verified'])
-        self.assertEqual(mock['statuses'],[200,403,429,429,200,429]);self.assertEqual(mock['ordinary_export_status'],403)
+        self.assertEqual(mock['statuses'],[200,404,429,429,200,429]);self.assertEqual(mock['ordinary_export_status'],403)
         run.Upstream.seen=[];server=ThreadingHTTPServer(('127.0.0.1',0),run.Upstream);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             with tempfile.TemporaryDirectory() as temp:

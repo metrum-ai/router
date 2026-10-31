@@ -83,7 +83,7 @@ def test_stateless_responses_to_chat_and_chat_to_responses_bridges(api, router):
         "/v1/responses",
         {"model": "responses-to-chat", "input": PROMPT_CANARY, "previous_response_id": "resp_synthetic"},
     )
-    assert status == 400 and body((status, None, raw))["error"]["type"] == "continuation_unsupported"
+    assert status == 400 and body((status, None, raw))["error"]["code"] == "continuation_unsupported"
     assert len(router["upstream"].calls) == before
     status, headers, raw = api(
         "/v1/chat/completions",

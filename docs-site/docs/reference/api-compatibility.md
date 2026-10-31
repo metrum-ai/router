@@ -22,6 +22,22 @@ OpenAI-compatible clients use the `/v1` base URL:
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
 | `/admin/reports/api/quota-status` | Admin live quota remaining | Reports-admin remaining/limits for one or many callers |
 
+### Unsupported OpenAI endpoints
+
+After caller authentication, legacy text completions and moderations return
+501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings and stored
+Responses retrieval, deletion, input-item listing, and cancellation also return
+501 in v4.5; their implementation is deferred to v4.6. Responses `input_tokens`
+and `compact` temporarily return 501 while pass-through support is being
+implemented. Files, uploads, batches, images, audio, vector stores, assistants,
+threads, fine-tuning, and realtime are outside the v4.5 scope and return the
+same error. These errors have `message`, `type`, `param`, and `code` fields. See
+the [error reference](errors).
+
+Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
+not planned for v4.5 and return authenticated 501 errors in Anthropic format.
+`/v1/messages/count_tokens` remains supported.
+
 Anthropic-compatible clients use the `/anthropic` base URL:
 
 | Endpoint | Compatibility target | Typical clients |
@@ -325,7 +341,15 @@ reasoning request, just like `enabled`, and excludes non-reasoning targets.
 
 When a deployment intentionally lets plain Anthropic Messages text use a non-native OpenAI Chat or Responses target, that active target must explicitly opt in with `request_shape_support.supported_inbound_dialects` including `anthropic`. This metadata is a validation claim for that provider/model/skin and model group; it should be based on direct upstream and router-level smoke evidence for the translated text path.
 
-Tool-bearing Claude Code traffic has a stricter requirement. Use Anthropic Messages-compatible targets with `tool_support.anthropic_messages`, or a separately documented bridge that has passed the exact client-tool workflow. OpenAI Chat or Responses tool metadata does not make a target eligible for Anthropic client tools.
+Tool-bearing Claude Code traffic has a stricter requirement. Use Anthropic Messages-compatible targets with `tool_support.anthropic_messages`, or a separately documented bridge that has passed the exact client-tool workflow. OpenAI Chat or Responses tool metadata alone does not make a target eligible for Anthropic client tools.
+
+### OpenAI requests to an Anthropic target
+
+An OpenAI Chat or Responses client can use an Anthropic target only if the request passes the target's dialect, modality, output-cap, reasoning and request-shape filters. For translated function tools, the target must explicitly list the caller dialect in `request_shape_support.supported_inbound_dialects`, set `request_shape_support.validation_status: passed`, and declare both `tool_support.anthropic_messages: [client_tools]` and the matching caller capability (`tool_support.openai_chat: [tools]` or `tool_support.openai_responses: [function]`). An explicit tool choice additionally requires `tool_choice` support on both sides. These flags are claims about the exact provider, model and request shape; enable them only after direct and routed tests. Strict function schemas, provider-hosted tools and unsupported content/history shapes are rejected rather than silently weakened.
+
+For structured output, the target must declare `structured_output: true`. OpenAI `json_schema` is sent as Anthropic `output_config.format`; JSON syntax is checked before delivery, but schema conformance relies on the upstream. JSON-object mode adds a JSON-only instruction and validates the returned object. Both modes buffer translated streams before emitting output; combining them with tool requests or tool history is not supported. OpenAI Chat `logprobs` cannot be translated to Anthropic and such a target is ineligible.
+
+For every route, also check the caller's group allow-list, the target's `input_modalities`, `honors_max_tokens`, `context_tokens`, `reasoning` and `request_shape_support` (including unsupported features and size limits). Targets with `force_store_false` cannot satisfy a `previous_response_id` continuation. See [model metadata](./model-metadata) and [routing](../routing/overview) for the complete configuration and eligibility controls. A passing mock is not proof that a real target supports these combinations.
 
 If a caller can see a group in `/v1/models` but `/anthropic/v1/messages` returns `502 no-eligible-target`, the token is authorized but the requested group has no target that satisfies the Messages request shape. For plain text, administrators should check whether non-native translated targets are missing `supported_inbound_dialects: [anthropic]` or whether all eligible Messages targets are `tool_only`. For tools, images, or thinking, the group needs target metadata for those exact Anthropic Messages capabilities.
 
@@ -351,7 +375,7 @@ Common safe filter reasons include `chat-to-responses-bridge-disabled`, `chat-to
 | `/v1/responses` | `reasoning` | Requires active OpenAI Responses target reasoning metadata. | Responses-to-Chat reasoning is unsupported unless `responses_to_chat.reasoning` is explicitly validated for the target. |
 | `/anthropic/v1/messages` | `thinking` | Requires active Anthropic Messages target reasoning/default-thinking metadata. | No general Messages bridge is implied by Chat or Responses bridge metadata. |
 
-Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate remains, the router returns `502 no-eligible-target`; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
+Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate supports the requested capabilities, the router returns `400 invalid_request_error` with an `unsupported_capability` code; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
 
@@ -409,7 +433,7 @@ Example response:
 }
 ```
 
-Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Requests for unlisted groups fail with `403 model-not-allowed` before any upstream provider is called.
+Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Unknown or disallowed groups fail with `404 model_not_found` before any upstream provider is called; the response does not disclose whether a group exists.
 
 The returned IDs are router model groups, not a full inventory of every upstream provider model. Platform teams can change the upstream provider/model mix behind a group without changing the caller-facing group name. With `server.responses.model_identity: requested_group`, these IDs are also exactly what completion responses report in their `model` field.
 
