@@ -64,13 +64,17 @@ def assert_pull_request_cancellation() -> None:
         text = read(path)
         if not re.search(r"(?m)^  pull_request:\s*$", text):
             continue
-        require(
-            re.search(
-                r"cancel-in-progress:\s*(true|\$\{\{\s*github\.event_name\s*!=\s*'merge_group'\s*\}\})",
-                text,
-            ),
-            f"{path.name} runs on pull_request without cancel-in-progress",
-        )
+        if path.name == "ci.yml":
+            require("cancel-in-progress: ${{ github.event_name != 'merge_group' && github.event_name != 'push' }}" in text,
+                    "ci must cancel superseded PRs but retain in-flight merge groups and main warmers")
+        else:
+            require(
+                re.search(
+                    r"cancel-in-progress:\s*(true|\$\{\{\s*github\.event_name\s*!=\s*'merge_group'\s*\}\})",
+                    text,
+                ),
+                f"{path.name} runs on pull_request without cancel-in-progress",
+            )
         if re.search(r"(?m)^  merge_group:\s*$", text):
             require(
                 "github.event_name != 'merge_group'" in text,

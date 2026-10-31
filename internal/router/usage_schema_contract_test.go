@@ -59,16 +59,19 @@ func TestUsageProvenancePostgresSchema(t *testing.T) {
 	if err := verifyUsageRequestKindMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
+	if err := verifyUsageEndpointMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
-	if err := store.db.Create(&usageRecord{RequestID: "provenance", UsageSource: "estimated", TS: now.Format(time.RFC3339Nano), InputTokens: 10, TotalTokens: 10}).Error; err != nil {
+	if err := store.db.Create(&usageRecord{RequestID: "provenance", Endpoint: "embeddings", UsageSource: "estimated", TS: now.Format(time.RFC3339Nano), InputTokens: 10, TotalTokens: 10}).Error; err != nil {
 		t.Fatal(err)
 	}
 	var row usageRecord
 	if err := store.db.Where("request_id = ?", "provenance").First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if row.UsageSource != "estimated" {
-		t.Fatal("lost provenance")
+	if row.UsageSource != "estimated" || row.Endpoint != "embeddings" {
+		t.Fatal("lost provenance or endpoint")
 	}
 	event := recordFromRow(usageRow{TS: now, RequestID: "count-postgres", RequestKind: "count_tokens", InputTokens: 12345, TotalCostUSD: 50})
 	if err := store.db.Create(event).Error; err != nil {

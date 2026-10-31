@@ -40,4 +40,6 @@ func applyUsageTokenBreakdownMigration(db *gorm.DB) error {
 	// Preserve zero known evidence; only draft windows may be regenerated from raw rows.
 	return verifyUsageTokenBreakdownMigration(db)
 }
-func verifyUsageTokenBreakdownMigration(db *gorm.DB) error { return ensureUsageRelationalSchema(db) }
+func verifyUsageTokenBreakdownMigration(db *gorm.DB) error {
+	return ensureUsageRelationalSchemaExcept(db, usageEndpointColumns)
+}

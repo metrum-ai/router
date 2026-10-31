@@ -71,8 +71,8 @@ def test_resp_11_capability_boundaries_reject(api, router):
         ("POST", "/v1/responses/resp_synthetic/cancel", 501),
         ("DELETE", "/v1/responses/resp_synthetic", 501),
         ("GET", "/v1/responses/resp_synthetic/input_items", 501),
-        ("POST", "/v1/conversations", None),
-        ("GET", "/v1/conversations/conv_synthetic", None),
+        ("POST", "/v1/conversations", 501),
+        ("GET", "/v1/conversations/conv_synthetic", 501),
         ("POST", "/v1/responses/resp_synthetic/compact", None),
         ("GET", "/v1/realtime", 501),
     ):

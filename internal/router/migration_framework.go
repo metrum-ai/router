@@ -33,7 +33,7 @@ const usageContentCaptureEncryptionMigrationID = 2026081901
 const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 10, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -201,6 +201,13 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	HandlerKey: "usage.token-breakdown.apply.v1@applyUsageTokenBreakdownMigration", PostconditionKey: "usage.token-breakdown.schema.v1@verifyUsageTokenBreakdownMigration",
 	Dependencies: []int{2026102302}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyUsageTokenBreakdownMigration, Verify: verifyUsageTokenBreakdownMigration,
+}, {
+	ID: 2026103001, Scope: usageMigrationScope, Name: "record usage endpoint", Release: "2026.10",
+	Checksum:      "2cc220391d192547bcff27b7c6c7cdd8e7c1ec71f5f74fe4c4bb5bd7e69f2076",
+	SchemaVersion: 11, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey: "usage.endpoint.apply.v1@applyUsageEndpointMigration", PostconditionKey: "usage.endpoint.schema.v1@verifyUsageEndpointMigration",
+	Dependencies: []int{2026102303}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyUsageEndpointMigration, Verify: verifyUsageEndpointMigration,
 }}
 
 func init() {
