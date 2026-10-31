@@ -18,11 +18,12 @@ go build -o /tmp/router-decision ./cmd/metrum-ai-router
 python3 examples/decision-models/run.py --router /tmp/router-decision
 ```
 
-Expect 12 successful combinations and structured `recommended_index`,
-`served_tier` and `outcome` rows. Fakes are implemented in
+Expect [12 successful combinations](evidence/mock-output.json) and structured
+`recommended_index`, `served_tier` and `outcome` rows. Fakes are implemented in
 `examples/external-routing-policy/fake_d3.py`, `fake_openjev.py` and
 `fake_clef.py`. `config.example.json` contains only synthetic prompts and model
-names, no keys. `evidence/` contains sanitized execution results.
+names, no keys. The [evidence index](evidence/README.md) describes sanitized
+execution results.
 
 ## Labeled routing probe (mock by default)
 
