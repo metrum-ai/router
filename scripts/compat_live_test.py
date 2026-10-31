@@ -57,12 +57,14 @@ class CompatLiveTest(unittest.TestCase):
                 return 'commit' if args[1:3] == ['rev-parse', 'HEAD'] else ''
 
             with mock.patch.dict(os.environ, env), mock.patch.object(compat_live.subprocess, 'run', side_effect=run), \
+                 mock.patch.object(compat_live, 'check_config', return_value='unused') as guard, \
                  mock.patch.object(compat_live.subprocess, 'check_output', side_effect=output), \
                  mock.patch.object(compat_live.subprocess, 'Popen', return_value=object()), \
                  mock.patch.object(compat_live, 'wait_ready'), mock.patch.object(compat_live, 'stop'), \
                  mock.patch.object(compat_live, 'build_tester', return_value=(tester, tester)), \
                  mock.patch.object(compat_live, 'meter', return_value=0.0):
                 self.assertEqual(compat_live.main(), 1)
+                guard.assert_called_once_with(config.resolve(), source.resolve())
                 self.assertEqual(build_dirs, [source])
 
     def test_hash_changes(self):

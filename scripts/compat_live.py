@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -48,6 +49,25 @@ def suites(kind):
     resource_creating = {'messages_code_execution', 'responses_get', 'responses_delete',
                          'responses_input_items', 'responses_multi_turn'}
     return [s for s in selected if s not in resource_creating]
+
+
+def check_config(config, router_source):
+    # Parse and validate with the exact tested revision, not the harness
+    # revision: model-capability schemas may change between the two. Build the
+    # fixed guard source against a clean temporary archive, never modifying the
+    # router worktree or weakening its configuration validation.
+    with tempfile.TemporaryDirectory(prefix='compat-live-guard-') as temp:
+        scratch = Path(temp)
+        archive = scratch / 'source.tar'
+        checkout = scratch / 'src'
+        checkout.mkdir()
+        with archive.open('wb') as out:
+            subprocess.run(['git', 'archive', 'HEAD'], cwd=router_source, stdout=out, check=True)
+        subprocess.run(['tar', '-xf', str(archive), '-C', str(checkout)], check=True, capture_output=True)
+        guard_dir = Path(tempfile.mkdtemp(prefix='compat-live-guard-', dir=checkout / 'scripts'))
+        shutil.copyfile(ROOT / 'scripts/compat-live-guard/main.go', guard_dir / 'main.go')
+        guard = subprocess.run(['go', 'run', './scripts/' + guard_dir.name, str(config)], cwd=checkout, check=True, capture_output=True, text=True)
+        return json.loads(guard.stdout)['usage_db']
 
 
 def local_port():
@@ -96,14 +116,13 @@ def main():
         fail('output directory must be outside the repository')
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     config_hash = sha256(config)
-    guard = subprocess.run(['go', 'run', './scripts/compat-live-guard', str(config)], cwd=ROOT, check=True, capture_output=True, text=True)
-    db = json.loads(guard.stdout)['usage_db']
-    testers = {kind: build_tester(kind, TESTERS[kind][0])[0] for kind in TESTERS}
-    hashes = {kind: sha256(path) for kind, path in testers.items()}
     git_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=router_source, text=True).strip()
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], cwd=router_source, text=True).strip())
     if dirty:
         fail('router source worktree must be clean')
+    db = check_config(config, router_source)
+    testers = {kind: build_tester(kind, TESTERS[kind][0])[0] for kind in TESTERS}
+    hashes = {kind: sha256(path) for kind, path in testers.items()}
     harness_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     harness_dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], cwd=ROOT, text=True).strip())
     harness_files = ['scripts/compat_live.py', 'scripts/compat_mock.py', 'scripts/compat-live-guard/main.go']
