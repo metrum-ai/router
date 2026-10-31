@@ -21,13 +21,14 @@ infer the running version from a date written in documentation.
 - **Proof, with limits attached.** The router overhead benchmark, three savings
   case studies, expert routing, the escalation continuum, decision-model
   routing, agent tool-call compatibility and governance under load are published
-  with their configurations, samples and limits, and each reruns with one
-  command. Results that came out negative — the coding-agent quality arm, the
+  with their configurations, samples and limits, and each ships the command
+  that reruns it. Results that came out negative — the coding-agent quality arm, the
   four-expert comparison, the escalation latency target — are published as
   negative.
-- **OpenAI and Anthropic compatibility is a required check.** The pinned
-  official SDK testers and the Go, Python and TypeScript suites run on the gate,
-  and `GET /v1/models/{id}` serves caller-filtered model lookup.
+- **OpenAI and Anthropic compatibility gates the merge.** The pinned official
+  SDK testers and the Go, Python and TypeScript suites run on every pull request
+  and again in the required merge-group gate, and `GET /v1/models/{id}` serves
+  caller-filtered model lookup.
 - **One caller-visible change:** chat streams no longer end with a usage-only
   chunk unless the caller sets `stream_options.include_usage`.
 - Release assets carry build-provenance attestations, Windows binaries are

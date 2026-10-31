@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the
-limits that produced it, and each proof reruns with one command. Negative and
-partial results are published as such, not dropped.
+limits that produced it, and each proof ships the command that reruns it.
+Negative and partial results are published as such, not dropped.
 
 ### Proof
 
@@ -84,10 +84,11 @@ partial results are published as such, not dropped.
 
 ### API compatibility
 
-- OpenAI and Anthropic compatibility runs as a required check: one CI job runs
-  the pinned official OpenAI and Anthropic testers plus the Go, Python and
-  TypeScript SDK suites against loopback mocks, with issue-linked expected
-  failures recorded against main (#535, #446, #549).
+- OpenAI and Anthropic compatibility runs on every pull request and again in
+  the required merge-group gate: the pinned official OpenAI and Anthropic
+  testers plus the Go, Python and TypeScript SDK suites run against loopback
+  mocks, with issue-linked expected failures recorded against main
+  (#535, #446, #549).
 
 - Chat streaming exposes a usage-only chunk only when the caller asks for it
   with `stream_options.include_usage` (#528).
