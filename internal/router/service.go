@@ -561,6 +561,7 @@ func (s *Service) routes() {
 		writeJSON(w, http.StatusOK, info)
 	})
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
+	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
@@ -663,9 +664,41 @@ func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if isAnthropicModelRequest(r) {
+		s.writeAnthropicModelList(w, r, rc)
+		return
+	}
 	defer s.finish(rc, http.StatusOK, nil)
 	data := s.callerModelMetadata(rc.caller)
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "mode": "default", "data": data, "models": data})
+}
+
+// handleModelGet returns only models visible to the authenticated caller.
+func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.begin(w, r, "models")
+	if !ok {
+		return
+	}
+	for _, model := range s.callerModelMetadata(rc.caller) {
+		if model["id"] == r.PathValue("model") {
+			defer s.finish(rc, http.StatusOK, nil)
+			if isAnthropicModelRequest(r) {
+				writeJSON(w, http.StatusOK, anthropicModel(model))
+			} else {
+				writeJSON(w, http.StatusOK, model)
+			}
+			return
+		}
+	}
+	if isAnthropicModelRequest(r) {
+		reason := "unknown-model"
+		if _, exists := s.cfg.Models[r.PathValue("model")]; exists {
+			reason = "model-not-allowed"
+		}
+		s.writeAnthropicModelNotFound(w, rc, reason)
+		return
+	}
+	s.writeError(w, rc, http.StatusNotFound, "model_not_found")
 }
 
 // handleCodexModels returns the local model catalog file shape consumed by Codex
@@ -4502,6 +4535,10 @@ func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status i
 		rc.rec.ErrorClass = code
 		rc.rec.ErrorMessage = code
 		s.finish(rc, status, &c)
+	}
+	if code == "model_not_found" {
+		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": "model", "message": "The requested model does not exist."}})
+		return
 	}
 	writeJSON(w, status, map[string]any{"error": map[string]any{"type": code, "message": code}})
 }
