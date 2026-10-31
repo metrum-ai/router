@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --with pyyaml python
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
-"""Compare three deterministic fakes through router shadow/enforce wiring."""
+"""Compare d3 and Clef through router shadow/enforce wiring."""
 import argparse
 from contextlib import ExitStack, nullcontext
 import hashlib
@@ -13,9 +13,7 @@ import secrets
 import socket
 import sys
 import tempfile
-import threading
 import time
-from http.server import ThreadingHTTPServer
 from urllib.parse import urlparse
 
 ROOT=Path(__file__).resolve().parents[2];EXTERNAL=ROOT/'examples/external-routing-policy';HERE=Path(__file__).resolve().parent
@@ -34,14 +32,14 @@ def free_port():
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--router',required=True,type=Path);p.add_argument('--config',type=Path,default=HERE/'config.example.json')
     p.add_argument('--backend',choices=('mock','local','fireworks'),default='mock');p.add_argument('--state-dir',type=Path);p.add_argument('--local-url');p.add_argument('--local-model')
-    p.add_argument('--decisions',choices=('fake','external'),default='fake');p.add_argument('--d3-url');p.add_argument('--openjev-url');p.add_argument('--clef-url')
-    p.add_argument('--policies',default='d3,openjev,clef',help='comma-separated policy names')
+    p.add_argument('--decisions',choices=('fake','external'),default='fake');p.add_argument('--d3-url');p.add_argument('--clef-url')
+    p.add_argument('--policies',default='d3,clef',help='comma-separated policy names')
     p.add_argument('--d3-model',default='vllm-sr/d3-lite');p.add_argument('--d3-revision',default='',help='operator-declared d3 revision; not verified by the adapter');p.add_argument('--clef-model',default='clef')
     p.add_argument('--d3-timeout-ms',type=int,default=250);p.add_argument('--clef-timeout-s',type=float,default=2)
     p.add_argument('--benchmark-dataset',type=Path,help='labeled synthetic data; report errors and accuracy')
     p.add_argument('--repetitions',type=int,default=1);args=p.parse_args()
     names=args.policies.split(',')
-    if not names or len(set(names))!=len(names) or any(n not in ('d3','openjev','clef') for n in names):p.error('invalid policies')
+    if not names or len(set(names))!=len(names) or any(n not in ('d3','clef') for n in names):p.error('invalid policies')
     if not 1<=args.repetitions<=100 or (args.repetitions!=1 and not args.benchmark_dataset):p.error('repetitions must be 1..100 and require a benchmark dataset')
     if args.benchmark_dataset and args.backend=='fireworks':p.error('labeled benchmark does not support paid hosted generation')
     if not args.d3_model or not args.clef_model or not 1<=args.d3_timeout_ms<=3800 or not 0<args.clef_timeout_s<=3.8:p.error('invalid model or adapter timeout')
@@ -53,28 +51,26 @@ def main():
         args.state_dir.mkdir(mode=0o700,parents=False,exist_ok=False)
     if args.backend=='local' and (not loopback(args.local_url) or urlparse(args.local_url).path!='/v1' or not args.local_model):p.error('local backend requires loopback /v1 URL and model')
     if args.backend=='fireworks' and not os.environ.get('FIREWORKS_API_KEY'):p.error('FIREWORKS_API_KEY required')
-    external_urls={'d3':args.d3_url,'openjev':args.openjev_url,'clef':args.clef_url}
-    if args.decisions=='external' and (not all(loopback(external_urls[n]) for n in names) or any(urlparse(external_urls[n]).path not in ('','/') for n in names if n in ('d3','openjev'))):p.error('selected decision endpoints must be loopback HTTP; d3/OpenJev expect base URLs')
+    external_urls={'d3':args.d3_url,'clef':args.clef_url}
+    if args.decisions=='external' and (not all(loopback(external_urls[n]) for n in names) or ('d3' in names and urlparse(args.d3_url).path not in ('','/'))):p.error('selected decision endpoints must be loopback HTTP; d3 expects a base URL')
     cfg=json.loads(args.config.read_text());models=cfg['target_models'];prompts=cfg['prompts']
     if len(models)!=2 or set(prompts)!= {'easy','hard'}:raise ValueError('expected two targets and easy/hard prompts')
     report=load('benchmark_report',HERE/'benchmark_report.py')
     cases=report.dataset(args.benchmark_dataset) if args.benchmark_dataset else [{'id':k,'domain':'demo','expected_tier':('cheap' if k=='easy' else 'strong'),'prompt':v} for k,v in prompts.items()]
-    d=load('d3_e2e',ROOT/'scripts/run_d3_policy_e2e.py');d3fake=d.load_fake();openjev=load('fake_openjev',EXTERNAL/'fake_openjev.py');clef=load('fake_clef',HERE/'fake_clef.py')
+    d=load('d3_e2e',ROOT/'scripts/run_d3_policy_e2e.py');d3fake=d.load_fake();clef=load('fake_clef',HERE/'fake_clef.py')
     with (nullcontext(args.state_dir) if args.state_dir else tempfile.TemporaryDirectory(prefix='decision-examples-')) as directory,ExitStack() as stack:
         tmp=Path(directory);env={k:os.environ[k] for k in ('PATH','HOME','TMPDIR','SYSTEMROOT','LD_LIBRARY_PATH') if k in os.environ}
         if args.backend=='fireworks':env['FIREWORKS_API_KEY']=os.environ['FIREWORKS_API_KEY']
         upstream=d.upstream_server(stack)
         if args.decisions=='fake':
             d3=d3fake.start_in_thread(api_key='');stack.callback(d3.server_close);stack.callback(d3.shutdown)
-            jev=ThreadingHTTPServer(('127.0.0.1',0),openjev.Handler);threading.Thread(target=jev.serve_forever,daemon=True).start();stack.callback(jev.server_close);stack.callback(jev.shutdown)
             cf,thread=clef.start();stack.callback(thread.join);stack.callback(cf.server_close);stack.callback(cf.shutdown)
-            urls=[f'http://127.0.0.1:{d3.server_port}',f'http://127.0.0.1:{jev.server_port}',f'http://127.0.0.1:{cf.server_port}/v1/systemone']
-        else:urls=[args.d3_url,args.openjev_url,args.clef_url]
+            urls=[f'http://127.0.0.1:{d3.server_port}',f'http://127.0.0.1:{cf.server_port}/v1/systemone']
+        else:urls=[args.d3_url,args.clef_url]
         ports={}
         for name,script,flag,url in [
             ('d3',EXTERNAL/'d3_policy.py','--url',urls[0]),
-            ('openjev',EXTERNAL/'openjev_policy.py','--openjev-url',urls[1]),
-            ('clef',HERE/'clef_policy.py','--clef-url',urls[2])]:
+            ('clef',HERE/'clef_policy.py','--clef-url',urls[1])]:
             if name not in names:continue
             extra={'d3':['--model',args.d3_model,'--revision',args.d3_revision,'--timeout-ms',str(args.d3_timeout_ms)],'clef':['--model',args.clef_model,'--timeout-s',str(args.clef_timeout_s)]}.get(name,[])
             port=free_port();proc=d.start(stack,[sys.executable,str(script),'--port',str(port),flag,url,*extra],tmp/(name+'.log'),env)
