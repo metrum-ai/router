@@ -17,10 +17,34 @@ OpenAI-compatible clients use the `/v1` base URL:
 |---|---|---|
 | `/v1/chat/completions` | OpenAI Chat Completions-style requests | OpenAI SDK chat clients, Warp-style OpenAI-compatible agents |
 | `/v1/responses` | OpenAI Responses-style requests | Codex CLI, Responses-compatible agent frameworks |
-| `/v1/models` | OpenAI-style model discovery | Client setup and allow-list discovery |
+| `/v1/responses/input_tokens` | Unbilled input counting through a native Responses target | SDK token budgeting |
+| `/v1/responses/compact` | Metered stateless compaction through a native Responses target | Conversation compaction |
+| `/v1/models`, `/v1/models/{id}` | Caller-filtered OpenAI-style model discovery | Client setup and allow-list discovery |
 | `/v1/codex/models.json` | Codex-native local model catalog | Codex CLI fetch-then-run setup |
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
 | `/admin/reports/api/quota-status` | Admin live quota remaining | Reports-admin remaining/limits for one or many callers |
+
+### Unsupported OpenAI endpoints
+
+After caller authentication, legacy text completions and moderations return
+501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings are not
+implemented yet. Stored Responses retrieval, deletion, input-item listing and
+cancellation are also not implemented. Files, uploads, batches, images, audio,
+vector stores, assistants, threads, fine-tuning, and realtime are outside the
+v4.5 scope and return the same error. These errors have `message`, `type`,
+`param`, and `code` fields. See the [error reference](errors).
+
+Responses input counting requires a native Responses target in the requested
+model group. It observes caller request rate and concurrency limits, but does not
+bill tokens; the audit record has `endpoint=responses.input_tokens`. A request
+with `previous_response_id` returns 501 until stored-response affinity is available.
+Responses compaction likewise requires a native Responses target and applies the
+same token admission and metering as Responses. It bypasses the response cache;
+`previous_response_id` is rejected with 501 until affinity is available.
+
+Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
+not planned for v4.5 and return authenticated 501 errors in Anthropic format.
+`/v1/messages/count_tokens` remains supported.
 
 Anthropic-compatible clients use the `/anthropic` base URL:
 
@@ -350,7 +374,7 @@ Common safe filter reasons include `chat-to-responses-bridge-disabled`, `chat-to
 | `/v1/responses` | `reasoning` | Requires active OpenAI Responses target reasoning metadata. | Responses-to-Chat reasoning is unsupported unless `responses_to_chat.reasoning` is explicitly validated for the target. |
 | `/anthropic/v1/messages` | `thinking` | Requires active Anthropic Messages target reasoning/default-thinking metadata. | No general Messages bridge is implied by Chat or Responses bridge metadata. |
 
-Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate remains, the router returns `502 no-eligible-target`; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
+Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate supports the requested capabilities, the router returns `400 invalid_request_error` with an `unsupported_capability` code; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
 
@@ -408,7 +432,7 @@ Example response:
 }
 ```
 
-Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Requests for unlisted groups fail with `403 model-not-allowed` before any upstream provider is called.
+Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Unknown or disallowed groups fail with `404 model_not_found` before any upstream provider is called; the response does not disclose whether a group exists.
 
 The returned IDs are router model groups, not a full inventory of every upstream provider model. Platform teams can change the upstream provider/model mix behind a group without changing the caller-facing group name. With `server.responses.model_identity: requested_group`, these IDs are also exactly what completion responses report in their `model` field.
 
