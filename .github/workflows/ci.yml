@@ -108,7 +108,7 @@ jobs:
 
   ci:
     name: ci
-    runs-on: router-arc
+    runs-on: router-arc-small
     if: always()
     needs: [router, other-go, other]
     timeout-minutes: 5

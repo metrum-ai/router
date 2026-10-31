@@ -1,0 +1,159 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+# Coverage not present in the consolidated ci lanes. These are deliberately
+# independent checks, not the required ci aggregator; see #535 retirement PR.
+name: Supplemental offline checks
+on:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supplemental-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
+
+jobs:
+  contracts:
+    runs-on: router-arc-small
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: internal/router/admindist/web/package-lock.json
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - run: python3 -m pip install --user 'PyYAML==6.0.3'
+      - name: Secret contracts and API bootstrap
+        run: |
+          make secret-check
+          python3 scripts/api_compat_bootstrap_test.py
+      - name: Docs QA
+        run: make docs-qa
+      - name: Admin typecheck
+        run: |
+          npm ci --prefix internal/router/admindist/web --no-audit --no-fund
+          npx --prefix internal/router/admindist/web tsc --noEmit -p internal/router/admindist/web
+  api-compat:
+    needs: changes
+    if: github.event_name != 'merge_group' || needs.changes.outputs.go == '1' || needs.changes.outputs.examples == '1'
+    runs-on: router-arc-small
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/api_compat_ts/package-lock.json
+      - run: make api-compat-mock api-compat-ts
+  harbor:
+    needs: changes
+    if: github.event_name != 'merge_group' || needs.changes.outputs.go == '1' || needs.changes.outputs.examples == '1'
+    runs-on: router-arc-small
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - run: make harbor-local
+  d3:
+    needs: changes
+    if: github.event_name != 'merge_group' || needs.changes.outputs.go == '1' || needs.changes.outputs.examples == '1'
+    runs-on: router-arc-small
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: make d3-policy-e2e
+  changes:
+    runs-on: router-arc-small
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: github.event_name == 'merge_group'
+        with:
+          python-version: '3.12'
+      - name: Select merge-group lanes
+        if: github.event_name == 'merge_group'
+        env:
+          CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: python3 scripts/ci_changes.py
+      - name: Publish selected lanes
+        id: select
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "go=${CI_RUN_GO:-1}" >> "$GITHUB_OUTPUT"
+          echo "examples=${CI_RUN_EXAMPLES:-1}" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'merge_group'
+        with:
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
+          filters: |
+            lrp:
+              - 'services/learned-routing-policy/**'
+              - 'scripts/ci_lrp_synthetic.sh'
+    outputs:
+      go: ${{ steps.select.outputs.go }}
+      examples: ${{ steps.select.outputs.examples }}
+      lrp: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.lrp == 'true' }}
+  lrp:
+    needs: changes
+    if: needs.changes.outputs.lrp == 'true'
+    runs-on: router-arc
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - run: bash scripts/ci_lrp_synthetic.sh

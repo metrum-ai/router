@@ -249,6 +249,25 @@ def assert_agent_chain_workflow() -> None:
 
 
 def assert_arc_runners() -> None:
+    small_jobs = {
+        "admin-typecheck.yml": {"admin-typecheck"},
+        "agent-tool-compat.yml": {"local-agent-mock"},
+        "api-compat-live.yml": {"live-unit"},
+        "ci.yml": {"ci"},
+        "dco.yml": {"signed-off-commits"},
+        "decision-models-smoke.yml": {"decision-models"},
+        "docs-qa.yml": {"docs-qa"},
+        "examples-catalog-smoke.yml": {"tokenomics"},
+        "expert-routing-smoke.yml": {"mock"},
+        "ft-example.yml": {"offline"},
+        "governance-example-smoke.yml": {"governance"},
+        "inspect-coding-evaluation.yml": {"contract"},
+        "run3-gate-smoke.yml": {"gate"},
+        "run3-gpu-safety-smoke.yml": {"gpu-safety"},
+        "security-evidence.yml": {"secret-scan"},
+        "source-headers.yml": {"validate"},
+        "supplemental-checks.yml": {"contracts", "api-compat", "harbor", "d3", "changes"},
+    }
     for path in sorted(WORKFLOWS.glob("*.yml")):
         text = read(path)
         if path.name == "runner-cache-trim.yml":
@@ -267,10 +286,48 @@ def assert_arc_runners() -> None:
                 if path.name == "agent-tool-compat.yml":
                     require("make agent-tool-mock-codex" in body, "Codex PR smoke was removed")
                 continue
-            require(re.search(r"(?m)^    runs-on: router-arc$", body) is not None,
-                    f"{path.name}/{name} must use router-arc")
+            runner = "router-arc-small" if name in small_jobs.get(path.name, set()) else "router-arc"
+            require(re.search(rf"(?m)^    runs-on: {re.escape(runner)}$", body) is not None,
+                    f"{path.name}/{name} must use {runner}")
         require("cache: false" not in text, f"{path.name} must not rely on warm host Go caches")
         require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
+
+
+def assert_small_runner_filters() -> None:
+    workflows = {
+        "agent-tool-compat.yml": ("local-agent-mock", "codex-workspace-sandbox"),
+        "decision-models-smoke.yml": ("decision-models",),
+        "examples-catalog-smoke.yml": ("tokenomics",),
+        "ft-example.yml": ("offline",),
+        "governance-example-smoke.yml": ("governance",),
+        "run3-gate-smoke.yml": ("gate",),
+        "run3-gpu-safety-smoke.yml": ("gpu-safety",),
+    }
+    for filename, names in workflows.items():
+        text = read(WORKFLOWS / filename)
+        pr = text.split("  pull_request:", 1)[1].split("  merge_group:", 1)[0]
+        require("    paths:" in pr and f".github/workflows/{filename}" in pr,
+                f"{filename} must have PR path filters including itself")
+        for name in names:
+            body = jobs(text)[name]
+            require("fetch-depth: 0" in body and "github.event.merge_group.base_sha" in body
+                    and "python3 scripts/ci_changes.py" in body, f"{filename}/{name} has no merge-group classifier")
+            condition = "github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'"
+            steps = re.split(r"(?m)^      - ", body)
+            selection = next((index for index, step in enumerate(steps) if "python3 scripts/ci_changes.py" in step), -1)
+            require(selection >= 0 and selection < len(steps) - 1, f"{filename}/{name} has no selected work")
+            for step in steps[selection + 1:]:
+                require(condition in step, f"{filename}/{name} has an ungated step after the classifier")
+    supplemental = jobs(read(WORKFLOWS / "supplemental-checks.yml"))
+    for name in ("api-compat", "harbor", "d3"):
+        require("needs: changes" in supplemental[name] and "needs.changes.outputs.go == '1'" in supplemental[name]
+                and "needs.changes.outputs.examples == '1'" in supplemental[name],
+                f"supplemental {name} must skip unrelated merge groups")
+    require("needs: changes" not in supplemental["contracts"], "docs and secret contracts must stay unconditional")
+    dco = read(WORKFLOWS / "dco.yml")
+    require(re.search(r"(?m)^  pull_request:\s*$", dco) is not None
+            and "paths:" not in dco.split("  pull_request:", 1)[1].split("  merge_group:", 1)[0],
+            "required DCO must not have a PR path filter")
 
 
 def assert_consolidated_ci() -> None:
@@ -302,6 +359,7 @@ def assert_consolidated_ci() -> None:
 
 def main() -> int:
     assert_consolidated_ci()
+    assert_small_runner_filters()
     assert_arc_runners()
     assert_pull_request_cancellation()
     assert_make_tiers()
