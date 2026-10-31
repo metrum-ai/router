@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
 import subprocess
 from pathlib import Path
@@ -40,10 +38,6 @@ def jobs(text: str) -> dict[str, str]:
         if current is not None:
             found[current].append(line)
     return {name: "\n".join(body) for name, body in found.items()}
-
-
-def steps(job_text: str) -> list[str]:
-    return re.split(r"\n      - ", "\n" + job_text)
 
 
 def make_rule(text: str, name: str) -> str:
@@ -105,8 +99,11 @@ def assert_make_tiers() -> None:
     makefile = read(ROOT / "Makefile")
     fast = make_rule(makefile, "test-fast")
     full = make_rule(makefile, "test")
-    require("$(MAKE) validate-build-metadata" in make_rule(makefile, "ci-python"),
+    python_lane = make_rule(makefile, "ci-python")
+    require("$(MAKE) validate-build-metadata" in python_lane,
             "consolidated CI must validate build metadata before the merge group")
+    require("python3 scripts/check_source_headers.py" in python_lane,
+            "consolidated CI must validate source headers")
     assert_go_timeout_headroom(fast, make_recipe=True)
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
@@ -126,84 +123,52 @@ def assert_make_tiers() -> None:
             "TypeScript runner must retain its fail-closed offline build")
 
 
-def assert_fast_go_workflow() -> None:
-    text = read(WORKFLOWS / "go.yml")
-    parsed = jobs(text)
-    require("merge_group:" in text, "go.yml must report on merge groups")
-    require("if: github.event_name != 'merge_group'" in parsed["test-and-vet"], "PR go job must skip merge groups")
-    require(any("run: make test-fast" in item for item in steps(parsed["test-and-vet"])), "PR go job dropped test-fast")
-    require("astral-sh/setup-uv@" in parsed["test-and-vet"], "PR go job must install uv for harbor-adapter and api-compat bootstrap")
-    merge = parsed["test-and-vet-merge-group"]
-    require("if: github.event_name == 'merge_group'" in merge, "merge-group go job missing")
-    require("name: test-and-vet" in merge, "merge-group go job must keep the required check name")
-    require(
-        "actions/setup-go" not in merge
-        and "actions/setup-python" not in merge
-        and "setup-uv" not in merge,
-        "merge-group go job still downloads actions",
-    )
-    require("\n        run: make test\n" not in text, "go.yml must not run the full suite")
-
-
-def assert_deterministic_gate() -> None:
-    text = read(WORKFLOWS / "deterministic-gate.yml")
-    require("merge_group:" in text and "workflow_dispatch:" in text, "deterministic gate triggers are incomplete")
-    require("schedule:" not in text, "deterministic gate must not be scheduled")
+def assert_retirement_topology() -> None:
+    for name in ("go.yml", "deterministic-gate.yml", "case-study-smoke.yml"):
+        require(not (WORKFLOWS / name).exists(), f"retired workflow returned: {name}")
+    ci = read(WORKFLOWS / "ci.yml")
+    require("pull_request:" in ci and "merge_group:" in ci and "run: make ci" in ci,
+            "consolidated ci must cover PR and merge group")
+    makefile = read(ROOT / "Makefile")
+    for lane in ("ci-go", "ci-router", "ci-windows", "ci-python", "ci-examples", "compat-mock"):
+        require(f"{lane}:" in makefile and lane in makefile.split("CI_LANES :=", 1)[1].splitlines()[0],
+                f"missing consolidated lane {lane}")
+    examples = make_rule(makefile, "ci-examples")
+    for directory in ("common", "support-agent", "document-qa", "coding-agent"):
+        require(f"examples/case-studies/{directory}" in examples, f"missing case-study tests: {directory}")
+    text = read(WORKFLOWS / "supplemental-checks.yml")
+    require("merge_group:" in text and "workflow_dispatch:" in text and "pull_request:" not in text,
+            "supplemental checks must run on merge groups and dispatch")
     parsed = jobs(text)
     coverage = {
-        "go": ("gofmt -l .", "go vet ./...", "go test ./internal/router"),
-        "contracts": ("make secret-check capability-smoke-contracts d3-policy-test harbor-adapter-test",
-                      "scripts/outcome_calibrated_policy_test.py", "scripts/api_compat_bootstrap_test.py",
-                      "scripts/ci_topology_test.py", "scripts/harbor_promotion_test.py",
-                      "scripts/release_provenance_test.py",
-                      "make docs-qa", "tsc --noEmit"),
-        "api-compat": ("make api-compat-mock", "make api-compat-ts"),
+        "contracts": ("make secret-check", "scripts/api_compat_bootstrap_test.py", "make docs-qa", "tsc --noEmit"),
+        "api-compat": ("make api-compat-mock api-compat-ts",),
         "harbor": ("make harbor-local",),
         "d3": ("make d3-policy-e2e",),
-        "lrp": ("scripts/ci_lrp_synthetic.sh",),
+        "lrp": ("scripts/ci_lrp_synthetic.sh", "needs.changes.outputs.lrp"),
         "sbom": ("anchore/sbom-action", "anchore/scan-action", "actions/upload-artifact"),
+        "changes": ("dorny/paths-filter@", "github.event.merge_group.base_sha", "github.event.merge_group.head_sha"),
     }
-    require(set(parsed) == set(coverage) | {"changes", "test-full"}, "gate lane inventory drifted")
-    assert_go_timeout_headroom(parsed["go"])
+    require(set(parsed) == set(coverage), "supplemental lane inventory drifted")
     for lane, markers in coverage.items():
         for marker in markers:
-            matched = [step for step in steps(parsed[lane]) if marker in step]
-            require(len(matched) == 1, f"{lane} must run {marker} exactly once")
-            require("github.event_name != 'pull_request'" in matched[0], f"{marker} can run on pull_request")
-    for lane, body in parsed.items():
-        require("Defer full gate until merge queue" in body, f"{lane} has no PR deferral")
-    aggregate = parsed["test-full"]
-    require("name: test-full" in aggregate and "always()" in aggregate, "required aggregate context drifted")
-    for lane in coverage.keys() | {"changes"}:
-        require(f"- {lane}" in aggregate, f"aggregate does not need {lane}")
-    require("name == 'lrp' and job['result'] == 'skipped'" in aggregate,
-            "only a filtered LRP skip may pass the aggregate")
-    shell = aggregate.split("        run: |-\n", 1)[1]
-    shell = "\n".join(line[10:] for line in shell.splitlines())
-    for lane in coverage.keys() | {"changes"}:
-        for result in ("success", "skipped", "failure", "cancelled"):
-            results = {name: {"result": "success"} for name in coverage.keys() | {"changes"}}
-            results[lane]["result"] = result
-            check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True,
-                                   env={**os.environ, "RESULTS": json.dumps(results)}, check=False)
-            expected = 0 if result == "success" or (lane == "lrp" and result == "skipped") else 1
-            require(check.returncode == expected, f"aggregate accepted {lane}={result}: {check.stderr}")
-    versions = {"actions/checkout": "v7.0.1", "actions/setup-go": "v7.0.0",
-                "actions/setup-python": "v7.0.0", "actions/setup-node": "v7.1.0",
-                "astral-sh/setup-uv": "v10.3.0", "dorny/paths-filter": "v4.0.3"}
-    for line in text.splitlines():
-        for action, version in versions.items():
-            if f"uses: {action}@" in line:
-                require(re.search(rf"@\w{{40}} # {re.escape(version)}$", line) is not None,
-                        f"missing pinned version comment: {line}")
-    require(text.count("runs-on: router-arc") == len(parsed),
-            "gate lanes must use the repository-restricted ARC scale set")
-    require("needs.changes.outputs.lrp" in parsed["lrp"], "LRP is not path-filtered")
-    changes = parsed["changes"]
-    for marker in ("dorny/paths-filter@", "github.event.merge_group.base_sha",
-                   "github.event.merge_group.head_sha", "workflow_dispatch",
-                   "services/learned-routing-policy/**", "scripts/ci_lrp_synthetic.sh"):
-        require(marker in changes, f"LRP filter missing {marker}")
+            require(marker in parsed[lane], f"{lane} lost {marker}")
+    codeql = read(WORKFLOWS / "codeql.yml")
+    require("merge_group:" in codeql and "schedule:" in codeql and "pull_request:" not in codeql,
+            "advanced CodeQL must run on merge groups and schedule, not PRs")
+    require("vars.CODEQL_ADVANCED_ENABLED == 'true'" in codeql,
+            "CodeQL activation must remain coordinated with default setup")
+    require("github/codeql-action/init@" in codeql and "github/codeql-action/analyze@" in codeql,
+            "CodeQL analysis is incomplete")
+    require((WORKFLOWS / "dco.yml").exists(), "DCO workflow removed")
+    headers = read(WORKFLOWS / "source-headers.yml")
+    require("push:" in headers and "pull_request:" not in headers and "merge_group:" not in headers,
+            "source-header workflow must retain main push without duplicating ci")
+    dependabot = read(ROOT / ".github" / "dependabot.yml")
+    ecosystems = re.findall(r"(?m)^  - package-ecosystem:", dependabot)
+    limits = re.findall(r"(?m)^    open-pull-requests-limit:\s*(\d+)\s*$", dependabot)
+    require(bool(ecosystems) and len(ecosystems) == len(limits) and all(limit == "0" for limit in limits),
+            "version-update PRs must remain paused in every Dependabot ecosystem")
 
 
 def assert_provider_workflows() -> None:
@@ -277,8 +242,7 @@ def main() -> int:
     assert_arc_runners()
     assert_pull_request_cancellation()
     assert_make_tiers()
-    assert_fast_go_workflow()
-    assert_deterministic_gate()
+    assert_retirement_topology()
     assert_provider_workflows()
     assert_agent_chain_workflow()
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
