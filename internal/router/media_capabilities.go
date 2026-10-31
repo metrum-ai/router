@@ -80,6 +80,40 @@ func requestHasMedia(req *IRRequest) bool {
 	return false
 }
 
+// openAIJSONObjectRequest identifies JSON-object mode without weakening a schema request.
+func openAIJSONObjectRequest(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	if format, ok := req.Raw["response_format"].(map[string]any); ok && stringValue(format["type"]) == "json_object" {
+		return true
+	}
+	if text, ok := req.Raw["text"].(map[string]any); ok {
+		if format, ok := text["format"].(map[string]any); ok && stringValue(format["type"]) == "json_object" {
+			return true
+		}
+	}
+	return false
+}
+
+// openAIJSONSchemaForAnthropic extracts the caller's explicit schema.
+func openAIJSONSchemaForAnthropic(req *IRRequest) (any, bool) {
+	if req == nil {
+		return nil, false
+	}
+	if format, ok := req.Raw["response_format"].(map[string]any); ok && stringValue(format["type"]) == "json_schema" {
+		if nested, ok := format["json_schema"].(map[string]any); ok && nested["schema"] != nil {
+			return nested["schema"], true
+		}
+	}
+	if text, ok := req.Raw["text"].(map[string]any); ok {
+		if format, ok := text["format"].(map[string]any); ok && stringValue(format["type"]) == "json_schema" && format["schema"] != nil {
+			return format["schema"], true
+		}
+	}
+	return nil, false
+}
+
 func anthropicFormat(req *IRRequest) map[string]any {
 	if req == nil {
 		return nil

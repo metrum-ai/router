@@ -50,7 +50,11 @@ func TestGeminiThinkingLocalhostE2E(t *testing.T) {
 	defer server.Close()
 	client := &http.Client{Timeout: 15 * time.Second}
 	for _, stream := range []bool{false, true} {
-		req, _ := http.NewRequest("POST", "http://127.0.0.1:18472/v1/chat/completions", strings.NewReader(fmt.Sprintf(`{"model":"native-stream","stream":%v,"messages":[{"role":"user","content":"hi"}]}`, stream)))
+		options := ""
+		if stream {
+			options = `,"stream_options":{"include_usage":true}`
+		}
+		req, _ := http.NewRequest("POST", "http://127.0.0.1:18472/v1/chat/completions", strings.NewReader(fmt.Sprintf(`{"model":"native-stream","stream":%v,"messages":[{"role":"user","content":"hi"}]%s}`, stream, options)))
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
