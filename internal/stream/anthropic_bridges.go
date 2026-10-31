@@ -22,6 +22,7 @@ type AnthropicUpstreamToChatCaller struct {
 	Model                       string
 	PublicModel                 string // caller-facing model; empty keeps Model
 	CreatedAt                   int64
+	IncludeUsage                bool
 	chat                        ResponsesUpstreamToChatCaller
 	blocks                      map[int]string
 	tools                       map[int]int
@@ -167,6 +168,7 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 			return nil, errors.New("stream: message_stop without stop reason")
 		}
 		t.terminal = true
+		finish := t.chat.chunk(map[string]any{}, t.stop)
 		t.chat.usage = map[string]any{"prompt_tokens": t.usage.InputTokens, "completion_tokens": t.usage.OutputTokens, "total_tokens": t.usage.TotalTokens}
 		details := map[string]any{}
 		if t.usage.CachedInputTokens != nil {
@@ -178,7 +180,16 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		if len(details) > 0 {
 			t.chat.usage["prompt_tokens_details"] = details
 		}
-		return []Event{t.chat.chunk(map[string]any{}, t.stop)}, ErrTerminal
+		events := []Event{finish}
+		if t.IncludeUsage {
+			id := t.chat.ResponseID
+			if t.IDs != nil {
+				id = t.IDs.Encode(id)
+			}
+			payload, _ := json.Marshal(map[string]any{"id": id, "object": "chat.completion.chunk", "created": t.CreatedAt, "model": callerModel(t.PublicModel, t.Model), "choices": []any{}, "usage": t.chat.usage})
+			events = append(events, Event{Data: payload})
+		}
+		return events, ErrTerminal
 	default:
 		return nil, errors.New("stream: unsupported Anthropic event")
 	}
@@ -349,6 +360,9 @@ type AnthropicUpstreamToResponsesCaller struct {
 }
 
 func (t *AnthropicUpstreamToResponsesCaller) Next(up Event) ([]Event, error) {
+	// The internal Chat hop needs usage for the Responses completion event;
+	// this is not a caller-visible Chat usage chunk.
+	t.reader.IncludeUsage = true
 	events, err := t.reader.Next(up)
 	if err != nil && !errors.Is(err, ErrTerminal) {
 		return nil, err
