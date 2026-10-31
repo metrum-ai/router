@@ -6,8 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -22,12 +22,16 @@ def run_guard(events: list[dict], env: dict[str, str] | None = None, save_json: 
     argv = [sys.executable, str(GUARD)]
     if save_json is not None:
         argv += ["--save-json", str(save_json)]
+    child_env = os.environ.copy()
+    child_env.pop("ROUTER_TEST_GUARD_WARN_SECONDS", None)
+    child_env.pop("ROUTER_TEST_GUARD_FAIL_SECONDS", None)
+    child_env.update(env or {})
     proc = subprocess.run(
         argv,
         input=payload,
         text=True,
         capture_output=True,
-        env=None if env is None else {**__import__("os").environ, **env},
+        env=child_env,
         check=False,
     )
     return proc.returncode, proc.stdout
@@ -66,6 +70,16 @@ def main() -> int:
     # --save-json to an unwritable path fails fast and loudly.
     code, out = run_guard([{"Action": "pass", "Package": PKG, "Elapsed": 1.0}], save_json=Path("/nonexistent-dir/router_guard.json"))
     require(code != 0, "--save-json to an unwritable path must fail")
+
+    # Default thresholds: retain 360s warning; fail only above 720s.
+    for elapsed, expected, annotation in [(360.0, 0, None), (486.0, 0, "::warning::"),
+                                           (674.0, 0, "::warning::"), (720.0, 0, "::warning::"),
+                                           (721.0, 1, "::error::")]:
+        code, out = run_guard([{"Action": "pass", "Package": PKG, "Elapsed": elapsed}])
+        require(code == expected, f"default threshold at {elapsed}s: got {code}: {out}")
+        require("fail at 720s" in out and "budget 360s" in out, f"wrong defaults: {out}")
+        require(("::warning::" not in out and "::error::" not in out) if annotation is None else annotation in out,
+                f"wrong annotation at {elapsed}s: {out}")
 
     # Over warn but under fail: exit 0 with a warning annotation.
     code, out = run_guard(

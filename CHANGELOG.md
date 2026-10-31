@@ -483,8 +483,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add an OpenJev task-class external routing example: policy service, Shadeform
   runbook, synthetic harness, and live evidence
-  (`examples/external-routing-policy/openjev_*`, `docs/OPENJEV_ROUTING_DEMO.md`,
-  `docs/evidence/openjev-routing/`) (#241).
+  (`examples/external-routing-policy/openjev_*`, `docs/OPENJEV_ROUTING_DEMO.md`)
+  (#241). OpenJev is excluded from the v4.5 comparison for licensing.
 - Add `make local-router` for a weighted local coding-agent instance from
   source (`scripts/local_pi_instance.py`).
 
