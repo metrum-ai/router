@@ -1,0 +1,16 @@
+{
+  "concurrency": [
+    1,
+    8,
+    32,
+    128
+  ],
+  "model": "chat",
+  "note": "partial load driver; backend identity, hardware, profile and host-resource verification are external",
+  "output_tokens": 32,
+  "prompt_sha256": "2aa36f713bdf3728a8c7fa2ef67a751f150edea220ec1a0cb2a6d98109c4bce9",
+  "repetitions": 3,
+  "requests_per_worker": 8,
+  "schema": 1,
+  "warmup_per_worker": 1
+}

@@ -1,0 +1,28 @@
+File: profiled-router
+Build ID: d8bcf5025101d5e578bc8135e8d84936ea7b7e74
+Type: cpu
+Time: 2026-10-31 02:52:20 UTC
+Duration: 8.03s, Total samples = 820ms (10.21%)
+Showing nodes accounting for 510ms, 62.20% of 820ms total
+Showing top 20 nodes out of 443
+      flat  flat%   sum%        cum   cum%
+     210ms 25.61% 25.61%      210ms 25.61%  internal/runtime/syscall/linux.Syscall6
+      40ms  4.88% 30.49%       50ms  6.10%  github.com/glebarez/go-sqlite.(*conn).bind
+      40ms  4.88% 35.37%       40ms  4.88%  runtime.spanClass.sizeclass
+      30ms  3.66% 39.02%       30ms  3.66%  runtime.futex
+      20ms  2.44% 41.46%       20ms  2.44%  modernc.org/memory.(*Allocator).mmap
+      20ms  2.44% 43.90%       20ms  2.44%  runtime.adjustframe
+      20ms  2.44% 46.34%       20ms  2.44%  runtime.lock2
+      10ms  1.22% 47.56%       10ms  1.22%  crypto/sha256.Sum256
+      10ms  1.22% 48.78%       10ms  1.22%  encoding/hex.Encode
+      10ms  1.22% 50.00%       10ms  1.22%  encoding/json/internal/jsonwire.AppendQuote
+      10ms  1.22% 51.22%       10ms  1.22%  encoding/json/jsontext.Token.appendString
+      10ms  1.22% 52.44%       10ms  1.22%  internal/runtime/atomic.(*UnsafePointer).Load
+      10ms  1.22% 53.66%       10ms  1.22%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+      10ms  1.22% 54.88%       10ms  1.22%  internal/runtime/maps.ctrlGroup.matchH2
+      10ms  1.22% 56.10%       10ms  1.22%  internal/strconv.formatBase10
+      10ms  1.22% 57.32%       10ms  1.22%  internal/sync.(*Mutex).Unlock
+      10ms  1.22% 58.54%       10ms  1.22%  modernc.org/libc.Xmemcpy
+      10ms  1.22% 59.76%       10ms  1.22%  modernc.org/sqlite/lib._initMemArray
+      10ms  1.22% 60.98%       10ms  1.22%  modernc.org/sqlite/lib._moveToRoot
+      10ms  1.22% 62.20%       10ms  1.22%  modernc.org/sqlite/lib._pageInsertArray

@@ -1,0 +1,29 @@
+File: profiled-router
+Build ID: d8bcf5025101d5e578bc8135e8d84936ea7b7e74
+Type: cpu
+Time: 2026-10-31 02:44:14 UTC
+Duration: 8.06s, Total samples = 14.38s (178.51%)
+Showing nodes accounting for 9.87s, 68.64% of 14.38s total
+Dropped 794 nodes (cum <= 0.07s)
+Showing top 20 nodes out of 275
+      flat  flat%   sum%        cum   cum%
+     5.15s 35.81% 35.81%      5.32s 37.00%  github.com/glebarez/go-sqlite.(*conn).bind
+     2.09s 14.53% 50.35%      2.09s 14.53%  internal/runtime/syscall/linux.Syscall6
+     0.33s  2.29% 52.64%      0.66s  4.59%  runtime.tryDeferToSpanScan
+     0.32s  2.23% 54.87%      0.32s  2.23%  runtime.memmove
+     0.28s  1.95% 56.82%      0.28s  1.95%  runtime.spanClass.sizeclass (inline)
+     0.20s  1.39% 58.21%      0.56s  3.89%  runtime.scanObject
+     0.18s  1.25% 59.46%      0.49s  3.41%  github.com/metrum-ai/router/internal/router.(*dynamicObservationStore).add
+     0.17s  1.18% 60.64%      0.17s  1.18%  internal/runtime/gc/scan.scanSpanPackedAVX512
+     0.14s  0.97% 61.61%      0.29s  2.02%  regexp.(*Regexp).tryBacktrack
+     0.14s  0.97% 62.59%      0.14s  0.97%  runtime.(*lfstack).pop
+     0.12s  0.83% 63.42%      0.15s  1.04%  encoding/json/internal/jsonwire.AppendQuote
+     0.12s  0.83% 64.26%      0.12s  0.83%  runtime.futex
+     0.10s   0.7% 64.95%      0.10s   0.7%  runtime.memclrNoHeapPointers
+     0.10s   0.7% 65.65%      0.32s  2.23%  runtime.scanblock
+     0.09s  0.63% 66.27%      1.07s  7.44%  modernc.org/sqlite/lib._sqlite3VdbeExec
+     0.08s  0.56% 66.83%      0.09s  0.63%  github.com/metrum-ai/router/internal/router.pruneTokens
+     0.08s  0.56% 67.39%      0.08s  0.56%  runtime.typePointers.next
+     0.07s  0.49% 67.87%      0.48s  3.34%  modernc.org/sqlite/lib._balance_nonroot
+     0.06s  0.42% 68.29%      0.11s  0.76%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+     0.05s  0.35% 68.64%      0.36s  2.50%  runtime.findRunnable

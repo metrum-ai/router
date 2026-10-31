@@ -1,0 +1,28 @@
+File: profiled-router
+Build ID: d8bcf5025101d5e578bc8135e8d84936ea7b7e74
+Type: cpu
+Time: 2026-10-31 03:02:05 UTC
+Duration: 8.06s, Total samples = 740ms ( 9.18%)
+Showing nodes accounting for 510ms, 68.92% of 740ms total
+Showing top 20 nodes out of 346
+      flat  flat%   sum%        cum   cum%
+     220ms 29.73% 29.73%      220ms 29.73%  internal/runtime/syscall/linux.Syscall6
+      70ms  9.46% 39.19%       70ms  9.46%  github.com/glebarez/go-sqlite.(*conn).bind
+      30ms  4.05% 43.24%       30ms  4.05%  runtime.tryDeferToSpanScan
+      20ms  2.70% 45.95%       20ms  2.70%  internal/sync.(*HashTrieMap[go.shape.interface {},go.shape.interface {}]).Load
+      20ms  2.70% 48.65%       20ms  2.70%  runtime.futex
+      10ms  1.35% 50.00%       10ms  1.35%  crypto/internal/fips140/sha256.blockSHANI
+      10ms  1.35% 51.35%       10ms  1.35%  encoding/json/internal/jsonflags.Flags.Get (inline)
+      10ms  1.35% 52.70%       10ms  1.35%  encoding/json/internal/jsonwire.AppendQuote
+      10ms  1.35% 54.05%       20ms  2.70%  encoding/json/jsontext.(*encoderState).WriteToken
+      10ms  1.35% 55.41%       10ms  1.35%  encoding/json/jsontext.(*encoderState).reset
+      10ms  1.35% 56.76%       10ms  1.35%  encoding/json/v2.makeStructArshaler.func2
+      10ms  1.35% 58.11%       10ms  1.35%  github.com/metrum-ai/router/internal/router.(*Service).finish
+      10ms  1.35% 59.46%      300ms 40.54%  github.com/metrum-ai/router/internal/router.(*Service).handleLLM
+      10ms  1.35% 60.81%       10ms  1.35%  github.com/metrum-ai/router/internal/router.requestInputModalities (inline)
+      10ms  1.35% 62.16%       10ms  1.35%  internal/abi.(*Type).IsDirectIface (inline)
+      10ms  1.35% 63.51%       10ms  1.35%  internal/bytealg.CountString
+      10ms  1.35% 64.86%       10ms  1.35%  internal/poll.(*FD).Fstat
+      10ms  1.35% 66.22%       10ms  1.35%  memeqbody
+      10ms  1.35% 67.57%       10ms  1.35%  modernc.org/sqlite/lib._sqlite3FkRequired
+      10ms  1.35% 68.92%       10ms  1.35%  modernc.org/sqlite/lib._vdbeRecordCompareString

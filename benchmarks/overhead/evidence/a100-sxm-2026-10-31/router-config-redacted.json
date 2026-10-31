@@ -1,0 +1,195 @@
+{
+  "enforce": {
+    "callers": [
+      {
+        "allow": [
+          "chat"
+        ],
+        "id": "synthetic-overhead",
+        "rate": {
+          "concurrent": 160,
+          "rpm": 50000,
+          "tpm": 100000000
+        },
+        "token_sha256": "<synthetic-token-hash-redacted>"
+      }
+    ],
+    "models": {
+      "chat": {
+        "external_policy": {
+          "allow_hosts": [
+            "127.0.0.1"
+          ],
+          "include_request": true,
+          "max_response_bytes": 65536,
+          "mode": "enforce",
+          "on_error": "fail_closed",
+          "timeout_ms": 5000,
+          "url": "http://127.0.0.1:18094/route"
+        },
+        "strategy": "external",
+        "targets": [
+          {
+            "model": "chat",
+            "provider": "backend",
+            "tier": "cheap"
+          }
+        ]
+      }
+    },
+    "providers": {
+      "backend": {
+        "base_url": "http://127.0.0.1:18000/v1",
+        "dialect": "openai-chat"
+      }
+    },
+    "server": {
+      "cache": {
+        "enabled": false
+      },
+      "decision_telemetry": {
+        "enabled": true
+      },
+      "default_model_group": "chat",
+      "identifiers": {
+        "mode": "passthrough"
+      },
+      "listen": "127.0.0.1:18080",
+      "logging": {
+        "path": "/tmp/benchmark-private/requests.jsonl"
+      },
+      "usage_db": {
+        "driver": "sqlite",
+        "enabled": true,
+        "migration_policy": "auto-safe",
+        "path": "/tmp/benchmark-private/usage.sqlite"
+      }
+    },
+    "state_path": "/tmp/benchmark-private/state.json"
+  },
+  "plain": {
+    "callers": [
+      {
+        "allow": [
+          "chat"
+        ],
+        "id": "synthetic-overhead",
+        "rate": {
+          "concurrent": 160,
+          "rpm": 50000,
+          "tpm": 100000000
+        },
+        "token_sha256": "<synthetic-token-hash-redacted>"
+      }
+    ],
+    "models": {
+      "chat": {
+        "strategy": "static",
+        "targets": [
+          {
+            "model": "chat",
+            "provider": "backend",
+            "tier": "cheap"
+          }
+        ]
+      }
+    },
+    "providers": {
+      "backend": {
+        "base_url": "http://127.0.0.1:18000/v1",
+        "dialect": "openai-chat"
+      }
+    },
+    "server": {
+      "cache": {
+        "enabled": false
+      },
+      "decision_telemetry": {
+        "enabled": true
+      },
+      "default_model_group": "chat",
+      "identifiers": {
+        "mode": "passthrough"
+      },
+      "listen": "127.0.0.1:18080",
+      "logging": {
+        "path": "/tmp/benchmark-private/requests.jsonl"
+      },
+      "usage_db": {
+        "driver": "sqlite",
+        "enabled": true,
+        "migration_policy": "auto-safe",
+        "path": "/tmp/benchmark-private/usage.sqlite"
+      }
+    },
+    "state_path": "/tmp/benchmark-private/state.json"
+  },
+  "shadow": {
+    "callers": [
+      {
+        "allow": [
+          "chat"
+        ],
+        "id": "synthetic-overhead",
+        "rate": {
+          "concurrent": 160,
+          "rpm": 50000,
+          "tpm": 100000000
+        },
+        "token_sha256": "<synthetic-token-hash-redacted>"
+      }
+    ],
+    "models": {
+      "chat": {
+        "external_policy": {
+          "allow_hosts": [
+            "127.0.0.1"
+          ],
+          "include_request": true,
+          "max_response_bytes": 65536,
+          "mode": "shadow",
+          "on_error": "fail_closed",
+          "timeout_ms": 5000,
+          "url": "http://127.0.0.1:18094/route"
+        },
+        "strategy": "external",
+        "targets": [
+          {
+            "model": "chat",
+            "provider": "backend",
+            "tier": "cheap"
+          }
+        ]
+      }
+    },
+    "providers": {
+      "backend": {
+        "base_url": "http://127.0.0.1:18000/v1",
+        "dialect": "openai-chat"
+      }
+    },
+    "server": {
+      "cache": {
+        "enabled": false
+      },
+      "decision_telemetry": {
+        "enabled": true
+      },
+      "default_model_group": "chat",
+      "identifiers": {
+        "mode": "passthrough"
+      },
+      "listen": "127.0.0.1:18080",
+      "logging": {
+        "path": "/tmp/benchmark-private/requests.jsonl"
+      },
+      "usage_db": {
+        "driver": "sqlite",
+        "enabled": true,
+        "migration_policy": "auto-safe",
+        "path": "/tmp/benchmark-private/usage.sqlite"
+      }
+    },
+    "state_path": "/tmp/benchmark-private/state.json"
+  }
+}
