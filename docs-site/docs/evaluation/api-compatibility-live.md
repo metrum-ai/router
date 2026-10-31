@@ -6,9 +6,9 @@ doc_type: explanation
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Live API compatibility: baseline (in progress)
+# Live API compatibility: bounded evidence
 
-This is a **partial historical baseline**, not a release-candidate result or a compatibility guarantee. Current-model validation, the final release matrix and rerun target are not yet complete.
+This page records a **partial historical baseline** and selected current-model proofs, not a full release matrix or a compatibility guarantee. Omitted suites are not passes.
 
 ## Scope and evidence
 
@@ -24,7 +24,7 @@ This is a **partial historical baseline**, not a release-candidate result or a c
 
 On 2026-10-31, PR [#603](https://github.com/metrum-ai/router/pull/603) head `c95783fe37046e011c043be743a7b21605d929c2` was tested with the pinned testers and GPT-6 Luna / native Claude Haiku 5.5. The head was unchanged at shutdown. The deliberately limited, forced-no-storage config included inline Claude PDF support. Results were **16/27, 13/27, 6/27, 17/27** in the four-lane order below; all tester exits were nonzero. Evidence: live `42fa088c`, offline probes `ed0b140b`, direct provider diagnostics `3e3cf1ef` (`router/v45-proof/536`). Router usage rows total **$0.00083660** at configured list rates, not an invoice; seven upstream attempts reported no usage.
 
-The tables enumerate all selected failing suites; all other selected suites passed. **501** is a documented unsupported error, not a passing SDK suite; **400-L** is a capability rejection under the limited config, not proof of provider behavior; **P** is a provider/model restriction confirmed directly, with the stated limits; **G** is an open gap.
+The tables enumerate all selected failing suites; all other selected suites passed. **501** is a documented unsupported error, not a passing SDK suite; **400-L** is a capability rejection under the limited config, not proof of provider behavior; **P** is a provider/model restriction confirmed directly, with the stated limits; **G** was a gap at the tested batch head; later fixes are noted below.
 
 | OpenAI SDK suites | GPT | Claude |
 | --- | --- | --- |
@@ -41,11 +41,13 @@ The tables enumerate all selected failing suites; all other selected suites pass
 | `messages_document` | 400 unsupported modality in this config; GPT document support not tested | Pass |
 | `completions`, `completions_stream`, `message_batches_create`, `message_batches_get`, `message_batches_cancel`, `message_batches_list`, `message_batches_results`, `message_batches_delete`, `beta_files` | 501 | 501 |
 
-The Anthropic batch follow-up suites stopped at create and did not individually prove each later method. Stored Responses and hosted-resource suites were not run; stored Responses lifecycle is documented as deferred to v4.6. An offline black-hole probe found 20/26 expected 501 shapes with zero upstream attempts; five OpenAI endpoint/method combinations returned bare 404/405 and OpenAI `/v1/skills` returned the wrong dialect's 501 envelope ([#580](https://github.com/metrum-ai/router/issues/580)). The [API reference](https://github.com/metrum-ai/router/blob/c95783fe37046e011c043be743a7b21605d929c2/docs-site/docs/reference/api-compatibility.md) documents the 501s and temporary Responses utility limits. No unrun suite is counted as a pass.
+The Anthropic batch follow-up suites stopped at create and did not individually prove each later method. Stored Responses and hosted-resource suites were not run; stored Responses lifecycle is documented as deferred to v4.6. An offline black-hole probe found 20/26 expected 501 shapes with zero upstream attempts; five OpenAI endpoint/method combinations returned bare 404/405 and OpenAI `/v1/skills` returned the wrong dialect's 501 envelope ([#580](https://github.com/metrum-ai/router/issues/580)). The [API reference](https://github.com/metrum-ai/router/blob/c95783fe37046e011c043be743a7b21605d929c2/docs-site/docs/reference/api-compatibility.md) documents the 501s and temporary Responses utility limits. No unrun suite is counted as a pass. On later main, [#605](https://github.com/metrum-ai/router/pull/605) addressed the unserved-path error shapes and [#608](https://github.com/metrum-ai/router/pull/608) implemented stateless Responses utilities. The historical batch results above do not verify those later changes; stored Responses lifecycle remains deferred.
 
 ## Post-merge bridge proof
 
 After #603 merged, a separate narrow proof on main `ad8d8b98fd342346f32db1127d0817c9cd1db1bd` enabled test-only `passed` validation to permit bridge dispatch. OpenAI Chat → native Claude and Anthropic Messages → GPT Responses each passed three checks: tools, JSON schema, and inline PDF. Five were pinned-tester suites; the OpenAI Chat PDF was a custom HTTP 200/nonempty-content check. The pinned suites may accept refusals, and response bodies were not captured; neither blank-PDF check establishes semantic document comprehension. This is not production validation and does not establish streaming or stateful behavior. All six upstream attempts reported usage; after-drain router meter **$0.00035430**, at list rates and not an invoice. No hosted resources or stored-response lifecycle were exercised. Sanitized evidence: `a7c346a2` (`router/v45-proof/536`); [result and limitations](https://github.com/metrum-ai/router/issues/539#issuecomment-6549913914).
+
+After #605 and #608 merged, the same six checks were repeated on main `6896d482b564df2229f42b1a6d1e34482b692615`: **3/3 passed in each direction**. All six attempts reported usage; after-drain router meter **$0.00037530** at list rates, not an invoice. The same refusal, blank-PDF, unary-only and experimental-validation limitations apply. Sanitized evidence: `d343aaa3` (`router/v45-proof/536`); [full result](https://github.com/metrum-ai/router/issues/539#issuecomment-6550260881). This is a bridge pair, not a new four-lane matrix.
 
 ## Current-model subset (prior main)
 
