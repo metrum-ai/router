@@ -51,7 +51,8 @@ infer the running version from a date written in documentation.
 | Security | Tenant provisioner RBAC loses NetworkPolicy write access; re-apply `provisioner-rbac.yaml` when onboarding the next tenant (#414) |
 | Error codes | A disallowed group no longer returns `403 model-not-allowed`: unknown and disallowed models both return `404 model_not_found`, disclosing nothing about which groups exist (#530) |
 | Error codes | A capability or dialect no target can serve returns `400 unsupported_capability` with `param`; a terminal provider request error keeps its status as `upstream-rejected` instead of `502`; provider `401`/`402`/`403` returns `503 upstream-access-denied` (#530) |
-| Unsupported surfaces | Endpoints outside v4.5 answer `501 unsupported_endpoint` in the caller's dialect; automation matching `405` must accept `501` (#531) |
+| Unsupported surfaces | Endpoints outside v4.5 answer `501 unsupported_endpoint` in the caller's dialect, including the late-added OpenAI surfaces (videos, containers, conversations, agents, ChatKit threads, skills) that previously returned a bare `404`/`405`; automation matching `405` must accept `501` (#531, #580) |
+| Database | Usage schema 11 (`2026103001`) adds `request_usage.endpoint`; apply it through the Required Migration Gate before serving, and restore a pre-upgrade database backup to downgrade to 4.4 (#608) |
 | CI | Required CI fans out into six measured router shards, other Go and Windows, and compatibility, Python and example lanes behind one aggregate `ci` job; Go test wall time is guarded (#549, #569, #418) |
 
 ### Caller Impact
@@ -92,6 +93,15 @@ endpoints outside v4.5 must accept `501`; and monitoring that treated provider
 behind another proxy must preserve `Via` for the loop protection to work, and
 anyone using the tenant provisioner must re-apply its RBAC manifest.
 
+v4.5.0 moves the usage database to schema 11 (`2026103001`, which adds
+`request_usage.endpoint`) on both SQLite and PostgreSQL. Run the
+[Upgrade Guide](/docs/release-notes/upgrade-guide) Required Migration Gate
+before serving: the default `deployment-job` policy has the serving process
+validate the ledger only, and `auto-safe` applies it at startup solely on a
+reviewed single-node SQLite deployment. Existing rows cannot be classified
+retroactively. **Downgrading to 4.4 requires restoring a pre-upgrade database
+backup**; package rollback never runs a reverse migration.
+
 ### Validation
 
 Check `/readyz`, `/version` and authenticated `/v1/models`, including
@@ -106,7 +116,8 @@ one with the opt-in carries usage. For compatibility, run the mock suites from
 the source distribution
 (`make api-compat-mock api-compat-ts agent-tool-mock agent-chain-mock`). These
 are deployment checks, not a claim that a release artifact has passed final
-launch validation.
+launch validation. Confirm the usage schema ledger reports schema 11 applied and
+compatible for the configured driver before serving.
 
 ### Security and Rollback
 
