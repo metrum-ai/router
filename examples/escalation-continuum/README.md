@@ -60,7 +60,55 @@ and reconcile potentially charged requests before retrying; never expose the
 state directory, caller token, router config or provider credentials. The
 example uses a short-lived router and cleans it up on normal exit.
 
+## Synthetic labeled measurement fixture
+
+`benchmark_run.py` adds 12 hand-authored arithmetic cases, fixed reference
+answers, and explicit synthetic `complexity`, `sensitive` and latency labels.
+It uses known case IDs and exact prompt matching to choose a tier; it is **not**
+a complexity or sensitivity classifier and must not be used with real data.
+A latency label is a routing input, not a measured SLA. The sensitive cases
+are invented arithmetic, not private data; the frontier-only comparison also
+sends those synthetic cases to the frontier. Use neither this fixture nor its
+markers to make production privacy decisions.
+
+The default is fake-only (all answers scripted, no network or paid calls):
+
+```sh
+uv run --with pyyaml python examples/escalation-continuum/benchmark_run.py \
+  --router /tmp/escalation-router
+```
+
+For an explicitly approved mixed run, first provision the two independently
+protected local and GPU services, expose them only on loopback, set the OpenAI
+credential, and add `--backend mixed --allow-paid`, the four endpoint/model
+flags shown above and a **new** private absolute `--state-dir`. Unlike the
+smoke runner, the benchmark's loopback relay forwards only the fixture's exact
+synthetic inputs to a fixed GPT-6.1 Sol Responses endpoint, rejects additional
+payload fields, limits output to 32 tokens, and counts at most 15 upstream
+attempts (including ambiguous failures). Stop and reconcile after any failure;
+these bounds are not an invoice or a guarantee against rate changes. It does
+not provision, watch or tear down GPU services. Never publish private state.
+
+Each case runs both `frontier-only` and `escalation` through the router. Raw
+records show exact-match correctness, selected tier, request time, token usage
+and usage-derived cost; routing rows must match the fixture reason. The sample
+is far too small and narrow for general quality claims. Local and GPU cost
+excludes hardware and energy. Provider costs are configured token-price
+estimates, not reconciled billing. Network/tunnel topology is part of timing;
+do not treat it as co-located overhead. AMD and NVIDIA must be independently
+measured before claiming vendor-neutral results. A single
+[synthetic MI300X measurement](evidence/mi300x-2026-10-30/README.md)
+records CPU, AMD GPU and hosted frontier routing and the illustrative latency
+target it missed; it does not establish provider billing or production parity.
+
+The isolated fake Responses integration can also be exercised without any
+network traffic or real key by setting `ROUTER_TEST_BINARY=/tmp/escalation-router`
+when running the tests below.
+
 ## What you should see
+
+Published bounded examples, including the synthetic NVIDIA run, are indexed in
+[the evidence directory](evidence/README.md). They are not production claims.
 
 The output identifies the selected tier and model for each prompt, using the
 stored request-usage rows. The runner fails if a route, status, retry count or

@@ -1,0 +1,58 @@
+{
+  "models_get": {
+    "reason": "Model lookup returns 404",
+    "issue": "https://github.com/metrum-ai/router/issues/529"
+  },
+  "chat_completions_stream": {
+    "reason": "Streaming includes a usage-only chunk without choices",
+    "issue": "https://github.com/metrum-ai/router/issues/528"
+  },
+  "completions": {
+    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "issue": "https://github.com/metrum-ai/router/issues/531"
+  },
+  "completions_stream": {
+    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "issue": "https://github.com/metrum-ai/router/issues/531"
+  },
+  "embeddings": {
+    "reason": "Embedding endpoint returns 405",
+    "issue": "https://github.com/metrum-ai/router/issues/532"
+  },
+  "embeddings_batch": {
+    "reason": "Embedding endpoint returns 405",
+    "issue": "https://github.com/metrum-ai/router/issues/532"
+  },
+  "responses_get": {
+    "reason": "Stored response lookup or continuation is not implemented",
+    "issue": "https://github.com/metrum-ai/router/issues/533"
+  },
+  "responses_delete": {
+    "reason": "Stored response lookup or continuation is not implemented",
+    "issue": "https://github.com/metrum-ai/router/issues/533"
+  },
+  "responses_input_items": {
+    "reason": "Stored response lookup or continuation is not implemented",
+    "issue": "https://github.com/metrum-ai/router/issues/533"
+  },
+  "responses_input_tokens": {
+    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "issue": "https://github.com/metrum-ai/router/issues/531"
+  },
+  "responses_compact": {
+    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "issue": "https://github.com/metrum-ai/router/issues/531"
+  },
+  "responses_multi_turn": {
+    "reason": "Stored response lookup or continuation is not implemented",
+    "issue": "https://github.com/metrum-ai/router/issues/533"
+  },
+  "moderations": {
+    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "issue": "https://github.com/metrum-ai/router/issues/531"
+  },
+  "error_responses": {
+    "reason": "Unknown model returns 403 instead of the expected API error",
+    "issue": "https://github.com/metrum-ai/router/issues/530"
+  }
+}

@@ -10,7 +10,7 @@ import socket
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--socket', required=True)
-    parser.add_argument('command', choices=('start', 'stop', 'status', 'stop32', 'stop128'))
+    parser.add_argument('command', choices=('start', 'stop', 'status', 'stop29', 'stop32', 'stop116', 'stop128'))
     args = parser.parse_args()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(30)

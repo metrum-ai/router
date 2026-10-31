@@ -1,10 +1,12 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Governance load: SQLite security export (#431)
+# Governance load: security export (#431)
 
-This bounded localhost test covers SQLite security-CSV export. It is not a
-usage-billing export or a PostgreSQL/distributed acceptance test. Run it with
+This bounded localhost test covers SQLite and optional PostgreSQL security-CSV
+export and per-key request-usage reports. It is not a usage-billing export or a
+distributed acceptance test. Run
+the SQLite case with
 `go test ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=1 -v`.
 
 ## Local observation
@@ -35,8 +37,98 @@ make governance-load
 
 Both passed on the original stacked test branch; `make governance-load` is
 available once the separate reservation-baseline work is merged. This test can
-run independently with the `go test` command above. These tests use SQLite and
-synthetic Basic admin credentials.
-They do not cover PostgreSQL, multiple router processes, durable crash/restart,
-provider failures after response commitment, retention, or audit event
-completeness for all endpoint/error types. #431 remains open.
+run independently with the `go test` command above. The SQLite case uses synthetic Basic admin credentials.
+
+## Per-key request-usage observation
+
+On 2026-10-30 UTC, production-code base
+`566fd81edf9f790c31e24abfb9630a29b3c2d4e5` on Linux x86_64, 16 visible
+CPUs (AMD Ryzen 7 7730U), Go 1.27.3, passed the expanded scenario four times
+under the race detector with SQLite and four times with disposable local
+PostgreSQL 16.15 UTF-8 over a private Unix socket. Each run matched all 64
+client request IDs once in the per-key admin request report: 32 per synthetic
+key, no duplicates or cross-key rows, each with two attempts and fallback
+recorded. That includes eight deliberately cut streams whose upstreams observed
+cancellation. The existing security CSV checks also passed. PostgreSQL test
+schemas were absent afterward and the private server was stopped.
+
+This verifies bounded request-row/accounting presence, not usage-token
+correctness, provider charges or billing settlement: no monetary totals were
+reconciled. It also does not establish at-most-once behavior across multiple
+router processes or crashes. The PostgreSQL test remains opt-in.
+
+```sh
+go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=4 -v
+# With a disposable PostgreSQL DSN, use the PostgreSQL command below with -count=4.
+```
+
+## Completed-response token and price fixture
+
+In the earlier observation below, the audit workload supplied a synthetic
+fallback price of $2 per million input tokens and $5 per million output tokens.
+For each of the 56 completed requests per run, the request report must match the mock upstream's terminal
+usage: three input tokens, two output tokens, five total, and $0.000016 in
+configured-price cost. The failed primary returns no usage. Eight intentionally
+cut streams are excluded from this token/cost assertion because they do not
+receive a terminal usage frame; their report-row isolation and fallback metadata
+are still checked. This is deterministic synthetic price arithmetic, not a
+provider invoice, a reconciliation of canceled streams, or proof for other
+pricing shapes.
+
+On 2026-10-30 UTC, the expanded test passed twice under the race
+detector on SQLite and twice on disposable local PostgreSQL 16.15 UTF-8, on
+production-code base `6ab2d35822d2004271a24c4f3aa56e5212514dbd`. The 56
+asserted rows split into 24 for the first key and 32 for the second. PostgreSQL
+schemas were absent afterward and its private server stopped. No hosted or
+paid services were used.
+
+```sh
+go test -race ./internal/router -run '^TestGovernanceLoadAuditExport$' -count=2 -v
+# With the disposable PostgreSQL DSN below:
+go test -race ./internal/router -run '^TestGovernanceLoadAuditExportPostgres$' -count=2 -v
+```
+
+## Cut streams across both keys
+
+The current 64-worker fixture cuts 16 streams: eight per key. Each key has
+32 unique request and security-export rows, with two attempts and fallback;
+24 completed responses per key are reconciled to the mock's reported tokens
+and configured price. Cut requests lack terminal provider usage; the test
+rejects a `reported` source for those rows but does not claim actual billing
+settlement or assert their token/cost totals. The scenario remains synthetic,
+single-process and restricted to this controlled cancellation timing.
+
+On 2026-10-30 UTC, this version passed twice under the race detector with
+SQLite and twice with disposable PostgreSQL 16.15 UTF-8. In those four runs,
+each key's eight cut rows were recorded with status 499 and estimated usage;
+that is an observation, not a guarantee for all stream races. A follow-up
+checked the actual disposable schema prefix after the initial cleanup check
+used the wrong prefix; no test schemas remained and the private server stopped.
+Full results are not provider billing or distributed/crash proof. The following earlier
+PostgreSQL observation describes the prior eight-cut, first-key-only fixture.
+
+## PostgreSQL observation
+
+On 2026-10-29 UTC, the same 64-worker scenario passed three times under the
+race detector against a disposable local PostgreSQL 16.15 UTF-8 cluster using a
+private Unix socket and synthetic credentials. Each run observed all eight
+upstream cancellations; the two filtered exports each contained exactly 32
+unique request IDs, with no cross-key rows, synthetic bearer tokens or prompt
+text. The tests used a fresh isolated schema, explicitly applied maintenance
+migrations and the historical-validation job, and verified serving
+compatibility before starting the router. This is a bounded security CSV result,
+not usage-billing reconciliation.
+
+To reproduce, provide a **disposable database** on a trusted local server; the
+test creates and drops a schema and must never target production:
+
+```sh
+GOVERNANCE_LOAD_POSTGRES_DSN='host=/path/to/private/socket port=5432 user=test dbname=disposable sslmode=disable' \
+  go test -race ./internal/router -run '^TestGovernanceLoadAuditExportPostgres$' -count=1 -v
+```
+
+With no `GOVERNANCE_LOAD_POSTGRES_DSN` the PostgreSQL case skips; CI without an
+explicit disposable database does not establish PostgreSQL coverage. Neither
+case covers multiple router processes, durable crash/restart, provider failures
+after response commitment, retention, or audit-event completeness for all
+endpoint/error types. #431 remains open.

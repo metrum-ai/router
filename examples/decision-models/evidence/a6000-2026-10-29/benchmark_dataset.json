@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "provenance": "Original hand-authored synthetic prompts and policy labels for this repository; Apache-2.0. Labels express the benchmark's example routing policy, not independently validated answer quality.",
+  "rows": [
+    {"id":"math-e1","domain":"math","expected_tier":"cheap","prompt":"What is 7 plus 8? Answer with the number."},
+    {"id":"math-e2","domain":"math","expected_tier":"cheap","prompt":"Convert 2 meters to centimeters."},
+    {"id":"math-h1","domain":"math","expected_tier":"strong","prompt":"Prove or disprove that every finite integral domain is a field, and explain each step."},
+    {"id":"math-h2","domain":"math","expected_tier":"strong","prompt":"Derive the maximum likelihood estimator for a Poisson rate and discuss its asymptotic variance."},
+    {"id":"code-e1","domain":"code","expected_tier":"cheap","prompt":"Write a Python expression that reverses a string."},
+    {"id":"code-e2","domain":"code","expected_tier":"cheap","prompt":"What does len([2, 4, 6]) return in Python?"},
+    {"id":"code-h1","domain":"code","expected_tier":"strong","prompt":"Design a concurrent bounded work queue with cancellation, explain its invariants, and include race-focused tests."},
+    {"id":"code-h2","domain":"code","expected_tier":"strong","prompt":"Analyze a distributed transaction protocol for partial failures and propose an idempotent recovery algorithm."},
+    {"id":"writing-e1","domain":"writing","expected_tier":"cheap","prompt":"Rewrite 'The meeting is at noon' in a friendly tone."},
+    {"id":"writing-e2","domain":"writing","expected_tier":"cheap","prompt":"Give a short synonym for 'rapid'."},
+    {"id":"writing-h1","domain":"writing","expected_tier":"strong","prompt":"Compare two conflicting interpretations of a fictional contract and identify ambiguities and assumptions, without giving legal advice."},
+    {"id":"writing-h2","domain":"writing","expected_tier":"strong","prompt":"Draft a balanced incident review from an imaginary service outage, separating observations, uncertainty, contributing factors, and corrective actions."}
+  ]
+}

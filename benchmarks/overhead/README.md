@@ -97,6 +97,14 @@ this experiment from other clients: unrelated chat requests could inflate that
 count. The sampled observation period is polled, so its count is not guaranteed
 continuous between polls; the capture guard itself tracks every handler exit.
 
+For exploratory captures when normal gaps between client requests make exact
+occupancy unattainable, `--minimum-active-percent 90` opts into a lower floor:
+29 active handlers for 32 clients or 116 for 128 clients. The same floor is
+polled in the observation window and tracked through CPU stop/heap capture; the
+metadata records both client concurrency and the selected floor. This does
+**not** prove exact 32/128 active handlers or satisfy a stricter exact-occupancy
+acceptance criterion. The default remains 100%, with no silent fallback.
+
 If the load ends too early, any request fails, token usage is inconsistent, or
 the guard fails, no `profile-phase.json` is written and **both profile files
 must be treated as invalid**, even if they exist. Use sufficiently long fixed
@@ -108,8 +116,13 @@ deadline: an independent watchdog and the project GPU budget and teardown
 controls remain mandatory.
 
 `python3 benchmarks/overhead/profile_integration_smoke.py` validates this
-orchestration at 32 and 128 with one delayed localhost mock, parses both
-profiles, and checks that short load is rejected. It is not a measurement.
+orchestration at 32 and 128 clients with both strict and opt-in 90% floors
+against one delayed localhost mock, parses both profiles, and checks that short
+load is rejected. It is not a measurement.
+
+A [partial A100 observation](evidence/a100-2026-10-30/README.md) contains
+plain-path latency and sparse 32-client decision profiles, alongside explicit
+failed phases and limitations. It is not a complete #422 measurement.
 
 #422 still requires CPU and heap profiles under **32 and 128** concurrent
 requests for both plain and decision-model paths, plus the specified shadow and

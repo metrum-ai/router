@@ -1,0 +1,28 @@
+File: profiled-router
+Build ID: 5027b0fc9deb8b8d24c8ad387e44b2c9f128702e
+Type: cpu
+Time: 2026-10-30 21:13:24 UTC
+Duration: 8.03s, Total samples = 750ms ( 9.34%)
+Showing nodes accounting for 490ms, 65.33% of 750ms total
+Showing top 20 nodes out of 363
+      flat  flat%   sum%        cum   cum%
+     210ms 28.00% 28.00%      210ms 28.00%  internal/runtime/syscall/linux.Syscall6
+      30ms  4.00% 32.00%       40ms  5.33%  github.com/glebarez/go-sqlite.(*conn).bind
+      30ms  4.00% 36.00%       90ms 12.00%  modernc.org/sqlite/lib._sqlite3VdbeExec
+      30ms  4.00% 40.00%       30ms  4.00%  runtime.futex
+      30ms  4.00% 44.00%       30ms  4.00%  runtime.tryDeferToSpanScan
+      20ms  2.67% 46.67%       20ms  2.67%  runtime.lock2
+      10ms  1.33% 48.00%       10ms  1.33%  encoding/json/jsontext.(*decoderState).ReadValue
+      10ms  1.33% 49.33%       10ms  1.33%  encoding/json/jsontext.(*stateMachine).popObject
+      10ms  1.33% 50.67%       10ms  1.33%  github.com/metrum-ai/router/internal/router.requestInputModalities
+      10ms  1.33% 52.00%       40ms  5.33%  github.com/metrum-ai/router/internal/router.usageModels
+      10ms  1.33% 53.33%       30ms  4.00%  gorm.io/gorm.(*Statement).AddVar
+      10ms  1.33% 54.67%       10ms  1.33%  internal/abi.Name.IsExported
+      10ms  1.33% 56.00%       10ms  1.33%  internal/stringslite.HasPrefix
+      10ms  1.33% 57.33%       10ms  1.33%  internal/sync.(*HashTrieMap[go.shape.interface {},go.shape.interface {}]).Load
+      10ms  1.33% 58.67%       10ms  1.33%  modernc.org/libc.Xmemcpy
+      10ms  1.33% 60.00%       10ms  1.33%  modernc.org/libc.Xmemmove
+      10ms  1.33% 61.33%       10ms  1.33%  modernc.org/sqlite/lib._pcache1FetchNoMutex
+      10ms  1.33% 62.67%       10ms  1.33%  modernc.org/sqlite/lib._sqlite3VdbeRecordCompareWithSkip
+      10ms  1.33% 64.00%       10ms  1.33%  modernc.org/sqlite/lib._vdbeUnbind
+      10ms  1.33% 65.33%       10ms  1.33%  modernc.org/sqlite/lib._walChecksumBytes

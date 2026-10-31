@@ -1,0 +1,29 @@
+{
+  "frontier-only": {
+    "count": 12,
+    "exact": 12,
+    "tiers": {
+      "frontier": 12
+    },
+    "median_request_ms": 1311.542,
+    "configured_rate_estimate_usd": "0.001652"
+  },
+  "escalation": {
+    "count": 12,
+    "exact": 12,
+    "tiers": {
+      "local": 6,
+      "datacenter": 3,
+      "frontier": 3
+    },
+    "median_request_ms": 563.963,
+    "configured_rate_estimate_usd": "0.00063"
+  },
+  "hosted_attempts": 15,
+  "latency_01_request_ms": 562.863733,
+  "gpu_hourly_quote_usd": 2.59,
+  "create_to_verified_teardown_seconds": 481.361,
+  "teardown_file_time_utc": "2026-10-30T21:34:18.069226+00:00",
+  "quote_times_elapsed_usd_approx": 0.346313,
+  "note": "Synthetic results, not invoice or production quality/SLA; CPU and GPU costs excluded from token-rate estimates; GPU timing is not colocated."
+}

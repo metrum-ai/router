@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "provenance": "Original synthetic arithmetic prompts and deterministic reference answers, authored for this repository under Apache-2.0. Marked sensitivity is simulated, not customer data.",
+  "cases": [
+    {"id":"local-01","prompt":"What is 7 + 8?","answer":"15","complexity":"simple","sensitive":false,"latency_budget_ms":5000},
+    {"id":"local-02","prompt":"What is 19 - 6?","answer":"13","complexity":"simple","sensitive":false,"latency_budget_ms":5000},
+    {"id":"local-03","prompt":"What is 5 * 6?","answer":"30","complexity":"simple","sensitive":false,"latency_budget_ms":5000},
+    {"id":"local-04","prompt":"What is 28 / 4?","answer":"7","complexity":"simple","sensitive":false,"latency_budget_ms":5000},
+    {"id":"gpu-01","prompt":"What is 12 * 11?","answer":"132","complexity":"medium","sensitive":false,"latency_budget_ms":5000},
+    {"id":"gpu-02","prompt":"What is 144 / 12?","answer":"12","complexity":"medium","sensitive":false,"latency_budget_ms":5000},
+    {"id":"gpu-03","prompt":"What is 24 * 7?","answer":"168","complexity":"medium","sensitive":false,"latency_budget_ms":5000},
+    {"id":"frontier-01","prompt":"What is (17 * 13) + 9?","answer":"230","complexity":"complex","sensitive":false,"latency_budget_ms":5000},
+    {"id":"frontier-02","prompt":"What is (25 * 16) - 37?","answer":"363","complexity":"complex","sensitive":false,"latency_budget_ms":5000},
+    {"id":"frontier-03","prompt":"What is (18 * 14) + 13?","answer":"265","complexity":"complex","sensitive":false,"latency_budget_ms":5000},
+    {"id":"private-01","prompt":"What is 23 + 19?","answer":"42","complexity":"complex","sensitive":true,"latency_budget_ms":5000},
+    {"id":"latency-01","prompt":"What is 17 + 16?","answer":"33","complexity":"complex","sensitive":false,"latency_budget_ms":200}
+  ]
+}

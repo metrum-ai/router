@@ -341,6 +341,72 @@ ft-example-test:
 	PROMPTFOO_DISABLE_TELEMETRY=1 examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules/.bin/promptfoo eval -c examples/fine-tune-qwen3p8-27b/eval/mock.yaml --no-cache
 	python3 scripts/fixed_model_outcome_gate_test.py
 
+# Consolidated local/Actions gate. Recursive make waits for every lane and
+# propagates any failure; the compatibility target builds the router once.
+.PHONY: ci ci-go ci-router ci-python ci-windows compat-mock
+CI_RUN_GO ?= 1
+CI_RUN_EXAMPLES ?= 1
+CI_LANES := $(if $(filter 1,$(CI_RUN_GO)),ci-go ci-router ci-windows) ci-python compat-mock $(if $(filter 1,$(CI_RUN_EXAMPLES)),ci-examples)
+CI_REPORTS := $(addprefix report-,$(CI_LANES))
+.PHONY: $(CI_REPORTS)
+ci:
+	# Never expose a developer's Bedrock bearer token to synthetic fixtures.
+	@failures=$$(mktemp); trap 'rm -f "$$failures"' EXIT; \
+	export CI_FAILURES="$$failures"; \
+	env -u AWS_BEARER_TOKEN_BEDROCK $(MAKE) -k -j5 $(CI_REPORTS); result=$$?; \
+	if [ -s "$$failures" ]; then \
+	  echo 'CI failed lanes:' >&2; sort -u "$$failures" >&2; \
+	elif [ "$$result" -eq 0 ]; then echo 'CI: all selected lanes passed'; \
+	else echo 'CI failed before lane results were recorded' >&2; fi; \
+	exit "$$result"
+
+$(CI_REPORTS): report-%:
+	@$(MAKE) $* || { printf '%s\n' '$*' >> "$$CI_FAILURES"; exit 1; }
+
+ci-go:
+	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
+	go vet ./...
+	go test $$(go list ./... | grep -v '/internal/router$$') -timeout=15m
+
+ci-router:
+	$(PYTHON) scripts/ci_router_shards.py
+
+ci-windows:
+	@set -eu; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	for arch in amd64 arm64; do \
+	  CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go vet ./...; \
+	  for bin in $(PACKAGE_BINARIES); do \
+	    CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/$$arch-$$bin.exe" "./cmd/$$bin"; \
+	  done; \
+	done
+
+ci-python: secret-contract capability-smoke-contracts
+	$(MAKE) validate-build-metadata
+	python3 scripts/outcome_calibrated_policy_test.py
+	$(MAKE) d3-policy-test harbor-adapter-test
+	python3 scripts/validate_release_tag_test.py
+	uv run --with pyyaml python scripts/release_provenance_test.py
+	python3 scripts/ci_topology_test.py
+	python3 scripts/harbor_promotion_test.py
+	uv run --with pyyaml python scripts/eval_infra_test.py
+	uv run --with pyyaml python scripts/eval_infra_matrix.py
+	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
+	$(PYTHON) benchmarks/overhead/decision_smoke.py
+	python3 scripts/router_test_time_guard_test.py
+	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
+	$(PYTHON) scripts/compat_results_test.py
+	$(PYTHON) scripts/ci_changes_test.py
+
+.PHONY: ci-examples
+ci-examples:
+	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
+	$(PYTHON) -m unittest discover -s examples/case-studies/coding-agent -p 'test_*.py' -q
+
+compat-mock:
+	$(PYTHON) scripts/compat_mock.py
+
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.
 test-fast: secret-contract capability-smoke-contracts

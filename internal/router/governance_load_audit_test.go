@@ -6,14 +6,17 @@ package router
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,15 +25,56 @@ import (
 	"time"
 )
 
-// Test the bounded SQLite security CSV export under concurrent completed
-// requests and pre-response fallback, including deliberately cut-off streams.
-// This is not a PostgreSQL test; the security CSV is not usage billing.
+// Exercise bounded security CSV exports under completed requests, fallback,
+// and deliberately cut-off streams. The security CSV is not usage billing.
 func TestGovernanceLoadAuditExport(t *testing.T) {
+	runGovernanceLoadAuditExport(t, nil)
+}
+
+// Use a disposable, schema-isolated PostgreSQL database. Never point this
+// destructive schema test at production data.
+func TestGovernanceLoadAuditExportPostgres(t *testing.T) {
+	base := strings.TrimSpace(os.Getenv("GOVERNANCE_LOAD_POSTGRES_DSN"))
+	if base == "" {
+		t.Skip("set GOVERNANCE_LOAD_POSTGRES_DSN to a disposable PostgreSQL database")
+	}
+	// The shared helper uses this variable; the dedicated opt-in above keeps
+	// this load test from running against an unrelated PostgreSQL test DSN.
+	t.Setenv("ROUTER_TEST_PG_DSN", base)
+	_, cleanup, schema := configAdminPostgresTestDB(t)
+	defer cleanup()
+	cfg := UsageDBConfig{Driver: "postgres", DSN: pgDSNWithSearchPath(base, schema), MigrationPolicy: usageDBMigrationPolicyDeploymentJob}
+	runner, closeUsageDB, err := UsageMigrationRunner(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeUsageDB()
+	if err := runner.ApplyPending("governance-load-test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.ApplyMaintenancePendingWithEvidence("governance-load-test", "empty-disposable-test-schema"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.ApplyPending("governance-load-test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.RunDataJob(context.Background(), "historical-usage-validation-v1", "governance-load-test", DataJobCheckpoint{Ordinal: 0}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := runner.Verify()
+	if err != nil || !UsageMigrationServingCompatible(status) {
+		t.Fatalf("usage schema not serving-compatible: state=%s err=%v", status.State, err)
+	}
+	runGovernanceLoadAuditExport(t, &cfg)
+}
+
+func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
+	t.Helper()
 	const workers = 64
 	const secondToken = "synthetic-audit-second-token"
 	t.Setenv("GOVERNANCE_TEST_ADMIN_HASH", mustBcryptHash(t, "synthetic-password"))
 	var primaryCalls, fallbackCalls atomic.Int64
-	canceledUpstreams := make(chan struct{}, workers/8)
+	canceledUpstreams := make(chan struct{}, workers/4)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		if json.NewDecoder(r.Body).Decode(&body) != nil {
@@ -72,10 +116,13 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.Cache.Enabled = false
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+	if usageCfg != nil {
+		cfg.Server.UsageDB = *usageCfg
+	}
 	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, Realm: "Synthetic", AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "GOVERNANCE_TEST_ADMIN_HASH", Subject: "basic:admin", Domain: "local/test"}}}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, *, admin:security_reports, read|export", "p, basic:admin, *, admin:reports, read|export|drilldown"}}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 256, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 30}}
-	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "primary-model"}, {Provider: "mock", Model: "fallback-model"}}}
+	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "primary-model"}, {Provider: "mock", Model: "fallback-model", InputPricePerMillionUSD: 2, OutputPricePerMillionUSD: 5}}}
 	cfg.Callers[0].Rate = RateConfig{RPM: 10000, TPM: 10000000, Concurrent: workers + 10}
 	second := cfg.Callers[0]
 	second.ID, second.TokenID = "audit-second", "rtr_audit_second"
@@ -92,6 +139,7 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 	client := &http.Client{Timeout: 90 * time.Second}
 	type result struct {
 		key, id string
+		aborted bool
 		err     error
 	}
 	results := make(chan result, workers)
@@ -106,8 +154,11 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 			if i%2 != 0 {
 				token, key = secondToken, second.TokenID
 			}
+			// Both token IDs cut streams: i%8==0 is the first key, 5 is
+			// the second, and both are in the streaming half of the mix.
+			cut := i%8 == 0 || i%8 == 5
 			content := "synthetic audit request"
-			if i%8 == 0 {
+			if cut {
 				content = "abort-stream"
 			}
 			body, _ := json.Marshal(map[string]any{"model": "default", "stream": (i/2)%2 == 0, "max_tokens": 64, "messages": []any{map[string]any{"role": "user", "content": content}}})
@@ -123,7 +174,7 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 				return
 			}
 			defer resp.Body.Close()
-			if i%8 == 0 {
+			if cut {
 				var firstLine string
 				firstLine, err = bufio.NewReader(resp.Body).ReadString('\n')
 				if err == nil && !strings.HasPrefix(firstLine, "data:") {
@@ -136,7 +187,7 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 			if err == nil && resp.StatusCode != http.StatusOK {
 				err = fmt.Errorf("worker %d status %d", i, resp.StatusCode)
 			}
-			results <- result{key: key, id: resp.Header.Get("X-Request-Id"), err: err}
+			results <- result{key: key, id: resp.Header.Get("X-Request-Id"), aborted: cut, err: err}
 		}(i)
 	}
 	close(start)
@@ -148,7 +199,7 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 		t.Fatal("audit load timeout")
 	}
 	close(results)
-	for i := 0; i < workers/8; i++ {
+	for i := 0; i < workers/4; i++ {
 		select {
 		case <-canceledUpstreams:
 		case <-time.After(15 * time.Second):
@@ -156,6 +207,7 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 		}
 	}
 	want := map[string]map[string]bool{cfg.Callers[0].TokenID: {}, second.TokenID: {}}
+	aborted := make(map[string]bool)
 	for result := range results {
 		if result.err != nil {
 			t.Error(result.err)
@@ -166,6 +218,7 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 			continue
 		}
 		want[result.key][result.id] = true
+		aborted[result.id] = result.aborted
 	}
 	if primaryCalls.Load() != workers || fallbackCalls.Load() != workers {
 		t.Fatalf("primary=%d fallback=%d, want %d each", primaryCalls.Load(), fallbackCalls.Load(), workers)
@@ -187,10 +240,82 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	// Security events are not billing rows. Independently wait for the usage
+	// writer and compare the per-key request report, including cut streams.
+	deadline = time.Now().Add(15 * time.Second)
+	for {
+		flushUsageForTest(t, svc)
+		var count int64
+		if err := svc.usage.db.Model(&usageRecord{}).Where("token_id IN ?", []string{cfg.Callers[0].TokenID, second.TokenID}).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count >= workers {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d request usage rows persisted", count, workers)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	for key, ids := range want {
 		if len(ids) != workers/2 {
 			t.Fatalf("key %s generated %d IDs", key, len(ids))
 		}
+		reportReq := httptest.NewRequest("GET", "/admin/reports/api/requests?since=24h&limit=256&token_id="+key, nil)
+		reportReq.SetBasicAuth("admin", "synthetic-password")
+		reportRR := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(reportRR, reportReq)
+		if reportRR.Code != http.StatusOK {
+			t.Fatalf("request report status=%d", reportRR.Code)
+		}
+		for _, forbidden := range []string{testToken, secondToken, "synthetic audit request", "abort-stream"} {
+			if strings.Contains(reportRR.Body.String(), forbidden) {
+				t.Fatal("request report exposed synthetic credential or request content")
+			}
+		}
+		var report adminReportResponse
+		if err := json.Unmarshal(reportRR.Body.Bytes(), &report); err != nil {
+			t.Fatal(err)
+		}
+		if len(report.Requests) != len(ids) {
+			t.Fatalf("key %s request report got %d rows, want %d", key, len(report.Requests), len(ids))
+		}
+		usageSeen := make(map[string]bool, len(ids))
+		completed := 0
+		cutSources := map[string]int{}
+		cutStatuses := map[int]int{}
+		for _, row := range report.Requests {
+			if row.TokenID != key || !ids[row.RequestID] || usageSeen[row.RequestID] {
+				t.Fatalf("unexpected or duplicate usage row: key=%s request=%s", row.TokenID, row.RequestID)
+			}
+			usageSeen[row.RequestID] = true
+			if row.Attempts != 2 || !row.Fallback {
+				t.Errorf("request %s: attempts=%d fallback=%v, want 2 and true", row.RequestID, row.Attempts, row.Fallback)
+			}
+			// Cut streams intentionally do not receive the upstream's terminal
+			// usage. Reconcile only completed responses with that usage frame.
+			if !aborted[row.RequestID] {
+				completed++
+				if row.UsageSource != "reported" {
+					t.Errorf("completed request %s usage source %q, want reported", row.RequestID, row.UsageSource)
+				}
+				const cost = 0.000016 // 3 input at $2/M + 2 output at $5/M.
+				if row.InputTokens != 3 || row.OutputTokens != 2 || row.TotalTokens != 5 || math.Abs(row.TotalCostUSD-cost) > 1e-12 {
+					t.Errorf("request %s usage=(%d,%d,%d,$%.9f), want (3,2,5,$%.9f)", row.RequestID, row.InputTokens, row.OutputTokens, row.TotalTokens, row.TotalCostUSD, cost)
+				}
+			} else {
+				cutSources[row.UsageSource]++
+				cutStatuses[row.Status]++
+				if row.UsageSource == "reported" {
+					t.Errorf("cut request %s claims reported usage without terminal usage", row.RequestID)
+				}
+			}
+		}
+		expectedCompleted := workers/2 - workers/8
+		if completed != expectedCompleted {
+			t.Fatalf("key %s reconciled %d completed rows, want %d", key, completed, expectedCompleted)
+		}
+		t.Logf("token_id=%s completed_usage_reconciled=%d cut_sources=%v cut_statuses=%v", key, completed, cutSources, cutStatuses)
 		req := httptest.NewRequest("GET", "/admin/reports/security/export.csv?since=24h&limit=256&token_id="+key, nil)
 		req.SetBasicAuth("admin", "synthetic-password")
 		rr := httptest.NewRecorder()
@@ -217,6 +342,6 @@ func TestGovernanceLoadAuditExport(t *testing.T) {
 		if len(seen) != len(ids) {
 			t.Fatalf("key %s got %d events want %d", key, len(seen), len(ids))
 		}
-		t.Logf("token_id=%s requests=%d csv_events=%d duplicates=0", key, len(ids), len(seen))
+		t.Logf("token_id=%s requests=%d usage_rows=%d csv_events=%d duplicates=0", key, len(ids), len(usageSeen), len(seen))
 	}
 }

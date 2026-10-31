@@ -1,0 +1,123 @@
+{
+  "test": "five actual CPU model servers, explicit domain tags",
+  "model_aliases": {
+    "medical": "cpu-medical",
+    "legal": "cpu-legal",
+    "finance": "cpu-finance",
+    "code": "cpu-code",
+    "general": "cpu-general"
+  },
+  "standalone_response_checks": {
+    "medical": {
+      "http_status": 200,
+      "nonempty_content": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 3,
+        "prompt_tokens": 35,
+        "total_tokens": 38,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    "legal": {
+      "http_status": 200,
+      "nonempty_content": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 15,
+        "prompt_tokens": 35,
+        "total_tokens": 50,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    "finance": {
+      "http_status": 200,
+      "nonempty_content": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 10,
+        "prompt_tokens": 35,
+        "total_tokens": 45,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    "code": {
+      "http_status": 200,
+      "nonempty_content": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 10,
+        "prompt_tokens": 35,
+        "total_tokens": 45,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    "general": {
+      "http_status": 200,
+      "nonempty_content": true,
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 10,
+        "prompt_tokens": 35,
+        "total_tokens": 45,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    }
+  },
+  "domain_runner": {
+    "mode": "local",
+    "note": "Explicit tags, not classification or quality evidence. Local and mock costs exclude compute.",
+    "routes": [
+      {
+        "declared_domain": "medical",
+        "target_model": "cpu-medical",
+        "input_tokens": 37,
+        "output_tokens": 20,
+        "usage_cost_usd": 0.0
+      },
+      {
+        "declared_domain": "legal",
+        "target_model": "cpu-legal",
+        "input_tokens": 37,
+        "output_tokens": 12,
+        "usage_cost_usd": 0.0
+      },
+      {
+        "declared_domain": "finance",
+        "target_model": "cpu-finance",
+        "input_tokens": 37,
+        "output_tokens": 18,
+        "usage_cost_usd": 0.0
+      },
+      {
+        "declared_domain": "code",
+        "target_model": "cpu-code",
+        "input_tokens": 37,
+        "output_tokens": 20,
+        "usage_cost_usd": 0.0
+      },
+      {
+        "declared_domain": "general",
+        "target_model": "cpu-general",
+        "input_tokens": 34,
+        "output_tokens": 20,
+        "usage_cost_usd": 0.0
+      }
+    ]
+  },
+  "limitations": [
+    "Synthetic transport and routing only; no classifier, specialist quality, or production claim.",
+    "Local costs exclude CPU, memory and infrastructure; no hosted or GPU calls.",
+    "The domain runner does not assess response content or finish reasons."
+  ]
+}
