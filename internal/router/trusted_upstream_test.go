@@ -73,8 +73,8 @@ func TestTrustedRouterRateLimitChains(t *testing.T) {
 		wantType, wantRetry string
 	}{
 		{"unflagged-429", 429, `{"error":{"type":"rate_limit_error"}}`, false, 1, 503, "upstream-rate-limited", ""},
-		{"trusted-429-depth-1", 429, `{"error":{"type":"rpm-exceeded"}}`, true, 1, 429, "upstream-rate-limited", "17"},
-		{"trusted-429-depth-3", 429, `{"error":{"type":"rpm-exceeded"}}`, true, 3, 429, "upstream-rate-limited", "17"},
+		{"trusted-429-depth-1", 429, `{"error":{"type":"rpm-exceeded"}}`, true, 1, 429, "rate_limit_error", "17"},
+		{"trusted-429-depth-3", 429, `{"error":{"type":"rpm-exceeded"}}`, true, 3, 429, "rate_limit_error", "17"},
 		{"trusted-503-depth-3", 503, `{"error":{"type":"upstream-rate-limited"}}`, true, 3, 503, "upstream-rate-limited", "17"},
 		{"unflagged-spoof-503", 503, `{"error":{"type":"upstream-rate-limited"}}`, false, 1, 502, "upstream-failed", ""},
 		{"trusted-other-503", 503, `{"error":{"type":"other"}}`, true, 1, 502, "upstream-failed", ""},
