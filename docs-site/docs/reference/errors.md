@@ -14,7 +14,9 @@ Caller-facing errors use a sanitized JSON envelope. Clients should parse `error.
 ```json
 {
   "error": {
-    "type": "upstream-failed",
+    "type": "invalid_request_error",
+    "code": "upstream-rejected",
+    "param": null,
     "message": "all eligible upstream targets failed for model \"example-coder\" after 1 attempt(s); contact the router operator with the request_id",
     "details": {
       "request_id": "req_0123456789abcdef0123456789abcdef",
@@ -33,6 +35,7 @@ Caller-facing errors use a sanitized JSON envelope. Clients should parse `error.
 Fields are intentionally bounded:
 
 - `error.type`: stable router error category for client handling.
+- `error.code` and `error.param`: machine-readable code and relevant field (or null).
 - `error.message`: safe human-readable summary. Do not parse it for control flow.
 - `X-Request-Id`: request identifier for operator drilldown on every response.
 - `error.details.request_id`: request identifier included by upstream-failure and other route-specific errors when a details object is present.
@@ -48,7 +51,9 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 | Type | HTTP status | Meaning | Caller action | Admin action |
 |---|---:|---|---|---|
 | `missing-model` | 400 | The request omitted `model` and no `server.default_model_group` is configured. | Set a model group allowed for your token. | Configure `server.default_model_group` if omitted model should be accepted. |
-| `model-not-allowed` | 403 | The caller token is not allowed to use the requested model group. | Use `/v1/models` to see allowed groups; see [Available Models And Access](../getting-started/available-models). | Update the caller `allow` list if access is intended. |
+| `model_not_found` | 404 | An OpenAI model is unknown or not available to this caller. Both cases have the same public response. | Use `/v1/models` to see allowed groups. | Check model configuration and caller access using internal diagnostics. |
+| `not_found_error` | 404 | An Anthropic model is unknown or unavailable to this caller. Both cases have the same public response. | Use `/v1/models` to see allowed groups. | Check model configuration and caller access using internal diagnostics. |
+| `unsupported_capability`, `unsupported_endpoint_for_model` | 400 | Configured targets cannot serve the requested OpenAI capability or dialect. | Adjust the indicated parameter or choose an allowed compatible model. | Add or enable a target with the required capability or dialect. |
 | `key-disabled` | 403 | The matched caller token is configured but disabled. | Use an active caller token or ask for the token to be re-enabled. | Re-enable only if the caller token should still be trusted and assigned to active ownership records. |
 | `key-suspended` | 403 | The matched caller token is temporarily suspended. | Use another active caller token or wait for an administrator to restore access. | Review the suspension reason and reactivate only after the hold is cleared. |
 | `key-expired` | 403 | The matched caller token is past its configured expiration time. | Rotate to a current caller token. | Issue a replacement caller token and retire the expired one according to rotation policy. |
@@ -58,12 +63,10 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 | `key-exhausted` | 403 | The caller token's lifetime token budget is exhausted or the request's reserved token budget would exceed the remaining lifetime budget. | Use a caller token with remaining budget, lower an unrealistic output cap, or ask for a new budget. | Inspect the caller token lifetime budget and issue or re-enable tokens according to policy. |
 | `pii-filter-blocked` | 400 | The requested model group is configured to reject requests that match PII filter rules, or the request exceeded the configured PII replacement cap. | Remove the sensitive value, reduce matched values, or use an approved workflow. | Review the model group's `pii_filter` rules, mode, and `max_replacements_per_request`. |
 | `pii-filter-failed` | 502 | The router could not apply the configured PII filter. | Retry after the administrator resolves configuration. | Check regex validation, filter limits, and request shape. |
-| `no-eligible-target` | 502 | No configured upstream target satisfies the request requirements. | Try a different allowed group only if instructed. | Add or enable a target that supports the requested dialect, tools, modalities, and cap behavior. |
+| `no-eligible-target` | 502 | Routing, contract, or policy filtering left no eligible upstream target. | Try a different allowed group only if instructed. | Inspect routing diagnostics and configured target constraints. |
 | `routing-policy-error` | 502 | A TypeScript or enforced external routing policy failed, timed out, returned an invalid decision, or selected a target outside the eligible list. | Retry only if the operator says the policy failure is transient; otherwise provide the request ID. | Inspect safe policy execution/error telemetry, script concurrency, external-policy reachability and timeout, then restore the reviewed policy or use its documented baseline rollback. |
-| `upstream-rate-limited` | 503 | All eligible upstream attempts were rejected by provider-side rate limits. | Retry later with backoff, or contact the administrator with the request ID if it persists. | Inspect `request_attempts`, provider status, and upstream rate-limit policy. |
+| `upstream-rejected` | 400, 404, 413, 422 | A terminal upstream request or model error is preserved without exposing its body. | Check the request or contact the administrator with the request ID. | Inspect sanitized request attempts and provider status. |
 | `upstream-capacity-throttled` | 503 | Every otherwise eligible target is temporarily unavailable because provider/model/target shared shaping or adaptive backoff is protecting upstream capacity. | Retry after the `Retry-After` window when present, or contact the administrator with the request ID. | Inspect `request_upstream_shape_events`, `request_trace_events`, current traffic-shape config, and recent upstream `429` or quota events. |
-| `upstream-quota-exhausted` | 503 | All eligible upstream attempts failed because a provider reported exhausted balance, credits, quota, billing, or payment state. | Retry later only after the provider account is funded or quota is restored; include the request ID when escalating. | Inspect `request_attempts` for `upstream_quota_exhausted`, then verify provider account balance, billing, quota, and entitlement state. |
-| `upstream-access-denied` | 503 | All eligible upstream attempts failed because provider credentials, entitlement, region, policy, or model access prevented serving the request. | Do not rotate the router caller token for this symptom. Contact the operator with the request ID. | Inspect `request_attempts` for provider access classes, check provider credentials and entitlement, and confirm whether fallback recovered any target. |
 | `upstream-failed` | 502 | All eligible upstream attempts failed for another upstream error class, or a request was blocked by upstream payload controls such as private image URL egress policy. `error.details.reason_code` gives the sanitized cause when it is known, for example `upstream_bad_request` or `upstream_request_too_large`. | Retry only after checking whether the request shape is allowed; do not retry blocked private image URLs unchanged. If `reason_code` is `upstream_bad_request` or `upstream_request_too_large`, reduce request size/tool payload or contact the operator with the request ID. | Inspect request attempts, fallback behavior, provider status, sanitized upstream error details, request/translation shape rows, request-shape buckets, redirect responses, response-size limits, and image URL egress policy. |
 | `upstream-timeout` | 504 | The upstream did not complete within configured timeout. | Retry with a smaller task or larger timeout if available. | Tune timeout, fallback, provider mix, or client token budget. |
 | `metrics-forbidden` | 403 | `/metrics` was requested with a caller token that is not authorized for metrics. | Use `/v1/usage` for caller usage. | Grant metrics access through authorization policy or an existing `metrics_admin: true` operator caller. |
@@ -98,7 +101,7 @@ Explicit output caps also affect quota admission. The router reserves estimated 
 
 ## Traffic-Shaped Responses
 
-`traffic-shaped` is a router-side 429 used for configured caller burst smoothing. It is distinct from hard `rpm-exceeded`, `tpm-exceeded`, `concurrency-exceeded`, `quota-exhausted`, and lifetime-budget failures, and distinct from upstream provider 429s that can later become `503 upstream-rate-limited`.
+`traffic-shaped` is a router-side 429 used for configured caller burst smoothing. It is distinct from hard `rpm-exceeded`, `tpm-exceeded`, `concurrency-exceeded`, `quota-exhausted`, and lifetime-budget failures, and from upstream provider rate limits, which use the upstream retry and rate-limit policy.
 
 Safe example:
 
@@ -127,7 +130,7 @@ Terminal upstream failures include safe fields that help clients and operators d
 - `error.details.inbound_dialect`, `target_dialect`, `tool_count`, `tool_choice_mode`, `request_bytes_bucket`, `tool_schema_bytes_bucket`, `estimated_input_tokens_bucket`, `output_cap_field`, and `output_cap_bucket`: safe request-shape hints when available;
 - `error.details.router_quota_state` and `error.details.router_key_state`: safe caller admission state at the time of the request.
 
-An upstream `400` normally remains a `502 upstream-failed` terminal router response because the proxy could not satisfy the caller request, but its `error_class` and `reason_code` are `upstream_bad_request` and `retryable` is false in diagnostics. This usually means the selected upstream rejected the request shape or parameters; do not blindly retry the same payload. An upstream `413` returns `reason_code: upstream_request_too_large`, which means callers should reduce context, attachments, tool schemas, or output caps before retrying. A router-side `429` such as `traffic-shaped`, `tpm-exceeded`, or `rpm-exceeded` happens before upstream attempts and does not include `X-Upstream-Status`.
+A terminal upstream `400`, `404`, `413`, or `422` is preserved with `code: upstream-rejected`, while the provider's response body is not forwarded. Provider `401`, `402`, and `403` failures return `503 upstream-access-denied`, not a caller authentication error. Upstream `408` and `429` use the existing timeout and rate-limit policies. A router-side `429` such as `traffic-shaped`, `tpm-exceeded`, or `rpm-exceeded` happens before upstream attempts and does not include `X-Upstream-Status`.
 
 Image URL validation also uses the `upstream-failed` envelope with a safe
 `reason_code`. `image_url_forbidden` means the URL scheme, literal address, or

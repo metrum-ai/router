@@ -538,7 +538,7 @@ func TestModelIdentityUpstreamFailureRedaction(t *testing.T) {
 			}
 			if identity == ModelIdentityRequestedGroup {
 				assertNoUpstreamIdentity(t, rr)
-				if details["last_error"] != "upstream status 500" {
+				if details["last_error"] != "upstream returned HTTP 500" {
 					t.Fatalf("requested_group last_error=%v", details["last_error"])
 				}
 				if _, ok := details["target_dialect"]; ok {
@@ -556,7 +556,7 @@ func TestModelIdentityUpstreamFailureRedaction(t *testing.T) {
 				if first["provider"] != miLunaProvider || first["model"] != miLunaModel || second["provider"] != miFireProvider || second["model"] != miFireModel {
 					t.Fatalf("upstream-mode targets=%v", targets)
 				}
-				if last := fmt.Sprint(details["last_error"]); !strings.HasPrefix(last, "upstream status 500") {
+				if last := fmt.Sprint(details["last_error"]); last != "upstream returned HTTP 500" {
 					t.Fatalf("upstream-mode last_error=%q", last)
 				}
 			}
@@ -596,7 +596,7 @@ func TestModelIdentityRoutingErrorsUseGroup(t *testing.T) {
 			cfg.Models[miGroup] = group
 		})
 		rr := miPerform(t, svc, "/v1/chat/completions", fmt.Sprintf(miDialectCases[0].tools, "x"))
-		if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "no-eligible-target") {
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 		}
 		assertNoUpstreamIdentity(t, rr)

@@ -298,7 +298,7 @@ def test_resp_07_force_store_false_rejects_continuation(capi, contracts_router):
         {"model": "responses-force-store", "previous_response_id": "resp_prior", "input": "x"},
     )
     assert status == 400, raw
-    assert _error_type(raw) == "continuation_unsupported"
+    assert json.loads(raw)["error"]["code"] == "continuation_unsupported"
     assert FakeUpstream.calls == []
 
 
@@ -309,7 +309,7 @@ def test_resp_07_native_only_state_rejects_on_stateless_bridge(capi, contracts_r
         {"model": "responses-to-chat", "previous_response_id": "resp_upstream_turn1", "input": "x"},
     )
     assert status == 400, raw
-    assert _error_type(raw) == "continuation_unsupported"
+    assert json.loads(raw)["error"]["code"] == "continuation_unsupported"
     assert FakeUpstream.calls == []
 
 
@@ -551,8 +551,8 @@ def test_resp_09_unsupported_controls_reject_before_upstream(capi, contracts_rou
     """RESP-09: targets without structured/reasoning metadata are never sent stripped requests."""
     payload = {"model": "responses-basic", "input": "x"} | extra
     status, _, raw = capi("/v1/responses", payload)
-    assert status == 502, raw
-    assert _error_type(raw) == "no-eligible-target"
+    assert status == 400, raw
+    assert json.loads(raw)["error"]["code"] == "unsupported_capability"
     assert FakeUpstream.calls == []
 
 
@@ -644,8 +644,8 @@ def test_resp_10_non_function_tools_skip_stateless_bridge(capi, contracts_router
         "/v1/responses",
         {"model": "responses-to-chat", "input": "x", "tools": [LOOKUP_TOOL, tool]},
     )
-    assert status == 502, raw
-    assert _error_type(raw) == "no-eligible-target"
+    assert status == 400, raw
+    assert json.loads(raw)["error"]["code"] == "unsupported_capability"
     assert FakeUpstream.calls == []
 
 
