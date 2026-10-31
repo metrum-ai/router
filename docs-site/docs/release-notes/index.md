@@ -26,13 +26,10 @@ infer the running version from a date written in documentation.
   four-expert comparison, the escalation latency target — are published as
   negative.
 - **OpenAI and Anthropic compatibility is a required check.** The pinned
-  official SDK testers and the Go, Python and TypeScript suites run on the gate;
-  `GET /v1/models/{id}` serves model lookup; unknown model and capability
-  failures use documented OpenAI-style errors; and endpoints the router does not
-  serve answer `501 unsupported_endpoint` instead of a bare `405`.
-- **Two caller-visible changes:** chat streams no longer end with a usage-only
-  chunk unless the caller sets `stream_options.include_usage`, and unsupported
-  endpoints return `501` instead of `405`.
+  official SDK testers and the Go, Python and TypeScript suites run on the gate,
+  and `GET /v1/models/{id}` serves caller-filtered model lookup.
+- **One caller-visible change:** chat streams no longer end with a usage-only
+  chunk unless the caller sets `stream_options.include_usage`.
 - Release assets carry build-provenance attestations, Windows binaries are
   Authenticode-signed when signing secrets are provisioned, and the updated Go
   and Node dependencies close the reported advisories.
@@ -42,7 +39,6 @@ infer the running version from a date written in documentation.
 | Area | Change |
 | --- | --- |
 | Caller streams | Chat streams send no usage-only chunk unless `stream_options.include_usage` is true (#528); clients that consumed the trailing chunk must opt in |
-| Error codes | Endpoints the router does not serve (embeddings, stored Responses) answer `501 unsupported_endpoint`, not `405` (#531) |
 | Router chains | Sanitized router-only `Via` with a hop limit (default 16) and HTTP 508 on a loop; intermediate proxies must preserve `Via` (#430) |
 | Trusted upstreams | YAML providers may set `upstream_kind: router` to keep a 429 or typed 503 and `Retry-After`; database-backed config sets reject the field (#496) |
 | Database | PostgreSQL-backed replicas learn configuration changes through LISTEN/NOTIFY, with the revision poller as the fallback (#443, #452) |
@@ -53,10 +49,10 @@ infer the running version from a date written in documentation.
 ### Caller Impact
 
 Routed model groups, request shapes, tool support and usage accounting are
-unchanged. Two response-shape changes matter to clients: chat streams no longer
-carry a usage-only chunk unless the caller opts in, and unsupported endpoints
-return `501` with an OpenAI-style error body instead of `405`. Nothing in this
-release changes routing policy, model groups or prices on its own.
+unchanged. One response-shape change matters to clients: chat streams no longer
+carry a usage-only chunk unless the caller opts in, so a client that relied on a
+trailing `choices: []` chunk must set `stream_options.include_usage`. Nothing in
+this release changes routing policy, model groups or prices on its own.
 
 ### Proof and Evidence
 
@@ -67,8 +63,8 @@ Every number in this release links to the run that produced it. Start here:
 | Added latency, p50/p99 and streaming first content | `benchmarks/overhead/evidence/` | Shared hosts; CPU and memory per 1,000 requests/s, sustained throughput and edge results missing (#422 open) |
 | Savings on three workloads, with scored quality | [Savings Case Studies](/docs/evaluation/savings-case-studies) | Three to five tasks per arm; one arm lost quality |
 | Expert routing across four domains | `docs/evidence/expert-routing/` | Negative result on a fixed 88-case cohort; classifier and route accuracy differ |
-| Escalation, local → GPU → frontier | `examples/escalation-continuum/evidence/` | Illustrative latency target missed; hardware and energy excluded; quotes not invoices |
-| Decision-model wiring and observation | `examples/decision-models/evidence/` | OpenJev excluded for licensing; edge results missing; no co-located added-latency claim |
+| Escalation, local → GPU → frontier | [Escalation and decision evidence](/docs/evaluation/escalation-and-decision-evidence) | Illustrative latency target missed; hardware and energy excluded; invoices pending |
+| Decision-model wiring and observation | [Escalation and decision evidence](/docs/evaluation/escalation-and-decision-evidence) | OpenJev excluded for licensing; edge results missing; no co-located added-latency claim |
 | Agent tool calls and router chains | [API compatibility](/docs/reference/api-compatibility) | Deterministic mock cells, not live-provider certification |
 | Governance under load | `docs/GOVERNANCE_LOAD.md`, `docs/GOVERNANCE_AUDIT_LOAD.md` | Bounded local probes, not the complete acceptance suite |
 
@@ -77,12 +73,11 @@ the examples and benchmark READMEs in the repository.
 
 ### Upgrade
 
-Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide). Two items need
+Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide). One item needs
 attention before traffic moves: clients that consumed the chat usage-only chunk
-must set `stream_options.include_usage`, and automation that matched `405` for
-embeddings or stored Responses must accept `501`. Deployments that run router
-chains behind another proxy must preserve `Via` for the loop protection to work,
-and anyone using the tenant provisioner must re-apply its RBAC manifest.
+must set `stream_options.include_usage`. Deployments that run router chains
+behind another proxy must preserve `Via` for the loop protection to work, and
+anyone using the tenant provisioner must re-apply its RBAC manifest.
 
 ### Validation
 
@@ -90,9 +85,8 @@ Check `/readyz`, `/version` and authenticated `/v1/models`, including
 `GET /v1/models/{id}` with a caller-scoped token; a model the caller cannot use
 must return the same 404 as one that does not exist. Confirm a chat stream
 without `stream_options.include_usage` ends without a usage-only chunk and that
-one with the opt-in carries usage. Confirm the embeddings and stored Responses
-paths return `501 unsupported_endpoint` with an OpenAI-style body. For
-compatibility, run the mock suites from the source distribution
+one with the opt-in carries usage. For compatibility, run the mock suites from
+the source distribution
 (`make api-compat-mock api-compat-ts agent-tool-mock agent-chain-mock`). These
 are deployment checks, not a claim that a release artifact has passed final
 launch validation.

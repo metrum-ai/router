@@ -49,8 +49,10 @@ partial results are published as such, not dropped.
 - Escalation continuum (#427): local tier → datacenter GPU → frontier API on
   synthetic labeled cases, run on AMD MI300X and NVIDIA A6000, including the
   illustrative latency target each run missed
-  (`examples/escalation-continuum/evidence/`). Local and GPU costs exclude
-  hardware and energy, and provider figures are quotes, not invoices.
+  (`examples/escalation-continuum/evidence/`,
+  `docs-site/docs/evaluation/escalation-and-decision-evidence.md`). Local and
+  GPU costs exclude hardware and energy, and provider figures are estimates
+  with the invoice pending.
 
 - Decision-model routing (#428): d3 and Clef adapters in shadow and enforce, a
   labeled routing probe with two-tier confusion matrices and policy-duration
@@ -88,19 +90,9 @@ partial results are published as such, not dropped.
 - Chat streaming exposes a usage-only chunk only when the caller asks for it
   with `stream_options.include_usage` (#528).
 
-- Endpoints the router does not serve answer with an OpenAI-style
-  `501 unsupported_endpoint` error instead of a bare `405`, including
-  embeddings and stored Responses (#531, #532, #533).
-
-- Errors the router owns follow OpenAI semantics for unknown model, missing
-  capability or dialect, and the documented error body shape (#530).
-
 - `GET /v1/models/{id}` serves caller-filtered model lookup, including IDs that
   contain slashes; unknown and unauthorized IDs both return an indistinguishable
   `model_not_found` 404 (#529).
-
-- The starter configuration passes the core OpenAI compatibility suites as
-  shipped (#534).
 
 ### CI
 
@@ -165,11 +157,6 @@ partial results are published as such, not dropped.
   that need usage in the stream must opt in; clients that tolerated a trailing
   `choices: []` chunk see one fewer chunk.
 
-- Endpoints the router does not serve return `501 unsupported_endpoint` with an
-  OpenAI-style error body instead of `405` (#531). Clients and scripts that
-  matched `405` for `/v1/embeddings` or stored Responses must accept `501`;
-  embeddings and stored Responses themselves move to v4.6.0 (#532, #533).
-
 - YAML-configured providers can opt in to `upstream_kind: router` for a
   separately authenticated trusted router, preserving its rate-limit 429 or
   typed 503 and valid `Retry-After` after fallbacks are exhausted (#496).
@@ -207,8 +194,7 @@ partial results are published as such, not dropped.
 - Fine-tune run 3 and the maintained TRL + PEFT trainer (#425), the d3
   follow-up measurements (#287), embeddings (#532), stored Responses (#533) and
   the external-rerun gate line move to v4.6.0, together with the remaining
-  medium and low lockfile advisories (#510). In v4.5.0 embeddings and stored
-  Responses keep the documented OpenAI-style `501 unsupported_endpoint` error.
+  medium and low lockfile advisories (#510).
 
 ## [4.4.0] - 2026-10-27
 
