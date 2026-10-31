@@ -615,6 +615,40 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "anthropic") })
 	s.mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-chat") })
 	s.mux.HandleFunc("POST /v1/responses", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
+	for _, pattern := range []string{
+		"POST /v1/completions", "POST /v1/moderations", "POST /v1/embeddings",
+		"POST /v1/responses/input_tokens", "POST /v1/responses/compact",
+		"GET /v1/responses/{id}", "DELETE /v1/responses/{id}",
+		"GET /v1/responses/{id}/input_items", "POST /v1/responses/{id}/cancel",
+	} {
+		s.mux.HandleFunc(pattern, s.handleUnsupportedOpenAIEndpoint)
+	}
+	for _, prefix := range []string{"/v1", "/anthropic/v1"} {
+		for _, suffix := range []string{
+			"POST /complete", "GET /messages/batches", "POST /messages/batches",
+			"GET /messages/batches/{id}", "DELETE /messages/batches/{id}",
+			"GET /messages/batches/{id}/results", "POST /messages/batches/{id}/cancel",
+		} {
+			method, path, _ := strings.Cut(suffix, " ")
+			s.mux.HandleFunc(method+" "+prefix+path, s.handleUnsupportedOpenAIEndpoint)
+		}
+		for _, path := range []string{"/skills", "/skills/"} {
+			for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+				s.mux.HandleFunc(method+" "+prefix+path, s.handleUnsupportedOpenAIEndpoint)
+			}
+		}
+	}
+	for _, path := range []string{
+		"/v1/files", "/v1/files/", "/anthropic/v1/files", "/anthropic/v1/files/", "/v1/uploads", "/v1/uploads/",
+		"/v1/batches", "/v1/batches/", "/v1/images", "/v1/images/",
+		"/v1/audio", "/v1/audio/", "/v1/vector_stores", "/v1/vector_stores/",
+		"/v1/assistants", "/v1/assistants/", "/v1/threads", "/v1/threads/",
+		"/v1/fine_tuning", "/v1/fine_tuning/", "/v1/realtime", "/v1/realtime/",
+	} {
+		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+			s.mux.HandleFunc(method+" "+path, s.handleUnsupportedOpenAIEndpoint)
+		}
+	}
 	s.mux.HandleFunc("GET /.well-known/security.txt", securityTextHandler)
 	s.mux.Handle("GET /", docsHandler())
 }
@@ -656,6 +690,35 @@ func (w *discardAdminAuthWriter) Write(b []byte) (int, error) {
 
 func (w *discardAdminAuthWriter) WriteHeader(statusCode int) {
 	w.status = statusCode
+}
+
+func (s *Service) handleUnsupportedOpenAIEndpoint(w http.ResponseWriter, r *http.Request) {
+	anthropicHeader := r.Header.Get("Anthropic-Version") != "" || (r.Header.Get("X-API-Key") != "" && r.Header.Get("Authorization") == "")
+	anthropic := anthropicHeader || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/v1/messages/batches") || r.URL.Path == "/v1/complete" || strings.HasPrefix(r.URL.Path, "/v1/skills")
+	dialect := "openai-chat"
+	if anthropic {
+		dialect = "anthropic"
+	}
+	rc, ok := s.begin(w, r, dialect)
+	if !ok {
+		return
+	}
+	code := "unsupported_endpoint"
+	rc.trace("request_error", code, Target{}, 0, http.StatusNotImplemented, code, false, 0)
+	rc.rec.Status = http.StatusNotImplemented
+	rc.rec.Error = &code
+	rc.rec.ErrorClass = code
+	rc.rec.ErrorMessage = code
+	s.finish(rc, http.StatusNotImplemented, &code)
+	message := fmt.Sprintf("%s %s is not supported by this router. See https://llm-api.apps.metrum.ai/docs/reference/api-compatibility.", r.Method, r.URL.Path)
+	if anthropic {
+		w.Header().Set("Request-Id", rc.id)
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"type": "error", "request_id": rc.id, "error": map[string]any{"type": "invalid_request_error", "message": message}})
+		return
+	}
+	writeJSON(w, http.StatusNotImplemented, map[string]any{"error": map[string]any{
+		"type": "invalid_request_error", "code": code, "param": nil, "message": message,
+	}})
 }
 
 func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {

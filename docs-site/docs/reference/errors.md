@@ -49,6 +49,7 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 |---|---:|---|---|---|
 | `missing-model` | 400 | The request omitted `model` and no `server.default_model_group` is configured. | Set a model group allowed for your token. | Configure `server.default_model_group` if omitted model should be accepted. |
 | `model-not-allowed` | 403 | The caller token is not allowed to use the requested model group. | Use `/v1/models` to see allowed groups; see [Available Models And Access](../getting-started/available-models). | Update the caller `allow` list if access is intended. |
+| `unsupported_endpoint` | 501 | The requested endpoint is not offered by the router. | Use a supported endpoint. | See [API Compatibility](api-compatibility). |
 | `key-disabled` | 403 | The matched caller token is configured but disabled. | Use an active caller token or ask for the token to be re-enabled. | Re-enable only if the caller token should still be trusted and assigned to active ownership records. |
 | `key-suspended` | 403 | The matched caller token is temporarily suspended. | Use another active caller token or wait for an administrator to restore access. | Review the suspension reason and reactivate only after the hold is cleared. |
 | `key-expired` | 403 | The matched caller token is past its configured expiration time. | Rotate to a current caller token. | Issue a replacement caller token and retire the expired one according to rotation policy. |

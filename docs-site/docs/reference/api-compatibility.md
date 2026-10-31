@@ -22,6 +22,22 @@ OpenAI-compatible clients use the `/v1` base URL:
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
 | `/admin/reports/api/quota-status` | Admin live quota remaining | Reports-admin remaining/limits for one or many callers |
 
+### Unsupported OpenAI endpoints
+
+After caller authentication, legacy text completions and moderations return
+501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings and stored
+Responses retrieval, deletion, input-item listing, and cancellation also return
+501 in v4.5; their implementation is deferred to v4.6. Responses `input_tokens`
+and `compact` temporarily return 501 while pass-through support is being
+implemented. Files, uploads, batches, images, audio, vector stores, assistants,
+threads, fine-tuning, and realtime are outside the v4.5 scope and return the
+same error. These errors have `message`, `type`, `param`, and `code` fields. See
+the [error reference](errors).
+
+Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
+not planned for v4.5 and return authenticated 501 errors in Anthropic format.
+`/v1/messages/count_tokens` remains supported.
+
 Anthropic-compatible clients use the `/anthropic` base URL:
 
 | Endpoint | Compatibility target | Typical clients |
