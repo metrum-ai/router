@@ -90,6 +90,7 @@ def main():
         if not os.environ.get(key):
             fail(f'{key} must be set in the environment')
     config = config.resolve()
+    router_source = Path(os.environ.get('COMPAT_LIVE_ROUTER_SOURCE', ROOT)).expanduser().resolve()
     output = Path(output_name).expanduser().resolve()
     if output == ROOT or ROOT in output.parents:
         fail('output directory must be outside the repository')
@@ -99,15 +100,24 @@ def main():
     db = json.loads(guard.stdout)['usage_db']
     testers = {kind: build_tester(kind, TESTERS[kind][0])[0] for kind in TESTERS}
     hashes = {kind: sha256(path) for kind, path in testers.items()}
-    git_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], cwd=ROOT, text=True).strip())
-    metadata = {'router_commit': git_head, 'git_dirty': dirty, 'config_sha256': config_hash, 'tester_commits': {k: v[0] for k, v in TESTERS.items()}, 'tester_sha256': hashes, 'suites': {k: suites(k) for k in TESTERS}, 'scope': 'core subset; not the complete tester catalog'}
+    git_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=router_source, text=True).strip()
+    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], cwd=router_source, text=True).strip())
+    if dirty:
+        fail('router source worktree must be clean')
+    harness_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+    harness_dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], cwd=ROOT, text=True).strip())
+    harness_files = ['scripts/compat_live.py', 'scripts/compat_mock.py', 'scripts/compat-live-guard/main.go']
+    metadata = {'router_commit': git_head, 'git_dirty': dirty, 'harness_commit': harness_head, 'harness_dirty': harness_dirty, 'harness_sha256': {name: sha256(ROOT / name) for name in harness_files}, 'config_sha256': config_hash, 'tester_commits': {k: v[0] for k, v in TESTERS.items()}, 'tester_sha256': hashes, 'suites': {k: suites(k) for k in TESTERS}, 'scope': 'core subset; not the complete tester catalog'}
     (output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
     with tempfile.TemporaryDirectory(prefix='compat-live-') as temp:
         binary = Path(temp) / 'router'
-        subprocess.run(['go', 'build', '-buildvcs=false', '-o', str(binary), './cmd/metrum-ai-router'], cwd=ROOT, check=True)
+        subprocess.run(['go', 'build', '-buildvcs=false', '-o', str(binary), './cmd/metrum-ai-router'], cwd=router_source, check=True)
         if sha256(config) != config_hash:
             fail('config changed during preparation; refusing to run')
+        final_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=router_source, text=True).strip()
+        final_dirty = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=all'], cwd=router_source, text=True).strip()
+        if final_head != git_head or final_dirty:
+            fail('router source changed during preparation; refusing to run')
         port = local_port()
         proc = None
         failed = False

@@ -37,14 +37,20 @@ class CompatLiveTest(unittest.TestCase):
             config.write_text('test')
             tester = root / 'tester'
             tester.write_text('binary')
+            source = root / 'router-source'
+            source.mkdir()
             env = {'COMPAT_LIVE_CONFIG': str(config), 'COMPAT_LIVE_OUT': str(root / 'results'),
-                   'OPENAI_API_KEY': 'synthetic', 'ANTHROPIC_API_KEY': 'synthetic', 'ROUTER_CALLER_TOKEN': 'synthetic'}
+                   'COMPAT_LIVE_ROUTER_SOURCE': str(source), 'OPENAI_API_KEY': 'synthetic',
+                   'ANTHROPIC_API_KEY': 'synthetic', 'ROUTER_CALLER_TOKEN': 'synthetic'}
+            build_dirs = []
 
             def run(args, **kwargs):
                 if args[:2] == ['go', 'run']:
                     return SimpleNamespace(stdout='{"usage_db":"unused"}', returncode=0)
                 if str(args[0]) == str(tester):
                     return SimpleNamespace(returncode=1)
+                if args[:2] == ['go', 'build']:
+                    build_dirs.append(kwargs['cwd'])
                 return SimpleNamespace(returncode=0)
 
             def output(args, **kwargs):
@@ -57,6 +63,7 @@ class CompatLiveTest(unittest.TestCase):
                  mock.patch.object(compat_live, 'build_tester', return_value=(tester, tester)), \
                  mock.patch.object(compat_live, 'meter', return_value=0.0):
                 self.assertEqual(compat_live.main(), 1)
+                self.assertEqual(build_dirs, [source])
 
     def test_hash_changes(self):
         with tempfile.TemporaryDirectory() as temp:
