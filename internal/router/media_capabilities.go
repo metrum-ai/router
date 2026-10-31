@@ -121,8 +121,15 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 		parts = append(parts, m.Parts...)
 	}
 	for _, p := range parts {
-		if p.Type == "image" && p.FileID != "" && caller != out && out == "openai-chat" {
-			return "unsupported_modality"
+		if caller != out && out == "openai-chat" {
+			if p.Type == "image" && p.FileID != "" {
+				return "unsupported_modality"
+			}
+			// Chat file parts accept file_data and file_id, not file_url.
+			// Do not fetch caller-provided URLs or send an unsupported shape.
+			if p.Type == "document" && p.ImageURL != "" {
+				return "unsupported_modality"
+			}
 		}
 	}
 	if requestHasMedia(req) && (out == "replicate" || out == "gemini-generate-content") {
