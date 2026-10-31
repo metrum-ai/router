@@ -14,7 +14,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
+  # Finish an in-flight main cache warm; GitHub keeps only the newest pending push.
+  cancel-in-progress: ${{ github.event_name != 'merge_group' && github.event_name != 'push' }}
 
 jobs:
   router:
