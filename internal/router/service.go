@@ -1425,7 +1425,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	if rc.rec.Endpoint != "responses.compact" {
+	// Audio-output requests must not be replayed to undeclared shadow targets.
+	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -3518,6 +3519,9 @@ func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect s
 		candidates = next
 		return len(next) != 0
 	}
+	if requestWantsChatAudioOutput(req, dialect) && !filter(func(t Target, out string) bool { return targetSupportsChatAudioOutput(t, req, dialect, out) }) {
+		return "unsupported_capability", "modalities"
+	}
 	if len(req.Tools) > 0 && !filter(func(t Target, out string) bool { return targetSupportsToolsForCallerDialect(t, dialect, out) }) {
 		return "unsupported_capability", "tools"
 	}
@@ -3575,6 +3579,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 			if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && !target.ToolOnly &&
 				targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 				targetSupportsInputModalities(target, requiredModalities) &&
+				targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
 				targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
 				targetCanSatisfyReasoning(target, outDialect, req) &&
 				targetHonorsExplicitMaxTokens(target, req) &&
@@ -3592,6 +3597,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 		if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 			targetSupportsToolsForCallerDialect(target, callerDialect, outDialect) &&
 			targetSupportsInputModalities(target, requiredModalities) &&
+			targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
 			targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
 			targetCanSatisfyReasoning(target, outDialect, req) &&
 			targetHonorsExplicitMaxTokens(target, req) &&

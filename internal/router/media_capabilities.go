@@ -138,6 +138,34 @@ func applyAnthropicFormat(body map[string]any, req *IRRequest, dialect string) {
 	}
 }
 
+// requestWantsChatAudioOutput detects requested Chat audio output, independently
+// from audio input parts. Presence of an audio configuration is itself a request.
+func requestWantsChatAudioOutput(req *IRRequest, caller string) bool {
+	if req == nil || normalizeDialect(caller) != "openai-chat" {
+		return false
+	}
+	if _, present := req.Raw["audio"]; present {
+		return true
+	}
+	if modalities, ok := req.Raw["modalities"].([]any); ok {
+		for _, modality := range modalities {
+			if stringValue(modality) == "audio" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Audio output is currently supported only by the native Chat passthrough;
+// translated bridges do not preserve audio response objects or streaming events.
+func targetSupportsChatAudioOutput(target Target, req *IRRequest, caller, out string) bool {
+	if !requestWantsChatAudioOutput(req, caller) {
+		return true
+	}
+	return normalizeDialect(out) == "openai-chat" && stringSliceContains(defaultModalities(target.OutputModalities), "audio")
+}
+
 // mediaAdmission checks the group before any upstream attempt. Native opaque
 // Anthropic blocks are portable only to another native Anthropic endpoint.
 func mediaTargetReason(target Target, req *IRRequest, caller, out string) string {
