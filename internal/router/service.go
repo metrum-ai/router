@@ -122,11 +122,14 @@ type decision struct {
 }
 
 type routingEligibilityError struct {
-	Model           string
-	Dialect         string
-	Requirements    []string
-	ContractPresent bool
-	ContractReason  string
+	Model              string
+	Dialect            string
+	Requirements       []string
+	ContractPresent    bool
+	ContractReason     string
+	CapabilityMismatch bool
+	MismatchCode       string
+	MismatchParam      string
 }
 
 func (e routingEligibilityError) Error() string {
@@ -683,7 +686,12 @@ func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.writeError(w, rc, http.StatusNotFound, "model_not_found")
+	modelID := r.PathValue("model")
+	reason := "unknown-model"
+	if _, exists := s.cfg.Models[modelID]; exists {
+		reason = "model-not-allowed"
+	}
+	s.writeModelNotFound(w, rc, modelID, reason)
 }
 
 // handleCodexModels returns the local model catalog file shape consumed by Codex
@@ -1102,8 +1110,7 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 
 func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if !s.identifiersAvailable() {
-		w.Header().Set("X-Request-Id", requestID())
-		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		s.writeUnavailableIdentifiers(w, "anthropic")
 		return
 	}
 
@@ -1152,12 +1159,12 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
-	if !rc.caller.allow[req.Model] {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
-		return
-	}
-	if _, ok := s.cfg.Models[req.Model]; !ok {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-found")
+	if _, exists := s.cfg.Models[req.Model]; !exists || !rc.caller.allow[req.Model] {
+		reason := "unknown-model"
+		if exists {
+			reason = "model-not-allowed"
+		}
+		s.writeAnthropicModelNotFound(w, rc, reason)
 		return
 	}
 	rc.rec.RequestedModel = req.Model
@@ -1169,8 +1176,7 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect string) {
 	if !s.identifiersAvailable() {
-		w.Header().Set("X-Request-Id", requestID())
-		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		s.writeUnavailableIdentifiers(w, dialect)
 		return
 	}
 	endpointDialect := dialect
@@ -1273,13 +1279,19 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 	}
 
-	if !rc.caller.allow[req.Model] {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
-		return
-	}
-	group, ok := s.cfg.Models[req.Model]
-	if !ok {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-found")
+	group, exists := s.cfg.Models[req.Model]
+	if !exists || !rc.caller.allow[req.Model] {
+		reason := "unknown-model"
+		if exists {
+			reason = "model-not-allowed"
+		}
+		if dialect == "openai-chat" || dialect == "openai-responses" {
+			s.writeModelNotFound(w, rc, req.Model, reason)
+		} else if dialect == "anthropic" {
+			s.writeAnthropicModelNotFound(w, rc, reason)
+		} else {
+			s.writeError(w, rc, http.StatusForbidden, reason)
+		}
 		return
 	}
 	if reason := s.mediaAdmission(group, req, dialect); reason != "" {
@@ -1669,12 +1681,18 @@ func committedStreamUsage(err error, req *IRRequest, dialect string, reservation
 }
 
 func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	if dialect == "models" && isAnthropicModelRequest(r) {
+		dialect = "anthropic"
+	}
 	// Receive clock for router-added latency (issue #159). Captured before auth
 	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
 	// receive through httptrace.WroteRequest.
 	receiveAt := time.Now()
 	id := requestID()
 	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		w.Header().Set("Request-Id", id)
+	}
 	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
 	rc := &requestContext{
@@ -2064,11 +2082,12 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	targets := append([]Target(nil), group.Targets...)
 	targets = s.targetsForRequest(rc, targets, req, callerDialect)
 	if len(targets) == 0 {
-		return decision{}, routingEligibilityError{
-			Model:        groupName,
-			Dialect:      callerDialect,
-			Requirements: routingRequirements(req, callerDialect),
+		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
+		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
+			err.CapabilityMismatch = true
+			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(group.Targets, req, callerDialect)
 		}
+		return decision{}, err
 	}
 	contractResult := contractFilterResult{targets: targets}
 	if rc == nil || rc.rec.RequestKind != "count_tokens" {
@@ -3302,6 +3321,65 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
+func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
+	var candidates []Target
+	for _, target := range targets {
+		out := targetDialect(s.cfg.Provider[target.Provider], target)
+		// Gemini's eligibility check validates the actual message shape; an
+		// empty synthetic request cannot establish whether the dialect exists.
+		if (normalizeDialect(out) == "gemini-generate-content" && normalizeDialect(dialect) == "openai-chat") || targetSupportsCallerDialect(target, &IRRequest{}, dialect, out) {
+			candidates = append(candidates, target)
+		}
+	}
+	if len(candidates) == 0 {
+		return "unsupported_endpoint_for_model", "model"
+	}
+	filter := func(keep func(Target, string) bool) bool {
+		next := make([]Target, 0, len(candidates))
+		for _, target := range candidates {
+			out := targetDialect(s.cfg.Provider[target.Provider], target)
+			if keep(target, out) {
+				next = append(next, target)
+			}
+		}
+		candidates = next
+		return len(next) != 0
+	}
+	if len(req.Tools) > 0 && !filter(func(t Target, out string) bool { return targetSupportsToolsForCallerDialect(t, dialect, out) }) {
+		return "unsupported_capability", "tools"
+	}
+	if requestHasStructuredOutput(req) && !filter(func(t Target, out string) bool {
+		if (dialect == "openai-chat" || dialect == "openai-responses") && out == "anthropic" {
+			return false
+		}
+		return targetSupportsStructuredOutput(t, dialect, out, true)
+	}) {
+		if dialect == "openai-responses" {
+			return "unsupported_capability", "text.format"
+		}
+		return "unsupported_capability", "response_format"
+	}
+	if requestRequiresReasoning(req) && !filter(func(t Target, out string) bool { return targetCanSatisfyReasoning(t, out, req) }) {
+		return "unsupported_capability", "reasoning"
+	}
+	if dialect == "openai-chat" && boolValue(req.Raw["logprobs"]) && !filter(func(t Target, out string) bool { return out != "anthropic" }) {
+		return "unsupported_capability", "logprobs"
+	}
+	if requestHasImages(req) && !filter(func(t Target, out string) bool { return targetSupportsInputModalities(t, requestInputModalities(req)) }) {
+		if dialect == "openai-responses" {
+			return "unsupported_capability", "input"
+		}
+		return "unsupported_capability", "messages"
+	}
+	if rawKeyPresent(req.Raw, "tool_choice") {
+		return "unsupported_capability", "tool_choice"
+	}
+	if req.Stream {
+		return "unsupported_capability", "stream"
+	}
+	return "unsupported_capability", "model"
+}
+
 func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *IRRequest, callerDialect string) []Target {
 	// Counting does not require an inference bridge, tool execution support or
 	// room to generate output. In particular compaction counts can exceed the
@@ -4155,6 +4233,10 @@ func (s *Service) writeTrafficShapeError(w http.ResponseWriter, rc *requestConte
 		rc.rec.ErrorMessage = message
 		s.finish(rc, http.StatusTooManyRequests, &code)
 	}
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, http.StatusTooManyRequests, message)
+		return
+	}
 	errBody := map[string]any{
 		"type":       code,
 		"message":    message,
@@ -4167,12 +4249,15 @@ func (s *Service) writeTrafficShapeError(w http.ResponseWriter, rc *requestConte
 	if retrySeconds > 0 {
 		errBody["retry_after_seconds"] = retrySeconds
 	}
-	writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": errBody})
+	writeAPIJSON(w, http.StatusTooManyRequests, map[string]any{"error": errBody})
 }
 
 func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *requestContext, err routingEligibilityError) {
 	code := "no-eligible-target"
 	status := http.StatusBadGateway
+	if err.CapabilityMismatch {
+		status = http.StatusBadRequest
+	}
 	for _, requirement := range err.Requirements {
 		if requirement == "continuation" {
 			code = "continuation_unsupported"
@@ -4195,9 +4280,23 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, message)
+		return
+	}
+	publicType, publicCode := code, code
+	var param any
+	if err.CapabilityMismatch && code != "continuation_unsupported" {
+		publicType, publicCode, param = "invalid_request_error", err.MismatchCode, err.MismatchParam
+	}
+	if code == "continuation_unsupported" && (err.Dialect == "openai-chat" || err.Dialect == "openai-responses") {
+		publicType, param = "invalid_request_error", "previous_response_id"
+	}
 	writeJSON(w, status, map[string]any{
 		"error": map[string]any{
-			"type":    code,
+			"type":    publicType,
+			"code":    publicCode,
+			"param":   param,
 			"message": message,
 			"details": map[string]any{
 				"model":        err.Model,
@@ -4228,7 +4327,11 @@ func (s *Service) writeRoutingPolicyError(w http.ResponseWriter, rc *requestCont
 		rc.rec.ErrorMessage = message
 		s.finish(rc, http.StatusBadGateway, &code)
 	}
-	writeJSON(w, http.StatusBadGateway, map[string]any{
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, http.StatusBadGateway, callerMessage)
+		return
+	}
+	writeAPIJSON(w, http.StatusBadGateway, map[string]any{
 		"error": map[string]any{
 			"type":    code,
 			"message": callerMessage,
@@ -4248,7 +4351,7 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 	}
 	classified := classifyError(err)
 	code, status := upstreamFailureResponse(classified, rc)
-	if code == "upstream-rate-limited" && classified.TrustedRouterRateLimit && classified.TrustedRetryAfterHeader != "" {
+	if (status == http.StatusTooManyRequests || code == "upstream-rate-limited") && classified.TrustedRouterRateLimit && classified.TrustedRetryAfterHeader != "" {
 		w.Header().Set("Retry-After", classified.TrustedRetryAfterHeader)
 	}
 	if rc != nil {
@@ -4294,6 +4397,11 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 		details["targets"] = callerSafeAttemptTargets(rc, len(attempted))
 		details["last_error"] = s.callerSafeErrorText(classified.Message, req.Model)
 	}
+	// Provider bodies can echo user content or credentials; only expose a
+	// bounded status summary in the client-facing diagnostic details.
+	if classified.StatusCode > 0 {
+		details["last_error"] = fmt.Sprintf("upstream returned HTTP %d", classified.StatusCode)
+	}
 	if reasonCode != "" {
 		details["reason_code"] = reasonCode
 		details["reason"] = reason
@@ -4313,9 +4421,21 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 		}
 		addCallerSafeRequestShapeDetails(details, rc.rec.RequestShape)
 	}
-	writeJSON(w, status, map[string]any{
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, message)
+		return
+	}
+	publicType := code
+	if status >= 400 && status < 500 {
+		publicType = "invalid_request_error"
+		if status == http.StatusTooManyRequests {
+			publicType = "rate_limit_error"
+		}
+	}
+	writeAPIJSON(w, status, map[string]any{
 		"error": map[string]any{
-			"type":    code,
+			"type":    publicType,
+			"code":    code,
 			"message": message,
 			"details": details,
 		},
@@ -4398,7 +4518,11 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 	if retryMS := int64(math.Ceil(float64(err.RetryAfter) / float64(time.Millisecond))); retryMS > 0 {
 		details["retry_after_ms"] = retryMS
 	}
-	writeJSON(w, status, map[string]any{
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, fmt.Sprintf("all currently eligible upstream targets for model %q are temporarily capacity-throttled; retry later or contact the router operator with the request_id", model))
+		return
+	}
+	writeAPIJSON(w, status, map[string]any{
 		"error": map[string]any{
 			"type":    code,
 			"message": fmt.Sprintf("all currently eligible upstream targets for model %q are temporarily capacity-throttled; retry later or contact the router operator with the request_id", model),
@@ -4408,6 +4532,18 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 }
 
 func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int) {
+	// Preserve request-specific client errors without forwarding provider bodies.
+	// Provider credentials, billing and entitlement failures must not look like
+	// caller authentication failures. Timeouts and rate limits retain their
+	// existing retry and Retry-After semantics below.
+	if !err.Canceled {
+		switch err.StatusCode {
+		case http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+			return "upstream-rejected", err.StatusCode
+		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+			return "upstream-access-denied", http.StatusServiceUnavailable
+		}
+	}
 	switch {
 	case err.Class == "upstream_loop_detected":
 		return "upstream-loop-detected", http.StatusLoopDetected
@@ -4522,6 +4658,31 @@ func sanitizeUpstreamError(err error) string {
 	return text
 }
 
+func (s *Service) writeModelNotFound(w http.ResponseWriter, rc *requestContext, model, reason string) {
+	if rc != nil {
+		rc.trace("request_error", reason, Target{}, 0, http.StatusNotFound, reason, false, 0)
+		rc.rec.Status = http.StatusNotFound
+		rc.rec.Error = &reason
+		rc.rec.ErrorClass = reason
+		rc.rec.ErrorMessage = reason
+		s.finish(rc, http.StatusNotFound, &reason)
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{
+		"type": "invalid_request_error", "code": "model_not_found", "param": "model",
+		"message": fmt.Sprintf("The model '%s' does not exist or you do not have access to it.", model),
+	}})
+}
+
+func (s *Service) writeUnavailableIdentifiers(w http.ResponseWriter, dialect string) {
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		writeAnthropicError(w, &requestContext{id: id}, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		return
+	}
+	s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+}
+
 func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status int, code string) {
 	if rc != nil {
 		rc.trace("request_error", code, Target{}, 0, status, code, false, 0)
@@ -4532,11 +4693,69 @@ func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status i
 		rc.rec.ErrorMessage = code
 		s.finish(rc, status, &c)
 	}
-	if code == "model_not_found" {
-		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": "model", "message": "The requested model does not exist."}})
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, code)
 		return
 	}
-	writeJSON(w, status, map[string]any{"error": map[string]any{"type": code, "message": code}})
+	if rc != nil && code == "unsupported_modality" && (rc.dialect == "openai-chat" || rc.dialect == "openai-responses") {
+		param := "messages"
+		if rc.dialect == "openai-responses" {
+			param = "input"
+		}
+		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": param, "message": "The model does not support the requested input modality."}})
+		return
+	}
+	body := map[string]any{"error": map[string]any{"type": code, "message": code}}
+	if rc != nil && rc.dialect == "content-admin" {
+		writeJSON(w, status, body)
+	} else {
+		writeAPIJSON(w, status, body)
+	}
+}
+
+func writeAnthropicError(w http.ResponseWriter, rc *requestContext, status int, message string) {
+	typ := "api_error"
+	switch status {
+	case http.StatusBadRequest:
+		typ = "invalid_request_error"
+	case http.StatusUnauthorized:
+		typ = "authentication_error"
+	case http.StatusForbidden:
+		typ = "permission_error"
+	case http.StatusNotFound:
+		typ = "not_found_error"
+	case http.StatusRequestEntityTooLarge:
+		typ = "request_too_large"
+	case http.StatusTooManyRequests:
+		typ = "rate_limit_error"
+	case 529:
+		typ = "overloaded_error"
+	}
+	w.Header().Set("Request-Id", rc.id)
+	writeJSON(w, status, map[string]any{"type": "error", "request_id": rc.id, "error": map[string]any{"type": typ, "message": message}})
+}
+
+// writeAPIJSON normalizes API error envelopes without changing admin responses.
+func writeAPIJSON(w http.ResponseWriter, status int, v any) {
+	if status >= 400 {
+		if body, ok := v.(map[string]any); ok {
+			if e, ok := body["error"].(map[string]any); ok {
+				if _, exists := e["type"]; !exists {
+					e["type"] = "server_error"
+				}
+				if _, exists := e["code"]; !exists {
+					e["code"] = e["type"]
+				}
+				if _, exists := e["param"]; !exists {
+					e["param"] = nil
+				}
+				if _, exists := e["message"]; !exists {
+					e["message"] = http.StatusText(status)
+				}
+			}
+		}
+	}
+	writeJSON(w, status, v)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

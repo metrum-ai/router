@@ -842,6 +842,6 @@ def test_anthropic_count_tokens_aliases(api, router):
         {"model": "messages", "messages": [{"role": "user", "content": PROMPT_CANARY}]},
         token=DENIED_CALLER,
     )
-    assert status == 403
-    assert b"model-not-allowed" in raw
+    assert status == 404
+    assert json.loads(raw)["error"]["type"] == "not_found_error"
     assert router["upstream"].calls == []
