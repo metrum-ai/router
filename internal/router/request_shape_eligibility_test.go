@@ -14,6 +14,28 @@ import (
 	"testing"
 )
 
+func TestOpenAIAnthropicUnsupportedShapeFiltering(t *testing.T) {
+	for _, tc := range []struct {
+		name, caller, target, want string
+		raw                        map[string]any
+	}{
+		{"chat logprobs", "openai-chat", "anthropic", "logprobs-unsupported", map[string]any{"logprobs": true}},
+		{"chat logprobs false", "openai-chat", "anthropic", "", map[string]any{"logprobs": false}},
+		{"native chat logprobs", "openai-chat", "openai-chat", "", map[string]any{"logprobs": true}},
+		{"chat json object", "openai-chat", "anthropic", "", map[string]any{"response_format": map[string]any{"type": "json_object"}}},
+		{"responses json schema", "openai-responses", "anthropic", "structured-output-unsupported", map[string]any{"text": map[string]any{"format": map[string]any{"type": "json_schema"}}}},
+		{"native chat json object", "openai-chat", "openai-chat", "", map[string]any{"response_format": map[string]any{"type": "json_object"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &IRRequest{Raw: tc.raw}
+			got := requestShapeFilterReason(Target{}, req, tc.caller, tc.target, requestTokenEstimateLogRecord{}, targetRequestShapeFit{ContextFit: true})
+			if got != tc.want {
+				t.Fatalf("filter reason = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRequestShapeFitSmallTextEligible(t *testing.T) {
 	cfg := minimalConfig(t)
 	target := cfg.Models["default"].Targets[0]
@@ -306,7 +328,7 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 			Key:         KeyConfig{LifetimeTokens: 1000000},
 		}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

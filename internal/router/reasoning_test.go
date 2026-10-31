@@ -228,7 +228,7 @@ func TestReasoningSurfaceMatrixPersistsTranslationProof(t *testing.T) {
 		{Provider: "reasoning_anthropic", Model: "reasoning-anthropic", Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlTokenBudget, MinBudgetTokens: 128, BudgetMustBeLessThanMaxTokens: true}},
 	}}
 	cfg.Callers[0].Allow = []string{"reasoning-chat", "reasoning-responses", "reasoning-anthropic"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestReasoningNoEligibleTargetAndModelListMetadata(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "reasoning") {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 

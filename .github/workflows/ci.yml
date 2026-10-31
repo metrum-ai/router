@@ -6,6 +6,8 @@ on:
   pull_request:
   merge_group:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -17,6 +19,7 @@ concurrency:
 jobs:
   router:
     name: router (${{ matrix.shard }})
+    if: github.event_name != 'push'
     runs-on: router-arc
     timeout-minutes: 45
     strategy:
@@ -24,6 +27,11 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3, 4, 5]
     steps:
+      - name: Isolate job caches
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/router-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/router-go-mod" >> "$GITHUB_ENV"
+          echo "COMPAT_CACHE=$RUNNER_TEMP/router-compat" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -38,16 +46,37 @@ jobs:
         if: env.CI_RUN_GO == '1'
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - name: Locate Go caches
+        if: env.CI_RUN_GO == '1'
+        id: go-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: env.CI_RUN_GO == '1'
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.build }}
+            ${{ steps.go-paths.outputs.modules }}
+          key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
       - name: Router shard
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index ${{ matrix.shard }}
 
   other-go:
     name: Other Go and Windows
+    if: github.event_name != 'push'
     runs-on: router-arc
     timeout-minutes: 45
     steps:
+      - name: Isolate job caches
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/router-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/router-go-mod" >> "$GITHUB_ENV"
+          echo "COMPAT_CACHE=$RUNNER_TEMP/router-compat" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -62,16 +91,37 @@ jobs:
         if: env.CI_RUN_GO == '1'
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+      - name: Locate Go caches
+        if: env.CI_RUN_GO == '1'
+        id: go-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: env.CI_RUN_GO == '1'
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.build }}
+            ${{ steps.go-paths.outputs.modules }}
+          key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
       - name: Other Go and Windows
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK make -k -j2 ci-go ci-windows
 
   other:
     name: Compatibility, Python and examples
+    if: github.event_name != 'push'
     runs-on: router-arc
     timeout-minutes: 45
     steps:
+      - name: Isolate job caches
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/router-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/router-go-mod" >> "$GITHUB_ENV"
+          echo "COMPAT_CACHE=$RUNNER_TEMP/router-compat" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -85,31 +135,40 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          cache: false
+      - name: Locate Go caches
+        id: go-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: tests/agent_compat/package-lock.json
+          path: |
+            ${{ steps.go-paths.outputs.build }}
+            ${{ steps.go-paths.outputs.modules }}
+          key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+      - name: Read pinned tester commits
+        id: pins
+        run: python3 scripts/ci_tester_pins.py >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.COMPAT_CACHE }}
+          key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            ~/.cache/router-compat
-            ~/.cache/pip
-          key: compat-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/compat_mock.py', 'go.mod') }}
       - name: Compatibility, Python and optional examples
         run: |
           lanes=(ci-python compat-mock)
           if [ "$CI_RUN_EXAMPLES" = 1 ]; then lanes+=(ci-examples); fi
           env -u AWS_BEARER_TOKEN_BEDROCK make -k -j3 "${lanes[@]}"
 
-  # Required on the combined merge-group SHA and on manual dispatch; PRs
-  # intentionally skip this lane to avoid duplicate high-cost scans.
+  # The source SBOM is required on merge groups and manual dispatch, not PRs
+  # or main-push cache warming.
   sbom:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
     runs-on: router-arc
     timeout-minutes: 90
     steps:
@@ -137,25 +196,106 @@ jobs:
           path: source-vulnerabilities.sarif
           if-no-files-found: error
 
+  warm:
+    name: Warm main caches
+    if: github.event_name == 'push'
+    runs-on: router-arc
+    timeout-minutes: 45
+    steps:
+      - name: Isolate job caches
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/router-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/router-go-mod" >> "$GITHUB_ENV"
+          echo "COMPAT_CACHE=$RUNNER_TEMP/router-compat" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Select optional lanes
+        env:
+          CI_BASE_SHA: ${{ github.event.before }}
+        run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Locate Go caches
+        id: go-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: go-cache
+        if: env.CI_RUN_GO == '1'
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.build }}
+            ${{ steps.go-paths.outputs.modules }}
+          key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+      - name: Warm Go builds and test results
+        if: env.CI_RUN_GO == '1'
+        run: |
+          env -u AWS_BEARER_TOKEN_BEDROCK make -k -j2 ci-go ci-windows
+          for shard in 0 1 2 3 4 5; do
+            env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index "$shard"
+          done
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: env.CI_RUN_GO == '1' && steps.go-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.build }}
+            ${{ steps.go-paths.outputs.modules }}
+          key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+      - name: Read pinned tester commits
+        id: pins
+        run: python3 scripts/ci_tester_pins.py >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: tester-cache
+        with:
+          path: ${{ env.COMPAT_CACHE }}
+          key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
+      - name: Build pinned testers
+        run: |
+          python3 -c 'import sys; sys.path.insert(0, "scripts"); from compat_mock import TESTERS, build_tester; [build_tester(k, v[0]) for k, v in TESTERS.items()]'
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.tester-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.COMPAT_CACHE }}
+          key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
+
   ci:
     name: ci
-    runs-on: router-arc
+    runs-on: router-arc-small
     if: always()
-    needs: [router, other-go, other, sbom]
+    needs: [router, other-go, other, sbom, warm]
     timeout-minutes: 5
     steps:
       - name: Require every lane
         env:
+          CI_EVENT: ${{ github.event_name }}
           ROUTER_RESULT: ${{ needs.router.result }}
           OTHER_GO_RESULT: ${{ needs.other-go.result }}
           OTHER_RESULT: ${{ needs.other.result }}
           SBOM_RESULT: ${{ needs.sbom.result }}
-          CI_EVENT_NAME: ${{ github.event_name }}
+          WARM_RESULT: ${{ needs.warm.result }}
         run: |
-          for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
-            if [ "$result" != success ]; then echo "A required CI lane did not succeed: $result" >&2; exit 1; fi
-          done
-          if [ "$SBOM_RESULT" != success ] && ! { [ "$CI_EVENT_NAME" = pull_request ] && [ "$SBOM_RESULT" = skipped ]; }; then
-            echo "Required SBOM scan did not succeed: $SBOM_RESULT ($CI_EVENT_NAME)" >&2
-            exit 1
+          if [ "$CI_EVENT" = push ]; then
+            [ "$WARM_RESULT" = success ] || { echo "Main cache warm failed: $WARM_RESULT" >&2; exit 1; }
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT"; do
+              [ "$result" = skipped ] || { echo "Unexpected push lane result: $result" >&2; exit 1; }
+            done
+          else
+            [ "$WARM_RESULT" = skipped ] || { echo "Unexpected cache warm result: $WARM_RESULT" >&2; exit 1; }
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
+              [ "$result" = success ] || { echo "A required CI lane did not succeed: $result" >&2; exit 1; }
+            done
+            if [ "$CI_EVENT" = pull_request ]; then
+              [ "$SBOM_RESULT" = skipped ] || { echo "Unexpected PR SBOM result: $SBOM_RESULT" >&2; exit 1; }
+            else
+              [ "$SBOM_RESULT" = success ] || { echo "Required SBOM scan did not succeed: $SBOM_RESULT" >&2; exit 1; }
+            fi
           fi

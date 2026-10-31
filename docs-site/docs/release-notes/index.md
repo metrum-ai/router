@@ -14,6 +14,93 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.5.0 - 2026-11-04
+
+### Highlights
+
+- **Proof, with limits attached.** The router overhead benchmark, three savings
+  case studies, expert routing, the escalation continuum, decision-model
+  routing, agent tool-call compatibility and governance under load are published
+  with their configurations, samples and limits, and each ships the command
+  that reruns it. Results that came out negative — the coding-agent quality arm, the
+  four-expert comparison, the escalation latency target — are published as
+  negative.
+- **OpenAI and Anthropic compatibility gates the merge.** The pinned official
+  SDK testers run inside the required CI check on every pull request and merge
+  group, the Go and TypeScript SDK suites run alongside as supplemental checks,
+  and `GET /v1/models/{id}` serves caller-filtered model lookup.
+- **One caller-visible change:** chat streams no longer end with a usage-only
+  chunk unless the caller sets `stream_options.include_usage`.
+- Release assets carry build-provenance attestations, Windows binaries are
+  Authenticode-signed when signing secrets are provisioned, and the updated Go
+  and Node dependencies close the reported advisories.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Caller streams | Chat streams send no usage-only chunk unless `stream_options.include_usage` is true (#528); clients that consumed the trailing chunk must opt in |
+| Router chains | Sanitized router-only `Via` with a hop limit (default 16) and HTTP 508 on a loop; intermediate proxies must preserve `Via` (#430) |
+| Trusted upstreams | YAML providers may set `upstream_kind: router` to keep a 429 or typed 503 and `Retry-After`; database-backed config sets reject the field (#496) |
+| Database | PostgreSQL-backed replicas learn configuration changes through LISTEN/NOTIFY, with the revision poller as the fallback (#443, #452) |
+| Release artifacts | Provenance attestations on release assets; Windows signing is a logged no-op until signing secrets exist (#332) |
+| Security | Tenant provisioner RBAC loses NetworkPolicy write access; re-apply `provisioner-rbac.yaml` when onboarding the next tenant (#414) |
+| CI | Required CI fans out into six measured router shards, other Go and Windows, and compatibility, Python and example lanes behind one aggregate `ci` job; Go test wall time is guarded (#549, #569, #418) |
+
+### Caller Impact
+
+Routed model groups, request shapes, tool support and usage accounting are
+unchanged. One response-shape change matters to clients: chat streams no longer
+carry a usage-only chunk unless the caller opts in, so a client that relied on a
+trailing `choices: []` chunk must set `stream_options.include_usage`. Nothing in
+this release changes routing policy, model groups or prices on its own.
+
+### Proof and Evidence
+
+Every number in this release links to the run that produced it. Start here:
+
+| Proof | Where | Limit stated in the evidence |
+| --- | --- | --- |
+| Added latency, p50/p99 and streaming first content | `benchmarks/overhead/evidence/` | Shared hosts; CPU and memory per 1,000 requests/s, sustained throughput and edge results missing (#422 open) |
+| Savings on three workloads, with scored quality | [Savings Case Studies](/docs/evaluation/savings-case-studies) | Three to five tasks per arm; one arm lost quality |
+| Expert routing across four domains | `docs/evidence/expert-routing/` | Negative result on a fixed 88-case cohort; classifier and route accuracy differ |
+| Escalation, local → GPU → frontier | [Escalation and decision evidence](/docs/evaluation/escalation-and-decision-evidence) | Illustrative latency target missed; hardware and energy excluded; invoices pending |
+| Decision-model wiring and observation | [Escalation and decision evidence](/docs/evaluation/escalation-and-decision-evidence) | OpenJev excluded for licensing; edge results missing; no co-located added-latency claim |
+| Agent tool calls and router chains | [Tool-call compatibility proof](/docs/evaluation/tool-call-proof), [API compatibility](/docs/reference/api-compatibility) | Deterministic mock cells, not live-provider certification |
+| Governance under load | `docs/GOVERNANCE_LOAD.md`, `docs/GOVERNANCE_AUDIT_LOAD.md` | Bounded local probes, not the complete acceptance suite |
+
+Paths are relative to the source distribution; the same files are linked from
+the examples and benchmark READMEs in the repository.
+
+### Upgrade
+
+Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide). One item needs
+attention before traffic moves: clients that consumed the chat usage-only chunk
+must set `stream_options.include_usage`. Deployments that run router chains
+behind another proxy must preserve `Via` for the loop protection to work, and
+anyone using the tenant provisioner must re-apply its RBAC manifest.
+
+### Validation
+
+Check `/readyz`, `/version` and authenticated `/v1/models`, including
+`GET /v1/models/{id}` with a caller-scoped token; a model the caller cannot use
+must return the same 404 as one that does not exist. Confirm a chat stream
+without `stream_options.include_usage` ends without a usage-only chunk and that
+one with the opt-in carries usage. For compatibility, run the mock suites from
+the source distribution
+(`make api-compat-mock api-compat-ts agent-tool-mock agent-chain-mock`). These
+are deployment checks, not a claim that a release artifact has passed final
+launch validation.
+
+### Security and Rollback
+
+Keep the previous binary, reviewed configuration and restorable config and usage
+database backups. This release adds no mandatory usage-database migration; the
+PostgreSQL notifier change is additive and polling remains the fallback, so
+rollback is binary replacement plus re-applying the previous provisioner RBAC
+manifest. Windows artifacts are unsigned unless signing secrets are
+provisioned; verify provenance attestations and `SHA256SUMS` before installing.
+
 ## v4.4.0 - 2026-10-27
 
 ### Highlights

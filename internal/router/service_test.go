@@ -148,7 +148,7 @@ func TestAuthRejectsUnknownTokenBeforeUpstream(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +696,7 @@ func TestAdminBasicAuthDoesNotChangeProxyBearerAuth(t *testing.T) {
 			Permissions:     []string{"admin:auth:read"},
 		}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1054,7 +1054,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		},
 	}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 1, ExportMarkdown: true}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3680,7 +3680,7 @@ func TestAdminReportsRejectWithoutCasbinPolicy(t *testing.T) {
 	}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, other, local/test, admin:reports, read"}}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3738,7 +3738,7 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		},
 	}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 50, ExportMarkdown: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 30}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4169,7 +4169,7 @@ func TestCodexCatalogMatchesResponsesEligibilityAcrossDialects(t *testing.T) {
 	if rr := request("/v1/responses", `{"model":"native-responses","input":"catalog routing"}`); rr.Code != http.StatusOK {
 		t.Fatalf("native Responses routing status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if rr := request("/v1/responses", `{"model":"chat-only","input":"catalog routing"}`); rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "no-eligible-target") {
+	if rr := request("/v1/responses", `{"model":"chat-only","input":"catalog routing"}`); rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_endpoint_for_model"`) {
 		t.Fatalf("unbridged Chat target Responses routing status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if rr := request("/v1/responses", `{"model":"bridged-chat","input":"catalog routing"}`); rr.Code != http.StatusOK {
@@ -4287,7 +4287,7 @@ func TestCodexCatalogAdvertisesImagesOnlyForEligibleResponsesPath(t *testing.T) 
 		}
 	}
 	for _, name := range []string{"bridge-text-only", "native-image-blocked"} {
-		if rr := request(name); rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "no-eligible-target") {
+		if rr := request(name); rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 			t.Fatalf("ineligible image route %s status=%d body=%s", name, rr.Code, rr.Body.String())
 		}
 	}
@@ -5039,7 +5039,7 @@ func TestCursorOpenAIChatToolsAndImageNoEligiblePersistsDiagnostics(t *testing.T
 	req.Header.Set("User-Agent", "Cursor/1.0")
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if calls.Load() != 0 {
@@ -5166,7 +5166,7 @@ func TestAnthropicMessagesSkipsOpenAITargetsWithoutInboundValidation(t *testing.
 		{Provider: "responses", Model: "responses-tools", ToolSupport: ToolSupport{OpenAIResponses: []string{"function"}}},
 	}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "anthropic-inbound")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5177,8 +5177,8 @@ func TestAnthropicMessagesSkipsOpenAITargetsWithoutInboundValidation(t *testing.
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
-		t.Fatalf("status=%d body=%s, want no eligible target", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"type":"invalid_request_error"`) {
+		t.Fatalf("status=%d body=%s, want invalid request", rr.Code, rr.Body.String())
 	}
 	if upstreamCalls != 0 {
 		t.Fatalf("upstream calls=%d, want none", upstreamCalls)
@@ -5278,7 +5278,7 @@ func TestAnthropicMessagesCanUseValidatedTranslatedOpenAITarget(t *testing.T) {
 		},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "anthropic-translated")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5437,7 +5437,7 @@ func TestOpenAIResponsesStructuredOutputPassthrough(t *testing.T) {
 		ToolSupport: ToolSupport{OpenAIResponses: []string{"structured_outputs"}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "structured-responses-test")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5516,13 +5516,13 @@ func TestStructuredOutputRequestsRequireExplicitSupport(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("unsupported structured-output request reached upstream %d times", calls.Load())
 	}
-	if !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) ||
+	if !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) ||
 		!strings.Contains(rr.Body.String(), `structured_outputs`) {
 		t.Fatalf("error details missing structured-output requirement: %s", rr.Body.String())
 	}
@@ -6033,13 +6033,13 @@ func TestStructuredOutputNoEligibleTargetReturnsRequirement(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("upstream was called %d time(s)", calls.Load())
 	}
-	if !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) ||
+	if !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) ||
 		!strings.Contains(rr.Body.String(), `"structured_outputs"`) {
 		t.Fatalf("structured output requirement missing from body=%s", rr.Body.String())
 	}
@@ -6169,6 +6169,148 @@ func parseSSEEvents(t *testing.T, body string) map[string]map[string]any {
 	return events
 }
 
+func TestAnthropicErrorsModelPrivacyAndEnvelope(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Models["private"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "upstream"}}}
+	cfg.Callers[0].Allow = []string{"default"}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	var messages []string
+	for _, model := range []string{"missing", "private"} {
+		for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens"} {
+			req := httptest.NewRequest("POST", path, strings.NewReader(fmt.Sprintf(`{"model":%q,"max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`, model)))
+			req.Header.Set("X-API-Key", testToken)
+			rr := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(rr, req)
+			var body struct {
+				Type, RequestID string
+				Error           struct{ Type, Message string }
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+				t.Fatal(err)
+			}
+			body.Type = stringValue(raw["type"])
+			body.RequestID = stringValue(raw["request_id"])
+			e, _ := raw["error"].(map[string]any)
+			body.Error.Type = stringValue(e["type"])
+			body.Error.Message = stringValue(e["message"])
+			if rr.Code != 404 || body.Type != "error" || body.Error.Type != "not_found_error" || body.RequestID == "" || rr.Header().Get("Request-Id") != body.RequestID {
+				t.Fatalf("%s %s: %d %s", model, path, rr.Code, rr.Body.String())
+			}
+			messages = append(messages, body.Error.Message)
+		}
+	}
+	for _, message := range messages {
+		if message != messages[0] {
+			t.Fatalf("model access disclosed: %#v", messages)
+		}
+	}
+}
+
+func TestAnthropicTargetRejectsRequestedChatLogprobs(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	provider := cfg.Provider["mock"]
+	provider.Dialect = "anthropic"
+	cfg.Provider["mock"] = provider
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hi"}],"logprobs":true}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	if rr.Code != 400 || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"logprobs"`) {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAnthropicTargetRejectsJSONObjectWithoutCapability(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	provider := cfg.Provider["mock"]
+	provider.Dialect = "anthropic"
+	cfg.Provider["mock"] = provider
+	group := cfg.Models["default"]
+	group.Targets[0].RequestShapeSupport = RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed"}
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_object"}}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	if rr.Code != 400 || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"response_format"`) {
+		t.Fatalf("%d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestOpenAICapabilityMismatchReturnsClientError(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	for _, tc := range []struct{ path, body, code, param string }{
+		{"/v1/chat/completions", `{"model":"default","messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object"}}}}`, "unsupported_capability", "response_format"},
+		{"/v1/responses", `{"model":"default","input":"hi"}`, "unsupported_endpoint_for_model", "model"},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		var v struct {
+			Error struct{ Type, Code, Param, Message string }
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		if rr.Code != 400 || v.Error.Type != "invalid_request_error" || v.Error.Code != tc.code || v.Error.Param != tc.param || v.Error.Message == "" {
+			t.Fatalf("%s: %d %s", tc.path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestOpenAIModelNotFoundDoesNotDiscloseAccess(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Models["private"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "private-model"}}}
+	cfg.Callers[0].Allow = []string{"default"}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	for _, path := range []string{"/v1/chat/completions", "/v1/responses"} {
+		for _, model := range []string{"private", "missing"} {
+			body := `{"model":"` + model + `","messages":[{"role":"user","content":"hi"}]}`
+			if path == "/v1/responses" {
+				body = `{"model":"` + model + `","input":"hi"}`
+			}
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			rr := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(rr, req)
+			var v struct {
+				Error struct{ Type, Code, Param, Message string }
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
+				t.Fatal(err)
+			}
+			if rr.Code != 404 || v.Error.Type != "invalid_request_error" || v.Error.Code != "model_not_found" || v.Error.Param != "model" || v.Error.Message != "The model '"+model+"' does not exist or you do not have access to it." {
+				t.Fatalf("%s %s: %d %s", path, model, rr.Code, rr.Body.String())
+			}
+		}
+	}
+}
+
 func TestCallerAllowListRestrictsModelGroups(t *testing.T) {
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -6206,11 +6348,8 @@ func TestCallerAllowListRestrictsModelGroups(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusForbidden {
+		if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), `"code":"model_not_found"`) || strings.Contains(rr.Body.String(), "model-not-allowed") {
 			t.Fatalf("%s status=%d body=%s", model, rr.Code, rr.Body.String())
-		}
-		if !strings.Contains(rr.Body.String(), "model-not-allowed") {
-			t.Fatalf("%s missing model-not-allowed: %s", model, rr.Body.String())
 		}
 	}
 	if calls.Load() != 1 {
@@ -6218,47 +6357,110 @@ func TestCallerAllowListRestrictsModelGroups(t *testing.T) {
 	}
 }
 
-func TestModelGetOnlyReturnsAllowedModels(t *testing.T) {
+func TestUnsupportedOpenAIEndpoints(t *testing.T) {
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
-	cfg.Models["private"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "private-model"}}}
-	cfg.Models["accounts/x/models/y"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "slash-model"}}}
-	cfg.Models["accounts/x/models/private"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "private-slash-model"}}}
-	cfg.Callers[0].Allow = []string{"default", "accounts/x/models/y"}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	for _, tc := range []struct {
-		model  string
-		status int
-	}{{"default", 200}, {"accounts/x/models/y", 200}, {"accounts/x/models/private", 404}, {"accounts/x/models/missing", 404}, {"private", 404}, {"missing", 404}} {
-		req := httptest.NewRequest(http.MethodGet, "/v1/models/"+tc.model, nil)
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/v1/completions"}, {"POST", "/v1/moderations"}, {"POST", "/v1/embeddings"},
+		{"POST", "/v1/responses/input_tokens"}, {"POST", "/v1/responses/compact"},
+		{"GET", "/v1/responses/resp_1"}, {"DELETE", "/v1/responses/resp_1"}, {"GET", "/v1/responses/resp_1/input_items"}, {"POST", "/v1/responses/resp_1/cancel"},
+		{"POST", "/v1/files"}, {"GET", "/v1/files/file_1"}, {"POST", "/v1/uploads"}, {"POST", "/v1/batches"}, {"POST", "/v1/images/generations"}, {"POST", "/v1/audio/speech"}, {"POST", "/v1/vector_stores"}, {"POST", "/v1/assistants"}, {"POST", "/v1/threads"}, {"POST", "/v1/fine_tuning/jobs"}, {"GET", "/v1/realtime"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != tc.status {
-			t.Fatalf("%s: status=%d body=%s", tc.model, rr.Code, rr.Body.String())
+		var body struct {
+			Error struct {
+				Type    string
+				Code    string
+				Param   any
+				Message string
+			}
 		}
-		if tc.status == 200 && !strings.Contains(rr.Body.String(), `"id":"`+tc.model+`"`) {
-			t.Fatalf("model: %s", rr.Body.String())
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
 		}
-		if tc.status == 404 && !strings.Contains(rr.Body.String(), `"code":"model_not_found"`) {
-			t.Fatalf("error: %s", rr.Body.String())
+		if rr.Code != 501 || body.Error.Type != "invalid_request_error" || body.Error.Code != "unsupported_endpoint" || body.Error.Param != nil || !strings.Contains(body.Error.Message, tc.method+" "+tc.path) {
+			t.Fatalf("%s %s: %d %s", tc.method, tc.path, rr.Code, rr.Body.String())
 		}
 	}
-	escaped := httptest.NewRequest(http.MethodGet, "/v1/models/accounts%2Fx%2Fmodels%2Fy", nil)
-	escaped.Header.Set("Authorization", "Bearer "+testToken)
-	escapedResult := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(escapedResult, escaped)
-	if escapedResult.Code != http.StatusOK || !strings.Contains(escapedResult.Body.String(), `"id":"accounts/x/models/y"`) {
-		t.Fatalf("escaped slash: status=%d body=%s", escapedResult.Code, escapedResult.Body.String())
+}
+
+func TestUnsupportedAnthropicEndpoints(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/v1/models/default", nil)
+	defer svc.Close()
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/v1/complete"}, {"POST", "/v1/messages/batches"}, {"GET", "/v1/messages/batches"},
+		{"GET", "/v1/messages/batches/batch_1"}, {"DELETE", "/v1/messages/batches/batch_1"},
+		{"GET", "/v1/messages/batches/batch_1/results"}, {"POST", "/v1/messages/batches/batch_1/cancel"},
+		{"POST", "/v1/files?beta=true"}, {"GET", "/v1/skills"}, {"GET", "/v1/skills/skill_1"},
+		{"POST", "/anthropic/v1/complete"}, {"POST", "/anthropic/v1/messages/batches"}, {"POST", "/anthropic/v1/files?beta=true"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set("X-API-Key", testToken)
+		req.Header.Set("Anthropic-Version", "2023-06-01")
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		var body struct {
+			Type      string                         `json:"type"`
+			RequestID string                         `json:"request_id"`
+			Error     struct{ Type, Message string } `json:"error"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if rr.Code != 501 || body.Type != "error" || body.Error.Type != "invalid_request_error" || body.RequestID == "" || rr.Header().Get("Request-Id") != body.RequestID || !strings.Contains(body.Error.Message, tc.method+" "+req.URL.Path) {
+			t.Fatalf("%s %s: %d %s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+	}
 	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status=%d", rr.Code)
+	svc.Handler().ServeHTTP(rr, httptest.NewRequest("POST", "/v1/complete", nil))
+	if rr.Code != 401 {
+		t.Fatalf("unauthenticated: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestModelGetAndInferenceSharePrivateNotFound(t *testing.T) {
+	const model = "accounts/x/models/hidden"
+	var responses []string
+	for _, exists := range []bool{false, true} {
+		cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+		if exists {
+			cfg.Models[model] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "hidden-model"}}}
+		}
+		cfg.Callers[0].Allow = []string{"default"}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct{ method, path, body string }{
+			{http.MethodGet, "/v1/models/accounts%2Fx%2Fmodels%2Fhidden", ""},
+			{http.MethodPost, "/v1/chat/completions", `{"model":"accounts/x/models/hidden","messages":[{"role":"user","content":"hi"}]}`},
+		} {
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			rr := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(rr, req)
+			if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), `"code":"model_not_found"`) {
+				t.Fatalf("exists=%v %s: %d %s", exists, tc.path, rr.Code, rr.Body.String())
+			}
+			responses = append(responses, rr.Body.String())
+		}
+		svc.Close()
+	}
+	for _, body := range responses[1:] {
+		if body != responses[0] {
+			t.Fatalf("unknown/disallowed model errors differ: %#v", responses)
+		}
 	}
 }
 
@@ -7031,7 +7233,7 @@ func TestCountTokensRejectsUnauthorizedModelsBeforeUsage(t *testing.T) {
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"), &enabled)
 	cfg.Models["allowed"] = cfg.Models["default"]
 	cfg.Callers[0].Allow = []string{"allowed"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7042,7 +7244,7 @@ func TestCountTokensRejectsUnauthorizedModelsBeforeUsage(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusForbidden || !strings.Contains(rr.Body.String(), "model-not-allowed") {
+		if rr.Code != http.StatusNotFound || !strings.Contains(rr.Body.String(), `"type":"not_found_error"`) {
 			t.Fatalf("model %s status=%d body=%s", model, rr.Code, rr.Body.String())
 		}
 	}
@@ -7407,7 +7609,7 @@ func TestRejectedModelMetricsUseBoundedLabel(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusForbidden {
+		if rr.Code != http.StatusNotFound {
 			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 		}
 	}
@@ -7457,7 +7659,7 @@ func TestCasbinAuthorizationForMetricsAndReports(t *testing.T) {
 	}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, PolicyFile: policyFile}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7541,7 +7743,7 @@ func TestAnthropicMaxTokensForwardedToAnthropicUpstream(t *testing.T) {
 		OutputModalities: []string{"text"},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "vision")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7740,7 +7942,7 @@ func TestNoEligibleTargetMentionsMaxTokensWhenCapUnsafeTargetsSkipped(t *testing
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if !strings.Contains(rr.Body.String(), "max_tokens") {
@@ -9376,7 +9578,7 @@ func TestModelGroupContractFiltersWeightedTargetsAndRecordsUsage(t *testing.T) {
 		},
 	}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "contracted")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9697,7 +9899,7 @@ func TestPIIFilterCacheStoresRedactedResponseNotRestoredPII(t *testing.T) {
 		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9756,7 +9958,7 @@ func TestContentCaptureResponseStoresRedactedPIIPlaceholders(t *testing.T) {
 		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10351,8 +10553,8 @@ func TestResponsesTrafficIgnoresChatSkinEvenWithResponsesCatalogMetadata(t *test
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
 	svc.Close()
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
-		t.Fatalf("status=%d body=%s, want no eligible target", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_endpoint_for_model"`) {
+		t.Fatalf("status=%d body=%s, want unsupported endpoint", rr.Code, rr.Body.String())
 	}
 	if upstreamCalls != 0 {
 		t.Fatalf("chat skin should not be selected for responses tools, upstreamCalls=%d", upstreamCalls)
@@ -10643,7 +10845,7 @@ func TestResponsesToolPassthroughSkipsMiniMaxForcedToolChoice(t *testing.T) {
 		},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "agent-tools-smoke")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10654,14 +10856,14 @@ func TestResponsesToolPassthroughSkipsMiniMaxForcedToolChoice(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if upstreamCalled {
 		t.Fatal("upstream called for MiniMax forced tool_choice despite unsupported request-shape metadata")
 	}
-	if !strings.Contains(rr.Body.String(), "no-eligible-target") {
-		t.Fatalf("body=%s, want no-eligible-target", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
+		t.Fatalf("body=%s, want unsupported capability", rr.Body.String())
 	}
 }
 
@@ -10680,7 +10882,7 @@ func TestResponsesToChatBridgeRequiresOptIn(t *testing.T) {
 	cfg.Provider["chat"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["bridge"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "chat", Model: "chat-model"}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10690,7 +10892,7 @@ func TestResponsesToChatBridgeRequiresOptIn(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_endpoint_for_model"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if upstreamCalled {
@@ -10737,7 +10939,7 @@ func TestResponsesToChatBridgeTextAndFunctionToolsHandler(t *testing.T) {
 		ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true, ValidationStatus: "passed"},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10810,7 +11012,7 @@ func TestResponsesToChatBridgeSkipsUnsupportedBeforeUpstream(t *testing.T) {
 		ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10831,7 +11033,7 @@ func TestResponsesToChatBridgeSkipsUnsupportedBeforeUpstream(t *testing.T) {
 			rr := httptest.NewRecorder()
 			if tc.name == "previous response" {
 				svc.Handler().ServeHTTP(rr, req)
-				if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"type":"continuation_unsupported"`) {
+				if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"continuation_unsupported"`) {
 					t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 				}
 				assertDecisionFilterReason(t, svc, tc.want)
@@ -10844,7 +11046,7 @@ func TestResponsesToChatBridgeSkipsUnsupportedBeforeUpstream(t *testing.T) {
 				}
 				return
 			}
-			if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
+			if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"type":"invalid_request_error"`) {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 			assertDecisionFilterReason(t, svc, tc.want)
@@ -10878,11 +11080,11 @@ func TestResponsesToolPassthroughRequiresExplicitTargetSupport(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
-		t.Fatalf("body=%s, want no-eligible-target", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
+		t.Fatalf("body=%s, want unsupported capability", rr.Body.String())
 	}
 	if upstreamCalled {
 		t.Fatal("upstream called for Responses tool request without explicit tool support")
@@ -11191,7 +11393,7 @@ func TestChatInboundCanUseOptInResponsesBridgeText(t *testing.T) {
 		Bridges:  BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11257,7 +11459,7 @@ func TestChatInboundResponsesBridgeRequiresOptIn(t *testing.T) {
 	cfg.Provider["responses"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-responses", APIKey: "provider-key"}
 	cfg.Models["bridge-disabled"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "responses", Model: "responses-text-model"}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-disabled")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11267,7 +11469,7 @@ func TestChatInboundResponsesBridgeRequiresOptIn(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_endpoint_for_model"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if upstreamCalled {
@@ -11313,7 +11515,7 @@ func TestChatInboundResponsesBridgeStatefulSessionInjectsPreviousResponseID(t *t
 		}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-stateful")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11644,7 +11846,7 @@ func TestChatInboundResponsesBridgeReasoningTelemetry(t *testing.T) {
 		Bridges:   BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true, Reasoning: true}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-reasoning")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11719,7 +11921,7 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 	}
 	cfg.Models["bridge-stateful"] = ModelGroup{Strategy: "static", Targets: []Target{target}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-stateful")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11841,7 +12043,7 @@ func TestChatInboundResponsesBridgeRejectsUnsupportedStreamingShapeBeforeUpstrea
 		Bridges:  BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11851,7 +12053,7 @@ func TestChatInboundResponsesBridgeRejectsUnsupportedStreamingShapeBeforeUpstrea
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if upstreamCalled {
@@ -12129,10 +12331,10 @@ func TestNoEligibleTargetReturnsActionableError(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) ||
+	if !strings.Contains(rr.Body.String(), `"type":"invalid_request_error"`) ||
 		!strings.Contains(rr.Body.String(), `anthropic_tool_passthrough`) ||
 		!strings.Contains(rr.Body.String(), `image`) {
 		t.Fatalf("unexpected body=%s", rr.Body.String())
@@ -12158,7 +12360,7 @@ func TestUpstreamFailureReturnsActionableError(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `"type":"upstream-failed"`) ||
 		!strings.Contains(rr.Body.String(), `"attempts":1`) ||
 		!strings.Contains(rr.Body.String(), `"provider":"mock"`) ||
-		!strings.Contains(rr.Body.String(), `upstream status 503`) {
+		!strings.Contains(rr.Body.String(), `upstream returned HTTP 503`) {
 		t.Fatalf("unexpected body=%s", rr.Body.String())
 	}
 }
@@ -12181,7 +12383,7 @@ func TestUpstreamRedirectsAreNotFollowed(t *testing.T) {
 			dir := t.TempDir()
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -12227,7 +12429,7 @@ func TestNonRetryableUpstream4xxStopsFallback(t *testing.T) {
 		{Provider: "mock", Model: "bad-request-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools"}}},
 		{Provider: "mock", Model: "fallback-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools"}}},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12244,7 +12446,7 @@ func TestNonRetryableUpstream4xxStopsFallback(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var downstream map[string]map[string]any
@@ -12253,7 +12455,7 @@ func TestNonRetryableUpstream4xxStopsFallback(t *testing.T) {
 	}
 	errObj := downstream["error"]
 	details, _ := errObj["details"].(map[string]any)
-	if errObj["type"] != "upstream-failed" || !strings.Contains(stringValue(errObj["message"]), "rejected the request shape or parameters") {
+	if errObj["code"] != "upstream-rejected" || !strings.Contains(stringValue(errObj["message"]), "rejected the request shape or parameters") {
 		t.Fatalf("unexpected downstream error: %#v", errObj)
 	}
 	if details["reason_code"] != "upstream_bad_request" || details["reason"] != "selected upstream rejected the request shape or parameters" ||
@@ -12291,7 +12493,7 @@ func TestUpstreamRequestTooLargeReturnsSafeShapeReason(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12301,7 +12503,7 @@ func TestUpstreamRequestTooLargeReturnsSafeShapeReason(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var downstream map[string]map[string]any
@@ -12310,7 +12512,7 @@ func TestUpstreamRequestTooLargeReturnsSafeShapeReason(t *testing.T) {
 	}
 	errObj := downstream["error"]
 	details, _ := errObj["details"].(map[string]any)
-	if errObj["type"] != "upstream-failed" || !strings.Contains(stringValue(errObj["message"]), "rejected the request size") {
+	if errObj["code"] != "upstream-rejected" || !strings.Contains(stringValue(errObj["message"]), "rejected the request size") {
 		t.Fatalf("unexpected downstream error: %#v", errObj)
 	}
 	if details["reason_code"] != "upstream_request_too_large" || details["reason"] != "selected upstream rejected the request size" ||
@@ -12349,7 +12551,7 @@ func TestUpstreamFailureDetailsUseTerminalAttemptDialect(t *testing.T) {
 		{Provider: "mock_chat", Model: "retryable-chat-model"},
 		{Provider: "mock_anthropic", Model: "terminal-anthropic-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12359,7 +12561,7 @@ func TestUpstreamFailureDetailsUseTerminalAttemptDialect(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var downstream map[string]map[string]any
@@ -12409,7 +12611,7 @@ func TestUpstream403EntitlementFailureFallsBackWithoutCallerRetryability(t *test
 		{Provider: "mock", Model: "restricted-model"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12475,7 +12677,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 		{Provider: "mock", Model: "bad-key-model"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12485,7 +12687,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), `"type":"upstream-access-denied"`) {
+	if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), `"code":"upstream-access-denied"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if strings.Contains(rr.Body.String(), "provider-secret-value") || strings.Contains(rr.Body.String(), "provider-key") {
@@ -12545,7 +12747,7 @@ func TestRetryableUpstream5xxStillFallsBack(t *testing.T) {
 		{Provider: "mock", Model: "temporary-failure"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12597,7 +12799,7 @@ func TestDecodeErrorStillFallsBack(t *testing.T) {
 		{Provider: "mock", Model: "schema-drift-model"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12634,7 +12836,7 @@ func TestSuccessfulUpstreamResponseSizeIsBounded(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Upstream.MaxResponseBytes = 128
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12853,7 +13055,7 @@ func TestMultipleInlineImagesPersistOnlySafeScalarUsageMetadata(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "vision-model", InputModalities: []string{"text", "image"}}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13087,7 +13289,7 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 					},
 				}}}
 			}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -13101,7 +13303,11 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 			body := rr.Body.String()
-			for _, want := range []string{`"type":"upstream-quota-exhausted"`, `"request_id"`, "quota, credits, or billing"} {
+			wantType := `"type":"upstream-access-denied"`
+			if tc.name == "messages" {
+				wantType = `"type":"api_error"`
+			}
+			for _, want := range []string{wantType, `"request_id"`, "upstream provider access or entitlement failed"} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("body missing %q: %s", want, body)
 				}
@@ -13130,7 +13336,7 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 			if err := svc.usage.db.Find(&errors).Error; err != nil {
 				t.Fatal(err)
 			}
-			if len(errors) != 1 || errors[0].ErrorType != "upstream-quota-exhausted" || errors[0].Status != http.StatusServiceUnavailable || !errors[0].Retryable {
+			if len(errors) != 1 || errors[0].ErrorType != "upstream-access-denied" || errors[0].Status != http.StatusServiceUnavailable || !errors[0].Retryable {
 				t.Fatalf("unexpected error rows: %#v", errors)
 			}
 		})
@@ -13174,7 +13380,7 @@ func TestUpstreamQuotaExhaustionFallsBackAndRecordsAttempt(t *testing.T) {
 		{Provider: "mock", Model: "credit-empty"},
 		{Provider: "mock", Model: "healthy-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13300,7 +13506,7 @@ func TestFallbackAttributesServingTargetPricingCostsCacheAndObservations(t *test
 					},
 				},
 			}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -13410,7 +13616,7 @@ func TestDiagnosticsSanitizeUpstreamErrorBeforePersistence(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13507,7 +13713,7 @@ func TestDiagnosticsSanitizeTruncatedUpstreamErrorBeforePersistence(t *testing.T
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
 	cfg.Server.Diagnostics.MaxErrorBytes = maxErrorBytes
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13800,7 +14006,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 			dir := t.TempDir()
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -13810,7 +14016,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+testToken)
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
-			if rr.Code != http.StatusBadGateway {
+			if rr.Code != http.StatusBadRequest {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 
@@ -13871,7 +14077,7 @@ func TestSanitizedUpstreamErrorDetailsExplicitOptOut(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(false)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13881,7 +14087,7 @@ func TestSanitizedUpstreamErrorDetailsExplicitOptOut(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
+	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
@@ -13978,7 +14184,7 @@ func TestContentCaptureEnabledRequiresKeyMaterialAtStartup(t *testing.T) {
 		CaptureRequest: true,
 		Encryption:     ContentCaptureEncryptionConfig{Enabled: true, LocalKeyID: "missing-test-key"},
 	}
-	if svc, err := New(cfg); err == nil {
+	if svc, err := newServiceWithVerifiedFixture(cfg); err == nil {
 		svc.Close()
 		t.Fatal("New() accepted enabled content capture without key material")
 	} else if !strings.Contains(err.Error(), "CONTENT_CAPTURE_LOCAL_KEY is required") {
@@ -14078,7 +14284,7 @@ func TestContentCaptureStoresRedactedRequestResponseAndAllowedHeaders(t *testing
 		RedactionPatterns:       []ContentCaptureRedactionRule{{Name: "email", Expression: `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`}},
 		Encryption:              testContentCaptureEncryption(t),
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14165,7 +14371,7 @@ func TestContentCaptureStoresSanitizedUpstreamError(t *testing.T) {
 		CaptureUpstreamErrors: true,
 		Encryption:            testContentCaptureEncryption(t),
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14227,7 +14433,7 @@ func TestContentCaptureAdminDeleteRequiresContentAdminAndAudits(t *testing.T) {
 		Quota:        QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
 		Key:          KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 	})
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14321,7 +14527,7 @@ func TestContentCaptureAdminDeleteRequiresTargetDomainAuthorization(t *testing.T
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		},
 	)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14406,7 +14612,7 @@ func TestContentCaptureAdminDeleteAllowsTargetDomainOnlyGrant(t *testing.T) {
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		},
 	)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14491,7 +14697,7 @@ func TestContentCaptureAdminDeleteUsesCaptureTimeDomain(t *testing.T) {
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		},
 	)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14563,7 +14769,7 @@ func TestContentCaptureMaintenanceUsesCasbinAuthorization(t *testing.T) {
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		})
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14644,7 +14850,7 @@ func TestUpstreamAttemptTimeoutReturnsGatewayTimeoutAndDiagnostics(t *testing.T)
 	group := cfg.Models["default"]
 	group.AttemptTimeoutMS = 10
 	cfg.Models["default"] = group
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14721,7 +14927,7 @@ func TestDecisionTelemetryEnabledRecordsTextCandidateAndDecision(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14790,7 +14996,7 @@ func TestDecisionTelemetryRecordsExternalPolicyFailureBeforeDecision(t *testing.
 		Targets: []Target{{Provider: "mock", Model: "cheap-model", Weight: 1}},
 	}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "external-policy")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14866,7 +15072,7 @@ func TestDecisionTelemetryRecordsNoEligibleFilterReason(t *testing.T) {
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
 	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "tool-only", ToolOnly: true}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14876,7 +15082,7 @@ func TestDecisionTelemetryRecordsNoEligibleFilterReason(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	assertDecisionTelemetryCounts(t, svc, 18, 1, 1, 0, 0)
@@ -14889,7 +15095,7 @@ func TestDecisionTelemetryRecordsToolSupportFilterReason(t *testing.T) {
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
 	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "plain-chat"}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14900,7 +15106,7 @@ func TestDecisionTelemetryRecordsToolSupportFilterReason(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), `"type":"no-eligible-target"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	assertDecisionTelemetryCounts(t, svc, 18, 1, 1, 0, 0)
@@ -14922,7 +15128,7 @@ func TestDecisionTelemetryRecordsCacheBypassReason(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -15141,7 +15347,7 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 		wantStatus int
 	}{
 		{name: "success", statusCode: http.StatusOK, wantStatus: http.StatusOK},
-		{name: "upstream-400", statusCode: http.StatusBadRequest, wantStatus: http.StatusBadGateway},
+		{name: "upstream-400", statusCode: http.StatusBadRequest, wantStatus: http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -15166,7 +15372,7 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 			cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice", "structured_outputs"}}}}}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -15439,7 +15645,7 @@ func TestExternalRoutingPolicyCannotBypassCallerAuthorizationOrEligibility(t *te
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusForbidden || policyCalls != 0 {
+	if rr.Code != http.StatusNotFound || policyCalls != 0 || !strings.Contains(rr.Body.String(), `"code":"model_not_found"`) {
 		t.Fatalf("unauthorized external group status=%d policy_calls=%d body=%s", rr.Code, policyCalls, rr.Body.String())
 	}
 
@@ -15523,7 +15729,7 @@ func TestExternalRoutingPolicyShadowModelRefTelemetry(t *testing.T) {
 			cfg.Models["adaptive"] = ModelGroup{Strategy: "external", ExternalPolicy: ExternalPolicyConfig{
 				URL: policy.URL, AllowHosts: []string{"127.0.0.1"}, Mode: "shadow",
 			}, Targets: []Target{{Provider: "mock", ModelRef: "first"}, {Provider: "mock", ModelRef: "second"}}}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -15583,7 +15789,7 @@ func TestExternalRoutingPolicyShadowPromotionAndRollbackModes(t *testing.T) {
 			Targets: []Target{{Provider: "mock", Model: "first"}, {Provider: "mock", Model: "second"}},
 		}
 		cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "adaptive")
-		svc, err := New(cfg)
+		svc, err := newServiceWithVerifiedFixture(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -15664,7 +15870,7 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 		},
 	}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "region-failover")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -15711,7 +15917,7 @@ func TestAdminReportsPrefixRedirectStaysLocal(t *testing.T) {
 		}
 		cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, *, admin:reports, read"}}
 		cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, PathPrefix: prefix, DefaultSince: "24h", MaxRange: "31d", MaxRows: 10}
-		svc, err := New(cfg)
+		svc, err := newServiceWithVerifiedFixture(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}

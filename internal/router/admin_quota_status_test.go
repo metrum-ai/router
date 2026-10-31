@@ -54,7 +54,7 @@ func TestAdminQuotaStatusAuthzAndFilters(t *testing.T) {
 		},
 	}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 10}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

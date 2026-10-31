@@ -414,6 +414,7 @@ ci-examples:
 
 compat-mock:
 	$(PYTHON) scripts/compat_mock.py
+	$(PYTHON) scripts/compat_starter.py
 
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.

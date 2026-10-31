@@ -86,7 +86,7 @@ func TestResponsesBodyOnChatEndpointEnabledNativeResponsesStructuredOutput(t *te
 		ToolSupport: ToolSupport{OpenAIResponses: []string{"structured_outputs"}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "compat")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestResponsesBodyOnChatEndpointEnabledResponsesToChatReasoningTools(t *test
 		ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true, Reasoning: true, ValidationStatus: "passed"},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

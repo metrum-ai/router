@@ -141,11 +141,25 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 		s.writeError(w, rc, http.StatusBadGateway, "upstream-failed")
 		return
 	}
-	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
 	if retry := resp.Header.Get("Retry-After"); retry != "" {
 		w.Header().Set("Retry-After", retry)
+	}
+	if resp.StatusCode >= 400 {
+		// Count-token errors are still caller-facing Anthropic errors. Preserve
+		// provider 4xx status, but never forward a body that may echo secrets.
+		status := resp.StatusCode
+		code := "upstream-rejected"
+		if status == http.StatusLoopDetected {
+			code = "router-hop-limit"
+		} else if status >= 500 {
+			status = http.StatusBadGateway
+			code = "upstream-failed"
+		}
+		s.writeError(w, rc, status, code)
+		return
+	}
+	if contentType := resp.Header.Get("Content-Type"); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		w.Header().Set("X-Metrum-Usage-Source", "reported")
