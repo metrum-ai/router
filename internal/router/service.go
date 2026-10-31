@@ -4498,10 +4498,17 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 }
 
 func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int) {
-	// Preserve an actual upstream client response without forwarding its body,
-	// which can contain provider credentials or caller-supplied content.
-	if err.StatusCode >= 400 && err.StatusCode < 500 && !err.Canceled {
-		return "upstream-rejected", err.StatusCode
+	// Preserve request-specific client errors without forwarding provider bodies.
+	// Provider credentials, billing and entitlement failures must not look like
+	// caller authentication failures. Timeouts and rate limits retain their
+	// existing retry and Retry-After semantics below.
+	if !err.Canceled {
+		switch err.StatusCode {
+		case http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+			return "upstream-rejected", err.StatusCode
+		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+			return "upstream-access-denied", http.StatusServiceUnavailable
+		}
 	}
 	switch {
 	case err.Class == "upstream_loop_detected":

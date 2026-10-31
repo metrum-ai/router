@@ -12580,7 +12580,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusUnauthorized || !strings.Contains(rr.Body.String(), `"code":"upstream-rejected"`) {
+	if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), `"code":"upstream-access-denied"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if strings.Contains(rr.Body.String(), "provider-secret-value") || strings.Contains(rr.Body.String(), "provider-key") {
@@ -12602,7 +12602,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 	if err := svc.usage.db.Find(&errors).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(errors) != 1 || errors[0].ErrorType != "upstream-rejected" || errors[0].Status != http.StatusUnauthorized || errors[0].Retryable {
+	if len(errors) != 1 || errors[0].ErrorType != "upstream-access-denied" || errors[0].Status != http.StatusServiceUnavailable || errors[0].Retryable {
 		t.Fatalf("unexpected errors: %#v", errors)
 	}
 }
@@ -13192,15 +13192,15 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 			req.Header.Set("Authorization", "Bearer "+testToken)
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
-			if rr.Code != http.StatusPaymentRequired {
+			if rr.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 			body := rr.Body.String()
-			wantType := `"type":"invalid_request_error"`
+			wantType := `"type":"upstream-access-denied"`
 			if tc.name == "messages" {
 				wantType = `"type":"api_error"`
 			}
-			for _, want := range []string{wantType, `"request_id"`, "quota, credits, or billing"} {
+			for _, want := range []string{wantType, `"request_id"`, "upstream provider access or entitlement failed"} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("body missing %q: %s", want, body)
 				}
@@ -13229,7 +13229,7 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 			if err := svc.usage.db.Find(&errors).Error; err != nil {
 				t.Fatal(err)
 			}
-			if len(errors) != 1 || errors[0].ErrorType != "upstream-rejected" || errors[0].Status != http.StatusPaymentRequired || !errors[0].Retryable {
+			if len(errors) != 1 || errors[0].ErrorType != "upstream-access-denied" || errors[0].Status != http.StatusServiceUnavailable || !errors[0].Retryable {
 				t.Fatalf("unexpected error rows: %#v", errors)
 			}
 		})

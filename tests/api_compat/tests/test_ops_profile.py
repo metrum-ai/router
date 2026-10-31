@@ -625,14 +625,14 @@ CALLER_SURFACES = {
 #  terminal caller status/code when every target fails the same way).
 ERROR_CLASS_MATRIX = [
     (400, {"error": {"message": "bad param"}}, "upstream_bad_request", False, 400, "upstream-rejected"),
-    (401, {"error": {"code": "invalid_api_key"}}, "upstream_auth_failed", False, 401, "upstream-rejected"),
-    (402, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 402, "upstream-rejected"),
-    (403, {"error": {"code": "not_entitled"}}, "upstream_entitlement_failed", True, 403, "upstream-rejected"),
+    (401, {"error": {"code": "invalid_api_key"}}, "upstream_auth_failed", False, 503, "upstream-access-denied"),
+    (402, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 503, "upstream-access-denied"),
+    (403, {"error": {"code": "not_entitled"}}, "upstream_entitlement_failed", True, 503, "upstream-access-denied"),
     (404, {"error": {"code": "model_not_found"}}, "upstream_model_access_denied", True, 404, "upstream-rejected"),
-    (408, {"error": {"message": "timeout"}}, "upstream_timeout", True, 408, "upstream-rejected"),
+    (408, {"error": {"message": "timeout"}}, "upstream_timeout", True, 504, "upstream-timeout"),
     (413, {"error": {"message": "too large"}}, "upstream_request_too_large", False, 413, "upstream-rejected"),
-    (429, {"error": {"message": "slow down"}}, "upstream_rate_limited", True, 429, "upstream-rejected"),
-    (429, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 429, "upstream-rejected"),
+    (429, {"error": {"message": "slow down"}}, "upstream_rate_limited", True, 503, "upstream-rate-limited"),
+    (429, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 503, "upstream-quota-exhausted"),
     (500, {"error": {"message": "boom"}}, "upstream_status_5xx", True, 502, "upstream-failed"),
     (503, {"error": {"type": "overloaded_error"}}, "upstream_status_5xx", True, 502, "upstream-failed"),
 ]
@@ -718,7 +718,7 @@ def test_ops08_retry_after_redirect_and_unreachable_fallback_bounded(ops_router)
         started = time.monotonic()
         code, headers, raw = call(base, "/v1/chat/completions", chat_body("chat-fallback"))
         elapsed = time.monotonic() - started
-        assert code == 429 and json.loads(raw)["error"]["code"] == "upstream-rejected", raw
+        assert code == 503 and json.loads(raw)["error"]["code"] == "upstream-rate-limited", raw
         # One attempt per target and no sleeping on the provider's Retry-After.
         assert len(OpsUpstream.calls) == 2
         assert elapsed < 5, f"Retry-After {header!r} stalled the request for {elapsed:.1f}s"

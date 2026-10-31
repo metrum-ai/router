@@ -234,8 +234,8 @@ _ERROR_FIXTURES = [
         json.dumps({"error": {"message": f"slow down {LEAK_CANARY}"}}).encode(),
         "application/json",
         {"Retry-After": "7", "x-ratelimit-remaining-requests": "0"},
-        429,
-        "rate_limit_error",
+        503,
+        "upstream-rate-limited",
         "upstream_rate_limited",
     ),
     (
@@ -290,7 +290,7 @@ def test_http_07_upstream_errors_are_sanitized_and_sdk_usable(
     parsed = json.loads(raw)
     error = parsed["error"]
     assert error["type"] == error_type
-    if 400 <= up_status < 500:
+    if up_status in (400, 404, 413, 422):
         assert error["code"] == "upstream-rejected"
     details = error["details"]
     assert details["error_class"] == error_class

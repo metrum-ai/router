@@ -971,11 +971,11 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
 			wantStatus, wantType, wantError := scenario.ExpectedCallerStatus, scenario.ExpectedErrorType, scenario.ExpectedErrorType
-			if scenario.UpstreamStatus >= 400 && scenario.UpstreamStatus < 500 {
+			switch scenario.UpstreamStatus {
+			case http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
 				wantStatus, wantError, wantType = scenario.UpstreamStatus, "upstream-rejected", "invalid_request_error"
-				if scenario.UpstreamStatus == http.StatusTooManyRequests {
-					wantType = "rate_limit_error"
-				}
+			case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+				wantStatus, wantError, wantType = http.StatusServiceUnavailable, "upstream-access-denied", "upstream-access-denied"
 			}
 			if rr.Code != wantStatus {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())

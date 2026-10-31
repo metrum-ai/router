@@ -65,7 +65,7 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 | `pii-filter-failed` | 502 | The router could not apply the configured PII filter. | Retry after the administrator resolves configuration. | Check regex validation, filter limits, and request shape. |
 | `no-eligible-target` | 502 | Routing, contract, or policy filtering left no eligible upstream target. | Try a different allowed group only if instructed. | Inspect routing diagnostics and configured target constraints. |
 | `routing-policy-error` | 502 | A TypeScript or enforced external routing policy failed, timed out, returned an invalid decision, or selected a target outside the eligible list. | Retry only if the operator says the policy failure is transient; otherwise provide the request ID. | Inspect safe policy execution/error telemetry, script concurrency, external-policy reachability and timeout, then restore the reviewed policy or use its documented baseline rollback. |
-| `upstream-rejected` | Upstream 4xx | The terminal upstream response was a client error; its HTTP status is preserved without exposing its body. | Check the request or contact the administrator with the request ID. | Inspect sanitized request attempts, provider status, and upstream credentials or limits. |
+| `upstream-rejected` | 400, 404, 413, 422 | A terminal upstream request or model error is preserved without exposing its body. | Check the request or contact the administrator with the request ID. | Inspect sanitized request attempts and provider status. |
 | `upstream-capacity-throttled` | 503 | Every otherwise eligible target is temporarily unavailable because provider/model/target shared shaping or adaptive backoff is protecting upstream capacity. | Retry after the `Retry-After` window when present, or contact the administrator with the request ID. | Inspect `request_upstream_shape_events`, `request_trace_events`, current traffic-shape config, and recent upstream `429` or quota events. |
 | `upstream-failed` | 502 | All eligible upstream attempts failed for another upstream error class, or a request was blocked by upstream payload controls such as private image URL egress policy. `error.details.reason_code` gives the sanitized cause when it is known, for example `upstream_bad_request` or `upstream_request_too_large`. | Retry only after checking whether the request shape is allowed; do not retry blocked private image URLs unchanged. If `reason_code` is `upstream_bad_request` or `upstream_request_too_large`, reduce request size/tool payload or contact the operator with the request ID. | Inspect request attempts, fallback behavior, provider status, sanitized upstream error details, request/translation shape rows, request-shape buckets, redirect responses, response-size limits, and image URL egress policy. |
 | `upstream-timeout` | 504 | The upstream did not complete within configured timeout. | Retry with a smaller task or larger timeout if available. | Tune timeout, fallback, provider mix, or client token budget. |
@@ -101,7 +101,7 @@ Explicit output caps also affect quota admission. The router reserves estimated 
 
 ## Traffic-Shaped Responses
 
-`traffic-shaped` is a router-side 429 used for configured caller burst smoothing. It is distinct from hard `rpm-exceeded`, `tpm-exceeded`, `concurrency-exceeded`, `quota-exhausted`, and lifetime-budget failures, and distinct from terminal upstream provider `429` responses, which remain 429.
+`traffic-shaped` is a router-side 429 used for configured caller burst smoothing. It is distinct from hard `rpm-exceeded`, `tpm-exceeded`, `concurrency-exceeded`, `quota-exhausted`, and lifetime-budget failures, and from upstream provider rate limits, which use the upstream retry and rate-limit policy.
 
 Safe example:
 
@@ -130,7 +130,7 @@ Terminal upstream failures include safe fields that help clients and operators d
 - `error.details.inbound_dialect`, `target_dialect`, `tool_count`, `tool_choice_mode`, `request_bytes_bucket`, `tool_schema_bytes_bucket`, `estimated_input_tokens_bucket`, `output_cap_field`, and `output_cap_bucket`: safe request-shape hints when available;
 - `error.details.router_quota_state` and `error.details.router_key_state`: safe caller admission state at the time of the request.
 
-The terminal upstream 4xx status is preserved with `code: upstream-rejected`, while the provider's response body is not forwarded. A `400` can indicate rejected request parameters; a `413` indicates a request-size problem. A router-side `429` such as `traffic-shaped`, `tpm-exceeded`, or `rpm-exceeded` happens before upstream attempts and does not include `X-Upstream-Status`.
+A terminal upstream `400`, `404`, `413`, or `422` is preserved with `code: upstream-rejected`, while the provider's response body is not forwarded. Provider `401`, `402`, and `403` failures return `503 upstream-access-denied`, not a caller authentication error. Upstream `408` and `429` use the existing timeout and rate-limit policies. A router-side `429` such as `traffic-shaped`, `tpm-exceeded`, or `rpm-exceeded` happens before upstream attempts and does not include `X-Upstream-Status`.
 
 Image URL validation also uses the `upstream-failed` envelope with a safe
 `reason_code`. `image_url_forbidden` means the URL scheme, literal address, or
