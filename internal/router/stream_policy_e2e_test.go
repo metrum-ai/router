@@ -121,11 +121,11 @@ func TestStreamPolicyE2E(t *testing.T) {
 		status, _, body := post(tc.path, `{"model":"`+tc.model+`",`+tc.body+`}`)
 		var envelope struct {
 			Error struct {
-				Type string `json:"type"`
+				Code string `json:"code"`
 			} `json:"error"`
 		}
 		_ = json.Unmarshal([]byte(body), &envelope)
-		if status != tc.status || envelope.Error.Type != tc.code {
+		if status != tc.status || envelope.Error.Code != tc.code {
 			t.Fatalf("%s: %d %s", tc.model, status, body)
 		}
 		t.Logf("%s: %d %s", tc.model, status, tc.code)

@@ -350,7 +350,7 @@ Common safe filter reasons include `chat-to-responses-bridge-disabled`, `chat-to
 | `/v1/responses` | `reasoning` | Requires active OpenAI Responses target reasoning metadata. | Responses-to-Chat reasoning is unsupported unless `responses_to_chat.reasoning` is explicitly validated for the target. |
 | `/anthropic/v1/messages` | `thinking` | Requires active Anthropic Messages target reasoning/default-thinking metadata. | No general Messages bridge is implied by Chat or Responses bridge metadata. |
 
-Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate remains, the router returns `502 no-eligible-target`; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
+Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate supports the requested capabilities, the router returns `400 invalid_request_error` with an `unsupported_capability` code; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
 
@@ -408,7 +408,7 @@ Example response:
 }
 ```
 
-Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Requests for unlisted groups fail with `403 model-not-allowed` before any upstream provider is called.
+Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Unknown or disallowed groups fail with `404 model_not_found` before any upstream provider is called; the response does not disclose whether a group exists.
 
 The returned IDs are router model groups, not a full inventory of every upstream provider model. Platform teams can change the upstream provider/model mix behind a group without changing the caller-facing group name. With `server.responses.model_identity: requested_group`, these IDs are also exactly what completion responses report in their `model` field.
 

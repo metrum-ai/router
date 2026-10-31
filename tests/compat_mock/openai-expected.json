@@ -50,9 +50,5 @@
   "moderations": {
     "reason": "Endpoint returns 405 rather than the expected SDK response",
     "issue": "https://github.com/metrum-ai/router/issues/531"
-  },
-  "error_responses": {
-    "reason": "Unknown model returns 403 instead of the expected API error",
-    "issue": "https://github.com/metrum-ai/router/issues/530"
   }
 }
