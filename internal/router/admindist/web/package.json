@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.1.2",
-    "chart.js": "^4.5.1",
+    "chart.js": "^4.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.60.0",
