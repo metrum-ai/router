@@ -118,6 +118,7 @@ const sidebars = {
         "evaluation/deployment-readiness",
         "evaluation/deployment-security-assessment",
         "evaluation/operational-acceptance",
+        "evaluation/router-hierarchy-proof",
         "evaluation/security-and-trust",
         "evaluation/competitive-landscape",
         "evaluation/harbor-case-study",
