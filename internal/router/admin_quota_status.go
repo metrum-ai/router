@@ -45,6 +45,12 @@ func (s *Service) handleAdminQuotaStatus(w http.ResponseWriter, r *http.Request,
 		}
 		st := s.quota.stateFor(c.cfg.ID, now)
 		s.quota.resetWindows(st, now)
+		effective, _, err := s.quota.effectiveQuotaState(c.cfg.ID, st, now)
+		if err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"type": "quota-unavailable", "message": "quota-unavailable"}})
+			return
+		}
+		st = effective
 		quotaState, _ := s.quota.quotaState(c.cfg, st, 0)
 		keyState := s.quota.keyState(c.cfg, st, 0)
 		rows = append(rows, map[string]any{
@@ -56,7 +62,7 @@ func (s *Service) handleAdminQuotaStatus(w http.ResponseWriter, r *http.Request,
 			"status":      c.cfg.Status,
 			"quota_state": quotaState,
 			"key_state":   keyState,
-			"exhausted":   st.Disabled,
+			"exhausted":   st.Disabled || keyState == "exhausted",
 			"rate": map[string]any{
 				"rpm":        c.cfg.Rate.RPM,
 				"tpm":        c.cfg.Rate.TPM,

@@ -111,6 +111,10 @@ func applyIDReplacements(raw []byte, changes []idReplacement) []byte {
 	return append(out, raw[last:]...)
 }
 func decodeIdentifierFields(raw []byte, t IdentifierTransform) ([]byte, error) {
+	return decodeIdentifierFieldsWithPinnedResponse(raw, t, false)
+}
+
+func decodeIdentifierFieldsWithPinnedResponse(raw []byte, t IdentifierTransform, pinned bool) ([]byte, error) {
 	if t == nil {
 		return raw, nil
 	}
@@ -136,9 +140,15 @@ func decodeIdentifierFields(raw []byte, t IdentifierTransform) ([]byte, error) {
 	walk = func(n *idJSONNode, parentKey string) error {
 		for k, v := range n.fields {
 			switch k {
-			case "tool_call_id", "tool_use_id", "call_id", "previous_response_id":
+			case "tool_call_id", "tool_use_id", "call_id":
 				if e := decodeField(v); e != nil {
 					return e
+				}
+			case "previous_response_id":
+				if !pinned {
+					if e := decodeField(v); e != nil {
+						return e
+					}
 				}
 			case "id":
 				// Restore only OpenAI Chat tool_calls[].id, Anthropic tool_use

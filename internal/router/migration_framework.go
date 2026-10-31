@@ -33,7 +33,7 @@ const usageContentCaptureEncryptionMigrationID = 2026081901
 const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 10, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 14, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -201,6 +201,31 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	HandlerKey: "usage.token-breakdown.apply.v1@applyUsageTokenBreakdownMigration", PostconditionKey: "usage.token-breakdown.schema.v1@verifyUsageTokenBreakdownMigration",
 	Dependencies: []int{2026102302}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyUsageTokenBreakdownMigration, Verify: verifyUsageTokenBreakdownMigration,
+}, {
+	ID: 2026103001, Scope: usageMigrationScope, Name: "record usage endpoint", Release: "2026.10",
+	Checksum:      "2cc220391d192547bcff27b7c6c7cdd8e7c1ec71f5f74fe4c4bb5bd7e69f2076",
+	SchemaVersion: 11, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey: "usage.endpoint.apply.v1@applyUsageEndpointMigration", PostconditionKey: "usage.endpoint.schema.v1@verifyUsageEndpointMigration",
+	Dependencies: []int{2026102303}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyUsageEndpointMigration, Verify: verifyUsageEndpointMigration,
+}, {
+	ID: 2026103003, Scope: usageMigrationScope, Name: "record stored response affinity", Release: "2026.10",
+	Checksum: MigrationChecksum("usage.response-affinity.v1"), SchemaVersion: 12, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey: "usage.response-affinity.apply.v1@applyResponseAffinityMigration", PostconditionKey: "usage.response-affinity.schema.v1@verifyResponseAffinityMigration",
+	Dependencies: []int{2026103001}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyResponseAffinityMigration, Verify: verifyResponseAffinityMigration,
+}, {
+	ID: 2026103005, Scope: usageMigrationScope, Name: "link stored response retention to request", Release: "2026.10",
+	Checksum: MigrationChecksum("usage.response-affinity-request.v1"), SchemaVersion: 13, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey: "usage.response-affinity-request.apply.v1@applyResponseAffinityRequestMigration", PostconditionKey: "usage.response-affinity-request.schema.v1@verifyResponseAffinityRequestMigration",
+	Dependencies: []int{2026103003}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyResponseAffinityRequestMigration, Verify: verifyResponseAffinityRequestMigration,
+}, {
+	ID: 2026103006, Scope: usageMigrationScope, Name: "durable background response settlement", Release: "2026.10",
+	Checksum: MigrationChecksum("usage.background-response-settlement.v1"), SchemaVersion: 14, DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
+	HandlerKey: "usage.background-response-settlement.apply.v1@applyBackgroundSettlementMigration", PostconditionKey: "usage.background-response-settlement.schema.v1@verifyBackgroundSettlementMigration",
+	Dependencies: []int{2026103005}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+	Apply: applyBackgroundSettlementMigration, Verify: verifyBackgroundSettlementMigration,
 }}
 
 func init() {

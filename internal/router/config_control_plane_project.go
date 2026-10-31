@@ -20,6 +20,7 @@ package router
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -123,10 +124,11 @@ func deleteControlPlaneSetChildren(tx *gorm.DB, configSetID string) error {
 // License columns are deployment-owned and stay at their SQL defaults.
 func projectControlPlaneServer(tx *gorm.DB, configSetID string, cfg *Config) error {
 	row := map[string]any{
-		"config_set_id":       configSetID,
-		"listen":              cfg.Server.Listen,
-		"default_model_group": cfg.Server.DefaultModelGroup,
-		"state_path":          cfg.StatePath,
+		"config_set_id":             configSetID,
+		"listen":                    cfg.Server.Listen,
+		"default_model_group":       cfg.Server.DefaultModelGroup,
+		"state_path":                cfg.StatePath,
+		"responses_store_retention": defaultString(cfg.Server.ResponsesStore.Retention, "30d"),
 	}
 	if err := tx.Table("router_config_server").Create(row).Error; err != nil {
 		return fmt.Errorf("insert server row: %w", err)
@@ -530,18 +532,24 @@ func projectControlPlaneModelGroupTarget(tx *gorm.DB, configSetID, groupName str
 	if target.ModelRef != "" {
 		modelRef = target.ModelRef
 	}
+	dimensions, err := json.Marshal(target.EmbeddingDimensions)
+	if err != nil {
+		return fmt.Errorf("encode embedding dimensions: %w", err)
+	}
 	row := map[string]any{
-		"config_set_id": configSetID,
-		"group_name":    groupName,
-		"sequence":      sequence,
-		"provider_name": target.Provider,
-		"model_ref":     modelRef,
-		"model":         target.Model,
-		"dialect":       target.Dialect,
-		"weight":        target.Weight,
-		"rpm":           target.RPM,
-		"tier":          target.Tier,
-		"cost":          target.Cost,
+		"config_set_id":        configSetID,
+		"group_name":           groupName,
+		"sequence":             sequence,
+		"provider_name":        target.Provider,
+		"model_ref":            modelRef,
+		"model":                target.Model,
+		"dialect":              target.Dialect,
+		"weight":               target.Weight,
+		"rpm":                  target.RPM,
+		"tier":                 target.Tier,
+		"cost":                 target.Cost,
+		"embedding_space":      target.EmbeddingSpace,
+		"embedding_dimensions": string(dimensions),
 	}
 	if err := tx.Table("router_config_model_group_targets").Create(row).Error; err != nil {
 		return fmt.Errorf("insert model group %q target %d: %w", groupName, sequence, err)

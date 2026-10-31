@@ -207,6 +207,8 @@ The response shape is:
 }
 ```
 
+Usage reports accept `endpoint=embeddings` to filter embedding calls; request rows include the `endpoint` field. Historical rows without endpoint metadata remain blank. Endpoint filtering requires raw history and is unavailable for security reports or finalized daily rollups; these combinations return an error rather than an unfiltered result.
+
 Request sort keys are `timeUtc`, `costUsd`, `latencyMs`, `status`, and `requestId`. Security-event sort keys are `timeUtc`, `status`, `outcome`, `surface`, and `reason`. `limit` must be positive and no larger than `server.admin_reports.max_rows`; `direction` must be `asc` or `desc`. Cursors are opaque, signed, and bound to the endpoint, sort, and direction. Malformed, tampered, stale, or mismatched cursors return `400 invalid-report-filter`. Cursor pagination is domain-scoped the same way as the first page, so a subject authorized for `example/prod` cannot page into another project/environment.
 
 Aggregate tabs such as overview, usage by key, provider/model mix, savings by user, traffic-shaping summaries, and routing-decision buckets remain ranked top-N summaries. Their metadata uses:

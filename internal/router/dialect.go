@@ -125,6 +125,9 @@ func encodeUpstreamForTarget(dialect, model string, req *IRRequest, target Targe
 			msgs = append(msgs, map[string]any{"role": m.Role, "content": encodeAnthropicContent(m)})
 		}
 		body := map[string]any{"model": model, "messages": msgs, "max_tokens": effectiveMaxTokens(req, 1024), "stream": false}
+		if format, ok := openAIJSONSchemaForAnthropic(req); ok {
+			body["output_config"] = map[string]any{"format": map[string]any{"type": "json_schema", "schema": format}}
+		}
 		if req.System != "" {
 			body["system"] = req.System
 		}
@@ -294,6 +297,13 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 	// Encode a unary upstream call. The native streaming path flips stream=true
 	// via enableNativeUpstreamStream; the synthesized translator needs unary.
 	body["stream"] = false
+	// Native Responses storage is caller-controlled unless the target is
+	// explicitly configured to disable provider-side storage.
+	if req != nil {
+		if value, ok := req.Raw["store"]; ok {
+			body["store"] = value
+		}
+	}
 	if target.ForceStoreFalse {
 		body["store"] = false
 	}

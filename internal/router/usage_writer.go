@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,12 @@ type usageContentCaptureJob struct {
 	headers []*contentCaptureHeaderRecord
 }
 
+type backgroundSettlementJob struct {
+	responseID, owner, status string
+	usage                     Usage
+	observedAt                time.Time
+}
+
 const usageQueueCapacity = 10000
 const usageBatchSize = 256
 const usageFlushInterval = 250 * time.Millisecond
@@ -28,16 +35,19 @@ const usageDrainTimeout = 10 * time.Second
 
 // usageWriter is owned by the serving store; offline reporting stores remain synchronous.
 type usageWriter struct {
-	ch           chan any
-	done         chan struct{}
-	mu           sync.RWMutex
-	closed       bool
-	cancel       context.CancelFunc
-	dropped      atomic.Int64
-	writes       atomic.Int64
-	latencyNS    atomic.Int64
-	err          error
-	drainTimeout time.Duration
+	ch                   chan any
+	done                 chan struct{}
+	mu                   sync.RWMutex
+	closed               bool
+	cancel               context.CancelFunc
+	dropped              atomic.Int64
+	affinityFailures     atomic.Int64
+	settlementFailures   atomic.Int64
+	settlementUnreported atomic.Int64
+	writes               atomic.Int64
+	latencyNS            atomic.Int64
+	err                  error
+	drainTimeout         time.Duration
 }
 
 func newUsageWriter(s *usageStore) *usageWriter {
@@ -93,17 +103,42 @@ func startUsageWriter(write func(context.Context, []any) error, interval time.Du
 	return w
 }
 
-func (w *usageWriter) record(rec any) {
+func (w *usageWriter) record(rec any) bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	if w.closed {
 		w.dropped.Add(1)
-		return
+		return false
 	}
 	select {
 	case w.ch <- rec:
+		return true
 	default:
 		w.dropped.Add(1)
+		return false
+	}
+}
+
+// recordBackgroundSettlement never waits for the database.
+func (s *usageStore) recordBackgroundSettlement(job backgroundSettlementJob) {
+	if s == nil || s.writer == nil {
+		return
+	}
+	if !s.writer.record(job) {
+		s.writer.settlementFailures.Add(1)
+		log.Printf("background settlement queue unavailable")
+	}
+}
+
+// recordResponseAffinity never waits for the database; failures leave the
+// response unavailable and are reflected in the affinity failure counter.
+func (s *usageStore) recordResponseAffinity(row responseAffinityRecord) {
+	if s == nil || s.writer == nil {
+		return
+	}
+	if !s.writer.record(row) {
+		s.writer.affinityFailures.Add(1)
+		log.Printf("response affinity write queue unavailable")
 	}
 }
 
@@ -185,6 +220,8 @@ func (s *usageStore) writeUsageJobs(ctx context.Context, batch []any) error {
 	var order []reflect.Type
 	var cutoffs []time.Time
 	var captures []usageContentCaptureJob
+	var affinities []responseAffinityRecord
+	var settlements []backgroundSettlementJob
 	for _, job := range batch {
 		var models []any
 		switch rec := job.(type) {
@@ -196,6 +233,10 @@ func (s *usageStore) writeUsageJobs(ctx context.Context, batch []any) error {
 			cutoffs = append(cutoffs, rec)
 		case usageContentCaptureJob:
 			captures = append(captures, rec)
+		case responseAffinityRecord:
+			affinities = append(affinities, rec)
+		case backgroundSettlementJob:
+			settlements = append(settlements, rec)
 		}
 		for _, model := range models {
 			typ := reflect.TypeOf(model)
@@ -207,7 +248,7 @@ func (s *usageStore) writeUsageJobs(ctx context.Context, batch []any) error {
 			groups[typ] = reflect.Append(values, reflect.ValueOf(model))
 		}
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, cutoff := range cutoffs {
 			if err := tx.Where("ts < ?", formatUsageTime(cutoff.UTC())).Delete(&securityAccessEventRecord{}).Error; err != nil {
 				return err
@@ -237,11 +278,41 @@ func (s *usageStore) writeUsageJobs(ctx context.Context, batch []any) error {
 		}
 		return nil
 	})
+	if err != nil {
+		if s.writer != nil && len(affinities) > 0 {
+			s.writer.affinityFailures.Add(int64(len(affinities)))
+			log.Printf("response affinity batch could not be written")
+		}
+		if s.writer != nil && len(settlements) > 0 {
+			s.writer.settlementFailures.Add(int64(len(settlements)))
+			log.Printf("background settlement batch could not be written")
+		}
+		return err
+	}
+	// A collision revokes the original mapping. Process each affinity write
+	// independently so it cannot roll back unrelated audit or usage records.
+	for _, row := range affinities {
+		if err := insertResponseAffinity(s.db.WithContext(ctx), row); err != nil {
+			if s.writer != nil {
+				s.writer.affinityFailures.Add(1)
+			}
+			log.Printf("response affinity write failed")
+		}
+	}
+	for _, job := range settlements {
+		if _, err := settleBackgroundResponse(ctx, s.db, job.responseID, job.owner, job.status, job.usage, job.observedAt); err != nil {
+			if s.writer != nil {
+				s.writer.settlementFailures.Add(1)
+			}
+			log.Printf("background settlement write failed")
+		}
+	}
+	return nil
 }
 
 func (w *usageWriter) prometheus() string {
 	if w == nil {
 		return ""
 	}
-	return fmt.Sprintf("# TYPE usage_queue_depth gauge\nusage_queue_depth %d\n# TYPE usage_write_dropped_total counter\nusage_write_dropped_total %d\n# TYPE usage_write_latency_seconds summary\nusage_write_latency_seconds_sum %g\nusage_write_latency_seconds_count %d\n", len(w.ch), w.dropped.Load(), float64(w.latencyNS.Load())/1e9, w.writes.Load())
+	return fmt.Sprintf("# TYPE usage_queue_depth gauge\nusage_queue_depth %d\n# TYPE usage_write_dropped_total counter\nusage_write_dropped_total %d\n# TYPE response_affinity_write_failures_total counter\nresponse_affinity_write_failures_total %d\n# TYPE background_settlement_write_failures_total counter\nbackground_settlement_write_failures_total %d\n# TYPE background_usage_unreported_observations_total counter\nbackground_usage_unreported_observations_total %d\n# TYPE usage_write_latency_seconds summary\nusage_write_latency_seconds_sum %g\nusage_write_latency_seconds_count %d\n", len(w.ch), w.dropped.Load(), w.affinityFailures.Load(), w.settlementFailures.Load(), w.settlementUnreported.Load(), float64(w.latencyNS.Load())/1e9, w.writes.Load())
 }

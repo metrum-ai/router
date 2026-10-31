@@ -1775,7 +1775,7 @@ func TestRetentionDryRunWritesJobRecordsAndHonorsLegalHold(t *testing.T) {
 }
 
 func TestRetentionUsageDetailRequiresFinalizedRollupBeforeFutureDelete(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := OpenUsageStore(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "usage.sqlite"), MigrationPolicy: usageDBMigrationPolicyAutoSafe})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1802,7 +1802,7 @@ func TestRetentionUsageDetailRequiresFinalizedRollupBeforeFutureDelete(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(blocked.TableResults) != 1 {
+	if len(blocked.TableResults) != 2 {
 		t.Fatalf("blocked results: %#v", blocked)
 	}
 	if got := blocked.TableResults[0]; got.Status != "blocked_rollup_required" || got.CandidateRows != 1 || got.EligibleRows != 0 || got.BlockedRows != 1 {
@@ -1848,7 +1848,7 @@ func TestRetentionUsageDetailRequiresFinalizedRollupBeforeFutureDelete(t *testin
 }
 
 func TestRetentionUsageDetailHonorsChildTelemetryLegalHold(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := OpenUsageStore(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "usage.sqlite"), MigrationPolicy: usageDBMigrationPolicyAutoSafe})
 	if err != nil {
 		t.Fatal(err)
 	}

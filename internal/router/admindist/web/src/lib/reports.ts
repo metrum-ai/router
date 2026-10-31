@@ -336,6 +336,7 @@ function savingsBreakdownColumns(primaryLabel: string, secondaryLabel?: string):
 }
 
 const requestColumns: ReportColumn[] = [
+  { key: "endpoint", label: "Endpoint" },
   { key: "requestKind", label: "Request kind" },
   { key: "usageSource", label: "Usage source" },
   { key: "timeUtc", label: "Time" },
@@ -466,6 +467,7 @@ const baseFilters = [
   "project",
   "environment",
   "requested_model",
+  "endpoint",
   "resolved_group",
   "provider",
   "model",

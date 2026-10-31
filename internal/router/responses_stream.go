@@ -5,6 +5,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -154,6 +155,36 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		}
 		if err != nil && !errors.Is(err, stream.ErrTerminal) {
 			return result, upstreamError{Class: "stream_translator_error", Message: "invalid upstream stream event", Err: err}
+		}
+		if rc != nil && rc.responseCreated != nil {
+			for _, event := range events {
+				if event.Type == "response.created" {
+					var envelope struct {
+						Response struct {
+							ID     string `json:"id"`
+							Status string `json:"status"`
+						} `json:"response"`
+					}
+					if json.Unmarshal(up.Data, &envelope) == nil {
+						rc.responseCreated(envelope.Response.ID, envelope.Response.Status)
+					}
+				}
+			}
+		}
+		if rc != nil && rc.responseTerminal != nil {
+			for _, event := range events {
+				if event.Type == "response.completed" || event.Type == "response.failed" || event.Type == "response.incomplete" {
+					var envelope struct {
+						Response map[string]any `json:"response"`
+					}
+					if json.Unmarshal(up.Data, &envelope) != nil || envelope.Response == nil {
+						return result, upstreamError{Class: "background_settlement_error", Message: "invalid terminal response"}
+					}
+					if callbackErr := rc.responseTerminal(envelope.Response); callbackErr != nil {
+						return result, upstreamError{Class: "background_settlement_error", Message: "background settlement unavailable", Err: callbackErr}
+					}
+				}
+			}
 		}
 		if writeErr := emit(events); writeErr != nil {
 			return result, writeErr

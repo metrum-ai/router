@@ -441,9 +441,22 @@ func TestEncodeResponsesPassthroughStoreByTargetMetadata(t *testing.T) {
 	if err := json.Unmarshal(defaultBody, &defaultTarget); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := defaultTarget["store"]; ok {
-		t.Fatalf("default target body should omit store: %#v", defaultTarget)
+	if defaultTarget["store"] != true {
+		t.Fatalf("default target must honor store=true: %#v", defaultTarget)
 	}
+	req.Raw["store"] = false
+	falseBody, err := encodeResponsesPassthrough("responses-model", req, Target{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var falseTarget map[string]any
+	if err := json.Unmarshal(falseBody, &falseTarget); err != nil {
+		t.Fatal(err)
+	}
+	if falseTarget["store"] != false {
+		t.Fatalf("default target must honor store=false: %#v", falseTarget)
+	}
+	req.Raw["store"] = true
 
 	forcedBody, err := encodeResponsesPassthrough("responses-model", req, Target{ForceStoreFalse: true})
 	if err != nil {

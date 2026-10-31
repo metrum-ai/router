@@ -19,6 +19,12 @@ describe("admin report filters", () => {
     const columns = columnsForTab(tab, [{ requestKind: "count_tokens", usageSource: "none", inputTokens: 0 }]);
     expect(columns.map(column => column.key)).toContain("requestKind");
   });
+  test("exposes endpoint filtering and the endpoint request column", () => {
+    const tab = tabById("requests");
+    if (!tab) throw new Error("requests tab missing");
+    expect(names(globalFilterFields)).toContain("endpoint");
+    expect(columnsForTab(tab, [{ endpoint: "embeddings" }]).map(column => column.key)).toContain("endpoint");
+  });
   test("keeps the compatibility filter list as global filters followed by tab and pagination filters", () => {
     expect(filterFields).toEqual([...globalFilterFields, ...tabFilterFields, ...paginationFilterFields]);
   });

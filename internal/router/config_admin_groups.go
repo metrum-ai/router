@@ -770,6 +770,20 @@ func prepareGroupWrite(raw []byte, group string, req GroupTargetsWriteRequest, p
 		err = configAdminError(404, "group-not-found", "model group is not in the active configuration")
 		return
 	}
+	// The target-write API currently accepts only a subset of Target fields.
+	// Refuse embedding groups rather than dropping their space/dimension
+	// invariants; operators can make these changes through canonical import.
+	for _, target := range existing.Targets {
+		resolved, resolveErr := current.resolveTarget(group, target)
+		if resolveErr != nil {
+			err = configAdminError(422, "config-invalid", "the existing group cannot be resolved")
+			return
+		}
+		if isEmbeddingTarget(resolved) {
+			err = configAdminError(422, "embedding-target-write-unsupported", "update embedding groups through canonical configuration import")
+			return
+		}
+	}
 	strategyFrom = existing.Strategy
 	before = groupTargetSpecsFromGroup(existing)
 	after = append([]GroupTargetSpec(nil), req.Targets...)

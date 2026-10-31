@@ -11,6 +11,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // errQuotaStatePersist is returned when durable quota state cannot be written.
@@ -18,12 +20,13 @@ import (
 var errQuotaStatePersist = errors.New("quota-state-error")
 
 type quotaStore struct {
-	mu      sync.Mutex
-	path    string
-	keyID   string
-	key     []byte
-	callers map[string]*callerRuntime
-	state   persistentState
+	mu           sync.Mutex
+	path         string
+	keyID        string
+	key          []byte
+	callers      map[string]*callerRuntime
+	state        persistentState
+	backgroundDB *gorm.DB
 	// saveFault, when set, forces saveLocked to return without writing. Tests only.
 	saveFault error
 }
@@ -223,7 +226,11 @@ func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
 	now := time.Now().UTC()
 	st := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(st, now)
-	keyState := q.keyState(c.cfg, st, 0)
+	effective, minute, err := q.effectiveQuotaState(c.cfg.ID, st, now)
+	if err != nil {
+		return backgroundQuotaError()
+	}
+	keyState := q.keyState(c.cfg, effective, 0)
 	if st.Disabled || keyState == "exhausted" {
 		if ad := q.persistExhaustedLocked(st); !ad.OK {
 			return ad
@@ -241,7 +248,7 @@ func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
 	if exceedsBudget(c.cfg.Quota.Day.Requests, st.DayRequests+1) || exceedsBudget(c.cfg.Quota.Month.Requests, st.MonthRequests+1) {
 		return admission{Status: http.StatusTooManyRequests, Reason: "quota-exhausted", RetryAfter: "3600", QuotaState: "reject", KeyState: keyState}
 	}
-	res, ad := q.reserveTokensLocked(c, st, estTokens, now)
+	res, ad := q.reserveTokensLocked(c, effective, estTokens, now, minute)
 	if !ad.OK {
 		return ad
 	}
@@ -266,10 +273,12 @@ func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
 		}
 	}
 	reservedEstimate := c.inFlightReservedTokens
-	quotaState, warning := q.quotaState(c.cfg, st, reservedEstimate)
-	keyState = q.keyState(c.cfg, st, 0)
+	effective.DayRequests = st.DayRequests
+	effective.MonthRequests = st.MonthRequests
+	quotaState, warning := q.quotaState(c.cfg, effective, reservedEstimate)
+	keyState = q.keyState(c.cfg, effective, 0)
 	if estTokens > 0 {
-		keyState = q.keyState(c.cfg, st, reservedEstimate)
+		keyState = q.keyState(c.cfg, effective, reservedEstimate)
 	}
 	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: keyState, WarningText: warning, Reservation: res}
 }
@@ -286,7 +295,11 @@ func (q *quotaStore) AcquireConcurrency(c *callerRuntime) admission {
 	now := time.Now().UTC()
 	st := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(st, now)
-	keyState := q.keyState(c.cfg, st, 0)
+	effective, _, err := q.effectiveQuotaState(c.cfg.ID, st, now)
+	if err != nil {
+		return backgroundQuotaError()
+	}
+	keyState := q.keyState(c.cfg, effective, 0)
 	if st.Disabled || keyState == "exhausted" {
 		if ad := q.persistExhaustedLocked(st); !ad.OK {
 			return ad
@@ -298,6 +311,25 @@ func (q *quotaStore) AcquireConcurrency(c *callerRuntime) admission {
 	}
 	c.inFlight++
 	return admission{OK: true, Status: http.StatusOK, QuotaState: "ok", KeyState: keyState}
+}
+
+// AdmitStoredOperation allows owners to retrieve or cancel already-paid work
+// even after their token budget is exhausted. It still enforces concurrency
+// and request-per-minute limits, but does not admit new token consumption.
+func (q *quotaStore) AdmitStoredOperation(c *callerRuntime) admission {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := time.Now().UTC()
+	if c.cfg.Rate.Concurrent > 0 && c.inFlight >= c.cfg.Rate.Concurrent {
+		return admission{Status: http.StatusTooManyRequests, Reason: "concurrency-exceeded", RetryAfter: "1", QuotaState: "ok", KeyState: "active"}
+	}
+	c.reqTimes = pruneTimes(c.reqTimes, now.Add(-time.Minute))
+	if c.cfg.Rate.RPM > 0 && len(c.reqTimes) >= c.cfg.Rate.RPM {
+		return admission{Status: http.StatusTooManyRequests, Reason: "rpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: "active"}
+	}
+	c.inFlight++
+	c.reqTimes = append(c.reqTimes, now)
+	return admission{OK: true, Status: http.StatusOK, QuotaState: "ok", KeyState: "active"}
 }
 
 func (q *quotaStore) Release(c *callerRuntime) {
@@ -323,8 +355,12 @@ func (q *quotaStore) ReserveTokens(c *callerRuntime, estTokens int) admission {
 	now := time.Now().UTC()
 	st := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(st, now)
-	keyState := q.keyState(c.cfg, st, c.inFlightReservedTokens)
-	actualKeyState := q.keyState(c.cfg, st, 0)
+	effective, minute, err := q.effectiveQuotaState(c.cfg.ID, st, now)
+	if err != nil {
+		return backgroundQuotaError()
+	}
+	keyState := q.keyState(c.cfg, effective, c.inFlightReservedTokens)
+	actualKeyState := q.keyState(c.cfg, effective, 0)
 	if st.Disabled || actualKeyState == "exhausted" {
 		if ad := q.persistExhaustedLocked(st); !ad.OK {
 			return ad
@@ -334,13 +370,13 @@ func (q *quotaStore) ReserveTokens(c *callerRuntime, estTokens int) admission {
 	if keyState == "exhausted" {
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
 	}
-	res, ad := q.reserveTokensLocked(c, st, estTokens, now)
+	res, ad := q.reserveTokensLocked(c, effective, estTokens, now, minute)
 	if !ad.OK {
 		return ad
 	}
 	reservedEstimate := c.inFlightReservedTokens
-	quotaState, warning := q.quotaState(c.cfg, st, reservedEstimate)
-	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: q.keyState(c.cfg, st, reservedEstimate), WarningText: warning, Reservation: res}
+	quotaState, warning := q.quotaState(c.cfg, effective, reservedEstimate)
+	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: q.keyState(c.cfg, effective, reservedEstimate), WarningText: warning, Reservation: res}
 }
 
 func (q *quotaStore) RecordTokens(c *callerRuntime, reservation *quotaReservation, usage Usage) (string, string, error) {
@@ -358,9 +394,13 @@ func (q *quotaStore) RecordTokens(c *callerRuntime, reservation *quotaReservatio
 	st.MonthTokens += int64(total)
 	st.LifetimeTokens += int64(total)
 	c.tokenTimes = append(c.tokenTimes, tokenEvent{At: now, Tokens: total})
-	keyState := q.keyState(c.cfg, st, 0)
-	if keyState == "exhausted" {
-		st.Disabled = true
+	effective, _, ledgerErr := q.effectiveQuotaState(c.cfg.ID, st, now)
+	keyState := "error"
+	if ledgerErr == nil {
+		keyState = q.keyState(c.cfg, effective, 0)
+		if keyState == "exhausted" {
+			st.Disabled = true
+		}
 	}
 	// Consumed upstream work remains an outstanding liability even when the
 	// durable write fails. Keep counters, latch persistence health, and refuse
@@ -370,7 +410,10 @@ func (q *quotaStore) RecordTokens(c *callerRuntime, reservation *quotaReservatio
 		return "", "", fmt.Errorf("%w: %v", errQuotaStatePersist, err)
 	}
 	q.state.PersistenceUnhealthy = false
-	quotaState, _ := q.quotaState(c.cfg, st, 0)
+	if ledgerErr != nil {
+		return "", "", fmt.Errorf("%w: background quota unavailable", errQuotaStatePersist)
+	}
+	quotaState, _ := q.quotaState(c.cfg, effective, 0)
 	return quotaState, keyState, nil
 }
 
@@ -433,14 +476,14 @@ func (q *quotaStore) releaseReservationLocked(c *callerRuntime, reservation *quo
 	reservation.active = false
 }
 
-func (q *quotaStore) reserveTokensLocked(c *callerRuntime, st *callerState, estTokens int, now time.Time) (*quotaReservation, admission) {
+func (q *quotaStore) reserveTokensLocked(c *callerRuntime, st *callerState, estTokens int, now time.Time, backgroundMinute int64) (*quotaReservation, admission) {
 	if estTokens <= 0 {
 		return nil, admission{OK: true, Status: http.StatusOK}
 	}
 	reservedBefore := c.inFlightReservedTokens
 	keyState := q.keyState(c.cfg, st, reservedBefore)
 	c.tokenTimes = pruneTokens(c.tokenTimes, now.Add(-time.Minute))
-	if c.cfg.Rate.TPM > 0 && int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(c.cfg.Rate.TPM) {
+	if c.cfg.Rate.TPM > 0 && (backgroundMinute > int64(c.cfg.Rate.TPM) || int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(c.cfg.Rate.TPM)-backgroundMinute) {
 		return nil, admission{Status: http.StatusTooManyRequests, Reason: "tpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: keyState}
 	}
 	reservedEstimate := reservedBefore + int64(estTokens)
@@ -456,11 +499,21 @@ func (q *quotaStore) reserveTokensLocked(c *callerRuntime, st *callerState, estT
 }
 
 func (q *quotaStore) Usage(c *callerRuntime) map[string]any {
+	usage, _ := q.UsageWithError(c)
+	return usage
+}
+
+func (q *quotaStore) UsageWithError(c *callerRuntime) (map[string]any, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := time.Now().UTC()
 	st := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(st, now)
+	effective, _, err := q.effectiveQuotaState(c.cfg.ID, st, now)
+	if err != nil {
+		return nil, err
+	}
+	st = effective
 	return map[string]any{
 		"caller_id":          c.cfg.ID,
 		"caller_user":        callerUser(c.cfg),
@@ -477,10 +530,10 @@ func (q *quotaStore) Usage(c *callerRuntime) map[string]any {
 		"key": map[string]any{
 			"lifetime_tokens":   st.LifetimeTokens,
 			"remaining_tokens":  remaining(c.cfg.Key.LifetimeTokens, st.LifetimeTokens),
-			"exhausted":         st.Disabled,
+			"exhausted":         st.Disabled || q.keyState(c.cfg, st, 0) == "exhausted",
 			"configured_budget": c.cfg.Key.LifetimeTokens,
 		},
-	}
+	}, nil
 }
 
 func (q *quotaStore) stateFor(id string, now time.Time) *callerState {

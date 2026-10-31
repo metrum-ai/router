@@ -122,11 +122,14 @@ type decision struct {
 }
 
 type routingEligibilityError struct {
-	Model           string
-	Dialect         string
-	Requirements    []string
-	ContractPresent bool
-	ContractReason  string
+	Model              string
+	Dialect            string
+	Requirements       []string
+	ContractPresent    bool
+	ContractReason     string
+	CapabilityMismatch bool
+	MismatchCode       string
+	MismatchParam      string
 }
 
 func (e routingEligibilityError) Error() string {
@@ -139,22 +142,25 @@ type requestContext struct {
 	// receiveAt is the router receive clock used for router-added latency
 	// (receive to outbound WroteRequest). Prefer this over start when deriving
 	// issue #159 router-added latency from request_trace_events.
-	receiveAt            time.Time
-	ctx                  context.Context
-	caller               *callerRuntime
-	dialect              string
-	client               string
-	clientIP             clientIPInfo
-	method               string
-	pathTemplate         string
-	rec                  logRecord
-	bridgeSessionHeaders map[string]string
-	via                  []string
-	securityRecorded     bool
-	pacedUpstreamStream  bool
-	traceSeq             int
-	sanitizeTraceMessage func(string, string) string
-	conversationKey      string
+	receiveAt              time.Time
+	ctx                    context.Context
+	caller                 *callerRuntime
+	dialect                string
+	client                 string
+	clientIP               clientIPInfo
+	method                 string
+	pathTemplate           string
+	rec                    logRecord
+	bridgeSessionHeaders   map[string]string
+	responseCreated        func(string, string)
+	responseTerminal       func(map[string]any) error
+	via                    []string
+	securityRecorded       bool
+	pacedUpstreamStream    bool
+	chatStreamIncludeUsage bool
+	traceSeq               int
+	sanitizeTraceMessage   func(string, string) string
+	conversationKey        string
 	// modelIdentity is server.responses.model_identity captured at request
 	// start; see publicModel.
 	modelIdentity string
@@ -248,6 +254,9 @@ func newService(cfg *Config) (*Service, error) {
 		_ = quota.Close()
 		_ = logger.Close()
 		return nil, err
+	}
+	if usage != nil {
+		quota.backgroundDB = usage.db
 	}
 	bridgeSessions, err := newBridgeSessionBackends(context.Background(), cfg)
 	if err != nil {
@@ -561,6 +570,7 @@ func (s *Service) routes() {
 		writeJSON(w, http.StatusOK, info)
 	})
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
+	s.mux.HandleFunc("GET /v1/models/{model}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
@@ -615,6 +625,41 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "anthropic") })
 	s.mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-chat") })
 	s.mux.HandleFunc("POST /v1/responses", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
+	s.mux.HandleFunc("POST /v1/embeddings", s.handleEmbeddings)
+	s.mux.HandleFunc("POST /v1/responses/input_tokens", s.handleResponsesInputTokens)
+	s.mux.HandleFunc("POST /v1/responses/compact", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
+	for _, pattern := range []string{"GET /v1/responses/{id}", "DELETE /v1/responses/{id}", "GET /v1/responses/{id}/input_items", "POST /v1/responses/{id}/cancel"} {
+		s.mux.HandleFunc(pattern, s.handleStoredResponse)
+	}
+	for _, pattern := range []string{"POST /v1/completions", "POST /v1/moderations"} {
+		s.mux.HandleFunc(pattern, s.handleUnsupportedOpenAIEndpoint)
+	}
+	for _, prefix := range []string{"/v1", "/anthropic/v1"} {
+		for _, suffix := range []string{
+			"POST /complete", "GET /messages/batches", "POST /messages/batches",
+			"GET /messages/batches/{id}", "DELETE /messages/batches/{id}",
+			"GET /messages/batches/{id}/results", "POST /messages/batches/{id}/cancel",
+		} {
+			method, path, _ := strings.Cut(suffix, " ")
+			s.mux.HandleFunc(method+" "+prefix+path, s.handleUnsupportedOpenAIEndpoint)
+		}
+		for _, path := range []string{"/skills", "/skills/"} {
+			for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+				s.mux.HandleFunc(method+" "+prefix+path, s.handleUnsupportedOpenAIEndpoint)
+			}
+		}
+	}
+	for _, path := range []string{
+		"/v1/files", "/v1/files/", "/anthropic/v1/files", "/anthropic/v1/files/", "/v1/uploads", "/v1/uploads/",
+		"/v1/batches", "/v1/batches/", "/v1/images", "/v1/images/",
+		"/v1/audio", "/v1/audio/", "/v1/vector_stores", "/v1/vector_stores/",
+		"/v1/assistants", "/v1/assistants/", "/v1/threads", "/v1/threads/",
+		"/v1/fine_tuning", "/v1/fine_tuning/", "/v1/realtime", "/v1/realtime/",
+	} {
+		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+			s.mux.HandleFunc(method+" "+path, s.handleUnsupportedOpenAIEndpoint)
+		}
+	}
 	s.mux.HandleFunc("GET /.well-known/security.txt", securityTextHandler)
 	s.mux.Handle("GET /", docsHandler())
 }
@@ -658,14 +703,83 @@ func (w *discardAdminAuthWriter) WriteHeader(statusCode int) {
 	w.status = statusCode
 }
 
+func (s *Service) handleUnsupportedOpenAIEndpoint(w http.ResponseWriter, r *http.Request) {
+	anthropic := isAnthropicModelRequest(r) || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/v1/messages/batches") || r.URL.Path == "/v1/complete" || strings.HasPrefix(r.URL.Path, "/v1/skills")
+	dialect := "openai-chat"
+	if anthropic {
+		dialect = "anthropic"
+	}
+	rc, ok := s.begin(w, r, dialect)
+	if !ok {
+		return
+	}
+	s.writeUnsupportedEndpoint(w, r, rc, anthropic)
+}
+
+func (s *Service) writeUnsupportedEndpoint(w http.ResponseWriter, r *http.Request, rc *requestContext, anthropic bool) {
+	code := "unsupported_endpoint"
+	rc.trace("request_error", code, Target{}, 0, http.StatusNotImplemented, code, false, 0)
+	rc.rec.Status = http.StatusNotImplemented
+	rc.rec.Error = &code
+	rc.rec.ErrorClass = code
+	rc.rec.ErrorMessage = code
+	s.finish(rc, http.StatusNotImplemented, &code)
+	message := fmt.Sprintf("%s %s is not supported by this router. See https://llm-api.apps.metrum.ai/docs/reference/api-compatibility.", r.Method, r.URL.Path)
+	if anthropic {
+		w.Header().Set("Request-Id", rc.id)
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"type": "error", "request_id": rc.id, "error": map[string]any{"type": "invalid_request_error", "message": message}})
+		return
+	}
+	writeJSON(w, http.StatusNotImplemented, map[string]any{"error": map[string]any{
+		"type": "invalid_request_error", "code": code, "param": nil, "message": message,
+	}})
+}
+
 func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {
 	rc, ok := s.begin(w, r, "models")
 	if !ok {
 		return
 	}
+	if isAnthropicModelRequest(r) {
+		s.writeAnthropicModelList(w, r, rc)
+		return
+	}
 	defer s.finish(rc, http.StatusOK, nil)
 	data := s.callerModelMetadata(rc.caller)
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "mode": "default", "data": data, "models": data})
+}
+
+// handleModelGet returns only models visible to the authenticated caller.
+func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.begin(w, r, "models")
+	if !ok {
+		return
+	}
+	name := r.PathValue("model")
+	for _, model := range s.callerModelMetadata(rc.caller) {
+		if model["id"] == name {
+			defer s.finish(rc, http.StatusOK, nil)
+			if isAnthropicModelRequest(r) {
+				writeJSON(w, http.StatusOK, anthropicModel(model))
+			} else {
+				writeJSON(w, http.StatusOK, model)
+			}
+			return
+		}
+	}
+	if isAnthropicModelRequest(r) {
+		reason := "unknown-model"
+		if _, exists := s.cfg.Models[name]; exists {
+			reason = "model-not-allowed"
+		}
+		s.writeAnthropicModelNotFound(w, rc, reason)
+		return
+	}
+	reason := "unknown-model"
+	if _, exists := s.cfg.Models[name]; exists {
+		reason = "model-not-allowed"
+	}
+	s.writeModelNotFound(w, rc, name, reason)
 }
 
 // handleCodexModels returns the local model catalog file shape consumed by Codex
@@ -939,8 +1053,13 @@ func (s *Service) handleUsage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	defer s.finish(rc, http.StatusOK, nil)
-	writeJSON(w, http.StatusOK, s.quota.Usage(rc.caller))
+	usage, err := s.quota.UsageWithError(rc.caller)
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, "quota-state-error")
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
+	s.finish(rc, http.StatusOK, nil)
 }
 
 func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -1084,8 +1203,7 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 
 func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if !s.identifiersAvailable() {
-		w.Header().Set("X-Request-Id", requestID())
-		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		s.writeUnavailableIdentifiers(w, "anthropic")
 		return
 	}
 
@@ -1134,12 +1252,12 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
-	if !rc.caller.allow[req.Model] {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
-		return
-	}
-	if _, ok := s.cfg.Models[req.Model]; !ok {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-found")
+	if _, exists := s.cfg.Models[req.Model]; !exists || !rc.caller.allow[req.Model] {
+		reason := "unknown-model"
+		if exists {
+			reason = "model-not-allowed"
+		}
+		s.writeAnthropicModelNotFound(w, rc, reason)
 		return
 	}
 	rc.rec.RequestedModel = req.Model
@@ -1151,8 +1269,7 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect string) {
 	if !s.identifiersAvailable() {
-		w.Header().Set("X-Request-Id", requestID())
-		s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		s.writeUnavailableIdentifiers(w, dialect)
 		return
 	}
 	endpointDialect := dialect
@@ -1184,7 +1301,15 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
 		return
 	}
-	body, err = decodeIdentifierFields(body, s.identifiers)
+	var pinnedResponse *responseAffinityRecord
+	if endpointDialect == "openai-responses" || endpointDialect == "openai-chat" {
+		var continuationOK bool
+		body, pinnedResponse, continuationOK = s.resolveContinuationBody(w, rc, body)
+		if !continuationOK {
+			return
+		}
+	}
+	body, err = decodeIdentifierFieldsWithPinnedResponse(body, s.identifiers, pinnedResponse != nil)
 	if err != nil {
 		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-tool-call-id")
@@ -1234,30 +1359,111 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
+	if dialect == "openai-responses" && rc.pathTemplate == "/v1/responses" && s.usage != nil {
+		// Cached responses cannot create new provider-side stored state.
+		if value, exists := req.Raw["store"]; !exists || value != false {
+			req.NoCache = true
+		}
+	}
 	if (dialect == "openai-responses" || dialect == "anthropic") && requestHasForbiddenProviderHostedTools(req) {
 		s.writeError(w, rc, http.StatusBadRequest, "provider-hosted-tools-forbidden")
 		return
 	}
-	// Background and WebSocket Responses surfaces are not advertised. Reject
-	// them before upstream so they cannot silently succeed as unary HTTP 200.
-	if dialect == "openai-responses" && requestWantsResponsesBackground(req) {
-		s.writeError(w, rc, http.StatusBadRequest, "responses-background-unsupported")
-		return
+	background := dialect == "openai-responses" && requestWantsResponsesBackground(req)
+	if background {
+		if s.usage == nil || rc.pathTemplate != "/v1/responses" {
+			s.writeUnsupportedEndpoint(w, r, rc, false)
+			return
+		}
+		if value, exists := req.Raw["store"]; exists && value != true {
+			s.writeError(w, rc, http.StatusBadRequest, "background-store-required")
+			return
+		}
 	}
 	if dialect == "openai-responses" && requestWantsWebSocketUpgrade(r) {
 		s.writeError(w, rc, http.StatusBadRequest, "responses-websocket-unsupported")
 		return
 	}
 	rc.rec.Stream = req.Stream
+	if dialect == "openai-chat" {
+		if options, ok := req.Raw["stream_options"].(map[string]any); ok {
+			rc.chatStreamIncludeUsage, _ = options["include_usage"].(bool)
+		}
+	}
 
-	if !rc.caller.allow[req.Model] {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
+	group, exists := s.cfg.Models[req.Model]
+	if !exists || !rc.caller.allow[req.Model] {
+		reason := "unknown-model"
+		if exists {
+			reason = "model-not-allowed"
+		}
+		if dialect == "openai-chat" || dialect == "openai-responses" {
+			s.writeModelNotFound(w, rc, req.Model, reason)
+		} else if dialect == "anthropic" {
+			s.writeAnthropicModelNotFound(w, rc, reason)
+		} else {
+			s.writeError(w, rc, http.StatusForbidden, reason)
+		}
 		return
 	}
-	group, ok := s.cfg.Models[req.Model]
-	if !ok {
-		s.writeError(w, rc, http.StatusForbidden, "model-not-found")
+	if isEmbeddingGroup(group) {
+		s.writeError(w, rc, http.StatusBadRequest, "unsupported_endpoint_for_model")
 		return
+	}
+	if pinnedResponse != nil {
+		if pinnedResponse.ModelGroup != req.Model {
+			s.writeError(w, rc, http.StatusNotFound, "response_not_found")
+			return
+		}
+		target, available := s.affinityTarget(pinnedResponse)
+		if !available {
+			s.writeError(w, rc, http.StatusConflict, "response_target_unavailable")
+			return
+		}
+		group.Targets = []Target{target}
+		group.Strategy = "static"
+		req.NoCache = true
+	}
+	if background {
+		var native []Target
+		for _, target := range group.Targets {
+			provider, ok := s.cfg.Provider[target.Provider]
+			if !ok || provider.APIKey == "" || !shouldRecordNativeResponse(s, rc, req, target) {
+				continue
+			}
+			if _, err := responseAffinityTargetKey(target.Provider, provider, target); err == nil {
+				native = append(native, target)
+			}
+		}
+		if len(native) == 0 {
+			s.writeUnsupportedEndpoint(w, r, rc, false)
+			return
+		}
+		group.Targets = native
+		req.NoCache = true
+	}
+	if rc.rec.Endpoint == "responses.compact" {
+		if rawValuePresent(req.Raw, "previous_response_id") && pinnedResponse == nil {
+			s.writeUnsupportedEndpoint(w, r, rc, false)
+			return
+		}
+		if req.Stream {
+			s.writeError(w, rc, http.StatusBadRequest, "invalid-request")
+			return
+		}
+		var native []Target
+		for _, target := range group.Targets {
+			provider := s.cfg.Provider[target.Provider]
+			if targetDialect(provider, target) == "openai-responses" && !isBedrock(provider) {
+				native = append(native, target)
+			}
+		}
+		if len(native) == 0 {
+			s.writeUnsupportedEndpoint(w, r, rc, false)
+			return
+		}
+		group.Targets = native
+		req.NoCache = true
 	}
 	if reason := s.mediaAdmission(group, req, dialect); reason != "" {
 		s.writeError(w, rc, http.StatusBadRequest, reason)
@@ -1273,7 +1479,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	s.maybeShadowRequest(req.Model, dialect, body)
+	if rc.rec.Endpoint != "responses.compact" && !(dialect == "openai-responses" && rc.pathTemplate == "/v1/responses" && req.Raw["store"] != false) {
+		s.maybeShadowRequest(req.Model, dialect, body)
+	}
 	if group.Contract != nil {
 		rc.rec.ContractPresent = true
 		rc.rec.ContractBucket = "pending"
@@ -1514,6 +1722,18 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	rc.rec.FallbackUsed = fallbackUsed
 	if err != nil {
 		if committedStreamError(err) {
+			if dialect == "openai-responses" && requestWantsResponsesBackground(req) {
+				classified := classifyError(err)
+				rc.rec.ErrorClass = classified.Class
+				rc.rec.UsageSource = "none"
+				code := streamErrorCode(err)
+				status := http.StatusBadGateway
+				if classified.Canceled {
+					status = 499
+				}
+				s.finish(rc, status, &code)
+				return
+			}
 			usage := committedStreamUsage(err, req, dialect, reservationTokens)
 			if totalTokens(usage) > 0 {
 				if _, _, qerr := s.quota.RecordTokens(rc.caller, resAd.Reservation, usage); qerr != nil {
@@ -1545,6 +1765,27 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	if resp != nil {
 		ensureResponseID(resp)
+		if dialect == "openai-responses" && requestWantsResponsesBackground(req) {
+			// Queued background work is billed only on an observed terminal
+			// response, not from a provisional reservation estimate.
+			served := dec.Target
+			if selected, ok := selectedServingTarget(rc, dec); ok {
+				served = selected
+				s.applyServingTargetRecord(rc, served)
+			}
+			if !resp.Streamed {
+				s.queueBackgroundTerminal(rc, resp.ID, resp.Raw)
+			}
+			s.captureResponseContent(rc, resp, captureDecision)
+			s.quota.ReleaseReservation(rc.caller, resAd.Reservation)
+			rc.rec.Usage = Usage{}
+			rc.rec.UsageSource = "none"
+			if !resp.Streamed {
+				s.writeIR(w, dialect, resp, req.Stream, rc)
+			}
+			s.finish(rc, http.StatusOK, nil)
+			return
+		}
 		if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
 			resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)
 			if resp.Streamed {
@@ -1646,12 +1887,18 @@ func committedStreamUsage(err error, req *IRRequest, dialect string, reservation
 }
 
 func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	if dialect == "models" && isAnthropicModelRequest(r) {
+		dialect = "anthropic"
+	}
 	// Receive clock for router-added latency (issue #159). Captured before auth
 	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
 	// receive through httptrace.WroteRequest.
 	receiveAt := time.Now()
 	id := requestID()
 	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		w.Header().Set("Request-Id", id)
+	}
 	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
 	rc := &requestContext{
@@ -1684,6 +1931,13 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
 		rc.rec.RequestKind = "count_tokens"
+	case "/v1/responses/input_tokens":
+		rc.rec.RequestKind = "count_tokens"
+		rc.rec.Endpoint = "responses.input_tokens"
+	case "/v1/responses/compact":
+		rc.rec.Endpoint = "responses.compact"
+	case "/v1/embeddings":
+		rc.rec.Endpoint = "embeddings"
 	}
 	// Recognized inactive credentials retain safe attribution, never authorization.
 	// Unknown credentials have no caller and cannot acquire a report domain.
@@ -2041,11 +2295,12 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	targets := append([]Target(nil), group.Targets...)
 	targets = s.targetsForRequest(rc, targets, req, callerDialect)
 	if len(targets) == 0 {
-		return decision{}, routingEligibilityError{
-			Model:        groupName,
-			Dialect:      callerDialect,
-			Requirements: routingRequirements(req, callerDialect),
+		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
+		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
+			err.CapabilityMismatch = true
+			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(group.Targets, req, callerDialect)
 		}
+		return decision{}, err
 	}
 	contractResult := contractFilterResult{targets: targets}
 	if rc == nil || rc.rec.RequestKind != "count_tokens" {
@@ -2451,6 +2706,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
 	anthropicBridge := anthropicStreamBridge(callerDialect, outDialect)
+	openAIToolsBridge := openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) && (len(req.Tools) > 0 || openAIHasToolHistory(req, callerDialect))
 	bridgeStream := (bridge || chatResponsesBridge || anthropicBridge) && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
 	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
 	if req.Stream {
@@ -2471,7 +2727,13 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	chatResponsesSession := bridgeSessionLookup{}
 	var upReqBody []byte
 	var err error
-	if bridge {
+	if rc.rec.Endpoint == "responses.compact" {
+		body := providerPassthroughBody(req)
+		body["model"] = target.Model
+		upReqBody, err = json.Marshal(body)
+	} else if openAIToolsBridge {
+		upReqBody, err = encodeOpenAIToolsToAnthropic(target.Model, callerDialect, req, target)
+	} else if bridge {
 		bridgeReq := *req
 		bridgeReq.Stream = bridgeStream
 		upReqBody, err = encodeResponsesToChatBridge(target.Model, &bridgeReq, target)
@@ -2513,6 +2775,14 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}
 	}
 	endpoint, err := upstreamEndpoint(provider.BaseURL, outDialect, target)
+	if err == nil && rc.rec.Endpoint == "responses.compact" {
+		var u *url.URL
+		u, err = url.Parse(endpoint)
+		if err == nil {
+			u.Path += "/compact"
+			endpoint = u.String()
+		}
+	}
 	if err != nil {
 		attempt.ErrorClass = "endpoint_error"
 		attempt.ErrorMessage = err.Error()
@@ -2695,7 +2965,24 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 				pw = &experimentPacingWriter{ResponseWriter: w, ctx: attemptCtx, pacer: pacer}
 			}
 		}
+		if nativeStream && !bridgeStream && callerDialect == "openai-responses" && outDialect == "openai-responses" && shouldRecordNativeResponse(s, rc, req, target) {
+			rc.responseCreated = func(id, status string) { s.rememberNativeResponse(rc, req, target, id, status) }
+			if requestWantsResponsesBackground(req) {
+				rc.responseTerminal = func(response map[string]any) error {
+					id := stringValue(response["id"])
+					if s.identifiers != nil && id != "" {
+						id = s.identifiers.Encode(id)
+					}
+					s.queueBackgroundTerminal(rc, id, response)
+					return nil
+				}
+			}
+		}
 		streamResult, streamErr := proxy(attemptCtx, pw, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
+		if rc != nil {
+			rc.responseCreated = nil
+			rc.responseTerminal = nil
+		}
 		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
 			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))
 		}
@@ -2769,6 +3056,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			attempt.Retryable = true
 			return nil, attempt, upstreamError{Class: "decode_error", Message: err.Error(), Retryable: true, Err: err}
 		}
+		if rc != nil && callerDialect == "openai-responses" && outDialect == "openai-responses" && rc.pathTemplate == "/v1/responses" {
+			s.rememberNativeResponse(rc, req, target, resp.ID, stringValue(resp.Raw["status"]))
+			rewriteNativeResponsesObject(resp, s.identifiers)
+		}
 		attempt.ReasoningTokens = resp.Usage.ReasoningTokens
 		return resp, attempt, nil
 	}
@@ -2785,7 +3076,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return resp, attempt, nil
 	}
 	var resp *IRResponse
-	if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
+	if openAIToolsBridge {
+		resp, err = decodeAnthropicToolsToOpenAI(raw, callerDialect, target.Model, s.identifiers)
+	} else if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
 		resp, err = decodeAnthropicToolsBridge(outDialect, raw, target.Model, s.identifiers)
 	} else {
 		resp, err = decodeUpstreamResponse(outDialect, raw, target.Model)
@@ -3279,6 +3572,67 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
+func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
+	var candidates []Target
+	for _, target := range targets {
+		out := targetDialect(s.cfg.Provider[target.Provider], target)
+		// Gemini's eligibility check validates the actual message shape; an
+		// empty synthetic request cannot establish whether the dialect exists.
+		if (normalizeDialect(out) == "gemini-generate-content" && normalizeDialect(dialect) == "openai-chat") || targetSupportsCallerDialect(target, &IRRequest{}, dialect, out) {
+			candidates = append(candidates, target)
+		}
+	}
+	if len(candidates) == 0 {
+		return "unsupported_endpoint_for_model", "model"
+	}
+	filter := func(keep func(Target, string) bool) bool {
+		next := make([]Target, 0, len(candidates))
+		for _, target := range candidates {
+			out := targetDialect(s.cfg.Provider[target.Provider], target)
+			if keep(target, out) {
+				next = append(next, target)
+			}
+		}
+		candidates = next
+		return len(next) != 0
+	}
+	if len(req.Tools) > 0 && !filter(func(t Target, out string) bool { return targetSupportsToolsForCallerDialect(t, dialect, out) }) {
+		return "unsupported_capability", "tools"
+	}
+	if requestHasStructuredOutput(req) && !filter(func(t Target, out string) bool {
+		if (dialect == "openai-chat" || dialect == "openai-responses") && out == "anthropic" {
+			if _, ok := openAIJSONSchemaForAnthropic(req); !ok {
+				return false
+			}
+		}
+		return targetSupportsStructuredOutput(t, dialect, out, true)
+	}) {
+		if dialect == "openai-responses" {
+			return "unsupported_capability", "text.format"
+		}
+		return "unsupported_capability", "response_format"
+	}
+	if requestRequiresReasoning(req) && !filter(func(t Target, out string) bool { return targetCanSatisfyReasoning(t, out, req) }) {
+		return "unsupported_capability", "reasoning"
+	}
+	if dialect == "openai-chat" && boolValue(req.Raw["logprobs"]) && !filter(func(t Target, out string) bool { return out != "anthropic" }) {
+		return "unsupported_capability", "logprobs"
+	}
+	if requestHasImages(req) && !filter(func(t Target, out string) bool { return targetSupportsInputModalities(t, requestInputModalities(req)) }) {
+		if dialect == "openai-responses" {
+			return "unsupported_capability", "input"
+		}
+		return "unsupported_capability", "messages"
+	}
+	if rawKeyPresent(req.Raw, "tool_choice") {
+		return "unsupported_capability", "tool_choice"
+	}
+	if req.Stream {
+		return "unsupported_capability", "stream"
+	}
+	return "unsupported_capability", "model"
+}
+
 func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *IRRequest, callerDialect string) []Target {
 	// Counting does not require an inference bridge, tool execution support or
 	// room to generate output. In particular compaction counts can exceed the
@@ -3377,6 +3731,9 @@ func targetSupportsCallerDialect(target Target, req *IRRequest, callerDialect, o
 }
 
 func targetSupportsToolsForCallerDialect(target Target, callerDialect, outDialect string) bool {
+	if openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) {
+		return true
+	}
 	if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
 		return true
 	}
@@ -3703,8 +4060,8 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 		writeSSE("response.in_progress", map[string]any{"type": "response.in_progress", "sequence_number": 2, "response": map[string]any{"id": resp.ID, "object": "response", "status": "in_progress", "model": model, "output": []any{}}})
 		writeSSE("response.output_item.added", map[string]any{"type": "response.output_item.added", "sequence_number": 3, "output_index": 0, "item": map[string]any{"id": itemID, "type": "message", "status": "in_progress", "role": "assistant", "content": []any{}}})
 		writeSSE("response.content_part.added", map[string]any{"type": "response.content_part.added", "sequence_number": 4, "item_id": itemID, "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": "", "annotations": []any{}}})
-		writeSSE("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "sequence_number": 5, "item_id": itemID, "output_index": 0, "content_index": 0, "delta": resp.Text})
-		writeSSE("response.output_text.done", map[string]any{"type": "response.output_text.done", "sequence_number": 6, "item_id": itemID, "output_index": 0, "content_index": 0, "text": resp.Text})
+		writeSSE("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "sequence_number": 5, "item_id": itemID, "output_index": 0, "content_index": 0, "delta": resp.Text, "logprobs": []any{}})
+		writeSSE("response.output_text.done", map[string]any{"type": "response.output_text.done", "sequence_number": 6, "item_id": itemID, "output_index": 0, "content_index": 0, "text": resp.Text, "logprobs": []any{}})
 		writeSSE("response.content_part.done", map[string]any{"type": "response.content_part.done", "sequence_number": 7, "item_id": itemID, "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": resp.Text, "annotations": []any{}}})
 		writeSSE("response.output_item.done", map[string]any{"type": "response.output_item.done", "sequence_number": 8, "output_index": 0, "item": map[string]any{"id": itemID, "type": "message", "status": "completed", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": resp.Text, "annotations": []any{}}}}})
 		completed := encodeResponsesResponse(resp, publicModel)
@@ -3713,26 +4070,29 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	case "openai-chat":
 		if resp.RawResponse && resp.Raw != nil {
-			writeRawChatSSE(writeSSE, w, resp, publicModel)
+			writeRawChatSSE(writeSSE, w, resp, publicModel, rc.chatStreamIncludeUsage)
 			break
 		}
-		writeChatTextSSE(writeSSE, w, resp, publicModel)
+		writeChatTextSSE(writeSSE, w, resp, publicModel, rc.chatStreamIncludeUsage)
 	default:
-		writeChatTextSSE(writeSSE, w, resp, publicModel)
+		writeChatTextSSE(writeSSE, w, resp, publicModel, false)
 	}
 	if flusher != nil {
 		flusher.Flush()
 	}
 }
 
-func writeChatTextSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string) {
+func writeChatTextSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string, includeUsage bool) {
 	model := defaultString(publicModel, resp.Model)
 	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant", "content": resp.Text}, "finish_reason": nil}}})
-	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": defaultString(resp.StopReason, "stop")}}, "usage": chatUsageMap(resp.Usage)})
+	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": defaultString(resp.StopReason, "stop")}}})
+	if includeUsage {
+		writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []any{}, "usage": chatUsageMap(resp.Usage)})
+	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string) {
+func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string, includeUsage bool) {
 	raw := resp.Raw
 	id := defaultString(stringValue(raw["id"]), resp.ID)
 	model := defaultString(publicModel, defaultString(stringValue(raw["model"]), resp.Model))
@@ -3755,7 +4115,10 @@ func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IR
 			}
 		}
 	}
-	writeSSE("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": finishReason}}, "usage": raw["usage"]})
+	writeSSE("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": finishReason}}})
+	if includeUsage {
+		writeSSE("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []any{}, "usage": raw["usage"]})
+	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
@@ -4126,6 +4489,10 @@ func (s *Service) writeTrafficShapeError(w http.ResponseWriter, rc *requestConte
 		rc.rec.ErrorMessage = message
 		s.finish(rc, http.StatusTooManyRequests, &code)
 	}
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, http.StatusTooManyRequests, message)
+		return
+	}
 	errBody := map[string]any{
 		"type":       code,
 		"message":    message,
@@ -4138,12 +4505,15 @@ func (s *Service) writeTrafficShapeError(w http.ResponseWriter, rc *requestConte
 	if retrySeconds > 0 {
 		errBody["retry_after_seconds"] = retrySeconds
 	}
-	writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": errBody})
+	writeAPIJSON(w, http.StatusTooManyRequests, map[string]any{"error": errBody})
 }
 
 func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *requestContext, err routingEligibilityError) {
 	code := "no-eligible-target"
 	status := http.StatusBadGateway
+	if err.CapabilityMismatch {
+		status = http.StatusBadRequest
+	}
 	for _, requirement := range err.Requirements {
 		if requirement == "continuation" {
 			code = "continuation_unsupported"
@@ -4166,9 +4536,23 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, message)
+		return
+	}
+	publicType, publicCode := code, code
+	var param any
+	if err.CapabilityMismatch && code != "continuation_unsupported" {
+		publicType, publicCode, param = "invalid_request_error", err.MismatchCode, err.MismatchParam
+	}
+	if code == "continuation_unsupported" && (err.Dialect == "openai-chat" || err.Dialect == "openai-responses") {
+		publicType, param = "invalid_request_error", "previous_response_id"
+	}
 	writeJSON(w, status, map[string]any{
 		"error": map[string]any{
-			"type":    code,
+			"type":    publicType,
+			"code":    publicCode,
+			"param":   param,
 			"message": message,
 			"details": map[string]any{
 				"model":        err.Model,
@@ -4199,7 +4583,11 @@ func (s *Service) writeRoutingPolicyError(w http.ResponseWriter, rc *requestCont
 		rc.rec.ErrorMessage = message
 		s.finish(rc, http.StatusBadGateway, &code)
 	}
-	writeJSON(w, http.StatusBadGateway, map[string]any{
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, http.StatusBadGateway, callerMessage)
+		return
+	}
+	writeAPIJSON(w, http.StatusBadGateway, map[string]any{
 		"error": map[string]any{
 			"type":    code,
 			"message": callerMessage,
@@ -4219,7 +4607,7 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 	}
 	classified := classifyError(err)
 	code, status := upstreamFailureResponse(classified, rc)
-	if code == "upstream-rate-limited" && classified.TrustedRouterRateLimit && classified.TrustedRetryAfterHeader != "" {
+	if (status == http.StatusTooManyRequests || code == "upstream-rate-limited") && classified.TrustedRouterRateLimit && classified.TrustedRetryAfterHeader != "" {
 		w.Header().Set("Retry-After", classified.TrustedRetryAfterHeader)
 	}
 	if rc != nil {
@@ -4265,6 +4653,11 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 		details["targets"] = callerSafeAttemptTargets(rc, len(attempted))
 		details["last_error"] = s.callerSafeErrorText(classified.Message, req.Model)
 	}
+	// Provider bodies can echo user content or credentials; only expose a
+	// bounded status summary in the client-facing diagnostic details.
+	if classified.StatusCode > 0 {
+		details["last_error"] = fmt.Sprintf("upstream returned HTTP %d", classified.StatusCode)
+	}
 	if reasonCode != "" {
 		details["reason_code"] = reasonCode
 		details["reason"] = reason
@@ -4284,9 +4677,21 @@ func (s *Service) writeUpstreamFailureError(w http.ResponseWriter, rc *requestCo
 		}
 		addCallerSafeRequestShapeDetails(details, rc.rec.RequestShape)
 	}
-	writeJSON(w, status, map[string]any{
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, message)
+		return
+	}
+	publicType := code
+	if status >= 400 && status < 500 {
+		publicType = "invalid_request_error"
+		if status == http.StatusTooManyRequests {
+			publicType = "rate_limit_error"
+		}
+	}
+	writeAPIJSON(w, status, map[string]any{
 		"error": map[string]any{
-			"type":    code,
+			"type":    publicType,
+			"code":    code,
 			"message": message,
 			"details": details,
 		},
@@ -4369,7 +4774,11 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 	if retryMS := int64(math.Ceil(float64(err.RetryAfter) / float64(time.Millisecond))); retryMS > 0 {
 		details["retry_after_ms"] = retryMS
 	}
-	writeJSON(w, status, map[string]any{
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, fmt.Sprintf("all currently eligible upstream targets for model %q are temporarily capacity-throttled; retry later or contact the router operator with the request_id", model))
+		return
+	}
+	writeAPIJSON(w, status, map[string]any{
 		"error": map[string]any{
 			"type":    code,
 			"message": fmt.Sprintf("all currently eligible upstream targets for model %q are temporarily capacity-throttled; retry later or contact the router operator with the request_id", model),
@@ -4379,6 +4788,11 @@ func (s *Service) writeUpstreamCapacityThrottledError(w http.ResponseWriter, rc 
 }
 
 func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int) {
+	// Preserve an actual upstream client response without forwarding its body,
+	// which can contain provider credentials or caller-supplied content.
+	if err.StatusCode >= 400 && err.StatusCode < 500 && !err.Canceled {
+		return "upstream-rejected", err.StatusCode
+	}
 	switch {
 	case err.Class == "upstream_loop_detected":
 		return "upstream-loop-detected", http.StatusLoopDetected
@@ -4493,6 +4907,31 @@ func sanitizeUpstreamError(err error) string {
 	return text
 }
 
+func (s *Service) writeModelNotFound(w http.ResponseWriter, rc *requestContext, model, reason string) {
+	if rc != nil {
+		rc.trace("request_error", reason, Target{}, 0, http.StatusNotFound, reason, false, 0)
+		rc.rec.Status = http.StatusNotFound
+		rc.rec.Error = &reason
+		rc.rec.ErrorClass = reason
+		rc.rec.ErrorMessage = reason
+		s.finish(rc, http.StatusNotFound, &reason)
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{
+		"type": "invalid_request_error", "code": "model_not_found", "param": "model",
+		"message": fmt.Sprintf("The model '%s' does not exist or you do not have access to it.", model),
+	}})
+}
+
+func (s *Service) writeUnavailableIdentifiers(w http.ResponseWriter, dialect string) {
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		writeAnthropicError(w, &requestContext{id: id}, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+		return
+	}
+	s.writeError(w, nil, http.StatusServiceUnavailable, "identifier-transform-unavailable")
+}
+
 func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status int, code string) {
 	if rc != nil {
 		rc.trace("request_error", code, Target{}, 0, status, code, false, 0)
@@ -4503,7 +4942,69 @@ func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status i
 		rc.rec.ErrorMessage = code
 		s.finish(rc, status, &c)
 	}
-	writeJSON(w, status, map[string]any{"error": map[string]any{"type": code, "message": code}})
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, status, code)
+		return
+	}
+	if rc != nil && code == "unsupported_modality" && (rc.dialect == "openai-chat" || rc.dialect == "openai-responses") {
+		param := "messages"
+		if rc.dialect == "openai-responses" {
+			param = "input"
+		}
+		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": param, "message": "The model does not support the requested input modality."}})
+		return
+	}
+	body := map[string]any{"error": map[string]any{"type": code, "message": code}}
+	if rc != nil && rc.dialect == "content-admin" {
+		writeJSON(w, status, body)
+	} else {
+		writeAPIJSON(w, status, body)
+	}
+}
+
+func writeAnthropicError(w http.ResponseWriter, rc *requestContext, status int, message string) {
+	typ := "api_error"
+	switch status {
+	case http.StatusBadRequest:
+		typ = "invalid_request_error"
+	case http.StatusUnauthorized:
+		typ = "authentication_error"
+	case http.StatusForbidden:
+		typ = "permission_error"
+	case http.StatusNotFound:
+		typ = "not_found_error"
+	case http.StatusRequestEntityTooLarge:
+		typ = "request_too_large"
+	case http.StatusTooManyRequests:
+		typ = "rate_limit_error"
+	case 529:
+		typ = "overloaded_error"
+	}
+	w.Header().Set("Request-Id", rc.id)
+	writeJSON(w, status, map[string]any{"type": "error", "request_id": rc.id, "error": map[string]any{"type": typ, "message": message}})
+}
+
+// writeAPIJSON normalizes API error envelopes without changing admin responses.
+func writeAPIJSON(w http.ResponseWriter, status int, v any) {
+	if status >= 400 {
+		if body, ok := v.(map[string]any); ok {
+			if e, ok := body["error"].(map[string]any); ok {
+				if _, exists := e["type"]; !exists {
+					e["type"] = "server_error"
+				}
+				if _, exists := e["code"]; !exists {
+					e["code"] = e["type"]
+				}
+				if _, exists := e["param"]; !exists {
+					e["param"] = nil
+				}
+				if _, exists := e["message"]; !exists {
+					e["message"] = http.StatusText(status)
+				}
+			}
+		}
+	}
+	writeJSON(w, status, v)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

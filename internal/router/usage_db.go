@@ -87,6 +87,7 @@ type UsageReportOptions struct {
 	CallerProject        string
 	CallerEnvironment    string
 	RequestedModel       string
+	Endpoint             string
 	ResolvedGroup        string
 	TargetProvider       string
 	TargetModel          string
@@ -263,6 +264,7 @@ type securityTrendBucketRecord struct {
 }
 
 type usageRow struct {
+	Endpoint                           string
 	RequestKind                        string
 	UsageSource                        string
 	TS                                 time.Time
@@ -416,6 +418,7 @@ type securityAccessEvent struct {
 }
 
 type usageRecord struct {
+	Endpoint                           string                             `gorm:"column:endpoint;type:text;not null;default:''"`
 	RequestKind                        string                             `gorm:"column:request_kind;type:text;not null;default:''"`
 	UsageSource                        string                             `gorm:"column:usage_source;type:text;not null;default:''"`
 	RequestID                          string                             `gorm:"column:request_id;primaryKey;type:text"`
@@ -1639,6 +1642,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyUsageEndpointMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1821,6 +1828,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageCacheWriteColumns,
 		usageRequestKindColumns,
 		usageTokenBreakdownColumns,
+		usageEndpointColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2604,7 +2612,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -3265,6 +3273,7 @@ func rowFromRecord(rec logRecord) usageRow {
 		UpstreamTotalTPS:                   rec.UpstreamTotalTPS,
 		DownstreamOutputTPS:                rec.DownstreamOutputTPS,
 		DownstreamTotalTPS:                 rec.DownstreamTotalTPS,
+		Endpoint:                           rec.Endpoint,
 		RequestKind:                        rec.RequestKind,
 		UsageSource:                        rec.UsageSource,
 		InputTokens:                        rec.Usage.InputTokens,
@@ -3400,6 +3409,7 @@ func recordFromRow(row usageRow) *usageRecord {
 		UpstreamTotalTPS:                   row.UpstreamTotalTPS,
 		DownstreamOutputTPS:                row.DownstreamOutputTPS,
 		DownstreamTotalTPS:                 row.DownstreamTotalTPS,
+		Endpoint:                           row.Endpoint,
 		RequestKind:                        row.RequestKind,
 		UsageSource:                        row.UsageSource,
 		InputTokens:                        row.InputTokens,
@@ -3504,6 +3514,7 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		UpstreamTotalTPS:                   record.UpstreamTotalTPS,
 		DownstreamOutputTPS:                record.DownstreamOutputTPS,
 		DownstreamTotalTPS:                 record.DownstreamTotalTPS,
+		Endpoint:                           record.Endpoint,
 		RequestKind:                        record.RequestKind,
 		UsageSource:                        record.UsageSource,
 		InputTokens:                        record.InputTokens,
@@ -4076,13 +4087,16 @@ func retentionTablesForClass(dataClass string) []retentionTableSpec {
 	case retentionDataClassContentCapture:
 		return []retentionTableSpec{{DataClass: retentionDataClassContentCapture, TableName: "request_content_captures", TSColumn: "ts"}}
 	case retentionDataClassUsageDetail:
-		return []retentionTableSpec{{DataClass: retentionDataClassUsageDetail, TableName: "request_usage", TSColumn: "ts"}}
+		return []retentionTableSpec{{DataClass: retentionDataClassUsageDetail, TableName: "request_usage", TSColumn: "ts"}, {DataClass: retentionDataClassUsageDetail, TableName: "response_affinity", TSColumn: "created_ts"}}
 	default:
 		return nil
 	}
 }
 
 func runRetentionTable(tx *gorm.DB, class RetentionClassConfig, table retentionTableSpec, cutoff time.Time, dryRun bool) (RetentionTableStatus, error) {
+	if table.TableName == "response_affinity" {
+		return runResponseAffinityRetention(tx, class, cutoff, dryRun)
+	}
 	cutoffText := formatUsageTime(cutoff)
 	candidateRows, err := countRowsBefore(tx, table, cutoffText)
 	if err != nil {
@@ -7226,6 +7240,9 @@ func (s *usageStore) usageRowsQuery(opts UsageReportOptions) *gorm.DB {
 	}
 	if opts.RequestedModel != "" {
 		q = q.Where("requested_model = ?", opts.RequestedModel)
+	}
+	if opts.Endpoint != "" {
+		q = q.Where("endpoint = ?", opts.Endpoint)
 	}
 	if opts.ResolvedGroup != "" {
 		q = q.Where("resolved_group = ?", opts.ResolvedGroup)

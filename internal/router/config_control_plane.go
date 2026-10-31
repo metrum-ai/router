@@ -11,6 +11,7 @@ package router
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -40,7 +41,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 9, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -141,7 +142,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition())
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), configEmbeddingMigration(), configResponsesStoreMigration())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}
@@ -213,6 +214,7 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 	cfg := &Config{Server: ServerConfig{
 		Listen:            server.Listen,
 		DefaultModelGroup: server.DefaultModelGroup,
+		ResponsesStore:    ResponsesStoreConfig{Retention: server.ResponsesStoreRetention},
 	}, StatePath: server.StatePath, Provider: map[string]ProviderConfig{}, Models: map[string]ModelGroup{}}
 	var providers []providerRow
 	if err := db.Where("config_set_id = ?", set.ID).Order("provider_name ASC").Find(&providers).Error; err != nil {
@@ -295,7 +297,14 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 			if target.ModelRef.Valid {
 				modelRef = target.ModelRef.String
 			}
-			group.Targets = append(group.Targets, Target{Provider: target.ProviderName, ModelRef: modelRef, Model: target.Model, Dialect: target.Dialect, Weight: target.Weight, RPM: target.RPM, Tier: target.Tier, Cost: target.Cost})
+			projected := Target{Provider: target.ProviderName, ModelRef: modelRef, Model: target.Model, Dialect: target.Dialect, Weight: target.Weight, RPM: target.RPM, Tier: target.Tier, Cost: target.Cost, EmbeddingSpace: target.EmbeddingSpace}
+			if target.EmbeddingSpace != "" {
+				projected.OutputModalities = []string{"embeddings"}
+				if err := json.Unmarshal([]byte(target.EmbeddingDimensions), &projected.EmbeddingDimensions); err != nil {
+					return nil, fmt.Errorf("invalid embedding dimensions for group %q target %d", row.GroupName, target.Sequence)
+				}
+			}
+			group.Targets = append(group.Targets, projected)
 		}
 		cfg.Models[row.GroupName] = group
 	}
@@ -1291,13 +1300,14 @@ type configSetRow struct {
 func (configSetRow) TableName() string { return "router_config_sets" }
 
 type serverConfigRow struct {
-	ConfigSetID       string `gorm:"column:config_set_id"`
-	Listen            string `gorm:"column:listen"`
-	DefaultModelGroup string `gorm:"column:default_model_group"`
-	StatePath         string `gorm:"column:state_path"`
-	LicenseEnabled    bool   `gorm:"column:license_enabled"`
-	LicensePath       string `gorm:"column:license_path"`
-	LicenseStatePath  string `gorm:"column:license_state_path"`
+	ConfigSetID             string `gorm:"column:config_set_id"`
+	Listen                  string `gorm:"column:listen"`
+	DefaultModelGroup       string `gorm:"column:default_model_group"`
+	StatePath               string `gorm:"column:state_path"`
+	ResponsesStoreRetention string `gorm:"column:responses_store_retention;not null;default:'30d'"`
+	LicenseEnabled          bool   `gorm:"column:license_enabled"`
+	LicensePath             string `gorm:"column:license_path"`
+	LicenseStatePath        string `gorm:"column:license_state_path"`
 }
 
 func (serverConfigRow) TableName() string { return "router_config_server" }
@@ -1493,15 +1503,17 @@ type modelGroupRow struct {
 func (modelGroupRow) TableName() string { return "router_config_model_groups" }
 
 type modelGroupTargetRow struct {
-	Sequence     int            `gorm:"column:sequence"`
-	ProviderName string         `gorm:"column:provider_name"`
-	ModelRef     sql.NullString `gorm:"column:model_ref"`
-	Model        string         `gorm:"column:model"`
-	Dialect      string         `gorm:"column:dialect"`
-	Weight       int            `gorm:"column:weight"`
-	RPM          int            `gorm:"column:rpm"`
-	Tier         string         `gorm:"column:tier"`
-	Cost         int            `gorm:"column:cost"`
+	Sequence            int            `gorm:"column:sequence"`
+	ProviderName        string         `gorm:"column:provider_name"`
+	ModelRef            sql.NullString `gorm:"column:model_ref"`
+	Model               string         `gorm:"column:model"`
+	Dialect             string         `gorm:"column:dialect"`
+	Weight              int            `gorm:"column:weight"`
+	RPM                 int            `gorm:"column:rpm"`
+	Tier                string         `gorm:"column:tier"`
+	Cost                int            `gorm:"column:cost"`
+	EmbeddingSpace      string         `gorm:"column:embedding_space;not null;default:''"`
+	EmbeddingDimensions string         `gorm:"column:embedding_dimensions;not null;default:'[]'"`
 }
 
 func (modelGroupTargetRow) TableName() string { return "router_config_model_group_targets" }

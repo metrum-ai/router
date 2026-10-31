@@ -80,6 +80,25 @@ func requestHasMedia(req *IRRequest) bool {
 	return false
 }
 
+// openAIJSONSchemaForAnthropic extracts the schema without inventing a
+// schema for json_object or altering the caller's constraints.
+func openAIJSONSchemaForAnthropic(req *IRRequest) (any, bool) {
+	if req == nil {
+		return nil, false
+	}
+	if format, ok := req.Raw["response_format"].(map[string]any); ok && stringValue(format["type"]) == "json_schema" {
+		if nested, ok := format["json_schema"].(map[string]any); ok && nested["schema"] != nil {
+			return nested["schema"], true
+		}
+	}
+	if text, ok := req.Raw["text"].(map[string]any); ok {
+		if format, ok := text["format"].(map[string]any); ok && stringValue(format["type"]) == "json_schema" && format["schema"] != nil {
+			return format["schema"], true
+		}
+	}
+	return nil, false
+}
+
 func anthropicFormat(req *IRRequest) map[string]any {
 	if req == nil {
 		return nil

@@ -752,6 +752,7 @@ type adminReportFilterDTO struct {
 	CallerProject     string `json:"caller_project,omitempty"`
 	CallerEnvironment string `json:"caller_environment,omitempty"`
 	RequestedModel    string `json:"requested_model,omitempty"`
+	Endpoint          string `json:"endpoint,omitempty"`
 	ResolvedGroup     string `json:"resolved_group,omitempty"`
 	TargetProvider    string `json:"provider,omitempty"`
 	TargetModel       string `json:"target_model,omitempty"`
@@ -786,6 +787,7 @@ type adminReportRequest struct {
 	CacheReadInputTokens            *int    `json:"cacheReadInputTokens,omitempty"`
 	CacheWriteInputTokens           *int    `json:"cacheWriteInputTokens,omitempty"`
 	RequestKind                     string  `json:"requestKind"`
+	Endpoint                        string  `json:"endpoint"`
 	UsageSource                     string  `json:"usageSource"`
 	TimeUTC                         string  `json:"timeUtc"`
 	RequestID                       string  `json:"requestId"`
@@ -2546,6 +2548,7 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 		CallerProject:      q.Get("caller_project"),
 		CallerEnvironment:  q.Get("caller_environment"),
 		RequestedModel:     strings.TrimSpace(q.Get("requested_model")),
+		Endpoint:           strings.TrimSpace(q.Get("endpoint")),
 		ResolvedGroup:      q.Get("resolved_group"),
 		TargetProvider:     strings.TrimSpace(q.Get("provider")),
 		TargetModel:        strings.TrimSpace(q.Get("target_model")),
@@ -2591,6 +2594,10 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Service) parseAdminSecurityFilters(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, global bool) (SecurityReportOptions, adminReportFilters, bool) {
+	if strings.TrimSpace(r.URL.Query().Get("endpoint")) != "" {
+		writeInvalidReportFilter(w, "endpoint filtering is unavailable for security reports")
+		return SecurityReportOptions{}, adminReportFilters{}, false
+	}
 	filters, ok := s.parseAdminReportFilters(w, r, true, subject, global)
 	if !ok {
 		return SecurityReportOptions{}, adminReportFilters{}, false
@@ -5575,6 +5582,7 @@ func adminFilterDTO(filters adminReportFilters) adminReportFilterDTO {
 		CallerProject:     filters.CallerProject,
 		CallerEnvironment: filters.CallerEnvironment,
 		RequestedModel:    filters.RequestedModel,
+		Endpoint:          filters.Endpoint,
 		ResolvedGroup:     filters.ResolvedGroup,
 		TargetProvider:    filters.TargetProvider,
 		TargetModel:       filters.TargetModel,
@@ -5591,6 +5599,7 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 		CacheReadInputTokens:            row.CachedInputTokens,
 		CacheWriteInputTokens:           row.CacheWriteInputTokens,
 		RequestKind:                     row.RequestKind,
+		Endpoint:                        row.Endpoint,
 		UsageSource:                     row.UsageSource,
 		TimeUTC:                         formatUsageTime(row.TS),
 		RequestID:                       row.RequestID,

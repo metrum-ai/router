@@ -43,7 +43,7 @@ func validateRollupReportOptions(o UsageReportOptions) error {
 	if !o.From.Equal(o.From.UTC().Truncate(24*time.Hour)) || !o.To.Equal(o.To.UTC().Truncate(24*time.Hour)) {
 		return fmt.Errorf("rollup history requires whole UTC days")
 	}
-	if o.CallerIP != "" || o.TokenIDPrefix != "" || o.Status != 0 || o.UsageSource != "" || o.ReasoningPresent != nil || o.CachePresent != nil || o.TrafficShapedOnly || o.TrafficShapeBucket != "" || o.TrafficShapeScope != "" || o.ToolChoiceMode != "" || o.ToolCountBucket != "" || o.RequestBytesBucket != "" || o.InputTokensBucket != "" || o.OutputCapBucket != "" || o.RequestShapeFP != "" || o.ToolSchemaFP != "" || o.ErrorClass != "" {
+	if o.CallerIP != "" || o.TokenIDPrefix != "" || o.Status != 0 || o.Endpoint != "" || o.UsageSource != "" || o.ReasoningPresent != nil || o.CachePresent != nil || o.TrafficShapedOnly || o.TrafficShapeBucket != "" || o.TrafficShapeScope != "" || o.ToolChoiceMode != "" || o.ToolCountBucket != "" || o.RequestBytesBucket != "" || o.InputTokensBucket != "" || o.OutputCapBucket != "" || o.RequestShapeFP != "" || o.ToolSchemaFP != "" || o.ErrorClass != "" {
 		return fmt.Errorf("row-level filter is unavailable in finalized daily rollups; use raw history")
 	}
 	return nil

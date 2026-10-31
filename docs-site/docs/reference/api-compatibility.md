@@ -17,10 +17,71 @@ OpenAI-compatible clients use the `/v1` base URL:
 |---|---|---|
 | `/v1/chat/completions` | OpenAI Chat Completions-style requests | OpenAI SDK chat clients, Warp-style OpenAI-compatible agents |
 | `/v1/responses` | OpenAI Responses-style requests | Codex CLI, Responses-compatible agent frameworks |
-| `/v1/models` | OpenAI-style model discovery | Client setup and allow-list discovery |
+| `/v1/responses/input_tokens` | Unbilled input counting through a native Responses target | SDK token budgeting |
+| `/v1/responses/compact` | Metered stateless compaction through a native Responses target | Conversation compaction |
+| `/v1/embeddings` | Metered OpenAI-compatible embedding targets, including batched input | Vector embedding clients |
+| `/v1/models`, `/v1/models/{id}` | Caller-filtered OpenAI-style model discovery | Client setup and allow-list discovery |
 | `/v1/codex/models.json` | Codex-native local model catalog | Codex CLI fetch-then-run setup |
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
 | `/admin/reports/api/quota-status` | Admin live quota remaining | Reports-admin remaining/limits for one or many callers |
+
+### Unsupported OpenAI endpoints
+
+After caller authentication, legacy text completions and moderations return
+501 `unsupported_endpoint`; neither is planned for v4.5. Files, uploads, batches, images, audio,
+vector stores, assistants, threads, fine-tuning, and realtime are outside the
+v4.5 scope and return the same error. These errors have `message`, `type`,
+`param`, and `code` fields. See the [error reference](errors).
+
+Responses input counting requires a native Responses target in the requested
+model group. It observes caller request rate and concurrency limits, but does not
+bill tokens; the audit record has `endpoint=responses.input_tokens`.
+Responses compaction likewise requires a native Responses target and applies the
+same token admission and metering as Responses. It bypasses the response cache.
+With a usage database, both utilities pin `previous_response_id` to its recorded
+upstream and enforce caller ownership; without one, these references return 501.
+
+Stored Responses retrieval, deletion, input-item listing and cancellation require
+a SQLite or PostgreSQL usage database; without one these routes return 501.
+Only the creating caller can use a stored ID. Missing, expired, deleted and
+other-caller IDs return the same 404. A removed upstream account or model returns
+409 rather than rerouting. Configure a stable provider `key_id` for account
+identity. In file mode, ordinary Responses continuations retain their legacy
+best-effort routing and cannot enforce ownership or affinity. In router chains,
+each hop records and enforces its own affinity to the next hop. Stored operations
+are subject to caller concurrency and request-per-minute limits, but remain
+available when a token budget is exhausted so callers can retrieve or cancel
+already-started work.
+
+Background Responses require a usage database and a native Responses target with
+storage enabled. They bypass cache and shadow replay. The router records reported
+terminal usage once, at creation if already complete, otherwise when a caller
+retrieves or cancels the response (including streaming retrieval). It does not
+poll providers automatically. If terminal usage is absent or malformed, the
+response remains unsettled; deletion returns 409 `background_usage_unsettled`
+until a later retrieval reports usage. Monitor
+`background_usage_unreported_observations_total` and
+`background_settlement_write_failures_total` and reconcile unresolved work with
+the provider. Background token totals enter durable caller quota aggregates at
+settlement, not while the job is pending; asynchronous creation settlement and
+replica propagation can be delayed. Quotas and router cost estimates are not a
+hard cap on pending upstream work or a substitute for provider invoices.
+
+Affinity capture at creation is deliberately nonblocking. A queue failure or
+process crash before it is persisted can leave a response inaccessible through
+the router and prevent later settlement; monitor
+`response_affinity_write_failures_total` and reconcile provider records. The
+retention expiry also applies to unsettled response metadata.
+
+`server.responses_store.retention` defaults to `30d`. Expired IDs are inaccessible;
+physical metadata removal requires the enabled `usage_detail` retention job and
+respects legal holds. This does not delete the upstream provider's stored content.
+
+Embedding groups must use only `output_modalities: [embeddings]` targets and the `failover` or `weighted` strategy. Each target's `embedding_space` defaults to `provider/model`; all targets in the group must have the same space, explicitly asserting vector compatibility when providers or models differ. `embedding_dimensions` is an optional list of supported requested dimensions. Without it, only the upstream model's default dimensions are available. Embedding targets accept OpenAI-compatible text, token IDs, and batches of up to 2,048 inputs; configured context limits use an input-token estimate for text. Token-ID input is rejected when the group's PII filter is enabled because the router cannot inspect encoded text. Embeddings bypass the response cache, are charged for reported input tokens (estimated when usage is absent), and record `endpoint=embeddings`. Existing admin target-edit operations reject embedding groups to avoid dropping compatibility metadata; use canonical configuration import to change them.
+
+Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
+not planned for v4.5 and return authenticated 501 errors in Anthropic format.
+`/v1/messages/count_tokens` remains supported.
 
 Anthropic-compatible clients use the `/anthropic` base URL:
 
@@ -350,7 +411,7 @@ Common safe filter reasons include `chat-to-responses-bridge-disabled`, `chat-to
 | `/v1/responses` | `reasoning` | Requires active OpenAI Responses target reasoning metadata. | Responses-to-Chat reasoning is unsupported unless `responses_to_chat.reasoning` is explicitly validated for the target. |
 | `/anthropic/v1/messages` | `thinking` | Requires active Anthropic Messages target reasoning/default-thinking metadata. | No general Messages bridge is implied by Chat or Responses bridge metadata. |
 
-Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate remains, the router returns `502 no-eligible-target`; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
+Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate supports the requested capabilities, the router returns `400 invalid_request_error` with an `unsupported_capability` code; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
 
@@ -408,7 +469,7 @@ Example response:
 }
 ```
 
-Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Requests for unlisted groups fail with `403 model-not-allowed` before any upstream provider is called.
+Use one of the returned `id` values as the `model` field in `/v1/chat/completions`, `/v1/responses`, or `/anthropic/v1/messages`. If a group is not listed, that token is not allowed to use it. Unknown or disallowed groups fail with `404 model_not_found` before any upstream provider is called; the response does not disclose whether a group exists.
 
 The returned IDs are router model groups, not a full inventory of every upstream provider model. Platform teams can change the upstream provider/model mix behind a group without changing the caller-facing group name. With `server.responses.model_identity: requested_group`, these IDs are also exactly what completion responses report in their `model` field.
 
@@ -432,9 +493,9 @@ Tool-bearing requests bypass response caching because tool results depend on ext
 
 OpenAI Responses provider-hosted tools such as Fireworks-documented `mcp` and `sse` tools are not the same as client-executed function or namespace tools. By default, the router rejects caller-supplied remote provider-hosted entries such as `mcp`, `sse`, file-search, code-interpreter, and computer-use tools with `400 provider-hosted-tools-forbidden` before any upstream call. Generic hosted search or image-generation descriptors also return `400 provider-hosted-tools-forbidden`; they are never silently stripped. Anthropic versioned `web_search_*` server tools use this same policy. Deployments should expose provider-hosted tools only after a separate security design covers allowlisted hosts, timeouts, network egress, and data-retention expectations.
 
-The router controls upstream persistence policy for OpenAI-compatible requests. Same-dialect Chat Completions and Responses passthrough strip caller-supplied provider `metadata`; they send `store:false` upstream only when the resolved target sets `force_store_false: true`. Translated Responses calls use the same flag. Chat passthrough also honors target encoding metadata such as `output_token_field: max_completion_tokens` for upstreams that require `max_completion_tokens` instead of `max_tokens`.
+The router controls upstream persistence policy for OpenAI-compatible requests. Same-dialect Chat Completions and Responses passthrough strip caller-supplied provider `metadata`. Native Responses forwards the caller's `store` value unless the resolved target sets `force_store_false: true`, which always takes precedence. Chat passthrough and translated Responses calls retain their target-controlled storage behavior. Chat passthrough also honors target encoding metadata such as `output_token_field: max_completion_tokens` for upstreams that require `max_completion_tokens` instead of `max_tokens`.
 
-Eligible Anthropic ↔ OpenAI Chat and Anthropic ↔ OpenAI Responses paths also translate SSE incrementally with the default `server.streaming.translator: incremental`. Text and tool deltas use the caller dialect’s lifecycle; tool IDs are encoded on their first fragment, and tool arguments remain raw string deltas without intermediate JSON parsing. Anthropic `message_start` uses the reservation input estimate, reconciled with upstream usage at completion. Existing inbound-dialect validation and tool admission gates are unchanged: translator tool support does not admit cross-dialect Anthropic tool requests. Reasoning requests stay on native Anthropic routes; these bridges do not synthesize thinking blocks. Cancellation and the first-frame commit boundary match native streaming. The `synthesized` setting retains unary upstream calls for these four directions. Other upstream dialects without an incremental translator still synthesize caller SSE where eligible; Gemini generateContent remains non-streaming only.
+Eligible Anthropic ↔ OpenAI Chat and Anthropic ↔ OpenAI Responses paths also translate SSE incrementally with the default `server.streaming.translator: incremental`. Text and tool deltas use the caller dialect’s lifecycle; tool IDs are encoded on their first fragment, and tool arguments remain raw string deltas without intermediate JSON parsing. Anthropic `message_start` uses the reservation input estimate, reconciled with upstream usage at completion. Cross-dialect tools require the explicit target declarations and validation described below; translator support alone does not admit a request. Reasoning requests stay on native Anthropic routes; these bridges do not synthesize thinking blocks. Cancellation and the first-frame commit boundary match native streaming. The `synthesized` setting retains unary upstream calls for these four directions. Other upstream dialects without an incremental translator still synthesize caller SSE where eligible; Gemini generateContent remains non-streaming only.
 
 For same-dialect OpenAI Chat tool passthrough, the router forwards caller streaming upstream and proxies native SSE tool-call deltas. Caller `stream_options`, including `include_usage`, are forwarded for compatible targets. If a provider/model rejects that caller shape, configure `request_shape_support.unsupported_request_features: [stream_options]` for that target until the exact client, provider, model, dialect, and router path pass direct and router-level smokes.
 
@@ -449,6 +510,8 @@ The router detects explicit reasoning requests in all supported caller dialects:
 - Anthropic Messages: `thinking`.
 
 Reasoning is handled inside the requested model group. The router does not switch callers to another group and does not silently drop explicit reasoning controls. If no configured target in that group can satisfy the requested reasoning shape together with tools, images, structured outputs, and max-token cap behavior, the response is `502 no-eligible-target`.
+
+For OpenAI Chat or Responses function tools routed to an Anthropic target, the target must list the caller dialect in `request_shape_support.supported_inbound_dialects`, set `validation_status: passed` based on actual deployment evidence, and declare both `tool_support.anthropic_messages: [client_tools]` and the corresponding caller capability (`openai_chat: [tools]` or `openai_responses: [function]`). Explicit `tool_choice` additionally requires `tool_choice` on both sides. The bridge maps client function calls and results, including streaming and identifier rewrite. It rejects strict function schemas, legacy function-call shapes, unsupported content and Responses `previous_response_id` rather than silently weakening or misrouting them. Provider-hosted tools are not bridged. A test-only `passed` flag is not production evidence.
 
 Reasoning controls are dialect-specific. Anthropic reasoning uses native Anthropic routes; the text/tool bridges do not translate thinking output. Validated Chat ↔ Responses bridges can map OpenAI reasoning effort where configured. Targets that reject `max_tokens` for reasoning traffic can be configured so the router sends `max_completion_tokens` instead.
 

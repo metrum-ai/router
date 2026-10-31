@@ -12,6 +12,7 @@ export type GlobalFilterName =
   | "caller_project"
   | "caller_environment"
   | "requested_model"
+  | "endpoint"
   | "resolved_group"
   | "provider"
   | "target_model"
@@ -39,6 +40,7 @@ export const globalFilterFields = [
   ["caller_project", "Project", ""],
   ["caller_environment", "Environment", ""],
   ["requested_model", "Requested", ""],
+  ["endpoint", "Endpoint (e.g. embeddings)", ""],
   ["resolved_group", "Group", ""],
   ["provider", "Provider", ""],
   ["target_model", "Target", ""],

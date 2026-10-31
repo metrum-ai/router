@@ -168,8 +168,34 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {
+		return "logprobs-unsupported"
+	}
+	if (callerDialect == "openai-chat" || callerDialect == "openai-responses") && outDialect == "anthropic" && requestHasStructuredOutput(req) {
+		if _, ok := openAIJSONSchemaForAnthropic(req); !ok {
+			return "structured-output-unsupported"
+		}
+	}
 	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
+	}
+	if (callerDialect == "openai-chat" || callerDialect == "openai-responses") && outDialect == "anthropic" && req != nil {
+		if rawValuePresent(req.Raw, "previous_response_id") {
+			return "continuation-unsupported"
+		}
+		if openAIHasToolHistory(req, callerDialect) && !openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) {
+			return "tool-support"
+		}
+		if rawKeyPresent(req.Raw, "tool_choice") && (len(req.Tools) > 0 || openAIHasToolHistory(req, callerDialect)) {
+			if !openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) || !targetSupportsClientTools(target, callerDialect, true) || !targetSupportsClientTools(target, "anthropic", true) {
+				return "anthropic-bridge-tool-choice-unsupported"
+			}
+		}
+		if openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) && (len(req.Tools) > 0 || openAIHasToolHistory(req, callerDialect)) {
+			if _, err := encodeOpenAIToolsToAnthropic(target.Model, callerDialect, req, target); err != nil {
+				return "anthropic-bridge-unsupported-request"
+			}
+		}
 	}
 	if callerDialect == "anthropic" && outDialect != "anthropic" {
 		for _, tool := range req.Tools {

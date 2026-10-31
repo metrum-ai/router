@@ -298,7 +298,7 @@ Unsupported Responses fields are skipped before selection for Chat-bridged targe
 
 ## Responses Retention Controls
 
-The router controls provider-side retention fields through target metadata. Same-dialect OpenAI Chat and Responses passthrough strips caller-supplied provider `metadata`; it sends `store:false` upstream only when the resolved target sets `force_store_false: true`. Translated OpenAI Responses calls use the same flag. Validate that text, tools, continuation shape, streaming behavior, and usage accounting still pass with `store:false` before setting the flag, because some OpenAI-compatible upstreams reject the `store` field.
+The router controls provider-side retention fields through target metadata. Same-dialect OpenAI Chat and Responses passthrough strips caller-supplied provider `metadata`. Native Responses forwards the caller's `store` value, unless `force_store_false: true` overrides it. Chat passthrough and translated Responses calls retain their target-controlled storage behavior. Validate that text, tools, continuation shape, streaming behavior, and usage accounting still pass with `store:false` before setting the flag, because some OpenAI-compatible upstreams reject the `store` field.
 
 ```yaml
 models:

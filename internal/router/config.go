@@ -69,6 +69,7 @@ type ResponsesConfig struct {
 type ServerConfig struct {
 	Streaming           StreamingConfig           `yaml:"streaming" json:"streaming"`
 	Responses           ResponsesConfig           `yaml:"responses" json:"responses"`
+	ResponsesStore      ResponsesStoreConfig      `yaml:"responses_store" json:"responses_store"`
 	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
@@ -91,6 +92,10 @@ type ServerConfig struct {
 	// default, must be scoped to experiment callers/groups/targets, and never
 	// change traffic that does not match a scope.
 	ExperimentProfiles map[string]ExperimentProfileConfig `yaml:"experiment_profiles" json:"experimentProfiles,omitempty"`
+}
+
+type ResponsesStoreConfig struct {
+	Retention string `yaml:"retention" json:"retention"`
 }
 
 type OpenAICompatibilityConfig struct {
@@ -701,6 +706,8 @@ type Target struct {
 	Provider                     string         `yaml:"provider" json:"provider"`
 	Model                        string         `yaml:"model" json:"model"`
 	ModelRef                     string         `yaml:"model_ref" json:"modelRef,omitempty"`
+	EmbeddingSpace               string         `yaml:"embedding_space" json:"embeddingSpace,omitempty"`
+	EmbeddingDimensions          []int          `yaml:"embedding_dimensions" json:"embeddingDimensions,omitempty"`
 	Dialect                      string         `yaml:"dialect" json:"dialect"`
 	Region                       string         `yaml:"region" json:"region,omitempty"`
 	DisplayName                  string         `yaml:"display_name" json:"displayName,omitempty"`
@@ -1085,6 +1092,9 @@ func (c *Config) setDefaults() {
 	if c.Server.Responses.ModelIdentity == "" {
 		c.Server.Responses.ModelIdentity = ModelIdentityUpstream
 	}
+	if c.Server.ResponsesStore.Retention == "" {
+		c.Server.ResponsesStore.Retention = "30d"
+	}
 	if c.Server.Identifiers.Mode == "" {
 		c.Server.Identifiers.Mode = "rewrite"
 	}
@@ -1277,6 +1287,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	default:
 		return fmt.Errorf("server.responses.model_identity must be upstream or requested_group")
 	}
+	if _, err := responseStoreRetention(c.Server.ResponsesStore); err != nil {
+		return err
+	}
 	if _, err := newIdentifierTransform(c.Server.Identifiers); err != nil {
 		return err
 	}
@@ -1405,7 +1418,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			if err := validateReasoningSupport(model.Reasoning); err != nil {
 				return fmt.Errorf("provider %s model %s has invalid reasoning: %w", name, ref, err)
 			}
-			if err := validateModalities(model.InputModalities); err != nil {
+			if err := validateInputModalities(model.InputModalities); err != nil {
 				return fmt.Errorf("provider %s model %s has invalid input_modalities: %w", name, ref, err)
 			}
 			if err := validateModalities(model.OutputModalities); err != nil {
@@ -1601,7 +1614,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 					return fmt.Errorf("target modalities contains unsupported modality %q", modality)
 				}
 			}
-			if err := validateModalities(resolved.InputModalities); err != nil {
+			if err := validateInputModalities(resolved.InputModalities); err != nil {
 				return fmt.Errorf("model group %s target %s has invalid input_modalities: %w", name, resolved.Model, err)
 			}
 			if err := validateModalities(resolved.OutputModalities); err != nil {
@@ -1631,6 +1644,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 			m.Targets[i] = resolved
+		}
+		if err := validateEmbeddingGroup(name, &m); err != nil {
+			return err
 		}
 		if err := c.validateModelGroupContract(name, m); err != nil {
 			return err
@@ -3368,7 +3384,7 @@ func validateRequestShapeSupport(prefix string, support RequestShapeSupport) err
 
 func requestShapeInputModalityAllowed(modality string) bool {
 	switch strings.ToLower(strings.TrimSpace(modality)) {
-	case "text", "image", "audio", "video":
+	case "text", "image", "audio", "video", "document":
 		return true
 	default:
 		return false
@@ -3493,7 +3509,7 @@ func (c *Config) validateModelGroupContract(group string, model ModelGroup) erro
 			return fmt.Errorf("model group %s contract.supported_api_shapes %q is not served by any target", group, shape)
 		}
 	}
-	if err := validateModalities(contract.RequiredCaps.InputModalities); err != nil {
+	if err := validateInputModalities(contract.RequiredCaps.InputModalities); err != nil {
 		return fmt.Errorf("model group %s contract.required_capabilities.input_modalities is invalid: %w", group, err)
 	}
 	if err := validateModalities(contract.RequiredCaps.OutputModalities); err != nil {
@@ -3802,7 +3818,15 @@ func intelligentRoutingEmpty(cfg IntelligentRoutingConfig) bool {
 		strings.TrimSpace(cfg.OnError) == "" && strings.TrimSpace(cfg.SchemaVersion) == ""
 }
 
+func validateInputModalities(values []string) error {
+	return validateModalitiesForDirection(values, true)
+}
+
 func validateModalities(values []string) error {
+	return validateModalitiesForDirection(values, false)
+}
+
+func validateModalitiesForDirection(values []string, input bool) error {
 	allowed := map[string]bool{
 		"text":       true,
 		"image":      true,
@@ -3811,6 +3835,9 @@ func validateModalities(values []string) error {
 		"pdf":        true,
 		"file":       true,
 		"embeddings": true,
+	}
+	if input {
+		allowed["document"] = true
 	}
 	seen := map[string]bool{}
 	for _, v := range values {

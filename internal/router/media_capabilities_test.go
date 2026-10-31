@@ -11,6 +11,24 @@ import (
 	"testing"
 )
 
+func TestDocumentInputCapabilityValidation(t *testing.T) {
+	if err := validateInputModalities([]string{"text", "document"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateModalities([]string{"document"}); err == nil {
+		t.Fatal("document should not be accepted as an output modality")
+	}
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.Targets[0].InputModalities = []string{"text", "document"}
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+}
+
 func TestMediaCapabilitiesAdmissionAndForwarding(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		for _, supported := range []bool{false, true} {
@@ -72,6 +90,32 @@ func TestMediaCodecsPreserveDocuments(t *testing.T) {
 			if err != nil || !strings.Contains(string(b), "file-canary") {
 				t.Fatalf("%s -> %s: %s %v", in, out, b, err)
 			}
+		}
+	}
+}
+
+func TestOpenAISchemaMapsToAnthropic(t *testing.T) {
+	for _, tc := range []struct{ dialect, body string }{
+		{"openai-chat", `{"messages":[{"role":"user","content":"hi"}],"response_format":{"type":"json_schema","json_schema":{"name":"x","strict":true,"schema":{"type":"object","additionalProperties":false}}}}`},
+		{"openai-responses", `{"input":"hi","text":{"format":{"type":"json_schema","name":"x","strict":true,"schema":{"type":"object","additionalProperties":false}}}}`},
+	} {
+		req, err := decodeRequest(tc.dialect, []byte(tc.body), http.Header{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := encodeUpstreamForTarget("anthropic", "m", req, Target{StructuredOutput: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(b, &body); err != nil {
+			t.Fatal(err)
+		}
+		config, _ := body["output_config"].(map[string]any)
+		format, _ := config["format"].(map[string]any)
+		schema, _ := format["schema"].(map[string]any)
+		if format["type"] != "json_schema" || schema["type"] != "object" || schema["additionalProperties"] != false {
+			t.Fatalf("%s schema lost: %s", tc.dialect, b)
 		}
 	}
 }
