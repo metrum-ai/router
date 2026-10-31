@@ -6366,9 +6366,11 @@ func TestUnsupportedOpenAIEndpoints(t *testing.T) {
 	defer svc.Close()
 	for _, tc := range []struct{ method, path string }{
 		{"POST", "/v1/completions"}, {"POST", "/v1/moderations"}, {"POST", "/v1/embeddings"},
-		{"POST", "/v1/responses/input_tokens"}, {"POST", "/v1/responses/compact"},
 		{"GET", "/v1/responses/resp_1"}, {"DELETE", "/v1/responses/resp_1"}, {"GET", "/v1/responses/resp_1/input_items"}, {"POST", "/v1/responses/resp_1/cancel"},
 		{"POST", "/v1/files"}, {"GET", "/v1/files/file_1"}, {"POST", "/v1/uploads"}, {"POST", "/v1/batches"}, {"POST", "/v1/images/generations"}, {"POST", "/v1/audio/speech"}, {"POST", "/v1/vector_stores"}, {"POST", "/v1/assistants"}, {"POST", "/v1/threads"}, {"POST", "/v1/fine_tuning/jobs"}, {"GET", "/v1/realtime"},
+		{"POST", "/v1/videos"}, {"GET", "/v1/videos/video_1"}, {"POST", "/v1/containers"}, {"GET", "/v1/containers/container_1"},
+		{"POST", "/v1/conversations"}, {"GET", "/v1/conversations/conversation_1"}, {"POST", "/v1/agents"}, {"GET", "/v1/agents/agent_1"},
+		{"POST", "/v1/chatkit/threads"}, {"GET", "/v1/chatkit/threads/thread_1"}, {"GET", "/v1/skills"}, {"GET", "/v1/skills/skill_1"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		req.Header.Set("Authorization", "Bearer "+testToken)
@@ -6387,6 +6389,36 @@ func TestUnsupportedOpenAIEndpoints(t *testing.T) {
 		}
 		if rr.Code != 501 || body.Error.Type != "invalid_request_error" || body.Error.Code != "unsupported_endpoint" || body.Error.Param != nil || !strings.Contains(body.Error.Message, tc.method+" "+tc.path) {
 			t.Fatalf("%s %s: %d %s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestUnsupportedAdditionalOpenAIEndpointsRequireAuth(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	for _, path := range []string{"/v1/videos", "/v1/containers", "/v1/conversations", "/v1/agents", "/v1/chatkit/threads", "/v1/skills"} {
+		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+			for _, suffix := range []string{"", "/resource_1"} {
+				t.Run(method+path+suffix, func(t *testing.T) {
+					req := httptest.NewRequest(method, path+suffix, nil)
+					rr := httptest.NewRecorder()
+					svc.Handler().ServeHTTP(rr, req)
+					if rr.Code != http.StatusUnauthorized {
+						t.Fatalf("unauthenticated: %d %s", rr.Code, rr.Body.String())
+					}
+					req = httptest.NewRequest(method, path+suffix, nil)
+					req.Header.Set("Authorization", "Bearer "+testToken)
+					rr = httptest.NewRecorder()
+					svc.Handler().ServeHTTP(rr, req)
+					if rr.Code != http.StatusNotImplemented || !strings.Contains(rr.Body.String(), `"code":"unsupported_endpoint"`) || !strings.Contains(rr.Body.String(), `"type":"invalid_request_error"`) {
+						t.Fatalf("authenticated: %d %s", rr.Code, rr.Body.String())
+					}
+				})
+			}
 		}
 	}
 }

@@ -17,6 +17,8 @@ OpenAI-compatible clients use the `/v1` base URL:
 |---|---|---|
 | `/v1/chat/completions` | OpenAI Chat Completions-style requests | OpenAI SDK chat clients, Warp-style OpenAI-compatible agents |
 | `/v1/responses` | OpenAI Responses-style requests | Codex CLI, Responses-compatible agent frameworks |
+| `/v1/responses/input_tokens` | Unbilled input counting through a native Responses target | SDK token budgeting |
+| `/v1/responses/compact` | Metered stateless compaction through a native Responses target | Conversation compaction |
 | `/v1/models` | OpenAI-style model discovery | Client setup and allow-list discovery |
 | `/v1/codex/models.json` | Codex-native local model catalog | Codex CLI fetch-then-run setup |
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
@@ -27,12 +29,19 @@ OpenAI-compatible clients use the `/v1` base URL:
 After caller authentication, legacy text completions and moderations return
 501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings and stored
 Responses retrieval, deletion, input-item listing, and cancellation also return
-501 in v4.5; their implementation is deferred to v4.6. Responses `input_tokens`
-and `compact` temporarily return 501 while pass-through support is being
-implemented. Files, uploads, batches, images, audio, vector stores, assistants,
-threads, fine-tuning, and realtime are outside the v4.5 scope and return the
-same error. These errors have `message`, `type`, `param`, and `code` fields. See
-the [error reference](errors).
+501 in v4.5; their implementation is deferred to v4.6. Files, uploads, batches,
+images, audio, vector stores, assistants, threads, fine-tuning, realtime, videos,
+containers, conversations, agents, ChatKit threads, and skills are outside the
+v4.5 scope and return the same error. These errors have `message`, `type`,
+`param`, and `code` fields. See the [error reference](errors).
+
+Responses input counting requires a native Responses target in the requested
+model group. It observes caller request rate and concurrency limits, but does not
+bill tokens; the audit record has `endpoint=responses.input_tokens`. A request
+with `previous_response_id` returns 501 until stored-response affinity is available.
+Responses compaction likewise requires a native Responses target and applies the
+same token admission and metering as Responses. It bypasses the response cache;
+`previous_response_id` is rejected with 501 until affinity is available.
 
 Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
 not planned for v4.5 and return authenticated 501 errors in Anthropic format.

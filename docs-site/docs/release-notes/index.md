@@ -29,8 +29,12 @@ infer the running version from a date written in documentation.
   SDK testers run inside the required CI check on every pull request and merge
   group, the Go and TypeScript SDK suites run alongside as supplemental checks,
   and `GET /v1/models/{id}` serves caller-filtered model lookup.
-- **One caller-visible change:** chat streams no longer end with a usage-only
-  chunk unless the caller sets `stream_options.include_usage`.
+- **Caller-visible changes:** chat streams no longer end with a usage-only
+  chunk unless the caller sets `stream_options.include_usage`; errors now follow
+  the caller's dialect, with an indistinguishable `404` for an unknown or
+  disallowed model, `400` for a capability no target can serve, and `503` when a
+  provider rejects the router's credentials; and endpoints the router does not
+  serve answer `501 unsupported_endpoint` instead of a bare `405`.
 - Release assets carry build-provenance attestations, Windows binaries are
   Authenticode-signed when signing secrets are provisioned, and the updated Go
   and Node dependencies close the reported advisories.
@@ -45,15 +49,20 @@ infer the running version from a date written in documentation.
 | Database | PostgreSQL-backed replicas learn configuration changes through LISTEN/NOTIFY, with the revision poller as the fallback (#443, #452) |
 | Release artifacts | Provenance attestations on release assets; Windows signing is a logged no-op until signing secrets exist (#332) |
 | Security | Tenant provisioner RBAC loses NetworkPolicy write access; re-apply `provisioner-rbac.yaml` when onboarding the next tenant (#414) |
+| Error codes | A disallowed group no longer returns `403 model-not-allowed`: unknown and disallowed models both return `404 model_not_found`, disclosing nothing about which groups exist (#530) |
+| Error codes | A capability or dialect no target can serve returns `400 unsupported_capability` with `param`; a terminal provider request error keeps its status as `upstream-rejected` instead of `502`; provider `401`/`402`/`403` returns `503 upstream-access-denied` (#530) |
+| Unsupported surfaces | Endpoints outside v4.5 answer `501 unsupported_endpoint` in the caller's dialect; automation matching `405` must accept `501` (#531) |
 | CI | Required CI fans out into six measured router shards, other Go and Windows, and compatibility, Python and example lanes behind one aggregate `ci` job; Go test wall time is guarded (#549, #569, #418) |
 
 ### Caller Impact
 
-Routed model groups, request shapes, tool support and usage accounting are
-unchanged. One response-shape change matters to clients: chat streams no longer
-carry a usage-only chunk unless the caller opts in, so a client that relied on a
-trailing `choices: []` chunk must set `stream_options.include_usage`. Nothing in
-this release changes routing policy, model groups or prices on its own.
+Routed model groups and usage accounting are unchanged. Client-visible
+differences are the chat usage opt-in, the dialect-shaped error contract
+(indistinguishable `404` for unknown or disallowed models, `400` for a
+capability no target can serve, `503` when a provider rejects the router's
+credentials, `501` for endpoints outside v4.5), and Anthropic model discovery
+plus document input. Nothing in this release changes routing policy, model
+groups or prices on its own.
 
 ### Proof and Evidence
 
@@ -74,9 +83,12 @@ the examples and benchmark READMEs in the repository.
 
 ### Upgrade
 
-Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide). One item needs
+Follow the [Upgrade Guide](/docs/release-notes/upgrade-guide). Three items need
 attention before traffic moves: clients that consumed the chat usage-only chunk
-must set `stream_options.include_usage`. Deployments that run router chains
+must set `stream_options.include_usage`; automation that matched `405` for
+endpoints outside v4.5 must accept `501`; and monitoring that treated provider
+`401`/`402`/`403` as a caller authentication problem must expect
+`503 upstream-access-denied` instead. Deployments that run router chains
 behind another proxy must preserve `Via` for the loop protection to work, and
 anyone using the tenant provisioner must re-apply its RBAC manifest.
 
@@ -84,7 +96,11 @@ anyone using the tenant provisioner must re-apply its RBAC manifest.
 
 Check `/readyz`, `/version` and authenticated `/v1/models`, including
 `GET /v1/models/{id}` with a caller-scoped token; a model the caller cannot use
-must return the same 404 as one that does not exist. Confirm a chat stream
+must return the same 404 as one that does not exist, and the Anthropic catalog
+must list only that caller's groups. Confirm a request the group cannot serve
+returns `400` with a `param`, that a provider credential failure surfaces as
+`503 upstream-access-denied`, and that an endpoint outside v4.5 returns `501`
+in the caller's dialect. Confirm a chat stream
 without `stream_options.include_usage` ends without a usage-only chunk and that
 one with the opt-in carries usage. For compatibility, run the mock suites from
 the source distribution
@@ -95,11 +111,12 @@ launch validation.
 ### Security and Rollback
 
 Keep the previous binary, reviewed configuration and restorable config and usage
-database backups. This release adds no mandatory usage-database migration; the
-PostgreSQL notifier change is additive and polling remains the fallback, so
-rollback is binary replacement plus re-applying the previous provisioner RBAC
-manifest. Windows artifacts are unsigned unless signing secrets are
-provisioned; verify provenance attestations and `SHA256SUMS` before installing.
+database backups. Take a usage-database backup before upgrading and run the
+[Upgrade Guide](/docs/release-notes/upgrade-guide) Required Migration Gate for the
+schema level this build expects; package rollback never runs a reverse
+migration. The PostgreSQL notifier change is additive and polling remains the
+fallback. Windows artifacts are unsigned unless signing secrets are provisioned;
+verify provenance attestations and `SHA256SUMS` before installing.
 
 ## v4.4.0 - 2026-10-27
 

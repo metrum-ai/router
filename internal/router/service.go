@@ -626,9 +626,10 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "anthropic") })
 	s.mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-chat") })
 	s.mux.HandleFunc("POST /v1/responses", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
+	s.mux.HandleFunc("POST /v1/responses/input_tokens", s.handleResponsesInputTokens)
+	s.mux.HandleFunc("POST /v1/responses/compact", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
 	for _, pattern := range []string{
 		"POST /v1/completions", "POST /v1/moderations", "POST /v1/embeddings",
-		"POST /v1/responses/input_tokens", "POST /v1/responses/compact",
 		"GET /v1/responses/{id}", "DELETE /v1/responses/{id}",
 		"GET /v1/responses/{id}/input_items", "POST /v1/responses/{id}/cancel",
 	} {
@@ -655,6 +656,9 @@ func (s *Service) routes() {
 		"/v1/audio", "/v1/audio/", "/v1/vector_stores", "/v1/vector_stores/",
 		"/v1/assistants", "/v1/assistants/", "/v1/threads", "/v1/threads/",
 		"/v1/fine_tuning", "/v1/fine_tuning/", "/v1/realtime", "/v1/realtime/",
+		"/v1/videos", "/v1/videos/", "/v1/containers", "/v1/containers/",
+		"/v1/conversations", "/v1/conversations/", "/v1/agents", "/v1/agents/",
+		"/v1/chatkit/threads", "/v1/chatkit/threads/",
 	} {
 		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
 			s.mux.HandleFunc(method+" "+path, s.handleUnsupportedOpenAIEndpoint)
@@ -705,7 +709,7 @@ func (w *discardAdminAuthWriter) WriteHeader(statusCode int) {
 
 func (s *Service) handleUnsupportedOpenAIEndpoint(w http.ResponseWriter, r *http.Request) {
 	anthropicHeader := r.Header.Get("Anthropic-Version") != "" || (r.Header.Get("X-API-Key") != "" && r.Header.Get("Authorization") == "")
-	anthropic := anthropicHeader || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/v1/messages/batches") || r.URL.Path == "/v1/complete" || strings.HasPrefix(r.URL.Path, "/v1/skills")
+	anthropic := anthropicHeader || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/v1/messages/batches") || r.URL.Path == "/v1/complete"
 	dialect := "openai-chat"
 	if anthropic {
 		dialect = "anthropic"
@@ -714,6 +718,10 @@ func (s *Service) handleUnsupportedOpenAIEndpoint(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
+	s.writeUnsupportedEndpoint(w, r, rc, anthropic)
+}
+
+func (s *Service) writeUnsupportedEndpoint(w http.ResponseWriter, r *http.Request, rc *requestContext, anthropic bool) {
 	code := "unsupported_endpoint"
 	rc.trace("request_error", code, Target{}, 0, http.StatusNotImplemented, code, false, 0)
 	rc.rec.Status = http.StatusNotImplemented
@@ -1379,6 +1387,30 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 		return
 	}
+	if rc.rec.Endpoint == "responses.compact" {
+		if rawValuePresent(req.Raw, "previous_response_id") {
+			// Stored response ownership and target affinity are not implemented yet.
+			s.writeUnsupportedEndpoint(w, r, rc, false)
+			return
+		}
+		if req.Stream {
+			s.writeError(w, rc, http.StatusBadRequest, "invalid-request")
+			return
+		}
+		var native []Target
+		for _, target := range group.Targets {
+			provider := s.cfg.Provider[target.Provider]
+			if targetDialect(provider, target) == "openai-responses" && !isBedrock(provider) {
+				native = append(native, target)
+			}
+		}
+		if len(native) == 0 {
+			s.writeUnsupportedEndpoint(w, r, rc, false)
+			return
+		}
+		group.Targets = native
+		req.NoCache = true
+	}
 	if reason := s.mediaAdmission(group, req, dialect); reason != "" {
 		s.writeError(w, rc, http.StatusBadRequest, reason)
 		return
@@ -1393,7 +1425,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	s.maybeShadowRequest(req.Model, dialect, body)
+	if rc.rec.Endpoint != "responses.compact" {
+		s.maybeShadowRequest(req.Model, dialect, body)
+	}
 	if group.Contract != nil {
 		rc.rec.ContractPresent = true
 		rc.rec.ContractBucket = "pending"
@@ -1831,6 +1865,11 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
 		rc.rec.RequestKind = "count_tokens"
+	case "/v1/responses/input_tokens":
+		rc.rec.RequestKind = "count_tokens"
+		rc.rec.Endpoint = "responses.input_tokens"
+	case "/v1/responses/compact":
+		rc.rec.Endpoint = "responses.compact"
 	}
 	// Recognized inactive credentials retain safe attribution, never authorization.
 	// Unknown credentials have no caller and cannot acquire a report domain.
@@ -2625,7 +2664,11 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	chatResponsesSession := bridgeSessionLookup{}
 	var upReqBody []byte
 	var err error
-	if openAIToolsBridge {
+	if rc.rec.Endpoint == "responses.compact" {
+		body := providerPassthroughBody(req)
+		body["model"] = target.Model
+		upReqBody, err = json.Marshal(body)
+	} else if openAIToolsBridge {
 		upReqBody, err = encodeOpenAIToolsToAnthropic(target.Model, callerDialect, req, target)
 	} else if bridge {
 		bridgeReq := *req
@@ -2675,6 +2718,14 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}
 	}
 	endpoint, err := upstreamEndpoint(provider.BaseURL, outDialect, target)
+	if err == nil && rc.rec.Endpoint == "responses.compact" {
+		var u *url.URL
+		u, err = url.Parse(endpoint)
+		if err == nil {
+			u.Path += "/compact"
+			endpoint = u.String()
+		}
+	}
 	if err != nil {
 		attempt.ErrorClass = "endpoint_error"
 		attempt.ErrorMessage = err.Error()
