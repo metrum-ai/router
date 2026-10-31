@@ -4759,6 +4759,10 @@ func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status i
 		writeAnthropicError(w, rc, status, code)
 		return
 	}
+	if code == "model_not_found" {
+		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": "model", "message": "The requested model does not exist."}})
+		return
+	}
 	if rc != nil && code == "unsupported_modality" && (rc.dialect == "openai-chat" || rc.dialect == "openai-responses") {
 		param := "messages"
 		if rc.dialect == "openai-responses" {

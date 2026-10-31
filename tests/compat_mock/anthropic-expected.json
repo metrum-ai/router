@@ -38,17 +38,5 @@
   "beta_files": {
     "reason": "Beta files are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
-  },
-  "beta_models": {
-    "reason": "Anthropic model list shape or lookup is not implemented",
-    "issue": "https://github.com/metrum-ai/router/issues/538"
-  },
-  "beta_models_get": {
-    "reason": "Anthropic model list shape or lookup is not implemented",
-    "issue": "https://github.com/metrum-ai/router/issues/538"
-  },
-  "error_responses": {
-    "reason": "Unknown model returns 403 instead of the expected API error",
-    "issue": "https://github.com/metrum-ai/router/issues/530"
   }
 }
