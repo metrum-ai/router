@@ -59,7 +59,7 @@ Each failure links its owning issue. “Investigating” is not a final classifi
 | `responses` | Pass | Pass |
 | `responses_stream` | Pass | Bug [#539](https://github.com/metrum-ai/router/issues/539) |
 | `responses_tools` | Pass | Bug [#539](https://github.com/metrum-ai/router/issues/539) |
-| `responses_tools_stream` | Tester expectation | Bug [#539](https://github.com/metrum-ai/router/issues/539) |
+| `responses_tools_stream` | Tester expectation ([source](https://github.com/beranekio/openai-compatibility-tester/blob/5935805af52c01059e5a166b01cf1c28077103f5/internal/suites/responses_tools_stream.go), [#536](https://github.com/metrum-ai/router/issues/536)) | Bug [#539](https://github.com/metrum-ai/router/issues/539) |
 | `responses_json` | Pass | Bug [#539](https://github.com/metrum-ai/router/issues/539) |
 | `responses_get` | Bug [#531](https://github.com/metrum-ai/router/issues/531) | Bug [#531](https://github.com/metrum-ai/router/issues/531) |
 | `responses_get_stream` | Not run | Not run |
@@ -157,7 +157,7 @@ Each failure links its owning issue. “Investigating” is not a final classifi
 
 ## Rerun and limits
 
-The current harness reruns only the 31-suite OpenAI and 27-suite Anthropic subsets, not the full tables above or the starter run. It can create provider-side stored response objects while testing stored-response suites; cleanup may fail when the corresponding router endpoint is unsupported. Use only disposable test data. First prepare a fresh local YAML config with `gpt` and `claude` groups, a single caller with day/month/lifetime token limits no higher than 200,000, configured prices, disabled content capture, native provider targets, and fresh absolute SQLite usage and state paths. Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and `ROUTER_CALLER_TOKEN` in the environment. Then, from the repository root:
+The current harness reruns only 27 OpenAI and 27 Anthropic suites per lane, not the full tables above or the starter run. It excludes stored-response and hosted-code suites to avoid creating provider-side resources, so it does not reproduce the complete baseline matrix. Earlier baseline runs requested stored responses; attempted cleanup through the unsupported router endpoint failed, and test logs did not retain their provider IDs. Use only disposable test data. First prepare a fresh local YAML config with `gpt` and `claude` groups, a single caller with day/month/lifetime token limits no higher than 200,000, configured prices, disabled content capture, native provider targets, `force_store_false: true` on every OpenAI target, and fresh absolute SQLite usage and state paths. Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and `ROUTER_CALLER_TOKEN` in the environment. Then, from the repository root:
 
 ```sh
 COMPAT_LIVE_CONFIG=/path/to/config.yaml COMPAT_LIVE_OUT=/path/to/new-results python3 scripts/compat_live.py

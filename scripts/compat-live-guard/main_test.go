@@ -24,7 +24,7 @@ func fixture(t *testing.T) *router.Config {
 			"anthropic": {BaseURL: "https://api.anthropic.com"},
 		},
 		Models: map[string]router.ModelGroup{
-			"gpt":    {Targets: []router.Target{{Provider: "openai", Dialect: "openai-chat", PricingSource: "test", InputPricePerMillionUSD: 0.05, OutputPricePerMillionUSD: 0.4, RequestShapeSupport: router.RequestShapeSupport{ValidationStatus: "limited"}}}},
+			"gpt":    {Targets: []router.Target{{Provider: "openai", Dialect: "openai-chat", PricingSource: "test", ForceStoreFalse: true, InputPricePerMillionUSD: 0.05, OutputPricePerMillionUSD: 0.4, RequestShapeSupport: router.RequestShapeSupport{ValidationStatus: "limited"}}}},
 			"claude": {Targets: []router.Target{{Provider: "anthropic", Dialect: "anthropic", PricingSource: "test", InputPricePerMillionUSD: 1, OutputPricePerMillionUSD: 5, RequestShapeSupport: router.RequestShapeSupport{ValidationStatus: "limited"}}}},
 		},
 	}
@@ -46,6 +46,7 @@ func TestValidateLiveSafety(t *testing.T) {
 			c.Models["claude"] = g
 		}},
 		{"content capture", func(c *router.Config) { c.Server.ContentCapture.Enabled = true }},
+		{"upstream storage not disabled", func(c *router.Config) { c.Models["gpt"].Targets[0].ForceStoreFalse = false }},
 		{"existing state", func(c *router.Config) {
 			if err := os.WriteFile(c.StatePath, []byte("{}"), 0600); err != nil {
 				t.Fatal(err)

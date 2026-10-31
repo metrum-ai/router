@@ -62,6 +62,9 @@ func validate(c *router.Config) error {
 				(group == "claude" && (base != "https://api.anthropic.com" || t.Dialect != "anthropic")) {
 				return errors.New("targets must use the native OpenAI and Anthropic API endpoints")
 			}
+			if group == "gpt" && !t.ForceStoreFalse {
+				return errors.New("OpenAI targets must force store:false to prevent provider-side stored responses")
+			}
 		}
 	}
 	return nil

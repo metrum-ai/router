@@ -43,9 +43,11 @@ def meter(path):
 
 def suites(kind):
     selected = TESTERS[kind][1].split(',')
-    # This provider-hosted tool may allocate a sandbox and incur non-token
-    # charges. Omission is explicit; it is not an unsupported-endpoint pass.
-    return [s for s in selected if s != 'messages_code_execution']
+    # These suites can create provider-side objects or allocate a hosted
+    # sandbox. Their omission is explicit; it is not an unsupported pass.
+    resource_creating = {'messages_code_execution', 'responses_get', 'responses_delete',
+                         'responses_input_items', 'responses_multi_turn'}
+    return [s for s in selected if s not in resource_creating]
 
 
 def local_port():

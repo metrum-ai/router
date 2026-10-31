@@ -15,9 +15,11 @@ import compat_live
 
 class CompatLiveTest(unittest.TestCase):
     def test_suite_scope(self):
-        self.assertEqual(len(compat_live.suites('openai')), 31)
+        self.assertEqual(len(compat_live.suites('openai')), 27)
         self.assertEqual(len(compat_live.suites('anthropic')), 27)
         self.assertNotIn('messages_code_execution', compat_live.suites('anthropic'))
+        for suite in ('responses_get', 'responses_delete', 'responses_input_items', 'responses_multi_turn'):
+            self.assertNotIn(suite, compat_live.suites('openai'))
         self.assertIn('chat_completions_stream_usage', compat_live.suites('openai'))
 
     def test_meter_sums_only_persisted_rows(self):
