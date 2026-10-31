@@ -36,12 +36,11 @@ workspace, module/build cache or `/var/tmp` contents are assumed to survive.
 
 ## Acceptance and timing
 
-PR checks exercise the new pods first. The deterministic workflow defers its
-real suite on pull requests, so its tiny PR-job times are **not** full-gate
-measurements. Dispatch `deterministic-gate.yml` on the migration branch to run
-all real offline lanes without queue admission or provider-backed evaluation.
-Report queue delay separately from runner execution, each lane's conclusion,
-cache-hit/miss evidence and `internal/router` test duration. Compare with the
+PR and merge-group checks exercise the consolidated `ci` workflow. The
+additional offline checks in `supplemental-checks.yml` run on merge groups or
+manual dispatch and are not included in the required `ci` result. Report queue
+delay separately from runner execution, each lane's conclusion, cache-hit/miss
+evidence and `internal/router` test duration. Compare with the
 maintainer's pikachu baseline: deterministic gate approximately9–10minutes,
 internal/router approximately520seconds. First cold starts and later restored
 runs are distinct measurements. Manual/protected provider lanes, release and

@@ -106,11 +106,42 @@ jobs:
           if [ "$CI_RUN_EXAMPLES" = 1 ]; then lanes+=(ci-examples); fi
           env -u AWS_BEARER_TOKEN_BEDROCK make -k -j3 "${lanes[@]}"
 
+  # Required on the combined merge-group SHA and on manual dispatch; PRs
+  # intentionally skip this lane to avoid duplicate high-cost scans.
+  sbom:
+    if: github.event_name != 'pull_request'
+    runs-on: router-arc
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Generate CycloneDX source SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: source-sbom.cdx.json
+          upload-artifact: true
+      - name: Scan source dependencies
+        uses: anchore/scan-action@1638637db639e0ade3258b51db49a9a137574c3e
+        with:
+          path: .
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+          output-file: source-vulnerabilities.sarif
+      - name: Upload vulnerability report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: source-vulnerabilities-sarif
+          path: source-vulnerabilities.sarif
+          if-no-files-found: error
+
   ci:
     name: ci
     runs-on: router-arc-small
     if: always()
-    needs: [router, other-go, other]
+    needs: [router, other-go, other, sbom]
     timeout-minutes: 5
     steps:
       - name: Require every lane
@@ -118,7 +149,13 @@ jobs:
           ROUTER_RESULT: ${{ needs.router.result }}
           OTHER_GO_RESULT: ${{ needs.other-go.result }}
           OTHER_RESULT: ${{ needs.other.result }}
+          SBOM_RESULT: ${{ needs.sbom.result }}
+          CI_EVENT_NAME: ${{ github.event_name }}
         run: |
           for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
             if [ "$result" != success ]; then echo "A required CI lane did not succeed: $result" >&2; exit 1; fi
           done
+          if [ "$SBOM_RESULT" != success ] && ! { [ "$CI_EVENT_NAME" = pull_request ] && [ "$SBOM_RESULT" = skipped ]; }; then
+            echo "Required SBOM scan did not succeed: $SBOM_RESULT ($CI_EVENT_NAME)" >&2
+            exit 1
+          fi
