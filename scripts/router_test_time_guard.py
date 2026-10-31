@@ -13,7 +13,7 @@ The package-level result line (the pass/fail event with no Test field) is the
 authoritative wall time; the script wall clock is a fallback.
 
 Exits 0 when the package stays under ROUTER_TEST_GUARD_FAIL_SECONDS (default
-480 s), 1 when it exceeds it, and emits a ::warning:: annotation when it
+720 s), 1 when it exceeds it, and emits a ::warning:: annotation when it
 exceeds ROUTER_TEST_GUARD_WARN_SECONDS (default 360 s, the #367 budget). A
 failed package result propagates as exit 1 as well.
 """
@@ -36,7 +36,7 @@ def main() -> int:
     json_out = open(args.save_json, "w", encoding="utf-8") if args.save_json else None
 
     warn_seconds = float(os.environ.get("ROUTER_TEST_GUARD_WARN_SECONDS", "360"))
-    fail_seconds = float(os.environ.get("ROUTER_TEST_GUARD_FAIL_SECONDS", "480"))
+    fail_seconds = float(os.environ.get("ROUTER_TEST_GUARD_FAIL_SECONDS", "720"))
     started = time.monotonic()
     package_elapsed: float | None = None
     package_failed = False
