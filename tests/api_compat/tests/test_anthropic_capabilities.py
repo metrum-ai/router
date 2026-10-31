@@ -112,12 +112,10 @@ def _send(anth_router, payload, *, scenario=None, headers=None):
 
 def _assert_no_eligible(status, raw, calls):
     """Router-owned rejection with zero upstream calls."""
-    if status == 400:
-        assert json.loads(raw)["error"]["type"] == "unsupported_modality"
-        assert not calls
-        return
-    assert status == 502, raw[:300]
-    assert json.loads(raw)["error"]["type"] == "no-eligible-target"
+    assert status == 400, raw[:300]
+    error = json.loads(raw)["error"]
+    assert error["type"] == "invalid_request_error"
+    assert error["message"]
     assert calls == []
 
 
@@ -224,7 +222,7 @@ def test_anth_06_thinking_controls_follow_capability_profile(anth_router):
         },
     )
     assert status == 502, raw[:300]
-    assert json.loads(raw)["error"]["details"]["error_class"] == "encode_error"
+    assert json.loads(raw)["error"]["type"] == "api_error"
     assert calls == []
 
     # Thinking + client tools + caller tool_choice: both forwarded, tool_choice untouched.
@@ -264,7 +262,8 @@ def test_anth_06_thinking_controls_follow_capability_profile(anth_router):
         "model": "anth-plain", "max_tokens": 2000,
         "thinking": {"type": "adaptive"}, "messages": _user(),
     })
-    assert status == 502, raw
+    assert status == 400, raw
+    assert json.loads(raw)["error"]["type"] == "invalid_request_error"
     assert calls == []
 
 
@@ -532,15 +531,15 @@ def test_anth_12_native_server_tools_documents_and_unknown_blocks(anth_router):
             scenario=scenario,
         )
         assert status == 400, raw[:300]
-        assert json.loads(raw)["error"]["type"] == "provider-hosted-tools-forbidden"
+        assert json.loads(raw)["error"] == {"type": "invalid_request_error", "message": "provider-hosted-tools-forbidden"}
         assert not calls
 
     for content, error in (([future_block], "unsupported_block"), ([document], "unsupported_modality")):
         status, raw, calls = _send(anth_router, {"model": "anth-bridge", "max_tokens": 64, "messages": _user(content)})
-        assert status == 400 and json.loads(raw)["error"]["type"] == error
+        assert status == 400 and json.loads(raw)["error"] == {"type": "invalid_request_error", "message": error}
         assert not calls
     status, raw, calls = _send(anth_router, {"model": "anth-bridge", "max_tokens": 64, "output_config": {"format": {"type": "json_schema", "schema": {"type": "object"}}}, "messages": _user()})
-    assert status == 400 and json.loads(raw)["error"]["type"] == "unsupported_parameter"
+    assert status == 400 and json.loads(raw)["error"] == {"type": "invalid_request_error", "message": "unsupported_parameter"}
     assert not calls
     status, raw, calls = _send(anth_router, {"model": "anth-plain", "max_tokens": 64, "messages": _user(user_content)})
     assert status == 200, raw[:300]

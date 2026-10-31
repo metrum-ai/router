@@ -284,8 +284,8 @@ func TestProductionDerivedAnthropicPlainTextToolOnly(t *testing.T) {
 
 	toolOnly := newSvc(t, true)
 	defer toolOnly.Close()
-	if got := post(toolOnly, false); got != fixture.PlainTextStatus {
-		t.Fatalf("plain-text against tool_only-only group status=%d want %d", got, fixture.PlainTextStatus)
+	if got := post(toolOnly, false); got != http.StatusBadRequest {
+		t.Fatalf("plain-text against tool_only-only group status=%d want %d", got, http.StatusBadRequest)
 	}
 	if got := post(toolOnly, true); got != fixture.ToolRequestStatus {
 		t.Fatalf("tool request against tool_only group status=%d want %d", got, fixture.ToolRequestStatus)
@@ -497,13 +497,13 @@ func TestProductionDerivedCodexResponsesReasoningEligibility(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		req.Header.Set("Content-Type", "application/json")
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), fixture.WithReasoningMissingMetadataExpectedError) {
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) {
 			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 		}
 		if upstreamHits.Load() != 0 {
 			t.Fatalf("upstream hits=%d, want 0 before eligibility failure", upstreamHits.Load())
 		}
-		details := decodeProductionDerivedErrorDetails(t, rr.Body.Bytes(), "no-eligible-target")
+		details := decodeProductionDerivedErrorDetails(t, rr.Body.Bytes(), "invalid_request_error")
 		requirements, _ := details["requirements"].([]any)
 		joined := fmt.Sprint(requirements)
 		for _, want := range []string{"tools", "openai-responses_tool_passthrough", "reasoning"} {
@@ -970,7 +970,14 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 			req.Header.Set("User-Agent", "Cursor/1.0")
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
-			if rr.Code != scenario.ExpectedCallerStatus {
+			wantStatus, wantType, wantError := scenario.ExpectedCallerStatus, scenario.ExpectedErrorType, scenario.ExpectedErrorType
+			switch scenario.UpstreamStatus {
+			case http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+				wantStatus, wantError, wantType = scenario.UpstreamStatus, "upstream-rejected", "invalid_request_error"
+			case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+				wantStatus, wantError, wantType = http.StatusServiceUnavailable, "upstream-access-denied", "upstream-access-denied"
+			}
+			if rr.Code != wantStatus {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
 			if rr.Header().Get("X-Router-Error-Class") != scenario.ExpectedErrorClass ||
@@ -978,7 +985,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 				rr.Header().Get("X-Upstream-Status") == "" {
 				t.Fatalf("missing upstream diagnostic headers: %#v", rr.Header())
 			}
-			details := decodeProductionDerivedErrorDetails(t, rr.Body.Bytes(), scenario.ExpectedErrorType)
+			details := decodeProductionDerivedErrorDetails(t, rr.Body.Bytes(), wantType)
 			if details["error_class"] != scenario.ExpectedErrorClass || int(details["upstream_status"].(float64)) != scenario.UpstreamStatus || details["retryable"] != scenario.ExpectedRetryable {
 				t.Fatalf("unexpected error details: %#v", details)
 			}
@@ -996,7 +1003,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 			if err := svc.usage.db.First(&usage).Error; err != nil {
 				t.Fatal(err)
 			}
-			if usage.Error != scenario.ExpectedErrorType || usage.Status != scenario.ExpectedCallerStatus || usage.QuotaState != "ok" || usage.KeyState != "active" {
+			if usage.Error != wantError || usage.Status != wantStatus || usage.QuotaState != "ok" || usage.KeyState != "active" {
 				t.Fatalf("unexpected usage error state: %#v", usage)
 			}
 			var requestErr requestErrorRecord
@@ -1004,7 +1011,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 			if err := svc.usage.db.Where("request_id = ?", usage.RequestID).First(&requestErr).Error; err != nil {
 				t.Fatal(err)
 			}
-			if requestErr.ErrorClass != scenario.ExpectedErrorClass || requestErr.ErrorType != scenario.ExpectedErrorType || requestErr.Status != scenario.ExpectedCallerStatus || requestErr.Retryable != scenario.ExpectedRetryable {
+			if requestErr.ErrorClass != scenario.ExpectedErrorClass || requestErr.ErrorType != wantError || requestErr.Status != wantStatus || requestErr.Retryable != scenario.ExpectedRetryable {
 				t.Fatalf("unexpected request error: %#v", requestErr)
 			}
 			var upstreamDetails []requestUpstreamErrorDetailRecord

@@ -4,19 +4,19 @@
     "issue": "https://github.com/metrum-ai/router/issues/528"
   },
   "completions": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Legacy completions are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "completions_stream": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Legacy completions are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "embeddings": {
-    "reason": "Embedding endpoint returns 405",
+    "reason": "Embedding endpoint is not yet offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/532"
   },
   "embeddings_batch": {
-    "reason": "Embedding endpoint returns 405",
+    "reason": "Embedding endpoint is not yet offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/532"
   },
   "responses_get": {
@@ -32,11 +32,11 @@
     "issue": "https://github.com/metrum-ai/router/issues/533"
   },
   "responses_input_tokens": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Responses input token counting is not yet offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "responses_compact": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Responses compaction is not yet offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "responses_multi_turn": {
@@ -44,11 +44,7 @@
     "issue": "https://github.com/metrum-ai/router/issues/533"
   },
   "moderations": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Moderations are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
-  },
-  "error_responses": {
-    "reason": "Unknown model returns 403 instead of the expected API error",
-    "issue": "https://github.com/metrum-ai/router/issues/530"
   }
 }
