@@ -3496,6 +3496,12 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 }
 
 func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
+	// This is called only after the full request has no eligible target. A
+	// synthetic dialect-only candidate can otherwise mask an ineligible audio
+	// target (for example a tool-only target on a tool-less request).
+	if requestWantsChatAudioOutput(req, dialect) {
+		return "unsupported_capability", "modalities"
+	}
 	var candidates []Target
 	for _, target := range targets {
 		out := targetDialect(s.cfg.Provider[target.Provider], target)
@@ -3518,9 +3524,6 @@ func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect s
 		}
 		candidates = next
 		return len(next) != 0
-	}
-	if requestWantsChatAudioOutput(req, dialect) && !filter(func(t Target, out string) bool { return targetSupportsChatAudioOutput(t, req, dialect, out) }) {
-		return "unsupported_capability", "modalities"
 	}
 	if len(req.Tools) > 0 && !filter(func(t Target, out string) bool { return targetSupportsToolsForCallerDialect(t, dialect, out) }) {
 		return "unsupported_capability", "tools"

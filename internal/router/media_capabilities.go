@@ -139,12 +139,12 @@ func applyAnthropicFormat(body map[string]any, req *IRRequest, dialect string) {
 }
 
 // requestWantsChatAudioOutput detects requested Chat audio output, independently
-// from audio input parts. Presence of an audio configuration is itself a request.
+// from audio input parts. A non-null audio configuration is itself a request.
 func requestWantsChatAudioOutput(req *IRRequest, caller string) bool {
 	if req == nil || normalizeDialect(caller) != "openai-chat" {
 		return false
 	}
-	if _, present := req.Raw["audio"]; present {
+	if rawValuePresent(req.Raw, "audio") {
 		return true
 	}
 	if modalities, ok := req.Raw["modalities"].([]any); ok {

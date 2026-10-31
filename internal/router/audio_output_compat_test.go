@@ -37,6 +37,30 @@ func TestChatAudioOutputSelectsAudioTarget(t *testing.T) {
 	}
 }
 
+func TestChatAudioOutputIneligibleTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name, dialect string
+		targets       []Target
+	}{
+		{"tool-only-audio", "openai-chat", []Target{{Provider: "native", Model: "tool-audio", ToolOnly: true, OutputModalities: []string{"audio"}}, {Provider: "native", Model: "text", OutputModalities: []string{"text"}}}},
+		{"responses-without-bridge", "openai-responses", []Target{{Provider: "native", Model: "responses", OutputModalities: []string{"text", "audio"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var hits atomic.Int32
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+			defer up.Close()
+			svc := nativeStreamTestService(t, up.URL, tc.dialect, tc.targets)
+			r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"native-stream","messages":[{"role":"user","content":"hello"}],"modalities":["text","audio"]}`))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			w := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(w, r)
+			if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(w.Body.String(), `"param":"modalities"`) {
+				t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+			}
+		})
+	}
+}
+
 func TestChatAudioOutputEligibility(t *testing.T) {
 	for _, tc := range []struct {
 		name, dialect, request string
@@ -50,6 +74,7 @@ func TestChatAudioOutputEligibility(t *testing.T) {
 		{"translated-declared-audio", "anthropic", `"modalities":["audio"]`, []string{"text", "audio"}, 400},
 		{"native-declared-audio", "openai-chat", `"modalities":["text","audio"],"audio":{"format":"wav","voice":"alloy"}`, []string{"text", "audio"}, 200},
 		{"native-default-text", "openai-chat", `"modalities":["text"]`, []string{"text"}, 200},
+		{"null-audio-is-absent", "openai-chat", `"modalities":["text"],"audio":null`, []string{"text"}, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var hits atomic.Int32
@@ -76,7 +101,7 @@ func TestChatAudioOutputEligibility(t *testing.T) {
 				if hits.Load() != 0 || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"modalities"`) {
 					t.Fatalf("wrong rejection or upstream called: hits=%d body=%s", hits.Load(), rr.Body.String())
 				}
-			} else if hits.Load() != 1 || (strings.Contains(tc.request, `"audio"`) && (captured["audio"] == nil || !strings.Contains(rr.Body.String(), `"audio"`))) {
+			} else if hits.Load() != 1 || (tc.name == "native-declared-audio" && (captured["audio"] == nil || !strings.Contains(rr.Body.String(), `"audio"`))) {
 				t.Fatalf("native passthrough lost audio: hits=%d body=%s", hits.Load(), rr.Body.String())
 			}
 		})
