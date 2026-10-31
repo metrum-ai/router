@@ -32,10 +32,10 @@ func TestTokenBreakdownMigrationPreservesUnknownHistoricalCoverage(t *testing.T)
 			}
 		}
 	}
-	if err := store.db.Where("scope = ? AND migration_id = ?", usageMigrationScope, 2026102303).Delete(&migrationAttemptRecord{}).Error; err != nil {
+	if err := store.db.Where("scope = ? AND migration_id IN ?", usageMigrationScope, []int{2026102303, 2026103001}).Delete(&migrationAttemptRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Exec("DELETE FROM schema_migration_ledger WHERE scope = ? AND migration_id = ?", usageMigrationScope, 2026102303).Error; err != nil {
+	if err := store.db.Exec("DELETE FROM schema_migration_ledger WHERE scope = ? AND migration_id IN (?, ?)", usageMigrationScope, 2026102303, 2026103001).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
