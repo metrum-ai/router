@@ -32,6 +32,8 @@ After #564, the same current-model subset was rerun on main `4b1a87e9f3a06868016
 
 After #567, a rerun on main `d77739d45da037ab8197b2253b6c7881d1dfac8c` passed **14/27, 9/27, 1/27, 11/27** in the same four-lane order. Compared with the table below, GPT `chat_completions_stream`, Claude `chat_completions_stream_usage` and Claude `responses_stream` changed from failure to pass; every other selected suite had the same pass/fail result. Router usage rows total **$0.00068860** at list rates, not an invoice; seven upstream attempts reported no usage. Evidence snapshot `dda91a4f` (`router/v45-proof/536`). This restricted run is not full catalog or release-candidate evidence; the unchanged starter was not rerun at this head.
 
+After #568, a rerun on main `9691e073def730e243001e6702bb09130fff8fcd` passed **15/27, 10/27, 1/27, 11/27**. Compared with the post-#567 run, OpenAI `models_get` changed from failure to pass on both targets; other selected suite pass/fail results were unchanged. Anthropic model-get now reaches the endpoint but fails its `type: model` assertion ([#538](https://github.com/metrum-ai/router/issues/538)). Router usage rows total **$0.00074310** at list rates, not an invoice; seven upstream attempts reported no usage. Evidence snapshot `1768271e` (`router/v45-proof/536`). The unchanged starter and full catalog were not rerun.
+
 ### OpenAI SDK → GPT / Claude: 13 / 27, 7 / 27
 
 | Suite | GPT | Claude |
