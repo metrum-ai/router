@@ -51,7 +51,7 @@ infer the running version from a date written in documentation.
 | Security | Tenant provisioner RBAC loses NetworkPolicy write access; re-apply `provisioner-rbac.yaml` when onboarding the next tenant (#414) |
 | Error codes | A disallowed group no longer returns `403 model-not-allowed`: unknown and disallowed models both return `404 model_not_found`, disclosing nothing about which groups exist (#530) |
 | Error codes | A capability or dialect no target can serve returns `400 unsupported_capability` with `param`; a terminal provider request error keeps its status as `upstream-rejected` instead of `502`; provider `401`/`402`/`403` returns `503 upstream-access-denied` (#530) |
-| Unsupported surfaces | Endpoints outside v4.5 answer `501 unsupported_endpoint` in the caller's dialect; automation matching `405` must accept `501` (#531) |
+| Unsupported surfaces | Endpoints outside v4.5 answer `501 unsupported_endpoint` in the caller's dialect, including the late-added OpenAI surfaces (videos, containers, conversations, agents, ChatKit threads, skills) that previously returned a bare `404`/`405`; automation matching `405` must accept `501` (#531, #580) |
 | Database | Usage schema 11 (`2026103001`) adds `request_usage.endpoint`; apply it through the Required Migration Gate before serving, and restore a pre-upgrade database backup to downgrade to 4.4 (#608) |
 | CI | Required CI fans out into six measured router shards, other Go and Windows, and compatibility, Python and example lanes behind one aggregate `ci` job; Go test wall time is guarded (#549, #569, #418) |
 

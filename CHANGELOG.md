@@ -115,10 +115,11 @@ Negative and partial results are published as such, not dropped.
 - Endpoints the router does not serve answer with an authenticated, dialect-
   shaped `501 unsupported_endpoint`: OpenAI legacy completions, moderations,
   embeddings, stored Responses, files, batches, images, audio, vector stores,
-  assistants, threads, fine-tuning and realtime, and Anthropic legacy
-  `/v1/complete`, message batches, beta files and skills (#531). Responses
-  `input_tokens` and `compact` return `501` temporarily while pass-through is
-  implemented.
+  assistants, threads, fine-tuning, realtime, videos, containers, conversations,
+  agents, ChatKit threads and skills, and Anthropic legacy `/v1/complete`,
+  message batches and beta files (#531, #580). Every one of those paths answers
+  in the caller's own dialect rather than leaving late-added OpenAI surfaces on a
+  bare `404`/`405` or answering `/v1/skills` in the Anthropic envelope.
 
 - Anthropic clients get a caller-filtered model catalog and model lookup in
   Anthropic format (#538), and document input is a declared, routable modality
