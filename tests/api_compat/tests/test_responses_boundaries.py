@@ -65,20 +65,23 @@ def test_resp_11_capability_boundaries_reject(api, router):
     assert status == 200, raw
     assert len(upstream.calls) == before + 1
 
-    # Retrieve / cancel / delete / input-items are not advertised routes.
-    for method, path in (
-        ("GET", "/v1/responses/resp_synthetic"),
-        ("POST", "/v1/responses/resp_synthetic/cancel"),
-        ("DELETE", "/v1/responses/resp_synthetic"),
-        ("GET", "/v1/responses/resp_synthetic/input_items"),
-        ("POST", "/v1/conversations"),
-        ("GET", "/v1/conversations/conv_synthetic"),
-        ("POST", "/v1/responses/resp_synthetic/compact"),
-        ("GET", "/v1/realtime"),
+    # Known unsupported endpoints return 501; unregistered paths remain 404/405.
+    for method, path, expected in (
+        ("GET", "/v1/responses/resp_synthetic", 501),
+        ("POST", "/v1/responses/resp_synthetic/cancel", 501),
+        ("DELETE", "/v1/responses/resp_synthetic", 501),
+        ("GET", "/v1/responses/resp_synthetic/input_items", 501),
+        ("POST", "/v1/conversations", None),
+        ("GET", "/v1/conversations/conv_synthetic", None),
+        ("POST", "/v1/responses/resp_synthetic/compact", None),
+        ("GET", "/v1/realtime", 501),
     ):
         before = len(upstream.calls)
         status, _, raw = _request_method(base, method, path, payload={"model": "responses"} if method == "POST" else None)
-        assert status in {404, 405}, f"{method} {path} -> {status} {raw!r}"
+        assert status in ({expected} if expected else {404, 405}), f"{method} {path} -> {status} {raw!r}"
+        if expected == 501:
+            error = _body(raw)["error"]
+            assert error["type"] == "invalid_request_error" and error["code"] == "unsupported_endpoint"
         assert len(upstream.calls) == before
 
     # WebSocket-style Upgrade on /v1/responses must not become unary success.

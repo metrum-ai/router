@@ -80,6 +80,40 @@ func requestHasMedia(req *IRRequest) bool {
 	return false
 }
 
+// openAIJSONObjectRequest identifies JSON-object mode without weakening a schema request.
+func openAIJSONObjectRequest(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	if format, ok := req.Raw["response_format"].(map[string]any); ok && stringValue(format["type"]) == "json_object" {
+		return true
+	}
+	if text, ok := req.Raw["text"].(map[string]any); ok {
+		if format, ok := text["format"].(map[string]any); ok && stringValue(format["type"]) == "json_object" {
+			return true
+		}
+	}
+	return false
+}
+
+// openAIJSONSchemaForAnthropic extracts the caller's explicit schema.
+func openAIJSONSchemaForAnthropic(req *IRRequest) (any, bool) {
+	if req == nil {
+		return nil, false
+	}
+	if format, ok := req.Raw["response_format"].(map[string]any); ok && stringValue(format["type"]) == "json_schema" {
+		if nested, ok := format["json_schema"].(map[string]any); ok && nested["schema"] != nil {
+			return nested["schema"], true
+		}
+	}
+	if text, ok := req.Raw["text"].(map[string]any); ok {
+		if format, ok := text["format"].(map[string]any); ok && stringValue(format["type"]) == "json_schema" && format["schema"] != nil {
+			return format["schema"], true
+		}
+	}
+	return nil, false
+}
+
 func anthropicFormat(req *IRRequest) map[string]any {
 	if req == nil {
 		return nil
@@ -121,8 +155,15 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 		parts = append(parts, m.Parts...)
 	}
 	for _, p := range parts {
-		if p.Type == "image" && p.FileID != "" && caller != out && out == "openai-chat" {
-			return "unsupported_modality"
+		if caller != out && out == "openai-chat" {
+			if p.Type == "image" && p.FileID != "" {
+				return "unsupported_modality"
+			}
+			// Chat file parts accept file_data and file_id, not file_url.
+			// Do not fetch caller-provided URLs or send an unsupported shape.
+			if p.Type == "document" && p.ImageURL != "" {
+				return "unsupported_modality"
+			}
 		}
 	}
 	if requestHasMedia(req) && (out == "replicate" || out == "gemini-generate-content") {
