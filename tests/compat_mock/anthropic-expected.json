@@ -31,10 +31,6 @@
     "reason": "Message batches endpoint returns 405",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
-  "messages_document": {
-    "reason": "Document modality is rejected",
-    "issue": "https://github.com/metrum-ai/router/issues/537"
-  },
   "beta_files": {
     "reason": "Beta files endpoint returns 405",
     "issue": "https://github.com/metrum-ai/router/issues/531"
