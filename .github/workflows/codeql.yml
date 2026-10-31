@@ -1,0 +1,42 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+# GitHub default setup currently owns CodeQL. After this workflow is on main,
+# disable default setup and set CODEQL_ADVANCED_ENABLED=true to activate it.
+# The two setups cannot upload analyses simultaneously.
+name: CodeQL
+on:
+  merge_group:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: vars.CODEQL_ADVANCED_ENABLED == 'true'
+    runs-on: router-arc
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, go, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: matrix.language == 'go'
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1

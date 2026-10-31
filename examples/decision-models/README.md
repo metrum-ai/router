@@ -10,12 +10,13 @@ can disagree with the toy classifications and still satisfy the wiring check.
 
 ## Run the mock
 
-From the repository root (Go, Python 3, PyYAML). The demo builds `routerctl`
-and uses `callers hash` for its private PBKDF2 caller verifier:
+From the repository root (Go and `uv`; `uv` supplies PyYAML, so no global
+Python packages are needed). The demo builds `routerctl` and uses `callers
+hash` for its private PBKDF2 caller verifier:
 
 ```sh
 go build -o /tmp/router-decision ./cmd/metrum-ai-router
-python3 examples/decision-models/run.py --router /tmp/router-decision
+uv run --with pyyaml python examples/decision-models/run.py --router /tmp/router-decision
 ```
 
 Expect eight successful combinations and structured `recommended_index`,
@@ -33,7 +34,7 @@ quality**, and the data is too small and artificial for production claims.
 Run the same cases in shadow and enforce and retain raw decisions:
 
 ```sh
-python3 examples/decision-models/run.py --router /tmp/router-decision \
+uv run --with pyyaml python examples/decision-models/run.py --router /tmp/router-decision \
   --benchmark-dataset examples/decision-models/benchmark_dataset.json \
   --policies d3,clef --repetitions 9 > /tmp/decision-benchmark.json
 ```
@@ -54,7 +55,7 @@ combination). In external mode supply URLs for the selected policies only. For
 example, to probe an independently served real d3 endpoint on loopback:
 
 ```sh
-python3 examples/decision-models/run.py --router /tmp/router-decision \
+uv run --with pyyaml python examples/decision-models/run.py --router /tmp/router-decision \
   --benchmark-dataset examples/decision-models/benchmark_dataset.json \
   --policies d3 --repetitions 9 --decisions external \
   --d3-url http://127.0.0.1:18300 --d3-model d3-lite \

@@ -2,6 +2,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Run 3 recipe and evaluation freeze (#425)
 
+> **Historical preregistration, not a current launch guide.** The original
+> run completed and its formal gate failed; see the [run 3 evidence](../../../docs/evidence/finetune/2026-10-28-run3/README.md).
+> The Axolotl execution path was retired for v4.5 in #509. Replacement trainer
+> work and any further run 3 are deferred to v4.6.0. The text below preserves
+> the original freeze and does not authorize or describe a new run.
+
 This registration is **after teacher collection but before any run-3 training,
 base/candidate held-out inference or outcome results**. The source-pool
 registration said that a collection/runtime and recipe registration must be

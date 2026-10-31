@@ -388,6 +388,7 @@ ci-windows:
 	done
 
 ci-python: secret-contract capability-smoke-contracts
+	python3 scripts/check_source_headers.py
 	$(MAKE) validate-build-metadata
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
