@@ -4536,10 +4536,6 @@ func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status i
 		rc.rec.ErrorMessage = code
 		s.finish(rc, status, &c)
 	}
-	if code == "model_not_found" {
-		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": "model", "message": "The requested model does not exist."}})
-		return
-	}
 	writeJSON(w, status, map[string]any{"error": map[string]any{"type": code, "message": code}})
 }
 
