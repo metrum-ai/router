@@ -71,7 +71,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	cachedPrice, writePrice := 2.0, 12.5
 	cfg.Models["reasoning"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-reasoner", InputPricePerMillionUSD: 10, OutputPricePerMillionUSD: 20, CachedInputPricePerMillionUSD: &cachedPrice, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}}}}
 	cfg.Models["cache"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "anthropic", Model: "mock-cache", InputPricePerMillionUSD: 10, OutputPricePerMillionUSD: 20, CachedInputPricePerMillionUSD: &cachedPrice, CacheWritePricePerMillionUSD: &writePrice}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
