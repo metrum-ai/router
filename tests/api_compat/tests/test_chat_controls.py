@@ -96,9 +96,10 @@ def _only_call(router) -> dict:
 
 
 def _assert_no_eligible_zero_upstream(router, status: int, raw: bytes) -> None:
-    assert status == 502, raw[:300]
+    assert status == 400, raw[:300]
     error = json.loads(raw)["error"]
-    assert error["type"] == "no-eligible-target"
+    assert error["type"] == "invalid_request_error"
+    assert error["code"] == "unsupported_capability"
     assert router["upstream"].calls == []
 
 
@@ -185,7 +186,8 @@ def test_chat_06_nonexistent_named_tool_is_provider_validated(api, router):
         "/v1/chat/completions", _chat("chat", tools=[LOOKUP_TOOL], tool_choice=named_missing)
     )
     scenario.assert_complete()
-    assert status == 502, raw[:300]
+    assert status == 400, raw[:300]
+    assert json.loads(raw)["error"]["code"] == "upstream-rejected"
     assert headers.get("X-Router-Error-Class") == "upstream_bad_request"
     assert headers.get("X-Upstream-Status") == "400"
     error = json.loads(raw)["error"]

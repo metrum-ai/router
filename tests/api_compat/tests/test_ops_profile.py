@@ -624,15 +624,15 @@ CALLER_SURFACES = {
 # (upstream status, upstream body, expected attempt class, fallback expected,
 #  terminal caller status/code when every target fails the same way).
 ERROR_CLASS_MATRIX = [
-    (400, {"error": {"message": "bad param"}}, "upstream_bad_request", False, 502, "upstream-failed"),
-    (401, {"error": {"code": "invalid_api_key"}}, "upstream_auth_failed", False, 503, "upstream-access-denied"),
-    (402, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 503, "upstream-quota-exhausted"),
-    (403, {"error": {"code": "not_entitled"}}, "upstream_entitlement_failed", True, 503, "upstream-access-denied"),
-    (404, {"error": {"code": "model_not_found"}}, "upstream_model_access_denied", True, 503, "upstream-access-denied"),
-    (408, {"error": {"message": "timeout"}}, "upstream_timeout", True, 504, "upstream-timeout"),
-    (413, {"error": {"message": "too large"}}, "upstream_request_too_large", False, 502, "upstream-failed"),
-    (429, {"error": {"message": "slow down"}}, "upstream_rate_limited", True, 503, "upstream-rate-limited"),
-    (429, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 503, "upstream-quota-exhausted"),
+    (400, {"error": {"message": "bad param"}}, "upstream_bad_request", False, 400, "upstream-rejected"),
+    (401, {"error": {"code": "invalid_api_key"}}, "upstream_auth_failed", False, 401, "upstream-rejected"),
+    (402, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 402, "upstream-rejected"),
+    (403, {"error": {"code": "not_entitled"}}, "upstream_entitlement_failed", True, 403, "upstream-rejected"),
+    (404, {"error": {"code": "model_not_found"}}, "upstream_model_access_denied", True, 404, "upstream-rejected"),
+    (408, {"error": {"message": "timeout"}}, "upstream_timeout", True, 408, "upstream-rejected"),
+    (413, {"error": {"message": "too large"}}, "upstream_request_too_large", False, 413, "upstream-rejected"),
+    (429, {"error": {"message": "slow down"}}, "upstream_rate_limited", True, 429, "upstream-rejected"),
+    (429, {"error": {"code": "insufficient_quota"}}, "upstream_quota_exhausted", True, 429, "upstream-rejected"),
     (500, {"error": {"message": "boom"}}, "upstream_status_5xx", True, 502, "upstream-failed"),
     (503, {"error": {"type": "overloaded_error"}}, "upstream_status_5xx", True, 502, "upstream-failed"),
 ]
@@ -641,6 +641,21 @@ ERROR_CLASS_MATRIX = [
 def _error_type(raw: bytes) -> str:
     payload = json.loads(raw)
     return payload["error"]["type"]
+
+
+def _assert_terminal_error(dialect, status, headers, raw, expected_status, expected_code, klass, upstream_status, attempts):
+    assert status == expected_status, raw
+    error = json.loads(raw)["error"]
+    assert headers.get("X-Router-Error-Class") == klass
+    assert headers.get("X-Upstream-Status") == str(upstream_status)
+    if dialect == "anthropic":
+        expected_type = {400: "invalid_request_error", 401: "authentication_error", 403: "permission_error", 404: "not_found_error", 413: "request_too_large", 429: "rate_limit_error"}.get(status, "api_error")
+        assert error["type"] == expected_type
+        assert json.loads(raw)["request_id"] == headers["X-Request-Id"]
+    else:
+        assert error["code"] == expected_code
+        details = error["details"]
+        assert details["error_class"] == klass and details["attempts"] == attempts
 
 
 @pytest.mark.parametrize("dialect", sorted(CALLER_SURFACES))
@@ -670,20 +685,16 @@ def test_ops07_error_classes_retry_policy_across_dialects(ops_router, dialect):
             assert attempts[0]["fallback_reason"] == klass, where
             assert usage_rows(db, rid)[0]["fallback_used"] == 1, where
         else:
-            assert (code, _error_type(raw)) == (all_fail_status, all_fail_code), (where, raw)
+            _assert_terminal_error(dialect, code, headers, raw, all_fail_status, all_fail_code, klass, status, 1)
             assert models == [primary], f"{where}: non-retryable class must not fall back"
-            details = json.loads(raw)["error"]["details"]
-            assert details["error_class"] == klass and details["attempts"] == 1, where
-            assert details["retryable"] is False, where
-            assert headers.get("X-Upstream-Status") == str(status), where
+            if dialect != "anthropic":
+                assert json.loads(raw)["error"]["details"]["retryable"] is False, where
 
         # Every target fails the same way: terminal status/code per class, bounded attempts.
         OpsUpstream.reset(lambda h, b, status=status, body=body: h.send_json(status, body))
         code, headers, raw = call(base, path, build())
-        assert (code, _error_type(raw)) == (all_fail_status, all_fail_code), (where, raw)
         assert len(OpsUpstream.calls) == (2 if fallback else 1), where
-        details = json.loads(raw)["error"]["details"]
-        assert details["error_class"] == klass and details["attempts"] == len(OpsUpstream.calls), where
+        _assert_terminal_error(dialect, code, headers, raw, all_fail_status, all_fail_code, klass, status, len(OpsUpstream.calls))
 
 
 def test_ops08_retry_after_redirect_and_unreachable_fallback_bounded(ops_router):
@@ -707,7 +718,7 @@ def test_ops08_retry_after_redirect_and_unreachable_fallback_bounded(ops_router)
         started = time.monotonic()
         code, headers, raw = call(base, "/v1/chat/completions", chat_body("chat-fallback"))
         elapsed = time.monotonic() - started
-        assert code == 503 and _error_type(raw) == "upstream-rate-limited", raw
+        assert code == 429 and json.loads(raw)["error"]["code"] == "upstream-rejected", raw
         # One attempt per target and no sleeping on the provider's Retry-After.
         assert len(OpsUpstream.calls) == 2
         assert elapsed < 5, f"Retry-After {header!r} stalled the request for {elapsed:.1f}s"
@@ -1061,9 +1072,10 @@ def test_ops06_anthropic_cache_control_breakpoints_and_accounting(ops_router):
     code, headers, raw = call(base, "/anthropic/v1/messages", bad)
     assert len(OpsUpstream.calls) == 1
     assert OpsUpstream.calls[0]["body"]["messages"][0]["content"][0]["cache_control"]["ttl"] == "7d"
-    assert code == 502, raw
-    details = json.loads(raw)["error"]["details"]
-    assert details["error_class"] == "upstream_bad_request" and details["attempts"] == 1
+    assert code == 400, raw
+    assert json.loads(raw)["error"]["type"] == "invalid_request_error"
+    assert headers.get("X-Router-Error-Class") == "upstream_bad_request"
+    assert headers.get("X-Upstream-Status") == "400"
 
 
 def _count_rows(usage_db: Path) -> int:

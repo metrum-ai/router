@@ -384,7 +384,8 @@ def test_route_07_stale_continuation_retries_once_stateless(router, memory_route
 
     assert _chat(base, PROMPT_CANARY, session="route-07-stale")[0] == 200
     status, _, raw = _chat(base, PROMPT_CANARY, session="route-07-stale")
-    assert status == 502, raw
+    assert status == 400, raw
+    assert json.loads(raw)["error"]["code"] == "upstream-rejected"
     # No stale-state replay: the caller decides whether to retry.
     assert _chat(base, PROMPT_CANARY, session="route-07-stale")[0] == 200
     scenario.assert_complete()
@@ -651,14 +652,14 @@ def test_route_10_bridge_encoders_preserve_null_false_zero_distinctions(router, 
                 "tool_choice": None,
             },
         )
-        assert status == 502, raw
-        assert json.loads(raw)["error"]["type"] == "no-eligible-target"
+        assert status == 400, raw
+        assert json.loads(raw)["error"]["code"] == "unsupported_capability"
         status, _, raw = api(
             "/v1/responses",
             {"model": "r2c", "input": PROMPT_CANARY, "tools": [LOOKUP_RESPONSES], "tool_choice": None},
         )
-        assert status == 502, raw
-        assert json.loads(raw)["error"]["type"] == "no-eligible-target"
+        assert status == 400, raw
+        assert json.loads(raw)["error"]["code"] == "unsupported_capability"
         assert upstream.calls == []
 
         # Responses→Chat: omitted stays absent; explicit zero is forwarded.
