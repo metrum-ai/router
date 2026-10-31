@@ -656,6 +656,9 @@ func (s *Service) routes() {
 		"/v1/audio", "/v1/audio/", "/v1/vector_stores", "/v1/vector_stores/",
 		"/v1/assistants", "/v1/assistants/", "/v1/threads", "/v1/threads/",
 		"/v1/fine_tuning", "/v1/fine_tuning/", "/v1/realtime", "/v1/realtime/",
+		"/v1/videos", "/v1/videos/", "/v1/containers", "/v1/containers/",
+		"/v1/conversations", "/v1/conversations/", "/v1/agents", "/v1/agents/",
+		"/v1/chatkit/threads", "/v1/chatkit/threads/",
 	} {
 		for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
 			s.mux.HandleFunc(method+" "+path, s.handleUnsupportedOpenAIEndpoint)
@@ -706,7 +709,7 @@ func (w *discardAdminAuthWriter) WriteHeader(statusCode int) {
 
 func (s *Service) handleUnsupportedOpenAIEndpoint(w http.ResponseWriter, r *http.Request) {
 	anthropicHeader := r.Header.Get("Anthropic-Version") != "" || (r.Header.Get("X-API-Key") != "" && r.Header.Get("Authorization") == "")
-	anthropic := anthropicHeader || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/v1/messages/batches") || r.URL.Path == "/v1/complete" || strings.HasPrefix(r.URL.Path, "/v1/skills")
+	anthropic := anthropicHeader || strings.HasPrefix(r.URL.Path, "/anthropic/") || strings.HasPrefix(r.URL.Path, "/v1/messages/batches") || r.URL.Path == "/v1/complete"
 	dialect := "openai-chat"
 	if anthropic {
 		dialect = "anthropic"
