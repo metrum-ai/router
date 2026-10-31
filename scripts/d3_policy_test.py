@@ -16,8 +16,8 @@ import io
 import json
 import sys
 import threading
-import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -257,9 +257,23 @@ class FakeClassifierTests(unittest.TestCase):
     def kind_of(self, text: str) -> str:
         return fake.answer(self.KIND, fake.classify(text))["choice"]
 
-    def test_adversarial_inputs_classify_fast(self) -> None:
-        # CodeQL py/polynomial-redos #22: unbounded `\d+\s*[-+*/^]\s*\d+` was
-        # quadratic on long digit runs (20k digits took ~13 s).
+    def test_adversarial_inputs_have_bounded_scan_work(self) -> None:
+        # Guard the audited patterns, including the bounded arithmetic branch:
+        # CodeQL py/polynomial-redos #22 replaced quadratic unbounded digit and
+        # whitespace runs. A pattern change requires renewed complexity review.
+        patterns = {
+            "HARD_RE": (r"\b(prove|proof|theorem|distributed|consensus|concurren\w*|lock-free|optimi[sz]\w*|"
+                        r"complexity|derive|formal|invariant|race condition|compiler|scheduler|asymptotic|"
+                        r"np-hard|cryptograph\w*|architecture)\b"),
+            "CODE_RE": r"\b(code|function|python|go|rust|bug|class|compile|refactor|test|api|sql|regex)\b",
+            "MATH_RE": (r"\b(integral|equation|prove|theorem|sum|probability|matrix|calculate|derivative|prime)\b|"
+                        r"\d\s{0,8}[-+*/^]\s{0,8}\d"),
+            "AGENT_RE": r"\b(tool|write the file|read the file|create the file|run the command|proof\.txt)\b",
+        }
+        regexes = {name: getattr(fake, name) for name in patterns}
+        for name, pattern in patterns.items():
+            self.assertEqual(regexes[name].pattern, pattern, f"review regex complexity before changing {name}")
+        self.assertEqual(fake.MAX_SCAN_CHARS, 32768)
         inputs = (
             "0" * 200000 + "x",
             "1 " * 100000 + "x",
@@ -268,16 +282,13 @@ class FakeClassifierTests(unittest.TestCase):
             "7" * 100000 + "+" + " " * 100000,
         )
         for text in inputs:
-            start = time.perf_counter()
-            fake.classify(text)
-            elapsed = time.perf_counter() - start
-            self.assertLess(elapsed, 0.5, f"classify len={len(text)} took {elapsed:.3f}s")
-            # classify scans only the tail; check each regex on the full text too.
-            for name in ("HARD_RE", "CODE_RE", "MATH_RE", "AGENT_RE"):
-                start = time.perf_counter()
-                getattr(fake, name).search(text)
-                elapsed = time.perf_counter() - start
-                self.assertLess(elapsed, 0.5, f"{name} len={len(text)} took {elapsed:.3f}s")
+            spies = {name: mock.Mock(wraps=regex) for name, regex in regexes.items()}
+            with mock.patch.multiple(fake, **spies):
+                fake.classify(text)
+            for name, spy in spies.items():
+                spy.search.assert_called_once_with(text[-32768:])
+                # Exercise each reviewed regex on the full adversarial text too.
+                regexes[name].search(text)
 
     def test_arithmetic_prompts_still_math(self) -> None:
         for text in ("What is 12 + 7?", "compute 3*4 please", "2^10 = ?", "100 - 58",

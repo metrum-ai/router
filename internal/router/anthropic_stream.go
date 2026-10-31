@@ -34,7 +34,8 @@ func anthropicBridgeProxy(caller string) func(context.Context, http.ResponseWrit
 				t = &base
 			}
 		case "openai-chat":
-			t = &stream.AnthropicUpstreamToChatCaller{IDs: encoder, Model: model, PublicModel: public, CreatedAt: time.Now().Unix()}
+			includeUsage := rc != nil && rc.chatStreamIncludeUsage
+			t = &stream.AnthropicUpstreamToChatCaller{IDs: encoder, Model: model, PublicModel: public, CreatedAt: time.Now().Unix(), IncludeUsage: includeUsage}
 		case "openai-responses":
 			t = &stream.AnthropicUpstreamToResponsesCaller{ChatUpstreamToResponsesCaller: stream.ChatUpstreamToResponsesCaller{IDs: encoder, ResponseID: "resp_" + requestID(), Model: model, PublicModel: public, CreatedAt: time.Now().Unix()}}
 		}
