@@ -3,6 +3,13 @@
 
 # Fine-tune Qwen3.8-27B and govern it with Metrum AI Router
 
+> **v4.5 retirement:** The vulnerable Axolotl training path, its historical
+> inventory lock and its schema-install CI were removed in [#509](https://github.com/metrum-ai/router/issues/509).
+> The configurations and results below are historical records, not runnable
+> training instructions. The replacement trainer and further run 3 work are
+> deferred to v4.6.0; no replacement is provided here. Existing historical
+> results and gate failures remain unchanged.
+
 ## AMD Instinct — NVIDIA/AMD merged comparison (Refs #359)
 
 Original NVIDIA LoRA **FAIL** (+0.5pp exact gain <required+10pp) and AMD **FAIL**
@@ -205,72 +212,20 @@ test200/300 tool targets. Missing either class fails before spending. Canonical
 structure is schema-validated; references are synthetic and not independently
 human-verified. This conversion is not the upstream's full benchmark.
 
-## Train and serve
+## Historical training and serving
 
-Fireworks reports `tunable=false`, `supportsLora=true`: use the issue's fallback
-**standalone train → upload LoRA → dedicated Fireworks deployment**. Do not claim
-independent managed training. Both serving stacks use the same adapter.
+The former Axolotl launcher and installation inputs are retired in v4.5.
+[Run-1 evidence](../../docs/evidence/finetune/2026-10-23/README.md) and the
+[recorded image inventory](../../docs/evidence/finetune/2026-10-23/axolotl-package-versions.txt)
+remain historical evidence, not an installable lock. The original image remains
+vulnerable; removing its launcher does not patch it. The retained
+`standalone/axolotl.yaml`, `standalone/fsdp2.yaml` and run-2/run-3 configs
+are historical, not an instruction to train. Replacement training work is
+planned for v4.6.0 and has not been implemented or validated here.
 
-Provision only once the dataset, pinned environment and commands are ready.
-Use Shadeform first and also check Vast for B200s. Approved GPUs are RTX PRO
-6000 Blackwell, H100, H200 and B200, up to eight GPUs. Pick the cheapest
-configuration that actually fits; verify with the tiny hardware smoke before
-training. Require CUDA ≥12.8, ≥500 GB disk and ≥1 Gbps network. Report advertised
-network separately from measurements.
-`standalone/cloud.py` supports both marketplaces; mutations default to dry-run.
-Use a fresh per-instance SSH key, attach only its public key, keep runtime state
-outside Git, and verify deletion through the API even after failures.
-
-Primary toolkit: **Axolotl**, whose upstream includes an explicit Qwen3.8-27B
-recipe (inspected at commit `777990d36ab92dcdc8b62d5ad07dc30b9618ff25`).
-`standalone/axolotl.yaml` is BF16 LoRA, not QLoRA. `standalone/fsdp2.yaml` is
-merged by `standalone/render.py` for 2/4/8 GPUs, keeping effective batch 16.
-The launcher pins the official Axolotl image by digest and saves its actual
-package inventory in `requirements.lock`. This inventory includes the image's
-Axolotl 0.21.1.dev0 and is not a pip-installable PyPI lock. Use the pinned image
-to reproduce it. `requirements.in` names the released 0.21.0 alternative for
-operators, but that alternative is not claimed to be hardware-tested.
-
-**Security warning:** the frozen image inventory contains packages affected by
-published high and critical advisories; see [#509](https://github.com/metrum-ai/router/issues/509).
-The digest preserves the historical environment; it does not remediate it. Do
-not use this image for production or with untrusted inputs while these findings
-are unresolved. In particular, `sqlitedict` deserializes stored values with
-pickle, so an untrusted database can execute code. Trusted database provenance
-alone does not address the other image advisories. The recorded `trackio==0.40.0`
-requires Pillow below 13, so simply editing the inventory to say Pillow 13 would
-neither fix the image nor satisfy that dependency. A replacement image needs its
-own dependency and runtime validation.
-
-If the real hardware smoke shows unsupported architecture, use Unsloth only
-after verifying its exact Qwen3.8 recipe/version; record why, never silently
-change quantization or training parameters.
-
-Download the exact base revision on the remote host. Pass `HF_TOKEN` over
-encrypted stdin into the single `standalone/download_model.py` process; do not
-persist tokens or copy credentials. Mount host `/workspace` at container `/data`:
-mounting over the image's `/workspace` would hide Axolotl's bundled venv.
-
-```sh
-# On the GPU host after copying this example to /workspace/standalone:
-DRY_RUN=1 bash /workspace/standalone/run.sh smoke
-DRY_RUN=0 GPUS=1 bash /workspace/standalone/run.sh smoke
-# Only after the 2-step, 512-token smoke succeeds:
-DRY_RUN=0 GPUS=1 bash /workspace/standalone/run.sh train
-MODEL_DIR=/workspace/base ADAPTER_DIR=/workspace/adapter DRY_RUN=1 bash serve/run.sh
-# After reviewing, DRY_RUN=0 launches the pinned official vLLM image.
-```
-
-Training uses text-only BF16 LoRA, rank 16, alpha 32, two epochs, learning rate
-1e-4, cosine decay, effective batch 16, max sequence 8192, gradient checkpointing.
-The vision tower and LM head remain frozen and are checked before training.
-The byte-identical canonical training file is the upload input if managed SFT
-becomes available later; token rendering is a trainer-only transformation.
-
-Reach vLLM from gyrados using `ssh -N -L 127.0.0.1:18526:127.0.0.1:8000 ...`.
-Never publish an unauthenticated model endpoint. The Docker recipe publishes
-only loopback on the host. Native serving inside an existing GPU container must
-also use `--host 127.0.0.1`.
+Historical run 1 used text-only BF16 LoRA, rank 16, alpha 32, two epochs,
+learning rate 1e-4, cosine decay, effective batch 16 and sequence length 8192.
+See the linked evidence for the actual result and limitations.
 
 ## Fireworks adapter upload and dedicated deployment
 

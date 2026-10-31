@@ -24,9 +24,10 @@ The GPU tunnel precludes a co-located latency conclusion. Router token-price
 arithmetic was $0.001652 and $0.000630 respectively, with local and GPU
 infrastructure rates configured to zero. Those figures are not total cost,
 provider invoices or proof of savings. One MI300X was quoted at $2.59/hour;
-recorded creation to verified teardown was 481.361 s (quote × elapsed ≈
-$0.346313, not reconciled billing). A previous bootstrap failure also incurred
-an unreconciled GPU charge. Exact actual costs remain outstanding.
+recorded creation to verified teardown was 481.361 s: **estimate (hours ×
+list rate), invoice pending: approximately $0.346313**. A previous bootstrap
+failure has the same method's estimate of approximately $0.096101. These
+are not actual charges; invoice reconciliation is not a v4.5 blocker.
 
 Provenance:
 
@@ -45,5 +46,6 @@ Provenance:
   artifact library under `router / v45-proof / 427`, snapshot `a371eee3`.
 
 This run does not establish production quality, privacy, latency SLA,
-vendor-neutral results or costs. NVIDIA, representative tasks, load variation,
-provider billing reconciliation and the remaining #427 acceptance are open.
+vendor-neutral results or costs. A separate bounded NVIDIA observation is
+published; representative tasks, load variation and the remaining #427
+acceptance remain open.
