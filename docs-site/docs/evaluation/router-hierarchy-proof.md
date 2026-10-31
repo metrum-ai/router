@@ -1,3 +1,8 @@
+---
+title: Router hierarchy proof
+doc_type: explanation
+---
+
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
