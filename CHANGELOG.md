@@ -97,6 +97,41 @@ Negative and partial results are published as such, not dropped.
   contain slashes; unknown and unauthorized IDs both return an indistinguishable
   `model_not_found` 404 (#529).
 
+- Errors follow the caller's dialect and disclose nothing about models the
+  caller cannot use: an unknown model and a disallowed one return the same
+  `404 model_not_found` (OpenAI) or `404 not_found_error` (Anthropic) before any
+  upstream call (#530).
+
+- A capability or dialect that no configured target can serve returns `400`
+  with `code: unsupported_capability` and `param` naming the field instead of
+  `502 no-eligible-target` (#530), and a terminal provider request error keeps
+  its status (`400`, `404`, `413`, `422`) as `code: upstream-rejected` without
+  the provider body instead of becoming `502 upstream-failed` (#530).
+
+- Provider credential, balance and entitlement failures (`401`, `402`, `403`)
+  return `503 upstream-access-denied` rather than a caller authentication error
+  (#530).
+
+- Endpoints the router does not serve answer with an authenticated, dialect-
+  shaped `501 unsupported_endpoint`: OpenAI legacy completions, moderations,
+  embeddings, stored Responses, files, batches, images, audio, vector stores,
+  assistants, threads, fine-tuning and realtime, and Anthropic legacy
+  `/v1/complete`, message batches, beta files and skills (#531). Responses
+  `input_tokens` and `compact` return `501` temporarily while pass-through is
+  implemented.
+
+- Anthropic clients get a caller-filtered model catalog and model lookup in
+  Anthropic format (#538), and document input is a declared, routable modality
+  for Anthropic Messages and OpenAI content parts (#537).
+
+- Cross-dialect structured output and tool translation are validated against
+  real models, and a translated tool request is eligible only when the target
+  declares the caller dialect, `validation_status: passed` and the matching tool
+  capability on both sides (#539).
+
+- The generated starter configuration covers Responses, tools, structured
+  output and vision, with a pinned starter smoke (#534).
+
 ### CI
 
 - Required CI fans out into three lanes: `router` across six measured shards,
@@ -163,6 +198,28 @@ Negative and partial results are published as such, not dropped.
   that need usage in the stream must opt in; clients that tolerated a trailing
   `choices: []` chunk see one fewer chunk.
 
+- An unknown model and a model group the caller's token may not use now return
+  the same `404 model_not_found` (OpenAI) or `404 not_found_error` (Anthropic)
+  before any upstream attempt, so a caller cannot probe which groups exist. A
+  disallowed group no longer returns `403 model-not-allowed` (#529, #530).
+
+- A request that no configured target can serve returns `400` with
+  `code: unsupported_capability` and the offending `param` instead of a routing
+  failure or an upstream round trip that strips the field (#530).
+
+- A terminal provider request error (`400`, `404`, `413`, `422`) is preserved
+  with that status and `code: upstream-rejected` instead of becoming
+  `502 upstream-failed` (#530).
+
+- Provider `401`, `402` and `403` failures return `503 upstream-access-denied`.
+  Automation that treated those statuses as its own authentication failure must
+  stop doing so (#530).
+
+- Endpoints the router does not serve return `501 unsupported_endpoint` with an
+  OpenAI-shaped body (`message`, `type`, `param`, `code`) for OpenAI callers and
+  the Anthropic-shaped equivalent for Anthropic callers, instead of a bare
+  `405`. Scripts that matched `405` for those paths must accept `501` (#531).
+
 - YAML-configured providers can opt in to `upstream_kind: router` for a
   separately authenticated trusted router, preserving its rate-limit 429 or
   typed 503 and valid `Retry-After` after fallbacks are exhausted (#496).
@@ -200,7 +257,8 @@ Negative and partial results are published as such, not dropped.
 - Fine-tune run 3 and the maintained TRL + PEFT trainer (#425), the d3
   follow-up measurements (#287), embeddings (#532), stored Responses (#533) and
   the external-rerun gate line move to v4.6.0, together with the remaining
-  medium and low lockfile advisories (#510).
+  medium and low lockfile advisories (#510). In v4.5.0 embeddings and stored
+  Responses keep the documented OpenAI-style `501 unsupported_endpoint` error.
 
 ## [4.4.0] - 2026-10-27
 
