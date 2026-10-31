@@ -306,7 +306,7 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 			Key:         KeyConfig{LifetimeTokens: 1000000},
 		}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

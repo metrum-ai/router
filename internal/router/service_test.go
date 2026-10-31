@@ -148,7 +148,7 @@ func TestAuthRejectsUnknownTokenBeforeUpstream(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +696,7 @@ func TestAdminBasicAuthDoesNotChangeProxyBearerAuth(t *testing.T) {
 			Permissions:     []string{"admin:auth:read"},
 		}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1054,7 +1054,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		},
 	}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 1, ExportMarkdown: true}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3680,7 +3680,7 @@ func TestAdminReportsRejectWithoutCasbinPolicy(t *testing.T) {
 	}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, other, local/test, admin:reports, read"}}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3738,7 +3738,7 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		},
 	}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 50, ExportMarkdown: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 30}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5166,7 +5166,7 @@ func TestAnthropicMessagesSkipsOpenAITargetsWithoutInboundValidation(t *testing.
 		{Provider: "responses", Model: "responses-tools", ToolSupport: ToolSupport{OpenAIResponses: []string{"function"}}},
 	}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "anthropic-inbound")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5278,7 +5278,7 @@ func TestAnthropicMessagesCanUseValidatedTranslatedOpenAITarget(t *testing.T) {
 		},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "anthropic-translated")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5437,7 +5437,7 @@ func TestOpenAIResponsesStructuredOutputPassthrough(t *testing.T) {
 		ToolSupport: ToolSupport{OpenAIResponses: []string{"structured_outputs"}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "structured-responses-test")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7031,7 +7031,7 @@ func TestCountTokensRejectsUnauthorizedModelsBeforeUsage(t *testing.T) {
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"), &enabled)
 	cfg.Models["allowed"] = cfg.Models["default"]
 	cfg.Callers[0].Allow = []string{"allowed"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7457,7 +7457,7 @@ func TestCasbinAuthorizationForMetricsAndReports(t *testing.T) {
 	}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, PolicyFile: policyFile}
 	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7541,7 +7541,7 @@ func TestAnthropicMaxTokensForwardedToAnthropicUpstream(t *testing.T) {
 		OutputModalities: []string{"text"},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "vision")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9376,7 +9376,7 @@ func TestModelGroupContractFiltersWeightedTargetsAndRecordsUsage(t *testing.T) {
 		},
 	}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "contracted")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9697,7 +9697,7 @@ func TestPIIFilterCacheStoresRedactedResponseNotRestoredPII(t *testing.T) {
 		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -9756,7 +9756,7 @@ func TestContentCaptureResponseStoresRedactedPIIPlaceholders(t *testing.T) {
 		PIIFilter: testPIIFilterConfig("redact_only"),
 		Targets:   []Target{{Provider: "mock", Model: "mock-model"}},
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10643,7 +10643,7 @@ func TestResponsesToolPassthroughSkipsMiniMaxForcedToolChoice(t *testing.T) {
 		},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "agent-tools-smoke")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10680,7 +10680,7 @@ func TestResponsesToChatBridgeRequiresOptIn(t *testing.T) {
 	cfg.Provider["chat"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["bridge"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "chat", Model: "chat-model"}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10737,7 +10737,7 @@ func TestResponsesToChatBridgeTextAndFunctionToolsHandler(t *testing.T) {
 		ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true, ValidationStatus: "passed"},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -10810,7 +10810,7 @@ func TestResponsesToChatBridgeSkipsUnsupportedBeforeUpstream(t *testing.T) {
 		ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11191,7 +11191,7 @@ func TestChatInboundCanUseOptInResponsesBridgeText(t *testing.T) {
 		Bridges:  BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11257,7 +11257,7 @@ func TestChatInboundResponsesBridgeRequiresOptIn(t *testing.T) {
 	cfg.Provider["responses"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-responses", APIKey: "provider-key"}
 	cfg.Models["bridge-disabled"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "responses", Model: "responses-text-model"}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-disabled")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11313,7 +11313,7 @@ func TestChatInboundResponsesBridgeStatefulSessionInjectsPreviousResponseID(t *t
 		}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-stateful")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11644,7 +11644,7 @@ func TestChatInboundResponsesBridgeReasoningTelemetry(t *testing.T) {
 		Bridges:   BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true, Reasoning: true}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-reasoning")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11719,7 +11719,7 @@ func TestChatInboundResponsesBridgeStatefulSessionStaleRetryPurgesMapping(t *tes
 	}
 	cfg.Models["bridge-stateful"] = ModelGroup{Strategy: "static", Targets: []Target{target}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge-stateful")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -11841,7 +11841,7 @@ func TestChatInboundResponsesBridgeRejectsUnsupportedStreamingShapeBeforeUpstrea
 		Bridges:  BridgeSupport{ChatToResponses: DialectBridgeSupport{Enabled: true}},
 	}}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "bridge")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12181,7 +12181,7 @@ func TestUpstreamRedirectsAreNotFollowed(t *testing.T) {
 			dir := t.TempDir()
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -12227,7 +12227,7 @@ func TestNonRetryableUpstream4xxStopsFallback(t *testing.T) {
 		{Provider: "mock", Model: "bad-request-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools"}}},
 		{Provider: "mock", Model: "fallback-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools"}}},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12291,7 +12291,7 @@ func TestUpstreamRequestTooLargeReturnsSafeShapeReason(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12349,7 +12349,7 @@ func TestUpstreamFailureDetailsUseTerminalAttemptDialect(t *testing.T) {
 		{Provider: "mock_chat", Model: "retryable-chat-model"},
 		{Provider: "mock_anthropic", Model: "terminal-anthropic-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12409,7 +12409,7 @@ func TestUpstream403EntitlementFailureFallsBackWithoutCallerRetryability(t *test
 		{Provider: "mock", Model: "restricted-model"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12475,7 +12475,7 @@ func TestUpstreamAuthFailureStopsFallbackWithAccessDeniedError(t *testing.T) {
 		{Provider: "mock", Model: "bad-key-model"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12545,7 +12545,7 @@ func TestRetryableUpstream5xxStillFallsBack(t *testing.T) {
 		{Provider: "mock", Model: "temporary-failure"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12597,7 +12597,7 @@ func TestDecodeErrorStillFallsBack(t *testing.T) {
 		{Provider: "mock", Model: "schema-drift-model"},
 		{Provider: "mock", Model: "fallback-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12634,7 +12634,7 @@ func TestSuccessfulUpstreamResponseSizeIsBounded(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Upstream.MaxResponseBytes = 128
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -12853,7 +12853,7 @@ func TestMultipleInlineImagesPersistOnlySafeScalarUsageMetadata(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "vision-model", InputModalities: []string{"text", "image"}}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13087,7 +13087,7 @@ func TestUpstreamQuotaExhaustionReturnsSanitizedErrorAcrossSurfaces(t *testing.T
 					},
 				}}}
 			}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -13174,7 +13174,7 @@ func TestUpstreamQuotaExhaustionFallsBackAndRecordsAttempt(t *testing.T) {
 		{Provider: "mock", Model: "credit-empty"},
 		{Provider: "mock", Model: "healthy-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13300,7 +13300,7 @@ func TestFallbackAttributesServingTargetPricingCostsCacheAndObservations(t *test
 					},
 				},
 			}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -13410,7 +13410,7 @@ func TestDiagnosticsSanitizeUpstreamErrorBeforePersistence(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13507,7 +13507,7 @@ func TestDiagnosticsSanitizeTruncatedUpstreamErrorBeforePersistence(t *testing.T
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
 	cfg.Server.Diagnostics.MaxErrorBytes = maxErrorBytes
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13800,7 +13800,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 			dir := t.TempDir()
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -13871,7 +13871,7 @@ func TestSanitizedUpstreamErrorDetailsExplicitOptOut(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(false)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -13978,7 +13978,7 @@ func TestContentCaptureEnabledRequiresKeyMaterialAtStartup(t *testing.T) {
 		CaptureRequest: true,
 		Encryption:     ContentCaptureEncryptionConfig{Enabled: true, LocalKeyID: "missing-test-key"},
 	}
-	if svc, err := New(cfg); err == nil {
+	if svc, err := newServiceWithVerifiedFixture(cfg); err == nil {
 		svc.Close()
 		t.Fatal("New() accepted enabled content capture without key material")
 	} else if !strings.Contains(err.Error(), "CONTENT_CAPTURE_LOCAL_KEY is required") {
@@ -14078,7 +14078,7 @@ func TestContentCaptureStoresRedactedRequestResponseAndAllowedHeaders(t *testing
 		RedactionPatterns:       []ContentCaptureRedactionRule{{Name: "email", Expression: `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`}},
 		Encryption:              testContentCaptureEncryption(t),
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14165,7 +14165,7 @@ func TestContentCaptureStoresSanitizedUpstreamError(t *testing.T) {
 		CaptureUpstreamErrors: true,
 		Encryption:            testContentCaptureEncryption(t),
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14227,7 +14227,7 @@ func TestContentCaptureAdminDeleteRequiresContentAdminAndAudits(t *testing.T) {
 		Quota:        QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
 		Key:          KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 	})
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14321,7 +14321,7 @@ func TestContentCaptureAdminDeleteRequiresTargetDomainAuthorization(t *testing.T
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		},
 	)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14406,7 +14406,7 @@ func TestContentCaptureAdminDeleteAllowsTargetDomainOnlyGrant(t *testing.T) {
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		},
 	)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14491,7 +14491,7 @@ func TestContentCaptureAdminDeleteUsesCaptureTimeDomain(t *testing.T) {
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		},
 	)
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14563,7 +14563,7 @@ func TestContentCaptureMaintenanceUsesCasbinAuthorization(t *testing.T) {
 			Key:         KeyConfig{LifetimeTokens: 1000000, SoftPct: 90, OnExhaust: "disable"},
 		})
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14644,7 +14644,7 @@ func TestUpstreamAttemptTimeoutReturnsGatewayTimeoutAndDiagnostics(t *testing.T)
 	group := cfg.Models["default"]
 	group.AttemptTimeoutMS = 10
 	cfg.Models["default"] = group
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14721,7 +14721,7 @@ func TestDecisionTelemetryEnabledRecordsTextCandidateAndDecision(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14790,7 +14790,7 @@ func TestDecisionTelemetryRecordsExternalPolicyFailureBeforeDecision(t *testing.
 		Targets: []Target{{Provider: "mock", Model: "cheap-model", Weight: 1}},
 	}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "external-policy")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14866,7 +14866,7 @@ func TestDecisionTelemetryRecordsNoEligibleFilterReason(t *testing.T) {
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
 	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "tool-only", ToolOnly: true}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14889,7 +14889,7 @@ func TestDecisionTelemetryRecordsToolSupportFilterReason(t *testing.T) {
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
 	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "plain-chat"}}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -14922,7 +14922,7 @@ func TestDecisionTelemetryRecordsCacheBypassReason(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.DecisionTelemetry.Enabled = true
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -15166,7 +15166,7 @@ func TestRequestShapeTelemetryPersistsForSuccessfulAndRejectedAttempts(t *testin
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 			cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice", "structured_outputs"}}}}}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -15523,7 +15523,7 @@ func TestExternalRoutingPolicyShadowModelRefTelemetry(t *testing.T) {
 			cfg.Models["adaptive"] = ModelGroup{Strategy: "external", ExternalPolicy: ExternalPolicyConfig{
 				URL: policy.URL, AllowHosts: []string{"127.0.0.1"}, Mode: "shadow",
 			}, Targets: []Target{{Provider: "mock", ModelRef: "first"}, {Provider: "mock", ModelRef: "second"}}}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -15583,7 +15583,7 @@ func TestExternalRoutingPolicyShadowPromotionAndRollbackModes(t *testing.T) {
 			Targets: []Target{{Provider: "mock", Model: "first"}, {Provider: "mock", Model: "second"}},
 		}
 		cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "adaptive")
-		svc, err := New(cfg)
+		svc, err := newServiceWithVerifiedFixture(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -15664,7 +15664,7 @@ func TestTargetRegionPersistsForServedFailoverTarget(t *testing.T) {
 		},
 	}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "region-failover")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -15711,7 +15711,7 @@ func TestAdminReportsPrefixRedirectStaysLocal(t *testing.T) {
 		}
 		cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, *, admin:reports, read"}}
 		cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, PathPrefix: prefix, DefaultSince: "24h", MaxRange: "31d", MaxRows: 10}
-		svc, err := New(cfg)
+		svc, err := newServiceWithVerifiedFixture(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}

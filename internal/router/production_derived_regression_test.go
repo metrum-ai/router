@@ -187,7 +187,7 @@ func TestProductionDerivedAdminReportsForwardedHTTPSTrust(t *testing.T) {
 			Policy:  []string{"p, basic:admin, local/test, admin:reports, read|export|drilldown"},
 		}
 		cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
-		svc, err := New(cfg)
+		svc, err := newServiceWithVerifiedFixture(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -365,7 +365,7 @@ func TestProductionDerivedAnthropicMessagesImageEligibility(t *testing.T) {
 
 	t.Run("no eligible target remains actionable", func(t *testing.T) {
 		dir := t.TempDir()
-		svc, err := New(newConfig(dir, false))
+		svc, err := newServiceWithVerifiedFixture(newConfig(dir, false))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -385,7 +385,7 @@ func TestProductionDerivedAnthropicMessagesImageEligibility(t *testing.T) {
 
 	t.Run("validated Anthropic image target receives shape", func(t *testing.T) {
 		dir := t.TempDir()
-		svc, err := New(newConfig(dir, true))
+		svc, err := newServiceWithVerifiedFixture(newConfig(dir, true))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -461,7 +461,7 @@ func TestProductionDerivedCodexResponsesReasoningEligibility(t *testing.T) {
 	cfg.Models[fixture.TestModelGroup] = ModelGroup{Strategy: "static", Targets: []Target{plainTarget}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, fixture.TestModelGroup)
 
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +522,7 @@ func TestProductionDerivedCodexResponsesReasoningEligibility(t *testing.T) {
 		cfg2.Provider["responses_reasoning"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-responses", APIKey: "provider-key"}
 		cfg2.Models[fixture.TestModelGroup] = ModelGroup{Strategy: "static", Targets: []Target{plainTarget, reasoningTarget}}
 		cfg2.Callers[0].Allow = append(cfg2.Callers[0].Allow, fixture.TestModelGroup)
-		svc2, err := New(cfg2)
+		svc2, err := newServiceWithVerifiedFixture(cfg2)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -959,7 +959,7 @@ func TestProductionDerivedUpstreamErrorClassificationIsCallerVisible(t *testing.
 			cfg := testConfig(t, upstream.URL, "provider-key", dir)
 			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 			cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1034,7 +1034,7 @@ func TestProductionDerivedRouterTrafficShapeRejectionSkipsUpstream(t *testing.T)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	on := true
 	cfg.Callers[0].TrafficShape = TrafficShapeConfig{Enabled: &on, RequestStartPerSec: 0.01, RequestBurst: 1}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

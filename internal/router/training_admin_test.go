@@ -27,7 +27,7 @@ func TestTrainingAdminAuthorizationAuditAndMissingCapture(t *testing.T) {
 			}
 			cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", Subject: "basic:admin", Domain: domain, PasswordHashEnv: "TRACE_TEST_ADMIN_HASH"}}}
 			cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, " + domain + ", content:training, export|label"}}
-			svc, err := New(cfg)
+			svc, err := newServiceWithVerifiedFixture(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}

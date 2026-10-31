@@ -3,6 +3,10 @@
 name: Run 3 GPU teardown safety smoke
 on:
   pull_request:
+    paths:
+      - 'examples/fine-tune-qwen3p8-27b/run3/gpu/**'
+      - 'scripts/ci_changes.py'
+      - '.github/workflows/run3-gpu-safety-smoke.yml'
   merge_group:
   workflow_dispatch:
 permissions:
@@ -12,12 +16,20 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 jobs:
   gpu-safety:
-    runs-on: router-arc
+    runs-on: router-arc-small
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      - name: Select merge-group lanes
+        if: github.event_name == 'merge_group'
+        env:
+          CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: python3 scripts/ci_changes.py
       - name: Run fake-API teardown and lease tests
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: python3 -m unittest discover -s examples/fine-tune-qwen3p8-27b/run3/gpu -p 'test_*.py' -v

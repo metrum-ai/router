@@ -232,7 +232,7 @@ models:
 	}
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	cfg.StatePath = filepath.Join(t.TempDir(), "router-state.json")
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
