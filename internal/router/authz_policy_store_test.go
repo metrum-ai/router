@@ -44,7 +44,7 @@ func TestDBBackedAuthorizationLoadsActivePolicySet(t *testing.T) {
 	cfg.Callers[0].MetricsAdmin = true
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(dbPath)
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Source: "db"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestDBBackedAuthorizationMissingActivePolicyFailsClosed(t *testing.T) {
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(dbPath)
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Source: "db"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err == nil {
 		svc.Close()
 		t.Fatal("expected missing active DB policy to fail service startup")

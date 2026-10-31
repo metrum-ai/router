@@ -48,7 +48,7 @@ func TestUsageWriterLocalhostToolContinuation(t *testing.T) {
 	cfg.Provider["openai_chat"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["tool-e2e"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "openai_chat", Model: "tool-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}}}}
 	cfg.Callers[0].Allow = []string{"tool-e2e"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
