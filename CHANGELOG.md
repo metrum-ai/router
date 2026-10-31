@@ -131,6 +131,10 @@ Negative and partial results are published as such, not dropped.
 
 - The generated starter configuration covers Responses, tools, structured
   output and vision, with a pinned starter smoke (#534).
+- Responses `input_tokens` counts input through a native Responses target
+  without billing tokens, and `compact` performs stateless compaction with the
+  same token admission and metering as Responses while bypassing the response
+  cache (#531). Both require a native Responses target in the requested group.
 
 ### CI
 
@@ -251,6 +255,19 @@ Negative and partial results are published as such, not dropped.
 - Database-backed configuration changes are announced to PostgreSQL replicas
   through LISTEN/NOTIFY, and the revision poller remains the documented
   fallback (#443, #449, #452).
+- Responses `input_tokens` and `compact` are served in v4.5.0; a request that
+  carries `previous_response_id` still returns `501 unsupported_endpoint`
+  because stored-response affinity is not available yet (#531). Input counting
+  is unbilled and the audit record carries `endpoint=responses.input_tokens`.
+
+- The usage database moves to schema 11 (`2026103001`), which adds
+  `request_usage.endpoint` so usage rows record the surface each request used,
+  on SQLite and PostgreSQL. Apply it through the Required Migration Gate before
+  serving: with the default `deployment-job` policy the serving process only
+  validates the ledger, and `auto-safe` applies it at startup solely on a
+  reviewed single-node SQLite deployment. Existing rows cannot be classified
+  retroactively and keep an empty value. Downgrading to 4.4 requires restoring
+  a pre-upgrade database backup (#608).
 
 ### Moved to v4.6.0
 
