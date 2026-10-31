@@ -21,11 +21,16 @@ fixture set is a smoke test, not proof of parity in production.
 
 The routed arm used Fireworks Flash 1017 for 8/15 requests and OpenAI
 GPT-6.1 Sol for 7/15; baseline used Sol for all 15. This run's usage-derived
-cost was 42.7% lower; there were no paired quality wins or losses. Provider
-invoices were not attributable per run, so these are **not reconciled invoice
-charges**. Source URLs and dated prices are in `evidence/usage.json`; individual
-outcomes and the calculation are in `evidence/`. The confidence intervals are
-wide and do not establish quality parity.
+cost was 42.7% lower; there were no paired quality wins or losses. The OpenAI
+charges for both arms were later reconciled against provider usage: **$0.013722
+billed** for the frontier arm and **$0.005652 billed** for the routed arm's seven
+`gpt-6.1-sol` requests. The routed arm's eight Fireworks requests add $0.002209
+at list rates, an estimate with no invoice behind it, which is why the routed
+total above is $0.007860756 and not a fully billed figure. Source URLs and dated
+prices are in `evidence/usage.json`; individual outcomes are in `evidence/`, and
+the reconciliation method is in
+[`../common/evidence/billing-reconciliation-2026-10-28.md`](../common/evidence/billing-reconciliation-2026-10-28.md).
+The confidence intervals are wide and do not establish quality parity.
 
 See [`../common/README.md`](../common/README.md) for router setup, credentials,
 rate provenance, usage extraction and cost interpretation. Run on a local
