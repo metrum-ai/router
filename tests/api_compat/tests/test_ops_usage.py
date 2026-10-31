@@ -213,12 +213,13 @@ def test_ops10_extended_canaries_absent_from_artifacts(api, router):
         token=None,
     )
     assert status == 401
-    status, _, _ = api(
+    status, _, raw = api(
         "/v1/responses",
         {"model": "responses", "input": REASONING_CANARY},
         token=DENIED_CALLER,
     )
-    assert status == 403
+    assert status == 404
+    assert json.loads(raw)["error"]["code"] == "model_not_found"
 
     assert_generated_artifacts_redacted(router)
     extra = {IMAGE_CANARY, REASONING_CANARY, TOOL_RESULT_CANARY}

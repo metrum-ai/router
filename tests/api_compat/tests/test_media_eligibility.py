@@ -532,12 +532,14 @@ def test_media_06_private_image_url_rejected(vision_router):
 
 
 def test_media_09_image_generation_unsupported(vision_router):
-    """MEDIA-09 (cheap): image generation is out of scope (not found / not allowed)."""
+    """MEDIA-09: image generation returns a structured unsupported-endpoint error."""
     VisionUpstream.scenario = None
     status, _, raw = _api(
         vision_router,
         "/v1/images/generations",
         {"model": "vision-chat", "prompt": "draw a cat"},
     )
-    assert status in {404, 405}, raw
+    assert status == 501, raw
+    error = json.loads(raw)["error"]
+    assert error["type"] == "invalid_request_error" and error["code"] == "unsupported_endpoint"
     assert VisionUpstream.calls == []

@@ -168,6 +168,14 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	// These OpenAI request features cannot be represented by the current
+	// Anthropic translation. Do not silently drop them on an otherwise eligible target.
+	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {
+		return "logprobs-unsupported"
+	}
+	if (callerDialect == "openai-chat" || callerDialect == "openai-responses") && outDialect == "anthropic" && requestHasStructuredOutput(req) {
+		return "structured-output-unsupported"
+	}
 	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
 	}

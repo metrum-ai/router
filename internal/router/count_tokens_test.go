@@ -33,7 +33,7 @@ func TestCountTokensProxyUnbilled(t *testing.T) {
 		if call == 3 {
 			w.Header().Set("Retry-After", "5")
 			w.WriteHeader(429)
-			fmt.Fprint(w, `{"error":{"type":"rate_limit_error","message":"retry"}}`)
+			fmt.Fprint(w, `{"error":{"type":"rate_limit_error","message":"private provider detail"}}`)
 			return
 		}
 		fmt.Fprint(w, "{\n  \"input_tokens\": 12345, \"exact\": true\n}")
@@ -120,8 +120,8 @@ func TestCountTokensProxyUnbilled(t *testing.T) {
 			t.Fatal(err)
 		}
 		if i == 2 {
-			if response.StatusCode != 429 || response.Header.Get("Retry-After") != "5" {
-				t.Fatalf("error passthrough status=%d body=%s", response.StatusCode, data)
+			if response.StatusCode != 429 || response.Header.Get("Retry-After") != "5" || response.Header.Get("Request-Id") == "" || !strings.Contains(string(data), `"type":"rate_limit_error"`) || strings.Contains(string(data), "private provider detail") {
+				t.Fatalf("sanitized error status=%d body=%s", response.StatusCode, data)
 			}
 			continue
 		}

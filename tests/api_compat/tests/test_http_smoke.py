@@ -28,18 +28,18 @@ def test_auth_model_access_and_invalid_shape_reject_before_upstream(api, router)
     )
     assert status == 401
     assert body((status, None, raw)) == {
-        "error": {"type": "unauthorized", "message": "unauthorized"}
+        "error": {"type": "unauthorized", "message": "unauthorized", "code": "unauthorized", "param": None}
     }
     assert router["upstream"].calls == []
     status, _, raw = api("/v1/chat/completions", {"model": "chat", "messages": [{"role": "user", "content": PROMPT_CANARY}]}, token="not-a-caller")
     assert status == 401 and body((status, None, raw))["error"]["type"] == "unauthorized"
     assert router["upstream"].calls == []
     status, _, raw = api("/v1/responses", {"model": "responses", "input": PROMPT_CANARY}, token=DENIED_CALLER)
-    assert status == 403 and body((status, None, raw))["error"]["type"] == "model-not-allowed"
+    assert status == 404 and body((status, None, raw))["error"]["code"] == "model_not_found"
     assert router["upstream"].calls == []
     status, _, raw = api("/v1/chat/completions", {"model": "chat", "input": PROMPT_CANARY})
-    assert status == 400 and body((status, None, raw))["error"]["type"] == "responses-body-on-chat-endpoint-disabled"
+    assert status == 400 and body((status, None, raw))["error"]["code"] == "responses-body-on-chat-endpoint-disabled"
     assert router["upstream"].calls == []
     status, _, raw = api("/v1/responses", {"model": "responses", "input": PROMPT_CANARY, "tools": [{"type": "sse", "url": "http://127.0.0.1/never-call"}]})
-    assert status == 400 and body((status, None, raw))["error"]["type"] == "provider-hosted-tools-forbidden"
+    assert status == 400 and body((status, None, raw))["error"]["code"] == "provider-hosted-tools-forbidden"
     assert router["upstream"].calls == []
