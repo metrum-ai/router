@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config.minimal.example.yaml"
@@ -87,6 +88,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--owner-user", default="local-dev")
     parser.add_argument("--project", default="example-project")
     parser.add_argument("--allow", default="local")
+    parser.add_argument("--upstream-base-url", default="", help="override both OpenAI upstream base URLs (for example a local mock)")
     return parser.parse_args()
 
 
@@ -170,6 +172,14 @@ def main() -> None:
 
     generated = omit_server_license(config_src.read_text(encoding="utf-8"))
     generated = rewrite_local_paths(generated, out_dir)
+    if args.upstream_base_url:
+        url = urlsplit(args.upstream_base_url)
+        if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.query or url.fragment:
+            die("--upstream-base-url must be an HTTP(S) URL without credentials, query, or fragment")
+        original = "base_url: https://api.openai.com/v1"
+        if generated.count(original) != 2:
+            die("minimal config must contain two OpenAI base URLs")
+        generated = generated.replace(original, "base_url: " + json.dumps(args.upstream_base_url))
     if re.search(r"(?m)^[ \t]*license:", generated):
         die("generated config still contains a license key")
     config_path.write_text(generated, encoding="utf-8")
