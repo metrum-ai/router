@@ -220,7 +220,7 @@ func TestGeminiUnsupportedChatRoleFailsEligibilityBeforeUpstream(t *testing.T) {
 	request.Header.Set("Authorization", "Bearer "+testToken)
 	recorder := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusBadGateway || !strings.Contains(recorder.Body.String(), `"type":"no-eligible-target"`) {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), `"code":"unsupported_capability"`) {
 		t.Fatalf("unsupported role status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 	if upstreamCalls.Load() != 0 {

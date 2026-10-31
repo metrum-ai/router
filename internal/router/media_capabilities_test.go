@@ -33,7 +33,7 @@ func TestMediaCapabilitiesAdmissionAndForwarding(t *testing.T) {
 				cfg.Provider["media"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
 				target := Target{Provider: "media", Model: "m", RequestShapeSupport: RequestShapeSupport{SupportedInboundDialects: []string{"anthropic"}, ValidationStatus: "passed"}}
 				if supported {
-					target.Modalities = []string{"text", "document"}
+					target.InputModalities = []string{"text", "document"}
 				}
 				cfg.Models["media"] = ModelGroup{Strategy: "static", Targets: []Target{target}}
 				cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "media")

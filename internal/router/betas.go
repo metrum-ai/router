@@ -20,7 +20,11 @@ func (s *Service) writeBetaFieldError(w http.ResponseWriter, rc *requestContext,
 		rc.rec.ErrorMessage = message
 		s.finish(rc, http.StatusBadRequest, &c)
 	}
-	writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"type": code, "message": message, "param": field}})
+	if rc != nil && rc.dialect == "anthropic" {
+		writeAnthropicError(w, rc, http.StatusBadRequest, message)
+		return
+	}
+	writeAPIJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"type": code, "message": message, "param": field}})
 }
 
 func permittedBetas(caller string, allowed []string) string {

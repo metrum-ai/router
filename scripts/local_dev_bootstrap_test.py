@@ -121,6 +121,8 @@ def test_go_ctl_issues_caller() -> None:
                 str(ROOT),
                 "--smartrouterctl",
                 str(ctl_bin),
+                "--upstream-base-url",
+                "http://127.0.0.1:18080/v1",
             ],
             capture_output=True,
             text=True,
@@ -134,6 +136,10 @@ def test_go_ctl_issues_caller() -> None:
         cfg = (out / "config.yaml").read_text(encoding="utf-8")
         if re.search(r"(?m)^[ \t]*license:", cfg):
             raise AssertionError("generated config must omit server.license")
+        if cfg.count("base_url: http://127.0.0.1:18080/v1") != 2 or "dialect: openai-responses" not in cfg:
+            raise AssertionError("both upstreams must use the overridden URL")
+        if cfg.count("structured_output: true") != 2:
+            raise AssertionError("both starter targets should support structured output")
         if "token_hash: pbkdf2-sha3-512:i=" not in cfg or "token_sha256:" in cfg or "REPLACE_WITH" in cfg:
             raise AssertionError("caller token_hash was not merged")
         for field, expected in {"rpm": {100_000}, "tpm": {100_000_000}, "concurrent": {256},
@@ -161,7 +167,15 @@ def test_go_ctl_issues_caller() -> None:
             raise AssertionError(validate.stderr)
 
 
+def test_rejects_unsafe_url() -> None:
+    with tempfile.TemporaryDirectory() as temp:
+        result = subprocess.run([sys.executable, str(SCRIPT), "--out-dir", str(Path(temp) / "out"), "--upstream-base-url", "http://user:password@localhost/v1"], capture_output=True, text=True)
+        if result.returncode == 0 or "password" in result.stderr:
+            raise AssertionError("credentialed upstream URL must be rejected without echoing it")
+
+
 def main() -> None:
+    test_rejects_unsafe_url()
     test_refuses_existing_out_dir()
     test_stubbed_ctl_writes_safe_summary()
     test_go_ctl_issues_caller()
