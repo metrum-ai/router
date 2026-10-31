@@ -86,6 +86,16 @@ The bootstrap prepares a local config, env template, and one caller token.
 Confirm `/readyz`, then `GET /v1/models` and one Chat request as in
 [Local Quickstart](docs-site/docs/getting-started/local-quickstart.md).
 
+For an offline compatibility check, start a compatible local mock on port
+18080, then bootstrap with `--upstream-base-url http://127.0.0.1:18080/v1`.
+With the router running, point a locally installed OpenAI compatibility tester
+at `http://127.0.0.1:8080/v1`, set `OPENAI_MODEL=local` and
+`OPENAI_RESPONSES_MODEL=local`, and supply the caller token from
+`tmp/local-dev/router.token` as `OPENAI_API_KEY` without printing it. Run the
+`models,models_get,chat_completions,responses` suites to check the core paths.
+Do not use a real provider key with a mock, or assume mock results establish
+production provider behavior.
+
 ### Local coding-agent router (example config)
 
 For a weighted `big-coder` mix (Fireworks deepseek-v4p1-flash-1017 70 / OpenAI gpt-6-luna 30)

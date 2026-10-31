@@ -27,12 +27,12 @@ OpenAI-compatible clients use the `/v1` base URL:
 ### Unsupported OpenAI endpoints
 
 After caller authentication, legacy text completions and moderations return
-501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings are not
-implemented yet. Stored Responses retrieval, deletion, input-item listing and
-cancellation are also not implemented. Files, uploads, batches, images, audio,
-vector stores, assistants, threads, fine-tuning, and realtime are outside the
-v4.5 scope and return the same error. These errors have `message`, `type`,
-`param`, and `code` fields. See the [error reference](errors).
+501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings and stored
+Responses retrieval, deletion, input-item listing, and cancellation also return
+501 in v4.5; their implementation is deferred to v4.6. Files, uploads, batches,
+images, audio, vector stores, assistants, threads, fine-tuning, and realtime are
+outside the v4.5 scope and return the same error. These errors have `message`,
+`type`, `param`, and `code` fields. See the [error reference](errors).
 
 Responses input counting requires a native Responses target in the requested
 model group. It observes caller request rate and concurrency limits, but does not
