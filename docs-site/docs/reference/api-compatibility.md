@@ -30,8 +30,9 @@ Responses retrieval, deletion, input-item listing, and cancellation also return
 501 in v4.5; their implementation is deferred to v4.6. Responses `input_tokens`
 and `compact` temporarily return 501 while pass-through support is being
 implemented. Files, uploads, batches, images, audio, vector stores, assistants,
-threads, fine-tuning, and realtime are outside the v4.5 scope and return the
-same error. These errors have `message`, `type`, `param`, and `code` fields. See
+threads, fine-tuning, realtime, videos, containers, conversations, agents,
+ChatKit threads, and skills are outside the v4.5 scope and return the same error.
+These errors have `message`, `type`, `param`, and `code` fields. See
 the [error reference](errors).
 
 Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
