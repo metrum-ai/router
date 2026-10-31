@@ -198,9 +198,10 @@ Negative and partial results are published as such, not dropped.
 
 - Chat audio output now requires `output_modalities: [text, audio]` on the target
   (or `[audio]` for an audio-only declaration). Native Chat targets without an
-  audio declaration default to text-only; an
-  audio request without an eligible target returns `400 unsupported_capability`
-  with `param: modalities`. Translated bridges do not support audio output
+  audio declaration default to text-only; an audio request that would otherwise
+  route to a text-only target returns `400 unsupported_capability` with
+  `param: modalities`. Other capability or endpoint errors may take precedence.
+  Translated bridges do not support audio output
   (#612, #576).
 
 - Chat streaming no longer sends a usage-only chunk unless the caller sets
