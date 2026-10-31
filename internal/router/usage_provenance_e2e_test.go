@@ -56,7 +56,7 @@ func TestUsageProvenanceLocalhostE2E(t *testing.T) {
 	group := cfg.Models["default"]
 	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
 	cfg.Models["default"] = group
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

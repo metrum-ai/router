@@ -241,7 +241,7 @@ func TestTrafficShapeInputTokensRejectsBeforeUpstreamAndPersistsTelemetry(t *tes
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.db"))
 	on := true
 	cfg.Callers[0].TrafficShape = TrafficShapeConfig{Enabled: &on, InputTokensPerSec: 1, InputTokenBurst: 4}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

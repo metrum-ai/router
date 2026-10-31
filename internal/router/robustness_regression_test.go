@@ -81,7 +81,7 @@ func TestFallbackOrdering429RetryAfterTelemetryAndSecretRedaction(t *testing.T) 
 		{Provider: "fallback", Model: "bad-gateway-model"},
 		{Provider: "fallback", Model: "healthy-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestFallbackDoesNotCrossToolEligibility(t *testing.T) {
 		{Provider: "mock", Model: "tool-model", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}},
 		{Provider: "mock", Model: "plain-model"},
 	}}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestCallerRPMErrorIsSafeAndSkipsUpstream(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Callers[0].Rate.RPM = 1
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

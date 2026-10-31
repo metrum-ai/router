@@ -40,7 +40,7 @@ func TestCacheBillingLocalhostE2E(t *testing.T) {
 	group.Targets[0].InputPricePerMillionUSD = 10
 	group.Targets[0].OutputPricePerMillionUSD = 20
 	cfg.Models["default"] = group
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

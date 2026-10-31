@@ -4,6 +4,7 @@
 package router
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,11 @@ import (
 // ledger), never request data. Each fixture gets a private byte copy, not a
 // shared connection, hard link, transaction or database. Migration tests keep
 // using the uncached constructors so actual DDL/adoption remains under test.
+
+// One-shot evidence that a path was copied from the verified managed template.
+// A digest check below prevents bypassing real startup checks after mutation.
+var verifiedUsageFixtureCopies sync.Map // path -> [32]byte
+
 var usageFixtureTemplates [2]struct {
 	once sync.Once
 	path string
@@ -86,12 +92,63 @@ func cloneUsageFixture(path string, managed bool) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(out, in)
+	hash := sha256.New()
+	_, err = io.Copy(io.MultiWriter(out, hash), in)
 	closeErr := out.Close()
 	if err == nil {
 		err = closeErr
 	}
+	if err == nil && managed {
+		var digest [32]byte
+		copy(digest[:], hash.Sum(nil))
+		verifiedUsageFixtureCopies.Store(path, digest)
+	}
 	return err
+}
+
+// Only an unchanged, freshly cloned managed fixture may skip repeated startup
+// verification. Consume the marker on first use: restarts and modified stores
+// follow the real production path. This helper is never used by production.
+func openVerifiedUsageFixture(cfg UsageDBConfig) (*usageStore, error) {
+	return openVerifiedUsageFixtureOr(cfg, OpenUsageStore)
+}
+
+func openVerifiedUsageFixtureOr(cfg UsageDBConfig, fallback func(UsageDBConfig) (*usageStore, error)) (*usageStore, error) {
+	value, ok := verifiedUsageFixtureCopies.LoadAndDelete(cfg.Path)
+	if !ok || strings.ToLower(cfg.Driver) != "sqlite" || cfg.MigrationPolicy != usageDBMigrationPolicyAutoSafe {
+		return fallback(cfg)
+	}
+	file, err := os.Open(cfg.Path)
+	if err != nil {
+		return fallback(cfg)
+	}
+	hash := sha256.New()
+	_, err = io.Copy(hash, file)
+	closeErr := file.Close()
+	var digest [32]byte
+	copy(digest[:], hash.Sum(nil))
+	if err != nil || closeErr != nil || digest != value.([32]byte) {
+		return fallback(cfg)
+	}
+	db, err := openUsageDB(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &usageStore{db: db}, nil
+}
+
+// Match New's redaction and writer setup while using the fast path only for
+// the explicitly marked fresh fixtures. Other configurations use production.
+func newServiceWithVerifiedFixture(cfg *Config) (*Service, error) {
+	svc, err := newServiceWithUsageStore(cfg, func(dbCfg UsageDBConfig) (*usageStore, error) {
+		return newUsageStoreWithOpener(dbCfg, openVerifiedUsageFixture)
+	})
+	if err != nil {
+		redactor := newSecretRedactor()
+		redactor.addConfig(cfg)
+		return nil, redactConfigError(err, redactor)
+	}
+	return svc, nil
 }
 
 func cleanupUsageFixtureTemplates() {
@@ -153,6 +210,65 @@ func BenchmarkUsageFixtureSetup(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+func TestVerifiedUsageFixtureFastPathAndFallback(t *testing.T) {
+	for _, mutateBeforeOpen := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mutate-before-open=%v", mutateBeforeOpen), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "usage.sqlite")
+			cfg := freshSQLiteUsageDBConfigForTest(path)
+			if _, ok := verifiedUsageFixtureCopies.Load(path); !ok {
+				t.Fatal("fresh verified fixture was not registered")
+			}
+			corrupt := func() {
+				t.Helper()
+				db, err := openUsageDB(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Exec("DROP TABLE request_usage").Error; err != nil {
+					t.Fatal(err)
+				}
+				sqlDB, err := db.DB()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := sqlDB.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !mutateBeforeOpen {
+				fallbackCalled := false
+				store, err := newUsageStoreWithOpener(cfg, func(cfg UsageDBConfig) (*usageStore, error) {
+					return openVerifiedUsageFixtureOr(cfg, func(cfg UsageDBConfig) (*usageStore, error) {
+						fallbackCalled = true
+						return OpenUsageStore(cfg)
+					})
+				})
+				if fallbackCalled {
+					t.Fatal("unchanged fixture unexpectedly used production schema initialization")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if store.writer == nil {
+					t.Fatal("fast fixture omitted the real usage writer")
+				}
+				if err := store.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			corrupt()
+			store, err := newUsageStoreWithOpener(cfg, openVerifiedUsageFixture)
+			if err == nil {
+				_ = store.Close()
+				t.Fatal("modified or restarted fixture bypassed real schema verification")
+			}
+			if _, ok := verifiedUsageFixtureCopies.Load(path); ok {
+				t.Fatal("fixture marker was not consumed")
+			}
+		})
 	}
 }
 

@@ -1480,6 +1480,10 @@ type decisionTelemetrySummary struct {
 }
 
 func newUsageStore(cfg UsageDBConfig) (*usageStore, error) {
+	return newUsageStoreWithOpener(cfg, OpenUsageStore)
+}
+
+func newUsageStoreWithOpener(cfg UsageDBConfig, openStore func(UsageDBConfig) (*usageStore, error)) (*usageStore, error) {
 	if cfg.DrainTimeoutMS < 0 {
 		return nil, errors.New("usage_db.drain_timeout_ms must not be negative")
 	}
@@ -1493,7 +1497,7 @@ func newUsageStore(cfg UsageDBConfig) (*usageStore, error) {
 	if driver == "sqlite" && cfg.Path == "" {
 		return nil, nil
 	}
-	store, err := OpenUsageStore(cfg)
+	store, err := openStore(cfg)
 	if err != nil {
 		return nil, err
 	}
