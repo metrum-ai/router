@@ -111,11 +111,12 @@ launch validation.
 ### Security and Rollback
 
 Keep the previous binary, reviewed configuration and restorable config and usage
-database backups. This release adds no mandatory usage-database migration; the
-PostgreSQL notifier change is additive and polling remains the fallback, so
-rollback is binary replacement plus re-applying the previous provisioner RBAC
-manifest. Windows artifacts are unsigned unless signing secrets are
-provisioned; verify provenance attestations and `SHA256SUMS` before installing.
+database backups. Take a usage-database backup before upgrading and run the
+[Upgrade Guide](/docs/release-notes/upgrade-guide) Required Migration Gate for the
+schema level this build expects; package rollback never runs a reverse
+migration. The PostgreSQL notifier change is additive and polling remains the
+fallback. Windows artifacts are unsigned unless signing secrets are provisioned;
+verify provenance attestations and `SHA256SUMS` before installing.
 
 ## v4.4.0 - 2026-10-27
 
