@@ -123,6 +123,11 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if terminal {
 				result.Terminal = true
 			}
+			// Meter upstream usage even when it was requested by the router, but
+			// do not expose the usage-only chunk unless the caller opted in.
+			if normalizeDialect(dialect) == "openai-chat" && rc != nil && !rc.chatStreamIncludeUsage && isChatUsageOnlyFrame(rawFrame) {
+				continue
+			}
 			firstFrame := !result.Committed
 			if firstFrame {
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -164,6 +169,15 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			return result, upErr
 		}
 	}
+}
+
+func isChatUsageOnlyFrame(frame []byte) bool {
+	var payload map[string]any
+	if json.Unmarshal(sseFrameData(frame), &payload) != nil || payload["usage"] == nil {
+		return false
+	}
+	choices, ok := payload["choices"].([]any)
+	return ok && len(choices) == 0
 }
 
 func isSSEBlankLine(line []byte) bool {

@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 import tempfile
-import time
 import unittest
 from unittest.mock import patch
 import charges
@@ -17,21 +16,18 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'attachment not confirmed'):
                 lease.attach_key(42,'test-public',request=lambda *a:result)
 
-    def test_creation_failure_signals_teardown(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state=Path(directory)
-            (state/'intent.json').write_text(json.dumps({'label':'metrum-425-'+'a'*32,'deadline_unix':time.time()+3600,
-                'reservation_limit_usd':100,'profile':'run3-training'}))
-            def api(cloud,path,method='GET',payload=None,execute=False):
-                if path.startswith('/bundles/'):return {'offers':[{'id':123,'dph_total':5,'gpu_name':'H200'}]}
-                if path=='/asks/123/':return {'new_contract':42}
-                if path=='/instances/42/ssh/':return {'success':False}
-                raise AssertionError('unexpected API request')
-            def keygen(*a,**k):(state/'instance-key.pub').write_text('test-public')
-            with patch.object(lease,'assert_watcher'),patch.object(lease.subprocess,'run',side_effect=keygen),patch.object(lease.watcher.cloud,'request',side_effect=api):
-                with self.assertRaisesRegex(RuntimeError,'attachment not confirmed'):lease.create(state,123,10)
-            self.assertEqual((state/'done.txt').read_text(),'GPU-DONE #425\n')
-            self.assertEqual(json.loads((state/'lease.json').read_text())['id'],42)
+    def test_retired_launcher_and_locks_are_absent(self):
+        root=Path(__file__).resolve().parents[2]
+        for name in ('run.sh','requirements.in','requirements.lock'):
+            self.assertFalse((root/'standalone'/name).exists(),name)
+        self.assertTrue((root/'standalone'/'axolotl.yaml').is_file())
+        self.assertTrue((root/'run3'/'axolotl.yaml').is_file())
+
+    def test_retired_creation_never_calls_cloud(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lease.watcher.cloud,'request') as api:
+            with self.assertRaisesRegex(RuntimeError,'retired'):lease.create(Path(directory),123,10)
+            api.assert_not_called()
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_watcher_deletes_only_own_instance_and_key(self):
         with tempfile.TemporaryDirectory() as directory:
