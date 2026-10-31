@@ -85,8 +85,8 @@ def test_route_rejections_make_zero_upstream_calls(api, router):
 
     # Bridge opt-in disabled: chat group has no responses_to_chat.
     status, _, raw = api("/v1/responses", {"model": "chat", "input": PROMPT_CANARY})
-    assert status == 502
-    assert _body(raw)["error"]["type"] == "no-eligible-target"
+    assert status == 400
+    assert _body(raw)["error"]["code"] == "unsupported_endpoint_for_model"
     assert len(router["upstream"].calls) == before
 
     # Unsupported structured output is not silently stripped to admit the text bridge.
@@ -104,8 +104,8 @@ def test_route_rejections_make_zero_upstream_calls(api, router):
             },
         },
     )
-    assert status == 502
-    assert _body(raw)["error"]["type"] == "no-eligible-target"
+    assert status == 400
+    assert _body(raw)["error"]["code"] == "unsupported_capability"
     assert len(router["upstream"].calls) == before
 
 
@@ -121,7 +121,7 @@ def test_route_streaming_and_stateful_bridges_remain_rejected(api, router):
         },
     )
     assert status == 400
-    assert _body(raw)["error"]["type"] == "continuation_unsupported"
+    assert _body(raw)["error"]["code"] == "continuation_unsupported"
     assert len(router["upstream"].calls) == before
 
     # chat-to-responses incremental streaming is supported (P3).
@@ -145,8 +145,8 @@ def test_route_streaming_and_stateful_bridges_remain_rejected(api, router):
         "/v1/responses",
         {"model": "responses-to-chat", "input": PROMPT_CANARY, "stream": True},
     )
-    assert status == 502
-    assert _body(raw)["error"]["type"] == "no-eligible-target"
+    assert status == 400
+    assert _body(raw)["error"]["code"] == "unsupported_capability"
     assert len(router["upstream"].calls) == before
 
 

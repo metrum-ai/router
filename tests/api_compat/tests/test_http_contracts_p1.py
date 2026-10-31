@@ -225,8 +225,8 @@ _ERROR_FIXTURES = [
         json.dumps({"error": {"message": f"bad {LEAK_CANARY}", "type": "invalid_request_error"}}).encode(),
         "application/json",
         {},
-        502,
-        "upstream-failed",
+        400,
+        "invalid_request_error",
         "upstream_bad_request",
     ),
     (
@@ -252,8 +252,8 @@ _ERROR_FIXTURES = [
         f"not json at all {LEAK_CANARY}".encode(),
         "application/json",
         {},
-        502,
-        "upstream-failed",
+        400,
+        "invalid_request_error",
         "upstream_bad_request",
     ),
     (
@@ -290,6 +290,8 @@ def test_http_07_upstream_errors_are_sanitized_and_sdk_usable(
     parsed = json.loads(raw)
     error = parsed["error"]
     assert error["type"] == error_type
+    if up_status in (400, 404, 413, 422):
+        assert error["code"] == "upstream-rejected"
     details = error["details"]
     assert details["error_class"] == error_class
     assert details["attempts"] == 1
@@ -404,8 +406,8 @@ def test_http_08_target_request_byte_limit_boundary(http_router, upstream):
     upstream.reset_state()
     upstream.scenario = ScriptedScenario()
     status, raw = _raw_post(base, "/v1/chat/completions", _chat_body_of_size("limited", LIMIT_BYTES + 1))
-    assert status == 502
-    assert json.loads(raw)["error"]["type"] == "no-eligible-target"
+    assert status == 400
+    assert json.loads(raw)["error"]["code"] == "unsupported_capability"
     assert upstream.calls == []
 
     # Healthy follow-up after the rejection.
