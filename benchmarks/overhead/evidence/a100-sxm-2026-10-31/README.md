@@ -3,7 +3,7 @@
 
 # A100-SXM4 partial overhead observation — 2026-10-31
 
-This is one real, shared-host measurement, **not full #422 acceptance**.
+This is one real, shared-host measurement, **not full strict #422 acceptance**.
 The underlying bounded run and teardown evidence is `router / v45-proof / 422`,
 snapshot `8ea2013d`. The GPU was deleted; the post-deletion provider estimate
 was $0.6235102405, not a reconciled charge. Edge: **pending, amd-halo offline**,
@@ -95,3 +95,21 @@ shadow/128 and enforce/128. These are host-specific samples, not proof of
 stable rankings or causal attribution. Heap files are forced-GC snapshots,
 not memory per 1,000 req/s. `cpu-top.txt`, raw CPU and heap profiles and
 capture metadata are in each successful profile directory.
+
+## Later strict enforce/32 attempt
+
+A subsequent single enforce/32 attempt recorded 2,080 selected policy decisions
+with no recorded error class and observed an eight-second 32/32 poll window,
+but failed the guarded profile stop. The controller error was not retained;
+its exact cause is unproven. The resulting CPU and heap files are invalid and
+are not included here. Readiness connection refusals in the raw log occurred
+before subsequent successful service health checks; they do not establish a
+startup race. Polling does not establish continuous 32/32 occupancy. Strict
+matched profiles therefore remain unproven; the earlier 90%-floor profiles
+above remain exploratory, not strict acceptance.
+
+The exact GPU and registered key were verified absent and the local key removed.
+The provider's post-deletion estimate was $0.1364369829, **not** reconciled
+billing; actual charges remain pending. The bounded failed-run diagnostics,
+original source hashes and teardown are archived as `router / v45-proof /
+422-strict-failure`, snapshot `d39e8d06`.
