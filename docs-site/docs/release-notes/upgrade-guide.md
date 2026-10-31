@@ -102,6 +102,14 @@ occurred. Regenerate draft windows only while raw rows remain; finalized windows
 are immutable through the generator. Recomputing finalized history requires a
 separately reviewed maintenance/restore workflow, not an automatic backfill.
 
+Usage migration `2026103001` (schema v11, dependent on v10, online) adds
+`request_usage.endpoint`, which records the surface each request used. Existing
+rows cannot be classified from stored metadata, so they keep an empty value and
+new rows record the endpoint. Like the earlier expansions it is
+`restore-required`: package rollback never runs a reverse migration, so
+downgrading to a package that predates schema v11 requires restoring a
+pre-upgrade database backup.
+
 Historical provenance remains empty/unknown. New estimated rollup counters
 start at zero, not a reconstruction of historical estimates. Historical nullable
 cache-write counts/prices remain unknown. Historical count calls cannot be
