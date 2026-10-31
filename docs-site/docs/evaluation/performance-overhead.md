@@ -22,7 +22,8 @@ The concurrency-one p99 uses only eight requests per phase; negative deltas
 reflect variation, not negative physical overhead. First content is a streamed
 event, not necessarily a token. This single shared-host result is not an edge
 or small-VM benchmark, repeatability guarantee, production SLO, or universal
-router overhead.
+router overhead. Edge: **pending, amd-halo offline**; edge measurement is
+deferred beyond v4.5.
 
 Two 32-client decision-path profiles were captured but their CPU samples were
 sparse. Plain profiles failed capture; decision latency and 128-client profiles
