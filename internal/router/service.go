@@ -3461,7 +3461,10 @@ func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect s
 	}
 	if requestHasStructuredOutput(req) && !filter(func(t Target, out string) bool {
 		if (dialect == "openai-chat" || dialect == "openai-responses") && out == "anthropic" {
-			return false
+			_, schema := openAIJSONSchemaForAnthropic(req)
+			if (!schema && !openAIJSONObjectRequest(req)) || len(req.Tools) > 0 || openAIHasToolHistory(req, dialect) {
+				return false
+			}
 		}
 		return targetSupportsStructuredOutput(t, dialect, out, true)
 	}) {
@@ -4394,6 +4397,9 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
+	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
+		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
+	}
 	if rc != nil && rc.dialect == "anthropic" {
 		writeAnthropicError(w, rc, status, message)
 		return

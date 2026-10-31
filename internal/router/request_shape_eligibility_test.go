@@ -22,7 +22,7 @@ func TestOpenAIAnthropicUnsupportedShapeFiltering(t *testing.T) {
 		{"chat logprobs", "openai-chat", "anthropic", "logprobs-unsupported", map[string]any{"logprobs": true}},
 		{"chat logprobs false", "openai-chat", "anthropic", "", map[string]any{"logprobs": false}},
 		{"native chat logprobs", "openai-chat", "openai-chat", "", map[string]any{"logprobs": true}},
-		{"chat json object", "openai-chat", "anthropic", "structured-output-unsupported", map[string]any{"response_format": map[string]any{"type": "json_object"}}},
+		{"chat json object", "openai-chat", "anthropic", "", map[string]any{"response_format": map[string]any{"type": "json_object"}}},
 		{"responses json schema", "openai-responses", "anthropic", "structured-output-unsupported", map[string]any{"text": map[string]any{"format": map[string]any{"type": "json_schema"}}}},
 		{"native chat json object", "openai-chat", "openai-chat", "", map[string]any{"response_format": map[string]any{"type": "json_object"}}},
 	} {
