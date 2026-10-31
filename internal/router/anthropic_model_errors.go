@@ -6,7 +6,8 @@ package router
 import "net/http"
 
 func isAnthropicModelRequest(r *http.Request) bool {
-	return r.Header.Get("Anthropic-Version") != "" || (r.Header.Get("X-API-Key") != "" && r.Header.Get("Authorization") == "")
+	_, hasVersion := r.Header[http.CanonicalHeaderKey("Anthropic-Version")]
+	return hasVersion || (r.Header.Get("X-API-Key") != "" && r.Header.Get("Authorization") == "")
 }
 
 func (s *Service) writeAnthropicModelNotFound(w http.ResponseWriter, rc *requestContext, reason string) {
