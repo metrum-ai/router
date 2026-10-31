@@ -5,5 +5,6 @@
   "license": "Apache-2.0",
   "copyright": "Copyright 2026 Metrum AI; SPDX-License-Identifier: Apache-2.0",
   "scripts": {"test": "promptfoo eval -c mock.yaml --no-cache", "eval": "promptfoo eval -c promptfooconfig.yaml --no-cache"},
-  "devDependencies": {"promptfoo": "0.124.1"}
+  "devDependencies": {"promptfoo": "0.124.1"},
+  "overrides": {"@azure/identity": {"@azure/msal-node": "7.1.1"}}
 }
