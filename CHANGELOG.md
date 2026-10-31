@@ -65,9 +65,9 @@ Negative and partial results are published as such, not dropped.
   clients (pi, LangGraph, OpenAI Agents SDK, Claude Code and Codex) exercising
   streamed tool calls and continuations directly and through router chains of
   depth 1, 2, 3 and 5, with a scheduled matrix that publishes per-cell reports
-  (`tests/agent_compat/`,
-  `docs-site/docs/reference/api-compatibility.md`). These are deterministic
-  mock cells, not live-provider certification.
+  (`docs-site/docs/evaluation/tool-call-proof.md`,
+  `docs-site/docs/reference/api-compatibility.md`, `tests/agent_compat/`).
+  These are deterministic mock cells, not live-provider certification.
 
 - Governance under load (#431): reservation, rate and concurrency, PII
   redaction and security-export probes under concurrency, with exact admission,
@@ -84,11 +84,11 @@ Negative and partial results are published as such, not dropped.
 
 ### API compatibility
 
-- OpenAI and Anthropic compatibility runs on every pull request and again in
-  the required merge-group gate: the pinned official OpenAI and Anthropic
-  testers plus the Go, Python and TypeScript SDK suites run against loopback
-  mocks, with issue-linked expected failures recorded against main
-  (#535, #446, #549).
+- OpenAI and Anthropic compatibility runs on every pull request and again on
+  the merge group: the pinned official OpenAI and Anthropic testers run inside
+  the required `ci` check, and the Go and TypeScript SDK suites run in the
+  supplemental checks, all against loopback mocks with issue-linked expected
+  failures recorded against main (#535, #446, #549).
 
 - Chat streaming exposes a usage-only chunk only when the caller asks for it
   with `stream_options.include_usage` (#528).

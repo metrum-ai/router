@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -39,6 +40,10 @@ def jobs(text: str) -> dict[str, str]:
         if current is not None:
             found[current].append(line)
     return {name: "\n".join(body) for name, body in found.items()}
+
+
+def steps(job_text: str) -> list[str]:
+    return re.split(r"\n      - ", "\n" + job_text)
 
 
 def make_rule(text: str, name: str) -> str:
@@ -254,7 +259,10 @@ def assert_arc_runners() -> None:
             runner = "router-arc-small" if name in small_jobs.get(path.name, set()) else "router-arc"
             require(re.search(rf"(?m)^    runs-on: {re.escape(runner)}$", body) is not None,
                     f"{path.name}/{name} must use {runner}")
-        require("cache: false" not in text, f"{path.name} must not rely on warm host Go caches")
+        if "cache: false" in text:
+            require(path.name == "ci.yml" and "actions/cache/restore@" in text
+                    and "actions/cache/save@" in text,
+                    f"{path.name} must use explicit Actions caches, not warm host caches")
         require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
 
 
@@ -298,40 +306,68 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "ci"}, "fanout lane inventory drifted")
+    require("push:\n    branches: [main]" in text and "if: github.event_name == 'push'" in lanes["warm"],
+            "main-only cache warmer missing")
     require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
-            and "shard: [0, 1, 2, 3, 4, 5]" in lanes["router"],
-            "router shard inventory drifted")
+            and "shard: [0, 1, 2, 3, 4, 5]" in lanes["router"], "router shard inventory drifted")
     for name in ("router", "other-go", "other"):
-        require("scripts/ci_changes.py" in lanes[name] and "actions/setup-go@" in lanes[name]
-                and "cache: true" in lanes[name], f"{name} lost selection or Go cache")
+        require("if: github.event_name != 'push'" in lanes[name]
+                and "scripts/ci_changes.py" in lanes[name] and "actions/setup-go@" in lanes[name]
+                and "cache: false" in lanes[name] and "actions/cache/restore@" in lanes[name]
+                and "actions/cache/save@" not in lanes[name]
+                and "hashFiles('go.mod', 'go.sum')" in lanes[name] and "restore-keys:" in lanes[name]
+                and "steps.go-paths.outputs.build" in lanes[name] and "steps.go-paths.outputs.modules" in lanes[name]
+                and "GOCACHE=$RUNNER_TEMP/router-go-build" in lanes[name]
+                and "GOMODCACHE=$RUNNER_TEMP/router-go-mod" in lanes[name], f"{name} lost selection or isolated Go cache")
     require("ci-go ci-windows" in lanes["other-go"] and "ci-python compat-mock" in lanes["other"]
             and "ci-examples" in lanes["other"], "fanout dropped a consolidated lane")
-    require("~/.cache/router-compat" in lanes["other"] and "actions/cache@" in lanes["other"],
-            "compatibility tester cache missing")
+    for name in ("other", "warm"):
+        require("${{ env.COMPAT_CACHE }}" in lanes[name] and "COMPAT_CACHE=$RUNNER_TEMP/router-compat" in lanes[name]
+                and "scripts/ci_tester_pins.py" in lanes[name] and "steps.pins.outputs.openai" in lanes[name]
+                and "steps.pins.outputs.anthropic" in lanes[name], f"{name} missing commit-keyed tester cache")
+    require("actions/setup-node@" not in text, "Node setup returned to lanes that do not need it")
+    for name in ("router", "other-go", "other", "warm"):
+        setup = next((step for step in steps(lanes[name]) if step.startswith("name: Isolate job caches")), None)
+        require(setup is not None, f"{name} missing job-local cache setup")
+        command = setup.split("        run: |\n", 1)[1]
+        command = "\n".join(line[10:] for line in command.splitlines())
+        with tempfile.TemporaryDirectory() as temp:
+            env_file = Path(temp) / "env"
+            check = subprocess.run(["bash", "-c", command], capture_output=True, text=True,
+                                   env={**os.environ, "RUNNER_TEMP": temp, "GITHUB_ENV": str(env_file)}, check=False)
+            require(check.returncode == 0 and set(env_file.read_text().splitlines()) == {
+                f"GOCACHE={temp}/router-go-build", f"GOMODCACHE={temp}/router-go-mod",
+                f"COMPAT_CACHE={temp}/router-compat"}, f"{name} cache isolation failed")
+    require("actions/cache/save@" in lanes["warm"] and "actions/cache/restore@" in lanes["warm"]
+            and "--shard-count 6 --shard-index" in lanes["warm"] and "ci-go ci-windows" in lanes["warm"],
+            "trusted main cache warming is incomplete")
+    pins = subprocess.run(["python3", str(ROOT / "scripts/ci_tester_pins.py")],
+                          capture_output=True, text=True, check=True).stdout.splitlines()
+    require(len(pins) == 2 and all(re.fullmatch(r"(?:openai|anthropic)=[0-9a-f]{40}", p) for p in pins),
+            "tester cache keys must use full commit pins")
     sbom = lanes["sbom"]
-    for marker in ("if: github.event_name != 'pull_request'", "anchore/sbom-action@", "anchore/scan-action@",
-                   "severity-cutoff: high", "fail-build: true", "actions/upload-artifact@"):
+    for marker in ("github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'",
+                   "anchore/sbom-action@", "anchore/scan-action@", "severity-cutoff: high", "fail-build: true",
+                   "actions/upload-artifact@"):
         require(marker in sbom, f"required SBOM lane lost {marker}")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm]" in aggregate, "required ci aggregator drifted")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT")
-    for event in ("pull_request", "merge_group", "workflow_dispatch"):
-        for sbom_result in ("success", "failure", "cancelled", "skipped"):
-            env = {**os.environ, **{n: "success" for n in names},
-                   "CI_EVENT_NAME": event, "SBOM_RESULT": sbom_result}
-            check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, env=env, check=False)
-            expected = sbom_result == "success" or (event == "pull_request" and sbom_result == "skipped")
-            require((check.returncode == 0) == expected, f"ci accepted SBOM {sbom_result} on {event}")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT")
+    for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
+        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT")
+                         and event != "push" or n == "WARM_RESULT" and event == "push"
+                         or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
+                         else "skipped") for n in names}
         for name in names:
             for result in ("success", "failure", "cancelled", "skipped"):
-                env = {**os.environ, **{n: "success" for n in names}, name: result,
-                       "CI_EVENT_NAME": event, "SBOM_RESULT": "skipped" if event == "pull_request" else "success"}
+                env = {**os.environ, "CI_EVENT": event, **expected, name: result}
                 check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, env=env, check=False)
-                require((check.returncode == 0) == (result == "success"), f"ci accepted {name}={result} on {event}")
+                require((check.returncode == 0) == (result == expected[name]),
+                        f"ci accepted {event} {name}={result}")
 
 
 def main() -> int:
