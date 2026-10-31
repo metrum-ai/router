@@ -91,11 +91,10 @@ class AMDTests(unittest.TestCase):
         self.assertIn('--device=/dev/kfd', args)
         self.assertEqual(args[args.index('--max-num-seqs')+1], '128')
 
-    def test_training_offline(self):
-        args = plan.command('smoke', 'rocm/pytorch@sha256:'+'b'*64)
-        self.assertIn('--network=none', args)
-        self.assertEqual(args[-1], '/data/smoke.yaml')
-        self.assertNotIn('-p', args)
+    def test_axolotl_training_commands_retired(self):
+        for mode in ('smoke', 'train'):
+            with self.assertRaisesRegex(ValueError, 'retired'):
+                plan.command(mode, 'rocm/pytorch@sha256:'+'b'*64)
 
     def test_current_qualification_envelope_is_not_training_parent(self):
         root = Path(__file__).resolve().parents[3]/'docs/evidence/finetune-amd/2026-10-23'

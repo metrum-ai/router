@@ -1,8 +1,4 @@
 {
-  "models_get": {
-    "reason": "Model lookup returns 404",
-    "issue": "https://github.com/metrum-ai/router/issues/529"
-  },
   "completions": {
     "reason": "Endpoint returns 405 rather than the expected SDK response",
     "issue": "https://github.com/metrum-ai/router/issues/531"
