@@ -26,9 +26,9 @@ infer the running version from a date written in documentation.
   four-expert comparison, the escalation latency target — are published as
   negative.
 - **OpenAI and Anthropic compatibility gates the merge.** The pinned official
-  SDK testers and the Go, Python and TypeScript suites run on every pull request
-  and again in the required merge-group gate, and `GET /v1/models/{id}` serves
-  caller-filtered model lookup.
+  SDK testers run inside the required CI check on every pull request and merge
+  group, the Go and TypeScript SDK suites run alongside as supplemental checks,
+  and `GET /v1/models/{id}` serves caller-filtered model lookup.
 - **One caller-visible change:** chat streams no longer end with a usage-only
   chunk unless the caller sets `stream_options.include_usage`.
 - Release assets carry build-provenance attestations, Windows binaries are
@@ -66,7 +66,7 @@ Every number in this release links to the run that produced it. Start here:
 | Expert routing across four domains | `docs/evidence/expert-routing/` | Negative result on a fixed 88-case cohort; classifier and route accuracy differ |
 | Escalation, local → GPU → frontier | [Escalation and decision evidence](/docs/evaluation/escalation-and-decision-evidence) | Illustrative latency target missed; hardware and energy excluded; invoices pending |
 | Decision-model wiring and observation | [Escalation and decision evidence](/docs/evaluation/escalation-and-decision-evidence) | OpenJev excluded for licensing; edge results missing; no co-located added-latency claim |
-| Agent tool calls and router chains | [API compatibility](/docs/reference/api-compatibility) | Deterministic mock cells, not live-provider certification |
+| Agent tool calls and router chains | [Tool-call compatibility proof](/docs/evaluation/tool-call-proof), [API compatibility](/docs/reference/api-compatibility) | Deterministic mock cells, not live-provider certification |
 | Governance under load | `docs/GOVERNANCE_LOAD.md`, `docs/GOVERNANCE_AUDIT_LOAD.md` | Bounded local probes, not the complete acceptance suite |
 
 Paths are relative to the source distribution; the same files are linked from
