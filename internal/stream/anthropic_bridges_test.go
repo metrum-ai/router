@@ -99,6 +99,44 @@ func TestAnthropicBridgesReplay(t *testing.T) {
 		}
 	}
 }
+func TestAnthropicChatUsageOptIn(t *testing.T) {
+	for _, include := range []bool{false, true} {
+		tr := &AnthropicUpstreamToChatCaller{Model: "test", IncludeUsage: include}
+		tr.Begin(TokenEstimate{})
+		for _, raw := range []string{
+			`{"type":"message_start","message":{"id":"msg","usage":{"input_tokens":4}}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}`,
+		} {
+			if _, err := tr.Next(Event{Data: []byte(raw)}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		events, err := tr.Next(Event{Data: []byte(`{"type":"message_stop"}`)})
+		if err != ErrTerminal {
+			t.Fatal(err)
+		}
+		if len(events) != 1+boolInt(include) {
+			t.Fatalf("include=%v events=%d", include, len(events))
+		}
+		if bytes.Contains(events[0].Data, []byte(`"usage"`)) {
+			t.Fatalf("usage on choice chunk: %s", events[0].Data)
+		}
+		if include && (!bytes.Contains(events[1].Data, []byte(`"choices":[]`)) || !bytes.Contains(events[1].Data, []byte(`"total_tokens":6`))) {
+			t.Fatalf("usage chunk: %s", events[1].Data)
+		}
+		if tr.UsageSnapshot().TotalTokens != 6 {
+			t.Fatalf("metering lost: %+v", tr.UsageSnapshot())
+		}
+	}
+}
+
+func boolInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 func TestAnthropicBridgeRejectsInvalidLifecycle(t *testing.T) {
 	for _, raw := range []string{`{`, `{"type":"message_stop"}`, `{"type":"error"}`, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"bad"}}`} {
 		tr := &AnthropicUpstreamToChatCaller{}
