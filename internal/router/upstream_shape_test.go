@@ -286,7 +286,7 @@ func TestAdaptiveBackoffHonorsBoundedRetryAfter(t *testing.T) {
 	svc.shaping.now = func() time.Time { return base.Add(time.Duration(offset.Load())) }
 
 	first := performChatRequest(t, svc, `{"model":"default","messages":[{"role":"user","content":"one"}]}`)
-	if first.Code != http.StatusTooManyRequests || !strings.Contains(first.Body.String(), `"type":"rate_limit_error"`) {
+	if first.Code != http.StatusServiceUnavailable || !strings.Contains(first.Body.String(), `"type":"upstream-rate-limited"`) {
 		t.Fatalf("first status/body=%d %s, want upstream rate limited", first.Code, first.Body.String())
 	}
 	second := performChatRequest(t, svc, `{"model":"default","messages":[{"role":"user","content":"two"}]}`)
@@ -312,7 +312,7 @@ func TestAdaptiveBackoffHonorsBoundedRetryAfter(t *testing.T) {
 	}
 	offset.Store(int64(time.Second))
 	fourth := performChatRequest(t, svc, `{"model":"default","messages":[{"role":"user","content":"four"}]}`)
-	if fourth.Code != http.StatusTooManyRequests || !strings.Contains(fourth.Body.String(), `"type":"rate_limit_error"`) || calls.Load() != 2 {
+	if fourth.Code != http.StatusServiceUnavailable || !strings.Contains(fourth.Body.String(), `"type":"upstream-rate-limited"`) || calls.Load() != 2 {
 		t.Fatalf("fourth status/body/calls=%d %s %d, want upstream retried once the bounded cooldown expires", fourth.Code, fourth.Body.String(), calls.Load())
 	}
 }
