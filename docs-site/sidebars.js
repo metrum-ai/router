@@ -109,6 +109,7 @@ const sidebars = {
         "security-governance/overview",
         "evaluation/overview",
         "evaluation/performance-overhead",
+        "evaluation/api-compatibility-live",
         "evaluation/evaluate-smart-router",
         "evaluation/prove-router-quality",
         "evaluation/model-group-quality",
