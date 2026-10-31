@@ -116,6 +116,7 @@ const sidebars = {
         "evaluation/escalation-and-decision-evidence",
         "evaluation/product-capabilities",
         "evaluation/cost-governance",
+        "evaluation/governance-load-proof",
         "evaluation/deployment-readiness",
         "evaluation/deployment-security-assessment",
         "evaluation/operational-acceptance",
