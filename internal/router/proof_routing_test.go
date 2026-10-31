@@ -121,7 +121,7 @@ func TestProofRoutingSameGroupDifferentUpstream(t *testing.T) {
 	caller.Allow = append(caller.Allow, "proof-routing")
 	cfg.Callers[0] = caller
 
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

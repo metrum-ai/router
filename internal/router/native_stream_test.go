@@ -423,7 +423,7 @@ func TestOpenAIChatTerminalFinishReasonWithoutDonePersistsAccounting(t *testing.
 	cfg.Provider["native"] = ProviderConfig{BaseURL: upstream.URL, Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["native-stream"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "native", Model: "native-chat"}}}
 	cfg.Callers[0].Allow = []string{"native-stream"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +472,7 @@ func nativeStreamTestService(t *testing.T, upstreamURL, dialect string, targets 
 	for _, fn := range mutate {
 		fn(cfg)
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

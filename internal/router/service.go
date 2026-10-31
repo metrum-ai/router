@@ -208,6 +208,12 @@ func New(cfg *Config) (*Service, error) {
 }
 
 func newService(cfg *Config) (*Service, error) {
+	return newServiceWithUsageStore(cfg, newUsageStore)
+}
+
+// newServiceWithUsageStore permits isolated test fixtures to provide a store;
+// production always uses newUsageStore and its full startup validation.
+func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*usageStore, error)) (*Service, error) {
 	cfg.setDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -244,7 +250,7 @@ func newService(cfg *Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	usage, err := newUsageStore(cfg.Server.UsageDB)
+	usage, err := openUsageStore(cfg.Server.UsageDB)
 	if err != nil {
 		_ = quota.Close()
 		_ = logger.Close()

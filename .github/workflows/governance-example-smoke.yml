@@ -3,6 +3,23 @@
 name: Governance example mock smoke
 on:
   pull_request:
+    paths:
+      - 'examples/governance/**'
+      - 'examples/tokenomics/**'
+      - 'examples/escalation-continuum/**'
+      - 'examples/catalog/**'
+      - '**/*.go'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'testdata/**'
+      - 'env*.json'
+      - 'go.mod'
+      - 'go.sum'
+      - 'config/**'
+      - 'config*.yaml'
+      - 'scripts/**'
+      - 'Makefile'
+      - '.github/workflows/governance-example-smoke.yml'
   merge_group:
   workflow_dispatch:
 permissions:
@@ -12,22 +29,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 jobs:
   governance:
-    runs-on: router-arc
+    runs-on: router-arc-small
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
-          cache: true
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      - name: Select merge-group lanes
+        if: github.event_name == 'merge_group'
+        env:
+          CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
+        with:
+          go-version-file: go.mod
+          cache: true
       - name: Install pinned YAML parser
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: python3 -m pip install 'PyYAML==6.0.3'
       - name: Build router
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: go build -o "$RUNNER_TEMP/governance-router" ./cmd/metrum-ai-router
       - name: Verify mock governance and adopted caller hashing
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         env:
           ROUTER_TEST_BINARY: ${{ runner.temp }}/governance-router
         run: |

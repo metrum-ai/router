@@ -7,7 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+## [4.5.0] - 2026-11-04
+
+Proof release: each claim below ships with the run, the configuration and the
+limits that produced it, and each proof ships the command that reruns it.
+Negative and partial results are published as such, not dropped.
+
+### Proof
+
+- Router overhead benchmark (#422): a paired load driver, a benchmark-only
+  profiling wrapper and an explicit profile occupancy floor measure added
+  p50/p99 latency and streaming first-content latency against a warmed vLLM
+  backend, direct versus routed. Published evidence covers the plain router
+  path and real d3 shadow and enforce paths on A100 hosts, including the
+  high-concurrency decision-path deltas and their limits
+  (`benchmarks/overhead/evidence/`). CPU and memory per 1,000 requests/s,
+  maximum sustained throughput and the edge case are still missing, so #422
+  stays open. Rerun: `make overhead-profile-smoke`,
+  `make overhead-decision-smoke`.
+
+- Savings case studies on three real workloads (#423): coding agent, support
+  agent and document Q&A, each routed against an all-frontier baseline on the
+  same tasks with a scored quality arm, paired trials, Wilson intervals and
+  per-request cost (`examples/case-studies/`,
+  `docs-site/docs/evaluation/savings-case-studies.md`). Provider charges for
+  the OpenAI requests are reconciled against provider usage in both arms; the
+  Fireworks side of the routed arms is a list-rate estimate, labelled as one.
+  The coding-agent study lost quality and is published that way.
+
+- Examples catalog (#424): tokenomics, governance, escalation continuum, domain
+  experts, decision models and KV-cache cost, each a runnable demo with mock
+  and self-hosted or hosted paths, sanitized evidence and stated limits
+  (`examples/`). Mock results are labelled wiring checks.
+
+- Expert routing demo (#426): a four-domain expert group against a
+  tensor-parallel general model on the same GPU count, with the negative result
+  published — the general model passed more strict checks than the routed
+  experts on the fixed 88-case cohort, and classifier accuracy is reported
+  separately from route accuracy (`docs/evidence/expert-routing/`).
+
+- Escalation continuum (#427): local tier → datacenter GPU → frontier API on
+  synthetic labeled cases, run on AMD MI300X and NVIDIA A6000, including the
+  illustrative latency target each run missed
+  (`examples/escalation-continuum/evidence/`,
+  `docs-site/docs/evaluation/escalation-and-decision-evidence.md`). Local and
+  GPU costs exclude hardware and energy, and provider figures are estimates
+  with the invoice pending.
+
+- Decision-model routing (#428): d3 and Clef adapters in shadow and enforce, a
+  labeled routing probe with two-tier confusion matrices and policy-duration
+  percentiles, and a bounded real d3/Clef observation on an A6000
+  (`examples/decision-models/evidence/`). OpenJev is excluded from the v4.5
+  comparison for licensing and edge results are missing; both are stated, and
+  no co-located added-latency claim is made.
+
+- Agent tool-call and router-chain compatibility (#429, #430): real agent
+  clients (pi, LangGraph, OpenAI Agents SDK, Claude Code and Codex) exercising
+  streamed tool calls and continuations directly and through router chains of
+  depth 1, 2, 3 and 5, with a scheduled matrix that publishes per-cell reports
+  (`tests/agent_compat/`,
+  `docs-site/docs/reference/api-compatibility.md`). These are deterministic
+  mock cells, not live-provider certification.
+
+- Governance under load (#431): reservation, rate and concurrency, PII
+  redaction and security-export probes under concurrency, with exact admission,
+  rejection and settlement counts and per-key usage reconciliation
+  (`docs/GOVERNANCE_LOAD.md`, `docs/GOVERNANCE_HTTP_LOAD.md`,
+  `docs/GOVERNANCE_PII_LOAD.md`, `docs/GOVERNANCE_AUDIT_LOAD.md`).
+  Rerun: `make governance-load`.
+
+- Fine-tune example: the vulnerable Axolotl launcher, its historical inventory
+  lock and its schema-install CI are retired in v4.5.0 and the example says so,
+  keeping the configurations and recorded results as historical records. Fine-
+  tune run 3 is published as a gate failure with its transport defect, and the
+  replacement trainer is deferred to v4.6.0 (#509).
+
+### API compatibility
+
+- OpenAI and Anthropic compatibility runs on every pull request and again in
+  the required merge-group gate: the pinned official OpenAI and Anthropic
+  testers plus the Go, Python and TypeScript SDK suites run against loopback
+  mocks, with issue-linked expected failures recorded against main
+  (#535, #446, #549).
+
+- Chat streaming exposes a usage-only chunk only when the caller asks for it
+  with `stream_options.include_usage` (#528).
+
+- `GET /v1/models/{id}` serves caller-filtered model lookup, including IDs that
+  contain slashes; unknown and unauthorized IDs both return an indistinguishable
+  `model_not_found` 404 (#529).
+
+### CI
+
+- Required CI fans out into three lanes: `router` across six measured shards,
+  `other-go` for the rest of the Go suite and the Windows cross-builds, and
+  `other` for the pinned SDK compatibility testers against loopback mocks, the
+  Python checks and the optional example suites. One aggregate `ci` job fails
+  unless every lane succeeds, and `make ci` runs the same graph locally
+  (#549, #569).
+
+- The merge-queue gate measures and guards `internal/router` Go test wall time,
+  warning at 6 minutes and failing at 8 (#418).
+
+- Offline evaluation infrastructure: a preregistered matrix, a pairwise
+  coverage generator with explicit exclusions, and an evaluation report schema
+  validator, all enforced in CI (#447).
+
+- A TypeScript SDK API-compat suite runs on the gate (#446), and TypeScript
+  compatibility jobs provision Go modules explicitly (#506).
+
+### Security
+
+- GitHub build-provenance attestations for every published release archive,
+  `SHA256SUMS`, and `release-artifacts.json` (#332). Windows archives are
+  unsigned by default; Authenticode remains an optional signing path.
+
+- Release workflow: Windows binaries are Authenticode-signed with Azure
+  Trusted Signing (RFC 3161 timestamped) when the signing secrets are
+  provisioned — the step is a logged no-op until then, so unsigned builds
+  keep working. Signing runs between the Windows `.exe` builds and the
+  deterministic zip packaging on tag builds only, so checksums and the
+  release inventory always hash the signed binaries; a sign or verify
+  failure fails the release once credentials exist (#332).
+
+- Tenant provisioner RBAC: the Role no longer grants NetworkPolicy write
+  access (trivy KSV-0056). The namespace default-deny policy moved from
+  `tenant-bootstrap-resources.example.yaml` to
+  `tenant-default-network-policy.example.yaml`, applied once at namespace
+  creation by the platform administrator in the same reviewed step that binds
+  the provisioner RBAC. Re-apply
+  `deploy/kubernetes/bootstrap/tenant-provisioner-rbac.yaml` and apply the new
+  template when onboarding the next tenant (#414).
+
+- Audit-tier semgrep findings in the Admin API code are triaged, and the
+  config-set YAML export sends `X-Content-Type-Options: nosniff` (#416).
+
+- Updated `github.com/go-jose/go-jose/v4` to 4.1.6 for
+  GHSA-mgcc-cww5-fp2q, a denial-of-service risk when parsing crafted RSA JWKs.
+  The dependency now rejects RSA JWK moduli over 4096 bits; OIDC deployments
+  using larger keys must rotate to supported keys before upgrading (#451).
+
+- Lockfile refreshes close the reported advisories in the agent-compatibility
+  project (undici), the evaluation tooling (node-forge, with a DigestInfo
+  validation test) and the fine-tune evaluation tooling (nested MSAL), and the
+  docs-site dependencies are updated to their patched versions (#511, #512,
+  #541, #564). Remaining medium and low lockfile advisories move to v4.6.0
+  (#510).
+
+### Behavior changes
+
+- Chat streaming no longer sends a usage-only chunk unless the caller sets
+  `stream_options.include_usage` to true (#528). Upstream usage collection for
+  accounting stays enabled, and the OpenAI-compatible bridges keep forcing
+  `stream_options.include_usage: true` on their own upstream requests. Clients
+  that need usage in the stream must opt in; clients that tolerated a trailing
+  `choices: []` chunk see one fewer chunk.
 
 - YAML-configured providers can opt in to `upstream_kind: router` for a
   separately authenticated trusted router, preserving its rate-limit 429 or
@@ -25,18 +179,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   omit misleading independent upstream duration and throughput values; their
   paced proxy wall time remains available in the trace.
 
-- GitHub build-provenance attestations for every published release archive,
-  `SHA256SUMS`, and `release-artifacts.json` (#332). Windows archives are
-  unsigned by default; Authenticode remains an optional signing path.
-
-- Release workflow: Windows binaries are Authenticode-signed with Azure
-  Trusted Signing (RFC 3161 timestamped) when the signing secrets are
-  provisioned — the step is a logged no-op until then, so unsigned builds
-  keep working. Signing runs between the Windows `.exe` builds and the
-  deterministic zip packaging on tag builds only, so checksums and the
-  release inventory always hash the signed binaries; a sign or verify
-  failure fails the release once credentials exist (#332).
-
 - Experiment profiles for endpoint-bound agent studies (#379): opt-in,
   scope-required (callers/groups/targets) profiles inject an added TTFT
   delay with seeded reproducible jitter and pace delivered output by an
@@ -49,23 +191,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   profile name and profile hash; upstream timing stays measured separately
   from downstream pacing. See `docs-site/docs/configuration/experiment-profiles.md`.
 
-### Security
+- Database-backed configuration changes are announced to PostgreSQL replicas
+  through LISTEN/NOTIFY, and the revision poller remains the documented
+  fallback (#443, #449, #452).
 
-- Updated `github.com/go-jose/go-jose/v4` to 4.1.6 for
-  GHSA-mgcc-cww5-fp2q, a denial-of-service risk when parsing crafted RSA JWKs.
-  The dependency now rejects RSA JWK moduli over 4096 bits; OIDC deployments
-  using larger keys must rotate to supported keys before upgrading (#451).
+### Moved to v4.6.0
 
-### Changed
-
-- Tenant provisioner RBAC: the Role no longer grants NetworkPolicy write
-  access (trivy KSV-0056). The namespace default-deny policy moved from
-  `tenant-bootstrap-resources.example.yaml` to
-  `tenant-default-network-policy.example.yaml`, applied once at namespace
-  creation by the platform administrator in the same reviewed step that binds
-  the provisioner RBAC. Re-apply
-  `deploy/kubernetes/bootstrap/tenant-provisioner-rbac.yaml` and apply the new
-  template when onboarding the next tenant (#414).
+- Fine-tune run 3 and the maintained TRL + PEFT trainer (#425), the d3
+  follow-up measurements (#287), embeddings (#532), stored Responses (#533) and
+  the external-rerun gate line move to v4.6.0, together with the remaining
+  medium and low lockfile advisories (#510).
 
 ## [4.4.0] - 2026-10-27
 
@@ -660,7 +795,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `METRUM_AI_ROUTER_VERSION`) and related runtime/metrics/k8s identity updates
   are coordinated in the runtime/deploy rename PR.
 
-[Unreleased]: https://github.com/metrum-ai/router/compare/v4.2.0...HEAD
+[Unreleased]: https://github.com/metrum-ai/router/compare/v4.5.0...HEAD
+[4.5.0]: https://github.com/metrum-ai/router/compare/v4.4.0...v4.5.0
 [4.2.0]: https://github.com/metrum-ai/router/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/metrum-ai/router/compare/v4.0.2...v4.1.0
 [4.0.2]: https://github.com/metrum-ai/router/compare/v4.0.1...v4.0.2

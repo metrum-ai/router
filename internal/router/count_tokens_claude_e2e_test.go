@@ -125,7 +125,7 @@ func TestCountTokensClaudeCodeCompactionE2E(t *testing.T) {
 	cfg.Callers[0].Quota.Day.Tokens = 10000000
 	cfg.Callers[0].Quota.Month.Tokens = 10000000
 	cfg.Callers[0].Key.LifetimeTokens = 10000000
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

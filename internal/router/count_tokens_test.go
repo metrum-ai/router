@@ -68,7 +68,7 @@ func TestCountTokensProxyUnbilled(t *testing.T) {
 	// compaction payload that would fail inference admission.
 	cfg.Callers[0].Rate.TPM = 1
 	cfg.Callers[0].Quota.Day.Tokens = 1
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
