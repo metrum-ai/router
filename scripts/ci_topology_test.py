@@ -342,6 +342,25 @@ def assert_consolidated_ci() -> None:
     require("actions/cache/save@" in lanes["warm"] and "actions/cache/restore@" in lanes["warm"]
             and "--shard-count 6 --shard-index" in lanes["warm"] and "ci-go ci-windows" in lanes["warm"],
             "trusted main cache warming is incomplete")
+    restore = next((step for step in steps(lanes["warm"]) if "id: go-cache" in step), None)
+    require(restore is not None and "if:" not in restore, "main must discover cache misses even on docs-only pushes")
+    policy = next((step for step in steps(lanes["warm"]) if step.startswith("name: Decide Go cache warming")), None)
+    require(policy is not None and "steps.go-cache.outputs.cache-matched-key" in policy,
+            "main cache warming must distinguish a usable fallback from a miss")
+    command = policy.split("        run: |\n", 1)[1]
+    command = "\n".join(line[10:] for line in command.splitlines())
+    for selected in ("0", "1"):
+        for matched in ("", "ci-go-previous-main"):
+            with tempfile.TemporaryDirectory() as temp:
+                output = Path(temp) / "output"
+                check = subprocess.run(["bash", "-c", command], capture_output=True, text=True,
+                                       env={**os.environ, "CI_RUN_GO": selected, "MATCHED_KEY": matched,
+                                            "GITHUB_OUTPUT": str(output)}, check=False)
+                expected = "needed=true" if selected == "1" or not matched else "needed=false"
+                require(check.returncode == 0 and output.read_text().strip() == expected,
+                        f"cache warm policy failed: go={selected} matched={bool(matched)}")
+    require("steps.warm-policy.outputs.needed == 'true'" in lanes["warm"],
+            "cache warm and save must follow the bootstrap policy")
     pins = subprocess.run(["python3", str(ROOT / "scripts/ci_tester_pins.py")],
                           capture_output=True, text=True, check=True).stdout.splitlines()
     require(len(pins) == 2 and all(re.fullmatch(r"(?:openai|anthropic)=[0-9a-f]{40}", p) for p in pins),
