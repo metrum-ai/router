@@ -198,10 +198,10 @@ def test_http_05_model_admission_and_discovery_agree(api, router):
     Upstream.scenario.assert_complete()
     Upstream.reset_state()
 
-    # Nonexistent group: not discoverable and rejected with model-not-allowed.
+    # Nonexistent and disallowed groups share the same privacy-preserving error.
     status, _, raw = api("/v1/chat/completions", _chat_payload(model="does-not-exist"))
-    assert status == 403
-    assert _error_body(raw)["error"]["type"] == "model-not-allowed"
+    assert status == 404
+    assert _error_body(raw)["error"]["code"] == "model_not_found"
     assert Upstream.calls == []
 
     # Unauthorized group for DENIED_CALLER: discovery and admission agree.
@@ -216,8 +216,8 @@ def test_http_05_model_admission_and_discovery_agree(api, router):
         {"model": "responses", "input": PROMPT_CANARY},
         token=DENIED_CALLER,
     )
-    assert status == 403
-    assert _error_body(raw)["error"]["type"] == "model-not-allowed"
+    assert status == 404
+    assert _error_body(raw)["error"]["code"] == "model_not_found"
     assert Upstream.calls == []
 
     # Same caller requesting a group that discovery lists for them still works.

@@ -83,7 +83,7 @@ func TestAnthropicTranslatedToolStreamingAdmission(t *testing.T) {
 				rr := httptest.NewRecorder()
 				svc.Handler().ServeHTTP(rr, req)
 				if !validated {
-					if rr.Code != 502 || attempts != 0 || !strings.Contains(rr.Body.String(), "no-eligible-target") {
+					if rr.Code != 400 || attempts != 0 || !strings.Contains(rr.Body.String(), `"type":"invalid_request_error"`) {
 						t.Fatalf("not fail closed: %d %s", rr.Code, rr.Body)
 					}
 					return
