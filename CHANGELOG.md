@@ -76,9 +76,11 @@ partial results are published as such, not dropped.
   `docs/GOVERNANCE_PII_LOAD.md`, `docs/GOVERNANCE_AUDIT_LOAD.md`).
   Rerun: `make governance-load`.
 
-- Fine-tune example: the Axolotl-based executable path is retired, the example
-  warns about its frozen vulnerable image, and fine-tune run 3 is published as
-  a gate failure with its transport defect (#509).
+- Fine-tune example: the vulnerable Axolotl launcher, its historical inventory
+  lock and its schema-install CI are retired in v4.5.0 and the example says so,
+  keeping the configurations and recorded results as historical records. Fine-
+  tune run 3 is published as a gate failure with its transport defect, and the
+  replacement trainer is deferred to v4.6.0 (#509).
 
 ### API compatibility
 
@@ -96,9 +98,12 @@ partial results are published as such, not dropped.
 
 ### CI
 
-- One `ci` job runs concurrent Go vet and tests across four router shards,
-  Python checks, Windows cross-builds and the pinned SDK compatibility testers
-  against loopback mocks; `make ci` runs the same graph locally (#549).
+- Required CI fans out into three lanes: `router` across six measured shards,
+  `other-go` for the rest of the Go suite and the Windows cross-builds, and
+  `other` for the pinned SDK compatibility testers against loopback mocks, the
+  Python checks and the optional example suites. One aggregate `ci` job fails
+  unless every lane succeeds, and `make ci` runs the same graph locally
+  (#549, #569).
 
 - The merge-queue gate measures and guards `internal/router` Go test wall time,
   warning at 6 minutes and failing at 8 (#418).

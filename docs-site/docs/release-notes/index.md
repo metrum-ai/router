@@ -44,7 +44,7 @@ infer the running version from a date written in documentation.
 | Database | PostgreSQL-backed replicas learn configuration changes through LISTEN/NOTIFY, with the revision poller as the fallback (#443, #452) |
 | Release artifacts | Provenance attestations on release assets; Windows signing is a logged no-op until signing secrets exist (#332) |
 | Security | Tenant provisioner RBAC loses NetworkPolicy write access; re-apply `provisioner-rbac.yaml` when onboarding the next tenant (#414) |
-| CI | One `ci` job runs Go shards, Python, Windows cross-builds and the pinned SDK compatibility testers, and the Go test wall time is guarded (#549, #418) |
+| CI | Required CI fans out into six measured router shards, other Go and Windows, and compatibility, Python and example lanes behind one aggregate `ci` job; Go test wall time is guarded (#549, #569, #418) |
 
 ### Caller Impact
 
