@@ -55,10 +55,29 @@ providers:
         pricing_updated_at: "2026-09-09"
         pricing_notes: Local starter metadata only. Refresh from current OpenAI
           pricing before production routing.
-        input_modalities: [text]
+        input_modalities: [text, image]
         output_modalities: [text]
         tool_support:
           openai_chat: [tools, tool_choice]
+  openai-responses:
+    dialect: openai-responses
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    api_key_env: OPENAI_API_KEY
+    key_id: openai-local
+    models:
+      gpt-4o-mini:
+        model: gpt-4o-mini
+        input_price_per_million_usd: 0.15
+        output_price_per_million_usd: 0.60
+        pricing_source: placeholder-for-local-dev
+        pricing_updated_at: "2026-09-09"
+        pricing_notes: Local starter metadata only. Refresh from current OpenAI
+          pricing before production routing.
+        input_modalities: [text, image]
+        output_modalities: [text]
+        tool_support:
+          openai_responses: [function]
 
 models:
   local:
@@ -66,6 +85,10 @@ models:
     targets:
       - provider: openai
         model_ref: gpt-4o-mini
+        structured_output: true
+      - provider: openai-responses
+        model_ref: gpt-4o-mini
+        structured_output: true
 
 users:
   - id: local-dev
