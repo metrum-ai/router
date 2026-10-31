@@ -120,6 +120,7 @@ help:
 	@echo "  local-router-pi-smoke  pi write/read tool continuation against a running local router"
 	@echo "  proof-routing          same-group different-upstream dynamic_score proof"
 	@echo "  harbor-adapter-test    offline Harbor agent-adapter contracts (AGENT-01..06)"
+	@echo "  compat-live            guarded live API compatibility subset (opt-in)"
 	@echo "  package-docker         build customer Docker packages"
 	@echo "  docs-build             build embedded public docs"
 	@echo "  sse-capture            generate synthetic SSE fixtures and replay goldens"
@@ -132,6 +133,12 @@ local-router-setup:
 		--out-dir "$(LOCAL_ROUTER_OUT)" \
 		--listen "$(LOCAL_ROUTER_LISTEN)" \
 		$(LOCAL_ROUTER_EXTRA_ARGS)
+
+# Opt-in live tests: config, results path and provider/caller keys come from the
+# environment. The harness fails closed on unsafe config or missing variables.
+.PHONY: compat-live
+compat-live:
+	@$(PYTHON) scripts/compat_live.py
 
 .PHONY: local-router-build
 local-router-build: validate-build-metadata
