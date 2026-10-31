@@ -3,6 +3,11 @@
 
 # Run 2 (#355): governed agent traces, shared freeze released
 
+> Historical record: the Axolotl execution path is retired in v4.5 under
+> [#509](https://github.com/metrum-ai/router/issues/509). Its configs and
+> reported outcomes are preserved; replacement training work is deferred to
+> v4.6.0. The historical instructions below are not authorization for a new run.
+
 ## High-limit infrastructure amendment
 
 `high-limit-infrastructure-preregistration.json` (SHA256

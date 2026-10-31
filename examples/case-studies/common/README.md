@@ -51,8 +51,11 @@ establish equivalence or generalize to production.
 Run the offline synthetic tests:
 
 ```sh
-python3 -m unittest discover -s examples/case-studies/common -p 'test_*.py' -v
+uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -v
 ```
+
+The suite imports PyYAML; `uv run --with pyyaml` installs it for the run. A bare
+`python3 -m unittest` fails on that import.
 
 To summarize an independently collected, sanitized JSON evidence file:
 
@@ -109,6 +112,13 @@ for every attempt, and reconcile rated totals with actual charges before claimin
 billed cost. If any of that cannot be established, report billing as unknown.
 The current example does not provision identities or perform this reconciliation;
 a change to isolate arms would need separate implementation and review.
+
+The 2026-10-28 study runs have since been reconciled after the fact: provider
+usage for the study minutes matched the router's usage rows exactly, so the
+`gpt-6.1-sol` charges of both arms are billed figures. The Fireworks share of
+the routed arms is still a list-rate estimate. Method, per-arm token totals and
+limits are in
+[`evidence/billing-reconciliation-2026-10-28.md`](evidence/billing-reconciliation-2026-10-28.md).
 
 Keep raw provider receipts, request IDs and task content private. Publish only
 reviewed, sanitized aggregates, configuration without credentials, and

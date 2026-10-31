@@ -238,7 +238,35 @@ def assert_arc_runners() -> None:
         require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
 
 
+def assert_consolidated_ci() -> None:
+    text = read(WORKFLOWS / "ci.yml")
+    lanes = jobs(text)
+    require(set(lanes) == {"router", "other-go", "other", "ci"}, "fanout lane inventory drifted")
+    require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
+            and "shard: [0, 1, 2, 3, 4, 5]" in lanes["router"],
+            "router shard inventory drifted")
+    for name in ("router", "other-go", "other"):
+        require("scripts/ci_changes.py" in lanes[name] and "actions/setup-go@" in lanes[name]
+                and "cache: true" in lanes[name], f"{name} lost selection or Go cache")
+    require("ci-go ci-windows" in lanes["other-go"] and "ci-python compat-mock" in lanes["other"]
+            and "ci-examples" in lanes["other"], "fanout dropped a consolidated lane")
+    require("~/.cache/router-compat" in lanes["other"] and "actions/cache@" in lanes["other"],
+            "compatibility tester cache missing")
+    aggregate = lanes["ci"]
+    require("name: ci" in aggregate and "if: always()" in aggregate
+            and "needs: [router, other-go, other]" in aggregate, "required ci aggregator drifted")
+    shell = aggregate.split("        run: |\n", 1)[1]
+    shell = "\n".join(line[10:] for line in shell.splitlines())
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT")
+    for name in names:
+        for result in ("success", "failure", "cancelled", "skipped"):
+            env = {**os.environ, **{n: "success" for n in names}, name: result}
+            check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, env=env, check=False)
+            require((check.returncode == 0) == (result == "success"), f"ci accepted {name}={result}")
+
+
 def main() -> int:
+    assert_consolidated_ci()
     assert_arc_runners()
     assert_pull_request_cancellation()
     assert_make_tiers()

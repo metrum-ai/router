@@ -77,7 +77,11 @@ func TestAnthropicCacheLocalhostE2E(t *testing.T) {
 				if pair[0] == "anthropic" {
 					endpoint = "/anthropic/v1/messages"
 				}
-				req, _ := http.NewRequest("POST", "http://127.0.0.1:18474"+endpoint, strings.NewReader(fmt.Sprintf(`{"model":"native-stream","stream":%v,"max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`, streaming)))
+				options := ""
+				if streaming && pair[0] == "openai-chat" {
+					options = `,"stream_options":{"include_usage":true}`
+				}
+				req, _ := http.NewRequest("POST", "http://127.0.0.1:18474"+endpoint, strings.NewReader(fmt.Sprintf(`{"model":"native-stream","stream":%v,"max_tokens":100,"messages":[{"role":"user","content":"hi"}]%s}`, streaming, options)))
 				req.Header.Set("Authorization", "Bearer "+testToken)
 				req.Header.Set("Content-Type", "application/json")
 				resp, err := client.Do(req)
