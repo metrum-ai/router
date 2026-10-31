@@ -39,6 +39,11 @@ func openAIHasToolHistory(req *IRRequest, caller string) bool {
 // tool-call/result history. It fails closed on shapes it cannot faithfully map.
 func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target Target) ([]byte, error) {
 	var messages []map[string]any
+	var system []string
+	seenResponsesConversation := false
+	if req.System != "" {
+		system = append(system, req.System)
+	}
 	appendBlocks := func(role string, blocks []any) {
 		if len(blocks) == 0 {
 			return
@@ -171,12 +176,14 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 				}
 				switch stringValue(m["type"]) {
 				case "function_call":
+					seenResponsesConversation = true
 					block, err := functionCall(stringValue(m["call_id"]), stringValue(m["name"]), stringValue(m["arguments"]))
 					if err != nil {
 						return nil, err
 					}
 					appendBlocks("assistant", []any{block})
 				case "function_call_output":
+					seenResponsesConversation = true
 					block, err := toolResult(stringValue(m["call_id"]), m["output"])
 					if err != nil {
 						return nil, err
@@ -187,9 +194,27 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					if role == "" {
 						role = "user"
 					}
+					if role == "system" {
+						if seenResponsesConversation {
+							return nil, fmt.Errorf("system message after conversation cannot be translated")
+						}
+						blocks, err := contentBlocks(m["content"])
+						if err != nil {
+							return nil, err
+						}
+						for _, value := range blocks {
+							block, _ := value.(map[string]any)
+							if stringValue(block["type"]) != "text" {
+								return nil, fmt.Errorf("non-text system content cannot be translated")
+							}
+							system = append(system, stringValue(block["text"]))
+						}
+						continue
+					}
 					if role != "assistant" && role != "user" {
 						return nil, fmt.Errorf("unsupported response role")
 					}
+					seenResponsesConversation = true
 					blocks, err := contentBlocks(m["content"])
 					if err != nil {
 						return nil, err
@@ -207,8 +232,8 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		return nil, fmt.Errorf("missing messages")
 	}
 	body := map[string]any{"model": model, "messages": messages, "max_tokens": effectiveMaxTokens(req, 1024), "stream": false}
-	if req.System != "" {
-		body["system"] = req.System
+	if len(system) > 0 {
+		body["system"] = strings.Join(system, "\n\n")
 	}
 	if req.Temperature != nil {
 		body["temperature"] = *req.Temperature
