@@ -20,6 +20,29 @@ This is a **partial historical baseline**, not a release-candidate result or a c
 - Router usage rows for both matrix subsets total **$0.00703245** at configured list rates, not an invoice; one usage row is estimated and some attempts have no reported usage. Direct diagnostic: **$0.00014965** list-rate from provider-reported 65 input and 366 output tokens; the rejected logprobs diagnostic had no reported usage. Unchanged starter: **$0.00000825** metered, plus an attempt without usage. These are not a complete provider bill.
 - The quota is a 200,000-token admission budget with estimated reservations; reconciliation and missing usage can prevent it from being a strict bound on provider billing.
 
+## Combined batch live gate
+
+On 2026-10-31, PR [#603](https://github.com/metrum-ai/router/pull/603) head `c95783fe37046e011c043be743a7b21605d929c2` was tested with the pinned testers and GPT-6 Luna / native Claude Haiku 5.5. The head was unchanged at shutdown. The deliberately limited, forced-no-storage config included inline Claude PDF support. Results were **16/27, 13/27, 6/27, 17/27** in the four-lane order below; all tester exits were nonzero. Evidence: live `42fa088c`, offline probes `ed0b140b`, direct provider diagnostics `3e3cf1ef` (`router/v45-proof/536`). Router usage rows total **$0.00083660** at configured list rates, not an invoice; seven upstream attempts reported no usage.
+
+The tables enumerate all selected failing suites; all other selected suites passed. **501** is a documented unsupported error, not a passing SDK suite; **400-L** is a capability rejection under the limited config, not proof of provider behavior; **P** is a provider/model restriction confirmed directly, with the stated limits; **G** is an open gap.
+
+| OpenAI SDK suites | GPT | Claude |
+| --- | --- | --- |
+| `chat_completions_logprobs` | P: unsupported (direct probe `3e3cf1ef`) | 400-L: unsupported logprobs |
+| `chat_completions_tools`, `chat_completions_tools_stream`, `chat_completions_multi_turn` | P: default reasoning/tool restriction; direct nonstream probe only | 400-L; bridge not exercised ([#539](https://github.com/metrum-ai/router/issues/539)) |
+| `responses_tools`, `responses_tools_stream`, `responses_reasoning` | Pass | 400-L; bridge not exercised ([#539](https://github.com/metrum-ai/router/issues/539)) |
+| `completions`, `completions_stream`, `embeddings`, `embeddings_batch`, `moderations` | 501 | 501 |
+| `responses_input_tokens`, `responses_compact` | G: temporary 501 ([#531](https://github.com/metrum-ai/router/issues/531)) | G: temporary 501 ([#531](https://github.com/metrum-ai/router/issues/531)) |
+
+| Anthropic SDK suites | GPT | Claude |
+| --- | --- | --- |
+| `messages`, `messages_stream`, `messages_tools`, `messages_tools_stream`, `messages_json`, `messages_multi_turn`, `messages_vision`, `messages_prompt_cache`, `beta_messages`, `beta_messages_stream` | 400-L; bridge not exercised ([#539](https://github.com/metrum-ai/router/issues/539)) | Pass |
+| `messages_thinking` | 400-L; bridge not exercised ([#539](https://github.com/metrum-ai/router/issues/539)) | P: legacy enabled-thinking rejected; adaptive required |
+| `messages_document` | 400 unsupported modality in this config; GPT document support not tested | Pass |
+| `completions`, `completions_stream`, `message_batches_create`, `message_batches_get`, `message_batches_cancel`, `message_batches_list`, `message_batches_results`, `message_batches_delete`, `beta_files` | 501 | 501 |
+
+The Anthropic batch follow-up suites stopped at create and did not individually prove each later method. Stored Responses and hosted-resource suites were not run; stored Responses lifecycle is documented as deferred to v4.6. An offline black-hole probe found 20/26 expected 501 shapes with zero upstream attempts; five OpenAI endpoint/method combinations returned bare 404/405 and OpenAI `/v1/skills` returned the wrong dialect's 501 envelope ([#580](https://github.com/metrum-ai/router/issues/580)). The [API reference](https://github.com/metrum-ai/router/blob/c95783fe37046e011c043be743a7b21605d929c2/docs-site/docs/reference/api-compatibility.md) documents the 501s and temporary Responses utility limits. No unrun suite is counted as a pass.
+
 ## Current-model subset (prior main)
 
 On 2026-10-31, the same tester binaries and router main `62e3a603637b9b850338f2a25dfcb8c23f7d3119` ran a restricted 27-suite selection in each lane against [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) and [Claude Haiku 5.5](https://platform.claude.com/docs/en/models/haiku-5-5/overview). Both model metadata checks returned 200. The targets use `limited` validation; OpenAI storage is forced off. This is not the full catalog and is not a release-candidate result. Omitted suites are not passes.
