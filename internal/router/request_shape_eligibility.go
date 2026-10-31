@@ -168,17 +168,13 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
 	support := target.RequestShapeSupport
+	// These OpenAI request features cannot be represented by the current
+	// Anthropic translation. Do not silently drop them on an otherwise eligible target.
 	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {
 		return "logprobs-unsupported"
 	}
 	if (callerDialect == "openai-chat" || callerDialect == "openai-responses") && outDialect == "anthropic" && requestHasStructuredOutput(req) {
-		_, schema := openAIJSONSchemaForAnthropic(req)
-		object := openAIJSONObjectRequest(req)
-		// Tool calls have no final text to validate. Until that combined mode
-		// is supported end-to-end, do not weaken the requested output guarantee.
-		if (!schema && !object) || len(req.Tools) > 0 || openAIHasToolHistory(req, callerDialect) {
-			return "structured-output-unsupported"
-		}
+		return "structured-output-unsupported"
 	}
 	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
