@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -127,7 +128,7 @@ def assert_retirement_topology() -> None:
     for name in ("go.yml", "deterministic-gate.yml", "case-study-smoke.yml"):
         require(not (WORKFLOWS / name).exists(), f"retired workflow returned: {name}")
     ci = read(WORKFLOWS / "ci.yml")
-    require("pull_request:" in ci and "merge_group:" in ci and "run: make ci" in ci,
+    require("pull_request:" in ci and "merge_group:" in ci and "name: ci" in jobs(ci)["ci"],
             "consolidated ci must cover PR and merge group")
     makefile = read(ROOT / "Makefile")
     for lane in ("ci-go", "ci-router", "ci-windows", "ci-python", "ci-examples", "compat-mock"):
@@ -146,7 +147,6 @@ def assert_retirement_topology() -> None:
         "harbor": ("make harbor-local",),
         "d3": ("make d3-policy-e2e",),
         "lrp": ("scripts/ci_lrp_synthetic.sh", "needs.changes.outputs.lrp"),
-        "sbom": ("anchore/sbom-action", "anchore/scan-action", "actions/upload-artifact"),
         "changes": ("dorny/paths-filter@", "github.event.merge_group.base_sha", "github.event.merge_group.head_sha"),
     }
     require(set(parsed) == set(coverage), "supplemental lane inventory drifted")
@@ -241,7 +241,7 @@ def assert_arc_runners() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "ci"}, "fanout lane inventory drifted")
     require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
             and "shard: [0, 1, 2, 3, 4, 5]" in lanes["router"],
             "router shard inventory drifted")
@@ -252,17 +252,29 @@ def assert_consolidated_ci() -> None:
             and "ci-examples" in lanes["other"], "fanout dropped a consolidated lane")
     require("~/.cache/router-compat" in lanes["other"] and "actions/cache@" in lanes["other"],
             "compatibility tester cache missing")
+    sbom = lanes["sbom"]
+    for marker in ("if: github.event_name != 'pull_request'", "anchore/sbom-action@", "anchore/scan-action@",
+                   "severity-cutoff: high", "fail-build: true", "actions/upload-artifact@"):
+        require(marker in sbom, f"required SBOM lane lost {marker}")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom]" in aggregate, "required ci aggregator drifted")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
     names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT")
-    for name in names:
-        for result in ("success", "failure", "cancelled", "skipped"):
-            env = {**os.environ, **{n: "success" for n in names}, name: result}
+    for event in ("pull_request", "merge_group", "workflow_dispatch"):
+        for sbom_result in ("success", "failure", "cancelled", "skipped"):
+            env = {**os.environ, **{n: "success" for n in names},
+                   "CI_EVENT_NAME": event, "SBOM_RESULT": sbom_result}
             check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, env=env, check=False)
-            require((check.returncode == 0) == (result == "success"), f"ci accepted {name}={result}")
+            expected = sbom_result == "success" or (event == "pull_request" and sbom_result == "skipped")
+            require((check.returncode == 0) == expected, f"ci accepted SBOM {sbom_result} on {event}")
+        for name in names:
+            for result in ("success", "failure", "cancelled", "skipped"):
+                env = {**os.environ, **{n: "success" for n in names}, name: result,
+                       "CI_EVENT_NAME": event, "SBOM_RESULT": "skipped" if event == "pull_request" else "success"}
+                check = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, env=env, check=False)
+                require((check.returncode == 0) == (result == "success"), f"ci accepted {name}={result} on {event}")
 
 
 def main() -> int:
