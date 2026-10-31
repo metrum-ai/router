@@ -1414,6 +1414,8 @@ func TestUsageStoreAutoSafeFailsClosedForDurableNonValidatedJobStates(t *testing
 		"unknown",
 	} {
 		t.Run(state, func(t *testing.T) {
+			// Each state uses its own database and migration runner.
+			t.Parallel()
 			path := filepath.Join(t.TempDir(), "usage.sqlite")
 			runner, closeDB, err := UsageMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: path})
 			if err != nil {
