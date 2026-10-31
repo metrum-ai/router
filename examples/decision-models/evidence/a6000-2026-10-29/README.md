@@ -38,11 +38,11 @@ baseline, and the repeated observations do not provide independent p99 tails.
 Both generation tiers used the same **fake** backend; no downstream answer
 quality, misroute costs, savings or hosted inference is measured.
 
-OpenJev was not run because the intended weights are CC BY-NC 4.0 and that
-license has not been cleared for this work. Edge hardware was unavailable.
-Thus the requested complete three-model edge/datacenter comparison remains
-open. `d3-result.json`, `clef-result.json`, and `benchmark_dataset.json` retain
-the synthetic rows, outcomes and confusion matrices.
+OpenJev is excluded from the v4.5 comparison because its weights are
+CC BY-NC 4.0. Edge: **pending, amd-halo offline**, deferred beyond v4.5.
+The d3/Clef datacenter observation remains limited as described above.
+`d3-result.json`, `clef-result.json`, and `benchmark_dataset.json` retain the
+synthetic rows, outcomes and confusion matrices.
 
 The independent watcher verified the VM and its registered public key absent
 and removed the local key. This retry's deleted-instance provider estimate was

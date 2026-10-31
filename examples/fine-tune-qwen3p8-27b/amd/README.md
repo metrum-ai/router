@@ -3,6 +3,11 @@
 
 # AMD Instinct preparation (#359)
 
+> **Historical record:** Axolotl training and its launcher are retired in
+> v4.5 under [#509](https://github.com/metrum-ai/router/issues/509). Replacement
+> training work is deferred to v4.6.0; the past instructions below do not
+> authorize a new run or assert that a replacement is available.
+
 Metrum AI's MI325X path has passed actual official-ROCm base/template/native and
 PEFT two-step/fixed-full-training checks. Pinned Axolotl dependency resolution
 failed, and unmerged ROCm vLLM LoRA loading failed; the documented alternatives
@@ -82,40 +87,11 @@ stop unrelated services to bypass that failure. Run `bash amd/capture-env.sh
 /private/env` and review/redact hardware IDs before publishing. Repeat the listener
 check after serving. Never dump environment variables or full Docker inspection.
 
-Axolotl is the first toolkit to try, **inside official rocm/pytorch**, not its
-NVIDIA image. The upstream AMD HPC guide at commit
-`777990d36ab92dcdc8b62d5ad07dc30b9618ff25` targets ROCm5.7/gfx90a and Llama;
-it is not evidence of MI325X/Qwen3.8 compatibility. Install the pinned Axolotl
-source and record the resolved package inventory/image digest without replacing
-ROCm torch with CUDA torch. Keep that installation recipe and derived environment
-inventory in evidence. No install/version combination is approved yet.
-
-On actual hardware verify `torch.version.hip`, BF16 and model loading, then run
-**two optimizer steps** on a tiny subset of exported training rows. Render using:
-
-```sh
-python3 amd/render.py --recipe standalone/axolotl.yaml --data-id "$MANIFEST_SHA256" --smoke --out /private/smoke.yaml
-python3 amd/plan.py smoke --image "$PYTORCH_DIGEST"
-```
-
-The planner only prints commands; inspect them before executing on the owned
-host. Mount the private base/data/configs at `/workspace/amd359` (container
-`/data`). Training runs network-isolated with no credentials. Transfer/download
-the immutable base beforehand without persisting HF credentials. The canonical
-training view must come from the validated export; do not discard provenance in
-the archive. Smoke uses `/data/canonical/smoke.jsonl`, never held-out data.
-
-Inspect prepared-cache token/template parity and supervised tool markers against
-NVIDIA. Record trainer and wrapper wall time, actual trained-token count, steps,
-loss, peak allocated/reserved memory and `amd-smi` sampling. Do not treat a
-process exit alone as proof of two completed optimizer steps. Only then render
-without `--smoke` and consider training. Cache identities include recipe and
-manifest hash. No automatic train approval marker is provided.
-
-If Axolotl fails, preserve the error/package inventory and reason. Use a documented
-ROCm-supported Transformers/TRL/PEFT alternative in the official PyTorch image,
-freeze the dependency/recipe amendment, and repeat the two-step smoke. There is
-no claim this fallback has run or that Unsloth supports this exact model/hardware.
+The earlier Axolotl bootstrap failed dependency resolution on ROCm; the actual
+historical PEFT training and its separate limitations are recorded in the linked
+AMD evidence. The Axolotl training command generator has been retired. No new
+trainer, dependency graph or GPU run is supplied by v4.5; replacement work is
+deferred to v4.6.0.
 
 ## Serve, tunnel and router evaluation wiring
 

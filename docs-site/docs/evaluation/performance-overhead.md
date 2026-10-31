@@ -22,15 +22,16 @@ The concurrency-one p99 uses only eight requests per phase; negative deltas
 reflect variation, not negative physical overhead. First content is a streamed
 event, not necessarily a token. This single shared-host result is not an edge
 or small-VM benchmark, repeatability guarantee, production SLO, or universal
-router overhead.
+router overhead. Edge: **pending, amd-halo offline**; edge measurement is
+deferred beyond v4.5.
 
 Two 32-client decision-path profiles were captured but their CPU samples were
 sparse. Plain profiles failed capture; decision latency and 128-client profiles
 had policy errors. CPU/memory per 1,000 requests/s and maximum sustained
 throughput are missing. The [full partial results and limitations](https://github.com/metrum-ai/router/tree/main/benchmarks/overhead/evidence/a100-2026-10-30)
 include raw samples, profiles, hardware, method and variance. Do not treat the
-failed phases as measurements. [#422](https://github.com/metrum-ai/router/issues/422)
-remains open.
+failed phases as measurements. See [#422](https://github.com/metrum-ai/router/issues/422)
+for the bounded release close-out and remaining limitations.
 
 ## d3 decision-path observation
 
@@ -63,3 +64,20 @@ deltas. Captured profiles used an exploratory 90% occupancy floor, not strict
 occupancy; enforce/32 failed capture. See [raw samples, variance, profiles,
 method and limitations](https://github.com/metrum-ai/router/tree/main/benchmarks/overhead/evidence/a100-sxm-2026-10-31).
 Edge: **pending, amd-halo offline**, deferred beyond v4.5.
+
+## Rerun and release limits
+
+Run `make overhead-load-smoke` for the one-command CPU-only harness check; it
+uses a scripted local backend and does not reproduce GPU performance. For a
+real comparison, use the single driver command in the
+[load runner guide](https://github.com/metrum-ai/router/blob/main/benchmarks/overhead/LOAD_RUNNER.md)
+for each separately configured plain, shadow and enforce route. Provisioning,
+model identity, spending controls and teardown require independent verification.
+
+A subsequent strict enforce/32 attempt failed the guarded stop, despite a
+32/32 polled eight-second window. Its profile is invalid and omitted. Polling
+cannot establish continuous occupancy, and the original controller error was
+not retained; the cause is unproven. Therefore strict enforce/32 continuous
+occupancy and matched strict profiles remain unproven. CPU/RAM per 1,000 req/s,
+sustained capacity and clean-host reproducibility also remain unproven. The
+prior 90%-floor captures above are exploratory and are not strict acceptance.

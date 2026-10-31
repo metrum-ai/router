@@ -188,9 +188,10 @@ used a local scripted SSE upstream and reports zero hosted-model calls:
 | [2026-10-28](https://github.com/metrum-ai/router/actions/runs/40673999064) | 20/20 | 5/5 |
 | [2026-10-29](https://github.com/metrum-ai/router/actions/runs/40861651773) | 20/20 | 5/5 |
 | [2026-10-30](https://github.com/metrum-ai/router/actions/runs/41044327781) | 24/24 | 5/5 |
+| [2026-10-31](https://github.com/metrum-ai/router/actions/runs/41192854439) | 24/24 | 5/5 |
 
-The four added cells on October 30 are the Claude Messages → Chat probes
-described above. These are three scheduled observations, not a seven-day
+The four added cells from October 30 onward are the Claude Messages → Chat
+probes described above. These are four scheduled observations, not a seven-day
 acceptance streak or live-provider certification. Artifacts cover only the
 specified cells; token and cost reconciliation and the other #430 acceptance
 criteria remain open.

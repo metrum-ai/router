@@ -17,6 +17,39 @@ import (
 	"time"
 )
 
+func TestNativeChatUsageOnlyChunkRespectsCallerOptIn(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}\n\ndata: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{{Provider: "native", Model: "native-chat"}})
+	for _, tc := range []struct {
+		name, options string
+		want          bool
+	}{
+		{"absent", "", false},
+		{"false", `,"stream_options":{"include_usage":false}`, false},
+		{"true", `,"stream_options":{"include_usage":true}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"model":"native-stream","stream":true,"messages":[{"role":"user","content":"hello"}]` + tc.options + `}`
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			rr := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), `"total_tokens":10`) != tc.want || !strings.Contains(rr.Body.String(), "[DONE]") {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+		})
+	}
+	resp := &IRResponse{}
+	accumulateNativeSSE(resp, "openai-chat", []byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}\n\n"))
+	if resp.Usage.TotalTokens != 10 {
+		t.Fatalf("usage not metered: %+v", resp.Usage)
+	}
+}
+
 func TestST1OpenAIChatNativeStreamFlushesIncrementally(t *testing.T) {
 	var upstreamBody map[string]any
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -390,7 +423,7 @@ func TestOpenAIChatTerminalFinishReasonWithoutDonePersistsAccounting(t *testing.
 	cfg.Provider["native"] = ProviderConfig{BaseURL: upstream.URL, Dialect: "openai-chat", APIKey: "provider-key"}
 	cfg.Models["native-stream"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "native", Model: "native-chat"}}}
 	cfg.Callers[0].Allow = []string{"native-stream"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -439,7 +472,7 @@ func nativeStreamTestService(t *testing.T, upstreamURL, dialect string, targets 
 	for _, fn := range mutate {
 		fn(cfg)
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -228,7 +228,7 @@ func TestReasoningSurfaceMatrixPersistsTranslationProof(t *testing.T) {
 		{Provider: "reasoning_anthropic", Model: "reasoning-anthropic", Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlTokenBudget, MinBudgetTokens: 128, BudgetMustBeLessThanMaxTokens: true}},
 	}}
 	cfg.Callers[0].Allow = []string{"reasoning-chat", "reasoning-responses", "reasoning-anthropic"}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

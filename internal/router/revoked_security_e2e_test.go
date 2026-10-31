@@ -53,7 +53,7 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 	if err := ActivateConfigSet(runner.db, "staging", id, "test"); err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
