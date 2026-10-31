@@ -5,6 +5,20 @@ name: Agent tool compatibility
 
 on:
   pull_request:
+    paths:
+      - 'tests/agent_compat/**'
+      - '**/*.go'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'testdata/**'
+      - 'env*.json'
+      - 'go.mod'
+      - 'go.sum'
+      - 'config/**'
+      - 'config*.yaml'
+      - 'scripts/**'
+      - 'Makefile'
+      - '.github/workflows/agent-tool-compat.yml'
   merge_group:
   workflow_dispatch:
 
@@ -17,26 +31,37 @@ concurrency:
 
 jobs:
   local-agent-mock:
-    runs-on: router-arc
+    runs-on: router-arc-small
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
-          cache: true
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      - name: Select merge-group lanes
+        if: github.event_name == 'merge_group'
+        env:
+          CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
+        with:
+          go-version-file: go.mod
+          cache: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: tests/agent_compat/package-lock.json
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         with:
           enable-cache: true
       - name: Pinned clients against local scripted upstream
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: make agent-tool-mock
 
   codex-workspace-sandbox:
@@ -47,30 +72,42 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
-          cache: true
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+      - name: Select merge-group lanes
+        if: github.event_name == 'merge_group'
+        env:
+          CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
+        with:
+          go-version-file: go.mod
+          cache: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: tests/agent_compat/package-lock.json
       - name: Install pinned mock-test dependencies
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: |
           go mod download
           npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
       - name: Codex workspace sandbox tool continuation
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: make agent-tool-mock-codex
       - name: Codex sandbox chain matrix
+        if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         run: |
           python3 tests/agent_compat/run_codex_chain_test.py
           python3 tests/agent_compat/run_codex_chain.py --output tests/agent_compat/.out/codex-chain-matrix.json
       - name: Retain Codex chain results
-        if: always()
+        if: always() && (github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: codex-chain-pr-matrix
