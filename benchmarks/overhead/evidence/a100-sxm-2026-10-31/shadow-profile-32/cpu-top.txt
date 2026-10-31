@@ -1,0 +1,28 @@
+File: profiled-router
+Build ID: d8bcf5025101d5e578bc8135e8d84936ea7b7e74
+Type: cpu
+Time: 2026-10-31 02:51:00 UTC
+Duration: 8.01s, Total samples = 800ms ( 9.99%)
+Showing nodes accounting for 490ms, 61.25% of 800ms total
+Showing top 20 nodes out of 403
+      flat  flat%   sum%        cum   cum%
+     200ms 25.00% 25.00%      200ms 25.00%  internal/runtime/syscall/linux.Syscall6
+      50ms  6.25% 31.25%       80ms 10.00%  github.com/glebarez/go-sqlite.(*conn).bind
+      40ms  5.00% 36.25%       50ms  6.25%  runtime.tryDeferToSpanScan
+      30ms  3.75% 40.00%       30ms  3.75%  runtime.futex
+      20ms  2.50% 42.50%       20ms  2.50%  modernc.org/libc.Xpthread_mutex_unlock
+      10ms  1.25% 43.75%       10ms  1.25%  encoding/json/jsontext.(*decoderState).ReadToken
+      10ms  1.25% 45.00%       10ms  1.25%  encoding/json/jsontext.(*decoderState).consumeObject
+      10ms  1.25% 46.25%       10ms  1.25%  encoding/json/jsontext.(*encoderState).WriteToken
+      10ms  1.25% 47.50%       10ms  1.25%  github.com/metrum-ai/router/internal/router.(*quotaStore).ReserveTokens
+      10ms  1.25% 48.75%       10ms  1.25%  github.com/metrum-ai/router/internal/router.(*upstreamShapeManager).admit
+      10ms  1.25% 50.00%       10ms  1.25%  internal/runtime/atomic.(*Int64).Load
+      10ms  1.25% 51.25%       10ms  1.25%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+      10ms  1.25% 52.50%       10ms  1.25%  internal/runtime/maps.(*Map).getWithoutKeySmallFastStr
+      10ms  1.25% 53.75%       10ms  1.25%  internal/strconv.formatBase10
+      10ms  1.25% 55.00%       10ms  1.25%  modernc.org/libc.(*TLS).Alloc
+      10ms  1.25% 56.25%       10ms  1.25%  modernc.org/libc.Xmemmove
+      10ms  1.25% 57.50%       50ms  6.25%  modernc.org/libc.___syscall_cp
+      10ms  1.25% 58.75%       20ms  2.50%  modernc.org/memory.(*Allocator).mmap
+      10ms  1.25% 60.00%       10ms  1.25%  modernc.org/sqlite/lib._exprIsConst
+      10ms  1.25% 61.25%       10ms  1.25%  modernc.org/sqlite/lib._initMemArray

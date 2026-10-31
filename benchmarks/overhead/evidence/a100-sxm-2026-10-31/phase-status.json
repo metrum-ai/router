@@ -1,0 +1,34 @@
+{
+  "enforce-latency": {
+    "status": "passed"
+  },
+  "enforce-profile-128": {
+    "status": "passed"
+  },
+  "enforce-profile-32": {
+    "error": "Command '['/usr/bin/python3', '/tmp/metrum-422-0f146d5de1dc4a00af503cc5f5e0dc8a/src/profile_phase.py', '--router-url', 'http://127.0.0.1:18080/v1/chat/completions', '--router-token-env', 'BENCH_ROUTER_TOKEN', '--control-socket', '/tmp/metrum-422-0f146d5de1dc4a00af503cc5f5e0dc8a/results/enforce-profile-32/control/control.sock', '--model', 'chat', '--path-kind', 'decision-enforce', '--prompt-file', '/tmp/metrum-422-0f146d5de1dc4a00af503cc5f5e0dc8a/results/enforce-profile-32/prompt.txt', '--output-tokens', '32', '--concurrency', '32', '--requests-per-worker', '64', '--minimum-sampling-seconds', '8', '--minimum-active-percent', '90', '--deadline-seconds', '360', '--output-dir', '/tmp/metrum-422-0f146d5de1dc4a00af503cc5f5e0dc8a/results/enforce-profile-32/capture']' returned non-zero exit status 1.",
+    "error_type": "CalledProcessError",
+    "status": "failed"
+  },
+  "plain-latency": {
+    "status": "passed"
+  },
+  "plain-profile-128": {
+    "status": "passed"
+  },
+  "plain-profile-32": {
+    "status": "passed"
+  },
+  "shadow-latency": {
+    "status": "passed"
+  },
+  "shadow-profile-128": {
+    "status": "passed"
+  },
+  "shadow-profile-32": {
+    "status": "passed"
+  },
+  "shadow-qualification": {
+    "status": "passed"
+  }
+}

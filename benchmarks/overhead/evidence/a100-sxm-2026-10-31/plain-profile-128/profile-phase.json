@@ -1,0 +1,18 @@
+{
+  "completion_tokens": 32,
+  "concurrency": 128,
+  "minimum_active_percent": 90,
+  "minimum_sampling_seconds": 8.0,
+  "model": "chat",
+  "note": "profile starts before observed window; occupancy is polled, not continuous proof. The 90% floor does not prove exact occupancy. Profiled run; do not use for unprofiled latency/throughput statistics",
+  "operator_declared_path_kind": "plain",
+  "poll_min_active_during_observed_window": 116,
+  "poll_observed_sampling_seconds": 8.018628191999994,
+  "profiled": true,
+  "prompt_sha256": "2aa36f713bdf3728a8c7fa2ef67a751f150edea220ec1a0cb2a6d98109c4bce9",
+  "prompt_tokens": 43,
+  "stop_guard_min_active": 116,
+  "streaming": false,
+  "timed_requests": 16384,
+  "warmup_per_worker": 1
+}

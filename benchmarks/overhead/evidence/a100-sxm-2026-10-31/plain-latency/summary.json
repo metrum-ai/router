@@ -1,0 +1,974 @@
+{
+  "delta_variance": [
+    {
+      "concurrency": 1,
+      "p50_delta_ms": {
+        "max": 1.6131269999999915,
+        "mean": 0.857995333333335,
+        "min": 0.29314500000000976,
+        "sample_stdev": 0.6802524233270476
+      },
+      "p99_delta_ms": {
+        "max": 1.794300000000007,
+        "mean": -1.0777683333333339,
+        "min": -6.028706,
+        "sample_stdev": 4.305941128001442
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 1,
+      "p50_delta_ms": {
+        "max": 1.0265899999999997,
+        "mean": 0.9737809999999998,
+        "min": 0.8921390000000002,
+        "sample_stdev": 0.0717131387334284
+      },
+      "p99_delta_ms": {
+        "max": 1.3988120000000013,
+        "mean": 0.9019166666666667,
+        "min": 0.29793699999999923,
+        "sample_stdev": 0.5581950664779601
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 8,
+      "p50_delta_ms": {
+        "max": 3.6650259999999975,
+        "mean": 2.907834666666664,
+        "min": 2.257478000000006,
+        "sample_stdev": 0.7098296116515066
+      },
+      "p99_delta_ms": {
+        "max": 4.422562999999997,
+        "mean": 3.708329333333334,
+        "min": 3.1303100000000086,
+        "sample_stdev": 0.6568068303971316
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 8,
+      "p50_delta_ms": {
+        "max": 2.6268899999999995,
+        "mean": 1.9404690000000002,
+        "min": 1.3299909999999997,
+        "sample_stdev": 0.6517762334474921
+      },
+      "p99_delta_ms": {
+        "max": 4.787535000000002,
+        "mean": 3.4843766666666673,
+        "min": 0.8860019999999977,
+        "sample_stdev": 2.2502619736649208
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 32,
+      "p50_delta_ms": {
+        "max": 5.683039000000008,
+        "mean": 5.162925000000006,
+        "min": 4.284006000000005,
+        "sample_stdev": 0.7654274000785453
+      },
+      "p99_delta_ms": {
+        "max": 17.502612999999997,
+        "mean": 14.551774333333336,
+        "min": 10.570983000000012,
+        "sample_stdev": 3.578753342423207
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 32,
+      "p50_delta_ms": {
+        "max": 8.830238999999999,
+        "mean": 8.093195666666668,
+        "min": 6.949554000000006,
+        "sample_stdev": 1.0041093918534603
+      },
+      "p99_delta_ms": {
+        "max": 26.647005999999998,
+        "mean": 18.56389833333333,
+        "min": 7.718002999999996,
+        "sample_stdev": 9.762250530068174
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 128,
+      "p50_delta_ms": {
+        "max": 32.02589499999999,
+        "mean": 25.95356533333333,
+        "min": 20.286903999999993,
+        "sample_stdev": 5.880000214457676
+      },
+      "p99_delta_ms": {
+        "max": 112.31376,
+        "mean": 97.86066166666667,
+        "min": 84.31549400000003,
+        "sample_stdev": 14.021197463957703
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 128,
+      "p50_delta_ms": {
+        "max": 66.63959300000002,
+        "mean": 57.99110466666667,
+        "min": 43.69995,
+        "sample_stdev": 12.46742025255676
+      },
+      "p99_delta_ms": {
+        "max": 78.24007399999999,
+        "mean": 74.92015133333332,
+        "min": 70.09492599999999,
+        "sample_stdev": 4.276132724107307
+      },
+      "streaming": true
+    }
+  ],
+  "pairs": [
+    {
+      "concurrency": 1,
+      "direct": {
+        "achieved_requests_per_second": 14.941007616548422,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 65.538839,
+        "p99_ms": 75.678569,
+        "phase_seconds": 0.535439122,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "p50_delta_ms": 0.6677140000000037,
+      "p99_delta_ms": -6.028706,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 14.965617186673413,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 66.206553,
+        "p99_ms": 69.649863,
+        "phase_seconds": 0.534558642,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 1,
+      "direct": {
+        "achieved_requests_per_second": 15.322151862773183,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 64.964555,
+        "p99_ms": 66.05205,
+        "phase_seconds": 0.522119874,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "p50_delta_ms": 1.6131269999999915,
+      "p99_delta_ms": 1.794300000000007,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 14.98324631457184,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 66.577682,
+        "p99_ms": 67.84635,
+        "phase_seconds": 0.533929686,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 1,
+      "direct": {
+        "achieved_requests_per_second": 15.310124298708034,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 65.461807,
+        "p99_ms": 65.791205,
+        "phase_seconds": 0.522530049,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "p50_delta_ms": 0.29314500000000976,
+      "p99_delta_ms": 1.0011009999999914,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 15.155656463347654,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 65.754952,
+        "p99_ms": 66.792306,
+        "phase_seconds": 0.527855723,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 1,
+      "direct": {
+        "achieved_requests_per_second": 15.495205500630604,
+        "content_event_gap_count": 248,
+        "content_event_gap_p50_ms": 1.838366,
+        "content_event_gap_p99_ms": 1.984487,
+        "metric": "ttft_content_ms",
+        "p50_ms": 7.830312,
+        "p99_ms": 8.594807,
+        "phase_seconds": 0.516288732,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "p50_delta_ms": 1.0265899999999997,
+      "p99_delta_ms": 1.3988120000000013,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 15.266821929991247,
+        "content_event_gap_count": 248,
+        "content_event_gap_p50_ms": 1.828891,
+        "content_event_gap_p99_ms": 2.064659,
+        "metric": "ttft_content_ms",
+        "p50_ms": 8.856902,
+        "p99_ms": 9.993619,
+        "phase_seconds": 0.524012138,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 1,
+      "direct": {
+        "achieved_requests_per_second": 15.430719019832704,
+        "content_event_gap_count": 248,
+        "content_event_gap_p50_ms": 1.831879,
+        "content_event_gap_p99_ms": 2.014851,
+        "metric": "ttft_content_ms",
+        "p50_ms": 8.241068,
+        "p99_ms": 9.249845,
+        "phase_seconds": 0.518446353,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "p50_delta_ms": 0.8921390000000002,
+      "p99_delta_ms": 0.29793699999999923,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 15.263598443359465,
+        "content_event_gap_count": 248,
+        "content_event_gap_p50_ms": 1.829921,
+        "content_event_gap_p99_ms": 1.981673,
+        "metric": "ttft_content_ms",
+        "p50_ms": 9.133207,
+        "p99_ms": 9.547782,
+        "phase_seconds": 0.524122803,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 1,
+      "direct": {
+        "achieved_requests_per_second": 15.40174526493653,
+        "content_event_gap_count": 248,
+        "content_event_gap_p50_ms": 1.837166,
+        "content_event_gap_p99_ms": 2.236889,
+        "metric": "ttft_content_ms",
+        "p50_ms": 8.133024,
+        "p99_ms": 9.406093,
+        "phase_seconds": 0.519421654,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "p50_delta_ms": 1.0026139999999995,
+      "p99_delta_ms": 1.0090009999999996,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 15.155862760010146,
+        "content_event_gap_count": 248,
+        "content_event_gap_p50_ms": 1.837467,
+        "content_event_gap_p99_ms": 2.028717,
+        "metric": "ttft_content_ms",
+        "p50_ms": 9.135638,
+        "p99_ms": 10.415094,
+        "phase_seconds": 0.527848538,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 8
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 8,
+      "direct": {
+        "achieved_requests_per_second": 96.90673974428137,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 81.894225,
+        "p99_ms": 86.260733,
+        "phase_seconds": 0.660428781,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "p50_delta_ms": 2.8009999999999877,
+      "p99_delta_ms": 4.422562999999997,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 93.15606739018209,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 84.695225,
+        "p99_ms": 90.683296,
+        "phase_seconds": 0.687019126,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 8,
+      "direct": {
+        "achieved_requests_per_second": 98.74933641410279,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 80.454065,
+        "p99_ms": 83.71854,
+        "phase_seconds": 0.648105621,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "p50_delta_ms": 2.257478000000006,
+      "p99_delta_ms": 3.5721149999999966,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 95.90587385144961,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 82.711543,
+        "p99_ms": 87.290655,
+        "phase_seconds": 0.667320962,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 8,
+      "direct": {
+        "achieved_requests_per_second": 97.32613624804429,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 81.749756,
+        "p99_ms": 85.59007,
+        "phase_seconds": 0.65758287,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "p50_delta_ms": 3.6650259999999975,
+      "p99_delta_ms": 3.1303100000000086,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 93.00005649026869,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 85.414782,
+        "p99_ms": 88.72038,
+        "phase_seconds": 0.688171625,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 8,
+      "direct": {
+        "achieved_requests_per_second": 94.74203075853913,
+        "content_event_gap_count": 1984,
+        "content_event_gap_p50_ms": 2.101694,
+        "content_event_gap_p99_ms": 4.672731,
+        "metric": "ttft_content_ms",
+        "p50_ms": 17.220377,
+        "p99_ms": 19.096155,
+        "phase_seconds": 0.675518558,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "p50_delta_ms": 2.6268899999999995,
+      "p99_delta_ms": 4.779593000000002,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 91.49919874509078,
+        "content_event_gap_count": 1983,
+        "content_event_gap_p50_ms": 2.092924,
+        "content_event_gap_p99_ms": 4.592069,
+        "metric": "ttft_content_ms",
+        "p50_ms": 19.847267,
+        "p99_ms": 23.875748,
+        "phase_seconds": 0.699459677,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 8,
+      "direct": {
+        "achieved_requests_per_second": 95.43025413746179,
+        "content_event_gap_count": 1984,
+        "content_event_gap_p50_ms": 2.085156,
+        "content_event_gap_p99_ms": 2.991349,
+        "metric": "ttft_content_ms",
+        "p50_ms": 19.008818,
+        "p99_ms": 20.907192,
+        "phase_seconds": 0.670646857,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "p50_delta_ms": 1.3299909999999997,
+      "p99_delta_ms": 4.787535000000002,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 90.19605954104587,
+        "content_event_gap_count": 1984,
+        "content_event_gap_p50_ms": 2.089064,
+        "content_event_gap_p99_ms": 5.098534,
+        "metric": "ttft_content_ms",
+        "p50_ms": 20.338809,
+        "p99_ms": 25.694727,
+        "phase_seconds": 0.709565366,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 8,
+      "direct": {
+        "achieved_requests_per_second": 95.64155143735191,
+        "content_event_gap_count": 1984,
+        "content_event_gap_p50_ms": 2.09044,
+        "content_event_gap_p99_ms": 4.90018,
+        "metric": "ttft_content_ms",
+        "p50_ms": 17.313312,
+        "p99_ms": 22.135138,
+        "phase_seconds": 0.669165222,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "p50_delta_ms": 1.8645260000000015,
+      "p99_delta_ms": 0.8860019999999977,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 93.43638465288753,
+        "content_event_gap_count": 1984,
+        "content_event_gap_p50_ms": 2.093287,
+        "content_event_gap_p99_ms": 4.457247,
+        "metric": "ttft_content_ms",
+        "p50_ms": 19.177838,
+        "p99_ms": 23.02114,
+        "phase_seconds": 0.684958009,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 64
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 32,
+      "direct": {
+        "achieved_requests_per_second": 282.63003280362034,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 112.576098,
+        "p99_ms": 121.082445,
+        "phase_seconds": 0.905777767,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "p50_delta_ms": 4.284006000000005,
+      "p99_delta_ms": 17.502612999999997,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 266.15783526638,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 116.860104,
+        "p99_ms": 138.585058,
+        "phase_seconds": 0.961835295,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 32,
+      "direct": {
+        "achieved_requests_per_second": 284.9044942931649,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 111.619351,
+        "p99_ms": 120.600732,
+        "phase_seconds": 0.898546724,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "p50_delta_ms": 5.683039000000008,
+      "p99_delta_ms": 10.570983000000012,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 266.5443464119443,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 117.30239,
+        "p99_ms": 131.171715,
+        "phase_seconds": 0.960440555,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 32,
+      "direct": {
+        "achieved_requests_per_second": 285.70416362391734,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 110.866355,
+        "p99_ms": 120.15231,
+        "phase_seconds": 0.896031744,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "p50_delta_ms": 5.521730000000005,
+      "p99_delta_ms": 15.581727,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 267.02750371397184,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 116.388085,
+        "p99_ms": 135.734037,
+        "phase_seconds": 0.958702742,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 32,
+      "direct": {
+        "achieved_requests_per_second": 272.3053540507459,
+        "content_event_gap_count": 7904,
+        "content_event_gap_p50_ms": 2.36303,
+        "content_event_gap_p99_ms": 5.879678,
+        "metric": "ttft_content_ms",
+        "p50_ms": 40.228714,
+        "p99_ms": 45.831488,
+        "phase_seconds": 0.940121067,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "p50_delta_ms": 8.499794000000001,
+      "p99_delta_ms": 26.647005999999998,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 245.5876586836956,
+        "content_event_gap_count": 7860,
+        "content_event_gap_p50_ms": 2.388479,
+        "content_event_gap_p99_ms": 5.530336,
+        "metric": "ttft_content_ms",
+        "p50_ms": 48.728508,
+        "p99_ms": 72.478494,
+        "phase_seconds": 1.042397657,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 32,
+      "direct": {
+        "achieved_requests_per_second": 273.0985957523036,
+        "content_event_gap_count": 7893,
+        "content_event_gap_p50_ms": 2.361146,
+        "content_event_gap_p99_ms": 6.210938,
+        "metric": "ttft_content_ms",
+        "p50_ms": 39.870637,
+        "p99_ms": 44.134111,
+        "phase_seconds": 0.937390393,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "p50_delta_ms": 8.830238999999999,
+      "p99_delta_ms": 21.326686000000002,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 245.0120630827888,
+        "content_event_gap_count": 7895,
+        "content_event_gap_p50_ms": 2.399224,
+        "content_event_gap_p99_ms": 5.688088,
+        "metric": "ttft_content_ms",
+        "p50_ms": 48.700876,
+        "p99_ms": 65.460797,
+        "phase_seconds": 1.044846514,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 32,
+      "direct": {
+        "achieved_requests_per_second": 265.1428767444912,
+        "content_event_gap_count": 7855,
+        "content_event_gap_p50_ms": 2.36868,
+        "content_event_gap_p99_ms": 6.795627,
+        "metric": "ttft_content_ms",
+        "p50_ms": 42.31652,
+        "p99_ms": 50.213284,
+        "phase_seconds": 0.96551717,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "p50_delta_ms": 6.949554000000006,
+      "p99_delta_ms": 7.718002999999996,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 246.78906840186477,
+        "content_event_gap_count": 7843,
+        "content_event_gap_p50_ms": 2.408993,
+        "content_event_gap_p99_ms": 5.761579,
+        "metric": "ttft_content_ms",
+        "p50_ms": 49.266074,
+        "p99_ms": 57.931287,
+        "phase_seconds": 1.037323094,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 256
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 128,
+      "direct": {
+        "achieved_requests_per_second": 598.2712133005758,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 212.991903,
+        "p99_ms": 232.69983,
+        "phase_seconds": 1.711598314,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "p50_delta_ms": 25.547897000000006,
+      "p99_delta_ms": 84.31549400000003,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 516.1436848592551,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 238.5398,
+        "p99_ms": 317.015324,
+        "phase_seconds": 1.983943677,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 128,
+      "direct": {
+        "achieved_requests_per_second": 578.6189937851749,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 220.829969,
+        "p99_ms": 239.347994,
+        "phase_seconds": 1.769731051,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "p50_delta_ms": 20.286903999999993,
+      "p99_delta_ms": 96.952731,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 508.353411696217,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 241.116873,
+        "p99_ms": 336.300725,
+        "phase_seconds": 2.014346666,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 128,
+      "direct": {
+        "achieved_requests_per_second": 584.1794824187814,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 218.88117,
+        "p99_ms": 241.719044,
+        "phase_seconds": 1.752885938,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "p50_delta_ms": 32.02589499999999,
+      "p99_delta_ms": 112.31376,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 494.80802338284127,
+        "content_event_gap_count": 0,
+        "content_event_gap_p50_ms": null,
+        "content_event_gap_p99_ms": null,
+        "metric": "latency_ms",
+        "p50_ms": 250.907065,
+        "p99_ms": 354.032804,
+        "phase_seconds": 2.069489482,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "streaming": false
+    },
+    {
+      "concurrency": 128,
+      "direct": {
+        "achieved_requests_per_second": 412.1784170405268,
+        "content_event_gap_count": 21285,
+        "content_event_gap_p50_ms": 6.683084,
+        "content_event_gap_p99_ms": 23.744758,
+        "metric": "ttft_content_ms",
+        "p50_ms": 136.20109,
+        "p99_ms": 299.96344,
+        "phase_seconds": 2.484361038,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "p50_delta_ms": 66.63959300000002,
+      "p99_delta_ms": 78.24007399999999,
+      "repetition": 0,
+      "router": {
+        "achieved_requests_per_second": 353.376608516099,
+        "content_event_gap_count": 16849,
+        "content_event_gap_p50_ms": 8.885974,
+        "content_event_gap_p99_ms": 17.515212,
+        "metric": "ttft_content_ms",
+        "p50_ms": 202.840683,
+        "p99_ms": 378.203514,
+        "phase_seconds": 2.897758299,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 128,
+      "direct": {
+        "achieved_requests_per_second": 418.9609262593383,
+        "content_event_gap_count": 20789,
+        "content_event_gap_p50_ms": 6.726005,
+        "content_event_gap_p99_ms": 24.195791,
+        "metric": "ttft_content_ms",
+        "p50_ms": 130.037122,
+        "p99_ms": 341.082009,
+        "phase_seconds": 2.444142009,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "p50_delta_ms": 63.633770999999996,
+      "p99_delta_ms": 70.09492599999999,
+      "repetition": 1,
+      "router": {
+        "achieved_requests_per_second": 345.81156287164464,
+        "content_event_gap_count": 16111,
+        "content_event_gap_p50_ms": 8.941296,
+        "content_event_gap_p99_ms": 18.138105,
+        "metric": "ttft_content_ms",
+        "p50_ms": 193.670893,
+        "p99_ms": 411.176935,
+        "phase_seconds": 2.961150262,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "streaming": true
+    },
+    {
+      "concurrency": 128,
+      "direct": {
+        "achieved_requests_per_second": 417.3816906184125,
+        "content_event_gap_count": 21359,
+        "content_event_gap_p50_ms": 6.860472,
+        "content_event_gap_p99_ms": 22.78699,
+        "metric": "ttft_content_ms",
+        "p50_ms": 128.028985,
+        "p99_ms": 317.518624,
+        "phase_seconds": 2.453389842,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "p50_delta_ms": 43.69995,
+      "p99_delta_ms": 76.425454,
+      "repetition": 2,
+      "router": {
+        "achieved_requests_per_second": 358.9339231481375,
+        "content_event_gap_count": 17812,
+        "content_event_gap_p50_ms": 8.739806,
+        "content_event_gap_p99_ms": 16.901491,
+        "metric": "ttft_content_ms",
+        "p50_ms": 171.728935,
+        "p99_ms": 393.944078,
+        "phase_seconds": 2.852892786,
+        "prompt_tokens": [
+          43
+        ],
+        "requests": 1024
+      },
+      "streaming": true
+    }
+  ]
+}

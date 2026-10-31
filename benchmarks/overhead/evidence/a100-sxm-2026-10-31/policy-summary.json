@@ -1,0 +1,54 @@
+{
+  "enforce-latency": [
+    {
+      "count": 9126,
+      "error_class": "",
+      "outcome": "selected"
+    }
+  ],
+  "enforce-profile-128": [
+    {
+      "count": 4224,
+      "error_class": "",
+      "outcome": "selected"
+    }
+  ],
+  "enforce-profile-32": [
+    {
+      "count": 2080,
+      "error_class": "",
+      "outcome": "selected"
+    }
+  ],
+  "plain-latency": [],
+  "plain-profile-128": [],
+  "plain-profile-32": [],
+  "shadow-latency": [
+    {
+      "count": 9126,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ],
+  "shadow-profile-128": [
+    {
+      "count": 4224,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ],
+  "shadow-profile-32": [
+    {
+      "count": 2080,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ],
+  "shadow-qualification": [
+    {
+      "count": 1536,
+      "error_class": "",
+      "outcome": "shadow_recommended"
+    }
+  ]
+}

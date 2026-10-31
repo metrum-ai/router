@@ -1,0 +1,29 @@
+File: profiled-router
+Build ID: d8bcf5025101d5e578bc8135e8d84936ea7b7e74
+Type: cpu
+Time: 2026-10-31 02:43:40 UTC
+Duration: 8.04s, Total samples = 6.55s (81.51%)
+Showing nodes accounting for 3.92s, 59.85% of 6.55s total
+Dropped 562 nodes (cum <= 0.03s)
+Showing top 20 nodes out of 323
+      flat  flat%   sum%        cum   cum%
+     1.31s 20.00% 20.00%      1.38s 21.07%  github.com/glebarez/go-sqlite.(*conn).bind
+     1.30s 19.85% 39.85%      1.30s 19.85%  internal/runtime/syscall/linux.Syscall6
+     0.16s  2.44% 42.29%      0.29s  4.43%  runtime.tryDeferToSpanScan
+     0.11s  1.68% 43.97%      0.18s  2.75%  regexp.(*Regexp).tryBacktrack
+     0.11s  1.68% 45.65%      0.11s  1.68%  runtime.futex
+     0.09s  1.37% 47.02%      0.23s  3.51%  github.com/metrum-ai/router/internal/router.(*dynamicObservationStore).add
+     0.09s  1.37% 48.40%      0.09s  1.37%  runtime.spanClass.sizeclass (inline)
+     0.08s  1.22% 49.62%      0.36s  5.50%  modernc.org/sqlite/lib._balance_nonroot
+     0.07s  1.07% 50.69%      0.92s 14.05%  modernc.org/sqlite/lib._sqlite3VdbeExec
+     0.07s  1.07% 51.76%      0.07s  1.07%  runtime.memmove
+     0.07s  1.07% 52.82%      0.16s  2.44%  runtime.scanObject
+     0.06s  0.92% 53.74%      0.06s  0.92%  internal/runtime/gc/scan.scanSpanPackedAVX512
+     0.06s  0.92% 54.66%      0.06s  0.92%  modernc.org/libc.Xmemcpy
+     0.06s  0.92% 55.57%      0.32s  4.89%  runtime.scanSpan
+     0.05s  0.76% 56.34%      0.05s  0.76%  modernc.org/libc.Xmemset
+     0.05s  0.76% 57.10%      0.08s  1.22%  runtime.findObject
+     0.05s  0.76% 57.86%      0.05s  0.76%  runtime.memclrNoHeapPointers
+     0.05s  0.76% 58.63%      0.07s  1.07%  runtime.stealWork
+     0.04s  0.61% 59.24%      0.07s  1.07%  modernc.org/sqlite/lib._vdbeRecordCompareString
+     0.04s  0.61% 59.85%      0.04s  0.61%  runtime.(*gcBitsArena).tryAlloc
