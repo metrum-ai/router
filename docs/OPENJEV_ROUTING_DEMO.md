@@ -3,7 +3,8 @@
 **Research / non-commercial weights.** [OpenJev](https://huggingface.co/openjev/openjev)
 is CC BY-NC 4.0. Do not use the weights for commercial marketing without
 permission from the authors. This repository's policy/shim glue is Apache-2.0.
-OpenJev is independent of TypeSafe's hosted Jev product.
+OpenJev is independent of TypeSafe's hosted Jev product. OpenJev is excluded
+from the v4.5 decision-model comparison because of the CC BY-NC 4.0 license.
 
 ## What it demonstrates
 
@@ -28,7 +29,7 @@ fallback hint inside the policy.
 python3 scripts/openjev_policy_test.py
 python3 scripts/run_openjev_routing_demo.py
 # or: make openjev-routing-demo
-python3 scripts/openjev_routing_benchmark.py --out docs/evidence/openjev-routing
+python3 scripts/openjev_routing_benchmark.py --out /tmp/openjev-routing
 # optional tiny live OpenAI cost sample:
 python3 scripts/openjev_routing_benchmark.py --live-openai --live-limit 6
 ```
@@ -89,12 +90,10 @@ OPENJEV_URL=http://127.0.0.1:3000 python3 scripts/openjev_routing_live_eval.py \
   --live-openai --openai-per-tier 5 --shuffle-repeat 2
 ```
 
-Observed live evidence: [`docs/evidence/openjev-routing/benchmark.live.json`](../evidence/openjev-routing/benchmark.live.json).
+OpenJev result artifacts have been removed from the current repository tree.
+Do not publish new OpenJev results as part of the v4.5 comparison.
 
-For a separate animation agent, use the measured handoff prompt:
-[`docs/evidence/openjev-routing/ANIMATION_AGENT_PROMPT.md`](../evidence/openjev-routing/ANIMATION_AGENT_PROMPT.md).
-
-Operational notes from the live run:
+Operational notes:
 
 - Install `cuda-nvcc-13-0` and set `CUDA_HOME=/usr/local/cuda-13.0` before vLLM.
 - Set `VLLM_USE_FLASHINFER_SAMPLER=0` if flashinfer JIT fails without a full toolkit.

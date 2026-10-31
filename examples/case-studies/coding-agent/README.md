@@ -32,10 +32,14 @@ retained. This small sample does not establish either general parity or a
 statistically reliable gap. The routed arm sent 2/4 requests to Fireworks Flash
 1017 and 2/4 to OpenAI GPT-6.1 Sol; all three baseline requests used Sol. The
 revised run's usage-derived cost was 23.9% lower, but that saving did not hold
-quality. The $0.0397225 incomplete-run cost above is separate and excluded
-from that comparison. Provider invoices are not attributable per run; neither
-figure is a reconciled invoice charge. Request-time prices and tokens are in
-`evidence/usage.json`, and per-trial scores are in `evidence/results.json`.
+quality. The OpenAI charges for both arms were later reconciled against provider
+usage: $0.036304 billed for the frontier arm and $0.022616 billed for its two
+`gpt-6.1-sol` requests, with the two Fireworks requests adding $0.005022 at list
+rates (estimate, no invoice). The $0.0397225 incomplete-run cost above is
+separate and excluded from that comparison; reconciled to provider usage it is
+$0.037204. Request-time prices and tokens are in `evidence/usage.json`, per-trial
+scores are in `evidence/results.json`, and the method is in
+[`../common/evidence/billing-reconciliation-2026-10-28.md`](../common/evidence/billing-reconciliation-2026-10-28.md).
 Request latency excludes sandbox execution.
 
 **Never run model-generated code on your workstation or CI runner.** The judge

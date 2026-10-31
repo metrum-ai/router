@@ -15,18 +15,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 jobs:
-  ci:
-    name: ci
+  router:
+    name: router (${{ matrix.shard }})
     runs-on: router-arc
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -34,6 +34,58 @@ jobs:
         env:
           CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
         run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: env.CI_RUN_GO == '1'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Router shard
+        if: env.CI_RUN_GO == '1'
+        run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index ${{ matrix.shard }}
+
+  other-go:
+    name: Other Go and Windows
+    runs-on: router-arc
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Select optional lanes
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+        run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: env.CI_RUN_GO == '1'
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Other Go and Windows
+        if: env.CI_RUN_GO == '1'
+        run: env -u AWS_BEARER_TOKEN_BEDROCK make -k -j2 ci-go ci-windows
+
+  other:
+    name: Compatibility, Python and examples
+    runs-on: router-arc
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Select optional lanes
+        env:
+          CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
+        run: python3 scripts/ci_changes.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -48,5 +100,25 @@ jobs:
             ~/.cache/router-compat
             ~/.cache/pip
           key: compat-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/compat_mock.py', 'go.mod') }}
-      - name: Run consolidated gate
-        run: make ci
+      - name: Compatibility, Python and optional examples
+        run: |
+          lanes=(ci-python compat-mock)
+          if [ "$CI_RUN_EXAMPLES" = 1 ]; then lanes+=(ci-examples); fi
+          env -u AWS_BEARER_TOKEN_BEDROCK make -k -j3 "${lanes[@]}"
+
+  ci:
+    name: ci
+    runs-on: router-arc
+    if: always()
+    needs: [router, other-go, other]
+    timeout-minutes: 5
+    steps:
+      - name: Require every lane
+        env:
+          ROUTER_RESULT: ${{ needs.router.result }}
+          OTHER_GO_RESULT: ${{ needs.other-go.result }}
+          OTHER_RESULT: ${{ needs.other.result }}
+        run: |
+          for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
+            if [ "$result" != success ]; then echo "A required CI lane did not succeed: $result" >&2; exit 1; fi
+          done
