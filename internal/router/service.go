@@ -139,22 +139,23 @@ type requestContext struct {
 	// receiveAt is the router receive clock used for router-added latency
 	// (receive to outbound WroteRequest). Prefer this over start when deriving
 	// issue #159 router-added latency from request_trace_events.
-	receiveAt            time.Time
-	ctx                  context.Context
-	caller               *callerRuntime
-	dialect              string
-	client               string
-	clientIP             clientIPInfo
-	method               string
-	pathTemplate         string
-	rec                  logRecord
-	bridgeSessionHeaders map[string]string
-	via                  []string
-	securityRecorded     bool
-	pacedUpstreamStream  bool
-	traceSeq             int
-	sanitizeTraceMessage func(string, string) string
-	conversationKey      string
+	receiveAt              time.Time
+	ctx                    context.Context
+	caller                 *callerRuntime
+	dialect                string
+	client                 string
+	clientIP               clientIPInfo
+	method                 string
+	pathTemplate           string
+	rec                    logRecord
+	bridgeSessionHeaders   map[string]string
+	via                    []string
+	securityRecorded       bool
+	pacedUpstreamStream    bool
+	chatStreamIncludeUsage bool
+	traceSeq               int
+	sanitizeTraceMessage   func(string, string) string
+	conversationKey        string
 	// modelIdentity is server.responses.model_identity captured at request
 	// start; see publicModel.
 	modelIdentity string
@@ -567,6 +568,7 @@ func (s *Service) routes() {
 		writeJSON(w, http.StatusOK, info)
 	})
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
+	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
@@ -672,6 +674,22 @@ func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {
 	defer s.finish(rc, http.StatusOK, nil)
 	data := s.callerModelMetadata(rc.caller)
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "mode": "default", "data": data, "models": data})
+}
+
+// handleModelGet returns only models visible to the authenticated caller.
+func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.begin(w, r, "models")
+	if !ok {
+		return
+	}
+	for _, model := range s.callerModelMetadata(rc.caller) {
+		if model["id"] == r.PathValue("model") {
+			defer s.finish(rc, http.StatusOK, nil)
+			writeJSON(w, http.StatusOK, model)
+			return
+		}
+	}
+	s.writeError(w, rc, http.StatusNotFound, "model_not_found")
 }
 
 // handleCodexModels returns the local model catalog file shape consumed by Codex
@@ -1255,6 +1273,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	rc.rec.Stream = req.Stream
+	if dialect == "openai-chat" {
+		if options, ok := req.Raw["stream_options"].(map[string]any); ok {
+			rc.chatStreamIncludeUsage, _ = options["include_usage"].(bool)
+		}
+	}
 
 	if !rc.caller.allow[req.Model] {
 		s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
@@ -3709,8 +3732,8 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 		writeSSE("response.in_progress", map[string]any{"type": "response.in_progress", "sequence_number": 2, "response": map[string]any{"id": resp.ID, "object": "response", "status": "in_progress", "model": model, "output": []any{}}})
 		writeSSE("response.output_item.added", map[string]any{"type": "response.output_item.added", "sequence_number": 3, "output_index": 0, "item": map[string]any{"id": itemID, "type": "message", "status": "in_progress", "role": "assistant", "content": []any{}}})
 		writeSSE("response.content_part.added", map[string]any{"type": "response.content_part.added", "sequence_number": 4, "item_id": itemID, "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": "", "annotations": []any{}}})
-		writeSSE("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "sequence_number": 5, "item_id": itemID, "output_index": 0, "content_index": 0, "delta": resp.Text})
-		writeSSE("response.output_text.done", map[string]any{"type": "response.output_text.done", "sequence_number": 6, "item_id": itemID, "output_index": 0, "content_index": 0, "text": resp.Text})
+		writeSSE("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "sequence_number": 5, "item_id": itemID, "output_index": 0, "content_index": 0, "delta": resp.Text, "logprobs": []any{}})
+		writeSSE("response.output_text.done", map[string]any{"type": "response.output_text.done", "sequence_number": 6, "item_id": itemID, "output_index": 0, "content_index": 0, "text": resp.Text, "logprobs": []any{}})
 		writeSSE("response.content_part.done", map[string]any{"type": "response.content_part.done", "sequence_number": 7, "item_id": itemID, "output_index": 0, "content_index": 0, "part": map[string]any{"type": "output_text", "text": resp.Text, "annotations": []any{}}})
 		writeSSE("response.output_item.done", map[string]any{"type": "response.output_item.done", "sequence_number": 8, "output_index": 0, "item": map[string]any{"id": itemID, "type": "message", "status": "completed", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": resp.Text, "annotations": []any{}}}}})
 		completed := encodeResponsesResponse(resp, publicModel)
@@ -3719,26 +3742,29 @@ func (s *Service) writeIRStream(w http.ResponseWriter, dialect string, resp *IRR
 		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 	case "openai-chat":
 		if resp.RawResponse && resp.Raw != nil {
-			writeRawChatSSE(writeSSE, w, resp, publicModel)
+			writeRawChatSSE(writeSSE, w, resp, publicModel, rc.chatStreamIncludeUsage)
 			break
 		}
-		writeChatTextSSE(writeSSE, w, resp, publicModel)
+		writeChatTextSSE(writeSSE, w, resp, publicModel, rc.chatStreamIncludeUsage)
 	default:
-		writeChatTextSSE(writeSSE, w, resp, publicModel)
+		writeChatTextSSE(writeSSE, w, resp, publicModel, false)
 	}
 	if flusher != nil {
 		flusher.Flush()
 	}
 }
 
-func writeChatTextSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string) {
+func writeChatTextSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string, includeUsage bool) {
 	model := defaultString(publicModel, resp.Model)
 	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant", "content": resp.Text}, "finish_reason": nil}}})
-	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": defaultString(resp.StopReason, "stop")}}, "usage": chatUsageMap(resp.Usage)})
+	writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": defaultString(resp.StopReason, "stop")}}})
+	if includeUsage {
+		writeSSE("", map[string]any{"id": resp.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []any{}, "usage": chatUsageMap(resp.Usage)})
+	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
-func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string) {
+func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IRResponse, publicModel string, includeUsage bool) {
 	raw := resp.Raw
 	id := defaultString(stringValue(raw["id"]), resp.ID)
 	model := defaultString(publicModel, defaultString(stringValue(raw["model"]), resp.Model))
@@ -3761,7 +3787,10 @@ func writeRawChatSSE(writeSSE func(string, any), w http.ResponseWriter, resp *IR
 			}
 		}
 	}
-	writeSSE("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": finishReason}}, "usage": raw["usage"]})
+	writeSSE("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": finishReason}}})
+	if includeUsage {
+		writeSSE("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": []any{}, "usage": raw["usage"]})
+	}
 	_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
@@ -4508,6 +4537,10 @@ func (s *Service) writeError(w http.ResponseWriter, rc *requestContext, status i
 		rc.rec.ErrorClass = code
 		rc.rec.ErrorMessage = code
 		s.finish(rc, status, &c)
+	}
+	if code == "model_not_found" {
+		writeJSON(w, status, map[string]any{"error": map[string]any{"type": "invalid_request_error", "code": code, "param": "model", "message": "The requested model does not exist."}})
+		return
 	}
 	writeJSON(w, status, map[string]any{"error": map[string]any{"type": code, "message": code}})
 }
