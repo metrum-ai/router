@@ -67,11 +67,11 @@ Every number in this release links to the run that produced it. Start here:
 | Proof | Where | Limit stated in the evidence |
 | --- | --- | --- |
 | Added latency, p50/p99 and streaming first content | `benchmarks/overhead/evidence/` | Shared hosts; CPU and memory per 1,000 requests/s, sustained throughput and edge results missing (#422 open) |
-| Savings on three workloads, with scored quality | [Savings Case Studies](./savings-case-studies) | Three to five tasks per arm; one arm lost quality |
+| Savings on three workloads, with scored quality | [Savings Case Studies](/docs/evaluation/savings-case-studies) | Three to five tasks per arm; one arm lost quality |
 | Expert routing across four domains | `docs/evidence/expert-routing/` | Negative result on a fixed 88-case cohort; classifier and route accuracy differ |
 | Escalation, local → GPU → frontier | `examples/escalation-continuum/evidence/` | Illustrative latency target missed; hardware and energy excluded; quotes not invoices |
 | Decision-model wiring and observation | `examples/decision-models/evidence/` | OpenJev excluded for licensing; edge results missing; no co-located added-latency claim |
-| Agent tool calls and router chains | [API compatibility](./../reference/api-compatibility) | Deterministic mock cells, not live-provider certification |
+| Agent tool calls and router chains | [API compatibility](/docs/reference/api-compatibility) | Deterministic mock cells, not live-provider certification |
 | Governance under load | `docs/GOVERNANCE_LOAD.md`, `docs/GOVERNANCE_AUDIT_LOAD.md` | Bounded local probes, not the complete acceptance suite |
 
 Paths are relative to the source distribution; the same files are linked from
