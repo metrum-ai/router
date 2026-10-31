@@ -30,6 +30,8 @@ Legend: **P** = pass; **M** = model lookup/catalog bug ([#529](https://github.co
 
 After #564, the same current-model subset was rerun on main `4b1a87e9f3a068680166c90855541c413945439d`. All four counts and individual pass/fail outcomes matched the table below; #564 changed docs dependencies and a CI timing guard, not runtime code. Router usage rows total **$0.00073210** at list rates, not an invoice; seven upstream attempts reported no usage. Evidence snapshot `84fe8f05` (`router/v45-proof/536`). The unchanged starter result below was not rerun at this head.
 
+After #567, a rerun on main `d77739d45da037ab8197b2253b6c7881d1dfac8c` passed **14/27, 9/27, 1/27, 11/27** in the same four-lane order. Compared with the table below, GPT `chat_completions_stream`, Claude `chat_completions_stream_usage` and Claude `responses_stream` changed from failure to pass; every other selected suite had the same pass/fail result. Router usage rows total **$0.00068860** at list rates, not an invoice; seven upstream attempts reported no usage. Evidence snapshot `dda91a4f` (`router/v45-proof/536`). This restricted run is not full catalog or release-candidate evidence; the unchanged starter was not rerun at this head.
+
 ### OpenAI SDK → GPT / Claude: 13 / 27, 7 / 27
 
 | Suite | GPT | Claude |
