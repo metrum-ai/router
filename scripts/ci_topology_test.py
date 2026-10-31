@@ -277,8 +277,8 @@ def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
     require(set(lanes) == {"router", "other-go", "other", "ci"}, "fanout lane inventory drifted")
-    require("fail-fast: false" in lanes["router"] and "--shard-count 16" in lanes["router"]
-            and "shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]" in lanes["router"],
+    require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
+            and "shard: [0, 1, 2, 3, 4, 5]" in lanes["router"],
             "router shard inventory drifted")
     for name in ("router", "other-go", "other"):
         require("scripts/ci_changes.py" in lanes[name] and "actions/setup-go@" in lanes[name]

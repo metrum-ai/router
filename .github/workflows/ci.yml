@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,7 +41,7 @@ jobs:
           cache: true
       - name: Router shard
         if: env.CI_RUN_GO == '1'
-        run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 16 --shard-index ${{ matrix.shard }}
+        run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index ${{ matrix.shard }}
 
   other-go:
     name: Other Go and Windows
