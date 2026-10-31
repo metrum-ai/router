@@ -81,7 +81,18 @@ uv run --with pyyaml python examples/escalation-continuum/benchmark_run.py \
 For an explicitly approved mixed run, first provision the two independently
 protected local and GPU services, expose them only on loopback, set the OpenAI
 credential, and add `--backend mixed --allow-paid`, the four endpoint/model
-flags shown above and a **new** private absolute `--state-dir`. Unlike the
+flags shown above and a **new** private absolute `--state-dir`. This is the
+command that produced the published synthetic CPU / GPU / frontier records:
+
+```sh
+uv run --with pyyaml python examples/escalation-continuum/benchmark_run.py \
+  --router /tmp/escalation-router --backend mixed --allow-paid \
+  --local-url http://127.0.0.1:8000/v1 --local-model YOUR_LOCAL_MODEL \
+  --datacenter-url http://127.0.0.1:8001/v1 --datacenter-model YOUR_DC_MODEL \
+  --state-dir /dev/shm/escalation-run-$(date +%s)
+```
+
+Unlike the
 smoke runner, the benchmark's loopback relay forwards only the fixture's exact
 synthetic inputs to a fixed GPT-6.1 Sol Responses endpoint, rejects additional
 payload fields, limits output to 32 tokens, and counts at most 15 upstream
@@ -103,7 +114,8 @@ target it missed; it does not establish provider billing or production parity.
 
 The isolated fake Responses integration can also be exercised without any
 network traffic or real key by setting `ROUTER_TEST_BINARY=/tmp/escalation-router`
-when running the tests below.
+when running the tests below. The credential-free path above is the rerun to
+use on a laptop: it needs Go and `uv` and makes no paid calls (about 9 s here).
 
 ## What you should see
 
