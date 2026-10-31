@@ -6357,6 +6357,77 @@ func TestCallerAllowListRestrictsModelGroups(t *testing.T) {
 	}
 }
 
+func TestUnsupportedOpenAIEndpoints(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/v1/completions"}, {"POST", "/v1/moderations"}, {"POST", "/v1/embeddings"},
+		{"GET", "/v1/responses/resp_1"}, {"DELETE", "/v1/responses/resp_1"}, {"GET", "/v1/responses/resp_1/input_items"}, {"POST", "/v1/responses/resp_1/cancel"},
+		{"POST", "/v1/files"}, {"GET", "/v1/files/file_1"}, {"POST", "/v1/uploads"}, {"POST", "/v1/batches"}, {"POST", "/v1/images/generations"}, {"POST", "/v1/audio/speech"}, {"POST", "/v1/vector_stores"}, {"POST", "/v1/assistants"}, {"POST", "/v1/threads"}, {"POST", "/v1/fine_tuning/jobs"}, {"GET", "/v1/realtime"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		var body struct {
+			Error struct {
+				Type    string
+				Code    string
+				Param   any
+				Message string
+			}
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if rr.Code != 501 || body.Error.Type != "invalid_request_error" || body.Error.Code != "unsupported_endpoint" || body.Error.Param != nil || !strings.Contains(body.Error.Message, tc.method+" "+tc.path) {
+			t.Fatalf("%s %s: %d %s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestUnsupportedAnthropicEndpoints(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	for _, tc := range []struct{ method, path string }{
+		{"POST", "/v1/complete"}, {"POST", "/v1/messages/batches"}, {"GET", "/v1/messages/batches"},
+		{"GET", "/v1/messages/batches/batch_1"}, {"DELETE", "/v1/messages/batches/batch_1"},
+		{"GET", "/v1/messages/batches/batch_1/results"}, {"POST", "/v1/messages/batches/batch_1/cancel"},
+		{"POST", "/v1/files?beta=true"}, {"GET", "/v1/skills"}, {"GET", "/v1/skills/skill_1"},
+		{"POST", "/anthropic/v1/complete"}, {"POST", "/anthropic/v1/messages/batches"}, {"POST", "/anthropic/v1/files?beta=true"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set("X-API-Key", testToken)
+		req.Header.Set("Anthropic-Version", "2023-06-01")
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		var body struct {
+			Type      string                         `json:"type"`
+			RequestID string                         `json:"request_id"`
+			Error     struct{ Type, Message string } `json:"error"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if rr.Code != 501 || body.Type != "error" || body.Error.Type != "invalid_request_error" || body.RequestID == "" || rr.Header().Get("Request-Id") != body.RequestID || !strings.Contains(body.Error.Message, tc.method+" "+req.URL.Path) {
+			t.Fatalf("%s %s: %d %s", tc.method, tc.path, rr.Code, rr.Body.String())
+		}
+	}
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, httptest.NewRequest("POST", "/v1/complete", nil))
+	if rr.Code != 401 {
+		t.Fatalf("unauthenticated: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestModelsEndpointOnlyListsAllowedModelGroups(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
