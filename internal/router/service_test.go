@@ -6230,13 +6230,13 @@ func TestAnthropicTargetRejectsRequestedChatLogprobs(t *testing.T) {
 	}
 }
 
-func TestAnthropicTargetRejectsUnimplementedJSONObject(t *testing.T) {
+func TestAnthropicTargetRejectsJSONObjectWithoutCapability(t *testing.T) {
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	provider := cfg.Provider["mock"]
 	provider.Dialect = "anthropic"
 	cfg.Provider["mock"] = provider
 	group := cfg.Models["default"]
-	group.Targets[0].StructuredOutput = true
+	group.Targets[0].RequestShapeSupport = RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed"}
 	cfg.Models["default"] = group
 	svc, err := New(cfg)
 	if err != nil {

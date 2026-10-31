@@ -1405,7 +1405,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			if err := validateReasoningSupport(model.Reasoning); err != nil {
 				return fmt.Errorf("provider %s model %s has invalid reasoning: %w", name, ref, err)
 			}
-			if err := validateModalities(model.InputModalities); err != nil {
+			if err := validateInputModalities(model.InputModalities); err != nil {
 				return fmt.Errorf("provider %s model %s has invalid input_modalities: %w", name, ref, err)
 			}
 			if err := validateModalities(model.OutputModalities); err != nil {
@@ -1601,7 +1601,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 					return fmt.Errorf("target modalities contains unsupported modality %q", modality)
 				}
 			}
-			if err := validateModalities(resolved.InputModalities); err != nil {
+			if err := validateInputModalities(resolved.InputModalities); err != nil {
 				return fmt.Errorf("model group %s target %s has invalid input_modalities: %w", name, resolved.Model, err)
 			}
 			if err := validateModalities(resolved.OutputModalities); err != nil {
@@ -3368,7 +3368,7 @@ func validateRequestShapeSupport(prefix string, support RequestShapeSupport) err
 
 func requestShapeInputModalityAllowed(modality string) bool {
 	switch strings.ToLower(strings.TrimSpace(modality)) {
-	case "text", "image", "audio", "video":
+	case "text", "image", "audio", "video", "document":
 		return true
 	default:
 		return false
@@ -3493,7 +3493,7 @@ func (c *Config) validateModelGroupContract(group string, model ModelGroup) erro
 			return fmt.Errorf("model group %s contract.supported_api_shapes %q is not served by any target", group, shape)
 		}
 	}
-	if err := validateModalities(contract.RequiredCaps.InputModalities); err != nil {
+	if err := validateInputModalities(contract.RequiredCaps.InputModalities); err != nil {
 		return fmt.Errorf("model group %s contract.required_capabilities.input_modalities is invalid: %w", group, err)
 	}
 	if err := validateModalities(contract.RequiredCaps.OutputModalities); err != nil {
@@ -3802,7 +3802,15 @@ func intelligentRoutingEmpty(cfg IntelligentRoutingConfig) bool {
 		strings.TrimSpace(cfg.OnError) == "" && strings.TrimSpace(cfg.SchemaVersion) == ""
 }
 
+func validateInputModalities(values []string) error {
+	return validateModalitiesForDirection(values, true)
+}
+
 func validateModalities(values []string) error {
+	return validateModalitiesForDirection(values, false)
+}
+
+func validateModalitiesForDirection(values []string, input bool) error {
 	allowed := map[string]bool{
 		"text":       true,
 		"image":      true,
@@ -3811,6 +3819,9 @@ func validateModalities(values []string) error {
 		"pdf":        true,
 		"file":       true,
 		"embeddings": true,
+	}
+	if input {
+		allowed["document"] = true
 	}
 	seen := map[string]bool{}
 	for _, v := range values {

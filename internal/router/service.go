@@ -1702,6 +1702,27 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			s.writeError(w, rc, http.StatusServiceUnavailable, "quota-state-error")
 			return
 		}
+		// Validate after quota settlement so an invalid upstream response is still
+		// accounted for, but before caching or sending any bytes to the caller.
+		if targetDialect(s.cfg.Provider[served.Provider], served) == "anthropic" && (dialect == "openai-chat" || dialect == "openai-responses") {
+			_, schema := openAIJSONSchemaForAnthropic(req)
+			objectMode := openAIJSONObjectRequest(req)
+			invalid := schema && !json.Valid([]byte(resp.Text))
+			if objectMode {
+				var object map[string]json.RawMessage
+				invalid = json.Unmarshal([]byte(resp.Text), &object) != nil || object == nil
+			}
+			if invalid {
+				rc.rec.QuotaState, rc.rec.KeyState = quotaState, keyState
+				rc.rec.Usage = resp.Usage
+				rc.rec.UsageSource = "reported"
+				if containsUsageEstimate(resp.Warnings) {
+					rc.rec.UsageSource = "estimated"
+				}
+				s.writeError(w, rc, http.StatusBadGateway, "invalid_structured_output")
+				return
+			}
+		}
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
@@ -2578,7 +2599,13 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
 	anthropicBridge := anthropicStreamBridge(callerDialect, outDialect)
-	bridgeStream := (bridge || chatResponsesBridge || anthropicBridge) && req.Stream && s.cfg.Server.Streaming.Translator != "synthesized"
+	openAIToolsBridge := openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) && (len(req.Tools) > 0 || openAIHasToolHistory(req, callerDialect))
+	translatedOpenAI := outDialect == "anthropic" && (callerDialect == "openai-chat" || callerDialect == "openai-responses")
+	jsonObject := translatedOpenAI && openAIJSONObjectRequest(req)
+	_, hasJSONSchema := openAIJSONSchemaForAnthropic(req)
+	jsonValidation := translatedOpenAI && (jsonObject || hasJSONSchema)
+	// Validate the complete response before sending bytes to a streaming caller.
+	bridgeStream := (bridge || chatResponsesBridge || anthropicBridge) && req.Stream && !jsonValidation && s.cfg.Server.Streaming.Translator != "synthesized"
 	nativeStream := nativeStreamEligible(req, callerDialect, outDialect) && s.cfg.Server.Streaming.Translator != "synthesized"
 	if req.Stream {
 		rc.rec.StreamMode = "synthesized"
@@ -2598,7 +2625,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	chatResponsesSession := bridgeSessionLookup{}
 	var upReqBody []byte
 	var err error
-	if bridge {
+	if openAIToolsBridge {
+		upReqBody, err = encodeOpenAIToolsToAnthropic(target.Model, callerDialect, req, target)
+	} else if bridge {
 		bridgeReq := *req
 		bridgeReq.Stream = bridgeStream
 		upReqBody, err = encodeResponsesToChatBridge(target.Model, &bridgeReq, target)
@@ -2612,7 +2641,13 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	} else if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
 		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect)
 	} else {
-		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, req, target)
+		upReq := req
+		if jsonObject {
+			copyReq := *req
+			copyReq.System = strings.TrimSpace(req.System + "\nReturn only a valid JSON object. Do not use Markdown fences or any text outside the object.")
+			upReq = &copyReq
+		}
+		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)
 	}
 	attempt.RequestBytes = int64(len(upReqBody))
 	if err != nil {
@@ -2912,7 +2947,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return resp, attempt, nil
 	}
 	var resp *IRResponse
-	if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
+	if openAIToolsBridge {
+		resp, err = decodeAnthropicToolsToOpenAI(raw, callerDialect, target.Model, s.identifiers)
+	} else if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
 		resp, err = decodeAnthropicToolsBridge(outDialect, raw, target.Model, s.identifiers)
 	} else {
 		resp, err = decodeUpstreamResponse(outDialect, raw, target.Model)
@@ -3435,7 +3472,10 @@ func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect s
 	}
 	if requestHasStructuredOutput(req) && !filter(func(t Target, out string) bool {
 		if (dialect == "openai-chat" || dialect == "openai-responses") && out == "anthropic" {
-			return false
+			_, schema := openAIJSONSchemaForAnthropic(req)
+			if (!schema && !openAIJSONObjectRequest(req)) || len(req.Tools) > 0 || openAIHasToolHistory(req, dialect) {
+				return false
+			}
 		}
 		return targetSupportsStructuredOutput(t, dialect, out, true)
 	}) {
@@ -3563,6 +3603,9 @@ func targetSupportsCallerDialect(target Target, req *IRRequest, callerDialect, o
 }
 
 func targetSupportsToolsForCallerDialect(target Target, callerDialect, outDialect string) bool {
+	if openAIAnthropicToolsBridgeEnabled(target, callerDialect, outDialect) {
+		return true
+	}
 	if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
 		return true
 	}
@@ -4365,6 +4408,9 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
+	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
+		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
+	}
 	if rc != nil && rc.dialect == "anthropic" {
 		writeAnthropicError(w, rc, status, message)
 		return

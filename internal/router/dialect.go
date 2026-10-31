@@ -125,6 +125,9 @@ func encodeUpstreamForTarget(dialect, model string, req *IRRequest, target Targe
 			msgs = append(msgs, map[string]any{"role": m.Role, "content": encodeAnthropicContent(m)})
 		}
 		body := map[string]any{"model": model, "messages": msgs, "max_tokens": effectiveMaxTokens(req, 1024), "stream": false}
+		if format, ok := openAIJSONSchemaForAnthropic(req); ok {
+			body["output_config"] = map[string]any{"format": map[string]any{"type": "json_schema", "schema": format}}
+		}
 		if req.System != "" {
 			body["system"] = req.System
 		}
