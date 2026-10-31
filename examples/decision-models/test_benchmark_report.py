@@ -43,6 +43,8 @@ class BenchmarkReportTests(unittest.TestCase):
         digest=hashlib.sha256(dataset_path.read_bytes()).hexdigest()
         ids={r['id'] for r in report.dataset(dataset_path)}
         self.assertEqual(len(ids),12)
+        self.assertEqual({p.name for p in evidence.glob('*-result.json')},{'d3-result.json','clef-result.json'})
+        self.assertFalse((HERE.parents[1]/'docs/evidence/openjev-routing').exists())
         for model in ('d3','clef'):
             data=json.loads((evidence/f'{model}-result.json').read_text())
             self.assertEqual((data['decisions'],data['backend']),('external','mock'))

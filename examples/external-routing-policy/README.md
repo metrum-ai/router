@@ -209,8 +209,8 @@ OPENJEV_URL=http://127.0.0.1:3000 python3 examples/external-routing-policy/openj
 ```
 
 Example router config: `config.openjev.example.yaml`. Full Shadeform runbook:
-[`docs/OPENJEV_ROUTING_DEMO.md`](../../docs/OPENJEV_ROUTING_DEMO.md). Sanitized
-evidence: [`docs/evidence/openjev-routing/`](../../docs/evidence/openjev-routing/).
+[`docs/OPENJEV_ROUTING_DEMO.md`](../../docs/OPENJEV_ROUTING_DEMO.md).
+OpenJev is excluded from the v4.5 decision-model comparison for licensing.
 
 ## Decision 3.0 (d3) Policy
 
