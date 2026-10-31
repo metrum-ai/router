@@ -9,11 +9,6 @@ import (
 	"strings"
 )
 
-func isAnthropicModelRequest(r *http.Request) bool {
-	_, hasVersion := r.Header[http.CanonicalHeaderKey("Anthropic-Version")]
-	return hasVersion || (r.Header.Get("X-API-Key") != "" && r.Header.Get("Authorization") == "")
-}
-
 func anthropicModel(m map[string]any) map[string]any {
 	return map[string]any{"type": "model", "id": m["id"], "display_name": m["display_name"], "created_at": "1970-01-01T00:00:00Z"}
 }
@@ -27,10 +22,6 @@ func (s *Service) writeAnthropicModelError(w http.ResponseWriter, rc *requestCon
 	s.finish(rc, status, &reason)
 	w.Header().Set("Request-Id", rc.id)
 	writeJSON(w, status, map[string]any{"type": "error", "request_id": rc.id, "error": map[string]any{"type": errorType, "message": message}})
-}
-
-func (s *Service) writeAnthropicModelNotFound(w http.ResponseWriter, rc *requestContext, reason string) {
-	s.writeAnthropicModelError(w, rc, http.StatusNotFound, reason, "not_found_error", "Model not found.")
 }
 
 func (s *Service) writeAnthropicModelList(w http.ResponseWriter, r *http.Request, rc *requestContext) {

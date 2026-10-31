@@ -100,7 +100,7 @@ def main():
                         with urlopen(req,timeout=15) as r:r.read();return r.status
                     except HTTPError as e:return e.code
                 statuses=[request('scoped',s['allowed_group'],SYNTHETIC_EMAIL),request('scoped',s['restricted_group']),request('scoped',s['allowed_group']),request('tokenlimited',s['allowed_group']),request('rate',s['allowed_group']),request('rate',s['allowed_group'])]
-                if statuses!=[200,403,429,429,200,429]:raise RuntimeError(f'unexpected control statuses {statuses}')
+                if statuses!=[200,404,429,429,200,429]:raise RuntimeError(f'unexpected control statuses {statuses}')
                 if a.backend=='mock' and (len(Upstream.seen)!=2 or not Upstream.seen[0]['no_raw_pii'] or not Upstream.seen[0]['redacted']):raise RuntimeError('PII redaction control failed')
                 reasons=[];events=0;usage=[]
                 for _ in range(80):

@@ -1,42 +1,38 @@
 {
   "completions": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Legacy completions are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "completions_stream": {
-    "reason": "Endpoint returns 405 rather than the expected SDK response",
+    "reason": "Legacy completions are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "message_batches_create": {
-    "reason": "Message batches endpoint returns 405",
+    "reason": "Message batches are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "message_batches_get": {
-    "reason": "Message batches endpoint returns 405",
+    "reason": "Message batches are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "message_batches_cancel": {
-    "reason": "Message batches endpoint returns 405",
+    "reason": "Message batches are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "message_batches_list": {
-    "reason": "Message batches endpoint returns 405",
+    "reason": "Message batches are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "message_batches_results": {
-    "reason": "Message batches endpoint returns 405",
+    "reason": "Message batches are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "message_batches_delete": {
-    "reason": "Message batches endpoint returns 405",
+    "reason": "Message batches are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
   },
   "beta_files": {
-    "reason": "Beta files endpoint returns 405",
+    "reason": "Beta files are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
-  },
-  "error_responses": {
-    "reason": "Unknown model returns 403 instead of the expected API error",
-    "issue": "https://github.com/metrum-ai/router/issues/530"
   }
 }

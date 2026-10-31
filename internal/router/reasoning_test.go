@@ -340,7 +340,7 @@ func TestReasoningNoEligibleTargetAndModelListMetadata(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "reasoning") {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
