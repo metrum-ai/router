@@ -3,10 +3,6 @@
     "reason": "Model lookup returns 404",
     "issue": "https://github.com/metrum-ai/router/issues/529"
   },
-  "chat_completions_stream": {
-    "reason": "Streaming includes a usage-only chunk without choices",
-    "issue": "https://github.com/metrum-ai/router/issues/528"
-  },
   "completions": {
     "reason": "Endpoint returns 405 rather than the expected SDK response",
     "issue": "https://github.com/metrum-ai/router/issues/531"
