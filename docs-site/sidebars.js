@@ -112,6 +112,7 @@ const sidebars = {
         "evaluation/evaluate-smart-router",
         "evaluation/prove-router-quality",
         "evaluation/model-group-quality",
+        "evaluation/escalation-and-decision-evidence",
         "evaluation/product-capabilities",
         "evaluation/cost-governance",
         "evaluation/deployment-readiness",
