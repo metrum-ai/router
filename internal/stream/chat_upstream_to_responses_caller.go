@@ -114,6 +114,7 @@ func (t *ChatUpstreamToResponsesCaller) closeItems() []Event {
 			events = append(events, t.event("response.function_call_arguments.done", p))
 		} else {
 			p["text"] = i.text.String()
+			p["logprobs"] = []any{}
 			events = append(events, t.event("response.output_text.done", p))
 			p = t.fields(i)
 			p["part"] = t.part(i)
@@ -202,6 +203,7 @@ func (t *ChatUpstreamToResponsesCaller) Next(up Event) ([]Event, error) {
 			i.text.WriteString(c.Delta.Content)
 			fields := t.fields(i)
 			fields["delta"] = c.Delta.Content
+			fields["logprobs"] = []any{}
 			events = append(events, t.event("response.output_text.delta", fields))
 		}
 		for _, call := range c.Delta.Tools {
