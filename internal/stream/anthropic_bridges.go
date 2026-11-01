@@ -23,6 +23,7 @@ type AnthropicUpstreamToChatCaller struct {
 	PublicModel                 string // caller-facing model; empty keeps Model
 	CreatedAt                   int64
 	IncludeUsage                bool
+	IncludeReasoning            bool
 	chat                        ResponsesUpstreamToChatCaller
 	blocks                      map[int]string
 	tools                       map[int]int
@@ -47,13 +48,13 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 			Usage anthropicUsageFields `json:"usage"`
 		} `json:"message"`
 		Block struct {
-			Type, ID, Name, Text string
-			Input                json.RawMessage `json:"input"`
+			Type, ID, Name, Text, Thinking string
+			Input                          json.RawMessage `json:"input"`
 		} `json:"content_block"`
 		Delta struct {
-			Type, Text string
-			JSON       string `json:"partial_json"`
-			Stop       string `json:"stop_reason"`
+			Type, Text, Thinking string
+			JSON                 string `json:"partial_json"`
+			Stop                 string `json:"stop_reason"`
 		} `json:"delta"`
 		Usage anthropicUsageFields `json:"usage"`
 	}
@@ -94,7 +95,12 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 		}
 		t.blocks[p.Index] = p.Block.Type
 		switch p.Block.Type {
-		case "thinking", "redacted_thinking":
+		case "thinking":
+			if t.IncludeReasoning && p.Block.Thinking != "" {
+				return []Event{t.chat.chunk(map[string]any{"reasoning_content": p.Block.Thinking}, nil)}, nil
+			}
+			return nil, nil
+		case "redacted_thinking":
 			return nil, nil
 		case "text":
 			if p.Block.Text != "" {
@@ -122,6 +128,10 @@ func (t *AnthropicUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 	case "content_block_delta":
 		kind := t.blocks[p.Index]
 		if kind == "thinking" || kind == "redacted_thinking" {
+			if kind == "thinking" && t.IncludeReasoning && p.Delta.Type == "thinking_delta" && p.Delta.Thinking != "" {
+				return []Event{t.chat.chunk(map[string]any{"reasoning_content": p.Delta.Thinking}, nil)}, nil
+			}
+			// Never emit signature deltas or redacted thinking.
 			return nil, nil
 		}
 		if kind == "text" && p.Delta.Type == "text_delta" {
@@ -217,6 +227,7 @@ type ResponsesUpstreamToAnthropicCaller struct {
 func (t *ResponsesUpstreamToAnthropicCaller) UsageSnapshot() Usage { return t.reader.UsageSnapshot() }
 
 func (t *ResponsesUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {
+	t.reader.IncludeReasoning = t.IncludeReasoning
 	events, err := t.reader.Next(up)
 	if err != nil && !errors.Is(err, ErrTerminal) {
 		return nil, err
@@ -237,6 +248,7 @@ type ChatUpstreamToAnthropicCaller struct {
 	IDs                       IdentifierEncoder
 	ResponseID, Model         string
 	PublicModel               string // caller-facing model; empty keeps Model
+	IncludeReasoning          bool
 	reader                    ChatUpstreamToResponsesCaller
 	begun, finished, terminal bool
 	blocks                    map[int]int
@@ -249,7 +261,7 @@ func (t *ChatUpstreamToAnthropicCaller) Begin(est TokenEstimate) ([]Event, error
 	}
 	t.begun = true
 	t.blocks = map[int]int{}
-	t.reader = ChatUpstreamToResponsesCaller{ResponseID: t.ResponseID, Model: t.Model, PublicModel: t.PublicModel}
+	t.reader = ChatUpstreamToResponsesCaller{ResponseID: t.ResponseID, Model: t.Model, PublicModel: t.PublicModel, IncludeReasoning: t.IncludeReasoning}
 	_, err := t.reader.Begin(est)
 	id := t.ResponseID
 	if t.IDs != nil {
@@ -309,7 +321,9 @@ func (t *ChatUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {
 			t.nextIndex++
 			t.blocks[p.OutputIndex] = index
 			block := map[string]any{"type": "text", "text": ""}
-			if p.Item.Type == "function_call" {
+			if p.Item.Type == "reasoning" {
+				block = map[string]any{"type": "thinking", "thinking": "", "signature": ""}
+			} else if p.Item.Type == "function_call" {
 				id := p.Item.CallID
 				if t.IDs != nil {
 					id = t.IDs.Encode(id)
@@ -317,10 +331,12 @@ func (t *ChatUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {
 				block = map[string]any{"type": "tool_use", "id": id, "name": p.Item.Name, "input": map[string]any{}}
 			}
 			out = append(out, typedEvent("content_block_start", map[string]any{"index": index, "content_block": block}))
-		case "response.output_text.delta", "response.function_call_arguments.delta":
+		case "response.output_text.delta", "response.function_call_arguments.delta", "response.reasoning_summary_text.delta":
 			delta := map[string]any{"type": "text_delta", "text": p.Delta}
 			if e.Type == "response.function_call_arguments.delta" {
 				delta = map[string]any{"type": "input_json_delta", "partial_json": p.Delta}
+			} else if e.Type == "response.reasoning_summary_text.delta" {
+				delta = map[string]any{"type": "thinking_delta", "thinking": p.Delta}
 			}
 			out = append(out, typedEvent("content_block_delta", map[string]any{"index": index, "delta": delta}))
 		case "response.output_item.done":
@@ -363,6 +379,7 @@ func (t *AnthropicUpstreamToResponsesCaller) Next(up Event) ([]Event, error) {
 	// The internal Chat hop needs usage for the Responses completion event;
 	// this is not a caller-visible Chat usage chunk.
 	t.reader.IncludeUsage = true
+	t.reader.IncludeReasoning = t.IncludeReasoning
 	events, err := t.reader.Next(up)
 	if err != nil && !errors.Is(err, ErrTerminal) {
 		return nil, err

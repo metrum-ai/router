@@ -138,14 +138,45 @@ func applyAnthropicFormat(body map[string]any, req *IRRequest, dialect string) {
 	}
 }
 
+// requestWantsChatAudioOutput detects requested Chat audio output, independently
+// from audio input parts. A non-null audio configuration is itself a request.
+func requestWantsChatAudioOutput(req *IRRequest, caller string) bool {
+	if req == nil || normalizeDialect(caller) != "openai-chat" {
+		return false
+	}
+	if rawValuePresent(req.Raw, "audio") {
+		return true
+	}
+	if modalities, ok := req.Raw["modalities"].([]any); ok {
+		for _, modality := range modalities {
+			if stringValue(modality) == "audio" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Audio output is currently supported only by the native Chat passthrough;
+// translated bridges do not preserve audio response objects or streaming events.
+func targetSupportsChatAudioOutput(target Target, req *IRRequest, caller, out string) bool {
+	if !requestWantsChatAudioOutput(req, caller) {
+		return true
+	}
+	return normalizeDialect(out) == "openai-chat" && stringSliceContains(defaultModalities(target.OutputModalities), "audio")
+}
+
 // mediaAdmission checks the group before any upstream attempt. Native opaque
 // Anthropic blocks are portable only to another native Anthropic endpoint.
 func mediaTargetReason(target Target, req *IRRequest, caller, out string) string {
 	if req == nil {
 		return ""
 	}
-	if caller == "anthropic" && out != "anthropic" && (unknownAnthropicBlocks(req.Raw["messages"]) || unknownAnthropicBlocks(req.Raw["system"])) {
-		return "unsupported_block"
+	if caller == "anthropic" && out != "anthropic" {
+		clean, err := foreignReasoningHistory(req, caller, out)
+		if err != nil || unknownAnthropicBlocks(clean.Raw["messages"]) || unknownAnthropicBlocks(clean.Raw["system"]) {
+			return "unsupported_block"
+		}
 	}
 	if !targetSupportsInputModalities(target, requestInputModalities(req)) {
 		return "unsupported_modality"
@@ -178,8 +209,16 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 func (s *Service) mediaAdmission(group ModelGroup, req *IRRequest, caller string) string {
 	first := ""
 	for _, target := range group.Targets {
-		out := targetDialect(s.cfg.Provider[target.Provider], target)
-		reason := mediaTargetReason(target, req, caller, out)
+		provider := s.cfg.Provider[target.Provider]
+		out := targetDialect(provider, target)
+		reason := ""
+		// Converse cannot represent opaque Anthropic blocks. Preserve the
+		// pre-bridge unsupported_block response rather than sanitizing them.
+		if caller == "anthropic" && isBedrock(provider) && req != nil && (unknownAnthropicBlocks(req.Raw["messages"]) || unknownAnthropicBlocks(req.Raw["system"])) {
+			reason = "unsupported_block"
+		} else {
+			reason = mediaTargetReason(target, req, caller, out)
+		}
 		if reason == "" {
 			return ""
 		}

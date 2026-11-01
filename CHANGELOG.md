@@ -196,6 +196,21 @@ Negative and partial results are published as such, not dropped.
 
 ### Behavior changes
 
+- Explicit `store:false` is now honored on native OpenAI Responses passthrough;
+  it was previously dropped, allowing OpenAI's default of storing to apply
+  (#624). Native caller `store:true` is also forwarded unless the target forces
+  false. Translated routes do not provide stored Responses retrieval. Provider
+  retention policies and router content capture are separate from this field.
+
+- Chat audio output now requires `output_modalities: [text, audio]` on the target
+  (or `[audio]` for an audio-only declaration). Native Chat targets without an
+  audio declaration default to text-only; an audio request that would otherwise
+  route to a text-only target returns `400 unsupported_capability` with
+  `param: modalities`. Other capability or endpoint errors may take precedence.
+  Audio streaming requires incremental translation; synthesized Chat streaming
+  rejects audio before dispatch. Translated bridges do not support audio output
+  (#612, #576).
+
 - Chat streaming no longer sends a usage-only chunk unless the caller sets
   `stream_options.include_usage` to true (#528). Upstream usage collection for
   accounting stays enabled, and the OpenAI-compatible bridges keep forcing

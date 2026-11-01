@@ -39,6 +39,11 @@ func openAIHasToolHistory(req *IRRequest, caller string) bool {
 // tool-call/result history. It fails closed on shapes it cannot faithfully map.
 func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target Target) ([]byte, error) {
 	var messages []map[string]any
+	var system []string
+	seenResponsesConversation := false
+	if req.System != "" {
+		system = append(system, req.System)
+	}
 	appendBlocks := func(role string, blocks []any) {
 		if len(blocks) == 0 {
 			return
@@ -58,11 +63,15 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		case []any:
 			for _, item := range value {
 				part, ok := item.(map[string]any)
-				if !ok {
-					return nil, fmt.Errorf("unsupported content part")
+				if !ok || !chatBridgeContentSupported("user", []any{part}) {
+					return nil, fmt.Errorf("unsupported or unrepresentable content part")
 				}
 				switch stringValue(part["type"]) {
-				case "text", "input_text", "output_text", "image_url", "input_image":
+				case "text", "input_text", "output_text":
+				case "image_url", "input_image":
+					if decodeContentPart(part).Detail != "" {
+						return nil, fmt.Errorf("image detail cannot be translated")
+					}
 				default:
 					return nil, fmt.Errorf("unsupported content part")
 				}
@@ -102,6 +111,25 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		blocks, err := contentBlocks(content)
 		if err != nil {
 			return nil, err
+		}
+		// contentBlocks has already validated the parts. Preserve ordered text
+		// blocks rather than flattening them with invented newline separators.
+		// Mixed media is already encoded as individual ordered blocks.
+		if _, isArray := content.([]any); isArray {
+			parts := decodeContentParts(content)
+			if !hasMediaParts(parts) {
+				var textBlocks []any
+				for _, part := range parts {
+					if part.Type == "text" && part.Text != "" {
+						textBlocks = append(textBlocks, map[string]any{"type": "text", "text": part.Text})
+					}
+				}
+				// Retain the previous empty-result representation when every
+				// part is empty rather than creating an empty block array.
+				if len(textBlocks) > 0 {
+					blocks = textBlocks
+				}
+			}
 		}
 		return map[string]any{"type": "tool_result", "tool_use_id": id, "content": blocks}, nil
 	}
@@ -170,14 +198,23 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					return nil, fmt.Errorf("invalid input item")
 				}
 				switch stringValue(m["type"]) {
+				case "reasoning":
+					// Provider-owned reasoning, including encrypted payloads, is not portable.
+					continue
 				case "function_call":
+					seenResponsesConversation = true
 					block, err := functionCall(stringValue(m["call_id"]), stringValue(m["name"]), stringValue(m["arguments"]))
 					if err != nil {
 						return nil, err
 					}
 					appendBlocks("assistant", []any{block})
 				case "function_call_output":
-					block, err := toolResult(stringValue(m["call_id"]), m["output"])
+					seenResponsesConversation = true
+					output, ok := responsesToolOutputText(m["output"])
+					if !ok {
+						return nil, fmt.Errorf("function_call_output.output must be text or input_text parts")
+					}
+					block, err := toolResult(stringValue(m["call_id"]), output)
 					if err != nil {
 						return nil, err
 					}
@@ -187,9 +224,34 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					if role == "" {
 						role = "user"
 					}
+					if role == "system" {
+						if seenResponsesConversation {
+							return nil, fmt.Errorf("system message after conversation cannot be translated")
+						}
+						var text strings.Builder
+						switch content := m["content"].(type) {
+						case string:
+							text.WriteString(content)
+						case []any:
+							for _, value := range content {
+								part, ok := value.(map[string]any)
+								if !ok || !bridgeTextPartSupported(part) || (stringValue(part["type"]) != "text" && stringValue(part["type"]) != "input_text" && stringValue(part["type"]) != "output_text") {
+									return nil, fmt.Errorf("non-text system content cannot be translated")
+								}
+								text.WriteString(stringValue(part["text"]))
+							}
+						default:
+							return nil, fmt.Errorf("non-text system content cannot be translated")
+						}
+						if text.Len() != 0 {
+							system = append(system, text.String())
+						}
+						continue
+					}
 					if role != "assistant" && role != "user" {
 						return nil, fmt.Errorf("unsupported response role")
 					}
+					seenResponsesConversation = true
 					blocks, err := contentBlocks(m["content"])
 					if err != nil {
 						return nil, err
@@ -207,8 +269,8 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		return nil, fmt.Errorf("missing messages")
 	}
 	body := map[string]any{"model": model, "messages": messages, "max_tokens": effectiveMaxTokens(req, 1024), "stream": false}
-	if req.System != "" {
-		body["system"] = req.System
+	if len(system) > 0 {
+		body["system"] = strings.Join(system, "\n\n")
 	}
 	if req.Temperature != nil {
 		body["temperature"] = *req.Temperature

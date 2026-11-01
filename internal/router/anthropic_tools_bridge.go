@@ -19,6 +19,13 @@ func anthropicToolsBridgeEnabled(target Target, out string) bool {
 func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out string) ([]byte, error) {
 	chat := *req
 	chat.Raw = map[string]any{}
+	// These caller controls are needed for eligibility checks and translated
+	// Responses encoding; the original thinking object is not forwarded.
+	for _, key := range []string{"thinking", "temperature", "top_p"} {
+		if value, ok := req.Raw[key]; ok {
+			chat.Raw[key] = value
+		}
+	}
 	var messages []any
 	for _, item := range valueAsSlice(req.Raw["messages"]) {
 		m, ok := item.(map[string]any)
@@ -109,6 +116,7 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 		bridgeTarget.Bridges.ChatToResponses.ParallelToolCalls = true
 		bridgeTarget.Bridges.ChatToResponses.StructuredOutputs = target.StructuredOutput
 		bridgeTarget.Bridges.ChatToResponses.Images = targetSupportsInputModalities(target, []string{"image"})
+		bridgeTarget.Bridges.ChatToResponses.Reasoning = requestRequiresReasoning(req)
 		return encodeChatToResponsesBridge(model, &chat, bridgeTarget, "")
 	}
 	body := map[string]any{"model": model, "messages": messages, "stream": req.Stream, "tools": chat.Tools}
@@ -127,8 +135,14 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 	if req.Temperature != nil {
 		body["temperature"] = *req.Temperature
 	}
+	if topP, ok := numberAsFloat(req.Raw["top_p"]); ok {
+		body["top_p"] = topP
+	}
 	if len(req.Stop) > 0 {
 		body["stop"] = req.Stop
+	}
+	if err := applyReasoningToOpenAIChat(body, req, target); err != nil {
+		return nil, err
 	}
 	return json.Marshal(body)
 }

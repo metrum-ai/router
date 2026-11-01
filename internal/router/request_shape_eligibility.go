@@ -144,7 +144,13 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 		fit.ToolSchemaFit = false
 	}
 	reason := ""
-	if s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
+	// Bedrock currently uses a Chat-to-Converse adapter, not a native
+	// Anthropic codec. Preserve main's fail-closed behavior for opaque
+	// Anthropic history rather than stripping it on the way to Bedrock.
+	if s.cfg != nil && normalizeDialect(callerDialect) == "anthropic" && isBedrock(s.cfg.Provider[target.Provider]) && reasoningHistoryPresent(req) {
+		reason = "bedrock-opaque-reasoning-unsupported"
+	}
+	if reason == "" && s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
 		if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) {
 			reason = "request-shape-dialect-unsupported"
 		} else if !strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed") {
@@ -166,7 +172,32 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 	return fit
 }
 
+// responsesExplicitNoStore identifies only an actual boolean false.
+func responsesExplicitNoStore(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	store, ok := req.Raw["store"].(bool)
+	return ok && !store
+}
+
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
+	// Native Responses and Chat represent no-store; Messages has no stored
+	// response resource. Other transports have no established equivalent.
+	if normalizeDialect(callerDialect) == "openai-responses" && responsesExplicitNoStore(req) {
+		switch normalizeDialect(outDialect) {
+		case "openai-responses", "openai-chat", "anthropic":
+		default:
+			return "store-false-unsupported"
+		}
+	}
+	// Validate the same sanitized history that the cross-dialect encoder sees.
+	// Otherwise harmless foreign reasoning items are rejected before stripping.
+	clean, err := foreignReasoningHistory(req, callerDialect, outDialect)
+	if err != nil {
+		return "reasoning-history-unsupported"
+	}
+	req = clean
 	support := target.RequestShapeSupport
 	// Logprobs cannot be represented by the current Anthropic translation.
 	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {
@@ -180,6 +211,9 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 		if (!schema && !object) || len(req.Tools) > 0 || openAIHasToolHistory(req, callerDialect) {
 			return "structured-output-unsupported"
 		}
+	}
+	if callerDialect == "openai-responses" && outDialect == "anthropic" && invalidResponsesAnthropicMessageContent(req) {
+		return "anthropic-bridge-unrepresentable-content"
 	}
 	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
@@ -231,8 +265,24 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "anthropic-bridge-tool-choice-unsupported"
 		}
 	}
-	if anthropicStreamBridge(callerDialect, outDialect) && (requestRequiresReasoning(req) || target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target)) {
-		return "anthropic-bridge-reasoning-unsupported"
+	if anthropicStreamBridge(callerDialect, outDialect) {
+		if requestRequiresReasoning(req) {
+			// A target's native reasoning support alone is not permission to
+			// translate it. Require an explicit validated inbound bridge even
+			// when ordinary request-shape eligibility is set to implicit.
+			if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) || !strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed") {
+				return "anthropic-bridge-reasoning-unsupported"
+			}
+			if !targetCanSatisfyReasoning(target, outDialect, req) {
+				return "anthropic-bridge-reasoning-unsupported"
+			}
+			if callerDialect == "anthropic" && outDialect == "openai-responses" && !target.Reasoning.SupportsSummaries {
+				return "anthropic-bridge-reasoning-summary-unsupported"
+			}
+		} else if target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target) {
+			// Do not expose unrequested thinking or silently change the default path.
+			return "anthropic-bridge-reasoning-unsupported"
+		}
 	}
 	if reason := responsesToChatBridgeFilterReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
@@ -251,8 +301,25 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "request-shape-required-input-modality"
 		}
 	}
-	if feature := firstUnsupportedRequestFeature(req, support.UnsupportedRequestFeatures); feature != "" {
-		return "request-shape-unsupported-feature"
+	for _, feature := range support.UnsupportedRequestFeatures {
+		normalized := strings.ToLower(strings.TrimSpace(feature))
+		// Translated Chat omits store for providers that reject it, relying on
+		// their declared default; Messages does not have this response resource.
+		if normalized == "store" && normalizeDialect(callerDialect) == "openai-responses" {
+			switch normalizeDialect(outDialect) {
+			case "openai-chat", "anthropic":
+				continue
+			case "openai-responses":
+				// The native encoder forwards even null, and a force policy
+				// inserts false even when the caller omitted the field.
+				if target.ForceStoreFalse || (req != nil && rawKeyPresent(req.Raw, "store")) {
+					return "request-shape-unsupported-feature"
+				}
+			}
+		}
+		if requestFeaturePresent(req, normalized) {
+			return "request-shape-unsupported-feature"
+		}
 	}
 	if support.SupportsLargeCodingAgentPayloads != nil && !*support.SupportsLargeCodingAgentPayloads && largeCodingAgentPayload(req, estimate) {
 		return "request-shape-unvalidated-large-agent-payload"
@@ -309,16 +376,6 @@ func stringSliceContainsNormalizedDialect(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func firstUnsupportedRequestFeature(req *IRRequest, unsupported []string) string {
-	for _, feature := range unsupported {
-		normalized := strings.ToLower(strings.TrimSpace(feature))
-		if requestFeaturePresent(req, normalized) {
-			return normalized
-		}
-	}
-	return ""
 }
 
 func requestFeaturePresent(req *IRRequest, feature string) bool {

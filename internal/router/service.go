@@ -1425,7 +1425,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	if rc.rec.Endpoint != "responses.compact" {
+	// Audio-output, explicit no-store and opaque reasoning requests must not be shadow replayed.
+	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -1531,6 +1532,16 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			return
 		}
 		s.writeError(w, rc, http.StatusBadGateway, "routing-failed")
+		return
+	}
+	// Synthesized Chat SSE cannot represent audio from the unary response.
+	// Fail before dispatch instead of returning a successful text-only stream.
+	if req.Stream && requestWantsChatAudioOutput(req, dialect) && s.cfg.Server.Streaming.Translator == "synthesized" {
+		s.writeRoutingEligibilityError(w, rc, routingEligibilityError{
+			Model: req.Model, Dialect: dialect,
+			Requirements:       []string{"native audio streaming (synthesized streaming is unsupported)"},
+			CapabilityMismatch: true, MismatchCode: "unsupported_capability", MismatchParam: "modalities",
+		})
 		return
 	}
 	req.CallerBetas = strings.Join(r.Header.Values("Anthropic-Beta"), ",")
@@ -2230,7 +2241,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
 		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
-			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(group.Targets, req, callerDialect)
+			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, req, callerDialect)
 		}
 		return decision{}, err
 	}
@@ -2634,6 +2645,12 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		EndpointHost:     endpointHost(provider.BaseURL),
 		AttemptTimeoutMS: s.attemptTimeoutMS(groupName, target),
 	}
+	cleanReq, historyErr := foreignReasoningHistory(req, callerDialect, outDialect)
+	if historyErr != nil {
+		attempt.ErrorClass = "encode_error"
+		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
+	}
+	req = cleanReq
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
@@ -2690,7 +2707,27 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			copyReq.System = strings.TrimSpace(req.System + "\nReturn only a valid JSON object. Do not use Markdown fences or any text outside the object.")
 			upReq = &copyReq
 		}
+		if callerDialect == "openai-responses" && outDialect == "anthropic" {
+			copyReq := *upReq
+			copyReq.System = responsesAnthropicSystemPrompt(upReq)
+			upReq = &copyReq
+		}
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)
+	}
+	// Responses→Chat has no stored Responses resource. Send false when the
+	// caller or target requests it, unless the target explicitly declares
+	// that it rejects the parameter and relies on its no-store default.
+	// Bedrock's internal Chat-shaped adapter is a Messages transport.
+	if err == nil && callerDialect == "openai-responses" && outDialect == "openai-chat" && !isBedrock(provider) && (responsesExplicitNoStore(req) || target.ForceStoreFalse) {
+		var chatBody map[string]any
+		if err = json.Unmarshal(upReqBody, &chatBody); err == nil {
+			if supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "store") {
+				delete(chatBody, "store")
+			} else {
+				chatBody["store"] = false
+			}
+			upReqBody, err = json.Marshal(chatBody)
+		}
 	}
 	attempt.RequestBytes = int64(len(upReqBody))
 	if err != nil {
@@ -2889,7 +2926,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			}
 		}
 		if anthropicBridge {
-			proxy = anthropicBridgeProxy(callerDialect)
+			proxy = anthropicBridgeProxy(callerDialect, requestRequiresReasoning(req))
 		}
 		// Experiment profiles (#379): scope-matched requests deliver through a
 		// pacing writer that injects the configured TTFT delay and output
@@ -3010,6 +3047,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ErrorMessage = err.Error()
 		attempt.Retryable = true
 		return nil, attempt, upstreamError{Class: "decode_error", Message: err.Error(), Retryable: true, Err: err}
+	}
+	if requestRequiresReasoning(req) && anthropicBridge {
+		attachBridgeReasoning(resp, raw, outDialect, callerDialect)
 	}
 	attempt.ReasoningTokens = resp.Usage.ReasoningTokens
 	return resp, attempt, nil
@@ -3494,7 +3534,34 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
-func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
+func (s *Service) capabilityMismatch(rc *requestContext, targets []Target, req *IRRequest, dialect string) (string, string) {
+	// Attribute failure to store only if the same request otherwise has an
+	// eligible target. Keep the original request estimate and all other gates.
+	if dialect == "openai-responses" && responsesExplicitNoStore(req) {
+		withoutStore := *req
+		withoutStore.Raw = make(map[string]any, len(req.Raw))
+		for key, value := range req.Raw {
+			if key != "store" {
+				withoutStore.Raw[key] = value
+			}
+		}
+		if len(s.targetsForRequest(rc, targets, &withoutStore, dialect)) > 0 {
+			return "unsupported_capability", "store"
+		}
+	}
+	if dialect == "openai-responses" && invalidResponsesFunctionOutput(req) {
+		return "unsupported_function_call_output", "input"
+	}
+	if dialect == "openai-responses" && invalidResponsesChatMessageContent(req) {
+		return "unsupported_capability", "input"
+	}
+	if dialect == "openai-responses" && invalidResponsesAnthropicMessageContent(req) {
+		for _, target := range targets {
+			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
+				return "unsupported_capability", "input"
+			}
+		}
+	}
 	var candidates []Target
 	for _, target := range targets {
 		out := targetDialect(s.cfg.Provider[target.Provider], target)
@@ -3575,6 +3642,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 			if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && !target.ToolOnly &&
 				targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 				targetSupportsInputModalities(target, requiredModalities) &&
+				targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
 				targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
 				targetCanSatisfyReasoning(target, outDialect, req) &&
 				targetHonorsExplicitMaxTokens(target, req) &&
@@ -3592,6 +3660,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 		if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 			targetSupportsToolsForCallerDialect(target, callerDialect, outDialect) &&
 			targetSupportsInputModalities(target, requiredModalities) &&
+			targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
 			targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
 			targetCanSatisfyReasoning(target, outDialect, req) &&
 			targetHonorsExplicitMaxTokens(target, req) &&
@@ -4459,6 +4528,9 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
+	if err.CapabilityMismatch && err.MismatchCode == "unsupported_function_call_output" {
+		message = "function_call_output.output must be a string or an array of input_text parts without unsupported metadata for a translated bridge"
+	}
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
 	}

@@ -19,19 +19,21 @@ type ChatUpstreamToResponsesCaller struct {
 	ResponseID, Model         string
 	PublicModel               string // caller-facing model; empty keeps Model
 	CreatedAt                 int64
+	IncludeReasoning          bool
 	sequence                  int
 	begun, finished, terminal bool
 	finishReason              string
 	items                     []*chatResponseItem
 	tools                     map[int]*chatResponseItem
 	message                   *chatResponseItem
+	reasoning                 *chatResponseItem
 	usage                     map[string]any
 }
 type chatResponseItem struct {
-	id, callID, name string
-	text             strings.Builder
-	index            int
-	tool, closed     bool
+	id, callID, name        string
+	text                    strings.Builder
+	index                   int
+	tool, reasoning, closed bool
 }
 
 var _ StreamTranslator = (*ChatUpstreamToResponsesCaller)(nil)
@@ -87,7 +89,9 @@ func (t *ChatUpstreamToResponsesCaller) item(i *chatResponseItem) map[string]any
 		}
 	}
 	p := map[string]any{"id": i.id, "status": status}
-	if i.tool {
+	if i.reasoning {
+		p["type"], p["summary"] = "reasoning", []any{map[string]any{"type": "summary_text", "text": i.text.String()}}
+	} else if i.tool {
 		p["type"], p["call_id"], p["name"], p["arguments"] = "function_call", i.callID, i.name, i.text.String()
 	} else {
 		p["type"], p["role"], p["content"] = "message", "assistant", []any{t.part(i)}
@@ -96,13 +100,31 @@ func (t *ChatUpstreamToResponsesCaller) item(i *chatResponseItem) map[string]any
 }
 func (t *ChatUpstreamToResponsesCaller) fields(i *chatResponseItem) map[string]any {
 	p := map[string]any{"item_id": i.id, "output_index": i.index}
-	if !i.tool {
+	if i.reasoning {
+		p["summary_index"] = 0
+	} else if !i.tool {
 		p["content_index"] = 0
 	}
 	return p
 }
+func (t *ChatUpstreamToResponsesCaller) closeReasoning() []Event {
+	i := t.reasoning
+	if i == nil || i.closed {
+		return nil
+	}
+	i.closed = true
+	t.reasoning = nil
+	fields := t.fields(i)
+	fields["text"] = i.text.String()
+	textDone := t.event("response.reasoning_summary_text.done", fields)
+	fields = t.fields(i)
+	fields["part"] = map[string]any{"type": "summary_text", "text": i.text.String()}
+	partDone := t.event("response.reasoning_summary_part.done", fields)
+	return []Event{textDone, partDone, t.event("response.output_item.done", map[string]any{"output_index": i.index, "item": t.item(i)})}
+}
+
 func (t *ChatUpstreamToResponsesCaller) closeItems() []Event {
-	var events []Event
+	events := t.closeReasoning()
 	for _, i := range t.items {
 		if i.closed {
 			continue
@@ -147,8 +169,9 @@ func (t *ChatUpstreamToResponsesCaller) Next(up Event) ([]Event, error) {
 			Index  int    `json:"index"`
 			Finish string `json:"finish_reason"`
 			Delta  struct {
-				Content string `json:"content"`
-				Tools   []struct {
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning_content"`
+				Tools     []struct {
 					Index    int    `json:"index"`
 					ID       string `json:"id"`
 					Function struct {
@@ -185,6 +208,28 @@ func (t *ChatUpstreamToResponsesCaller) Next(up Event) ([]Event, error) {
 		}
 		if t.finishReason != "" {
 			return nil, errors.New("stream: Chat choice after finish_reason")
+		}
+		if t.IncludeReasoning && c.Delta.Reasoning != "" {
+			if t.reasoning == nil {
+				i := &chatResponseItem{index: len(t.items), reasoning: true}
+				i.id = t.id(fmt.Sprintf("%s_rs_%d", t.ResponseID, i.index))
+				t.reasoning = i
+				t.items = append(t.items, i)
+				item := t.item(i)
+				item["summary"] = []any{}
+				events = append(events, t.event("response.output_item.added", map[string]any{"output_index": i.index, "item": item}))
+				fields := t.fields(i)
+				fields["part"] = map[string]any{"type": "summary_text", "text": ""}
+				events = append(events, t.event("response.reasoning_summary_part.added", fields))
+			}
+			i := t.reasoning
+			i.text.WriteString(c.Delta.Reasoning)
+			fields := t.fields(i)
+			fields["delta"] = c.Delta.Reasoning
+			events = append(events, t.event("response.reasoning_summary_text.delta", fields))
+		}
+		if c.Delta.Content != "" || len(c.Delta.Tools) > 0 {
+			events = append(events, t.closeReasoning()...)
 		}
 		if c.Delta.Content != "" {
 			if t.message == nil {

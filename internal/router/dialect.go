@@ -297,11 +297,25 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 	// Encode a unary upstream call. The native streaming path flips stream=true
 	// via enableNativeUpstreamStream; the synthesized translator needs unary.
 	body["stream"] = false
+	// Native Responses honors the caller's explicit field unless the target
+	// enforces a stricter no-store policy. Omission stays omission.
 	if target.ForceStoreFalse {
 		body["store"] = false
+	} else if store, present := req.Raw["store"]; present {
+		body["store"] = store
 	}
 	if err := applyReasoningToOpenAIResponses(body, req, target); err != nil {
 		return nil, err
+	}
+	// Preserve the caller's native Responses context control when the shared
+	// reasoning mapper normalizes effort/summary. Cross-dialect requests still
+	// use the bridge's explicit mapping and eligibility rules.
+	if original, ok := req.Raw["reasoning"].(map[string]any); ok {
+		if context, present := original["context"]; present {
+			if reasoning, ok := body["reasoning"].(map[string]any); ok {
+				reasoning["context"] = context
+			}
+		}
 	}
 	return json.Marshal(body)
 }
@@ -338,6 +352,7 @@ func encodeAnthropicPassthrough(model string, req *IRRequest, target Target) ([]
 	body := providerPassthroughBody(req)
 	body["model"] = model
 	body["stream"] = false
+	stripUnsignedAnthropicThinking(body)
 	normalizeAnthropicPassthroughImages(body)
 	if _, ok := body["max_tokens"]; !ok {
 		body["max_tokens"] = effectiveMaxTokens(req, 1024)
@@ -359,6 +374,53 @@ func encodeAnthropicPassthrough(model string, req *IRRequest, target Target) ([]
 		return nil, err
 	}
 	return json.Marshal(body)
+}
+
+// stripUnsignedAnthropicThinking removes bridge-generated thinking blocks that
+// cannot be replayed to native Claude. Copy the changed message and content
+// containers so other attempts still see the caller's original history.
+func stripUnsignedAnthropicThinking(body map[string]any) {
+	messages, ok := body["messages"].([]any)
+	if !ok {
+		return
+	}
+	var updated []any
+	for i, item := range messages {
+		message, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := message["content"].([]any)
+		if !ok {
+			continue
+		}
+		filtered := make([]any, 0, len(blocks))
+		for _, block := range blocks {
+			m, ok := block.(map[string]any)
+			if ok && stringValue(m["type"]) == "thinking" {
+				signature, present := m["signature"]
+				if !present || signature == "" {
+					continue
+				}
+			}
+			filtered = append(filtered, block)
+		}
+		if len(filtered) == len(blocks) {
+			continue
+		}
+		if updated == nil {
+			updated = append([]any(nil), messages...)
+		}
+		copyMessage := make(map[string]any, len(message))
+		for key, value := range message {
+			copyMessage[key] = value
+		}
+		copyMessage["content"] = filtered
+		updated[i] = copyMessage
+	}
+	if updated != nil {
+		body["messages"] = updated
+	}
 }
 
 // normalizeAnthropicPassthroughImages rewrites only OpenAI-style image_url blocks
@@ -463,7 +525,15 @@ func applyReasoningToOpenAIChat(body map[string]any, req *IRRequest, target Targ
 			delete(body, "max_tokens")
 		}
 	}
-	body["reasoning_effort"] = reasoningEffortForTarget(req.Reasoning, target)
+	effort := reasoningEffortForTarget(req.Reasoning, target)
+	if req.Reasoning.Source == "anthropic_thinking" {
+		var err error
+		effort, err = bridgeReasoningEffort(req.Reasoning)
+		if err != nil {
+			return err
+		}
+	}
+	body["reasoning_effort"] = effort
 	return nil
 }
 
@@ -474,8 +544,18 @@ func applyReasoningToOpenAIResponses(body map[string]any, req *IRRequest, target
 	if !targetCanSatisfyReasoning(target, "openai-responses", req) {
 		return fmt.Errorf("target does not support requested reasoning")
 	}
-	reasoning := map[string]any{"effort": reasoningEffortForTarget(req.Reasoning, target)}
-	if req.Reasoning.Summary != "" && target.Reasoning.SupportsSummaries {
+	effort := reasoningEffortForTarget(req.Reasoning, target)
+	if req.Reasoning.Source == "anthropic_thinking" {
+		var err error
+		effort, err = bridgeReasoningEffort(req.Reasoning)
+		if err != nil {
+			return err
+		}
+	}
+	reasoning := map[string]any{"effort": effort}
+	if req.Reasoning.Source == "anthropic_thinking" && target.Reasoning.SupportsSummaries {
+		reasoning["summary"] = "auto"
+	} else if req.Reasoning.Summary != "" && target.Reasoning.SupportsSummaries {
 		reasoning["summary"] = req.Reasoning.Summary
 	}
 	body["reasoning"] = reasoning
@@ -488,6 +568,23 @@ func applyReasoningToAnthropic(body map[string]any, req *IRRequest, target Targe
 	}
 	if !targetCanSatisfyReasoning(target, "anthropic", req) {
 		return fmt.Errorf("target does not support requested reasoning")
+	}
+	if strings.HasPrefix(req.Reasoning.Source, "openai_") {
+		maxTokens, _ := numberAsInt(body["max_tokens"])
+		thinking, effort, err := bridgeAnthropicReasoning(req.Reasoning, target, maxTokens)
+		if err != nil {
+			return err
+		}
+		body["thinking"] = thinking
+		if effort != "" {
+			outputConfig, _ := body["output_config"].(map[string]any)
+			if outputConfig == nil {
+				outputConfig = map[string]any{}
+				body["output_config"] = outputConfig
+			}
+			outputConfig["effort"] = effort
+		}
+		return nil
 	}
 	if req.Reasoning.Kind == "adaptive" {
 		body["thinking"] = map[string]any{"type": "adaptive"}
@@ -1011,7 +1108,11 @@ func encodeOpenAIChatContent(m IRMessage) any {
 			}
 		case "image":
 			if p.FileID != "" {
-				parts = append(parts, map[string]any{"type": "input_image", "file_id": p.FileID})
+				image := map[string]any{"type": "input_image", "file_id": p.FileID}
+				if p.Detail != "" {
+					image["detail"] = p.Detail
+				}
+				parts = append(parts, image)
 				continue
 			}
 			if u := imageURLForOpenAI(p); u != "" {
