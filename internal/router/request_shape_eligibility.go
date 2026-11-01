@@ -144,7 +144,13 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 		fit.ToolSchemaFit = false
 	}
 	reason := ""
-	if s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
+	// Bedrock currently uses a Chat-to-Converse adapter, not a native
+	// Anthropic codec. Preserve main's fail-closed behavior for opaque
+	// Anthropic history rather than stripping it on the way to Bedrock.
+	if s.cfg != nil && normalizeDialect(callerDialect) == "anthropic" && isBedrock(s.cfg.Provider[target.Provider]) && reasoningHistoryPresent(req) {
+		reason = "bedrock-opaque-reasoning-unsupported"
+	}
+	if reason == "" && s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
 		if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) {
 			reason = "request-shape-dialect-unsupported"
 		} else if !strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed") {
