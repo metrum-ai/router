@@ -21,12 +21,11 @@ Negative and partial results are published as such, not dropped.
   backend, direct versus routed. Published evidence covers the plain router
   path and real d3 shadow and enforce paths on A100 hosts, including the
   high-concurrency decision-path deltas and their limits
-  (`benchmarks/overhead/evidence/`). CPU and memory per 1,000 requests/s,
-  exploratory 90%-floor profiles are published as exploratory. Strict
-  continuous occupancy for enforce/32, CPU and memory per 1,000 requests/s,
-  maximum sustained throughput and the edge case remain unproven, and the issue
-  is closed with those limits recorded. Rerun: `make overhead-profile-smoke`,
-  `make overhead-decision-smoke`.
+  (`benchmarks/overhead/evidence/`). The exploratory 90%-floor profiles are
+  published as exploratory. Strict continuous occupancy for enforce/32, CPU and
+  memory per 1,000 requests/s, maximum sustained throughput and the edge case
+  remain unproven, and the issue is closed with those limits recorded. Rerun:
+  `make overhead-profile-smoke`, `make overhead-decision-smoke`.
 
 - Savings case studies on three real workloads (#423): coding agent, support
   agent and document Q&A, each routed against an all-frontier baseline on the
