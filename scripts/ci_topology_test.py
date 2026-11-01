@@ -174,10 +174,34 @@ def assert_retirement_topology() -> None:
     require("push:" in headers and "pull_request:" not in headers and "merge_group:" not in headers,
             "source-header workflow must retain main push without duplicating ci")
     dependabot = read(ROOT / ".github" / "dependabot.yml")
-    ecosystems = re.findall(r"(?m)^  - package-ecosystem:", dependabot)
-    limits = re.findall(r"(?m)^    open-pull-requests-limit:\s*(\d+)\s*$", dependabot)
-    require(bool(ecosystems) and len(ecosystems) == len(limits) and all(limit == "0" for limit in limits),
-            "version-update PRs must remain paused in every Dependabot ecosystem")
+    expected = {
+        ("gomod", "/"): "10",
+        ("npm", "/docs-site"): "10",
+        ("npm", "/internal/router/admindist/web"): "5",
+        ("pip", "/services/learned-routing-policy"): "5",
+        ("pip", "/evaluators/livecodebench"): "5",
+        ("pip", "/tests/api_compat"): "5",
+        ("pip", "/tests/harbor"): "5",
+        ("github-actions", "/"): "5",
+    }
+    entries = re.split(r"(?m)^  - package-ecosystem: ", dependabot)[1:]
+    actual = {}
+    for entry in entries:
+        ecosystem = entry.splitlines()[0].strip()
+        directory = re.search(r"(?m)^    directory: (\S+)\s*$", entry)
+        limit = re.search(r"(?m)^    open-pull-requests-limit: (\d+)\s*$", entry)
+        require(directory is not None and limit is not None, "invalid Dependabot update entry")
+        key = (ecosystem, directory.group(1))
+        require(key not in actual, f"duplicate Dependabot entry: {key}")
+        actual[key] = limit.group(1)
+        require(re.search(r"(?m)^      interval: weekly\s*$", entry) is not None,
+                f"Dependabot schedule must be weekly: {key}")
+        require(re.search(r"(?m)^      default-days: 7\s*$", entry) is not None,
+                f"Dependabot cooldown must be seven days: {key}")
+        if ecosystem != "github-actions":
+            require(re.search(r"(?m)^      semver-major-days: 14\s*$", entry) is not None,
+                    f"Dependabot major cooldown must be fourteen days: {key}")
+    require(actual == expected, "Dependabot update directories or limits differ from the post-release policy")
 
 
 def assert_provider_workflows() -> None:
