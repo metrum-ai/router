@@ -1439,6 +1439,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			// the unredacted token estimate to rule out post-PII alternatives.
 			earlyRC := *rc
 			estimate := requestTokenEstimateFromIR(req, dialect, len(body))
+			if group.PIIFilter.Enabled {
+				// Text may shrink during redaction. Do not reject a potentially
+				// eligible other dialect on its unredacted token estimate; request
+				// byte and non-token capability limits still apply here.
+				estimate.EstimatedTotalInputTokens = 0
+			}
 			earlyRC.rec.TokenEstimate = &estimate
 			otherEligible := len(s.targetsForRequest(&earlyRC, others, req, dialect)) > 0
 			if !otherEligible {
@@ -1658,6 +1664,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.trace("bridge_session_requested", "chat-to-responses stateful session header present", dec.Target, 0, 0, "", false, 0)
 	}
 
+	// Responses function history is not represented completely in the cache
+	// key. Developer histories are newly eligible for this tool bridge, so
+	// bypass cache even if the caller supplies no current tool definitions.
+	if developerHistory && responsesHasFunctionHistory(req) {
+		req.NoCache = true
+	}
 	callerID, project := cacheCallerScope(rc)
 	key := cacheKey(req, dec.Target, callerID, project)
 	if cacheable(req) {

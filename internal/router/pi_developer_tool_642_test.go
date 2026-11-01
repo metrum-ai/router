@@ -54,6 +54,32 @@ func TestDeveloperMultipartPIIAndCache642(t *testing.T) {
 	}
 }
 
+func TestDeveloperToolHistoryCacheBypass642(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id":"msg_%d","type":"message","role":"assistant","content":[{"type":"text","text":"answer-%d"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`, n, n)
+	}))
+	defer up.Close()
+	svc := nativeStreamTestService(t, up.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		cfg.Server.Cache = CacheConfig{Enabled: true, MaxBytes: 1 << 20, DefaultTTL: time.Minute}
+	})
+	for i, output := range []string{"first", "second", "second"} {
+		body := fmt.Sprintf(`{"model":"native-stream","temperature":0,"input":[{"role":"developer","content":"rules"},{"role":"user","content":"read"},{"type":"function_call","call_id":"call_1","name":"read","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":%q}]}`, output)
+		r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), fmt.Sprintf("answer-%d", i+1)) || hits.Load() != int32(i+1) {
+			t.Fatalf("tool history cached or failed: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+		}
+	}
+	if stats := svc.cache.Stats(); !stats.Enabled || stats.Items != 0 {
+		t.Fatalf("tool history populated cache: %#v", stats)
+	}
+}
+
 func TestDeveloperPIIMixedTargets642(t *testing.T) {
 	var anthHits, nativeHits atomic.Int32
 	anth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { anthHits.Add(1); w.WriteHeader(500) }))
@@ -82,7 +108,7 @@ func TestDeveloperPIIMixedTargets642(t *testing.T) {
 }
 
 func TestDeveloperPIIMixedLimitPrecedence642(t *testing.T) {
-	for _, kind := range []string{"redaction-shrinks", "request-byte-limit"} {
+	for _, kind := range []string{"redaction-shrinks", "redaction-shrinks-multipart", "redaction-shrinks-late", "request-byte-limit"} {
 		t.Run(kind, func(t *testing.T) {
 			var anthHits, nativeHits atomic.Int32
 			anth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { anthHits.Add(1); w.WriteHeader(500) }))
@@ -94,7 +120,7 @@ func TestDeveloperPIIMixedLimitPrecedence642(t *testing.T) {
 			}))
 			defer native.Close()
 			nativeTarget := Target{Provider: "oai", Model: "native-model"}
-			if kind == "redaction-shrinks" {
+			if strings.HasPrefix(kind, "redaction-shrinks") {
 				nativeTarget.RequestShapeSupport.MaxEstimatedInputTokens = 100
 			} else {
 				nativeTarget.RequestShapeSupport.MaxRequestBytes = 80
@@ -110,16 +136,21 @@ func TestDeveloperPIIMixedLimitPrecedence642(t *testing.T) {
 				cfg.Models["native-stream"] = g
 			})
 			var body string
-			if kind == "redaction-shrinks" {
+			switch kind {
+			case "redaction-shrinks":
 				body = `{"model":"native-stream","input":[{"role":"developer","content":"` + strings.Repeat("X", 1200) + `"},{"role":"user","content":"hi"}]}`
-			} else {
+			case "redaction-shrinks-multipart":
+				body = `{"model":"native-stream","input":[{"role":"developer","content":[{"type":"input_text","text":"` + strings.Repeat("X", 1200) + `"},{"type":"input_text","text":"safe"}]},{"role":"user","content":"hi"}]}`
+			case "redaction-shrinks-late":
+				body = `{"model":"native-stream","input":[{"role":"user","content":"hi"},{"role":"developer","content":"` + strings.Repeat("X", 1200) + `"}]}`
+			default:
 				body = `{"model":"native-stream","input":[{"role":"developer","content":[{"type":"input_text","text":"XXXXX"},{"type":"input_text","text":"extra"}]},{"role":"user","content":"hi"}]}`
 			}
 			r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
 			r.Header.Set("Authorization", "Bearer "+testToken)
 			w := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(w, r)
-			if kind == "redaction-shrinks" {
+			if strings.HasPrefix(kind, "redaction-shrinks") {
 				if w.Code != 200 || nativeHits.Load() != 1 || anthHits.Load() != 0 {
 					t.Fatalf("redacted native route status=%d native=%d anth=%d body=%s", w.Code, nativeHits.Load(), anthHits.Load(), w.Body.String())
 				}
