@@ -352,6 +352,7 @@ func encodeAnthropicPassthrough(model string, req *IRRequest, target Target) ([]
 	body := providerPassthroughBody(req)
 	body["model"] = model
 	body["stream"] = false
+	stripUnsignedAnthropicThinking(body)
 	normalizeAnthropicPassthroughImages(body)
 	if _, ok := body["max_tokens"]; !ok {
 		body["max_tokens"] = effectiveMaxTokens(req, 1024)
@@ -373,6 +374,53 @@ func encodeAnthropicPassthrough(model string, req *IRRequest, target Target) ([]
 		return nil, err
 	}
 	return json.Marshal(body)
+}
+
+// stripUnsignedAnthropicThinking removes bridge-generated thinking blocks that
+// cannot be replayed to native Claude. Copy the changed message and content
+// containers so other attempts still see the caller's original history.
+func stripUnsignedAnthropicThinking(body map[string]any) {
+	messages, ok := body["messages"].([]any)
+	if !ok {
+		return
+	}
+	var updated []any
+	for i, item := range messages {
+		message, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := message["content"].([]any)
+		if !ok {
+			continue
+		}
+		filtered := make([]any, 0, len(blocks))
+		for _, block := range blocks {
+			m, ok := block.(map[string]any)
+			if ok && stringValue(m["type"]) == "thinking" {
+				signature, present := m["signature"]
+				if !present || signature == "" {
+					continue
+				}
+			}
+			filtered = append(filtered, block)
+		}
+		if len(filtered) == len(blocks) {
+			continue
+		}
+		if updated == nil {
+			updated = append([]any(nil), messages...)
+		}
+		copyMessage := make(map[string]any, len(message))
+		for key, value := range message {
+			copyMessage[key] = value
+		}
+		copyMessage["content"] = filtered
+		updated[i] = copyMessage
+	}
+	if updated != nil {
+		body["messages"] = updated
+	}
 }
 
 // normalizeAnthropicPassthroughImages rewrites only OpenAI-style image_url blocks

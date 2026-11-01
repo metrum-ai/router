@@ -209,8 +209,16 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 func (s *Service) mediaAdmission(group ModelGroup, req *IRRequest, caller string) string {
 	first := ""
 	for _, target := range group.Targets {
-		out := targetDialect(s.cfg.Provider[target.Provider], target)
-		reason := mediaTargetReason(target, req, caller, out)
+		provider := s.cfg.Provider[target.Provider]
+		out := targetDialect(provider, target)
+		reason := ""
+		// Converse cannot represent opaque Anthropic blocks. Preserve the
+		// pre-bridge unsupported_block response rather than sanitizing them.
+		if caller == "anthropic" && isBedrock(provider) && req != nil && (unknownAnthropicBlocks(req.Raw["messages"]) || unknownAnthropicBlocks(req.Raw["system"])) {
+			reason = "unsupported_block"
+		} else {
+			reason = mediaTargetReason(target, req, caller, out)
+		}
 		if reason == "" {
 			return ""
 		}
