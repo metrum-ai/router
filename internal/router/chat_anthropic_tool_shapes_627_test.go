@@ -63,6 +63,33 @@ func TestChatAnthropic627ParallelResultShapes(t *testing.T) {
 	}
 }
 
+func TestChatAnthropic627EmptyArrayResultMatchesBaseline(t *testing.T) {
+	for _, content := range []any{[]any{}, []any{map[string]any{"type": "text", "text": ""}}} {
+		input := map[string]any{"model": "m", "messages": []any{
+			map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": "call_a", "type": "function", "function": map[string]any{"name": "read", "arguments": `{}`}}}},
+			map[string]any{"role": "tool", "tool_call_id": "call_a", "content": content},
+		}}
+		raw, _ := json.Marshal(input)
+		req, err := decodeRequest("openai-chat", raw, http.Header{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := encodeOpenAIToolsToAnthropic("m", "openai-chat", req, anthropicToolTarget())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(encoded, &body); err != nil {
+			t.Fatal(err)
+		}
+		messages := valueAsSlice(body["messages"])
+		result := valueAsSlice(messages[1].(map[string]any)["content"])[0].(map[string]any)
+		if result["content"] != nil {
+			t.Fatalf("empty array result changed from baseline: %#v", result)
+		}
+	}
+}
+
 func TestAnthropic627NativeToolResultPreservation(t *testing.T) {
 	for _, content := range []any{"E2E-TOOL-RESULT-7842\n", []any{map[string]any{"type": "text", "text": "E2E-TOOL-RESULT-7842\n"}}} {
 		blocks := []any{map[string]any{"type": "tool_result", "tool_use_id": "toolu_1", "content": content, "is_error": false, "cache_control": map[string]any{"type": "ephemeral"}}, map[string]any{"type": "tool_result", "tool_use_id": "toolu_2", "content": "second", "is_error": true}}

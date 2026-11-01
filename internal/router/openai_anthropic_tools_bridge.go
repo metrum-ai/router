@@ -118,11 +118,16 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		if _, isArray := content.([]any); isArray {
 			parts := decodeContentParts(content)
 			if !hasMediaParts(parts) {
-				blocks = make([]any, 0, len(parts))
+				var textBlocks []any
 				for _, part := range parts {
 					if part.Type == "text" && part.Text != "" {
-						blocks = append(blocks, map[string]any{"type": "text", "text": part.Text})
+						textBlocks = append(textBlocks, map[string]any{"type": "text", "text": part.Text})
 					}
+				}
+				// Retain the previous empty-result representation when every
+				// part is empty rather than creating an empty block array.
+				if len(textBlocks) > 0 {
+					blocks = textBlocks
 				}
 			}
 		}
