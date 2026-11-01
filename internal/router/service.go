@@ -2241,7 +2241,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
 		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
-			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(rc, group.Targets, req, callerDialect)
+			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, req, callerDialect)
 		}
 		return decision{}, err
 	}
@@ -3510,34 +3510,7 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
-func (s *Service) capabilityMismatch(rc *requestContext, targets []Target, req *IRRequest, dialect string) (string, string) {
-	// Diagnose audio only when removing that output requirement makes a
-	// non-audio target eligible. Otherwise report the unrelated capability or
-	// endpoint failure rather than blaming an audio-capable target.
-	if requestWantsChatAudioOutput(req, dialect) {
-		withoutAudio := *req
-		withoutAudio.Raw = make(map[string]any, len(req.Raw))
-		for k, v := range req.Raw {
-			if k != "audio" && k != "modalities" {
-				withoutAudio.Raw[k] = v
-			}
-		}
-		// Retain the actual request-size estimate used for selection. Recomputing
-		// it without the request context would incorrectly treat its size as zero.
-		if candidates := s.targetsForRequest(rc, targets, &withoutAudio, dialect); len(candidates) > 0 {
-			audioEligible := false
-			for _, target := range candidates {
-				out := targetDialect(s.cfg.Provider[target.Provider], target)
-				if targetSupportsChatAudioOutput(target, req, dialect, out) {
-					audioEligible = true
-					break
-				}
-			}
-			if !audioEligible {
-				return "unsupported_capability", "modalities"
-			}
-		}
-	}
+func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
 	if dialect == "openai-responses" && invalidResponsesFunctionOutput(req) {
 		return "unsupported_function_call_output", "input"
 	}
