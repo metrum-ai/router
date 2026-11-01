@@ -112,6 +112,20 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		if err != nil {
 			return nil, err
 		}
+		// contentBlocks has already validated the parts. Preserve ordered text
+		// blocks rather than flattening them with invented newline separators.
+		// Mixed media is already encoded as individual ordered blocks.
+		if _, isArray := content.([]any); isArray {
+			parts := decodeContentParts(content)
+			if !hasMediaParts(parts) {
+				blocks = make([]any, 0, len(parts))
+				for _, part := range parts {
+					if part.Type == "text" && part.Text != "" {
+						blocks = append(blocks, map[string]any{"type": "text", "text": part.Text})
+					}
+				}
+			}
+		}
 		return map[string]any{"type": "tool_result", "tool_use_id": id, "content": blocks}, nil
 	}
 	if caller == "openai-chat" {
