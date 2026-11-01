@@ -201,7 +201,8 @@ Negative and partial results are published as such, not dropped.
   audio declaration default to text-only; an audio request that would otherwise
   route to a text-only target returns `400 unsupported_capability` with
   `param: modalities`. Other capability or endpoint errors may take precedence.
-  Translated bridges do not support audio output
+  Audio streaming requires incremental translation; synthesized Chat streaming
+  rejects audio before dispatch. Translated bridges do not support audio output
   (#612, #576).
 
 - Chat streaming no longer sends a usage-only chunk unless the caller sets
