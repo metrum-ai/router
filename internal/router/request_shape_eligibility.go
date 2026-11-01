@@ -167,6 +167,13 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 }
 
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
+	// Validate the same sanitized history that the cross-dialect encoder sees.
+	// Otherwise harmless foreign reasoning items are rejected before stripping.
+	clean, err := foreignReasoningHistory(req, callerDialect, outDialect)
+	if err != nil {
+		return "reasoning-history-unsupported"
+	}
+	req = clean
 	support := target.RequestShapeSupport
 	// Logprobs cannot be represented by the current Anthropic translation.
 	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {

@@ -23,6 +23,11 @@ func responsesToChatBridgeFilterReason(target Target, req *IRRequest, callerDial
 	if normalizeDialect(callerDialect) != "openai-responses" || normalizeDialect(outDialect) != "openai-chat" {
 		return ""
 	}
+	clean, err := foreignReasoningHistory(req, callerDialect, outDialect)
+	if err != nil {
+		return "responses-to-chat-reasoning-history-unsupported"
+	}
+	req = clean
 	bridge := target.ResponsesToChat
 	if !bridge.Enabled {
 		return "responses-to-chat-bridge-disabled"
