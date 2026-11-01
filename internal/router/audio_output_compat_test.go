@@ -5,6 +5,7 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,6 +82,26 @@ func TestChatNativeAudioStreamPassthrough(t *testing.T) {
 	svc.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || hits.Load() != 1 || !strings.Contains(w.Body.String(), `"id":"audio_1"`) || !strings.Contains(w.Body.String(), `"data":"d2F2"`) || !strings.Contains(w.Body.String(), "[DONE]") {
 		t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+	}
+}
+
+func TestChatAudioSynthesizedStreamFailsClosed(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"chat_1","choices":[{"message":{"role":"assistant","content":"spoken","audio":{"data":"AUDIO_DATA"}},"finish_reason":"stop"}]}`)
+	}))
+	defer up.Close()
+	target := Target{Provider: "native", Model: "audio", OutputModalities: []string{"text", "audio"}}
+	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target})
+	svc.cfg.Server.Streaming.Translator = "synthesized"
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"native-stream","messages":[{"role":"user","content":"hi"}],"stream":true,"modalities":["text","audio"]}`))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"param":"modalities"`) {
+		t.Fatalf("synthesized audio must fail closed: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 	}
 }
 

@@ -1534,6 +1534,16 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadGateway, "routing-failed")
 		return
 	}
+	// Synthesized Chat SSE cannot represent audio from the unary response.
+	// Fail before dispatch instead of returning a successful text-only stream.
+	if req.Stream && requestWantsChatAudioOutput(req, dialect) && s.cfg.Server.Streaming.Translator == "synthesized" {
+		s.writeRoutingEligibilityError(w, rc, routingEligibilityError{
+			Model: req.Model, Dialect: dialect,
+			Requirements:       []string{"native audio streaming (synthesized streaming is unsupported)"},
+			CapabilityMismatch: true, MismatchCode: "unsupported_capability", MismatchParam: "modalities",
+		})
+		return
+	}
 	req.CallerBetas = strings.Join(r.Header.Values("Anthropic-Beta"), ",")
 	// Beta features can change provider semantics outside the normalized cache key.
 	if strings.TrimSpace(req.CallerBetas) != "" {
