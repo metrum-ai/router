@@ -89,7 +89,8 @@ Negative and partial results are published as such, not dropped.
   non-text and late developer messages remain rejected rather than silently
   dropped. Developer histories are ineligible for Anthropic targets when the
   model group's PII filter is enabled; PII-filtered developer histories are
-  not shadow replayed. Existing encrypted-reasoning and retention limitations
+  not shadow replayed, and developer histories bypass the response cache when
+  an Anthropic target can serve. Existing encrypted-reasoning and retention limitations
   still apply (#642); PII and cache alignment is deferred to #645.
 
 - OpenAI and Anthropic compatibility runs on every pull request and again on

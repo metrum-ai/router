@@ -54,6 +54,35 @@ func TestDeveloperMultipartPIIAndCache642(t *testing.T) {
 	}
 }
 
+func TestDeveloperReasoningHistoryCacheBypass642(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"id":"msg_%d","type":"message","role":"assistant","content":[{"type":"text","text":"answer-%d"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`, n, n)
+	}))
+	defer up.Close()
+	svc := nativeStreamTestService(t, up.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		cfg.Server.Cache = CacheConfig{Enabled: true, MaxBytes: 1 << 20, DefaultTTL: time.Minute}
+	})
+	for i, input := range []string{
+		`[{"role":"developer","content":"rules"},{"type":"reasoning","content":"x"},{"role":"user","content":"y"}]`,
+		`[{"role":"developer","content":"rules"},{"role":"user","content":"x"},{"role":"user","content":"y"}]`,
+		`[{"role":"developer","content":"rules"},{"role":"user","content":"x"},{"role":"user","content":"y"}]`,
+	} {
+		r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"native-stream","temperature":0,"input":`+input+`}`))
+		r.Header.Set("Authorization", "Bearer "+testToken)
+		w := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || hits.Load() != int32(i+1) || !strings.Contains(w.Body.String(), fmt.Sprintf("answer-%d", i+1)) {
+			t.Fatalf("reasoning history cache collision: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+		}
+	}
+	if stats := svc.cache.Stats(); !stats.Enabled || stats.Items != 0 {
+		t.Fatalf("developer history populated cache: %#v", stats)
+	}
+}
+
 func TestDeveloperToolHistoryCacheBypass642(t *testing.T) {
 	var hits atomic.Int32
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

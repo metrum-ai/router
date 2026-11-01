@@ -1664,11 +1664,16 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.trace("bridge_session_requested", "chat-to-responses stateful session header present", dec.Target, 0, 0, "", false, 0)
 	}
 
-	// Responses function history is not represented completely in the cache
-	// key. Developer histories are newly eligible for this tool bridge, so
-	// bypass cache even if the caller supplies no current tool definitions.
-	if developerHistory && responsesHasFunctionHistory(req) {
-		req.NoCache = true
+	// Responses-to-Anthropic developer histories are newly eligible, but raw
+	// history item types and tool results are not fully represented in cache
+	// keys. Bypass cache if Anthropic can serve, including as a fallback.
+	if developerHistory {
+		for _, target := range sessionTargets {
+			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
+				req.NoCache = true
+				break
+			}
+		}
 	}
 	callerID, project := cacheCallerScope(rc)
 	key := cacheKey(req, dec.Target, callerID, project)
