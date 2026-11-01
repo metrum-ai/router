@@ -67,7 +67,11 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					return nil, fmt.Errorf("unsupported or unrepresentable content part")
 				}
 				switch stringValue(part["type"]) {
-				case "text", "input_text", "output_text", "image_url", "input_image":
+				case "text", "input_text", "output_text":
+				case "image_url", "input_image":
+					if decodeContentPart(part).Detail != "" {
+						return nil, fmt.Errorf("image detail cannot be translated")
+					}
 				default:
 					return nil, fmt.Errorf("unsupported content part")
 				}

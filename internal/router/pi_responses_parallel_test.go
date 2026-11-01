@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+func TestPiResponsesChatImageFileDetailPreserved(t *testing.T) {
+	parts := decodeContentParts([]any{map[string]any{"type": "input_image", "file_id": "file_1", "detail": "high"}})
+	encoded, ok := encodeOpenAIChatContent(IRMessage{Parts: parts}).([]map[string]any)
+	if !ok || len(encoded) != 1 || encoded[0]["file_id"] != "file_1" || encoded[0]["detail"] != "high" {
+		t.Fatalf("lost file image detail: %#v", encoded)
+	}
+}
+
 func TestPiResponsesParallelToolHistory(t *testing.T) {
 	input := `[{"role":"user","content":"hi"},{"type":"function_call","call_id":"call_1","name":"read","arguments":"{\"path\":\"one\"}"},{"type":"function_call","call_id":"call_2","name":"read","arguments":"{\"path\":\"two\"}"},{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_text","text":"first"},{"type":"input_text","text":" output"}]},{"type":"function_call_output","call_id":"call_2","output":"second output"}]`
 	req, err := decodeRequest("openai-responses", []byte(piResponsePrefix+`"input":`+input+`}`), http.Header{})

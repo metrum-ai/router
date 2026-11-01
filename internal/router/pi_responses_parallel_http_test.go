@@ -81,6 +81,7 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 				t.Fatalf("unknown content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
 			}
 			for _, bad := range []string{
+				`[{"role":"user","content":"hi"},{"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"secret","future_metadata":"do not lose"}]}]`,
 				`[{"role":"user","content":[{"type":"input_text","text":"describe"},{"type":"input_image","image_url":null}]}]`,
 				`[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[{"type":"url_citation","url":"https://example.invalid"}]}]}]`,
 				`[{"role":"user","content":[{"type":"input_text","text":"hi","future_metadata":"must not be lost"}]}]`,
@@ -88,6 +89,22 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 				w = post(bad)
 				if w.Code != 400 || hits.Load() != 1 {
 					t.Fatalf("unrepresentable content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
+				}
+			}
+			if dialect == "anthropic" {
+				for _, bad := range []string{
+					`[{"role":"user","content":[{"type":"future_part","text":"lost"}]}]`,
+					`[{"role":"user","content":[{"type":"input_text","text":"hi","extra":"lost"}]}]`,
+					`[{"role":"user","content":[{"type":"input_text","text":"describe"},{"type":"input_image","image_url":"data:image/png;base64,AAAA","detail":"high"}]}]`,
+				} {
+					body := `{"model":"native-stream","stream":true,"input":` + bad + `}`
+					r := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+					r.Header.Set("Authorization", "Bearer "+testToken)
+					w = httptest.NewRecorder()
+					svc.Handler().ServeHTTP(w, r)
+					if w.Code != 400 || hits.Load() != 1 {
+						t.Fatalf("tool-less unsupported content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
+					}
 				}
 			}
 			if dialect == "openai-chat" {

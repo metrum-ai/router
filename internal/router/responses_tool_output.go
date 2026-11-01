@@ -18,7 +18,7 @@ func responsesToolOutputText(output any) (string, bool) {
 	var text strings.Builder
 	for _, part := range parts {
 		value, ok := part.(map[string]any)
-		if !ok || stringValue(value["type"]) != "input_text" {
+		if !ok || stringValue(value["type"]) != "input_text" || !bridgeTextPartSupported(value) {
 			return "", false
 		}
 		piece, ok := value["text"].(string)
@@ -45,6 +45,22 @@ func invalidResponsesFunctionOutput(req *IRRequest) bool {
 	return false
 }
 
+func bridgeTextPartSupported(part map[string]any) bool {
+	if _, ok := part["text"].(string); !ok {
+		return false
+	}
+	for key, value := range part {
+		if key == "type" || key == "text" || value == nil {
+			continue
+		}
+		if empty, ok := value.([]any); ok && len(empty) == 0 && (key == "annotations" || key == "logprobs") {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func chatBridgeContentSupported(role string, content any) bool {
 	if content == nil {
 		return role == "assistant"
@@ -63,16 +79,7 @@ func chatBridgeContentSupported(role string, content any) bool {
 		}
 		switch stringValue(m["type"]) {
 		case "text", "input_text", "output_text":
-			if _, ok := m["text"].(string); !ok {
-				return false
-			}
-			for key, value := range m {
-				if key == "type" || key == "text" || value == nil {
-					continue
-				}
-				if empty, ok := value.([]any); ok && len(empty) == 0 && (key == "annotations" || key == "logprobs") {
-					continue
-				}
+			if !bridgeTextPartSupported(m) {
 				return false
 			}
 		case "input_image", "image_url":
@@ -92,6 +99,29 @@ func chatBridgeContentSupported(role string, content any) bool {
 		}
 	}
 	return true
+}
+
+func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
+	if invalidResponsesChatMessageContent(req) {
+		return true
+	}
+	if req == nil {
+		return false
+	}
+	for _, value := range valueAsSlice(req.Raw["input"]) {
+		item, _ := value.(map[string]any)
+		typ := stringValue(item["type"])
+		if typ != "" && typ != "message" {
+			continue
+		}
+		for _, value := range valueAsSlice(item["content"]) {
+			part, _ := value.(map[string]any)
+			if (stringValue(part["type"]) == "input_image" || stringValue(part["type"]) == "image_url") && decodeContentPart(part).Detail != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func invalidResponsesChatMessageContent(req *IRRequest) bool {

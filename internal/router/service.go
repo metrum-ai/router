@@ -3501,6 +3501,13 @@ func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect s
 	if dialect == "openai-responses" && invalidResponsesChatMessageContent(req) {
 		return "unsupported_capability", "input"
 	}
+	if dialect == "openai-responses" && invalidResponsesAnthropicMessageContent(req) {
+		for _, target := range targets {
+			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
+				return "unsupported_capability", "input"
+			}
+		}
+	}
 	var candidates []Target
 	for _, target := range targets {
 		out := targetDialect(s.cfg.Provider[target.Provider], target)
@@ -4466,7 +4473,7 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_function_call_output" {
-		message = "function_call_output.output must be a string or an array of input_text parts for a translated bridge"
+		message = "function_call_output.output must be a string or an array of input_text parts without unsupported metadata for a translated bridge"
 	}
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
