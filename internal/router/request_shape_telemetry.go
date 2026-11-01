@@ -133,12 +133,48 @@ func (s *Service) recordTranslationShapeTelemetry(rc *requestContext, req *IRReq
 		shape.ToolSchemaFingerprint = rc.rec.RequestShape.ToolSchemaFingerprint
 	}
 	events := translationFieldEvents(req.Raw, translated, attemptIndex)
+	if (rc.dialect == "openai-responses" || rc.dialect == "openai-chat") && outDialect == "anthropic" && requestHasImageDetail(req) {
+		field := "messages"
+		if rc.dialect == "openai-responses" {
+			field = "input"
+		}
+		// Keep this bounded, content-free warning even if generic events
+		// already filled their per-attempt limit.
+		combined := appendTranslationFieldEvent(nil, attemptIndex, field, "stripped", "image-detail-ignored")
+		for _, event := range events {
+			combined = appendTranslationFieldEvent(combined, attemptIndex, event.FieldName, event.Action, event.Reason)
+		}
+		events = combined
+	}
 	shape.FieldsStrippedCount = countFieldEvents(events, "stripped")
 	shape.FieldsRewrittenCount = countFieldEvents(events, "rewritten")
 	shape.UnsupportedFieldsPresent = countFieldEvents(events, "unsupported") > 0
 	shape.TranslationWarningCount = shape.FieldsStrippedCount + shape.FieldsRewrittenCount + countFieldEvents(events, "unsupported")
 	rc.rec.TranslationShapes = append(rc.rec.TranslationShapes, shape)
 	rc.rec.TranslationFieldEvents = append(rc.rec.TranslationFieldEvents, events...)
+}
+
+func requestHasImageDetail(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	hasDetail := func(parts []IRContentPart) bool {
+		for _, part := range parts {
+			if part.Type == "image" && part.Detail != "" {
+				return true
+			}
+		}
+		return false
+	}
+	if hasDetail(req.InputParts) {
+		return true
+	}
+	for _, message := range req.Messages {
+		if hasDetail(message.Parts) {
+			return true
+		}
+	}
+	return false
 }
 
 func translationShapeFromBody(req *IRRequest, target Target, provider ProviderConfig, outDialect, endpointPath string, attemptIndex int, translated map[string]any, bodyBytes int) translationShapeLogRecord {

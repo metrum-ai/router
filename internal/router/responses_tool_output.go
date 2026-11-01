@@ -101,6 +101,43 @@ func chatBridgeContentSupported(role string, content any) bool {
 	return true
 }
 
+// Only the OpenAI detail hint may be discarded on an Anthropic image.
+// Reject other image-part metadata rather than silently losing it.
+func anthropicImageMetadataUnsupported(req *IRRequest, caller string) bool {
+	if req == nil {
+		return false
+	}
+	key := "messages"
+	if caller == "openai-responses" {
+		key = "input"
+	}
+	for _, rawMessage := range valueAsSlice(req.Raw[key]) {
+		message, _ := rawMessage.(map[string]any)
+		for _, rawPart := range valueAsSlice(message["content"]) {
+			part, _ := rawPart.(map[string]any)
+			if typ := stringValue(part["type"]); typ != "input_image" && typ != "image_url" {
+				continue
+			}
+			if part["file_id"] != nil && part["image_url"] != nil {
+				return true
+			}
+			for k, value := range part {
+				if value != nil && k != "type" && k != "image_url" && k != "file_id" && k != "detail" {
+					return true
+				}
+			}
+			if image, ok := part["image_url"].(map[string]any); ok {
+				for k, value := range image {
+					if value != nil && k != "url" && k != "detail" {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
 	if invalidResponsesChatMessageContent(req) {
 		return true
@@ -139,12 +176,6 @@ func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
 			}
 		} else {
 			seenConversation = true
-		}
-		for _, value := range valueAsSlice(item["content"]) {
-			part, _ := value.(map[string]any)
-			if (stringValue(part["type"]) == "input_image" || stringValue(part["type"]) == "image_url") && decodeContentPart(part).Detail != "" {
-				return true
-			}
 		}
 	}
 	return false

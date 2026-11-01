@@ -69,9 +69,8 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 				switch stringValue(part["type"]) {
 				case "text", "input_text", "output_text":
 				case "image_url", "input_image":
-					if decodeContentPart(part).Detail != "" {
-						return nil, fmt.Errorf("image detail cannot be translated")
-					}
+					// Anthropic has no equivalent to OpenAI's detail hint.
+					// Preserve the image source; omit only that hint.
 				default:
 					return nil, fmt.Errorf("unsupported content part")
 				}
