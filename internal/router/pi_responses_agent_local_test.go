@@ -53,7 +53,6 @@ func TestPiResponsesRealAgentLocalReadContinuation(t *testing.T) {
 	}))
 	defer up.Close()
 	target := anthropicToolTarget()
-	target.ForceStoreFalse = true
 	target.ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true, Streaming: true, ValidationStatus: "passed"}
 	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target})
 	var mu sync.Mutex

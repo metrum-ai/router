@@ -2697,6 +2697,21 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)
 	}
+	// Responses→Chat has no stored Responses resource. Send false when the
+	// caller or target requests it, unless the target explicitly declares
+	// that it rejects the parameter and relies on its no-store default.
+	// Bedrock's internal Chat-shaped adapter is a Messages transport.
+	if err == nil && callerDialect == "openai-responses" && outDialect == "openai-chat" && !isBedrock(provider) && (responsesExplicitNoStore(req) || target.ForceStoreFalse) {
+		var chatBody map[string]any
+		if err = json.Unmarshal(upReqBody, &chatBody); err == nil {
+			if supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "store") {
+				delete(chatBody, "store")
+			} else {
+				chatBody["store"] = false
+			}
+			upReqBody, err = json.Marshal(chatBody)
+		}
+	}
 	attempt.RequestBytes = int64(len(upReqBody))
 	if err != nil {
 		attempt.ErrorClass = "encode_error"

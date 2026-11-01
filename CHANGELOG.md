@@ -196,6 +196,12 @@ Negative and partial results are published as such, not dropped.
 
 ### Behavior changes
 
+- Explicit `store:false` is now honored on native OpenAI Responses passthrough;
+  it was previously dropped, allowing OpenAI's default of storing to apply
+  (#624). Native caller `store:true` is also forwarded unless the target forces
+  false. Translated routes do not provide stored Responses retrieval. Provider
+  retention policies and router content capture are separate from this field.
+
 - Chat streaming no longer sends a usage-only chunk unless the caller sets
   `stream_options.include_usage` to true (#528). Upstream usage collection for
   accounting stays enabled, and the OpenAI-compatible bridges keep forcing
