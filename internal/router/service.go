@@ -2690,6 +2690,11 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			copyReq.System = strings.TrimSpace(req.System + "\nReturn only a valid JSON object. Do not use Markdown fences or any text outside the object.")
 			upReq = &copyReq
 		}
+		if callerDialect == "openai-responses" && outDialect == "anthropic" {
+			copyReq := *upReq
+			copyReq.System = responsesAnthropicSystemPrompt(upReq)
+			upReq = &copyReq
+		}
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)
 	}
 	attempt.RequestBytes = int64(len(upReqBody))

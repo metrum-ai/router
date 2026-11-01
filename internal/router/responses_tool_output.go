@@ -108,11 +108,37 @@ func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
 	if req == nil {
 		return false
 	}
+	seenConversation := false
 	for _, value := range valueAsSlice(req.Raw["input"]) {
 		item, _ := value.(map[string]any)
 		typ := stringValue(item["type"])
 		if typ != "" && typ != "message" {
+			seenConversation = true
 			continue
+		}
+		role := stringValue(item["role"])
+		if role == "developer" {
+			return true
+		}
+		if role == "system" {
+			if seenConversation {
+				return true
+			}
+			if _, ok := item["content"].(string); !ok {
+				parts, ok := item["content"].([]any)
+				if !ok {
+					return true
+				}
+				for _, value := range parts {
+					part, _ := value.(map[string]any)
+					typ := stringValue(part["type"])
+					if typ != "text" && typ != "input_text" && typ != "output_text" {
+						return true
+					}
+				}
+			}
+		} else {
+			seenConversation = true
 		}
 		for _, value := range valueAsSlice(item["content"]) {
 			part, _ := value.(map[string]any)
@@ -122,6 +148,35 @@ func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
 		}
 	}
 	return false
+}
+
+// Call only after the Anthropic eligibility check has validated leading text
+// system items. The generic encoder ignores system-role messages themselves.
+func responsesAnthropicSystemPrompt(req *IRRequest) string {
+	var parts []string
+	if req.System != "" {
+		parts = append(parts, req.System)
+	}
+	for _, value := range valueAsSlice(req.Raw["input"]) {
+		item, _ := value.(map[string]any)
+		typ := stringValue(item["type"])
+		if (typ != "" && typ != "message") || stringValue(item["role"]) != "system" {
+			continue
+		}
+		if text, ok := item["content"].(string); ok {
+			if text != "" {
+				parts = append(parts, text)
+			}
+			continue
+		}
+		for _, value := range valueAsSlice(item["content"]) {
+			part, _ := value.(map[string]any)
+			if text := stringValue(part["text"]); text != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func invalidResponsesChatMessageContent(req *IRRequest) bool {
