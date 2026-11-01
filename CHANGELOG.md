@@ -91,14 +91,14 @@ Negative and partial results are published as such, not dropped.
 
 ### API compatibility
 
-- Responses-to-Anthropic now maps leading developer messages to the Anthropic
-  system prompt when their content is a string or one text part. Multipart,
-  non-text and late developer messages remain rejected rather than silently
-  dropped. Developer histories are ineligible for Anthropic targets when the
-  model group's PII filter is enabled; PII-filtered developer histories are
-  not shadow replayed, and developer histories bypass the response cache when
-  an Anthropic target can serve. Existing encrypted-reasoning and retention limitations
-  still apply (#642); PII and cache alignment is deferred to #645.
+- A leading text-only Responses developer message becomes the Anthropic system
+  prompt; a late or non-text developer message still returns `400` (#642).
+  Multipart developer content is rejected rather than silently dropped.
+  Developer histories are ineligible for Anthropic targets when the model
+  group's PII filter is enabled, are not shadow replayed, and bypass the
+  response cache when an Anthropic target can serve. Existing encrypted-reasoning
+  and retention limitations still apply; PII and cache alignment is deferred to
+  #645.
 
 - OpenAI and Anthropic compatibility runs on every pull request and again on
   the merge group: the pinned official OpenAI and Anthropic testers run inside
@@ -942,7 +942,3 @@ Negative and partial results are published as such, not dropped.
 [2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/metrum-ai/router/compare/v1.4.4...v2.0.0
-
-<!-- PLACEHOLDER (remove or replace before the v4.5.0 tag): #642, a leading
-Responses developer message becoming the Anthropic system prompt, has no merged
-PR as of this commit, so it is intentionally not described above. -->
