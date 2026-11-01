@@ -179,6 +179,9 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					return nil, fmt.Errorf("invalid input item")
 				}
 				switch stringValue(m["type"]) {
+				case "reasoning":
+					// Provider-owned reasoning, including encrypted payloads, is not portable.
+					continue
 				case "function_call":
 					seenResponsesConversation = true
 					block, err := functionCall(stringValue(m["call_id"]), stringValue(m["name"]), stringValue(m["arguments"]))

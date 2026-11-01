@@ -15,6 +15,7 @@ type ResponsesUpstreamToChatCaller struct {
 	ResponseID, Model        string
 	PublicModel              string // caller-facing model; empty keeps Model
 	CreatedAt                int64
+	IncludeReasoning         bool
 	role, terminal, finished bool
 	tools                    map[int]responsesChatTool
 	usage                    map[string]any
@@ -146,6 +147,11 @@ func (t *ResponsesUpstreamToChatCaller) Next(up Event) ([]Event, error) {
 			return nil, errors.New("stream: arguments for unknown function call")
 		}
 		return []Event{t.chunk(map[string]any{"tool_calls": []any{map[string]any{"index": tool.index, "function": map[string]any{"arguments": p.Delta}}}}, nil)}, nil
+	case "response.reasoning_summary_text.delta":
+		if t.IncludeReasoning && p.Delta != "" {
+			return []Event{t.chunk(map[string]any{"reasoning_content": p.Delta}, nil)}, nil
+		}
+		return nil, nil
 	case "response.output_text.delta", "response.refusal.delta":
 		key := "content"
 		if p.Type == "response.refusal.delta" {

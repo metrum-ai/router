@@ -1425,8 +1425,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	// Audio-output and explicit no-store requests must not be shadow replayed.
-	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	// Audio-output, explicit no-store and opaque reasoning requests must not be shadow replayed.
+	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -2645,6 +2645,12 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		EndpointHost:     endpointHost(provider.BaseURL),
 		AttemptTimeoutMS: s.attemptTimeoutMS(groupName, target),
 	}
+	cleanReq, historyErr := foreignReasoningHistory(req, callerDialect, outDialect)
+	if historyErr != nil {
+		attempt.ErrorClass = "encode_error"
+		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
+	}
+	req = cleanReq
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
@@ -2920,7 +2926,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			}
 		}
 		if anthropicBridge {
-			proxy = anthropicBridgeProxy(callerDialect)
+			proxy = anthropicBridgeProxy(callerDialect, requestRequiresReasoning(req))
 		}
 		// Experiment profiles (#379): scope-matched requests deliver through a
 		// pacing writer that injects the configured TTFT delay and output
@@ -3041,6 +3047,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ErrorMessage = err.Error()
 		attempt.Retryable = true
 		return nil, attempt, upstreamError{Class: "decode_error", Message: err.Error(), Retryable: true, Err: err}
+	}
+	if requestRequiresReasoning(req) && anthropicBridge {
+		attachBridgeReasoning(resp, raw, outDialect, callerDialect)
 	}
 	attempt.ReasoningTokens = resp.Usage.ReasoningTokens
 	return resp, attempt, nil
