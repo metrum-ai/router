@@ -37,6 +37,9 @@ func detectReasoningIntent(dialect string, raw map[string]any) ReasoningIntent {
 		}
 	case "openai-chat":
 		if effort, ok := normalizeReasoningEffort(stringValue(raw["reasoning_effort"])); ok {
+			if effort == "none" {
+				return ReasoningIntent{Disabled: true, Source: "openai_chat_reasoning_effort", Kind: "disabled", Effort: effort}
+			}
 			return ReasoningIntent{Requested: true, Source: "openai_chat_reasoning_effort", Kind: "effort", Effort: effort}
 		}
 	case "openai-responses":
@@ -47,6 +50,11 @@ func detectReasoningIntent(dialect string, raw map[string]any) ReasoningIntent {
 		intent := ReasoningIntent{Requested: true, Source: "openai_responses_reasoning", Kind: "effort"}
 		if effort, ok := normalizeReasoningEffort(stringValue(reasoning["effort"])); ok {
 			intent.Effort = effort
+			if effort == "none" {
+				intent.Requested = false
+				intent.Disabled = true
+				intent.Kind = "disabled"
+			}
 		}
 		if summary := strings.TrimSpace(stringValue(reasoning["summary"])); summary != "" {
 			intent.Summary = summary
@@ -64,12 +72,59 @@ func normalizeReasoningEffort(value string) (string, bool) {
 	return normalized, true
 }
 
+// invalidReasoningEffort validates known OpenAI values without constraining
+// which recognized efforts a particular upstream model supports.
+func invalidReasoningEffort(dialect string, raw map[string]any) bool {
+	var value any
+	switch dialect {
+	case "openai-chat":
+		value = raw["reasoning_effort"]
+	case "openai-responses":
+		reasoning, _ := raw["reasoning"].(map[string]any)
+		value = reasoning["effort"]
+	default:
+		return false
+	}
+	if value == nil {
+		return false
+	}
+	s, ok := value.(string)
+	if !ok {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return false
+	default:
+		return true
+	}
+}
+
+// Responses controls beyond effort have no lossless representation on the
+// no-reasoning translated path. Native Responses preserves them unchanged.
+func disabledResponsesReasoningHasOtherFields(req *IRRequest) bool {
+	if req == nil || !req.Reasoning.Disabled || req.Reasoning.Source != "openai_responses_reasoning" {
+		return false
+	}
+	reasoning, _ := req.Raw["reasoning"].(map[string]any)
+	for key, value := range reasoning {
+		if key != "effort" && value != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func openAIReasoningExplicitlyDisabled(req *IRRequest) bool {
+	return req != nil && req.Reasoning.Disabled && strings.HasPrefix(req.Reasoning.Source, "openai_")
+}
+
 func requestRequiresReasoning(req *IRRequest) bool {
 	return req != nil && req.Reasoning.Requested && !req.Reasoning.Disabled
 }
 
 func targetSupportsReasoning(target Target) bool {
-	return target.Reasoning.Supported || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target)
+	return target.Reasoning.Supported || strings.EqualFold(strings.TrimSpace(target.Reasoning.Mode), reasoningModeAlwaysOn) || defaultThinkingEnabled(target)
 }
 
 func defaultThinkingEnabled(target Target) bool {

@@ -680,8 +680,8 @@ func (s *Service) maybeShadowRequest(groupName, callerDialect string, body []byt
 func (s *Service) executeShadowRequest(run *shadowRunState, callerDialect string, body []byte) {
 	req, err := decodeRequest(callerDialect, body, nil)
 	// Shadow targets bypass normal selection and may not honor the caller's
-	// no-store intent. Skip without counting an attempted shadow request.
-	if err == nil && normalizeDialect(callerDialect) == "openai-responses" && responsesExplicitNoStore(req) {
+	// no-store or reasoning-off intent. Skip without counting an attempted replay.
+	if err == nil && ((normalizeDialect(callerDialect) == "openai-responses" && responsesExplicitNoStore(req)) || openAIReasoningExplicitlyDisabled(req)) {
 		return
 	}
 	started := time.Now()

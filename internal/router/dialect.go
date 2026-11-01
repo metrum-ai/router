@@ -514,6 +514,9 @@ func providerPassthroughBody(req *IRRequest) map[string]any {
 
 func applyReasoningToOpenAIChat(body map[string]any, req *IRRequest, target Target) error {
 	if !requestRequiresReasoning(req) {
+		if req != nil && req.Reasoning.Disabled && req.Reasoning.Source == "openai_responses_reasoning" {
+			body["reasoning_effort"] = "none"
+		}
 		return nil
 	}
 	if !targetCanSatisfyReasoning(target, "openai-chat", req) {
@@ -539,6 +542,9 @@ func applyReasoningToOpenAIChat(body map[string]any, req *IRRequest, target Targ
 
 func applyReasoningToOpenAIResponses(body map[string]any, req *IRRequest, target Target) error {
 	if !requestRequiresReasoning(req) {
+		if req != nil && req.Reasoning.Disabled && req.Reasoning.Source == "openai_chat_reasoning_effort" {
+			body["reasoning"] = map[string]any{"effort": "none"}
+		}
 		return nil
 	}
 	if !targetCanSatisfyReasoning(target, "openai-responses", req) {

@@ -98,7 +98,6 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 				for _, bad := range []string{
 					`[{"role":"user","content":[{"type":"future_part","text":"lost"}]}]`,
 					`[{"role":"user","content":[{"type":"input_text","text":"hi","extra":"lost"}]}]`,
-					`[{"role":"user","content":[{"type":"input_text","text":"describe"},{"type":"input_image","image_url":"data:image/png;base64,AAAA","detail":"high"}]}]`,
 				} {
 					body := `{"model":"native-stream","stream":true,"input":` + bad + `}`
 					r := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))

@@ -30,7 +30,7 @@ func bridgeReasoningEffort(intent ReasoningIntent) (string, error) {
 		switch strings.ToLower(strings.TrimSpace(intent.Effort)) {
 		case "", "medium":
 			return "medium", nil
-		case "low":
+		case "minimal", "low":
 			return "low", nil
 		case "high":
 			return "high", nil

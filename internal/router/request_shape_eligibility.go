@@ -150,6 +150,11 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 	if s.cfg != nil && normalizeDialect(callerDialect) == "anthropic" && isBedrock(s.cfg.Provider[target.Provider]) && reasoningHistoryPresent(req) {
 		reason = "bedrock-opaque-reasoning-unsupported"
 	}
+	// Bedrock's Converse adapter consumes neither OpenAI off control, even
+	// though the intermediate dialect is Chat. Do not silently drop it.
+	if reason == "" && s.cfg != nil && req != nil && req.Reasoning.Disabled && strings.HasPrefix(req.Reasoning.Source, "openai_") && isBedrock(s.cfg.Provider[target.Provider]) {
+		reason = "reasoning-disable-unsupported"
+	}
 	if reason == "" && s.cfg != nil && !s.cfg.Eligibility.implicitEnabled() && normalizeDialect(outDialect) == "anthropic" && normalizeDialect(callerDialect) != "anthropic" {
 		if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) {
 			reason = "request-shape-dialect-unsupported"
@@ -212,8 +217,28 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "structured-output-unsupported"
 		}
 	}
-	if callerDialect == "openai-responses" && outDialect == "anthropic" && invalidResponsesAnthropicMessageContent(req) {
-		return "anthropic-bridge-unrepresentable-content"
+	if callerDialect == "openai-responses" && outDialect != "openai-responses" && disabledResponsesReasoningHasOtherFields(req) {
+		return "reasoning-controls-unsupported"
+	}
+	if req != nil && req.Reasoning.Disabled && strings.HasPrefix(req.Reasoning.Source, "openai_") {
+		// Other provider codecs have no validated off control. Never silently
+		// reduce an explicit disable to an omitted provider setting.
+		if outDialect != "anthropic" && outDialect != "openai-chat" && outDialect != "openai-responses" {
+			return "reasoning-disable-unsupported"
+		}
+		// Native Chat preserves the field but must not add a contradictory
+		// target-level enabled thinking object to it.
+		if outDialect == "openai-chat" && len(target.DefaultOpenAIChatThinking) > 0 && !strings.EqualFold(strings.TrimSpace(stringValue(target.DefaultOpenAIChatThinking["type"])), "disabled") {
+			return "reasoning-default-on-unsupported"
+		}
+		if callerDialect != outDialect && (outDialect == "openai-chat" || outDialect == "openai-responses") && (target.Reasoning.DefaultOn || strings.EqualFold(strings.TrimSpace(target.Reasoning.Mode), reasoningModeAlwaysOn)) {
+			return "reasoning-default-on-unsupported"
+		}
+	}
+	if outDialect == "anthropic" && (callerDialect == "openai-responses" || callerDialect == "openai-chat") {
+		if anthropicImageMetadataUnsupported(req, callerDialect) || (callerDialect == "openai-responses" && invalidResponsesAnthropicMessageContent(req)) {
+			return "anthropic-bridge-unrepresentable-content"
+		}
 	}
 	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
@@ -279,7 +304,7 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			if callerDialect == "anthropic" && outDialect == "openai-responses" && !target.Reasoning.SupportsSummaries {
 				return "anthropic-bridge-reasoning-summary-unsupported"
 			}
-		} else if target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target) {
+		} else if target.Reasoning.DefaultOn || strings.EqualFold(strings.TrimSpace(target.Reasoning.Mode), reasoningModeAlwaysOn) || defaultThinkingEnabled(target) {
 			// Do not expose unrequested thinking or silently change the default path.
 			return "anthropic-bridge-reasoning-unsupported"
 		}
@@ -316,6 +341,12 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 					return "request-shape-unsupported-feature"
 				}
 			}
+		}
+		// An explicit OpenAI none is removed only when translating to
+		// Anthropic. Native/OpenAI-bridged requests still carry that field,
+		// so their unsupported-feature declarations must be honored.
+		if normalized == "reasoning" && outDialect == "anthropic" && req != nil && req.Reasoning.Disabled && strings.HasPrefix(req.Reasoning.Source, "openai_") {
+			continue
 		}
 		if requestFeaturePresent(req, normalized) {
 			return "request-shape-unsupported-feature"

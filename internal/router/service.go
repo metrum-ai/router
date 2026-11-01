@@ -1387,6 +1387,14 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 		return
 	}
+	if invalidReasoningEffort(dialect, req.Raw) {
+		code := "invalid_reasoning_effort"
+		s.finish(rc, http.StatusBadRequest, &code)
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
+			"type": "invalid_request_error", "code": code, "param": "reasoning_effort", "message": "invalid reasoning effort", "request_id": rc.id,
+		}})
+		return
+	}
 	if rc.rec.Endpoint == "responses.compact" {
 		if rawValuePresent(req.Raw, "previous_response_id") {
 			// Stored response ownership and target affinity are not implemented yet.
@@ -1425,8 +1433,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	// Audio-output, explicit no-store and opaque reasoning requests must not be shadow replayed.
-	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	// Audio-output, explicit no-store, reasoning-off and opaque reasoning requests must not be shadow replayed.
+	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
