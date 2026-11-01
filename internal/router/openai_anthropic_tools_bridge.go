@@ -63,8 +63,8 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		case []any:
 			for _, item := range value {
 				part, ok := item.(map[string]any)
-				if !ok {
-					return nil, fmt.Errorf("unsupported content part")
+				if !ok || !chatBridgeContentSupported("user", []any{part}) {
+					return nil, fmt.Errorf("unsupported or unrepresentable content part")
 				}
 				switch stringValue(part["type"]) {
 				case "text", "input_text", "output_text", "image_url", "input_image":

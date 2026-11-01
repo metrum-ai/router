@@ -32,8 +32,9 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 			}))
 			defer up.Close()
 			target := anthropicToolTarget()
+			target.InputModalities = []string{"text", "image"}
 			if dialect == "openai-chat" {
-				target.ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true, Streaming: true, ValidationStatus: "passed"}
+				target.ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, Images: true, FunctionTools: true, ToolChoice: true, Streaming: true, ValidationStatus: "passed"}
 			}
 			svc := nativeStreamTestService(t, up.URL, dialect, []Target{target})
 			input := `[{"role":"user","content":"hi"},{"type":"function_call","call_id":"c1","name":"read","arguments":"{}"},{"type":"function_call","call_id":"c2","name":"read","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"one"},{"type":"input_text","text":" two"}]},{"type":"function_call_output","call_id":"c2","output":"three"}]`
@@ -78,6 +79,16 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 			w = post(unknown)
 			if w.Code != 400 || hits.Load() != 1 {
 				t.Fatalf("unknown content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
+			}
+			for _, bad := range []string{
+				`[{"role":"user","content":[{"type":"input_text","text":"describe"},{"type":"input_image","image_url":null}]}]`,
+				`[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[{"type":"url_citation","url":"https://example.invalid"}]}]}]`,
+				`[{"role":"user","content":[{"type":"input_text","text":"hi","future_metadata":"must not be lost"}]}]`,
+			} {
+				w = post(bad)
+				if w.Code != 400 || hits.Load() != 1 {
+					t.Fatalf("unrepresentable content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
+				}
 			}
 			if dialect == "openai-chat" {
 				w = post(`[{"role":"bogus","content":"do not silently change my role"}]`)

@@ -48,7 +48,7 @@ func responsesToChatBridgeFilterReason(target Target, req *IRRequest, callerDial
 		return "responses-to-chat-function-output-nontext"
 	case invalidResponsesChatMessageContent(req):
 		return "responses-to-chat-content-unsupported"
-	case responsesHasFunctionHistory(req) && !bridge.FunctionTools:
+	case responsesHasFunctionHistory(req) && !bridge.FunctionTools && !target.Bridges.ResponsesToChat.Tools:
 		return "responses-to-chat-function-call-output"
 	case requestFeaturePresent(req, "tool_result"):
 		return "responses-to-chat-tool-result"
@@ -198,7 +198,7 @@ func encodeResponsesToChatBridge(model string, req *IRRequest, target Target) ([
 	return json.Marshal(body)
 }
 
-// Function history is opt-in via the persisted bridge tools capability.
+// Function history is opt-in via function_tools or the legacy bridge tools capability.
 func responsesHasFunctionHistory(req *IRRequest) bool {
 	for _, v := range valueAsSlice(req.Raw["input"]) {
 		m, _ := v.(map[string]any)

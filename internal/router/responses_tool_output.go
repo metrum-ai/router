@@ -75,7 +75,15 @@ func chatBridgeContentSupported(role string, content any) bool {
 				}
 				return false
 			}
-		case "input_image", "image_url", "input_file", "file", "input_audio", "audio":
+		case "input_image", "image_url":
+			if role != "user" {
+				return false
+			}
+			image := decodeContentPart(m)
+			if image.FileID == "" && imageURLForOpenAI(image) == "" {
+				return false
+			}
+		case "input_file", "file", "input_audio", "audio":
 			if role != "user" {
 				return false
 			}
