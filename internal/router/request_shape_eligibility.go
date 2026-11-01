@@ -181,6 +181,9 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "structured-output-unsupported"
 		}
 	}
+	if callerDialect == "openai-responses" && outDialect == "anthropic" && invalidResponsesAnthropicMessageContent(req) {
+		return "anthropic-bridge-unrepresentable-content"
+	}
 	if reason := mediaTargetReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason
 	}
