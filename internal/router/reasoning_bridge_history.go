@@ -35,10 +35,10 @@ func reasoningHistoryPresent(req *IRRequest) bool {
 	return false
 }
 
-// foreignReasoningHistory strips opaque provider-owned reasoning history only
-// when crossing the Anthropic/OpenAI boundary. Native passthrough is unchanged.
+// foreignReasoningHistory strips opaque provider-owned reasoning history when
+// crossing dialects. Native passthrough is unchanged.
 func foreignReasoningHistory(req *IRRequest, caller, out string) (*IRRequest, error) {
-	if req == nil || !anthropicStreamBridge(caller, out) {
+	if req == nil || normalizeDialect(caller) == normalizeDialect(out) || !reasoningHistoryPresent(req) {
 		return req, nil
 	}
 	copyReq := *req

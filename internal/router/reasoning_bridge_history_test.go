@@ -15,8 +15,10 @@ func TestForeignReasoningHistorySanitizedWithoutChangingNative(t *testing.T) {
 		{"anthropic", "openai-responses", `{"model":"m","messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"secret_thought","signature":"secret_signature"},{"type":"redacted_thinking","data":"secret_cipher"},{"type":"text","text":"visible"}]}]}`},
 		{"openai-responses", "anthropic", `{"model":"m","input":[{"type":"reasoning","encrypted_content":"secret_cipher","summary":[{"type":"summary_text","text":"secret_thought"}]},{"type":"message","role":"user","content":"visible"}]}`},
 		{"openai-chat", "anthropic", `{"model":"m","messages":[{"role":"assistant","content":"visible","reasoning_content":"secret_thought","signature":"secret_signature"}]}`},
+		{"openai-chat", "openai-responses", `{"model":"m","messages":[{"role":"assistant","content":"visible","reasoning_content":"secret_thought","signature":"secret_signature"}]}`},
+		{"openai-responses", "openai-chat", `{"model":"m","input":[{"type":"reasoning","encrypted_content":"secret_cipher"},{"role":"user","content":"visible"}]}`},
 	} {
-		t.Run(tc.caller, func(t *testing.T) {
+		t.Run(tc.caller+"-to-"+tc.out, func(t *testing.T) {
 			req, err := decodeRequest(tc.caller, []byte(tc.raw), http.Header{})
 			if err != nil {
 				t.Fatal(err)

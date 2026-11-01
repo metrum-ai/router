@@ -233,6 +233,12 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 	}
 	if anthropicStreamBridge(callerDialect, outDialect) {
 		if requestRequiresReasoning(req) {
+			// A target's native reasoning support alone is not permission to
+			// translate it. Require an explicit validated inbound bridge even
+			// when ordinary request-shape eligibility is set to implicit.
+			if !stringSliceContainsNormalizedDialect(target.RequestShapeSupport.SupportedInboundDialects, callerDialect) || !strings.EqualFold(strings.TrimSpace(target.RequestShapeSupport.ValidationStatus), "passed") {
+				return "anthropic-bridge-reasoning-unsupported"
+			}
 			if !targetCanSatisfyReasoning(target, outDialect, req) {
 				return "anthropic-bridge-reasoning-unsupported"
 			}
