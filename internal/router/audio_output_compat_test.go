@@ -100,7 +100,7 @@ func TestChatAudioSynthesizedStreamFailsClosed(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer "+testToken)
 	w := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(w, r)
-	if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"param":"modalities"`) {
+	if w.Code != 400 || hits.Load() != 0 || !strings.Contains(w.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(w.Body.String(), `"param":"modalities"`) {
 		t.Fatalf("synthesized audio must fail closed: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 	}
 }
