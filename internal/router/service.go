@@ -2696,6 +2696,11 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			copyReq.System = strings.TrimSpace(req.System + "\nReturn only a valid JSON object. Do not use Markdown fences or any text outside the object.")
 			upReq = &copyReq
 		}
+		if callerDialect == "openai-responses" && outDialect == "anthropic" {
+			copyReq := *upReq
+			copyReq.System = responsesAnthropicSystemPrompt(upReq)
+			upReq = &copyReq
+		}
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)
 	}
 	attempt.RequestBytes = int64(len(upReqBody))
@@ -3504,6 +3509,19 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 }
 
 func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
+	if dialect == "openai-responses" && invalidResponsesFunctionOutput(req) {
+		return "unsupported_function_call_output", "input"
+	}
+	if dialect == "openai-responses" && invalidResponsesChatMessageContent(req) {
+		return "unsupported_capability", "input"
+	}
+	if dialect == "openai-responses" && invalidResponsesAnthropicMessageContent(req) {
+		for _, target := range targets {
+			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
+				return "unsupported_capability", "input"
+			}
+		}
+	}
 	var candidates []Target
 	for _, target := range targets {
 		out := targetDialect(s.cfg.Provider[target.Provider], target)
@@ -4468,6 +4486,9 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		s.finish(rc, status, &code)
 	}
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
+	if err.CapabilityMismatch && err.MismatchCode == "unsupported_function_call_output" {
+		message = "function_call_output.output must be a string or an array of input_text parts without unsupported metadata for a translated bridge"
+	}
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
 	}

@@ -1046,7 +1046,11 @@ func encodeOpenAIChatContent(m IRMessage) any {
 			}
 		case "image":
 			if p.FileID != "" {
-				parts = append(parts, map[string]any{"type": "input_image", "file_id": p.FileID})
+				image := map[string]any{"type": "input_image", "file_id": p.FileID}
+				if p.Detail != "" {
+					image["detail"] = p.Detail
+				}
+				parts = append(parts, image)
 				continue
 			}
 			if u := imageURLForOpenAI(p); u != "" {
