@@ -1425,7 +1425,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	if rc.rec.Endpoint != "responses.compact" && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	// Audio-output and explicit no-store requests must not be shadow replayed.
+	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -1531,6 +1532,16 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			return
 		}
 		s.writeError(w, rc, http.StatusBadGateway, "routing-failed")
+		return
+	}
+	// Synthesized Chat SSE cannot represent audio from the unary response.
+	// Fail before dispatch instead of returning a successful text-only stream.
+	if req.Stream && requestWantsChatAudioOutput(req, dialect) && s.cfg.Server.Streaming.Translator == "synthesized" {
+		s.writeRoutingEligibilityError(w, rc, routingEligibilityError{
+			Model: req.Model, Dialect: dialect,
+			Requirements:       []string{"native audio streaming (synthesized streaming is unsupported)"},
+			CapabilityMismatch: true, MismatchCode: "unsupported_capability", MismatchParam: "modalities",
+		})
 		return
 	}
 	req.CallerBetas = strings.Join(r.Header.Values("Anthropic-Beta"), ",")
@@ -2230,7 +2241,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
 		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
-			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(rc, group.Targets, req, callerDialect)
+			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, req, callerDialect)
 		}
 		return decision{}, err
 	}
@@ -3622,6 +3633,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 			if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && !target.ToolOnly &&
 				targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 				targetSupportsInputModalities(target, requiredModalities) &&
+				targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
 				targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
 				targetCanSatisfyReasoning(target, outDialect, req) &&
 				targetHonorsExplicitMaxTokens(target, req) &&
@@ -3639,6 +3651,7 @@ func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *I
 		if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
 			targetSupportsToolsForCallerDialect(target, callerDialect, outDialect) &&
 			targetSupportsInputModalities(target, requiredModalities) &&
+			targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
 			targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
 			targetCanSatisfyReasoning(target, outDialect, req) &&
 			targetHonorsExplicitMaxTokens(target, req) &&
