@@ -84,6 +84,22 @@ func TestChatNativeAudioStreamPassthrough(t *testing.T) {
 	}
 }
 
+func TestAudioAttributionRetainsRequestSizeLimit(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer up.Close()
+	target := Target{Provider: "native", Model: "text", OutputModalities: []string{"text"}, RequestShapeSupport: RequestShapeSupport{MaxRequestBytes: 128}}
+	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target})
+	body := `{"model":"native-stream","messages":[{"role":"user","content":"` + strings.Repeat("x", 300) + `"}],"modalities":["text","audio"]}`
+	r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if w.Code != 400 || hits.Load() != 0 || strings.Contains(w.Body.String(), `"param":"modalities"`) {
+		t.Fatalf("oversize request misattributed to audio: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+	}
+}
+
 func TestAudioTargetMissingToolsReportsTools(t *testing.T) {
 	var hits atomic.Int32
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
