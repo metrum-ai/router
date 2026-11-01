@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 version: 2
-# Pause version-update PRs until v4.5.0 ships; security updates remain enabled.
 updates:
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -16,7 +15,7 @@ updates:
     directory: /docs-site
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -24,7 +23,7 @@ updates:
     directory: /internal/router/admindist/web
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -32,7 +31,7 @@ updates:
     directory: /services/learned-routing-policy
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -43,7 +42,7 @@ updates:
     directory: /evaluators/livecodebench
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -51,7 +50,7 @@ updates:
     directory: /tests/api_compat
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -59,7 +58,7 @@ updates:
     directory: /tests/harbor
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     cooldown:
       default-days: 7
       semver-major-days: 14
@@ -69,6 +68,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     cooldown:
       default-days: 7
