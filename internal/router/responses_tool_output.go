@@ -138,8 +138,80 @@ func anthropicImageMetadataUnsupported(req *IRRequest, caller string) bool {
 	return false
 }
 
+func responsesHasDeveloper(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	for _, value := range valueAsSlice(req.Raw["input"]) {
+		item, _ := value.(map[string]any)
+		typ := stringValue(item["type"])
+		if (typ == "" || typ == "message") && stringValue(item["role"]) == "developer" {
+			return true
+		}
+	}
+	return false
+}
+
+// For newly eligible developer histories, check original order before foreign
+// reasoning is removed: stripping must not promote either kind of instruction.
+// A developer-only prompt also cannot form an Anthropic conversation.
+func responsesDeveloperOrderingInvalid(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	input := valueAsSlice(req.Raw["input"])
+	if !responsesHasDeveloper(req) {
+		return false
+	}
+	seen, hasConversation := false, false
+	for _, value := range input {
+		item, ok := value.(map[string]any)
+		if !ok {
+			seen = true
+			continue
+		}
+		typ := stringValue(item["type"])
+		if typ != "" && typ != "message" {
+			seen = true
+			if typ == "function_call" || typ == "function_call_output" {
+				hasConversation = true
+			}
+			continue
+		}
+		switch stringValue(item["role"]) {
+		case "developer", "system":
+			if seen {
+				return true
+			}
+		case "user", "assistant":
+			seen, hasConversation = true, true
+		default:
+			seen = true
+		}
+	}
+	return !hasConversation
+}
+
+// Multiple developer parts would be concatenated differently from the IR
+// used by PII filtering and cache keys. Keep them ineligible for Anthropic.
+func responsesDeveloperMultipart(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	for _, value := range valueAsSlice(req.Raw["input"]) {
+		item, _ := value.(map[string]any)
+		if stringValue(item["role"]) != "developer" {
+			continue
+		}
+		if parts, ok := item["content"].([]any); ok && len(parts) > 1 {
+			return true
+		}
+	}
+	return false
+}
+
 func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
-	if invalidResponsesChatMessageContent(req) {
+	if invalidResponsesChatMessageContent(req) || responsesDeveloperMultipart(req) {
 		return true
 	}
 	if req == nil {
@@ -154,16 +226,13 @@ func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
 			continue
 		}
 		role := stringValue(item["role"])
-		if role == "developer" {
-			return true
-		}
-		if role == "system" {
+		if role == "system" || role == "developer" {
 			if seenConversation {
 				return true
 			}
 			if _, ok := item["content"].(string); !ok {
 				parts, ok := item["content"].([]any)
-				if !ok {
+				if !ok || (role == "developer" && len(parts) != 1) {
 					return true
 				}
 				for _, value := range parts {
@@ -182,7 +251,7 @@ func invalidResponsesAnthropicMessageContent(req *IRRequest) bool {
 }
 
 // Call only after the Anthropic eligibility check has validated leading text
-// system items. The generic encoder ignores system-role messages themselves.
+// system and developer items. The generic encoder ignores these messages themselves.
 func responsesAnthropicSystemPrompt(req *IRRequest) string {
 	var parts []string
 	if req.System != "" {
@@ -191,7 +260,8 @@ func responsesAnthropicSystemPrompt(req *IRRequest) string {
 	for _, value := range valueAsSlice(req.Raw["input"]) {
 		item, _ := value.(map[string]any)
 		typ := stringValue(item["type"])
-		if (typ != "" && typ != "message") || stringValue(item["role"]) != "system" {
+		role := stringValue(item["role"])
+		if (typ != "" && typ != "message") || (role != "system" && role != "developer") {
 			continue
 		}
 		if text, ok := item["content"].(string); ok {

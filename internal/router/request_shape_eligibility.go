@@ -196,6 +196,11 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "store-false-unsupported"
 		}
 	}
+	// For newly accepted developer histories, stripping foreign reasoning
+	// must not promote later instructions or leave no conversation.
+	if callerDialect == "openai-responses" && outDialect == "anthropic" && responsesDeveloperOrderingInvalid(req) {
+		return "anthropic-bridge-unrepresentable-content"
+	}
 	// Validate the same sanitized history that the cross-dialect encoder sees.
 	// Otherwise harmless foreign reasoning items are rejected before stripping.
 	clean, err := foreignReasoningHistory(req, callerDialect, outDialect)
