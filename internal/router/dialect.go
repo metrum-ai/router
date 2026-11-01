@@ -303,6 +303,16 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 	if err := applyReasoningToOpenAIResponses(body, req, target); err != nil {
 		return nil, err
 	}
+	// Preserve the caller's native Responses context control when the shared
+	// reasoning mapper normalizes effort/summary. Cross-dialect requests still
+	// use the bridge's explicit mapping and eligibility rules.
+	if original, ok := req.Raw["reasoning"].(map[string]any); ok {
+		if context, present := original["context"]; present {
+			if reasoning, ok := body["reasoning"].(map[string]any); ok {
+				reasoning["context"] = context
+			}
+		}
+	}
 	return json.Marshal(body)
 }
 

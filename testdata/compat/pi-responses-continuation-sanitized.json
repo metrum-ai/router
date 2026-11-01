@@ -1,0 +1,14 @@
+{
+  "model": "native-stream",
+  "input": [
+    {"role":"system","content":"[Pi system prompt redacted]"},
+    {"role":"user","content":[{"type":"input_text","text":"Read quote.txt using the read tool, then quote its exact content in your final answer."}]},
+    {"type":"function_call","id":"fc_offline","call_id":"call_offline","name":"read","arguments":"{\"path\":\"quote.txt\"}"},
+    {"type":"function_call_output","call_id":"call_offline","output":"E2E-TOOL-RESULT-7842\n"}
+  ],
+  "stream":true,
+  "prompt_cache_key":"sanitized-cache-key",
+  "store":false,
+  "max_output_tokens":512,
+  "tools":[{"type":"function","name":"read","description":"Read the contents of a file.","parameters":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"offset":{"type":"number"},"limit":{"type":"number"}}}}]
+}
