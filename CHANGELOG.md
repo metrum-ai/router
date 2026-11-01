@@ -22,8 +22,10 @@ Negative and partial results are published as such, not dropped.
   path and real d3 shadow and enforce paths on A100 hosts, including the
   high-concurrency decision-path deltas and their limits
   (`benchmarks/overhead/evidence/`). CPU and memory per 1,000 requests/s,
-  maximum sustained throughput and the edge case are still missing, so #422
-  stays open. Rerun: `make overhead-profile-smoke`,
+  exploratory 90%-floor profiles are published as exploratory. Strict
+  continuous occupancy for enforce/32, CPU and memory per 1,000 requests/s,
+  maximum sustained throughput and the edge case remain unproven, and the issue
+  is closed with those limits recorded. Rerun: `make overhead-profile-smoke`,
   `make overhead-decision-smoke`.
 
 - Savings case studies on three real workloads (#423): coding agent, support
@@ -82,6 +84,12 @@ Negative and partial results are published as such, not dropped.
   tune run 3 is published as a gate failure with its transport defect, and the
   replacement trainer is deferred to v4.6.0 (#509).
 
+- End-to-end agent gate on the release commit: the pinned agents run in OpenAI
+  and Anthropic styles against GPT and Claude targets, Harbor runs in both
+  styles, and the full live SDK suites run with per-suite classification
+  (`docs-site/docs/evaluation/api-compatibility-live.md`, which also records the
+  omitted suites and states that omitted suites are not passes).
+
 ### API compatibility
 
 - OpenAI and Anthropic compatibility runs on every pull request and again on
@@ -129,6 +137,35 @@ Negative and partial results are published as such, not dropped.
   real models, and a translated tool request is eligible only when the target
   declares the caller dialect, `validation_status: passed` and the matching tool
   capability on both sides (#539).
+
+- Opt-in cross-dialect reasoning bridges OpenAI ↔ Anthropic, in both directions
+  and in streaming: `reasoning_effort` maps to Anthropic thinking budgets of
+  1,024 / 4,096 / 16,384 tokens (capped below the outgoing `max_tokens`) or to
+  adaptive thinking when the target is explicitly configured for it, and
+  Anthropic budgets map back to low / medium / high effort with adaptive
+  counting as medium. Only visible summaries cross the bridge; a
+  provider may omit them (#613, #614, #633).
+
+- Cross-dialect translation strips Anthropic signatures, redacted thinking,
+  OpenAI encrypted reasoning and opaque foreign reasoning history, and foreign
+  reasoning items are dropped on continuation, so exact reasoning-state
+  continuity is not guaranteed. Native same-dialect passthrough still carries
+  signed and redacted reasoning; native Anthropic passthrough removes only
+  `thinking` blocks whose signature is empty or missing. The Bedrock Converse
+  adapter cannot encode signed or redacted thinking and returns `400
+  unsupported_block` before dispatch; a real Converse codec (#635) and
+  provider/account provenance (#622) are deferred to v4.6.0 (#633).
+
+- Responses tool history is preserved across the Chat and Anthropic bridges,
+  including parallel tool calls and array-shaped tool outputs (#617, #618), and
+  a translated tool result that arrives as a text array keeps its ordered text
+  blocks instead of being flattened with an invented newline (#630, #636).
+
+- A Responses image `detail` hint is ignored for Claude targets rather than
+  rejecting the request, restoring the cross-dialect vision path (#637), and an
+  explicit `reasoning_effort: none` is honoured as "no reasoning" instead of
+  being rejected, while an unrecognised effort value returns `400
+  invalid_request_error` with `param: reasoning_effort` (#638).
 
 - The generated starter configuration covers Responses, tools, structured
   output and vision, with a pinned starter smoke (#534).
@@ -897,3 +934,7 @@ Negative and partial results are published as such, not dropped.
 [2.2.0]: https://github.com/metrum-ai/router/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/metrum-ai/router/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/metrum-ai/router/compare/v1.4.4...v2.0.0
+
+<!-- PLACEHOLDER (remove or replace before the v4.5.0 tag): #642, a leading
+Responses developer message becoming the Anthropic system prompt, has no merged
+PR as of this commit, so it is intentionally not described above. -->
