@@ -48,6 +48,8 @@ func responsesToChatBridgeFilterReason(target Target, req *IRRequest, callerDial
 		return "responses-to-chat-function-output-nontext"
 	case invalidResponsesChatMessageContent(req):
 		return "responses-to-chat-content-unsupported"
+	case responsesHasMultiTextSystem(req):
+		return "responses-to-chat-content-unsupported"
 	case responsesHasFunctionHistory(req) && !bridge.FunctionTools && !target.Bridges.ResponsesToChat.Tools:
 		return "responses-to-chat-function-call-output"
 	case requestFeaturePresent(req, "tool_result"):

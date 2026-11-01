@@ -169,14 +169,39 @@ func responsesAnthropicSystemPrompt(req *IRRequest) string {
 			}
 			continue
 		}
+		var text strings.Builder
 		for _, value := range valueAsSlice(item["content"]) {
 			part, _ := value.(map[string]any)
-			if text := stringValue(part["text"]); text != "" {
-				parts = append(parts, text)
-			}
+			text.WriteString(stringValue(part["text"]))
+		}
+		if text.Len() != 0 {
+			parts = append(parts, text.String())
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func responsesHasMultiTextSystem(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	for _, value := range valueAsSlice(req.Raw["input"]) {
+		item, _ := value.(map[string]any)
+		if stringValue(item["role"]) != "system" {
+			continue
+		}
+		count := 0
+		for _, value := range valueAsSlice(item["content"]) {
+			part, _ := value.(map[string]any)
+			if stringValue(part["text"]) != "" {
+				count++
+			}
+		}
+		if count > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func invalidResponsesChatMessageContent(req *IRRequest) bool {
@@ -194,6 +219,9 @@ func invalidResponsesChatMessageContent(req *IRRequest) bool {
 			return true
 		}
 		typ := stringValue(item["type"])
+		if typ != "" && typ != "message" && typ != "function_call" && typ != "function_call_output" {
+			return true
+		}
 		if typ == "" || typ == "message" {
 			role := stringValue(item["role"])
 			if role != "user" && role != "assistant" && role != "system" && role != "developer" {
@@ -201,6 +229,24 @@ func invalidResponsesChatMessageContent(req *IRRequest) bool {
 			}
 			if !chatBridgeContentSupported(role, item["content"]) {
 				return true
+			}
+			// The generic IR joins separate message text parts with newlines.
+			// Until both translated encoders preserve their boundaries, do not
+			// silently alter a user, assistant, or developer message.
+			if role != "system" {
+				textParts := 0
+				for _, value := range valueAsSlice(item["content"]) {
+					part, _ := value.(map[string]any)
+					switch stringValue(part["type"]) {
+					case "text", "input_text", "output_text":
+						if stringValue(part["text"]) != "" {
+							textParts++
+						}
+					}
+				}
+				if textParts > 1 {
+					return true
+				}
 			}
 		}
 	}

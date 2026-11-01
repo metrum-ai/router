@@ -81,6 +81,8 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 				t.Fatalf("unknown content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
 			}
 			for _, bad := range []string{
+				`[{"role":"user","content":[{"type":"input_text","text":"allow"},{"type":"input_text","text":"listed"}]}]`,
+				`[{"type":"item_reference","id":"msg_saved"},{"role":"user","content":"continue"}]`,
 				`{"input":[{"role":"system","content":"must not disappear"},{"role":"user","content":"hello"}]}`,
 				`[{"role":"user","content":"hi"},{"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"secret","future_metadata":"do not lose"}]}]`,
 				`[{"role":"user","content":[{"type":"input_text","text":"describe"},{"type":"input_image","image_url":null}]}]`,
@@ -109,6 +111,10 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 				}
 			}
 			if dialect == "openai-chat" {
+				w = post(`[{"role":"system","content":[{"type":"input_text","text":"allow"},{"type":"input_text","text":"listed"}]},{"role":"user","content":"hello"}]`)
+				if w.Code != 400 || hits.Load() != 1 {
+					t.Fatalf("multiple system parts not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
+				}
 				w = post(`[{"role":"bogus","content":"do not silently change my role"}]`)
 				if w.Code != 400 || hits.Load() != 1 {
 					t.Fatalf("unknown role not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())

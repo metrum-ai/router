@@ -17,6 +17,25 @@ func TestPiResponsesChatImageFileDetailPreserved(t *testing.T) {
 	}
 }
 
+func TestPiResponsesAnthropicToolSystemTextParts(t *testing.T) {
+	input := `[{"role":"system","content":[{"type":"input_text","text":"allow"},{"type":"input_text","text":"listed"}]},{"role":"user","content":"hello"}]`
+	req, err := decodeRequest("openai-responses", []byte(piResponsePrefix+`"input":`+input+`}`), http.Header{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := encodeOpenAIToolsToAnthropic("up", "openai-responses", req, anthropicToolTarget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["system"] != "allowlisted" {
+		t.Fatalf("system text altered: %#v", body["system"])
+	}
+}
+
 func TestPiResponsesParallelToolHistory(t *testing.T) {
 	input := `[{"role":"user","content":"hi"},{"type":"function_call","call_id":"call_1","name":"read","arguments":"{\"path\":\"one\"}"},{"type":"function_call","call_id":"call_2","name":"read","arguments":"{\"path\":\"two\"}"},{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_text","text":"first"},{"type":"input_text","text":" output"}]},{"type":"function_call_output","call_id":"call_2","output":"second output"}]`
 	req, err := decodeRequest("openai-responses", []byte(piResponsePrefix+`"input":`+input+`}`), http.Header{})

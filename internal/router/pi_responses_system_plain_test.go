@@ -26,16 +26,16 @@ func TestPiResponsesPlainAnthropicSystem(t *testing.T) {
 	}))
 	defer up.Close()
 	svc := nativeStreamTestService(t, up.URL, "anthropic", []Target{anthropicBridgeTarget()})
-	post := func(input string) *httptest.ResponseRecorder {
-		body := `{"model":"native-stream","stream":true,"instructions":"base instruction","input":` + input + `}`
+	post := func(input, extra string) *httptest.ResponseRecorder {
+		body := `{"model":"native-stream","stream":true,"instructions":"base instruction","input":` + input + extra + `}`
 		r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer "+testToken)
 		w := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(w, r)
 		return w
 	}
-	w := post(`[{"role":"system","content":[{"type":"input_text","text":"system one"},{"type":"input_text","text":"system two"}]},{"role":"user","content":"hello"}]`)
-	if w.Code != 200 || hits.Load() != 1 || seen["system"] != "base instruction\n\nsystem one\n\nsystem two" {
+	w := post(`[{"role":"system","content":[{"type":"input_text","text":"allow"},{"type":"input_text","text":"listed"}]},{"role":"user","content":"hello"}]`, "")
+	if w.Code != 200 || hits.Load() != 1 || seen["system"] != "base instruction\n\nallowlisted" {
 		t.Fatalf("leading system lost: %d %s upstream=%#v hits=%d", w.Code, w.Body.String(), seen, hits.Load())
 	}
 	messages := valueAsSlice(seen["messages"])
@@ -43,9 +43,16 @@ func TestPiResponsesPlainAnthropicSystem(t *testing.T) {
 		t.Fatalf("bad messages %#v", messages)
 	}
 	for _, input := range []string{`[{"role":"user","content":"hello"},{"role":"system","content":"too late"}]`, `[{"role":"system","content":[{"type":"input_image","image_url":"data:image/png;base64,AAAA"}]},{"role":"user","content":"hello"}]`, `[{"role":"developer","content":"must not disappear"},{"role":"user","content":"hello"}]`, `{"input":[{"role":"system","content":"must not disappear"},{"role":"user","content":"hello"}]}`} {
-		w = post(input)
+		w = post(input, "")
 		if w.Code != 400 || hits.Load() != 1 {
 			t.Fatalf("unsupported system not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
+		}
+	}
+	// An item reference must never be silently dropped, even in JSON mode.
+	for _, extra := range []string{"", `,"text":{"format":{"type":"json_object"}}`} {
+		w = post(`[{"type":"item_reference","id":"msg_saved"},{"role":"user","content":"continue"}]`, extra)
+		if w.Code != 400 || hits.Load() != 1 {
+			t.Fatalf("unsupported item was not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
 		}
 	}
 }

@@ -206,16 +206,23 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 						if seenResponsesConversation {
 							return nil, fmt.Errorf("system message after conversation cannot be translated")
 						}
-						blocks, err := contentBlocks(m["content"])
-						if err != nil {
-							return nil, err
-						}
-						for _, value := range blocks {
-							block, _ := value.(map[string]any)
-							if stringValue(block["type"]) != "text" {
-								return nil, fmt.Errorf("non-text system content cannot be translated")
+						var text strings.Builder
+						switch content := m["content"].(type) {
+						case string:
+							text.WriteString(content)
+						case []any:
+							for _, value := range content {
+								part, ok := value.(map[string]any)
+								if !ok || !bridgeTextPartSupported(part) || (stringValue(part["type"]) != "text" && stringValue(part["type"]) != "input_text" && stringValue(part["type"]) != "output_text") {
+									return nil, fmt.Errorf("non-text system content cannot be translated")
+								}
+								text.WriteString(stringValue(part["text"]))
 							}
-							system = append(system, stringValue(block["text"]))
+						default:
+							return nil, fmt.Errorf("non-text system content cannot be translated")
+						}
+						if text.Len() != 0 {
+							system = append(system, text.String())
 						}
 						continue
 					}
