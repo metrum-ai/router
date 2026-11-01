@@ -1419,6 +1419,50 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		group.Targets = native
 		req.NoCache = true
 	}
+	// Decide this Responses→Anthropic limitation on the original history,
+	// before PII processing or shadow replay. Other eligible dialects retain
+	// their existing request semantics and are never forced through Anthropic.
+	developerHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && responsesHasDeveloper(req)
+	piiAnthropicExcluded := false
+	if developerHistory {
+		var others []Target
+		hasAnthropic := false
+		for _, target := range group.Targets {
+			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
+				hasAnthropic = true
+			} else {
+				others = append(others, target)
+			}
+		}
+		if hasAnthropic {
+			// Pre-PII shape decisions use the real request bytes, but never use
+			// the unredacted token estimate to rule out post-PII alternatives.
+			earlyRC := *rc
+			estimate := requestTokenEstimateFromIR(req, dialect, len(body))
+			earlyRC.rec.TokenEstimate = &estimate
+			otherEligible := len(s.targetsForRequest(&earlyRC, others, req, dialect)) > 0
+			if !otherEligible {
+				code := ""
+				switch {
+				case responsesDeveloperMultipart(req):
+					code = "unsupported_developer_content"
+				case responsesDeveloperOrderingInvalid(req):
+					code = "unsupported_capability"
+				case group.PIIFilter.Enabled && len(others) == 0:
+					code = "developer_pii_unsupported"
+				}
+				if code != "" {
+					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: code, MismatchParam: "input"})
+					return
+				}
+			}
+			if group.PIIFilter.Enabled {
+				// Never select or fall back to Anthropic on a PII-enabled group.
+				piiAnthropicExcluded = true
+				group.Targets = others
+			}
+		}
+	}
 	if reason := s.mediaAdmission(group, req, dialect); reason != "" {
 		s.writeError(w, rc, http.StatusBadRequest, reason)
 		return
@@ -1434,7 +1478,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
 	// Audio-output, explicit no-store, reasoning-off and opaque reasoning requests must not be shadow replayed.
-	if rc.rec.Endpoint != "responses.compact" && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	if rc.rec.Endpoint != "responses.compact" && !(developerHistory && group.PIIFilter.Enabled) && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -1484,6 +1528,15 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	if err != nil {
 		var blocked piiFilterBlockedError
 		if errors.As(err, &blocked) {
+			if piiAnthropicExcluded {
+				filteredRC := *rc
+				estimate := requestTokenEstimateFromIR(req, dialect, len(body))
+				filteredRC.rec.TokenEstimate = &estimate
+				if len(s.targetsForRequest(&filteredRC, group.Targets, req, dialect)) == 0 {
+					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: "developer_pii_unsupported", MismatchParam: "input"})
+					return
+				}
+			}
 			rc.rec.PIIFilterApplied = piiResult.Applied
 			rc.rec.PIIFilterMode = piiResult.Mode
 			rc.rec.PIIFilterReplacements = piiResult.Replacements
@@ -1530,6 +1583,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 		var eligibilityErr routingEligibilityError
 		if errors.As(err, &eligibilityErr) {
+			if piiAnthropicExcluded && len(s.targetsForRequest(rc, group.Targets, req, dialect)) == 0 {
+				eligibilityErr.CapabilityMismatch = true
+				eligibilityErr.MismatchCode = "developer_pii_unsupported"
+				eligibilityErr.MismatchParam = "input"
+			}
 			s.writeRoutingEligibilityError(w, rc, eligibilityErr)
 			return
 		}
@@ -3560,6 +3618,13 @@ func (s *Service) capabilityMismatch(rc *requestContext, targets []Target, req *
 	if dialect == "openai-responses" && invalidResponsesFunctionOutput(req) {
 		return "unsupported_function_call_output", "input"
 	}
+	if dialect == "openai-responses" && responsesDeveloperMultipart(req) {
+		for _, target := range targets {
+			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
+				return "unsupported_developer_content", "input"
+			}
+		}
+	}
 	if dialect == "openai-responses" && invalidResponsesChatMessageContent(req) {
 		return "unsupported_capability", "input"
 	}
@@ -4538,6 +4603,12 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 	message := fmt.Sprintf("no eligible upstream target is configured for model %q with %s requests requiring %s", err.Model, err.Dialect, strings.Join(err.Requirements, ", "))
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_function_call_output" {
 		message = "function_call_output.output must be a string or an array of input_text parts without unsupported metadata for a translated bridge"
+	}
+	if err.CapabilityMismatch && err.MismatchCode == "unsupported_developer_content" {
+		message = "Responses developer content must be a string or a single text part when translating to Anthropic"
+	}
+	if err.CapabilityMismatch && err.MismatchCode == "developer_pii_unsupported" {
+		message = "developer-role history is not supported with PII filtering on this route"
 	}
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)

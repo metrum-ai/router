@@ -198,7 +198,9 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 				}
 				switch stringValue(m["type"]) {
 				case "reasoning":
-					// Provider-owned reasoning, including encrypted payloads, is not portable.
+					// Provider-owned reasoning is not portable, but still marks the
+					// start of the original conversation for instruction ordering.
+					seenResponsesConversation = true
 					continue
 				case "function_call":
 					seenResponsesConversation = true
@@ -223,7 +225,7 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					if role == "" {
 						role = "user"
 					}
-					if role == "system" {
+					if role == "system" || role == "developer" {
 						if seenResponsesConversation {
 							return nil, fmt.Errorf("system message after conversation cannot be translated")
 						}
@@ -232,6 +234,9 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 						case string:
 							text.WriteString(content)
 						case []any:
+							if role == "developer" && len(content) != 1 {
+								return nil, fmt.Errorf("developer content must be a string or a single text part")
+							}
 							for _, value := range content {
 								part, ok := value.(map[string]any)
 								if !ok || !bridgeTextPartSupported(part) || (stringValue(part["type"]) != "text" && stringValue(part["type"]) != "input_text" && stringValue(part["type"]) != "output_text") {

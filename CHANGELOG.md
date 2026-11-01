@@ -84,6 +84,14 @@ Negative and partial results are published as such, not dropped.
 
 ### API compatibility
 
+- Responses-to-Anthropic now maps leading developer messages to the Anthropic
+  system prompt when their content is a string or one text part. Multipart,
+  non-text and late developer messages remain rejected rather than silently
+  dropped. Developer histories are ineligible for Anthropic targets when the
+  model group's PII filter is enabled; PII-filtered developer histories are
+  not shadow replayed. Existing encrypted-reasoning and retention limitations
+  still apply (#642); PII and cache alignment is deferred to #645.
+
 - OpenAI and Anthropic compatibility runs on every pull request and again on
   the merge group: the pinned official OpenAI and Anthropic testers run inside
   the required `ci` check, and the Go and TypeScript SDK suites run in the
