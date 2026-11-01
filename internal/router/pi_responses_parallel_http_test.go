@@ -34,12 +34,17 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 			target := anthropicToolTarget()
 			target.InputModalities = []string{"text", "image"}
 			if dialect == "openai-chat" {
+				target.ForceStoreFalse = true
 				target.ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, Images: true, FunctionTools: true, ToolChoice: true, Streaming: true, ValidationStatus: "passed"}
 			}
 			svc := nativeStreamTestService(t, up.URL, dialect, []Target{target})
 			input := `[{"role":"user","content":"hi"},{"type":"function_call","call_id":"c1","name":"read","arguments":"{}"},{"type":"function_call","call_id":"c2","name":"read","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"one"},{"type":"input_text","text":" two"}]},{"type":"function_call_output","call_id":"c2","output":"three"}]`
 			post := func(input string) *httptest.ResponseRecorder {
-				body := strings.Replace(piResponsePrefix, `"model":"m"`, `"model":"native-stream"`, 1) + `"input":` + input + `}`
+				prefix := strings.Replace(piResponsePrefix, `"model":"m"`, `"model":"native-stream"`, 1)
+				if dialect == "anthropic" {
+					prefix = strings.Replace(prefix, `"store":false,`, "", 1)
+				}
+				body := prefix + `"input":` + input + `}`
 				r := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
 				r.Header.Set("Authorization", "Bearer "+testToken)
 				w := httptest.NewRecorder()

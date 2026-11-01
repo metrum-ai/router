@@ -678,6 +678,12 @@ func (s *Service) maybeShadowRequest(groupName, callerDialect string, body []byt
 // using the same encoding, endpoint, and credential handling as the serving
 // path, then records aggregate counters. Streaming is disabled for replays.
 func (s *Service) executeShadowRequest(run *shadowRunState, callerDialect string, body []byte) {
+	req, err := decodeRequest(callerDialect, body, nil)
+	// Shadow targets bypass normal selection and may not honor the caller's
+	// no-store intent. Skip without counting an attempted shadow request.
+	if err == nil && normalizeDialect(callerDialect) == "openai-responses" && responsesExplicitNoStore(req) {
+		return
+	}
 	started := time.Now()
 	failed := true
 	var promptTokens, completionTokens int64
@@ -686,7 +692,6 @@ func (s *Service) executeShadowRequest(run *shadowRunState, callerDialect string
 		recordShadowObservation(s.configControlPlane, run.runID, failed, float64(time.Since(started).Milliseconds()), promptTokens, completionTokens, costUSD)
 	}()
 
-	req, err := decodeRequest(callerDialect, body, nil)
 	if err != nil {
 		return
 	}

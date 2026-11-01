@@ -297,7 +297,9 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 	// Encode a unary upstream call. The native streaming path flips stream=true
 	// via enableNativeUpstreamStream; the synthesized translator needs unary.
 	body["stream"] = false
-	if target.ForceStoreFalse {
+	// A caller's explicit no-store request must not be weakened by the
+	// target's default policy. True, null and omitted retain existing policy.
+	if target.ForceStoreFalse || responsesExplicitNoStore(req) {
 		body["store"] = false
 	}
 	if err := applyReasoningToOpenAIResponses(body, req, target); err != nil {

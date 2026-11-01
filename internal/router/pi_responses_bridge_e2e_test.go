@@ -58,13 +58,17 @@ func TestPiResponsesToolStreamingLocalhostContinuation(t *testing.T) {
 			defer up.Close()
 			target := anthropicToolTarget()
 			if dialect == "openai-chat" {
+				target.ForceStoreFalse = true
 				target.ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true, Streaming: true, ValidationStatus: "passed"}
 			}
 			svc := nativeStreamTestService(t, up.URL, dialect, []Target{target})
 			router := httptest.NewServer(svc.Handler())
 			defer router.Close()
 			tool := map[string]any{"type": "function", "name": "read", "parameters": map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}, "required": []string{"path"}}}
-			base := map[string]any{"model": "native-stream", "tools": []any{tool}, "max_output_tokens": 512, "stream": true, "store": false, "prompt_cache_key": "synthetic"}
+			base := map[string]any{"model": "native-stream", "tools": []any{tool}, "max_output_tokens": 512, "stream": true, "prompt_cache_key": "synthetic"}
+			if dialect == "openai-chat" {
+				base["store"] = false
+			}
 			input := []any{map[string]any{"role": "system", "content": "You are a coding assistant."}, map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Read quote.txt"}}}}
 			post := func(input []any) string {
 				base["input"] = input

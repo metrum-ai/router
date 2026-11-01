@@ -166,7 +166,31 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 	return fit
 }
 
+// responsesExplicitNoStore identifies only an actual boolean false; omitted,
+// null and true retain their existing target-controlled semantics.
+func responsesExplicitNoStore(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	store, ok := req.Raw["store"].(bool)
+	return ok && !store
+}
+
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
+	// Native Responses forwards explicit false. The translated Chat encoder
+	// sends it only under the target's force policy; other dialects have no
+	// validated equivalent, so fail closed instead of silently dropping it.
+	if normalizeDialect(callerDialect) == "openai-responses" && responsesExplicitNoStore(req) {
+		switch normalizeDialect(outDialect) {
+		case "openai-responses":
+		case "openai-chat":
+			if !target.ForceStoreFalse {
+				return "store-false-unsupported"
+			}
+		default:
+			return "store-false-unsupported"
+		}
+	}
 	support := target.RequestShapeSupport
 	// Logprobs cannot be represented by the current Anthropic translation.
 	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {
