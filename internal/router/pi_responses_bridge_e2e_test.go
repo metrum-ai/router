@@ -30,8 +30,15 @@ func TestPiResponsesToolStreamingLocalhostContinuation(t *testing.T) {
 					return
 				}
 				requests <- payload
-				w.Header().Set("Content-Type", "text/event-stream")
 				first := count.Add(1) == 1
+				if !first {
+					body, _ := json.Marshal(payload)
+					if !strings.Contains(string(body), "E2E-TOOL-RESULT-7842") {
+						http.Error(w, "missing expected tool output", http.StatusBadRequest)
+						return
+					}
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
 				if dialect == "openai-chat" {
 					if first {
 						fmt.Fprint(w, "data: {\"id\":\"chat_1\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"read\",\"arguments\":\"{\\\"path\\\":\\\"quote.txt\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chat_1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n")
@@ -79,6 +86,10 @@ func TestPiResponsesToolStreamingLocalhostContinuation(t *testing.T) {
 				}
 				return string(raw)
 			}
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "quote.txt"), []byte("E2E-TOOL-RESULT-7842"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			first := post(input)
 			var call map[string]any
 			scan := bufio.NewScanner(strings.NewReader(first))
@@ -99,11 +110,13 @@ func TestPiResponsesToolStreamingLocalhostContinuation(t *testing.T) {
 			if call == nil || call["name"] != "read" || !strings.Contains(stringValue(call["arguments"]), "quote.txt") {
 				t.Fatalf("missing tool call: %s", first)
 			}
-			path := filepath.Join(t.TempDir(), "quote.txt")
-			if err := os.WriteFile(path, []byte("E2E-TOOL-RESULT-7842"), 0600); err != nil {
-				t.Fatal(err)
+			var args struct {
+				Path string `json:"path"`
 			}
-			effect, err := os.ReadFile(path)
+			if err := json.Unmarshal([]byte(stringValue(call["arguments"])), &args); err != nil || args.Path != "quote.txt" {
+				t.Fatalf("unexpected returned read arguments: %v %#v", err, args)
+			}
+			effect, err := os.ReadFile(filepath.Join(dir, args.Path))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,9 +127,31 @@ func TestPiResponsesToolStreamingLocalhostContinuation(t *testing.T) {
 			}
 			initial, continuation := <-requests, <-requests
 			initialJSON, _ := json.Marshal(initial)
-			continuationJSON, _ := json.Marshal(continuation)
-			if !strings.Contains(string(initialJSON), "You are a coding assistant.") || !strings.Contains(string(continuationJSON), "E2E-TOOL-RESULT-7842") || !strings.Contains(string(continuationJSON), "call_1") {
-				t.Fatalf("lost system or tool output: initial=%s next=%s", initialJSON, continuationJSON)
+			if !strings.Contains(string(initialJSON), "You are a coding assistant.") {
+				t.Fatalf("missing system: %s", initialJSON)
+			}
+			messages := valueAsSlice(continuation["messages"])
+			if len(messages) < 3 {
+				t.Fatalf("missing continuation messages: %#v", continuation)
+			}
+			assistant, _ := messages[len(messages)-2].(map[string]any)
+			result, _ := messages[len(messages)-1].(map[string]any)
+			if dialect == "openai-chat" {
+				calls := valueAsSlice(assistant["tool_calls"])
+				if assistant["role"] != "assistant" || len(calls) != 1 || calls[0].(map[string]any)["id"] != "call_1" || result["role"] != "tool" || result["tool_call_id"] != "call_1" || result["content"] != "E2E-TOOL-RESULT-7842" {
+					t.Fatalf("bad Chat continuation: %#v", messages)
+				}
+			} else {
+				uses, results := valueAsSlice(assistant["content"]), valueAsSlice(result["content"])
+				if assistant["role"] != "assistant" || result["role"] != "user" || len(uses) != 1 || len(results) != 1 {
+					t.Fatalf("bad Anthropic continuation: %#v", messages)
+				}
+				use := uses[0].(map[string]any)
+				toolResult := results[0].(map[string]any)
+				encoded, _ := json.Marshal(toolResult)
+				if use["type"] != "tool_use" || use["id"] != "call_1" || toolResult["type"] != "tool_result" || toolResult["tool_use_id"] != "call_1" || !strings.Contains(string(encoded), "E2E-TOOL-RESULT-7842") {
+					t.Fatalf("bad Anthropic tool IDs/result: %#v", messages)
+				}
 			}
 		})
 	}

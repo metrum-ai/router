@@ -184,7 +184,11 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 					appendBlocks("assistant", []any{block})
 				case "function_call_output":
 					seenResponsesConversation = true
-					block, err := toolResult(stringValue(m["call_id"]), m["output"])
+					output, ok := responsesToolOutputText(m["output"])
+					if !ok {
+						return nil, fmt.Errorf("function_call_output.output must be text or input_text parts")
+					}
+					block, err := toolResult(stringValue(m["call_id"]), output)
 					if err != nil {
 						return nil, err
 					}

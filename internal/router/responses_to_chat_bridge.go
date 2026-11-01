@@ -44,6 +44,10 @@ func responsesToChatBridgeFilterReason(target Target, req *IRRequest, callerDial
 		return "responses-to-chat-reasoning"
 	case requestHasStructuredOutput(req):
 		return "responses-to-chat-structured-output"
+	case invalidResponsesFunctionOutput(req):
+		return "responses-to-chat-function-output-nontext"
+	case invalidResponsesChatMessageContent(req):
+		return "responses-to-chat-content-unsupported"
 	case responsesHasFunctionHistory(req) && !bridge.FunctionTools:
 		return "responses-to-chat-function-call-output"
 	case requestFeaturePresent(req, "tool_result"):
@@ -81,7 +85,7 @@ func responsesToChatBridgeFilterReason(target Target, req *IRRequest, callerDial
 	if rawKeyPresent(req.Raw, "tool_choice") && req.Raw["tool_choice"] == nil {
 		return "responses-to-chat-tool-choice-null-unsupported"
 	}
-	if !bridge.Text {
+	if !bridge.Text && !responsesHasFunctionHistory(req) {
 		return "responses-to-chat-text-unsupported"
 	}
 	return ""
@@ -116,6 +120,7 @@ func encodeResponsesToChatBridge(model string, req *IRRequest, target Target) ([
 			msgs = append(msgs, map[string]any{"role": "system", "content": req.System})
 		}
 		if input, ok := req.Raw["input"].([]any); ok {
+			previousCall := false
 			for _, v := range input {
 				m, ok := v.(map[string]any)
 				if !ok {
@@ -127,15 +132,24 @@ func encodeResponsesToChatBridge(model string, req *IRRequest, target Target) ([
 					if id == "" || name == "" || !json.Valid([]byte(arguments)) {
 						return nil, fmt.Errorf("invalid responses function call")
 					}
-					msgs = append(msgs, map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": id, "type": "function", "function": map[string]any{"name": name, "arguments": arguments}}}})
+					call := map[string]any{"id": id, "type": "function", "function": map[string]any{"name": name, "arguments": arguments}}
+					if previousCall {
+						last := msgs[len(msgs)-1]
+						last["tool_calls"] = append(last["tool_calls"].([]any), call)
+					} else {
+						msgs = append(msgs, map[string]any{"role": "assistant", "tool_calls": []any{call}})
+					}
+					previousCall = true
 				case "function_call_output":
+					previousCall = false
 					id := stringValue(m["call_id"])
-					output, ok := m["output"].(string)
+					output, ok := responsesToolOutputText(m["output"])
 					if id == "" || !ok {
 						return nil, fmt.Errorf("unsupported responses function output")
 					}
 					msgs = append(msgs, map[string]any{"role": "tool", "tool_call_id": id, "content": output})
 				case "", "message":
+					previousCall = false
 					decoded := decodeMessages([]any{m})
 					if len(decoded) != 1 {
 						return nil, fmt.Errorf("invalid responses message")
