@@ -20,7 +20,13 @@ This page records a **partial historical baseline** and selected current-model p
 - Router usage rows for both matrix subsets total **$0.00703245** at configured list rates, not an invoice; one usage row is estimated and some attempts have no reported usage. Direct diagnostic: **$0.00014965** list-rate from provider-reported 65 input and 366 output tokens; the rejected logprobs diagnostic had no reported usage. Unchanged starter: **$0.00000825** metered, plus an attempt without usage. These are not a complete provider bill.
 - The quota is a 200,000-token admission budget with estimated reservations; reconciliation and missing usage can prevent it from being a strict bound on provider billing.
 
-## Final-SHA live gate
+## Latest final-SHA live gate
+
+On final SHA `4c950276f5e9e3fc70b72ed06d4721fea0720da8`, the bounded full-capability run passed **17/18, 19/19, 17/17, 17/17** supported suites for OpenAI → GPT, OpenAI → Claude, Anthropic → GPT and Anthropic → Claude. Raw selected counts were **17/30, 19/30, 17/27, 17/27**. Denominators exclude documented 501s and directly proven provider-incompatible request shapes; GPT compaction remains included because the provider rejected the tester's fixture ID, not compaction itself. The [full per-suite classification](https://github.com/metrum-ai/router/issues/536#issuecomment-6553433652) includes the direct proofs. Responses vision to Claude passed (#637); Anthropic → GPT thinking remained a provider limit for the exact tested prompt after three matching direct calls produced no summary (#614). Test suites may accept refusals, and omitted suites are not passes.
+
+The run omitted 54 OpenAI and five Anthropic suites, including stored-response lifecycle and hosted-resource operations; it is not full-catalog or production validation. After-drain router usage was **$0.00149400** at list rates, not an invoice; eight attempted request rows did not report usage. Sanitized run evidence is `4cfbf908`; prior direct-provider comparisons are `577bb68d` and `b5d45327` (`router/v45-proof/536`).
+
+## Previous final-SHA live gate
 
 On final SHA `8fdeff867b24037ac62e5b04e94d9a04e2ca5564`, a bounded test-only full-capability config enabled GPT reasoning summaries and Claude adaptive reasoning. Supported-suite passes/runs were **17/18, 18/19, 17/17, 17/17** for OpenAI → GPT, OpenAI → Claude, Anthropic → GPT, and Anthropic → Claude. Raw selected counts were **17/30, 18/30, 17/27, 17/27**. Denominators exclude documented 501s and the exact provider-rejected request shapes; GPT compaction remains included because rejection of the tester's fixture ID does not prove compaction unsupported. The [full classification](https://github.com/metrum-ai/router/issues/536#issuecomment-6553110075) records each non-pass and its direct-provider proof or compatibility gap [#637](https://github.com/metrum-ai/router/issues/637).
 
