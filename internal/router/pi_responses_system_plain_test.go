@@ -42,7 +42,7 @@ func TestPiResponsesPlainAnthropicSystem(t *testing.T) {
 	if len(messages) != 1 || messages[0].(map[string]any)["role"] != "user" {
 		t.Fatalf("bad messages %#v", messages)
 	}
-	for _, input := range []string{`[{"role":"user","content":"hello"},{"role":"system","content":"too late"}]`, `[{"role":"system","content":[{"type":"input_image","image_url":"data:image/png;base64,AAAA"}]},{"role":"user","content":"hello"}]`, `[{"role":"developer","content":"must not disappear"},{"role":"user","content":"hello"}]`} {
+	for _, input := range []string{`[{"role":"user","content":"hello"},{"role":"system","content":"too late"}]`, `[{"role":"system","content":[{"type":"input_image","image_url":"data:image/png;base64,AAAA"}]},{"role":"user","content":"hello"}]`, `[{"role":"developer","content":"must not disappear"},{"role":"user","content":"hello"}]`, `{"input":[{"role":"system","content":"must not disappear"},{"role":"user","content":"hello"}]}`} {
 		w = post(input)
 		if w.Code != 400 || hits.Load() != 1 {
 			t.Fatalf("unsupported system not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())

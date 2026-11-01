@@ -81,6 +81,7 @@ func TestPiParallelResponsesStreamingHTTP(t *testing.T) {
 				t.Fatalf("unknown content not rejected: %d %s hits=%d", w.Code, w.Body.String(), hits.Load())
 			}
 			for _, bad := range []string{
+				`{"input":[{"role":"system","content":"must not disappear"},{"role":"user","content":"hello"}]}`,
 				`[{"role":"user","content":"hi"},{"type":"function_call_output","call_id":"c1","output":[{"type":"input_text","text":"secret","future_metadata":"do not lose"}]}]`,
 				`[{"role":"user","content":[{"type":"input_text","text":"describe"},{"type":"input_image","image_url":null}]}]`,
 				`[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"output_text","text":"answer","annotations":[{"type":"url_citation","url":"https://example.invalid"}]}]}]`,

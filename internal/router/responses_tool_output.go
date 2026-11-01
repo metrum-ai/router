@@ -183,6 +183,11 @@ func invalidResponsesChatMessageContent(req *IRRequest) bool {
 	if req == nil {
 		return false
 	}
+	// Responses input objects can be recursively decoded by the generic IR,
+	// but these bridges cannot preserve their nested role ordering safely.
+	if _, object := req.Raw["input"].(map[string]any); object {
+		return true
+	}
 	for _, value := range valueAsSlice(req.Raw["input"]) {
 		item, ok := value.(map[string]any)
 		if !ok {
