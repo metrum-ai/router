@@ -144,8 +144,11 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 	if req == nil {
 		return ""
 	}
-	if caller == "anthropic" && out != "anthropic" && (unknownAnthropicBlocks(req.Raw["messages"]) || unknownAnthropicBlocks(req.Raw["system"])) {
-		return "unsupported_block"
+	if caller == "anthropic" && out != "anthropic" {
+		clean, err := foreignReasoningHistory(req, caller, out)
+		if err != nil || unknownAnthropicBlocks(clean.Raw["messages"]) || unknownAnthropicBlocks(clean.Raw["system"]) {
+			return "unsupported_block"
+		}
 	}
 	if !targetSupportsInputModalities(target, requestInputModalities(req)) {
 		return "unsupported_modality"

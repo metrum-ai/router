@@ -231,8 +231,18 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "anthropic-bridge-tool-choice-unsupported"
 		}
 	}
-	if anthropicStreamBridge(callerDialect, outDialect) && (requestRequiresReasoning(req) || target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target)) {
-		return "anthropic-bridge-reasoning-unsupported"
+	if anthropicStreamBridge(callerDialect, outDialect) {
+		if requestRequiresReasoning(req) {
+			if !targetCanSatisfyReasoning(target, outDialect, req) {
+				return "anthropic-bridge-reasoning-unsupported"
+			}
+			if callerDialect == "anthropic" && outDialect == "openai-responses" && !target.Reasoning.SupportsSummaries {
+				return "anthropic-bridge-reasoning-summary-unsupported"
+			}
+		} else if target.Reasoning.DefaultOn || strings.EqualFold(target.Reasoning.Mode, reasoningModeAlwaysOn) || defaultThinkingEnabled(target) {
+			// Do not expose unrequested thinking or silently change the default path.
+			return "anthropic-bridge-reasoning-unsupported"
+		}
 	}
 	if reason := responsesToChatBridgeFilterReason(target, req, callerDialect, outDialect); reason != "" {
 		return reason

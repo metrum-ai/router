@@ -463,7 +463,15 @@ func applyReasoningToOpenAIChat(body map[string]any, req *IRRequest, target Targ
 			delete(body, "max_tokens")
 		}
 	}
-	body["reasoning_effort"] = reasoningEffortForTarget(req.Reasoning, target)
+	effort := reasoningEffortForTarget(req.Reasoning, target)
+	if req.Reasoning.Source == "anthropic_thinking" {
+		var err error
+		effort, err = bridgeReasoningEffort(req.Reasoning)
+		if err != nil {
+			return err
+		}
+	}
+	body["reasoning_effort"] = effort
 	return nil
 }
 
@@ -474,8 +482,18 @@ func applyReasoningToOpenAIResponses(body map[string]any, req *IRRequest, target
 	if !targetCanSatisfyReasoning(target, "openai-responses", req) {
 		return fmt.Errorf("target does not support requested reasoning")
 	}
-	reasoning := map[string]any{"effort": reasoningEffortForTarget(req.Reasoning, target)}
-	if req.Reasoning.Summary != "" && target.Reasoning.SupportsSummaries {
+	effort := reasoningEffortForTarget(req.Reasoning, target)
+	if req.Reasoning.Source == "anthropic_thinking" {
+		var err error
+		effort, err = bridgeReasoningEffort(req.Reasoning)
+		if err != nil {
+			return err
+		}
+	}
+	reasoning := map[string]any{"effort": effort}
+	if req.Reasoning.Source == "anthropic_thinking" && target.Reasoning.SupportsSummaries {
+		reasoning["summary"] = "auto"
+	} else if req.Reasoning.Summary != "" && target.Reasoning.SupportsSummaries {
 		reasoning["summary"] = req.Reasoning.Summary
 	}
 	body["reasoning"] = reasoning
@@ -488,6 +506,23 @@ func applyReasoningToAnthropic(body map[string]any, req *IRRequest, target Targe
 	}
 	if !targetCanSatisfyReasoning(target, "anthropic", req) {
 		return fmt.Errorf("target does not support requested reasoning")
+	}
+	if strings.HasPrefix(req.Reasoning.Source, "openai_") {
+		maxTokens, _ := numberAsInt(body["max_tokens"])
+		thinking, effort, err := bridgeAnthropicReasoning(req.Reasoning, target, maxTokens)
+		if err != nil {
+			return err
+		}
+		body["thinking"] = thinking
+		if effort != "" {
+			outputConfig, _ := body["output_config"].(map[string]any)
+			if outputConfig == nil {
+				outputConfig = map[string]any{}
+				body["output_config"] = outputConfig
+			}
+			outputConfig["effort"] = effort
+		}
+		return nil
 	}
 	if req.Reasoning.Kind == "adaptive" {
 		body["thinking"] = map[string]any{"type": "adaptive"}

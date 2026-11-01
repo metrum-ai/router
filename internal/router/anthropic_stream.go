@@ -17,7 +17,8 @@ func anthropicStreamBridge(caller, upstream string) bool {
 	caller, upstream = normalizeDialect(caller), normalizeDialect(upstream)
 	return caller == "anthropic" && (upstream == "openai-chat" || upstream == "openai-responses") || upstream == "anthropic" && (caller == "openai-chat" || caller == "openai-responses")
 }
-func anthropicBridgeProxy(caller string) func(context.Context, http.ResponseWriter, io.Reader, string, string, int64, *requestContext, ...IdentifierTransform) (nativeStreamResult, error) {
+func anthropicBridgeProxy(caller string, reasoning ...bool) func(context.Context, http.ResponseWriter, io.Reader, string, string, int64, *requestContext, ...IdentifierTransform) (nativeStreamResult, error) {
+	includeReasoning := len(reasoning) > 0 && reasoning[0]
 	return func(ctx context.Context, w http.ResponseWriter, body io.Reader, upstream, model string, maxBytes int64, rc *requestContext, ids ...IdentifierTransform) (nativeStreamResult, error) {
 		var encoder stream.IdentifierEncoder
 		if len(ids) > 0 {
@@ -27,7 +28,7 @@ func anthropicBridgeProxy(caller string) func(context.Context, http.ResponseWrit
 		public := rc.publicModel()
 		switch normalizeDialect(caller) {
 		case "anthropic":
-			base := stream.ChatUpstreamToAnthropicCaller{IDs: encoder, ResponseID: "msg_" + requestID(), Model: model, PublicModel: public}
+			base := stream.ChatUpstreamToAnthropicCaller{IDs: encoder, ResponseID: "msg_" + requestID(), Model: model, PublicModel: public, IncludeReasoning: includeReasoning}
 			if normalizeDialect(upstream) == "openai-responses" {
 				t = &stream.ResponsesUpstreamToAnthropicCaller{ChatUpstreamToAnthropicCaller: base}
 			} else {
@@ -35,9 +36,9 @@ func anthropicBridgeProxy(caller string) func(context.Context, http.ResponseWrit
 			}
 		case "openai-chat":
 			includeUsage := rc != nil && rc.chatStreamIncludeUsage
-			t = &stream.AnthropicUpstreamToChatCaller{IDs: encoder, Model: model, PublicModel: public, CreatedAt: time.Now().Unix(), IncludeUsage: includeUsage}
+			t = &stream.AnthropicUpstreamToChatCaller{IDs: encoder, Model: model, PublicModel: public, CreatedAt: time.Now().Unix(), IncludeUsage: includeUsage, IncludeReasoning: includeReasoning}
 		case "openai-responses":
-			t = &stream.AnthropicUpstreamToResponsesCaller{ChatUpstreamToResponsesCaller: stream.ChatUpstreamToResponsesCaller{IDs: encoder, ResponseID: "resp_" + requestID(), Model: model, PublicModel: public, CreatedAt: time.Now().Unix()}}
+			t = &stream.AnthropicUpstreamToResponsesCaller{ChatUpstreamToResponsesCaller: stream.ChatUpstreamToResponsesCaller{IDs: encoder, ResponseID: "resp_" + requestID(), Model: model, PublicModel: public, CreatedAt: time.Now().Unix(), IncludeReasoning: includeReasoning}}
 		}
 		return runResponsesStream(ctx, w, body, model, maxBytes, rc, t)
 	}

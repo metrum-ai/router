@@ -5,6 +5,7 @@ package router
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -85,15 +86,52 @@ func targetCanSatisfyReasoning(target Target, outDialect string, req *IRRequest)
 	if !targetSupportsReasoning(target) {
 		return false
 	}
+	foreign := (req.Reasoning.Source == "anthropic_thinking" && (outDialect == "openai-chat" || outDialect == "openai-responses")) || (strings.HasPrefix(req.Reasoning.Source, "openai_") && outDialect == "anthropic")
+	if foreign {
+		if target.Reasoning.RejectsTemperature && rawValuePresent(req.Raw, "temperature") {
+			return false
+		}
+		if target.Reasoning.RejectsTopP && rawValuePresent(req.Raw, "top_p") {
+			return false
+		}
+		if req.Reasoning.Source == "anthropic_thinking" {
+			if req.Reasoning.Kind == "token_budget" && !validForeignThinkingBudget(req.Raw) {
+				return false
+			}
+			if _, err := bridgeReasoningEffort(req.Reasoning); err != nil {
+				return false
+			}
+		}
+	}
 	control := strings.ToLower(strings.TrimSpace(target.Reasoning.Control))
 	switch outDialect {
 	case "anthropic":
 		if control != reasoningControlTokenBudget && !defaultThinkingEnabled(target) {
 			return false
 		}
+		if strings.HasPrefix(req.Reasoning.Source, "openai_") {
+			_, _, err := bridgeAnthropicReasoning(req.Reasoning, target, effectiveMaxTokens(req, 1024))
+			return err == nil
+		}
 		return reasoningBudgetForTarget(req.Reasoning, target) > 0
 	case "openai-responses", "openai-chat":
 		return control == reasoningControlEffortEnum || control == reasoningControlTokenBudget
+	default:
+		return false
+	}
+}
+
+// A translated Anthropic enabled budget is a positive integer JSON number.
+// Do not coerce strings, fractions, zero or missing values into an effort.
+func validForeignThinkingBudget(raw map[string]any) bool {
+	thinking, _ := raw["thinking"].(map[string]any)
+	switch budget := thinking["budget_tokens"].(type) {
+	case float64:
+		return budget > 0 && budget == math.Trunc(budget) && budget < float64(math.MaxInt)
+	case int:
+		return budget > 0
+	case int64:
+		return budget > 0 && uint64(budget) <= uint64(math.MaxInt)
 	default:
 		return false
 	}
