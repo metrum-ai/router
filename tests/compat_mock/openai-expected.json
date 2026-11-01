@@ -27,10 +27,6 @@
     "reason": "Stored response lookup or continuation is not implemented",
     "issue": "https://github.com/metrum-ai/router/issues/533"
   },
-  "responses_multi_turn": {
-    "reason": "Stored response lookup or continuation is not implemented",
-    "issue": "https://github.com/metrum-ai/router/issues/533"
-  },
   "moderations": {
     "reason": "Moderations are not offered (501)",
     "issue": "https://github.com/metrum-ai/router/issues/531"
