@@ -1425,7 +1425,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
-	if rc.rec.Endpoint != "responses.compact" {
+	if rc.rec.Endpoint != "responses.compact" && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -2230,7 +2230,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
 		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
-			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(group.Targets, req, callerDialect)
+			err.MismatchCode, err.MismatchParam = s.capabilityMismatch(rc, group.Targets, req, callerDialect)
 		}
 		return decision{}, err
 	}
@@ -2696,6 +2696,21 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			upReq = &copyReq
 		}
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)
+	}
+	// Responses→Chat has no stored Responses resource. Send false when the
+	// caller or target requests it, unless the target explicitly declares
+	// that it rejects the parameter and relies on its no-store default.
+	// Bedrock's internal Chat-shaped adapter is a Messages transport.
+	if err == nil && callerDialect == "openai-responses" && outDialect == "openai-chat" && !isBedrock(provider) && (responsesExplicitNoStore(req) || target.ForceStoreFalse) {
+		var chatBody map[string]any
+		if err = json.Unmarshal(upReqBody, &chatBody); err == nil {
+			if supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, "store") {
+				delete(chatBody, "store")
+			} else {
+				chatBody["store"] = false
+			}
+			upReqBody, err = json.Marshal(chatBody)
+		}
 	}
 	attempt.RequestBytes = int64(len(upReqBody))
 	if err != nil {
@@ -3499,7 +3514,21 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
-func (s *Service) capabilityMismatch(targets []Target, req *IRRequest, dialect string) (string, string) {
+func (s *Service) capabilityMismatch(rc *requestContext, targets []Target, req *IRRequest, dialect string) (string, string) {
+	// Attribute failure to store only if the same request otherwise has an
+	// eligible target. Keep the original request estimate and all other gates.
+	if dialect == "openai-responses" && responsesExplicitNoStore(req) {
+		withoutStore := *req
+		withoutStore.Raw = make(map[string]any, len(req.Raw))
+		for key, value := range req.Raw {
+			if key != "store" {
+				withoutStore.Raw[key] = value
+			}
+		}
+		if len(s.targetsForRequest(rc, targets, &withoutStore, dialect)) > 0 {
+			return "unsupported_capability", "store"
+		}
+	}
 	if dialect == "openai-responses" && invalidResponsesFunctionOutput(req) {
 		return "unsupported_function_call_output", "input"
 	}

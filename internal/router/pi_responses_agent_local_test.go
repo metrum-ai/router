@@ -108,8 +108,11 @@ func TestPiResponsesRealAgentLocalReadContinuation(t *testing.T) {
 	if calls.Load() != 2 {
 		t.Fatalf("upstream calls=%d output=%s", calls.Load(), output)
 	}
-	<-upstreamRequests
+	first := <-upstreamRequests
 	second := <-upstreamRequests
+	if first["store"] != false || second["store"] != false {
+		t.Fatalf("explicit no-store lost in Pi requests: first=%#v second=%#v", first["store"], second["store"])
+	}
 	messages := valueAsSlice(second["messages"])
 	found := false
 	for _, value := range messages {

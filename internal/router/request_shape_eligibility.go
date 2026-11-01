@@ -166,7 +166,25 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 	return fit
 }
 
+// responsesExplicitNoStore identifies only an actual boolean false.
+func responsesExplicitNoStore(req *IRRequest) bool {
+	if req == nil {
+		return false
+	}
+	store, ok := req.Raw["store"].(bool)
+	return ok && !store
+}
+
 func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord, fit targetRequestShapeFit) string {
+	// Native Responses and Chat represent no-store; Messages has no stored
+	// response resource. Other transports have no established equivalent.
+	if normalizeDialect(callerDialect) == "openai-responses" && responsesExplicitNoStore(req) {
+		switch normalizeDialect(outDialect) {
+		case "openai-responses", "openai-chat", "anthropic":
+		default:
+			return "store-false-unsupported"
+		}
+	}
 	support := target.RequestShapeSupport
 	// Logprobs cannot be represented by the current Anthropic translation.
 	if callerDialect == "openai-chat" && outDialect == "anthropic" && req != nil && boolValue(req.Raw["logprobs"]) {
@@ -254,8 +272,25 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 			return "request-shape-required-input-modality"
 		}
 	}
-	if feature := firstUnsupportedRequestFeature(req, support.UnsupportedRequestFeatures); feature != "" {
-		return "request-shape-unsupported-feature"
+	for _, feature := range support.UnsupportedRequestFeatures {
+		normalized := strings.ToLower(strings.TrimSpace(feature))
+		// Translated Chat omits store for providers that reject it, relying on
+		// their declared default; Messages does not have this response resource.
+		if normalized == "store" && normalizeDialect(callerDialect) == "openai-responses" {
+			switch normalizeDialect(outDialect) {
+			case "openai-chat", "anthropic":
+				continue
+			case "openai-responses":
+				// The native encoder forwards even null, and a force policy
+				// inserts false even when the caller omitted the field.
+				if target.ForceStoreFalse || (req != nil && rawKeyPresent(req.Raw, "store")) {
+					return "request-shape-unsupported-feature"
+				}
+			}
+		}
+		if requestFeaturePresent(req, normalized) {
+			return "request-shape-unsupported-feature"
+		}
 	}
 	if support.SupportsLargeCodingAgentPayloads != nil && !*support.SupportsLargeCodingAgentPayloads && largeCodingAgentPayload(req, estimate) {
 		return "request-shape-unvalidated-large-agent-payload"
@@ -312,16 +347,6 @@ func stringSliceContainsNormalizedDialect(values []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func firstUnsupportedRequestFeature(req *IRRequest, unsupported []string) string {
-	for _, feature := range unsupported {
-		normalized := strings.ToLower(strings.TrimSpace(feature))
-		if requestFeaturePresent(req, normalized) {
-			return normalized
-		}
-	}
-	return ""
 }
 
 func requestFeaturePresent(req *IRRequest, feature string) bool {
