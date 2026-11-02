@@ -1,0 +1,8 @@
+{
+  "name": "minimatch",
+  "version": "11.0.1",
+  "description": "Callable minimatch entry for serve-handler, delegating to minimatch 11",
+  "private": true,
+  "license": "Apache-2.0",
+  "main": "index.js"
+}
