@@ -245,6 +245,9 @@ def build_binaries(ctx: Ctx) -> None:
             ["go", "build", "-buildvcs=false", "-o", str(ctx.bin_dir / target), f"./cmd/{target}"],
             cwd=ROOT,
             check=True,
+            # Static binaries: the router nodes have no Go toolchain, and the
+            # binary must run on their libc.
+            env={**os.environ, "CGO_ENABLED": "0"},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
