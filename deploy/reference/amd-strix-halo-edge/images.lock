@@ -1,0 +1,44 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Pinned inputs for reference tier: amd-strix-halo-edge.
+# Resolved on 2026-11-02 against the AMD-published ROCm vLLM tag list:
+#   docker buildx imagetools inspect \
+#     rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
+# The tag names the architecture the image is built for (gfx1151 = RDNA 3.5,
+# Strix Halo), so it cannot resolve to a build for a different GPU family.
+schema: metrum.ai/reference-images/v1
+tier: amd-strix-halo-edge
+updated: "2026-11-02"
+
+router:
+  reference: metrum-ai-router:<version>-linux-amd64
+  digest: operator-supplied
+  note: Required as ROUTER_IMAGE by compose.yaml; never latest, never a moving tag.
+
+images:
+  - name: vllm-rocm
+    role: model-server
+    image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
+    digest: sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    source: https://hub.docker.com/r/rocm/vllm
+    platforms: [linux/amd64]
+    note: Official AMD ROCm vLLM image built for gfx1151 (Strix Halo); the arch is in the tag.
+
+models:
+  - id: Qwen/Qwen3-1.7B
+    revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+    license: Apache-2.0
+    slot: local-tiny
+    served_name: local-tiny
+    note: Always-resident smoke and classification model.
+  - id: Qwen/Qwen3-30B-A3B-Instruct-2507
+    revision: 0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe
+    license: Apache-2.0
+    slot: local-primary
+    served_name: local-primary
+    note: >-
+      Primary local model behind the local-chat group. Sparse MoE (30.5B total,
+      3.3B active) in BF16. Swap to Qwen/Qwen3-Coder-30B-A3B-Instruct
+      (revision b2cff646eb4bb1d68355c01b18ae02e7cf42d120) by changing
+      PRIMARY_MODEL_ID/PRIMARY_MODEL_REVISION; the slot, group and grants stay.

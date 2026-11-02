@@ -40,6 +40,7 @@ const sidebars = {
         "installation/index",
         "installation/deployment-artifacts",
         "installation/docker-compose",
+        "installation/edge-bundle",
         "installation/binary",
         "installation/kubernetes",
         "installation/package-validation",

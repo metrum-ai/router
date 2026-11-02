@@ -1,0 +1,121 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reference deployment: nvidia-datacenter
+# 1x NVIDIA 80 GB datacenter GPU (H100 80 GB class).
+# Model-server image pins must match images.lock; scripts/check_reference_configs.py
+# fails when they drift. The router image is supplied by the operator.
+name: metrum-router-reference-nvidia-datacenter
+
+x-vllm-service: &vllm-service
+  restart: unless-stopped
+  ipc: host
+  shm_size: 16gb
+  security_opt:
+    - no-new-privileges:true
+  environment:
+    HF_HOME: /cache
+    HF_HUB_ENABLE_HF_TRANSFER: "1"
+  volumes:
+    - hf-cache:/cache
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - >-
+        python3 -c "import urllib.request,sys;
+        sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"
+    interval: 15s
+    timeout: 5s
+    retries: 20
+    # Weight download and graph capture are slow on first boot; the suite waits.
+    start_period: 45m
+
+services:
+  vllm-tiny:
+    <<: *vllm-service
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    command:
+      - --model
+      - ${TINY_MODEL_ID:-Qwen/Qwen3-1.7B}
+      - --revision
+      - ${TINY_MODEL_REVISION:-70d244cc86ccca08cf5af4e1e306ecf908b1ad5e}
+      - --served-model-name
+      - local-tiny
+      - --max-model-len
+      - ${MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${TINY_GPU_MEMORY_UTILIZATION:-0.06}
+      - --api-key
+      - ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - 127.0.0.1:${TINY_VLLM_PORT:-8002}:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm-chat:
+    <<: *vllm-service
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    command:
+      - --model
+      - ${CHAT_MODEL_ID:-Qwen/Qwen3-32B}
+      - --revision
+      - ${CHAT_MODEL_REVISION:-9216db5781bf21249d130ec9da846c4624c16137}
+      - --served-model-name
+      - local-chat
+      - --quantization
+      - ${VLLM_QUANTIZATION:-fp8}
+      - --max-model-len
+      - ${MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${CHAT_GPU_MEMORY_UTILIZATION:-0.90}
+      - --api-key
+      - ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - 127.0.0.1:${CHAT_VLLM_PORT:-8001}:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  router:
+    image: ${ROUTER_IMAGE:?set ROUTER_IMAGE to the router runtime image, for example metrum-ai-router:<version>-linux-amd64}
+    restart: unless-stopped
+    command: ["--config", "/app/config/config.yaml"]
+    working_dir: /app/state
+    environment:
+      ROUTER_ID_TRANSFORM_KEY: ${ROUTER_ID_TRANSFORM_KEY:?set ROUTER_ID_TRANSFORM_KEY to 64 random bytes, hex or base64}
+      LOCAL_VLLM_API_KEY: ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
+      REFERENCE_ADMIN_PASSWORD_HASH: ${REFERENCE_ADMIN_PASSWORD_HASH:?set REFERENCE_ADMIN_PASSWORD_HASH to a bcrypt hash}
+      # Empty keeps the `escalate` group unusable until the operator supplies a key.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      # Loopback only. Put a TLS proxy in front before serving other hosts.
+      - 127.0.0.1:${ROUTER_HTTP_PORT:-8080}:8080
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./state:/app/state
+      - ./logs:/app/logs
+    depends_on:
+      vllm-tiny:
+        condition: service_healthy
+      vllm-chat:
+        condition: service_healthy
+
+volumes:
+  hf-cache:

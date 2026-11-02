@@ -1,0 +1,106 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Edge bundle: router plus two local model servers. install.sh copies this file
+# and the accelerator overlay into $EDGE_DATA_DIR/compose and starts them with
+# an env file in $EDGE_DATA_DIR/secrets/env. The accelerator overlay supplies
+# the model-server image pin and the device wiring; nothing here is vendor specific.
+name: metrum-router-edge
+
+x-vllm-service: &vllm-service
+  restart: unless-stopped
+  ipc: host
+  shm_size: 8gb
+  security_opt:
+    - no-new-privileges:true
+  environment:
+    HF_HOME: /cache
+    HF_HUB_ENABLE_HF_TRANSFER: "1"
+    HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+    LOCAL_VLLM_API_KEY: ${LOCAL_VLLM_API_KEY:?run install.sh to create the secret environment}
+  volumes:
+    - hf-cache:/cache
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - >-
+        python3 -c "import urllib.request,sys;
+        sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"
+    interval: 15s
+    timeout: 5s
+    retries: 20
+    start_period: 60m
+
+services:
+  # Always-resident small model: smoke tests, classification, cheap routing work.
+  vllm-tiny:
+    <<: *vllm-service
+    command:
+      - --model
+      - ${EDGE_TINY_MODEL:-Qwen/Qwen3-1.7B}
+      - --revision
+      - ${EDGE_TINY_REVISION:-70d244cc86ccca08cf5af4e1e306ecf908b1ad5e}
+      - --served-model-name
+      - local-tiny
+      - --max-model-len
+      - ${EDGE_MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${EDGE_TINY_UTILIZATION:-0.05}
+      - --api-key
+      - ${LOCAL_VLLM_API_KEY:?run install.sh to create the secret environment}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - 127.0.0.1:${EDGE_TINY_VLLM_PORT:-8002}:8000
+
+  # Primary local model behind the local-chat group. The served name is stable;
+  # EDGE_PRIMARY_MODEL and EDGE_PRIMARY_REVISION choose the weights.
+  vllm-primary:
+    <<: *vllm-service
+    command:
+      - --model
+      - ${EDGE_PRIMARY_MODEL:-Qwen/Qwen3-30B-A3B-Instruct-2507}
+      - --revision
+      - ${EDGE_PRIMARY_REVISION:-0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe}
+      - --served-model-name
+      - local-primary
+      - --max-model-len
+      - ${EDGE_MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${EDGE_PRIMARY_UTILIZATION:-0.80}
+      - --api-key
+      - ${LOCAL_VLLM_API_KEY:?run install.sh to create the secret environment}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - 127.0.0.1:${EDGE_PRIMARY_VLLM_PORT:-8001}:8000
+
+  router:
+    image: ${ROUTER_IMAGE:?set ROUTER_IMAGE to the router runtime image for this architecture}
+    restart: unless-stopped
+    command: ["--config", "/app/config/config.yaml"]
+    working_dir: /app/state
+    environment:
+      ROUTER_ID_TRANSFORM_KEY: ${ROUTER_ID_TRANSFORM_KEY:?run install.sh to create the secret environment}
+      LOCAL_VLLM_API_KEY: ${LOCAL_VLLM_API_KEY}
+      METRUM_ADMIN_PASSWORD_HASH: ${METRUM_ADMIN_PASSWORD_HASH}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EDGE_ESCALATION_API_KEY: ${EDGE_ESCALATION_API_KEY:-}
+    ports:
+      - ${EDGE_BIND_ADDRESS:-127.0.0.1}:${EDGE_ROUTER_PORT:-8080}:8080
+    volumes:
+      - ${EDGE_DATA_DIR:?set EDGE_DATA_DIR}/config/config.yaml:/app/config/config.yaml:ro
+      - ${EDGE_DATA_DIR}/state:/app/state
+      - ${EDGE_DATA_DIR}/logs:/app/logs
+    depends_on:
+      vllm-tiny:
+        condition: service_healthy
+      vllm-primary:
+        condition: service_healthy
+
+volumes:
+  hf-cache:
