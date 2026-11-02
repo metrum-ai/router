@@ -107,10 +107,13 @@ gate and a rollback to 4.5.0 needs no database restore for schema reasons.
 
 ### Known limitations
 
-- OpenAI reasoning models can reject a request that combines `reasoning_effort`
-  with tools on Chat Completions. For those targets, use the Responses dialect.
-  The router does not yet fail that combination closed before dispatch, so it
-  can surface as an upstream rejection; follow-up in #703 (#697).
+- A Chat Completions caller that combines tools with `reasoning_effort` is
+  affected, not only an Anthropic caller. A Chat-dialect target lets the provider
+  reject it (`400 upstream-rejected`); a Responses target behind the
+  `chat_to_responses` bridge is not eligible for that shape and reports
+  `400 unsupported_endpoint_for_model` with `param: model` and the requirement
+  `openai-chat_tool_passthrough`. Avoid the combination from a Chat caller until
+  #703 lands (#697).
 
 ### Security
 

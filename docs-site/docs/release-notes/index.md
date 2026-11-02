@@ -75,12 +75,16 @@ history passes through exactly as before.
 
 ### Known limitations
 
-- **Reasoning with tools on Chat Completions.** OpenAI reasoning models can
-  reject a request that combines `reasoning_effort` with tools when the caller
-  uses Chat Completions. Route those requests to the Responses dialect for that
-  target. The router does not yet declare reasoning-with-tools support per
-  dialect, so the combination is rejected upstream rather than closed before
-  dispatch; follow-up work is tracked in #703.
+- **Reasoning with tools on Chat Completions — Chat callers included.** A
+  Chat Completions caller that sends tools together with `reasoning_effort` is
+  affected, not only an Anthropic caller. Against a Chat-dialect target the
+  provider rejects the request and the caller sees `400 upstream-rejected`.
+  Routing that caller to a Responses target through the `chat_to_responses`
+  bridge does not currently make it eligible either: the router reports
+  `400 unsupported_endpoint_for_model` with `param: model` and the requirement
+  `openai-chat_tool_passthrough`. Practical guidance until #703 lands: do not
+  combine tools with `reasoning_effort` from a Chat caller, or call the
+  Responses surface directly.
 
 ### Proof and Evidence
 
