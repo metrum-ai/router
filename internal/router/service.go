@@ -88,6 +88,9 @@ type Service struct {
 	configInstanceID   string
 	configLoaded       atomic.Value // configLoadedState
 	shadows            *shadowRuntime
+	// provenance binds opaque provider reasoning history to its origin (#622).
+	// It is off unless configured, and off changes no behaviour.
+	provenance reasoningProvenanceBinding
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -157,8 +160,12 @@ type requestContext struct {
 	pacedUpstreamStream    bool
 	chatStreamIncludeUsage bool
 	traceSeq               int
-	sanitizeTraceMessage   func(string, string) string
-	conversationKey        string
+	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
+	wrapStreamFrame func([]byte) []byte
+	// provenanceStats accumulates bounded value-free provenance diagnostics.
+	provenanceStats      reasoningProvenanceStats
+	sanitizeTraceMessage func(string, string) string
+	conversationKey      string
 	// modelIdentity is server.responses.model_identity captured at request
 	// start; see publicModel.
 	modelIdentity string
@@ -266,6 +273,13 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		_ = usage.Close()
 		return nil, err
 	}
+	provenance, err := newReasoningProvenanceBinding(cfg.Server.ReasoningProvenance, os.Getenv)
+	if err != nil {
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		return nil, err
+	}
 	s := &Service{
 		identifiers:        identifiers,
 		cfg:                cfg,
@@ -292,6 +306,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
 		shadows:            newShadowRuntime(),
+		provenance:         provenance,
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -2797,6 +2812,24 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
 	}
 	req = cleanReq
+	// Opaque reasoning provenance (#622): unwrap history minted for this target
+	// and drop it for every other target. Off by default, so nothing changes
+	// unless an operator enables observe or enforce.
+	provenanceScope := reasoningScopeFor(target, provider, outDialect, groupName)
+	if !s.provenance.off() && req != nil && reasoningHistoryPresent(req) {
+		adjusted, stats := s.provenance.applyInbound(req.Raw, outDialect, provenanceScope, time.Now().UTC())
+		if !stats.empty() {
+			encoded, encodeErr := json.Marshal(adjusted)
+			if encodeErr == nil {
+				if decoded, decodeErr := decodeRequest(callerDialect, encoded, http.Header{}); decodeErr == nil {
+					decoded.Stream = req.Stream
+					req = decoded
+				}
+			}
+			mergeProvenanceStats(&rc.provenanceStats, stats)
+			rc.trace("reasoning_provenance_inbound", stats.summary(), target, attemptIndex, 0, "", false, 0)
+		}
+	}
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
@@ -3074,6 +3107,15 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if anthropicBridge {
 			proxy = anthropicBridgeProxy(callerDialect, requestRequiresReasoning(req))
 		}
+		// Opaque reasoning provenance (#622): bind values in streamed frames.
+		rc.wrapStreamFrame = nil
+		if s.provenance.wraps() {
+			scope := provenanceScope
+			streamStats := &rc.provenanceStats
+			rc.wrapStreamFrame = func(frame []byte) []byte {
+				return s.provenance.wrapOutboundFrame(frame, scope, time.Now().UTC(), streamStats)
+			}
+		}
 		// Experiment profiles (#379): scope-matched requests deliver through a
 		// pacing writer that injects the configured TTFT delay and output
 		// pacing. Every other request keeps the original writer untouched.
@@ -3146,6 +3188,16 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	}
 	attempt.DurationMS = durationMillis(time.Since(start))
 	attempt.ResponseBytes = int64(len(raw))
+	// Opaque reasoning provenance (#622): bind provider-owned values to the
+	// served target before they are decoded and returned to the caller.
+	if s.provenance.wraps() {
+		var wrapStats reasoningProvenanceStats
+		raw = s.provenance.wrapOutboundRaw(raw, provenanceScope, time.Now().UTC(), &wrapStats)
+		if !wrapStats.empty() {
+			mergeProvenanceStats(&rc.provenanceStats, wrapStats)
+			rc.trace("reasoning_provenance_outbound", wrapStats.summary(), target, attemptIndex, 0, "", false, 0)
+		}
+	}
 	if bridge {
 		resp, err := decodeResponsesToChatBridge(raw, target.Model)
 		if err != nil {
