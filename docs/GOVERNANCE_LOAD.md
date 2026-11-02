@@ -71,7 +71,7 @@ evidence. It makes no hosted calls and costs $0.
 ## Local dry run
 
 - Date: 2026-11-02 UTC.
-- Router: `0860943cc7` (harness commit; no product code changed by it).
+- Router: `1d6fc8b0a6` (harness commit; no product code changed by it).
 - Host: AMD Ryzen 7 7730U, 16 visible CPUs, Linux x86_64; Go 1.27.3.
 - Backend: SQLite (`auto-safe` migration), loopback upstream returning synthetic
   usage of 12 prompt + 8 completion tokens (240 for the dollar-budget case).
@@ -84,8 +84,8 @@ evidence. It makes no hosted calls and costs $0.
 | auth | missing token 401, wrong secret 401, disabled caller 403, both valid callers 200; 2 upstream calls total; 2 `api_auth_failed` audit rows; per-key `caller_id`/`token_id` attribution exact |
 | cancel | stream cancelled after 2 events (TCP reset); cancelled request settled 15 tokens as `usage_source=estimated` with status 499; the concurrency slot was released (second attempt admitted after a first 429) |
 | pii-failover | 16 requests, 16 primary failures, 16 fallback deliveries; no raw email or phone in either upstream, the request log or the usage rows; 16 `pii_filter_applied` rows with placeholders at the upstream |
-| dollar-budget | $0.01 budget as a 44,400-token budget; 199 admitted, 11,286 rejected; actual list-price cost $0.010746, a 7.46% overspend, when the upstream reports 240 tokens against a local estimate of about 20 |
-| crash-restart | `SIGKILL` after 80 admitted requests, restart in 0.90 s; 119 further admitted, then `quota-exhausted`; 3,940 of a 4,000-token day budget settled; 197 of 199 admitted requests have usage rows (async writer lost 2) |
+| dollar-budget | $0.01 budget as a 44,400-token budget; 198 admitted; actual list-price cost $0.010692, a 6.92% overspend, when the upstream reports 240 tokens against a local estimate of about 20 |
+| crash-restart | `SIGKILL` after 80 admitted requests, restart in 0.90 s; then admitted until `quota-exhausted`; 3,920 of a 4,000-token day budget settled; 196 of 199 admitted requests have usage rows (async writer lost 3) |
 | multiprocess | 2 processes, 2,000-token budget each: 198 admitted / 3,960 tokens, 1.98× the per-process budget; each process's own state file is accurate (1,980 + 1,980). With one shared state path the same 3,960 tokens settle but the persisted counter reads 1,980 |
 
 ## What changed in the picture
@@ -101,7 +101,7 @@ evidence. It makes no hosted calls and costs $0.
   configured budget (1.98× for two), and sharing the file makes the persisted
   counter understate spend because the last writer wins. Run one state file per
   process, and use PostgreSQL for accounting across replicas.
-- Async usage persistence is best effort: a `SIGKILL` lost 2 of 199 admitted
+- Async usage persistence is best effort: a `SIGKILL` lost 3 of 199 admitted
   rows while the quota counters stayed correct.
 - Rejected requests also write usage rows; the sustained run wrote more than
   35,000 rows for rejections, which is a real write-amplification cost of
