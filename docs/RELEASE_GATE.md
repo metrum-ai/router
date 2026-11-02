@@ -73,24 +73,23 @@ Stage B runs the matrix the v4.5 gate used, ported into `scripts/harbor_e2e/`:
 It runs on a Docker host reachable over SSH; the gate ships the bundle and its
 own router binary, runs `setup_remote.sh` (Docker CE with the Compose plugin and
 a Harbor virtualenv), installs the provider keys and the caller token into
-tmpfs, then executes the matrix and copies the result back.
+tmpfs, then runs the matrix and copies the result back.
 
 ```bash
 export RELEASE_GATE_HARBOR_HOST=root@203.0.113.10
 export RELEASE_GATE_HARBOR_KEY=~/.ssh/gate-key
-export RELEASE_GATE_HARBOR_VERSION=0.25.0   # default; the CLI the v4.5 matrix ran 5/5 against
+export RELEASE_GATE_HARBOR_VERSION=0.25.0   # default: the CLI the v4.5 matrix ran 5/5 against
 make release-gate
 ```
 
 Without `RELEASE_GATE_HARBOR_HOST` the stage reports `skipped` with the reason. A
-Harbor matrix is bounded evidence, never a certification, and the gate never
-upgrades it to a pass.
+Harbor matrix is bounded evidence, never a certification.
 
 Compose **v2** is required: Harbor invokes `docker compose` directly, and a host
 with only the legacy `docker-compose` fails with `unknown flag: --project-name`.
-The setup script installs the plugin, so this only matters for a hand-built host.
+`setup_remote.sh` installs the plugin, so this only matters for a hand-built host.
 
-The earlier `examples/harbor-algotune-pca` Codex adapter is **not** used by the
+The example `examples/harbor-algotune-pca` Codex adapter is **not** used by the
 gate: it calls an MCP-registration hook that Harbor's Codex agent does not
 provide in the 0.25 line either, so a matrix built on it fails inside the adapter
 before reaching the router. The Pi adapter above has no such dependency and is
