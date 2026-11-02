@@ -301,7 +301,7 @@ def stage_pi(outdir, port, db, cap_state):
                 token = env("ROUTER_CALLER_TOKEN")
             else:
                 base, real_group = direct_base[api]
-                model = os.environ.get("RELEASE_GATE_DIRECT_" + real_group.upper(), "gpt-6-luna" if real_group == "gpt" else "claude-haiku-4-5-20251001")
+                model = os.environ.get("RELEASE_GATE_DIRECT_" + real_group.upper(), "gpt-6-luna" if real_group in ("gpt", "gpt-bridge") else "claude-haiku-4-5-20251001")
                 token = env("OPENAI_API_KEY") if api in ("openai-responses", "openai-chat") else env("ANTHROPIC_API_KEY")
             write_models(workdir / "agent", API[api], base, model)
             prompt = task_prompt(task, workdir)
