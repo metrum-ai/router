@@ -40,7 +40,7 @@ The fastest validation needs no container runtime:
 
 ```sh
 cd deploy/reference/hierarchy
-./verify.sh --local
+bash verify.sh --local
 ```
 
 It builds the shipped binaries, generates three deployment tokens, applies the
@@ -91,7 +91,7 @@ done
 
 # 4. Start both tiers and verify.
 docker compose --env-file .env up -d
-ACCESS_TOKEN="$(cat ./secrets/app.token)" ./verify.sh --compose
+ACCESS_TOKEN="$(cat ./secrets/app.token)" bash verify.sh --compose
 ```
 
 The routers use `migration_policy: deployment-job`, so they refuse to serve
