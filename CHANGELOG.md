@@ -19,11 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `POST /v1/messages/count_tokens` no longer surfaces `404 upstream-rejected`
-  when a target's upstream has no count endpoint. An upstream `404` on the count
-  call is answered with the router's local estimate and the `estimated` marker,
-  with a bounded trace event and no provider/model/target identifiers in caller
-  text. Real provider failures keep their classes (`401`/`429` stay provider
-  4xx, `5xx` becomes `502 upstream-failed`) (#714).
+  when a gateway has no count route. An upstream `404` whose body is not the
+  provider's own typed `not_found_error` is answered with the router's local
+  estimate and the `estimated` marker, with a bounded trace event and no
+  provider/model/target identifiers in caller text. A typed provider
+  `not_found_error` (an unknown or misconfigured model) keeps its existing
+  `404 upstream-rejected` class, and every other provider status keeps its
+  class too (`401`/`429` stay provider 4xx, `5xx` becomes `502
+  upstream-failed`) (#714).
 
 ## [4.6.0] - 2026-11-02
 

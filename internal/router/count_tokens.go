@@ -143,11 +143,13 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	if retry := resp.Header.Get("Retry-After"); retry != "" {
 		w.Header().Set("Retry-After", retry)
 	}
-	if resp.StatusCode == http.StatusNotFound {
-		// A gateway can serve Messages without implementing count_tokens (#714).
-		// A count is advisory and free, so answer with the router's local
-		// estimate and mark it as estimated instead of surfacing an opaque
-		// upstream 404. Real provider failures keep their own classes below.
+	if resp.StatusCode == http.StatusNotFound && !anthropicTypedNotFoundError(data) {
+		// A gateway can serve Messages without implementing count_tokens (#714)
+		// and answers with a plain missing-route body. A count is advisory and
+		// free, so answer with the router's local estimate and mark it as
+		// estimated. The provider's own typed not_found_error (an unknown or
+		// misconfigured model) is a real routing failure and keeps the class
+		// below instead of being masked by an estimate.
 		rc.trace("count_tokens_upstream_unsupported", "upstream does not implement count_tokens; served a local estimate", target, 0, http.StatusOK, "", false, 0)
 		s.writeEstimatedCountTokens(w, rc, req)
 		return
@@ -187,6 +189,29 @@ func targetServesCountTokens(provider ProviderConfig, target Target) bool {
 		return false
 	}
 	return target.CountTokens == nil || *target.CountTokens
+}
+
+// anthropicTypedNotFoundError reports whether an upstream 404 body is the
+// Anthropic API's own typed error envelope, for example an unknown or
+// misconfigured model:
+//
+//	{"type":"error","error":{"type":"not_found_error","message":"..."}}
+//
+// A gateway that has no count route answers with an untyped body such as
+// {"error":{"message":"Not Found","code":404}}, which this reports as false so
+// the caller still gets a usable estimate (#714).
+func anthropicTypedNotFoundError(body []byte) bool {
+	var envelope struct {
+		Type  string `json:"type"`
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(envelope.Type), "error") &&
+		strings.EqualFold(strings.TrimSpace(envelope.Error.Type), "not_found_error")
 }
 
 // writeEstimatedCountTokens answers a count request with the router's local

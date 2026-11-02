@@ -62,22 +62,87 @@ func TestCountTokensDeclaredUnsupportedTargetEstimates(t *testing.T) {
 	}
 }
 
+// TestCountTokensUpstreamNotFoundEstimates pins the gateway case: a plain
+// missing-route 404 body is not an Anthropic typed error, so the router answers
+// with its local estimate instead of an opaque upstream failure.
 func TestCountTokensUpstreamNotFoundEstimates(t *testing.T) {
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error":{"message":"Not Found","code":404}}`))
-	}))
-	defer up.Close()
-	svc := countTokensTestService(t, up.URL, nil)
-	rr := postCountTokens(svc)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s, want a local estimate", rr.Code, rr.Body.String())
+	for _, tc := range []struct{ name, body string }{
+		{"gateway-json", `{"error":{"message":"Not Found","code":404}}`},
+		{"empty-body", ``},
+		{"plain-text", `404 page not found`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer up.Close()
+			svc := countTokensTestService(t, up.URL, nil)
+			rr := postCountTokens(svc)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s, want a local estimate", rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("X-Metrum-Usage-Source"); got != "estimated" {
+				t.Fatalf("usage source=%q, want estimated", got)
+			}
+			if strings.Contains(rr.Body.String(), "Not Found") {
+				t.Fatalf("body=%s, must not echo the provider body", rr.Body.String())
+			}
+		})
 	}
-	if got := rr.Header().Get("X-Metrum-Usage-Source"); got != "estimated" {
-		t.Fatalf("usage source=%q, want estimated", got)
+}
+
+// TestCountTokensTypedProviderNotFoundSurfaces pins the other side of the same
+// 404: the provider's own typed not_found_error means an unknown or
+// misconfigured model, which must keep its existing class and never become a
+// silent estimate.
+func TestCountTokensTypedProviderNotFoundSurfaces(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"unknown-model", `{"type":"error","error":{"type":"not_found_error","message":"model: claude-does-not-exist"}}`},
+		{"typed-uppercase", `{"type":"error","error":{"type":"NOT_FOUND_ERROR","message":"model: claude-does-not-exist"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer up.Close()
+			svc := countTokensTestService(t, up.URL, nil)
+			rr := postCountTokens(svc)
+			if rr.Code != http.StatusNotFound {
+				t.Fatalf("status=%d body=%s, want the provider 404 class preserved", rr.Code, rr.Body.String())
+			}
+			if got := rr.Header().Get("X-Metrum-Usage-Source"); got == "estimated" {
+				t.Fatal("a typed provider 404 must not be reported as an estimate")
+			}
+			if strings.Contains(rr.Body.String(), "claude-does-not-exist") {
+				t.Fatalf("body=%s, must not echo the provider body", rr.Body.String())
+			}
+		})
 	}
-	if strings.Contains(rr.Body.String(), "Not Found") {
-		t.Fatalf("body=%s, must not echo the provider body", rr.Body.String())
+}
+
+func TestAnthropicTypedNotFoundErrorDetection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"anthropic-typed", `{"type":"error","error":{"type":"not_found_error","message":"model: x"}}`, true},
+		{"anthropic-typed-with-details", `{"type":"error","error":{"type":"not_found_error","message":"model: x","details":null},"request_id":"req_1"}`, true},
+		{"gateway-untyped", `{"error":{"message":"Not Found","code":404}}`, false},
+		{"error-only-type", `{"error":{"type":"not_found_error"}}`, false},
+		{"other-typed-error", `{"type":"error","error":{"type":"invalid_request_error","message":"x"}}`, false},
+		{"not-json", `404 page not found`, false},
+		{"empty", ``, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := anthropicTypedNotFoundError([]byte(tc.body)); got != tc.want {
+				t.Fatalf("body=%q: got %t want %t", tc.body, got, tc.want)
+			}
+		})
 	}
 }
 
