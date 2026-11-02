@@ -32,6 +32,11 @@ FULL = """models:
     - provider: claude_bridge
       model: claude-live
       dialect: openai-chat
+  gpt-bridge:
+    targets:
+    - provider: openai_responses
+      model: gpt-live
+      dialect: openai-responses
 """
 
 PINNED = """models:
@@ -59,7 +64,7 @@ class LaneCoverageTest(unittest.TestCase):
             return release_gate.ensure_lanes_servable(path)
 
     def test_accepts_a_config_with_both_groups(self):
-        self.assertEqual(self.check(FULL), len(release_gate.LANES))
+        self.assertEqual(self.check(FULL), len(release_gate.LANES) + len(release_gate.EXTRA_LANES))
 
     def test_rejects_a_missing_group(self):
         with self.assertRaises(release_gate.GateError) as caught:
