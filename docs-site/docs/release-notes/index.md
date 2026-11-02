@@ -14,6 +14,61 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.6.0 - 2026-11-06
+
+### Highlights
+
+- **Embeddings and reporting.** `POST /v1/embeddings` is served for
+  embeddings-configured model groups, with admission control before any
+  upstream call and usage metering on the same accounting path as chat; the
+  configuration is fail-closed on embedding space, dimensions and selection
+  strategy. A scoped CFO usage report adds spend and hypothetical savings by
+  team, project, key and model group with JSON, CSV and Markdown exports.
+- **Tool results are preserved exactly.** Empty tool results are no longer
+  serialized as `null`, and multi-part tool-result text is concatenated without
+  inserted separators across the translated OpenAI and Anthropic directions.
+  Parallel tool calls now ship with an offline fixture matrix in required CI and
+  a budget-capped live gate whose passing and unproven cells are published.
+- **Caller-visible changes:** `400` capability failures name the recorded
+  eligibility reason and set `param` only when every rejected candidate shares
+  that field, and Anthropic-shaped error envelopes gain `error.code` and
+  `error.param`; PII-enabled groups skip shadow replay and fail closed on
+  Responses system-message histories bound for Anthropic or Bedrock Messages; a
+  null Messages `context_management` is treated as absent.
+- **No usage-database migration.** The usage schema stays at version 11.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Database | No usage-database migration in this release; schema stays at 11, so no migration gate applies and a rollback to 4.5.0 needs no schema restore (#420) |
+| Embeddings | New endpoint for embeddings groups only; groups must declare `embedding_space`, serve one identical dimension set and may set `default_embedding_dimensions`; chat-shaped strategies are rejected for embeddings groups (#532) |
+| PII-enabled groups | Candidate shadow replay is skipped with a policy recheck before dispatch, and Responses system-message histories fail closed with `system_pii_unsupported` when only Anthropic or Bedrock Messages targets are eligible; a replay already past the check can finish after a config change, so stop and drain shadow runs for a strict cutover (#664, #668) |
+| PII-enabled groups | The PII-aware response-cache bypass is **not** part of this release. A PII-enabled group with the response cache enabled still serves cached entries under the 4.5.0 rules until that change lands (#670) |
+| Error bodies | `400` capability failures now carry the eligibility reason and a `param` limited to fields shared by every rejected candidate; Anthropic-shaped envelopes add `error.code` and `error.param`. Callers matching on the previous generic text must accept the specific reason (#655) |
+| Anthropic Messages | A null `context_management` is treated as absent and is not forwarded; non-null values still require both the caller's beta and the target allowlist (#459) |
+| Reporting | Scoped CFO report requires retained raw usage and current project-to-team mappings; recorded costs are usage-derived, not invoices, and unmapped usage stays separate (#435) |
+| Examples and CI | Example overlays are scanned as rendered manifests, six example serving workloads and the example runner image run non-root, and the example dependency locks move to patched releases (#669, #682, #640) |
+
+### Caller Impact
+
+Routed model groups, prices and usage accounting are unchanged. Client-visible
+differences are the new `POST /v1/embeddings` surface, the more specific `400`
+bodies and Anthropic `error.code`/`error.param` fields, the treatment of a null
+Messages `context_management` as absent, fewer eligible targets for PII-enabled
+groups, and exact tool-result text. Clients that branch on the previous generic
+capability message text should match on `code` and `param` instead.
+
+### Proof and Evidence
+
+Tool-call compatibility is published with its limits: the offline fixture matrix
+runs in required CI on every pull request and merge group, and the live gate
+reports which provider and direction cells passed, which were not exercised and
+what the run cost. The page
+`evaluation/parallel-tool-calls-live` is the authoritative statement of that
+coverage; it does not claim comprehension of tool results, and it names the
+translated directions that remain offline-only.
+
 ## v4.5.0 - 2026-11-04
 
 ### Highlights

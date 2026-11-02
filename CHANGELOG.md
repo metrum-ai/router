@@ -7,14 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Skip candidate shadow replay for requests evaluated against locally active
-  PII-enabled model groups, and recheck the policy before replay (#664). A
-  replay already past that check can still finish after a config change; stop
-  and drain shadow runs for a strict cutover.
-- Fail closed for Responses system-message histories on PII-enabled groups
-  when translating to Anthropic or Bedrock Messages; extend the existing
-  developer-history PII guard to Bedrock. Other eligible targets remain
-  available (#668).
+## [4.6.0] - 2026-11-06
+
+Package release. No usage-database migration is included: the usage schema
+stays at version 11, so an upgrade needs no migration gate and a rollback to
+4.5.0 needs no database restore for schema reasons.
+
+### Added
+
+- OpenAI-compatible embeddings. `POST /v1/embeddings` is served for model
+  groups configured as embeddings groups, with admission control that rejects
+  malformed, oversized or ambiguous input before any upstream call, and usage
+  metering on the same accounting path as chat. Configuration is fail-closed
+  (`embedding_space`, `embedding_dimensions`, `default_embedding_dimensions`):
+  a group cannot mix embedding and non-embedding targets, every target must
+  serve the same space and dimension set, and chat-shaped selection strategies
+  are rejected so a selector cannot pick a different vector space (#532).
+
+- CFO usage report: scoped spend and hypothetical savings by team, project, key
+  and model group, with source-dated baseline prices, top consumers, an hourly
+  trend, an explicit project-to-team mapping, and JSON, CSV and optional
+  Markdown exports through the Admin API, `routerctl` and a browser view.
+  Recorded costs are usage-derived, not invoices; live token quotas are
+  labelled separately and unmapped usage stays separate rather than being
+  attributed (#435).
+
+- Tool-call compatibility evidence for parallel tool calls: an offline fixture
+  suite covering native and translated directions, three calls per turn with
+  out-of-order, error, multi-part and empty results, and a budget-capped live
+  gate against hosted providers. The release notes page records the cells that
+  pass and the cells that remain unproven (#656).
+
+### Changed
+
+- Routing errors now name the reason that actually removed the target.
+  `400` capability failures include the recorded eligibility reason and a
+  `param` that is only set when every rejected candidate shares that field;
+  otherwise `param` is null rather than guessed. Anthropic-shaped error
+  envelopes gain `error.code` and `error.param`. Selection telemetry uses the
+  same predicates (#655).
+
+- PII-enabled groups dispatch less. Candidate shadow replay is skipped for
+  requests evaluated against a locally active PII-enabled group, with the
+  policy rechecked before dispatch, and Responses system-message histories on
+  PII-enabled groups fail closed with `system_pii_unsupported` when the only
+  eligible translation target is Anthropic or Bedrock Messages. Both guards can
+  reduce eligible targets and, for shadow replay, reduce upstream calls (#664,
+  #668).
+
+- A null Anthropic Messages `context_management` is treated as absent and is
+  not forwarded upstream. Non-null values still require both the caller's beta
+  and the target allowlist (#459).
+
+- Unsupported-surface documentation no longer describes the older `502` for a
+  missing eligible target; capability failures are `400 unsupported_capability`
+  (#654).
+
+### Fixed
+
+- An explicitly empty tool result is preserved as an empty string when OpenAI
+  Chat or Responses history is translated to Anthropic Messages, instead of
+  being serialized as `null` (#657).
+
+- Multi-part tool-result text is concatenated exactly, without inserted
+  separators, on Messages→Chat, Messages→Responses and Chat→Responses, so a
+  result split into `alpha` and `beta` arrives as `alphabeta`. Ordinary message
+  formatting, mixed-media results and identifiers are unchanged (#672).
+
+### Security
+
+- Example Kubernetes overlays are scanned as rendered manifests rather than as
+  patch fragments: a required CI lane renders every overlay plus a composed
+  Linkerd example and fails on HIGH or CRITICAL findings with a reviewed,
+  reason-bearing ignore list. The example vLLM serving workloads and the
+  example runner image run as non-root with dropped capabilities, a read-only
+  root filesystem and explicit writable mounts (#669).
+
+- Dependency refresh removes the remaining high-severity advisory in the
+  example evaluation lockfile (`basic-ftp`) and moves `glob`, `@hono/node-server`
+  and `minimatch` to patched releases across the example and compatibility
+  projects, including the documentation site through a small callable adapter
+  that keeps its static server working (#682, #640). One advisory with no
+  patched release remains tracked (`deepmerge`, documentation build only).
 
 ## [4.5.0] - 2026-11-04
 

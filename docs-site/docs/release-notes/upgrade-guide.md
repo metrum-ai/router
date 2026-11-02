@@ -20,6 +20,70 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Compatibility and operations (v4.6.0)
+
+### No usage-database migration
+
+v4.6.0 adds no usage-schema migration; the schema stays at version 11. The
+Required Migration Gate does not apply to this upgrade, and rolling back to
+4.5.0 needs no database restore for schema reasons. Back up the usage database
+as usual before any package upgrade.
+
+### Embeddings groups
+
+`POST /v1/embeddings` is served only for model groups configured as embeddings
+groups. Each target declares `embedding_space` and `embedding_dimensions`
+(inherited from `model_ref` like other target fields); `default_embedding_dimensions`
+is required when a group serves more than one dimension set. Load-time
+validation rejects a group that mixes embedding and non-embedding targets,
+targets that disagree on space or dimension sets, non-text inputs, and the
+chat-shaped strategies (`semantic`, `dynamic_score`, `external`, `script`,
+`intelligent`). A request whose `dimensions` no target serves, or that omits
+`dimensions` where no default exists, fails closed. Adding embeddings to an
+existing chat group is not supported; create a separate group.
+
+### Error bodies for capability failures
+
+`400 unsupported_capability` (and the Anthropic-shaped equivalents) now carry
+the recorded eligibility reason and a `param` that is set only when every
+rejected candidate shares that field; otherwise `param` is `null`. Anthropic
+error envelopes gain `error.code` and `error.param`. This changes the body of an
+error that previously used a generic message and a bare `param`: review any
+caller, dashboard or test that matches the old text, and match `code` and
+`param` instead.
+
+### PII-enabled groups
+
+Two guards land in this release. Candidate shadow replay is skipped for requests
+evaluated against a locally active PII-enabled group, with the policy rechecked
+before dispatch; a replay already past that check can still finish after an
+in-flight configuration change, so stop and drain shadow runs before a strict
+cutover. Responses system-message histories on PII-enabled groups fail closed
+with `system_pii_unsupported` when the only eligible translation target is
+Anthropic or Bedrock Messages, which can make such a request return `400` where
+it previously dispatched.
+
+The PII-aware response-cache bypass is **not** part of v4.6.0. A PII-enabled
+group with the response cache enabled keeps the v4.5.0 behaviour until that
+change ships; if that matters for your deployment, disable the response cache
+for PII-enabled groups rather than relying on this release.
+
+### Anthropic Messages context management
+
+A null `context_management` is treated as absent and is not forwarded upstream.
+Non-null values still require both the caller's matching beta and the target
+allowlist; other beta-gated fields are unchanged.
+
+### Example infrastructure
+
+The example Kubernetes overlays are validated as rendered manifests in CI with a
+reviewed ignore list, and the example vLLM serving workloads and example runner
+image now run as non-root with dropped capabilities, a read-only root filesystem
+and explicit writable cache and temporary mounts. The example runner also
+expects to start as its non-root user. Re-validate device access, model startup
+and runner registration in your own environment before adopting those examples;
+the offline checks in CI do not exercise a GPU or a runner image.
+
 ## Compatibility and operations (v4.4.0)
 
 ### Authorization matching and tenant RBAC
