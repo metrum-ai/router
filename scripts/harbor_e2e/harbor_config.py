@@ -20,7 +20,7 @@ def caller_tokens() -> dict[tuple[str, str], str]:
     return {(style, group): f"harbor-{style}-{group}" for style in ("openai-responses", "anthropic-messages") for group in ("gpt", "claude")}
 
 
-def make_config(work: Path, router_port: int, relay_port: int) -> str:
+def make_config(work: Path, router_port: int, relay_port: int, relay_host: str = "172.17.0.1") -> str:
     callers = []
     for (style, group), token in caller_tokens().items():
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -47,8 +47,8 @@ def make_config(work: Path, router_port: int, relay_port: int) -> str:
   logging: {{path: "{work / 'router.jsonl'}"}}
 state_path: "{work / 'state.json'}"
 providers:
-  openai_direct: {{base_url: "http://127.0.0.1:{relay_port}/openai/v1", dialect: openai-responses, api_key: "synthetic-upstream"}}
-  anthropic_direct: {{base_url: "http://127.0.0.1:{relay_port}/anthropic", dialect: anthropic, api_key: "synthetic-upstream"}}
+  openai_direct: {{base_url: "http://{relay_host}:{relay_port}/openai/v1", dialect: openai-responses, api_key: "synthetic-upstream"}}
+  anthropic_direct: {{base_url: "http://{relay_host}:{relay_port}/anthropic", dialect: anthropic, api_key: "synthetic-upstream"}}
 models:
   gpt:
     strategy: static
