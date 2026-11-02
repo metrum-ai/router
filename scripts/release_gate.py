@@ -132,94 +132,24 @@ GPT_GROUP = "gpt"
 GPT_PINNED_DIALECT = "openai-responses"
 
 
-def ensure_gpt_responses_pinned(source):
-    """Require the GPT group to target the Responses dialect only.
+def ensure_lanes_servable(source):
+    """Require the groups the lanes address; per-lane eligibility is measured, not assumed.
 
-    A Chat-dialect GPT target rejects reasoning-with-tools requests that arrive
-    from an Anthropic Messages caller upstream (issue #697), which turns a
-    router translation choice into an opaque `upstream-rejected`. The gate
-    therefore refuses a GPT group that still lists a non-Responses target and
-    names the fix, instead of reporting that upstream rejection as the only
-    symptom.
+    Translation means a target of one dialect can serve callers of another, so the
+    gate does not pre-judge dialect coverage. It only refuses a config that lacks a
+    group entirely, because that would make a lane disappear rather than fail.
     """
     lines = Path(source).read_text(encoding="utf-8").splitlines()
-    header = re.compile(rf"^(\s*){re.escape(GPT_GROUP)}:\s*$")
-    start = None
-    indent = 0
-    for index, line in enumerate(lines):
-        match = header.match(line)
-        if match:
-            start, indent = index + 1, len(match.group(1))
-            break
-    if start is None:
-        raise GateError(f"the config must declare a {GPT_GROUP!r} model group for the gate lanes")
-    block = []
-    for line in lines[start:]:
-        if not line.strip():
-            block.append(line)
-            continue
-        if len(line) - len(line.lstrip()) <= indent:
-            break
-        block.append(line)
-
-    # Only list items under the group's own `targets:` key are targets; other
-    # nested lists (tags, modality lists, tool support) are irrelevant here.
-    targets_indent = None
-    target_lines = []
-    for position, line in enumerate(block):
-        match = re.match(r"^(\s*)targets:\s*$", line)
-        if match:
-            targets_indent = len(match.group(1))
-            target_lines = block[position + 1:]
-            break
-    if targets_indent is None:
-        raise GateError(f"the {GPT_GROUP!r} group must declare a targets list")
-    trimmed = []
-    for line in target_lines:
-        if not line.strip():
-            trimmed.append(line)
-            continue
-        line_indent = len(line) - len(line.lstrip())
-        is_item = line.strip().startswith("- ")
-        if not is_item and line_indent <= targets_indent:
-            break
-        trimmed.append(line)
-
-    targets, current = [], None
-    item_indent = None
-    for line in trimmed:
-        stripped = line.strip()
-        line_indent = len(line) - len(line.lstrip())
-        body = stripped
-        if stripped.startswith("- "):
-            if item_indent is None:
-                item_indent = line_indent
-            if line_indent != item_indent:
-                # A nested list inside a target (tool support, modalities, tags).
-                continue
-            current = {"provider": "", "dialect": ""}
-            targets.append(current)
-            body = stripped[2:].strip()
-        if current is None:
-            continue
-        if item_indent is not None and line_indent > item_indent + 2:
-            continue
-        provider = re.match(r"^provider:\s*(\S+)\s*$", body)
-        if provider:
-            current["provider"] = provider.group(1)
-            continue
-        dialect = re.match(r"^dialect:\s*(\S+)\s*$", body)
-        if dialect:
-            current["dialect"] = dialect.group(1)
-    if not targets:
-        raise GateError(f"the {GPT_GROUP!r} group must declare at least one target")
-    strays = [f"{t['provider'] or '?'}:{t['dialect'] or 'unset'}" for t in targets if t["dialect"] != GPT_PINNED_DIALECT]
-    if strays:
-        raise GateError(
-            f"the {GPT_GROUP!r} group must target only {GPT_PINNED_DIALECT!r}; "
-            f"pin or remove these targets: {', '.join(strays)} (issue #697)"
-        )
-    return len(targets)
+    groups = set()
+    for line in lines:
+        header = re.match(r"^  ([a-z0-9_-]+):\s*$", line)
+        if header:
+            groups.add(header.group(1))
+    wanted = {group for _, group in LANES}
+    missing = sorted(wanted - groups)
+    if missing:
+        raise GateError("the config declares no target group for: " + ", ".join(missing))
+    return len(LANES)
 
 
 def prepare_config(source, workdir, port, db_path):
@@ -607,7 +537,7 @@ def main():
 
     if not args.config or not Path(args.config).is_file():
         raise SystemExit("pass --config (or RELEASE_GATE_CONFIG) with a full-capability router config")
-    ensure_gpt_responses_pinned(args.config)
+    ensure_lanes_servable(args.config)
     compat_source = args.compat_config or args.config
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
