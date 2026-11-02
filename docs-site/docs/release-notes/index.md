@@ -14,6 +14,74 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.6.0 - 2026-11-06
+
+### Highlights
+
+- **Reasoning provenance, off by default.** When an operator enables it, opaque
+  reasoning history is bound to the provider account, model and group that
+  minted it, unwrapped only for that target and dropped after a fallback,
+  instead of being replayed to a provider that never issued it. With
+  `mode: off` nothing changes. See
+  [Reasoning provenance](/docs/operations/reasoning-provenance).
+- **Embeddings and reporting.** `POST /v1/embeddings` is served for
+  embeddings-configured model groups, with admission control before any
+  upstream call and usage metering on the same accounting path as chat; the
+  configuration is fail-closed on embedding space, dimensions and selection
+  strategy. A scoped CFO usage report adds spend and hypothetical savings by
+  team, project, key and model group with JSON, CSV and Markdown exports.
+- **Tool results are preserved exactly.** Empty tool results are no longer
+  serialized as `null`, multi-part tool-result text is concatenated without
+  inserted separators across the translated directions including Bedrock, and
+  mixed text and image tool results survive Messages-to-Responses. Parallel
+  tool calls ship with an offline fixture matrix in required CI and a
+  budget-capped live gate whose passing and unproven cells are published.
+- **Caller-visible changes:** `400` capability failures name the recorded
+  eligibility reason and set `param` only when every rejected candidate shares
+  that field, and Anthropic-shaped error envelopes gain `error.code` and
+  `error.param`; requests against PII-enabled groups bypass the response cache
+  and skip shadow replay, and Responses system-message histories on those groups
+  fail closed for Anthropic and Bedrock targets; a null Messages
+  `context_management` is treated as absent; `content_provenance_checks`
+  answers `501 unsupported_endpoint`.
+- **No usage-database migration.** The usage schema stays at version 11.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Database | No usage-database migration in this release; schema stays at 11, so no migration gate applies and a rollback to 4.5.0 needs no schema restore |
+| Reasoning provenance | New `server.reasoning_provenance` block, `mode: off` by default; `observe` and `enforce` require `key_env` with a secret of at least 32 bytes, and a configuration that supplies `key_env`, `key_id` or `ttl` while `off` is rejected (#622) |
+| PII-enabled groups | Response-cache reads and writes are bypassed while target-bound cache identity is reconciled, so upstream calls and provider spend can rise for those groups; existing cache entries are not purged and can become eligible again if filtering is disabled, until expiry or cache reset (#670) |
+| PII-enabled groups | Candidate shadow replay is skipped with a policy recheck before dispatch, and Responses system-message histories fail closed with `system_pii_unsupported` when only Anthropic or Bedrock Messages targets are eligible; a replay already past the check can finish after an in-flight change, so stop and drain shadow runs for a strict cutover (#664, #668) |
+| Embeddings | New endpoint for embeddings groups only; groups declare `embedding_space`, serve one identical dimension set and may set `default_embedding_dimensions`; chat-shaped strategies are rejected for embeddings groups (#532) |
+| Error bodies | `400` capability failures carry the eligibility reason and a `param` limited to fields shared by every rejected candidate; Anthropic-shaped envelopes add `error.code` and `error.param`. Callers matching the previous generic text must accept the specific reason (#655) |
+| Unsupported surfaces | `POST /v1/content_provenance_checks` answers an authenticated `501 unsupported_endpoint` with no upstream dispatch, where it previously fell through to a generic unsupported response (#620) |
+| Anthropic Messages | A null `context_management` is treated as absent and is not forwarded; non-null values still require both the caller's beta and the target allowlist (#459) |
+| Usage rows | New rows carry a bounded endpoint label; the schema-11 column is unchanged and historical rows are not backfilled (#653) |
+| Reporting | The scoped CFO report requires retained raw usage and current project-to-team mappings; recorded costs are usage-derived, not invoices, and unmapped usage stays separate (#435) |
+| Examples and CI | Example overlays are scanned as rendered manifests, six example serving workloads and the example runner image run non-root, and the example dependency locks move to patched releases (#669, #682, #640) |
+
+### Caller Impact
+
+Routed model groups, prices and usage accounting are unchanged. Client-visible
+differences are the new `POST /v1/embeddings` surface, the more specific `400`
+bodies and Anthropic `error.code`/`error.param` fields, `501` for
+`content_provenance_checks`, the treatment of a null Messages
+`context_management` as absent, fewer eligible targets and no response caching
+for PII-enabled groups, and exact tool-result text. Reasoning provenance is
+invisible to callers unless an operator enables it; with `mode: off`, reasoning
+history passes through exactly as before.
+
+### Proof and Evidence
+
+Tool-call compatibility is published with its limits: the offline fixture matrix
+runs in required CI on every pull request and merge group, and the live gate
+reports which provider and direction cells passed, which were not exercised and
+what the run cost. The page `evaluation/parallel-tool-calls-live` is the
+authoritative statement of that coverage; it does not claim comprehension of
+tool results, and it names the translated directions that remain offline-only.
+
 ## v4.5.0 - 2026-11-04
 
 ### Highlights
