@@ -62,11 +62,16 @@ evidence; the gate never upgrades it to a certification.
 
 Stage B pins the Harbor CLI at **0.24.0**, the version the v4.5 gate was
 validated against, and runs it through `uvx --from harbor==0.24.0 harbor` so the
-host's `harbor` on `PATH` is irrelevant. Override with
-`RELEASE_GATE_HARBOR_VERSION` only when the example agent adapter has been
-updated for the newer CLI: Harbor 0.25 removed the Codex agent hook the example
-adapter builds on, and the matrix fails inside the adapter rather than at the
-router.
+host's `harbor` on `PATH` is irrelevant. The pin records the validated CLI; it
+does not by itself make the matrix pass.
+
+The current blocker is the example adapter, not the CLI version: the Codex
+adapter in `examples/harbor-algotune-pca` calls an MCP-registration hook that no
+`Codex` agent in the pinned CLI provides (other Harbor adapters do, Codex does
+not), so the trial fails with `'MetrumCodex' object has no attribute
+'_build_register_mcp_servers_command'` before any request reaches the router.
+Updating that adapter is tracked as follow-up work; until then the stage reports
+`blocked`, and the table says so rather than reporting a pass.
 
 The host also needs Docker Compose **v2** (`docker compose`); Harbor invokes it
 directly, and a host with only legacy `docker-compose` fails with
