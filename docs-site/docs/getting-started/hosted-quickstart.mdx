@@ -227,7 +227,7 @@ The same token and model-group rules apply to SDK calls: `/v1/models` shows only
 | `401` or `403` before model discovery | Token or endpoint mismatch | Confirm `ROUTER_BASE_URL` and `ROUTER_TOKEN` with the deployment administrator. |
 | Expected group missing from `/v1/models` | The token allow list does not include that group | Use a listed group or request access. |
 | `403 model-not-allowed` | Requested model group is not allowed for the token | Use one of the returned `/v1/models` IDs. |
-| `502 no-eligible-target` for tools or images | The group is allowed but lacks a validated target for that request shape | Ask for a compatible group or target. |
+| 400 compatibility or modality error for tools or images | The group may lack a validated target for that request shape | Ask for a compatible group or target; see [Error Reference](../reference/errors). |
 | `503 upstream-quota-exhausted` | All eligible upstream providers reported exhausted balance, credits, quota, billing, or payment state | Retry after the administrator restores provider quota or include the request ID when escalating. |
 | `503 upstream-rate-limited` | All eligible upstream providers were rate limited | Retry with backoff or include the request ID when escalating. |
 | `503 upstream-capacity-throttled` | Provider/model/target shared shaping or adaptive backoff temporarily removed all otherwise eligible targets | Retry after the `Retry-After` window when present or include the request ID when escalating. |

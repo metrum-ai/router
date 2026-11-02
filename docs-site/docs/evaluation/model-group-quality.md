@@ -79,7 +79,7 @@ Before a group receives broad caller access:
 - image requests are validated with realistic VLM budgets when image modality is advertised;
 - reasoning or thinking requests are validated for each advertised API shape and target control mode;
 - capped request behavior is tested for the caller API's output cap field, including OpenAI Chat `max_completion_tokens`;
-- unsupported shapes produce safe no-eligible-target behavior or request-shape filter reasons before upstream;
+- unsupported shapes produce safe compatibility or modality errors and request-shape filter reasons before upstream (see [Error Reference](../reference/errors));
 - partial compatibility is encoded with request-shape gates, bridge flags, modality/tool metadata, or output-cap metadata instead of broad claims about the model;
 - usage rows include selected provider/model, token counts, status, latency, cache behavior, and cost fields;
 - Harbor or workload-specific validation meets the group success criteria;
