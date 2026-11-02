@@ -84,6 +84,8 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 
 ## Eligibility Requirements
 
+Normal configuration validation rejects empty model groups; the empty-group 502 is a defensive runtime case. A later contract filter can also produce 502 after ordinary request eligibility has left candidates.
+
 OpenAI-shaped routing eligibility errors can include a `requirements` list. Examples:
 
 - `text`: request needs text input support.
