@@ -91,5 +91,7 @@ with only the legacy `docker-compose` fails with `unknown flag: --project-name`.
 The setup script installs the plugin, so this only matters for a hand-built host.
 
 The earlier `examples/harbor-algotune-pca` Codex adapter is **not** used by the
-gate: it targets a Codex agent API that Harbor's Codex adapter does not provide,
-so a matrix built on it fails inside the adapter before reaching the router.
+gate: it calls an MCP-registration hook that Harbor's Codex agent does not
+provide in the 0.25 line either, so a matrix built on it fails inside the adapter
+before reaching the router. The Pi adapter above has no such dependency and is
+the one the v4.5 matrix passed with.
