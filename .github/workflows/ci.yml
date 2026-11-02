@@ -279,11 +279,42 @@ jobs:
           path: ${{ env.COMPAT_CACHE }}
           key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
 
+  parallel-native:
+    name: Parallel native tool fixtures
+    if: github.event_name != 'push'
+    runs-on: router-arc-small
+    timeout-minutes: 15
+    steps:
+      - name: Isolate job caches
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/parallel-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/parallel-go-mod" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Locate Go caches
+        id: go-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ${{ steps.go-paths.outputs.build }}
+            ${{ steps.go-paths.outputs.modules }}
+          key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+      - name: Test native parallel continuations
+        run: env -u AWS_BEARER_TOKEN_BEDROCK GOMAXPROCS=2 go test ./internal/router -run '^TestParallelNative(UnaryContinuation|ToolControls|Streams)$' -count=1
+
   ci:
     name: ci
     runs-on: router-arc-small
     if: always()
-    needs: [router, other-go, other, sbom, warm]
+    needs: [router, other-go, other, sbom, warm, parallel-native]
     timeout-minutes: 5
     steps:
       - name: Require every lane
@@ -294,15 +325,16 @@ jobs:
           OTHER_RESULT: ${{ needs.other.result }}
           SBOM_RESULT: ${{ needs.sbom.result }}
           WARM_RESULT: ${{ needs.warm.result }}
+          PARALLEL_NATIVE_RESULT: ${{ needs.parallel-native.result }}
         run: |
           if [ "$CI_EVENT" = push ]; then
             [ "$WARM_RESULT" = success ] || { echo "Main cache warm failed: $WARM_RESULT" >&2; exit 1; }
-            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT"; do
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT" "$PARALLEL_NATIVE_RESULT"; do
               [ "$result" = skipped ] || { echo "Unexpected push lane result: $result" >&2; exit 1; }
             done
           else
             [ "$WARM_RESULT" = skipped ] || { echo "Unexpected cache warm result: $WARM_RESULT" >&2; exit 1; }
-            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$PARALLEL_NATIVE_RESULT"; do
               [ "$result" = success ] || { echo "A required CI lane did not succeed: $result" >&2; exit 1; }
             done
             if [ "$CI_EVENT" = pull_request ]; then
