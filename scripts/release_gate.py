@@ -460,8 +460,13 @@ def stage_harbor(outdir, host=None, sha=""):
         run(ssh + [f"HARBOR_VERSION={version} bash /root/harbor-e2e/setup_remote.sh"])
         router = outdir / "router"
         if not router.is_file():
-            return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
-                     "result": "blocked", "note": "the gate built no router binary to ship to the host"}]
+            # Stage B can run before the stages that build the binary, so build it here.
+            with log_path.open("a") as logfile:
+                build = subprocess.run(["go", "build", "-buildvcs=false", "-o", str(router), "./cmd/metrum-ai-router"],
+                                       cwd=ROOT, stdout=logfile, stderr=subprocess.STDOUT, text=True)
+            if build.returncode != 0 or not router.is_file():
+                return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
+                         "result": "blocked", "note": "router build for the host failed; see harbor.log"}]
         run(scp + [str(router), f"{host}:/root/harbor-e2e/router"])
         secrets = {k: env(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY") if env(k)}
         if len(secrets) != 2:

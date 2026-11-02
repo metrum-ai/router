@@ -18,7 +18,7 @@ reported as such and the matrix stops rather than reporting a pass.
 """
 
 import json,os,pathlib,subprocess,sys,threading,time
-import generate_tasks,guarded_relay,mock_messages
+import generate_tasks,guarded_relay,harbor_config,mock_messages
 from harbor_config import make_config
 ROOT=pathlib.Path(os.environ.get('HARBOR_E2E_ROOT','/root/harbor-e2e'))
 TMP=pathlib.Path(os.environ.get('HARBOR_E2E_CREDS','/run/harbor-e2e'))
@@ -46,9 +46,13 @@ try:
  if replay['exit']!=0 or replay['values']!=['1'] or mock_messages.Mock.calls!=2:raise RuntimeError('Harbor Docker/adapter mock replay failed')
 finally:mock.shutdown();mock.server_close()
 print('OFFLINE REPLAY PASSED; provider calls not yet made',flush=True)
-relay=guarded_relay.http.server.ThreadingHTTPServer((HOST,18081),guarded_relay.Relay);relay.budget=guarded_relay.Budget(max_calls=80,max_reserve=1.5);relay.secrets_path=TMP/'provider-secrets.json';relay.records_path=ROOT/'provider-usage.jsonl'
+relay=guarded_relay.http.server.ThreadingHTTPServer((HOST,18081),guarded_relay.Relay)
+relay.budget=guarded_relay.Budget(max_calls=80,max_reserve=1.5);relay.secrets_path=TMP/'provider-secrets.json';relay.records_path=ROOT/'provider-usage.jsonl'
 threading.Thread(target=relay.serve_forever,daemon=True).start()
-config=make_config(TMP,18080,18081).replace('127.0.0.1:',HOST+':');(TMP/'router.yaml').write_text(config)
+# The router listens on the docker bridge so task containers can reach it; the
+# relay is reached by the router over loopback.
+config=make_config(TMP,18080,18081);(TMP/'router.yaml').write_text(config)
+tokens=harbor_config.caller_tokens()
 proc=None;results={}
 try:
  with (ROOT/'router-start.log').open('w') as f:
@@ -60,15 +64,21 @@ try:
     with urllib.request.urlopen(f'http://{HOST}:18080/readyz',timeout=1):break
    except OSError:time.sleep(.25)
   else:raise RuntimeError('router not ready')
-  for mode,style,group in [('routed','openai-responses','gpt')]:
-   (TMP/'router-token').write_text('e2e-'+('gpt' if group=='gpt' else 'claude')+'-'+group)
-   name=mode+'-'+group;results[name]=run(name,style,mode,group,18081 if mode=='direct' else 18080,tasks)
+  lanes=[('direct','openai-responses','gpt'),('routed','openai-responses','gpt'),
+         ('direct','anthropic-messages','claude'),('routed','anthropic-messages','claude')]
+  for mode,style,group in lanes:
+   (TMP/'router-token').write_text(tokens[(style,group)])
+   name=mode+'-'+group
+   results[name]=run(name,style,mode,group,18081 if mode=='direct' else 18080,tasks)
    (ROOT/'result.json').write_text(json.dumps({'sha':SHA,'jobs':results,'reserved_upper_usd':relay.budget.reserved,'requests':relay.budget.calls},indent=2)+'\n')
    if len(results[name]['values'])!=5 or results[name]['exit']!=0:raise RuntimeError('incomplete Harbor job '+name)
+  for group in ('gpt','claude'):
+   direct=results['direct-'+group]['values'];routed=results['routed-'+group]['values']
+   if len(direct)!=5 or len(routed)!=5:raise RuntimeError('Harbor task inventory mismatch '+group)
+   if any(direct[k]=='1' and routed[k]!='1' for k in direct):raise RuntimeError('Harbor baseline mismatch '+group)
 finally:
  if proc:
   proc.terminate()
   try:proc.wait(15)
   except subprocess.TimeoutExpired:proc.kill();proc.wait(5)
  relay.shutdown();relay.server_close()
-print('ALL HARBOR JOBS COMPLETE',flush=True)
