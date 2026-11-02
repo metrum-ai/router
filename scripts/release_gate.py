@@ -46,7 +46,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ("file", "edit", "quote")
-LANES = (("openai-responses", "gpt"), ("openai-responses", "claude"), ("anthropic-messages", "gpt"), ("anthropic-messages", "claude"))
+# The v4.5 gate ran a Chat-dialect lane in both styles, and production serves Chat
+# through the chat_to_responses bridge, so the matrix keeps those lanes.
+LANES = (("openai-responses", "gpt"), ("openai-responses", "claude"),
+         ("openai-chat", "gpt"), ("openai-chat", "claude"),
+         ("anthropic-messages", "gpt"), ("anthropic-messages", "claude"))
 DIRECT = (("openai-responses", "gpt"), ("anthropic-messages", "claude"))
 API = {"openai-responses": "openai-responses", "anthropic-messages": "anthropic-messages"}
 MARKER = "RELEASE-GATE-TOOL-4917"
