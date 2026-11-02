@@ -54,7 +54,9 @@ func TestValidateLiveSafety(t *testing.T) {
 			g.Targets[0].Dialect = "openai-chat"
 			c.Models["claude"] = g
 		}},
-		{"plaintext upstream", func(c *router.Config) { c.Provider["anthropic"] = router.ProviderConfig{BaseURL: "http://127.0.0.1:18081"} }},
+		{"plaintext upstream", func(c *router.Config) {
+			c.Provider["anthropic"] = router.ProviderConfig{BaseURL: "http://127.0.0.1:18081"}
+		}},
 		{"content capture", func(c *router.Config) { c.Server.ContentCapture.Enabled = true }},
 		{"upstream storage not disabled", func(c *router.Config) { c.Models["gpt"].Targets[0].ForceStoreFalse = false }},
 		{"existing state", func(c *router.Config) {
