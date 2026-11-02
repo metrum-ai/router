@@ -1,0 +1,43 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Pinned inputs for reference tier: nvidia-gb10-edge.
+# Resolved on 2026-11-02 with:
+#   docker buildx imagetools inspect vllm/vllm-openai:v0.33.0
+# The digest is the manifest-list digest; on this aarch64 tier it resolves to the
+# arm64 image, which is the same pin the datacenter tier uses.
+schema: metrum.ai/reference-images/v1
+tier: nvidia-gb10-edge
+updated: "2026-11-02"
+
+router:
+  reference: metrum-ai-router:<version>-linux-arm64
+  digest: operator-supplied
+  note: Required as ROUTER_IMAGE by compose.yaml; never latest, never a moving tag.
+
+images:
+  - name: vllm
+    role: model-server
+    image: vllm/vllm-openai:v0.33.0
+    digest: sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    source: https://hub.docker.com/r/vllm/vllm-openai
+    platforms: [linux/amd64, linux/arm64]
+    note: Official upstream image; this tier pulls the arm64 member of the manifest list.
+
+models:
+  - id: Qwen/Qwen3-1.7B
+    revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+    license: Apache-2.0
+    slot: local-tiny
+    served_name: local-tiny
+    note: Always-resident smoke and classification model.
+  - id: Qwen/Qwen3-30B-A3B-Instruct-2507
+    revision: 0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe
+    license: Apache-2.0
+    slot: local-primary
+    served_name: local-primary
+    note: >-
+      Primary local model behind the local-chat group. Sparse MoE (30.5B total,
+      3.3B active) in BF16. Swap to Qwen/Qwen3-Coder-30B-A3B-Instruct
+      (revision b2cff646eb4bb1d68355c01b18ae02e7cf42d120) by changing
+      PRIMARY_MODEL_ID/PRIMARY_MODEL_REVISION; the slot, group and grants stay.

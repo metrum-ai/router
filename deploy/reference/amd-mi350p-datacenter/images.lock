@@ -1,0 +1,47 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Pinned inputs for reference tier: amd-mi350p-datacenter.
+# Resolved on 2026-11-02 against the AMD-published ROCm vLLM tag list:
+#   docker buildx imagetools inspect \
+#     rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
+# The tag names the architecture the image is built for (gfx950 = CDNA 4,
+# MI350 series), so there is no ambiguity about which member of a multi-arch
+# index is used: this tag has one platform.
+schema: metrum.ai/reference-images/v1
+tier: amd-mi350p-datacenter
+updated: "2026-11-02"
+
+router:
+  reference: metrum-ai-router:<version>-linux-amd64
+  digest: operator-supplied
+  note: Required as ROUTER_IMAGE by compose.yaml; never latest, never a moving tag.
+
+images:
+  - name: vllm-rocm
+    role: model-server
+    image: rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
+    digest: sha256:3b20f0a32530aefa2416aa30f64011fdcab00c44676a915044b9a17379342fcc
+    source: https://hub.docker.com/r/rocm/vllm
+    platforms: [linux/amd64]
+    note: Official AMD ROCm vLLM image built for gfx950 (CDNA 4); the arch is in the tag.
+
+models:
+  - id: Qwen/Qwen3-1.7B
+    revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+    license: Apache-2.0
+    slot: local-tiny
+    served_name: local-tiny
+    note: Always-resident smoke and classification model.
+  - id: Qwen/Qwen3-32B
+    revision: 9216db5781bf21249d130ec9da846c4624c16137
+    license: Apache-2.0
+    slot: local-chat
+    served_name: local-chat
+    note: Primary local chat model, FP8 weights.
+  - id: Qwen/Qwen3-Coder-30B-A3B-Instruct
+    revision: b2cff646eb4bb1d68355c01b18ae02e7cf42d120
+    license: Apache-2.0
+    slot: local-coder
+    served_name: local-coder
+    note: Sparse coder model (30B total, 3B active), FP8 weights. Fits beside the chat slot on 144 GB.

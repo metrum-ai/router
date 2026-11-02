@@ -315,6 +315,28 @@ capability-smoke-live:
 
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
 
+# Gate for deploy/reference/<vendor>-<tier>: one file set per tier, official
+# upstream images pinned by digest, README sections, and a config that the
+# router's own loader accepts. No hardware and no registry access.
+.PHONY: test-reference-configs
+REFERENCE_TIERS := $(patsubst deploy/reference/%/,%,$(wildcard deploy/reference/*/))
+REFERENCE_TIERS := $(filter-out harness,$(REFERENCE_TIERS))
+# A bcrypt hash is required by the admin-auth block; the value never leaves CI.
+REFERENCE_CONFIG_ENV := REFERENCE_ADMIN_PASSWORD_HASH='$$2b$$12$$o8v1ntt3UOcyHUoCRKF4.eYHga/4SHaiGlOTrw8YEcp97knODcP/m' \
+	LOCAL_VLLM_API_KEY=reference-config-check \
+	ROUTER_ID_TRANSFORM_KEY=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+test-reference-configs:
+	uv run --with pyyaml python scripts/check_reference_configs.py
+	uv run --with pyyaml python -m unittest scripts/check_reference_configs_test.py -q
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	go build -buildvcs=false -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
+	for tier in $(REFERENCE_TIERS); do \
+	  echo "validating deploy/reference/$$tier/config.yaml"; \
+	  $(REFERENCE_CONFIG_ENV) "$$tmp/routerctl" config validate \
+	    --config "deploy/reference/$$tier/config.yaml" >/dev/null || exit 1; \
+	done
+
 # Offline gate for nvidia-local-serving blueprint + Kustomize overlay.
 # Live Shadeform steps are documented in docs/SHADEFORM_NVIDIA_LOCAL_SERVING_E2E.md.
 test-k8s-nvidia-local-serving:
@@ -414,6 +436,7 @@ ci-python: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
+	$(MAKE) test-reference-configs
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
 	$(PYTHON) scripts/ci_changes_test.py
