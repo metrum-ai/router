@@ -14,7 +14,7 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
-## v4.6.0 - 2026-11-06
+## v4.6.0 - YYYY-MM-DD
 
 ### Highlights
 
@@ -72,6 +72,15 @@ bodies and Anthropic `error.code`/`error.param` fields, `501` for
 for PII-enabled groups, and exact tool-result text. Reasoning provenance is
 invisible to callers unless an operator enables it; with `mode: off`, reasoning
 history passes through exactly as before.
+
+### Known limitations
+
+- **Reasoning with tools on Chat Completions.** OpenAI reasoning models can
+  reject a request that combines `reasoning_effort` with tools when the caller
+  uses Chat Completions. Route those requests to the Responses dialect for that
+  target. The router does not yet declare reasoning-with-tools support per
+  dialect, so the combination is rejected upstream rather than closed before
+  dispatch; follow-up work is tracked in #703.
 
 ### Proof and Evidence
 

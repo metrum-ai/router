@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.6.0] - 2026-11-06
+## [4.6.0] - YYYY-MM-DD
 
-Package release. No usage-database migration is included: the usage schema
-stays at version 11, so an upgrade needs no migration gate and a rollback to
-4.5.0 needs no database restore for schema reasons.
+Security, PII and tool-compatibility release. No usage-database migration is
+included: the usage schema stays at version 11, so an upgrade needs no migration
+gate and a rollback to 4.5.0 needs no database restore for schema reasons.
 
 ### Added
 
@@ -104,6 +104,13 @@ stays at version 11, so an upgrade needs no migration gate and a rollback to
 - Mixed text and image content inside a tool result is preserved when
   Messages history is translated to Responses; it previously produced an empty
   tool output with a `200` response (#679).
+
+### Known limitations
+
+- OpenAI reasoning models can reject a request that combines `reasoning_effort`
+  with tools on Chat Completions. For those targets, use the Responses dialect.
+  The router does not yet fail that combination closed before dispatch, so it
+  can surface as an upstream rejection; follow-up in #703 (#697).
 
 ### Security
 
