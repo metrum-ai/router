@@ -14,7 +14,7 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
-## v4.6.0 - YYYY-MM-DD
+## v4.6.0 - 2026-11-02
 
 ### Highlights
 
@@ -88,6 +88,22 @@ history passes through exactly as before.
   that sends tools needs a Responses target that declares the `openai-chat`
   inbound dialect; without that declaration the router refuses before dispatch.
   Calling the Responses surface directly also works.
+
+### Release verification
+
+The release gate (#712) ran on `0ea47c4ae10d4793a4afec56ad509e71634bac72`, with the four stages: agent tasks in six lanes plus a direct baseline, the Harbor matrix (five tasks, direct and routed in both API styles), the live SDK suites with a same-config A/B against v4.5.0, and the parallel tool-call gate. The candidate and v4.5.0 produced identical live-SDK failure sets on that one configuration.
+
+This tagged commit differs from the gated commit only in the release notes and the release-gate scripts. Files changed between `0ea47c4a` and the tag commit:
+
+```
+CHANGELOG.md
+docs-site/docs/release-notes/index.md
+docs-site/docs/release-notes/upgrade-guide.md
+scripts/release_gate.py
+scripts/release_gate_test.py
+```
+
+`scripts/release_gate.py` and `scripts/release_gate_test.py` are the gate harness (#713, #715): the test-scope changes that restored the Chat-dialect lanes and let the live-SDK stage run with a validated-target config. Router code is identical: `git diff --stat 0ea47c4a <tag> -- internal cmd go.mod go.sum` is empty.
 
 ### Proof and Evidence
 

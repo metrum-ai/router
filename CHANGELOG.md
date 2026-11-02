@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [4.6.0] - YYYY-MM-DD
+## [4.6.0] - 2026-11-02
 
 Security, PII and tool-compatibility release. No usage-database migration is
 included: the usage schema stays at version 11, so an upgrade needs no migration
@@ -115,6 +115,10 @@ gate and a rollback to 4.5.0 needs no database restore for schema reasons.
   `supported_inbound_dialects`; declaring it makes the Chat caller eligible.
   Avoid tools plus `reasoning_effort` from a Chat caller against a Chat target
   until #703 lands (#697).
+
+### Release verification
+
+The gate ran on `0ea47c4ae10d4793a4afec56ad509e71634bac72`. This commit differs from it only in the release notes and the gate scripts (`scripts/release_gate.py`, `scripts/release_gate_test.py`, #713 and #715); router code is identical, verified with `git diff --stat 0ea47c4a <tag> -- internal cmd go.mod go.sum`.
 
 ### Security
 
