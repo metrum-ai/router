@@ -92,8 +92,8 @@ providers:
     api_key_env: LOCAL_VLLM_API_KEY
     auth_scheme: bearer
     models:
-      local-primary:
-        model: local-primary
+      local-chat:
+        model: local-chat
         input_price_per_million_usd: 0
         output_price_per_million_usd: 0
         input_modalities: [text]
@@ -129,7 +129,7 @@ models:
     strategy: static
     targets:
       - provider: local-primary
-        model_ref: local-primary
+        model_ref: local-chat
         weight: 1
   escalate:
     strategy: static

@@ -320,7 +320,7 @@ capability-smoke-live:
 .PHONY: test-edge-bundle
 test-edge-bundle:
 	bash -n deploy/edge/install.sh deploy/edge/demo.sh deploy/edge/upgrade.sh deploy/edge/uninstall.sh
-	python3 deploy/edge/test/install_e2e.py
+	uv run --with pyyaml python deploy/edge/test/install_e2e.py
 
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
 

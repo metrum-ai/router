@@ -249,6 +249,64 @@ class EdgeBundleInstallTest(unittest.TestCase):
         self.assertFalse(self.data_dir.exists(), "purge left files behind")
 
 
+class EdgeBundleComposeTest(unittest.TestCase):
+    """The compose files must be structurally sound before a GPU host sees them.
+
+    CI has no container runtime, so `docker compose config` cannot run there; this
+    parses the same files and asserts the keys the deployment depends on.
+    """
+
+    def setUp(self) -> None:
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover - the Makefile target installs PyYAML
+            self.skipTest("PyYAML is not installed")
+        self.yaml = yaml
+
+    def load(self, name: str) -> dict:
+        return self.yaml.safe_load((EDGE / name).read_text(encoding="utf-8"))
+
+    def test_base_compose_shape(self) -> None:
+        base = self.load("compose.yaml")
+        services = base["services"]
+        self.assertEqual(set(services), {"vllm-tiny", "vllm-primary", "router"})
+        for name in ("vllm-tiny", "vllm-primary"):
+            service = services[name]
+            self.assertIn("command", service)
+            self.assertIn("healthcheck", service)
+            self.assertEqual(service["ports"][0].split(":")[0], "127.0.0.1", f"{name} must publish on loopback only")
+            command = service["command"]
+            self.assertIn("--served-model-name", command)
+            self.assertIn("--api-key", command)
+            self.assertIn("--gpu-memory-utilization", command)
+        router = services["router"]
+        self.assertTrue(router["image"].startswith("${ROUTER_IMAGE:?"))
+        self.assertTrue(router["ports"][0].endswith(":8080"), router["ports"][0])
+        self.assertIn("127.0.0.1", router["ports"][0])
+        self.assertTrue(any("config.yaml" in mount for mount in router["volumes"]))
+        self.assertTrue(any("state" in mount for mount in router["volumes"]))
+        for required in ("vllm-tiny", "vllm-primary"):
+            self.assertIn(required, router["depends_on"])
+
+    def test_served_names_are_stable_slots(self) -> None:
+        base = self.load("compose.yaml")
+        for service, served in (("vllm-tiny", "local-tiny"), ("vllm-primary", "local-chat")):
+            command = base["services"][service]["command"]
+            index = command.index("--served-model-name")
+            self.assertEqual(command[index + 1], served)
+
+    def test_overlays_only_add_accelerator_wiring(self) -> None:
+        base = self.load("compose.yaml")
+        for overlay_name in ("compose.amd.yaml", "compose.nvidia.yaml"):
+            overlay = self.load(overlay_name)
+            self.assertLessEqual(set(overlay["services"]), set(base["services"]))
+            for name, service in overlay["services"].items():
+                # An overlay may replace the image (digest per vendor) and add
+                # device wiring; it must not shadow the serving command.
+                self.assertNotIn("command", service, f"{overlay_name} shadows {name}'s command")
+                self.assertIn("image", service, f"{overlay_name} must pin {name}'s image")
+
+
 class EdgeBundlePinTest(unittest.TestCase):
     """The bundle must not drift from the reference configuration pins."""
 

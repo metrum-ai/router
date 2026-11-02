@@ -70,7 +70,7 @@ requests_at_ctx    = kv_pool / (kv_bytes_per_token × context_tokens)
 | Slot | Model | Weights (BF16) | Layers | KV heads | Head dim | KV bytes/token | Utilization | KV pool | Requests at 8K |
 |---|---|---|---|---|---|---|---|---|---|
 | `local-tiny` | Qwen3-1.7B | 3.4 GB | 28 | 8 | 128 | 112 KiB | 0.05 | 1.0 GiB | 1 |
-| `local-primary` (`local-chat`) | Qwen3-30B-A3B-Instruct-2507 | 61 GB | 48 | 4 | 128 | 96 KiB | 0.80 | 39.4 GiB | 52 |
+| `local-chat` (slot `local-primary`) | Qwen3-30B-A3B-Instruct-2507 | 61 GB | 48 | 4 | 128 | 96 KiB | 0.80 | 39.4 GiB | 52 |
 
 Reproduce the rows with `deploy/reference/harness/kv_math.py`:
 
