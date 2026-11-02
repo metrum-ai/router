@@ -30,7 +30,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
   && apt-get install -y --no-install-recommends nodejs \
   && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
-  && ln -sf /root/.local/bin/uv /usr/local/bin/uv
+RUN curl -fsSL https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
+# The base entrypoint defaults RUN_AS_ROOT to true; explicitly select its
+# non-root path before changing USER. Install tooling above as root.
+ENV RUN_AS_ROOT=false
+USER runner
 WORKDIR /actions-runner

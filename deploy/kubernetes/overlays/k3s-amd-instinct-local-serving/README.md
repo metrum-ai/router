@@ -32,6 +32,15 @@ local-serving blueprint and points to the same `vllm-tiny`, `vllm-chat`, and
 `vllm-coder` Service names. Do not apply the generated NVIDIA serving overlay or
 NVIDIA GPU Operator values on AMD nodes.
 
+Serving Pods run as UID/GID 10001 with dropped capabilities, RuntimeDefault
+seccomp and a read-only root. `/cache` and `/tmp` are ephemeral `emptyDir`
+volumes; weights are downloaded again after Pod replacement. Provision enough
+ephemeral storage or replace `/cache` with an appropriately owned PVC. AMD
+`/dev/kfd` and render-node group ownership varies by node and device plugin:
+operators must provide the appropriate supplemental groups or device-plugin
+permissions for this non-root UID. Validate device access and model startup on
+the target cluster before rollout; offline manifest checks do not exercise a GPU.
+
 Run `make test-k8s-amd-instinct-local-serving` for the offline checks. Follow
 `docs/K3S_AMD_INSTINCT_LOCAL_SERVING_E2E.md` for the live procedure. For Dell/AMD
 aligned architecture, routing policies, metrics, and OpenTelemetry design, see

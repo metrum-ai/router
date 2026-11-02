@@ -17,9 +17,31 @@ spec:
         app.kubernetes.io/name: vllm-coder
         app.kubernetes.io/component: local-serving
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: vllm
           image: vllm/vllm-openai:v0.11.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: HOME
+              value: /cache
+            - name: HF_HOME
+              value: /cache/huggingface
+            - name: XDG_CACHE_HOME
+              value: /cache
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           args:
             - "--model"
             - "Qwen/Qwen3-8B"
@@ -39,3 +61,13 @@ spec:
               nvidia.com/gpu: "1"
             requests:
               nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

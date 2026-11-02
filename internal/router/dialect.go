@@ -25,6 +25,14 @@ func decodeRequest(dialect string, body []byte, h http.Header) (*IRRequest, erro
 	if raw == nil {
 		return nil, fmt.Errorf("request body must be a JSON object")
 	}
+	// Claude Code can send a null beta field even when the feature is not in
+	// use. Treat only this Messages field as absent; non-null values continue
+	// through the existing beta gate and passthrough unchanged.
+	if dialect == "anthropic" {
+		if value, present := raw["context_management"]; present && value == nil {
+			delete(raw, "context_management")
+		}
+	}
 	if dialect == "openai-chat" {
 		if value, present := raw["max_tokens"]; present {
 			n, ok := value.(float64)

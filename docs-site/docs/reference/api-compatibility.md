@@ -19,6 +19,7 @@ OpenAI-compatible clients use the `/v1` base URL:
 | `/v1/responses` | OpenAI Responses-style requests | Codex CLI, Responses-compatible agent frameworks |
 | `/v1/responses/input_tokens` | Unbilled input counting through a native Responses target | SDK token budgeting |
 | `/v1/responses/compact` | Metered stateless compaction through a native Responses target | Conversation compaction |
+| `/v1/embeddings` | OpenAI Embeddings-style requests through an embeddings model group | Retrieval, clustering and semantic-search clients |
 | `/v1/models` | OpenAI-style model discovery | Client setup and allow-list discovery |
 | `/v1/codex/models.json` | Codex-native local model catalog | Codex CLI fetch-then-run setup |
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
@@ -27,9 +28,10 @@ OpenAI-compatible clients use the `/v1` base URL:
 ### Unsupported OpenAI endpoints
 
 After caller authentication, legacy text completions and moderations return
-501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings and stored
-Responses retrieval, deletion, input-item listing, and cancellation also return
-501 in v4.5; their implementation is deferred to v4.6. Files, uploads, batches,
+501 `unsupported_endpoint`. Stored Responses retrieval, deletion, input-item
+listing, and cancellation also return 501. Embeddings are served only for model
+groups configured with `output_modalities: [embeddings]`; other model groups
+return 400 `unsupported_capability` instead of silently producing vectors. Files, uploads, batches,
 images, audio, vector stores, assistants, threads, fine-tuning, realtime, videos,
 containers, conversations, agents, ChatKit threads, and skills are outside the
 v4.5 scope and return the same error. These errors have `message`, `type`,
@@ -345,7 +347,10 @@ cannot bypass it. Known beta-gated body fields are not silently stripped:
 `context_management` requires `context-management-2025-06-27`, `container`
 requires `code-execution-2025-08-25`, and `mcp_servers` requires
 `mcp-client-2025-04-04`. Presence without the matching permitted caller beta
-returns HTTP 400 naming the field before upstream. Unknown provider fields
+returns HTTP 400 naming the field before upstream. On Anthropic Messages only,
+`context_management: null` is treated as absent and is not forwarded; any
+non-null value still requires the matching caller beta and target allowlist.
+Unknown provider fields
 retain native passthrough semantics. Anthropic `thinking.type: adaptive` is a
 reasoning request, just like `enabled`, and excludes non-reasoning targets.
 

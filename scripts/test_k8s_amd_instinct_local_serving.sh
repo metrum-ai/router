@@ -53,13 +53,18 @@ grep -A1 'draDriver:' "$OVERLAY/gpu-operator-values.yaml" | grep -q 'enable: fal
 grep -A2 'driver:' "$OVERLAY/gpu-operator-values.yaml" | grep -q 'enable: false'
 
 echo "==> assert local-only router egress policy"
-grep -q 'smart-llmrouter-local-vllm-egress' "$OVERLAY/networkpolicies.yaml"
+grep -q 'metrum-ai-router-local-vllm-egress' "$OVERLAY/networkpolicies.yaml"
 grep -q 'app.kubernetes.io/component: local-serving' "$OVERLAY/networkpolicies.yaml"
 grep -q 'port: 8000' "$OVERLAY/networkpolicies.yaml"
 
-echo "==> kubectl kustomize overlay"
+echo "==> render kustomize overlay"
+rendered=""
 if command -v kubectl >/dev/null 2>&1; then
   rendered="$(kubectl kustomize "$OVERLAY")"
+elif command -v kustomize >/dev/null 2>&1; then
+  rendered="$(kustomize build "$OVERLAY")"
+fi
+if [[ -n "$rendered" ]]; then
   printf '%s\n' "$rendered" | grep -q 'name: vllm-tiny'
   printf '%s\n' "$rendered" | grep -q 'name: vllm-chat'
   printf '%s\n' "$rendered" | grep -q 'name: vllm-coder'
@@ -67,11 +72,11 @@ if command -v kubectl >/dev/null 2>&1; then
   printf '%s\n' "$rendered" | python3 -c '
 import sys
 for document in sys.stdin.read().split("---"):
-    if "kind: Deployment" in document and "name: smart-llmrouter" in document:
+    if "kind: Deployment" in document and "name: metrum-ai-router" in document:
         raise SystemExit("serving overlay must not deploy the router; Helm owns that workload")
 '
 else
-  echo "kubectl not found; skipping kustomize render check" >&2
+  echo "kubectl and kustomize not found; skipping render check" >&2
 fi
 
 echo "OK test-k8s-amd-instinct-local-serving"
