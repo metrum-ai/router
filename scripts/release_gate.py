@@ -474,7 +474,8 @@ def stage_harbor(outdir, host=None, sha=""):
                 return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
                          "result": "blocked", "note": "router build for the host failed; see harbor.log"}]
         run(scp + [str(router), f"{host}:/root/harbor-e2e/router"])
-        secrets = {k: env(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY") if env(k)}
+        # The relay expects provider names, not environment variable names.
+        secrets = {name: env(var) for name, var in (("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY")) if env(var)}
         if len(secrets) != 2:
             return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
                      "result": "skipped", "note": "provider keys missing; the matrix needs both"}]
