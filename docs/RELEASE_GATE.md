@@ -57,3 +57,17 @@ make release-gate
 Without `RELEASE_GATE_HARBOR_HOST` the stage runs locally when Docker exists and
 reports `skipped` with the reason when it does not. A Harbor matrix is bounded
 evidence; the gate never upgrades it to a certification.
+
+## Harbor CLI version and Compose
+
+Stage B pins the Harbor CLI at **0.24.0**, the version the v4.5 gate was
+validated against, and runs it through `uvx --from harbor==0.24.0 harbor` so the
+host's `harbor` on `PATH` is irrelevant. Override with
+`RELEASE_GATE_HARBOR_VERSION` only when the example agent adapter has been
+updated for the newer CLI: Harbor 0.25 removed the Codex agent hook the example
+adapter builds on, and the matrix fails inside the adapter rather than at the
+router.
+
+The host also needs Docker Compose **v2** (`docker compose`); Harbor invokes it
+directly, and a host with only legacy `docker-compose` fails with
+`unknown flag: --project-name`.

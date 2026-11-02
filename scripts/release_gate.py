@@ -392,6 +392,32 @@ def stage_pi(outdir, port, db, cap_state):
 
 
 HARBOR_TASK_DEFAULT = "aider/polyglot_python_two-bucket"
+# The release gate pins the Harbor CLI the v4.5 gate was validated against. The
+# example agent adapter targets that API; a newer CLI breaks it until the
+# adapter is updated (tracked separately).
+HARBOR_VERSION_DEFAULT = "0.24.0"
+
+
+def harbor_shim(target):
+    """Write an executable shim that runs the pinned Harbor CLI through uvx.
+
+    Harbor 0.25 changed the Codex agent API the example adapter builds on, so
+    the gate pins the validated version instead of following whatever `harbor`
+    happens to be on PATH. Docker Compose v2 is required by Harbor itself.
+    """
+    version = env("RELEASE_GATE_HARBOR_VERSION") or HARBOR_VERSION_DEFAULT
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise GateError("RELEASE_GATE_HARBOR_VERSION must be a pinned x.y.z version")
+    shim = target / f"harbor-{version}"
+    shim.write_text(
+        "#!/bin/sh\n"
+        f"exec uvx --from harbor=={version} harbor \"$@\"\n",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    return shim, version
+
+
 HARBOR_AGENTS_DEFAULT = "codex,claude-code"
 HARBOR_GROUPS_DEFAULT = "default,fast"
 
@@ -422,9 +448,20 @@ def stage_harbor(outdir, host=None):
         identity = env("RELEASE_GATE_HARBOR_KEY")
         if identity:
             ssh += ["-i", identity]
-        ssh += [host, command]
+        # The caller token and base URL travel over stdin into a 0600 file on the
+        # host, never on a command line and never in the log.
+        secrets = {key: env(key) for key in ("ROUTER_BASE_URL", "HARBOR_ROUTER_TOKEN") if env(key)}
+        if secrets:
+            payload = "".join(f"export {k}={shlex.quote(v)}\n" for k, v in secrets.items())
+            subprocess.run(ssh + [host, "umask 077; cat > /dev/shm/release-gate-harbor.env"],
+                           input=payload, text=True, capture_output=True, check=False)
+            command = ". /dev/shm/release-gate-harbor.env; rm -f /dev/shm/release-gate-harbor.env; " + command
+            if not command.startswith(". "):
+                raise GateError("internal: remote Harbor command prefix lost")
+        else:
+            command = "echo 'blocked: ROUTER_BASE_URL and HARBOR_ROUTER_TOKEN are required for the Harbor stage' >&2; exit 2"
         with log_path.open("w") as logfile:
-            code = subprocess.run(ssh, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
+            code = subprocess.run(ssh + [host, command], stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
         return [{
             "stage": "B",
             "lane": f"harbor-direct/routed (both styles) on {host}",
@@ -440,9 +477,11 @@ def stage_harbor(outdir, host=None):
             "result": "skipped",
             "note": "no container runtime and no RELEASE_GATE_HARBOR_HOST; Harbor needs a Docker host",
         }]
+    shim, version = harbor_shim(target)
     log_path = target / "harbor.log"
+    envs = dict(os.environ, HARBOR_BIN=str(shim))
     with log_path.open("w") as logfile:
-        code = subprocess.run([sys.executable, str(promotion), *common], cwd=ROOT, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
+        code = subprocess.run([sys.executable, str(promotion), *common], cwd=ROOT, env=envs, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
     return [{
         "stage": "B",
         "lane": "harbor-direct/routed (both styles)",
@@ -532,7 +571,9 @@ def render(rows, sha, cap, spent, config_source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default=env("RELEASE_GATE_CONFIG"), help="full-capability router config (required)")
-    parser.add_argument("--out", default=str(ROOT / ".out" / "release-gate"))
+    # Default outside the worktree: stage C refuses a dirty router checkout, and
+    # the gate's own output inside the repository would make it dirty.
+    parser.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "release-gate"))
     parser.add_argument("--cap", type=float, default=15.0)
     parser.add_argument("--stages", default="a,b,c,d")
     parser.add_argument("--allow-dirty", action="store_true")
