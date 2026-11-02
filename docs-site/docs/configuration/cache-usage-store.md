@@ -51,6 +51,25 @@ server:
 
 `store_sanitized_upstream_errors` defaults to `true` when diagnostics are enabled. It writes only bounded allowlisted provider error fields such as code, type, param, provider request ID, and categorized message values; set it to `false` only when you want to suppress those provider detail rows.
 
+### Decision telemetry is opt-in
+
+`server.decision_telemetry.enabled` defaults to `false`. While it is off, the
+router writes no `request_target_candidates` or `request_target_filter_reasons`
+rows at all — including for requests refused before dispatch, where the only
+router-side evidence is the bounded `requirements` array in the error body plus
+the `request_shapes` and `request_token_estimates` rows that are written
+regardless. A configuration that leaves the switch off therefore cannot answer
+"which target was rejected for which reason" from stored rows.
+
+Set `enabled: true` to store those rows for every request, refused or served.
+Cardinality is bounded per request by `max_candidates` (default 64 candidate
+rows) and `max_filter_reasons` (default 256 reason rows). Each reason row holds a
+bounded reason enum and a candidate index; it never carries a prompt, tool
+schema, provider key, or raw body. `record_candidates: false` suppresses the
+candidate rows only: the per-target reasons are still stored, and their
+`candidate_index` then refers to the position of the target in the group's
+`targets` list instead of a stored candidate row.
+
 ## Schema
 
 `server.cache` covers eligible deterministic unary responses. Tool-bearing and image-bearing requests bypass response caching. Requests evaluated against PII-enabled model groups also bypass cache reads and writes, even when no rule matches. Existing entries are not purged and can become eligible again if filtering is disabled, until expiry or cache reset. Configuration changes do not fence in-flight requests: for a strict cutover, pause and drain requests and confirm all replicas have loaded the enabled policy before resuming. The bounded diagnostic reason for otherwise cacheable requests is `cache-pii-filter`.
