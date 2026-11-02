@@ -330,7 +330,7 @@ def token_hash(ctx: Ctx, slug: str) -> tuple[str, str]:
 
 ROUTER_CONFIG = """\
 server:
-  listen: 127.0.0.1:{port}
+  listen: {listen}
   default_model_group: {default_group}
   identifiers:
     mode: passthrough
@@ -448,6 +448,7 @@ class Router:
 
 def render_router_config(
     *,
+    listen: str,
     port: int,
     default_group: str,
     log_path: Path,
@@ -459,7 +460,7 @@ def render_router_config(
     callers: str,
 ) -> str:
     return ROUTER_CONFIG.format(
-        port=port,
+        listen=listen,
         default_group=default_group,
         log_path=log_path,
         usage_path=usage_path,
@@ -750,10 +751,26 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=8, help="requests per lane discarded before measuring")
     parser.add_argument("--mock-ttft-ms", type=float, default=60.0, help="mock backend TTFT for a dry run")
     parser.add_argument("--mock-event-delay-ms", type=float, default=8.0)
+    parser.add_argument("--edge-url", default="",
+                        help="already running edge router base URL (multi-node run; skips local router startup)")
+    parser.add_argument("--dc-url", default="",
+                        help="already running datacenter router base URL (multi-node run)")
+    parser.add_argument("--edge-usage", type=Path, default=None,
+                        help="edge router usage SQLite copy for per-hop rows (multi-node run)")
+    parser.add_argument("--dc-usage", type=Path, default=None,
+                        help="datacenter router usage SQLite copy (multi-node run)")
+    parser.add_argument("--bootstrap", type=Path, default=None,
+                        help="multi-node: write the two router configs and tokens here, print a manifest, and exit")
+    parser.add_argument("--state-dir", default="",
+                        help="multi-node: router state/log/usage directory on the router nodes (default: the work directory)")
     parser.add_argument("--name", default="run")
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
 
+    if bool(args.edge_url) != bool(args.dc_url):
+        print("--edge-url and --dc-url must be given together", file=sys.stderr)
+        return 2
+    remote = bool(args.edge_url)
     if args.backend_url:
         if not args.model:
             print("--backend-url needs --model", file=sys.stderr)
@@ -777,14 +794,23 @@ def main() -> int:
     for secret in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FIREWORKS_API_KEY"):
         child_env.pop(secret, None)
     ctx = Ctx(work=work, bin_dir=work / "bin", commit=commit, strict=False, child_env=child_env)
-    build_binaries(ctx)
+    if not remote:
+        build_binaries(ctx)
 
-    app_token = new_caller_token(ctx, "hop-app")
-    router_token = new_caller_token(ctx, "hop-router")
-    loop_token = new_caller_token(ctx, "hop-loop")
-    edge_callers = caller_block(ctx, "hop-app", "hop-app", "hier, hier-direct, loop-demo")
-    edge_callers += caller_block(ctx, "hop-loop", "hop-loop", "loop-demo")
-    dc_callers = caller_block(ctx, "hop-router", "hop-router", "hier-dc, loop-demo")
+    if remote:
+        app_token = os.environ.get("HIER_APP_TOKEN", "")
+        if not app_token:
+            print("--edge-url/--dc-url need HIER_APP_TOKEN in the environment", file=sys.stderr)
+            return 2
+        router_token = loop_token = ""
+        edge_callers = dc_callers = ""
+    else:
+        app_token = new_caller_token(ctx, "hop-app")
+        router_token = new_caller_token(ctx, "hop-router")
+        loop_token = new_caller_token(ctx, "hop-loop")
+        edge_callers = caller_block(ctx, "hop-app", "hop-app", "hier, hier-direct, loop-demo")
+        edge_callers += caller_block(ctx, "hop-loop", "hop-loop", "loop-demo")
+        dc_callers = caller_block(ctx, "hop-router", "hop-router", "hier-dc, loop-demo")
 
     backend = None
     if backend_kind == "loopback-mock":
@@ -803,28 +829,55 @@ def main() -> int:
     ports = {"direct": free_port(), "edge": free_port(), "dc": free_port()}
     # Direct lane: a router is not involved at all, so it talks to the backend
     # API exactly as a client would.
-    direct_addr = backend_url.removesuffix("/v1")
     direct_addr = urllib.parse.urlsplit(backend_url)._replace(path="").geturl()
+
+    # Multi-node runs render the same configs with real node addresses and a
+    # shared state directory; a local run keeps everything on loopback.
+    if remote or args.bootstrap:
+        state_dir = Path(args.state_dir or "/var/lib/router")
+        edge_listen = "0.0.0.0:8080"
+        dc_listen = "0.0.0.0:8080"
+        edge_public = (args.edge_url or "http://127.0.0.1:8080").rstrip("/")
+        dc_public = (args.dc_url or "http://127.0.0.1:8080").rstrip("/")
+        edge_usage = state_dir / "edge-usage.sqlite"
+        dc_usage = state_dir / "dc-usage.sqlite"
+        edge_log = state_dir / "edge-requests.jsonl"
+        dc_log = state_dir / "dc-requests.jsonl"
+        edge_state = state_dir / "edge-state.json"
+        dc_state = state_dir / "dc-state.json"
+    else:
+        state_dir = work
+        edge_listen = f"127.0.0.1:{ports['edge']}"
+        dc_listen = f"127.0.0.1:{ports['dc']}"
+        edge_public = f"http://127.0.0.1:{ports['edge']}"
+        dc_public = f"http://127.0.0.1:{ports['dc']}"
+        edge_usage = work / "edge-usage.sqlite"
+        dc_usage = work / "dc-usage.sqlite"
+        edge_log = work / "logs" / "edge.jsonl"
+        dc_log = work / "logs" / "dc.jsonl"
+        edge_state = work / "edge-state.json"
+        dc_state = work / "dc-state.json"
 
     # Edge router: `hier-direct` goes straight to the backend (1-hop);
     # `hier` hands off to the datacenter router (2-hop); `loop-demo` points
     # back at itself through the datacenter router to prove loop protection.
-    edge_usage = work / "edge-usage.sqlite"
-    dc_usage = work / "dc-usage.sqlite"
-    edge_config = work / "edge.yaml"
-    dc_config = work / "dc.yaml"
+    edge_config = (args.bootstrap or work) / "edge.yaml"
+    dc_config = (args.bootstrap or work) / "dc.yaml"
+    if args.bootstrap:
+        args.bootstrap.mkdir(parents=True, exist_ok=True)
 
     dc_config.write_text(
         render_router_config(
+            listen=dc_listen,
             port=ports["dc"],
             default_group="hier-dc",
-            log_path=work / "logs" / "dc.jsonl",
+            log_path=dc_log,
             usage_path=dc_usage,
-            state_path=work / "dc-state.json",
+            state_path=dc_state,
             max_hops=4,
             providers=backend_provider + (
                 "  edge_loop:\n"
-                f"    base_url: http://127.0.0.1:{ports['edge']}/v1\n"
+                f"    base_url: {edge_public}/v1\n"
                 "    dialect: openai-chat\n"
                 f"    api_key: {loop_token}\n"
                 "    key_id: latency-edge-loop\n"
@@ -851,11 +904,12 @@ def main() -> int:
 
     edge_config.write_text(
         render_router_config(
+            listen=edge_listen,
             port=ports["edge"],
             default_group="hier",
-            log_path=work / "logs" / "edge.jsonl",
+            log_path=edge_log,
             usage_path=edge_usage,
-            state_path=work / "edge-state.json",
+            state_path=edge_state,
             max_hops=4,
             providers=(
                 "  backend:\n"
@@ -867,7 +921,7 @@ def main() -> int:
                 f"      {model}:\n"
                 f"        model: {model}\n"
                 "  dc:\n"
-                f"    base_url: http://127.0.0.1:{ports['dc']}/v1\n"
+                f"    base_url: {dc_public}/v1\n"
                 "    dialect: openai-chat\n"
                 f"    api_key: {router_token}\n"
                 "    key_id: latency-dc\n"
@@ -898,19 +952,58 @@ def main() -> int:
     )
     os.chmod(edge_config, 0o600)
 
-    dc = Router(ctx, "dc", dc_config, ports["dc"], work / "logs" / "dc.out").start()
-    dc.wait_ready()
-    edge = Router(ctx, "edge", edge_config, ports["edge"], work / "logs" / "edge.out").start()
-    edge.wait_ready()
+    if args.bootstrap:
+        # Multi-node bootstrap: hand the operator the two configs and the app
+        # token path, then stop. Tokens stay in mode-0600 files; nothing is
+        # printed except paths and non-secret scalars.
+        imports = []
+        for slug in ("hop-app", "hop-router", "hop-loop"):
+            source = ctx.work / "tokens" / f"{slug}.token"
+            if source.exists():
+                target = args.bootstrap / f"{slug}.token"
+                target.write_bytes(source.read_bytes())
+                os.chmod(target, 0o600)
+                imports.append(str(target))
+        manifest = {
+            "schema": "router-hierarchy-latency-bootstrap-v1",
+            "edge_config": str(edge_config),
+            "dc_config": str(dc_config),
+            "state_dir": str(state_dir),
+            "app_token_file": str(args.bootstrap / "hop-app.token"),
+            "token_files": imports,
+            "edge_url": edge_public,
+            "dc_url": dc_public,
+            "backend_url": backend_url,
+            "model": model,
+            "start_command": "metrum-ai-router -config <config>  (bind 0.0.0.0:8080)",
+        }
+        (args.bootstrap / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({k: v for k, v in manifest.items() if k != "token_files"}, indent=2))
+        print(f"token files: {', '.join(imports) if imports else '<none>'}")
+        return 0
+
+    if remote:
+        # Multi-node run: the caller started both routers from the configs this
+        # harness printed. Nothing is built or served on the load generator.
+        edge_addr, dc_addr = args.edge_url.rstrip("/"), args.dc_url.rstrip("/")
+        wait_remote(edge_addr, "edge")
+        wait_remote(dc_addr, "datacenter")
+        edge = dc = None
+    else:
+        dc = Router(ctx, "dc", dc_config, ports["dc"], work / "logs" / "dc.out").start()
+        dc.wait_ready()
+        edge = Router(ctx, "edge", edge_config, ports["edge"], work / "logs" / "edge.out").start()
+        edge.wait_ready()
+        edge_addr, dc_addr = edge.addr, dc.addr
 
     lanes = {
         "direct": {"addr": direct_addr, "model": model, "token": backend_token or "self-hosted-no-key"},
-        "1-hop": {"addr": edge.addr, "model": "hier-direct", "token": app_token},
-        "2-hop": {"addr": edge.addr, "model": "hier", "token": app_token},
+        "1-hop": {"addr": edge_addr, "model": "hier-direct", "token": app_token},
+        "2-hop": {"addr": edge_addr, "model": "hier", "token": app_token},
     }
     # Loop protection: a request that bounces between the two routers must end
     # as a bounded 508, never an unbounded ping-pong.
-    loop_status, loop_body = post_chat(edge.addr, app_token, "loop-demo", args.max_tokens)
+    loop_status, loop_body = post_chat(edge_addr, app_token, "loop-demo", args.max_tokens)
 
     results: dict[str, dict] = {}
     try:
@@ -923,8 +1016,10 @@ def main() -> int:
                 spec["addr"], spec["token"], spec["model"], args.requests, args.concurrency, args.max_tokens
             )
     finally:
-        edge.stop()
-        dc.stop()
+        if edge is not None:
+            edge.stop()
+        if dc is not None:
+            dc.stop()
         if backend is not None:
             backend.stop()
 
@@ -967,9 +1062,9 @@ def main() -> int:
         "lanes": results,
         "deltas": {lane: delta(lane) for lane in ("1-hop", "2-hop")},
         "usage": {
-            "edge/1-hop": hop_usage(edge_usage, "hop-app", "hier-direct"),
-            "edge/2-hop": hop_usage(edge_usage, "hop-app", "hier"),
-            "dc/2-hop": hop_usage(dc_usage, "hop-router", "hier-dc"),
+            "edge/1-hop": hop_usage(args.edge_usage or edge_usage, "hop-app", "hier-direct"),
+            "edge/2-hop": hop_usage(args.edge_usage or edge_usage, "hop-app", "hier"),
+            "dc/2-hop": hop_usage(args.dc_usage or dc_usage, "hop-router", "hier-dc"),
         },
         "backend_headers": headers,
         "limits": [
@@ -992,6 +1087,24 @@ def main() -> int:
     if not args.keep:
         shutil.rmtree(work / "bin", ignore_errors=True)
     return 0 if all(results[lane]["streaming"]["ok"] for lane in LANES) and loop_status == 508 else 1
+
+
+def wait_remote(addr: str, name: str, timeout: float = 90.0) -> None:
+    """Wait for an already running router on another node to answer readyz."""
+    host, port = urllib.parse.urlsplit(addr).hostname, urllib.parse.urlsplit(addr).port or 80
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            connection = socket.create_connection((host, port), timeout=2)
+            connection.sendall(b"GET /readyz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            if b"200" in connection.recv(64).split(b"\r\n", 1)[0]:
+                connection.close()
+                return
+            connection.close()
+        except OSError:
+            pass
+        time.sleep(0.5)
+    raise SystemExit(f"{name} router at {addr} did not become ready")
 
 
 def post_chat(addr: str, token: str, model: str, max_tokens: int) -> tuple[int, str]:

@@ -35,6 +35,39 @@ Run the load generator on a node separate from every router and from the
 backend. Record the CPU model and core count of each node in the run notes; the
 report records the load-generator host automatically.
 
+### Multi-node run
+
+The routers must run on their own nodes, not on the load generator. Render the
+two router configs (with real node addresses and a shared state directory) and
+the deployment tokens, copy them to the router nodes, start both routers, then
+measure:
+
+```sh
+# 1. On the load generator: render configs addressed to the router nodes.
+python3 benchmarks/hierarchy-latency/run.py \
+  --bootstrap ./bootstrap \
+  --edge-url http://<edge-host>:8080 --dc-url http://<dc-host>:8080 \
+  --backend-url http://<backend-host>:8000/v1 --model <served-model> \
+  --state-dir /var/lib/router
+# bootstrap/manifest.json names the two configs and the app token file.
+
+# 2. On each router node: mkdir -p /var/lib/router, copy its config and start
+#    the shipped binary (-config <file>); it binds 0.0.0.0:8080.
+
+# 3. On the load generator: measure against the running routers.
+HIER_APP_TOKEN="$(cat bootstrap/hop-app.token)" \
+python3 benchmarks/hierarchy-latency/run.py \
+  --edge-url http://<edge-host>:8080 --dc-url http://<dc-host>:8080 \
+  --backend-url http://<backend-host>:8000/v1 --model <served-model> \
+  --edge-usage ./edge-usage.sqlite --dc-usage ./dc-usage.sqlite \
+  --requests 400 --concurrency 8 --max-tokens 32 --name multi-node
+```
+
+`--edge-usage`/`--dc-usage` are copies of each router's SQLite usage file taken
+after the run, so the per-hop rows in the report come from the routers, not from
+the load generator. The backend token, if any, is read from the environment
+variable named by `--backend-key-env`.
+
 Output: `report.json` and `RESULT.md` under `.out/hierarchy-latency/<utc>-<name>/`.
 No hosted model calls; the cost is the operator's rental.
 
