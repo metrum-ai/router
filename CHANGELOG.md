@@ -7,24 +7,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Skip candidate shadow replay for requests evaluated against locally active
-  PII-enabled model groups, and recheck the policy before replay (#664). A
-  replay already past that check can still finish after a config change; stop
-  and drain shadow runs for a strict cutover.
-- Fail closed for Responses system-message histories on PII-enabled groups
-  when translating to Anthropic or Bedrock Messages; extend the existing
-  developer-history PII guard to Bedrock. Other eligible targets remain
-  available (#668).
-- `POST /v1/content_provenance_checks` explicitly returns an authenticated
-  OpenAI-shaped `501 unsupported_endpoint` without upstream dispatch; the
-  operation is not implemented (#620).
-- Populate `request_usage.endpoint` with bounded surface labels for new usage
-  rows, including Chat, Responses, Messages, counting and other accounted
-  surfaces. Historical empty values remain unchanged; usage schema stays at
-  version 11 (#653).
-- Bypass response-cache reads and writes for requests evaluated against
-  PII-enabled model groups while target-bound cache identity is reconciled
-  (#670). This may increase upstream calls for those groups.
+## [4.6.0] - 2026-11-02
+
+Security, PII and tool-compatibility release. No usage-database migration is
+included: the usage schema stays at version 11, so an upgrade needs no migration
+gate and a rollback to 4.5.0 needs no database restore for schema reasons.
+
+### Added
+
+- Reasoning provenance binding for opaque reasoning history, **off by
+  default**. When enabled, the router binds each provider-owned
+  `encrypted_content` value and each Anthropic `thinking`/`redacted_thinking`
+  block to the dialect, provider account, model and group that minted it,
+  unwraps it for the matching target and drops it everywhere else, so a foreign
+  value is never replayed after a fallback. `mode: off` changes no bytes;
+  `observe` and `enforce` require a secret supplied through the named
+  environment variable, and drop mismatched history with bounded diagnostic
+  classes that carry no values. See
+  `docs-site/docs/operations/reasoning-provenance.md` (#622).
+
+- OpenAI-compatible embeddings. `POST /v1/embeddings` is served for model
+  groups configured as embeddings groups, with admission control that rejects
+  malformed, oversized or ambiguous input before any upstream call, and usage
+  metering on the same accounting path as chat. Configuration is fail-closed
+  (`embedding_space`, `embedding_dimensions`, `default_embedding_dimensions`):
+  a group cannot mix embedding and non-embedding targets, every target must
+  serve the same space and dimension set, and chat-shaped selection strategies
+  are rejected so a selector cannot pick a different vector space (#532).
+
+- CFO usage report: scoped spend and hypothetical savings by team, project, key
+  and model group, with source-dated baseline prices, top consumers, an hourly
+  trend, an explicit project-to-team mapping, and JSON, CSV and optional
+  Markdown exports through the Admin API, `routerctl` and a browser view.
+  Recorded costs are usage-derived, not invoices; live token quotas are
+  labelled separately and unmapped usage stays separate rather than being
+  attributed (#435).
+
+- New usage rows record a bounded endpoint label, covering Chat, Responses,
+  Messages and the other surfaces that create usage events. The column and its
+  migration are unchanged from schema 11 and historical rows are not
+  backfilled (#653).
+
+- Tool-call compatibility evidence for parallel tool calls: an offline fixture
+  suite covering native and translated directions, three calls per turn with
+  out-of-order, error, multi-part and empty results, and a budget-capped live
+  gate against hosted providers. The published page records the cells that pass
+  and the cells that remain unproven (#656).
+
+### Changed
+
+- Routing errors now name the reason that actually removed the target.
+  `400` capability failures include the recorded eligibility reason and a
+  `param` that is only set when every rejected candidate shares that field;
+  otherwise `param` is null rather than guessed. Anthropic-shaped error
+  envelopes gain `error.code` and `error.param`. Selection telemetry uses the
+  same predicates (#655).
+
+- Requests evaluated against a PII-enabled model group bypass the router
+  response cache for both reads and writes while target-bound cache identity is
+  reconciled, and report `cache-pii-filter` as the bounded reason. Other groups
+  keep their existing caching. Upstream call volume and cost can rise for those
+  groups (see the operator notes for the cutover limits) (#670).
+
+- Candidate shadow replay is skipped for requests evaluated against a locally
+  active PII-enabled group, with the policy rechecked before dispatch, and
+  Responses system-message histories on PII-enabled groups fail closed with
+  `system_pii_unsupported` when the only eligible translation target is
+  Anthropic or Bedrock Messages. Both guards can reduce eligible targets and
+  reduce upstream calls (#664, #668).
+
+- A null Anthropic Messages `context_management` is treated as absent and is
+  not forwarded upstream. Non-null values still require both the caller's beta
+  and the target allowlist (#459).
+
+- `POST /v1/content_provenance_checks` returns an authenticated OpenAI-shaped
+  `501 unsupported_endpoint` instead of falling through to a generic
+  unsupported response. The operation is not implemented and nothing is
+  dispatched upstream (#620).
+
+- Unsupported-surface documentation no longer describes the older `502` for a
+  missing eligible target; capability failures are `400 unsupported_capability`
+  (#654).
+
+### Fixed
+
+- An explicitly empty tool result is preserved as an empty string when OpenAI
+  Chat or Responses history is translated to Anthropic Messages, instead of
+  being serialized as `null` (#657).
+
+- Multi-part tool-result text is concatenated exactly, without inserted
+  separators, on Messages→Chat, Messages→Responses and Chat→Responses, so a
+  result split into `alpha` and `beta` arrives as `alphabeta`. The same rule now
+  applies to Bedrock Converse conversion. Ordinary message formatting,
+  mixed-media results and identifiers are unchanged (#672, #678).
+
+- Mixed text and image content inside a tool result is preserved when
+  Messages history is translated to Responses; it previously produced an empty
+  tool output with a `200` response (#679).
+
+### Known limitations
+
+- A Chat Completions caller that combines tools with `reasoning_effort` is
+  affected, not only an Anthropic caller. A Chat-dialect target lets the provider
+  reject it (`400 upstream-rejected`); a Responses target behind the
+  `chat_to_responses` bridge reports `400 unsupported_endpoint_for_model` with
+  `param: model` for a target that does not declare `openai-chat` in
+  `supported_inbound_dialects`; declaring it makes the Chat caller eligible.
+  Avoid tools plus `reasoning_effort` from a Chat caller against a Chat target
+  until #703 lands (#697).
+
+### Release verification
+
+The gate ran on `0ea47c4ae10d4793a4afec56ad509e71634bac72`. This commit differs from it only in the release notes and the gate scripts (`scripts/release_gate.py`, `scripts/release_gate_test.py`, #713 and #715); router code is identical, verified with `git diff --stat 0ea47c4a <tag> -- internal cmd go.mod go.sum`.
+
+### Security
+
+- Example Kubernetes overlays are scanned as rendered manifests rather than as
+  patch fragments: a required CI lane renders every overlay plus a composed
+  Linkerd example and fails on HIGH or CRITICAL findings with a reviewed,
+  reason-bearing ignore list. The example vLLM serving workloads and the
+  example runner image run as non-root with dropped capabilities, a read-only
+  root filesystem and explicit writable mounts (#669).
+
+- Dependency refresh removes the remaining high-severity advisory in the
+  example evaluation lockfile (`basic-ftp`) and moves `glob`, `@hono/node-server`
+  and `minimatch` to patched releases across the example and compatibility
+  projects, including the documentation site through a small callable adapter
+  that keeps its static server working (#682, #640). One advisory with no
+  patched release remains tracked (`deepmerge`, documentation build only).
 
 ## [4.5.0] - 2026-11-04
 

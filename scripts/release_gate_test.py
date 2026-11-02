@@ -15,6 +15,25 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import release_gate  # noqa: E402
 
+FULL = """models:
+  gpt:
+    targets:
+    - provider: openai_chat
+      model: gpt-live
+      dialect: openai-chat
+    - provider: openai_responses
+      model: gpt-live
+      dialect: openai-responses
+  claude:
+    targets:
+    - provider: claude
+      model: claude-live
+      dialect: anthropic
+    - provider: claude_bridge
+      model: claude-live
+      dialect: openai-chat
+"""
+
 PINNED = """models:
   gpt:
     strategy: static
@@ -31,42 +50,21 @@ PINNED = """models:
 """
 
 
-class GptPinTest(unittest.TestCase):
+class LaneCoverageTest(unittest.TestCase):
     def check(self, text):
+        import tempfile
         with tempfile.TemporaryDirectory() as raw:
             path = Path(raw) / "config.yaml"
             path.write_text(text, encoding="utf-8")
-            return release_gate.ensure_gpt_responses_pinned(path)
+            return release_gate.ensure_lanes_servable(path)
 
-    def test_accepts_responses_only_group(self):
-        self.assertEqual(self.check(PINNED), 1)
+    def test_accepts_a_config_with_both_groups(self):
+        self.assertEqual(self.check(FULL), len(release_gate.LANES))
 
-    def test_rejects_chat_target_alongside_responses(self):
-        text = PINNED.replace(
-            "    targets:\n    - provider: openai_responses",
-            "    targets:\n    - provider: openai_chat\n      model: gpt-live\n      dialect: openai-chat\n    - provider: openai_responses",
-        )
+    def test_rejects_a_missing_group(self):
         with self.assertRaises(release_gate.GateError) as caught:
-            self.check(text)
-        self.assertIn("openai_chat:openai-chat", str(caught.exception))
-
-    def test_rejects_chat_only_group(self):
-        text = PINNED.replace("dialect: openai-responses", "dialect: openai-chat")
-        with self.assertRaises(release_gate.GateError) as caught:
-            self.check(text)
-        self.assertIn("must target only", str(caught.exception))
-
-    def test_rejects_missing_group(self):
-        text = PINNED.replace("  gpt:\n", "  other:\n")
-        with self.assertRaises(release_gate.GateError):
-            self.check(text)
-
-    def test_nested_lists_are_not_targets(self):
-        text = PINNED.replace(
-            "      dialect: openai-responses\n",
-            "      dialect: openai-responses\n      tags:\n      - live\n      tool_support:\n        openai_responses:\n        - function\n",
-        )
-        self.assertEqual(self.check(text), 1)
+            self.check(FULL.replace("  claude:\n", "  other:\n"))
+        self.assertIn("claude", str(caught.exception))
 
 
 class HarborStageTest(unittest.TestCase):
