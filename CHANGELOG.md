@@ -18,10 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /v1/content_provenance_checks` explicitly returns an authenticated
   OpenAI-shaped `501 unsupported_endpoint` without upstream dispatch; the
   operation is not implemented (#620).
-
+- Populate `request_usage.endpoint` with bounded surface labels for new usage
+  rows, including Chat, Responses, Messages, counting and other accounted
+  surfaces. Historical empty values remain unchanged; usage schema stays at
+  version 11 (#653).
 - Bypass response-cache reads and writes for requests evaluated against
   PII-enabled model groups while target-bound cache identity is reconciled
   (#670). This may increase upstream calls for those groups.
+
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the
