@@ -251,7 +251,7 @@ def assert_arc_runners() -> None:
         "admin-typecheck.yml": {"admin-typecheck"},
         "agent-tool-compat.yml": {"local-agent-mock"},
         "api-compat-live.yml": {"live-unit"},
-        "ci.yml": {"ci"},
+        "ci.yml": {"ci", "parallel-fixtures"},
         "dco.yml": {"signed-off-commits"},
         "decision-models-smoke.yml": {"decision-models"},
         "docs-qa.yml": {"docs-qa"},
@@ -334,7 +334,7 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "parallel-fixtures", "ci"}, "fanout lane inventory drifted")
     require("push:\n    branches: [main]" in text and "if: github.event_name == 'push'" in lanes["warm"],
             "main-only cache warmer missing")
     require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
@@ -398,14 +398,18 @@ def assert_consolidated_ci() -> None:
                    "anchore/sbom-action@", "anchore/scan-action@", "severity-cutoff: high", "fail-build: true",
                    "actions/upload-artifact@"):
         require(marker in sbom, f"required SBOM lane lost {marker}")
+    parallel = lanes["parallel-fixtures"]
+    require("if: github.event_name != 'push'" in parallel
+            and "go test ./internal/stream -run '^TestParallelThreeStreamTranslations$' -count=1" in parallel,
+            "parallel stream fixtures must run on every PR and merge group")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom, warm]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm, parallel-fixtures]" in aggregate, "required ci aggregator drifted")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "PARALLEL_RESULT")
     for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
-        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT")
+        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "PARALLEL_RESULT")
                          and event != "push" or n == "WARM_RESULT" and event == "push"
                          or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
                          else "skipped") for n in names}
