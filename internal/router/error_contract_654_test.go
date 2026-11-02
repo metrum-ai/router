@@ -12,9 +12,9 @@ import (
 	"testing"
 )
 
-// These controls use local mock targets only. Messages currently uses the
-// Anthropic envelope without the OpenAI code/param fields; after #655 merges
-// its additional fields must be pinned here as well.
+// These controls use local mock targets only. Messages routing capability
+// errors carry the Anthropic envelope with error.code/error.param, while
+// Messages media admission and the defensive empty-group 502 carry neither.
 func TestRoutingBoundaryContract654(t *testing.T) {
 	// Empty groups fail config validation. Mutate only this in-memory fixture to
 	// exercise the defensive HTTP branch, not a deployable configuration.
@@ -38,8 +38,8 @@ func TestRoutingBoundaryContract654(t *testing.T) {
 			var got struct {
 				Type  string `json:"type"`
 				Error struct {
-					Type, Code string
-					Param      any
+					Type, Code, Message string
+					Param               any
 				} `json:"error"`
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
@@ -49,7 +49,9 @@ func TestRoutingBoundaryContract654(t *testing.T) {
 				t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 			}
 			if tc.dialect == "anthropic" {
-				if got.Type != "error" || got.Error.Type != "api_error" {
+				// The defensive empty-group branch is not a capability error: it
+				// keeps the Anthropic api_error envelope without code/param.
+				if got.Type != "error" || got.Error.Type != "api_error" || got.Error.Code != "" {
 					t.Fatalf("bad Messages error: %s", w.Body.String())
 				}
 			} else if got.Error.Code != "no-eligible-target" || got.Error.Param != nil {
@@ -116,8 +118,8 @@ func TestCapabilityErrorContract654(t *testing.T) {
 			var got struct {
 				Type  string `json:"type"`
 				Error struct {
-					Type, Code string
-					Param      any
+					Type, Code, Message string
+					Param               any
 				} `json:"error"`
 			}
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
@@ -126,12 +128,19 @@ func TestCapabilityErrorContract654(t *testing.T) {
 			if w.Code != 400 || hits.Load() != 0 || got.Error.Type != "invalid_request_error" {
 				t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 			}
-			if tc.dialect == "anthropic" {
-				if got.Type != "error" {
-					t.Fatalf("wrong Messages envelope: %s", w.Body.String())
+			switch {
+			case tc.dialect != "anthropic":
+				if got.Error.Code != tc.code || got.Error.Param != tc.param {
+					t.Fatalf("wrong code/param: %s", w.Body.String())
 				}
-			} else if got.Error.Code != tc.code || got.Error.Param != tc.param {
-				t.Fatalf("wrong code/param: %s", w.Body.String())
+			case tc.code == "unsupported_modality":
+				// Messages media admission happens before routing, so it carries
+				// no code/param.
+				if got.Type != "error" || got.Error.Code != "" || got.Error.Param != nil || got.Error.Message != tc.code {
+					t.Fatalf("wrong Messages admission error: %s", w.Body.String())
+				}
+			case got.Type != "error" || got.Error.Code != tc.code || got.Error.Param != tc.param:
+				t.Fatalf("wrong Messages code/param: %s", w.Body.String())
 			}
 		})
 	}

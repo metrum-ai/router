@@ -255,6 +255,26 @@ For same-dialect OpenAI Chat, OpenAI Responses, and Anthropic Messages targets, 
 
 If a request includes tools, structured-output fields, images, or an explicit max-token cap, the router filters the model group's target list before policy selection. Targets that do not satisfy the request shape are skipped. If no compatible target remains for Chat, Responses, or Messages, the router normally returns a 400 compatibility error before sending an upstream request. Media admission may reject unsupported input earlier. See [Error Reference](errors) for codes and exceptions.
 
+### Routing and compatibility error contracts
+
+The following table describes Chat, Responses, and Messages request failures raised before an upstream attempt. A caller must not retry an unchanged request expecting a transient recovery; change the request or ask the operator to update the configured group.
+
+| Status | `code` | `param` | When | Retry unchanged? |
+|---|---|---|---|---|
+| 400 | `unsupported_capability` | `tools`, `tool_choice`, `response_format`, `text.format`, `output_config.format`, `reasoning`, `logprobs`, `modalities`, the caller's output-cap field, `stream_options`, `parallel_tool_calls`, `include`, `truncation`, or `store` | Configured targets cannot serve a shared requested capability. | No; adjust the request or the target configuration. |
+| 400 | `unsupported_capability` | `messages`, `input`, or `null` | A rejected input or tool history cannot be translated, or the rejected targets share no field-specific cause. The router does not guess a field for mixed causes, target-only constraints, or generic byte limits. | No. |
+| 400 | `context_length_exceeded` | `messages` (Chat/Messages) or `input` (Responses) | Every rejected target shares a context or input-token limit. | No; reduce the context or change target. |
+| 400 | `unsupported_endpoint_for_model` | `model` | Every rejected target lacks the requested API dialect or required bridge validation. | No; choose an allowed model group. |
+| 400 | `unsupported_function_call_output` | `input` | A translated function output is not representable. | No; change the output shape. |
+| 400 | `unsupported_developer_content` or `developer_pii_unsupported` | `input` | Responses developer history cannot be translated safely, or the route's PII policy prevents that translation. | No; change the request or the configuration. |
+| 400 | `unsupported_modality` (as the error message on Messages) | absent on Messages; `messages` (Chat) or `input` (Responses) | Media admission rejects unsupported input before routing. | No; change the input. |
+| 400 | `continuation_unsupported` | `previous_response_id` | A Responses continuation cannot be preserved by the available route. | No; use a compatible stateful route or change the request. |
+| 502 | `no-eligible-target` | `null` for OpenAI-shaped errors; absent on Messages | Defensive empty-group case, an unsupported caller dialect, or contract filtering after ordinary eligibility. Normal configuration validation rejects empty groups. | Not unless the operator confirms a configuration change. |
+
+OpenAI-shaped errors use `error.type: invalid_request_error` for these codes; the 502 case uses its usual server-error envelope. Messages uses the Anthropic envelope: routing capability errors carry `error.type: invalid_request_error` with `error.code` and `error.param`, where `param` is `null` when the rejected targets share no single field-specific cause. Messages media admission returns `400` with `error.message: "unsupported_modality"` and no `code` or `param`, and the defensive empty-group `502` uses `error.type: api_error` without `code` or `param`.
+
+This table covers routing and media-admission errors, not every upstream error. Some earlier validation paths have different codes or Anthropic-shaped bodies; inspect the actual response and quote the request ID when escalating.
+
 If a request reaches an upstream provider and that provider rejects the translated shape, the terminal response is usually `502 upstream-failed` with safe details such as `error.details.error_class = upstream_bad_request`, `error.details.upstream_status`, `X-Router-Error-Class`, `X-Upstream-Status`, and a request ID. Treat that as provider/model/dialect/request-shape evidence, not a generic retry signal. See [Error Reference](./errors) and [Request Troubleshooting](../troubleshooting/requests) for the downstream contract and request-ID workflow.
 
 ## Mixed OpenAI Endpoint Compatibility

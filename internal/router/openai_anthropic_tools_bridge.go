@@ -107,6 +107,11 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		if id == "" || content == nil {
 			return nil, fmt.Errorf("tool result missing id or content")
 		}
+		// Preserve an explicit empty string instead of serializing a nil slice
+		// as JSON null. Chat array results retain their existing representation.
+		if text, ok := content.(string); ok && text == "" {
+			return map[string]any{"type": "tool_result", "tool_use_id": id, "content": ""}, nil
+		}
 		blocks, err := contentBlocks(content)
 		if err != nil {
 			return nil, err
