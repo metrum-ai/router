@@ -69,5 +69,27 @@ class GptPinTest(unittest.TestCase):
         self.assertEqual(self.check(text), 1)
 
 
+class HarborPinTest(unittest.TestCase):
+    def test_shim_pins_the_validated_cli(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as raw:
+            shim, version = release_gate.harbor_shim(Path(raw))
+            text = shim.read_text(encoding="utf-8")
+            self.assertEqual(version, "0.24.0")
+            self.assertIn("uvx --from harbor==0.24.0 harbor", text)
+            self.assertTrue(shim.stat().st_mode & 0o111)
+
+    def test_rejects_an_unpinned_version(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as raw:
+            os.environ["RELEASE_GATE_HARBOR_VERSION"] = "latest"
+            try:
+                with self.assertRaises(release_gate.GateError):
+                    release_gate.harbor_shim(Path(raw))
+            finally:
+                del os.environ["RELEASE_GATE_HARBOR_VERSION"]
+
+
 if __name__ == "__main__":
     unittest.main()
