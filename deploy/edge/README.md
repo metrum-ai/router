@@ -53,6 +53,10 @@ multi-arch `vllm/vllm-openai` pin and the NVIDIA device reservation. The pins in
 `compose.amd.yaml` and `compose.nvidia.yaml` are the same ones the reference
 configurations pin, and the install test fails if they drift.
 
+The AMD overlay sets `entrypoint: ["vllm", "serve"]` explicitly: the ROCm image
+ships vLLM, but its default command is a wheel-pin helper rather than the server,
+and AMD's published run form is `vllm serve ...`.
+
 ## Sizing
 
 Method (the same as `deploy/reference/amd-strix-halo-edge/SIZING.md`):
@@ -98,7 +102,7 @@ for each; a skip is not a pass, and the script exits non-zero if anything failed
 | Step | What it shows |
 |---|---|
 | 1. local-first | `local-chat` and `local-tiny` answer from the box, with the upstream model named |
-| 2. escalation | `escalate` leaves the box through the operator's endpoint; without a usable key it fails closed with `503 upstream-access-denied` (an upstream `401` reported by the router) instead of quietly answering locally |
+| 2. escalation | `escalate` leaves the box through the operator's endpoint; without a usable key it fails closed with an upstream error (`upstream-access-denied` for a rejected key, `upstream-rejected` when no key is sent) instead of quietly answering locally |
 | 3. budget hit | the `demo-budget` caller is refused with `429 quota-exhausted` once its day request budget is spent |
 | 4. spend report | `routerctl usage summary` prints tokens and cost from the router's own usage rows, with the escalation spend separable from the on-box groups |
 
@@ -148,7 +152,7 @@ an air-gapped install is the same command with the inputs pre-staged:
 | `migration action verify-serving failed` | The bound data job is still pending; the installer resumes it at checkpoint 0 before verifying. Re-run `install.sh` to repeat the sequence, and read `state/` before deleting anything. |
 | `401` from the router with the demo token | Tokens are generated at install time and hashed in `config/config.yaml`. If the config was edited or restored from a different data directory, re-run `install.sh --force` (rotates both tokens). |
 | Admin UI returns 401 | Basic auth user is `admin`; the password is the one in `secrets/admin-password` or the one you passed with `--admin-password`. |
-| Escalation returns `503 upstream-access-denied` | Put the key in `secrets/env` under the variable named by `EDGE_ESCALATION_KEY_ENV` (default `OPENAI_API_KEY`) and restart the router. Failing closed is intended. |
+| Escalation returns an upstream error (`upstream-access-denied`/`upstream-rejected`) | Put the key in `secrets/env` under the variable named by `EDGE_ESCALATION_KEY_ENV` (default `OPENAI_API_KEY`) and restart the router. Failing closed is intended. |
 | `docker: permission denied` | Run with `sudo`, or add the user to the `docker` group and start a new session. |
 | Port already in use | `--port` changes the router port; `EDGE_TINY_VLLM_PORT`, `EDGE_PRIMARY_VLLM_PORT` change the model-server ports. |
 

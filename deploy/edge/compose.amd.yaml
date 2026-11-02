@@ -16,6 +16,9 @@ services:
       - seccomp:unconfined
     group_add: [video, render]
     devices: ["/dev/kfd", "/dev/dri"]
+    # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
+    # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
+    entrypoint: ["vllm", "serve"]
     environment:
       HIP_VISIBLE_DEVICES: "0"
       ROCR_VISIBLE_DEVICES: "0"
@@ -27,6 +30,9 @@ services:
       - seccomp:unconfined
     group_add: [video, render]
     devices: ["/dev/kfd", "/dev/dri"]
+    # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
+    # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
+    entrypoint: ["vllm", "serve"]
     environment:
       HIP_VISIBLE_DEVICES: "0"
       ROCR_VISIBLE_DEVICES: "0"

@@ -213,6 +213,16 @@ class EdgeBundleInstallTest(unittest.TestCase):
         self.assertNotIn(":latest", overlay)
         install_env = (docker_dir / "install.env").read_text(encoding="utf-8")
         self.assertIn("EDGE_MODE=docker", install_env)
+        amd_dir = self.tmp / "docker-render-amd"
+        amd = run(["bash", str(INSTALL), "--mode", "docker", "--dry-run",
+                   "--router-image", "metrum-ai-router:4.7.0-linux-amd64",
+                   "--routerctl", str(self.bin_dir / "metrum-ai-routerctl"),
+                   "--accelerator", "amd", "--data-dir", str(amd_dir)])
+        self.assertEqual(amd.returncode, 0, amd.stdout + amd.stderr)
+        amd_overlay = (amd_dir / "compose" / "compose.amd.yaml").read_text(encoding="utf-8")
+        self.assertIn("rocm/vllm:", amd_overlay)
+        # The ROCm image's default CMD is a wheel-pin helper, not the server.
+        self.assertIn('entrypoint: ["vllm", "serve"]', amd_overlay)
         validate = run([str(self.bin_dir / "metrum-ai-routerctl"), "config", "validate", "--config", str(config)],
                        env=self.secret_env_of(docker_dir))
         self.assertEqual(validate.returncode, 0, validate.stderr)
