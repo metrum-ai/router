@@ -1419,22 +1419,30 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		group.Targets = native
 		req.NoCache = true
 	}
-	// Decide this Responses→Anthropic limitation on the original history,
-	// before PII processing or shadow replay. Other eligible dialects retain
-	// their existing request semantics and are never forced through Anthropic.
+	// Decide Responses→Anthropic limitations on the original history, before
+	// filtering or shadow replay. Until target-bound instruction filtering is
+	// implemented, system histories on PII-enabled groups are also excluded:
+	// independently safe text parts can form a match after concatenation.
 	developerHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && responsesHasDeveloper(req)
+	piiSystemHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && group.PIIFilter.Enabled && responsesHasInstructionRole(req, "system")
+	piiExclusionCode := "developer_pii_unsupported"
+	if !developerHistory {
+		piiExclusionCode = "system_pii_unsupported"
+	}
 	piiAnthropicExcluded := false
-	if developerHistory {
+	if developerHistory || piiSystemHistory {
 		var others []Target
-		hasAnthropic := false
+		hasGuardedTarget := false
 		for _, target := range group.Targets {
-			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
-				hasAnthropic = true
+			provider := s.cfg.Provider[target.Provider]
+			guarded := targetDialect(provider, target) == "anthropic" || (group.PIIFilter.Enabled && isBedrock(provider))
+			if guarded {
+				hasGuardedTarget = true
 			} else {
 				others = append(others, target)
 			}
 		}
-		if hasAnthropic {
+		if hasGuardedTarget {
 			// Pre-PII shape decisions use the real request bytes, but never use
 			// the unredacted token estimate to rule out post-PII alternatives.
 			earlyRC := *rc
@@ -1455,7 +1463,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				case responsesDeveloperOrderingInvalid(req):
 					code = "unsupported_capability"
 				case group.PIIFilter.Enabled && len(others) == 0:
-					code = "developer_pii_unsupported"
+					code = piiExclusionCode
 				}
 				if code != "" {
 					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: code, MismatchParam: "input"})
@@ -1463,7 +1471,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				}
 			}
 			if group.PIIFilter.Enabled {
-				// Never select or fall back to Anthropic on a PII-enabled group.
+				// Never select or fall back to a guarded target for these histories on a PII-enabled group.
 				piiAnthropicExcluded = true
 				group.Targets = others
 			}
@@ -1541,7 +1549,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				estimate := requestTokenEstimateFromIR(req, dialect, len(body))
 				filteredRC.rec.TokenEstimate = &estimate
 				if len(s.targetsForRequest(&filteredRC, group.Targets, req, dialect)) == 0 {
-					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: "developer_pii_unsupported", MismatchParam: "input"})
+					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: piiExclusionCode, MismatchParam: "input"})
 					return
 				}
 			}
@@ -1593,7 +1601,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if errors.As(err, &eligibilityErr) {
 			if piiAnthropicExcluded && len(s.targetsForRequest(rc, group.Targets, req, dialect)) == 0 {
 				eligibilityErr.CapabilityMismatch = true
-				eligibilityErr.MismatchCode = "developer_pii_unsupported"
+				eligibilityErr.MismatchCode = piiExclusionCode
 				eligibilityErr.MismatchParam = "input"
 			}
 			s.writeRoutingEligibilityError(w, rc, eligibilityErr)
@@ -4513,6 +4521,9 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 	}
 	if err.CapabilityMismatch && err.MismatchCode == "developer_pii_unsupported" {
 		message = "developer-role history is not supported with PII filtering on this route"
+	}
+	if err.CapabilityMismatch && err.MismatchCode == "system_pii_unsupported" {
+		message = "system-role history is not supported with PII filtering on this route"
 	}
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
