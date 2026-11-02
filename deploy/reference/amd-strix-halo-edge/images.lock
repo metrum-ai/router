@@ -35,8 +35,8 @@ models:
   - id: Qwen/Qwen3-30B-A3B-Instruct-2507
     revision: 0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe
     license: Apache-2.0
-    slot: local-primary
-    served_name: local-primary
+    slot: local-chat
+    served_name: local-chat
     note: >-
       Primary local model behind the local-chat group. Sparse MoE (30.5B total,
       3.3B active) in BF16. Swap to Qwen/Qwen3-Coder-30B-A3B-Instruct

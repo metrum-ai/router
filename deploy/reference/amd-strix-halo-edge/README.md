@@ -38,14 +38,14 @@ Limits.
 | Slot | Model | Revision |
 |---|---|---|
 | `local-tiny` | `Qwen/Qwen3-1.7B` (Apache-2.0) | `70d244cc86ccca08cf5af4e1e306ecf908b1ad5e` |
-| `local-chat` → slot `local-primary` | `Qwen/Qwen3-30B-A3B-Instruct-2507` (Apache-2.0) | `0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe` |
+| slot `local-chat` | `Qwen/Qwen3-30B-A3B-Instruct-2507` (Apache-2.0) | `0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe` |
 
 ## Model groups
 
 | Group | Strategy | Target | Notes |
 |---|---|---|---|
 | `local-tiny` | static | `local-tiny` on `vllm-tiny` | smoke tests, cheap classification |
-| `local-chat` | static | `local-primary` on `vllm-primary` | default group, 30B-class sparse MoE |
+| `local-chat` | static | `local-chat` on `vllm-primary` | default group, 30B-class sparse MoE |
 | `escalate` | static | `frontier-chat` on `frontier` | OpenAI-compatible datacenter or frontier API, operator key |
 
 The primary slot is named for its role, so swapping the weights is one compose

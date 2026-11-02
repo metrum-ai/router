@@ -49,12 +49,12 @@ reports the number it reached, including zero if that is the answer.
 | Slot | Model | Weights | Layers | KV heads | Head dim | KV bytes/token |
 |---|---|---|---|---|---|---|
 | `local-tiny` | Qwen3-1.7B (BF16) | 3.4 GB | 28 | 8 | 128 | 112 KiB |
-| `local-primary` | Qwen3-30B-A3B-Instruct-2507 (BF16) | 61 GB | 48 | 4 | 128 | 96 KiB |
+| `local-chat` | Qwen3-30B-A3B-Instruct-2507 (BF16) | 61 GB | 48 | 4 | 128 | 96 KiB |
 
 | Slot | `gpu_memory_utilization` | Budget | − weights | − 2 GB overhead | KV pool | Context | Requests at that context |
 |---|---|---|---|---|---|---|---|
 | `local-tiny` | 0.05 | 6.4 GB | 3.0 GB | 1.0 GB | 1.0 GB | 8 192 | 1 |
-| `local-primary` | 0.80 | 102.4 GB | 41.4 GB | 39.4 GB | 39.4 GB | 8 192 | 52 |
+| `local-chat` | 0.80 | 102.4 GB | 41.4 GB | 39.4 GB | 39.4 GB | 8 192 | 52 |
 
 0.85 of the unified pool is allocated to the two slots; the remaining ~19 GB is
 left to the operating system and the router.

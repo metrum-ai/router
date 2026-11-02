@@ -70,7 +70,7 @@ services:
       - --revision
       - ${PRIMARY_MODEL_REVISION:-0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe}
       - --served-model-name
-      - local-primary
+      - local-chat
       - --max-model-len
       - ${MAX_MODEL_LEN:-8192}
       - --gpu-memory-utilization

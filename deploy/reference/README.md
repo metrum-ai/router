@@ -105,7 +105,19 @@ deploy/reference/harness/concurrency_sweep.py <vendor>-<tier>  # sizing method f
 Both accept `--out`/`--out-dir` so a run writes into the tier's `results/`;
 the model servers also publish on loopback, which is how the sweep measures the
 direct lane. Nothing in a tier listens on a non-loopback address except the
-router port. A run is only evidence
+router port.
+
+One command collects a whole run, including `ENV.md` with the host, driver,
+image digests and model revisions:
+
+```sh
+RUN_COMMIT=$(git rev-parse HEAD) ROUTER_TOKEN=... \
+  python3 deploy/reference/harness/run_tier.py <vendor>-<tier>
+```
+
+It writes `results/<date>-<commit>/` with `ENV.md`, `functional.json`,
+`sweep.json` and the sweep's raw driver output. A failed suite or sweep keeps the
+partial evidence and exits non-zero: the directory is then a record, not a pass. A run is only evidence
 when it names the commit it ran on and the hardware it ran on; the tier README
 then replaces `pending` with the measured numbers, the actual cost, and the
 limits.
