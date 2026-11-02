@@ -459,7 +459,11 @@ def stage_harbor(outdir, host=None, sha=""):
     with log_path.open("w") as logfile:
         def run(args, **kwargs):
             return subprocess.run(args, stdout=logfile, stderr=subprocess.STDOUT, text=True, **kwargs)
-        run(ssh + ["mkdir -p /root/harbor-e2e /run/harbor-e2e"])
+        # A previous attempt can leave the matrix router and relay running, which
+        # would hold the ports and lock the binary the next attempt uploads.
+        run(ssh + ["pkill -f '/root/harbor-e2e/router' >/dev/null 2>&1 || true; "
+                   "pkill -f 'run_matrix.py' >/dev/null 2>&1 || true; sleep 1; "
+                   "rm -f /root/harbor-e2e/router; mkdir -p /root/harbor-e2e /run/harbor-e2e"])
         for name in HARBOR_FILES:
             run(scp + [str(HARBOR_BUNDLE / name), f"{host}:/root/harbor-e2e/{name}"])
         run(ssh + [f"HARBOR_VERSION={version} bash /root/harbor-e2e/setup_remote.sh"])
