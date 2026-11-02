@@ -448,8 +448,13 @@ def main():
 
     if "c" in stages:
         log("stage C: live SDK compatibility suites")
-        if config is None:
-            config = prepare_config(args.config, outdir, free_port(), outdir / "usage-c.sqlite")
+        # The config guard refuses a usage database or quota state that already
+        # exists, so stage C always gets its own fresh paths.
+        stage_c = outdir / "stage-c"
+        stage_c.mkdir(parents=True, exist_ok=True)
+        for stale in ("usage.sqlite", "router-state.json", "requests.jsonl"):
+            (stage_c / stale).unlink(missing_ok=True)
+        config = prepare_config(args.config, stage_c, free_port(), stage_c / "usage.sqlite")
         rows += stage_compat_live(outdir, config)
         spent += sum(row.get("cost_usd") or 0 for row in rows if row["stage"] == "C")
 
