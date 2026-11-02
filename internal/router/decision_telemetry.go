@@ -154,50 +154,10 @@ func (s *Service) recordEligibilityTelemetry(rc *requestContext, groupName strin
 }
 
 func (s *Service) requestFilterReasons(target Target, req *IRRequest, callerDialect, outDialect string, estimate requestTokenEstimateLogRecord) []string {
-	requiredModalities := requestInputModalities(req)
-	requiresStructuredOutput := requestHasStructuredOutput(req)
-	var reasons []string
-	if target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id") {
-		reasons = append(reasons, "continuation_unsupported")
-	}
+	reasons := s.targetEligibilityReasons(target, req, callerDialect, outDialect, estimate)
 	bridge := isChatToResponsesBridge(callerDialect, outDialect, target) || isResponsesToChatBridge(callerDialect, outDialect, target)
-	bridgeDialectPair := isChatToResponsesDialectPair(callerDialect, outDialect) ||
-		(normalizeDialect(callerDialect) == "openai-responses" && normalizeDialect(outDialect) == "openai-chat")
-	anthropicDialectReason := anthropicInboundDialectFilterReason(target, callerDialect, outDialect)
-	if anthropicDialectReason != "" {
-		reasons = append(reasons, anthropicDialectReason)
-	}
-	if len(req.Tools) == 0 {
-		if target.ToolOnly {
-			reasons = append(reasons, "tool-only-target")
-		}
-	} else {
-		if !toolPassthrough(callerDialect, outDialect, req) && !bridge {
-			reasons = append(reasons, "dialect-tool-passthrough")
-		}
-		if !targetSupportsToolsForCallerDialect(target, callerDialect, outDialect) {
-			reasons = append(reasons, "tool-support")
-		}
-	}
-	if len(req.Tools) == 0 && callerDialect != outDialect && !bridge && !bridgeDialectPair && anthropicDialectReason == "" {
-		reasons = append(reasons, "dialect-unsupported")
-	}
-	for _, modality := range requiredModalities {
-		if !targetSupportsInputModalities(target, []string{modality}) {
-			reasons = append(reasons, "input-modality-"+safeReasonToken(modality))
-		}
-	}
-	if !targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) {
-		reasons = append(reasons, "structured-output-support")
-	}
-	if reason := reasoningFilterReason(target, outDialect, req); reason != "" {
-		reasons = append(reasons, reason)
-	}
-	if !targetHonorsExplicitMaxTokens(target, req) {
-		reasons = append(reasons, "max-tokens-honored")
-	}
-	if reason := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate).FilterReason; reason != "" {
-		reasons = append(reasons, reason)
+	if len(req.Tools) > 0 && !toolPassthrough(callerDialect, outDialect, req) && !bridge {
+		reasons = append(reasons, "dialect-tool-passthrough")
 	}
 	return reasons
 }
