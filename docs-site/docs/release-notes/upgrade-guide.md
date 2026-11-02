@@ -20,6 +20,97 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
 
+## Compatibility and operations (v4.6.0)
+
+### No usage-database migration
+
+v4.6.0 adds no usage-schema migration; the schema stays at version 11. The
+Required Migration Gate does not apply to this upgrade, and rolling back to
+4.5.0 needs no database restore for schema reasons. Back up the usage database
+as usual before any package upgrade.
+
+### Reasoning provenance is opt-in
+
+`server.reasoning_provenance` defaults to `mode: off`, where the router changes
+no bytes and reasoning history passes through exactly as in 4.5.0. Enabling
+`observe` or `enforce` requires a secret in the environment variable named by
+`key_env`, at least 32 bytes, plus a log-safe `key_id`; a configuration that
+sets `key_env`, `key_id` or `ttl` while the mode is `off` is rejected so a
+dormant block cannot look active. In `enforce`, history minted by another
+provider account, model or group is dropped rather than replayed, which can cost
+one continuation at cutover. Rotation, diagnostics and the full mismatch table
+are documented in [Reasoning provenance](/docs/operations/reasoning-provenance).
+
+### Embeddings groups
+
+`POST /v1/embeddings` is served only for model groups configured as embeddings
+groups. Each target declares `embedding_space` and `embedding_dimensions`
+(inherited from `model_ref` like other target fields);
+`default_embedding_dimensions` is required when a group serves more than one
+dimension set. Load-time validation rejects a group that mixes embedding and
+non-embedding targets, targets that disagree on space or dimension sets,
+non-text inputs, and the chat-shaped strategies (`semantic`, `dynamic_score`,
+`external`, `script`, `intelligent`). A request whose `dimensions` no target
+serves, or that omits `dimensions` where no default exists, fails closed. Adding
+embeddings to an existing chat group is not supported; create a separate group.
+
+### Error bodies for capability failures
+
+`400 unsupported_capability` (and the Anthropic-shaped equivalents) now carry
+the recorded eligibility reason and a `param` that is set only when every
+rejected candidate shares that field; otherwise `param` is `null`. Anthropic
+error envelopes gain `error.code` and `error.param`. This changes the body of an
+error that previously used a generic message and a bare `param`: review any
+caller, dashboard or test that matches the old text, and match `code` and
+`param` instead.
+
+### PII-enabled groups
+
+Three changes apply to requests evaluated against a PII-enabled model group.
+
+- Response-cache reads and writes are bypassed while target-bound cache identity
+  is reconciled, and otherwise-cacheable requests report `cache-pii-filter`.
+  Upstream call volume and provider spend can rise for those groups. The guard
+  uses the policy each request captured; it is not an instantaneous activation
+  barrier, so pause and drain requests and confirm every replica loaded the
+  enabled policy before a strict cutover. Existing cache entries are not purged
+  and can become eligible again if filtering is disabled, until expiry or cache
+  reset.
+- Candidate shadow replay is skipped, with the policy rechecked before dispatch.
+  A replay already past that check can still finish after an in-flight change,
+  so stop and drain shadow runs before a strict cutover.
+- Responses system-message histories fail closed with `system_pii_unsupported`
+  when the only eligible translation target is Anthropic or Bedrock Messages,
+  which can make such a request return `400` where it previously dispatched.
+
+These guards are safety mitigations, not a target-bound filtering identity; the
+broader reconciliation remains tracked.
+
+### Anthropic Messages context management
+
+A null `context_management` is treated as absent and is not forwarded upstream.
+Non-null values still require both the caller's matching beta and the target
+allowlist; other beta-gated fields are unchanged.
+
+### Usage rows and unsupported surfaces
+
+New usage rows carry a bounded endpoint label; the schema-11 column is unchanged
+and historical rows are not backfilled, so usage reports keep a mix of populated
+and empty labels until old rows age out. `POST /v1/content_provenance_checks`
+answers an authenticated `501 unsupported_endpoint` with no upstream dispatch;
+automation that previously treated that surface as generically unsupported should
+match the `501` code.
+
+### Example infrastructure
+
+The example Kubernetes overlays are validated as rendered manifests in CI with a
+reviewed ignore list, and the example vLLM serving workloads and example runner
+image now run as non-root with dropped capabilities, a read-only root filesystem
+and explicit writable cache and temporary mounts. The example runner also
+expects to start as its non-root user. Re-validate device access, model startup
+and runner registration in your own environment before adopting those examples;
+the offline checks in CI do not exercise a GPU or a runner image.
+
 ## Compatibility and operations (v4.4.0)
 
 ### Authorization matching and tenant RBAC
@@ -103,12 +194,14 @@ are immutable through the generator. Recomputing finalized history requires a
 separately reviewed maintenance/restore workflow, not an automatic backfill.
 
 Usage migration `2026103001` (schema v11, dependent on v10, online) adds
-`request_usage.endpoint`, which records the surface each request used. Existing
-rows cannot be classified from stored metadata, so they keep an empty value and
-new rows record the endpoint. Like the earlier expansions it is
-`restore-required`: package rollback never runs a reverse migration, so
-downgrading to a package that predates schema v11 requires restoring a
-pre-upgrade database backup.
+`request_usage.endpoint`. In v4.5, only Responses input-token and compact
+requests populate this column; other rows may be empty. Starting with v4.6,
+new request-usage rows receive bounded surface labels (including Chat,
+Responses and Messages); historical rows remain unchanged and are not
+backfilled. No new migration is needed for these values. Like the earlier
+expansions schema v11 is `restore-required`: package rollback never runs a
+reverse migration, so downgrading to a package that predates schema v11
+requires restoring a pre-upgrade database backup.
 
 Historical provenance remains empty/unknown. New estimated rollup counters
 start at zero, not a reconstruction of historical estimates. Historical nullable

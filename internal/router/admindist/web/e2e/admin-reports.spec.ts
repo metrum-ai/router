@@ -24,6 +24,55 @@ test.beforeEach(async ({ page }) => {
   await installAdminApiMocks(page, apiRequests);
 });
 
+test("CFO navigation hides stale key reports and exports only CFO Markdown", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/usage-by-key?*", (route) => route.fulfill({ json: { rows: [{ key: "legacy-secret-key", requests: 1 }], charts: [chart("legacy-secret-key")], summary: {} } }));
+  await page.route("**/api/cfo?*", async (route) => {
+    await gate;
+    await route.fulfill({ json: { byTeam: [], summary: {}, budgets: { available: false, rows: [] } } });
+  });
+  await page.goto("/?tab=usage-by-key");
+  await expect(page.getByText("legacy-secret-key", { exact: true })).toBeVisible();
+  await expect(page.getByText("legacy-secret-key requests", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "CFO report", exact: true }).first().click();
+  await expect(page.getByText("legacy-secret-key", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("legacy-secret-key requests", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Markdown full report for current filters" })).toHaveAttribute("href", /^cfo\/export\.md\?/);
+  release();
+  await expect(page.getByText("Live token budgets (not historical USD budgets)")).toBeVisible();
+  await page.route("**/admin/reports/custom/cfo/export.md?*", (route) => route.fulfill({ contentType: "text/plain", body: "CFO export" }));
+  await page.evaluate(() => history.replaceState(null, "", "/admin/reports/custom/?tab=cfo"));
+  await page.getByRole("link", { name: "Markdown full report for current filters" }).click();
+  await expect(page).toHaveURL(/\/admin\/reports\/custom\/cfo\/export\.md\?/);
+  await expect(page.getByText("CFO export")).toBeVisible();
+});
+
+test("CFO ignores a late prior key response", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  let release!: () => void;
+  let completed!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const settled = new Promise<void>((resolve) => { completed = resolve; });
+  await page.route("**/api/usage-by-key?*", async (route) => {
+    await gate;
+    await route.fulfill({ json: { rows: [{ key: "late-legacy-secret", requests: 1 }], charts: [chart("late-legacy-secret")], summary: {} } });
+    completed();
+  });
+  await page.route("**/api/cfo?*", (route) => route.fulfill({ json: { byTeam: [], summary: {}, budgets: { available: false, rows: [] } } }));
+  const request = page.waitForRequest("**/api/usage-by-key?*");
+  await page.goto("/?tab=usage-by-key");
+  await request;
+  await page.getByRole("button", { name: "CFO report", exact: true }).first().click();
+  await expect(page.getByText("Live token budgets (not historical USD budgets)")).toBeVisible();
+  release();
+  await settled;
+  await expect(page.getByText("late-legacy-secret", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("late-legacy-secret requests", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Live token budgets (not historical USD budgets)")).toBeVisible();
+});
+
 test("overview distinguishes estimated usage and preserves the source filter", async ({ page }) => {
   await page.route("**/api/summary*", (route) => route.fulfill({ json: {
     summary: { requests: 4, totalTokens: 200, estimatedTokenShare: 25, estimatedInputTokens: 10, estimatedOutputTokens: 40 },

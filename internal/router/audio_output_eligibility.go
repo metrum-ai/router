@@ -3,7 +3,7 @@
 
 package router
 
-func (s *Service) audioCapabilityMismatch(rc *requestContext, targets []Target, req *IRRequest, dialect string) (string, string) {
+func (s *Service) audioCapabilityMismatch(rc *requestContext, targets []Target, rejectedReasons [][]string, req *IRRequest, dialect string) (string, string) {
 	// Diagnose audio only when removing that output requirement makes a
 	// non-audio target eligible. Otherwise report the unrelated capability or
 	// endpoint failure rather than blaming an audio-capable target.
@@ -31,5 +31,5 @@ func (s *Service) audioCapabilityMismatch(rc *requestContext, targets []Target, 
 			}
 		}
 	}
-	return s.capabilityMismatch(rc, targets, req, dialect)
+	return commonRoutingCause(rejectedReasons, req, dialect)
 }

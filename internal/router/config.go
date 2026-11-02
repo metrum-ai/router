@@ -91,6 +91,19 @@ type ServerConfig struct {
 	// default, must be scoped to experiment callers/groups/targets, and never
 	// change traffic that does not match a scope.
 	ExperimentProfiles map[string]ExperimentProfileConfig `yaml:"experiment_profiles" json:"experimentProfiles,omitempty"`
+	// ReasoningProvenance binds opaque provider reasoning history to the
+	// provider account, model and dialect that minted it (#622).
+	ReasoningProvenance ReasoningProvenanceConfig `yaml:"reasoning_provenance" json:"reasoningProvenance,omitempty"`
+}
+
+// ReasoningProvenanceConfig controls opaque reasoning provenance binding.
+// Mode is off by default, so no client-visible bytes change unless an operator
+// enables observe or enforce.
+type ReasoningProvenanceConfig struct {
+	Mode   string `yaml:"mode" json:"mode"`
+	KeyEnv string `yaml:"key_env" json:"keyEnv,omitempty"`
+	KeyID  string `yaml:"key_id" json:"keyId,omitempty"`
+	TTL    string `yaml:"ttl" json:"ttl,omitempty"`
 }
 
 type OpenAICompatibilityConfig struct {
@@ -136,6 +149,7 @@ type AdminReportsConfig struct {
 	MaxRows        int                         `yaml:"max_rows" json:"max_rows"`
 	ExportMarkdown bool                        `yaml:"export_markdown" json:"export_markdown"`
 	Baselines      []AdminReportBaselineConfig `yaml:"baselines" json:"baselines"`
+	CFOTeams       map[string]string           `yaml:"cfo_teams" json:"cfo_teams,omitempty"`
 	Security       AdminSecurityReportsConfig  `yaml:"security" json:"security"`
 }
 
@@ -349,6 +363,9 @@ type ProviderModel struct {
 	Reasoning                          ReasoningSupport      `yaml:"reasoning" json:"reasoning,omitempty"`
 	InputModalities                    []string              `yaml:"input_modalities" json:"inputModalities,omitempty"`
 	OutputModalities                   []string              `yaml:"output_modalities" json:"outputModalities,omitempty"`
+	EmbeddingSpace                     string                `yaml:"embedding_space" json:"embeddingSpace,omitempty"`
+	EmbeddingDimensions                []int                 `yaml:"embedding_dimensions" json:"embeddingDimensions,omitempty"`
+	DefaultEmbeddingDimensions         int                   `yaml:"default_embedding_dimensions" json:"defaultEmbeddingDimensions,omitempty"`
 	HonorsMaxTokens                    *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
 	ForceStoreFalse                    bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
 	OutputTokenField                   string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
@@ -717,25 +734,35 @@ type Target struct {
 	InputPricePerMillionUSD      float64        `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
 	OutputPricePerMillionUSD     float64        `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
 	// CachedInputPricePerMillionUSD is nil when unknown/inherit; a non-nil zero means known free cache reads.
-	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
-	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
-	ImageInputPricePerImageUSD         float64               `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
-	PricingSource                      string                `yaml:"pricing_source" json:"pricingSource,omitempty"`
-	PricingUpdatedAt                   string                `yaml:"pricing_updated_at" json:"pricingUpdatedAt,omitempty"`
-	PricingNotes                       string                `yaml:"pricing_notes" json:"pricingNotes,omitempty"`
-	ToolSupport                        ToolSupport           `yaml:"tool_support" json:"toolSupport,omitempty"`
-	Reasoning                          ReasoningSupport      `yaml:"reasoning" json:"reasoning,omitempty"`
-	InputModalities                    []string              `yaml:"input_modalities" json:"inputModalities,omitempty"`
-	OutputModalities                   []string              `yaml:"output_modalities" json:"outputModalities,omitempty"`
-	HonorsMaxTokens                    *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
-	ForceStoreFalse                    bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
-	OutputTokenField                   string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
-	ActivationEvidence                 ActivationEvidence    `yaml:"activation_evidence" json:"activationEvidence,omitempty"`
-	Validation                         *TargetValidation     `yaml:"validation" json:"validation,omitempty"`
-	TrafficShape                       TrafficShapeConfig    `yaml:"traffic_shape" json:"trafficShape,omitempty"`
-	RequestShapeSupport                RequestShapeSupport   `yaml:"request_shape_support" json:"requestShapeSupport,omitempty"`
-	ResponsesToChat                    ResponsesToChatBridge `yaml:"responses_to_chat" json:"responsesToChat,omitempty"`
-	Bridges                            BridgeSupport         `yaml:"bridges" json:"bridges,omitempty"`
+	CachedInputPricePerMillionUSD      *float64         `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
+	ImageInputPricePerMillionTokensUSD float64          `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
+	ImageInputPricePerImageUSD         float64          `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
+	PricingSource                      string           `yaml:"pricing_source" json:"pricingSource,omitempty"`
+	PricingUpdatedAt                   string           `yaml:"pricing_updated_at" json:"pricingUpdatedAt,omitempty"`
+	PricingNotes                       string           `yaml:"pricing_notes" json:"pricingNotes,omitempty"`
+	ToolSupport                        ToolSupport      `yaml:"tool_support" json:"toolSupport,omitempty"`
+	Reasoning                          ReasoningSupport `yaml:"reasoning" json:"reasoning,omitempty"`
+	InputModalities                    []string         `yaml:"input_modalities" json:"inputModalities,omitempty"`
+	OutputModalities                   []string         `yaml:"output_modalities" json:"outputModalities,omitempty"`
+	// EmbeddingSpace names the vector space a target produces. Every target in an
+	// embeddings model group must declare the same space; the router never mixes
+	// spaces or dimensions across routing attempts.
+	EmbeddingSpace string `yaml:"embedding_space" json:"embeddingSpace,omitempty"`
+	// EmbeddingDimensions lists the output dimensions this target serves. A
+	// request for a dimension outside this list is never routed to the target.
+	EmbeddingDimensions []int `yaml:"embedding_dimensions" json:"embeddingDimensions,omitempty"`
+	// DefaultEmbeddingDimensions applies when a request omits dimensions. Zero
+	// means there is no default and such requests fail closed.
+	DefaultEmbeddingDimensions int                   `yaml:"default_embedding_dimensions" json:"defaultEmbeddingDimensions,omitempty"`
+	HonorsMaxTokens            *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
+	ForceStoreFalse            bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
+	OutputTokenField           string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
+	ActivationEvidence         ActivationEvidence    `yaml:"activation_evidence" json:"activationEvidence,omitempty"`
+	Validation                 *TargetValidation     `yaml:"validation" json:"validation,omitempty"`
+	TrafficShape               TrafficShapeConfig    `yaml:"traffic_shape" json:"trafficShape,omitempty"`
+	RequestShapeSupport        RequestShapeSupport   `yaml:"request_shape_support" json:"requestShapeSupport,omitempty"`
+	ResponsesToChat            ResponsesToChatBridge `yaml:"responses_to_chat" json:"responsesToChat,omitempty"`
+	Bridges                    BridgeSupport         `yaml:"bridges" json:"bridges,omitempty"`
 }
 
 type ResponsesToChatBridge struct {
@@ -1343,6 +1370,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateExperimentProfiles(c.Server.ExperimentProfiles); err != nil {
 		return err
 	}
+	if err := validateReasoningProvenanceConfig(c.Server.ReasoningProvenance); err != nil {
+		return err
+	}
 	if _, err := c.validateAccounts(); err != nil {
 		return err
 	}
@@ -1631,6 +1661,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 			m.Targets[i] = resolved
+		}
+		if err := validateEmbeddingGroup(name, m); err != nil {
+			return err
 		}
 		if err := c.validateModelGroupContract(name, m); err != nil {
 			return err
@@ -2376,6 +2409,22 @@ func validateAdminReports(cfg AdminReportsConfig, auth AdminAuthConfig, usage Us
 	if cfg.MaxRows <= 0 || cfg.MaxRows > 10000 {
 		return fmt.Errorf("server admin_reports max_rows must be between 1 and 10000")
 	}
+	if len(cfg.CFOTeams) > 500 {
+		return fmt.Errorf("server admin_reports cfo_teams allows at most 500 projects")
+	}
+	teams := make(map[string]bool)
+	for project, team := range cfg.CFOTeams {
+		if project == "" || team == "" || len(project) > 128 || len(team) > 128 || strings.TrimSpace(project) != project || strings.TrimSpace(team) != team || strings.ContainsAny(project+team, "\x00\r\n\t") {
+			return fmt.Errorf("server admin_reports cfo_teams requires nonempty, trimmed project and team names of at most 128 bytes")
+		}
+		if slugify(project) != project {
+			return fmt.Errorf("server admin_reports cfo_teams project keys must be canonical caller project IDs")
+		}
+		teams[team] = true
+	}
+	if len(teams) > 64 {
+		return fmt.Errorf("server admin_reports cfo_teams allows at most 64 teams")
+	}
 	if cfg.Security.RetentionDays == 0 {
 		cfg.Security.RetentionDays = 90
 	}
@@ -2954,6 +3003,15 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	}
 	if len(target.OutputModalities) == 0 {
 		target.OutputModalities = catalog.OutputModalities
+	}
+	if target.EmbeddingSpace == "" {
+		target.EmbeddingSpace = catalog.EmbeddingSpace
+	}
+	if len(target.EmbeddingDimensions) == 0 {
+		target.EmbeddingDimensions = catalog.EmbeddingDimensions
+	}
+	if target.DefaultEmbeddingDimensions == 0 {
+		target.DefaultEmbeddingDimensions = catalog.DefaultEmbeddingDimensions
 	}
 	if target.HonorsMaxTokens == nil {
 		target.HonorsMaxTokens = catalog.HonorsMaxTokens

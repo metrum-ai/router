@@ -330,6 +330,18 @@ test-k8s-amd-instinct-local-serving:
 test-k8s-nvidia-llmd-compat:
 	bash scripts/test_k8s_nvidia_llmd_compat.sh
 
+# Scripted v4.6 release gate: real providers, one result table with actual cost.
+# Needs RELEASE_GATE_CONFIG (full-capability config) and provider keys; capped.
+.PHONY: release-gate
+release-gate:
+	@$(PYTHON) scripts/release_gate.py --config "$${RELEASE_GATE_CONFIG}" --cap "$${RELEASE_GATE_CAP:-15}"
+
+# Live parallel tool-call gate (#656): real GPT and Claude, direct and routed.
+# Costs money; capped at $5 per run and never part of per-PR CI.
+.PHONY: test-parallel-tool-live
+test-parallel-tool-live:
+	uv run --with pyyaml python3 scripts/parallel_tool_live.py --out .out/parallel-tool-live.json
+
 # Fine-tuning operator example: only tiny synthetic rows; never trains a model.
 .PHONY: ft-example-test
 ft-example-test:
@@ -345,6 +357,7 @@ ft-example-test:
 	npm ci --prefix examples/fine-tune-qwen3p8-27b/.cache/promptfoo --ignore-scripts --no-audit --no-fund
 	NODE_FORGE_PATH="$(CURDIR)/examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules/node-forge" node examples/fine-tune-qwen3p8-27b/eval/test_node_forge.cjs
 	EVAL_NODE_MODULES="$(CURDIR)/examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules" node examples/fine-tune-qwen3p8-27b/eval/test_msal_override.cjs
+	EVAL_NODE_MODULES="$(CURDIR)/examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules" python3 examples/fine-tune-qwen3p8-27b/eval/test_ftp_override.py
 	PROMPTFOO_DISABLE_TELEMETRY=1 examples/fine-tune-qwen3p8-27b/.cache/promptfoo/node_modules/.bin/promptfoo eval -c examples/fine-tune-qwen3p8-27b/eval/mock.yaml --no-cache
 	python3 scripts/fixed_model_outcome_gate_test.py
 
@@ -682,6 +695,8 @@ docs-origin-test:
 	python3 scripts/check_docs_origin_test.py
 
 docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
+	python3 scripts/check_docs_eligibility_errors_test.py
+	python3 scripts/check_docs_eligibility_errors.py
 	go run ./cmd/metrum-ai-routerctl config validate --config examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml
 	python3 scripts/check_docs_public_face.py
 	python3 scripts/check_docs_origin.py

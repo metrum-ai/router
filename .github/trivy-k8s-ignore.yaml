@@ -1,0 +1,5 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# JSON is a YAML subset. Every entry must name one rule, exact rendered file,
+# and a non-empty explanation; scripts/validate_trivy_k8s_ignores.py enforces it.
+{"misconfigurations": []}

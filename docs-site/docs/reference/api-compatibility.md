@@ -19,6 +19,7 @@ OpenAI-compatible clients use the `/v1` base URL:
 | `/v1/responses` | OpenAI Responses-style requests | Codex CLI, Responses-compatible agent frameworks |
 | `/v1/responses/input_tokens` | Unbilled input counting through a native Responses target | SDK token budgeting |
 | `/v1/responses/compact` | Metered stateless compaction through a native Responses target | Conversation compaction |
+| `/v1/embeddings` | OpenAI Embeddings-style requests through an embeddings model group | Retrieval, clustering and semantic-search clients |
 | `/v1/models` | OpenAI-style model discovery | Client setup and allow-list discovery |
 | `/v1/codex/models.json` | Codex-native local model catalog | Codex CLI fetch-then-run setup |
 | `/v1/usage` | Router usage lookup | Authenticated caller quota and usage |
@@ -27,13 +28,18 @@ OpenAI-compatible clients use the `/v1` base URL:
 ### Unsupported OpenAI endpoints
 
 After caller authentication, legacy text completions and moderations return
-501 `unsupported_endpoint`; neither is planned for v4.5. Embeddings and stored
-Responses retrieval, deletion, input-item listing, and cancellation also return
-501 in v4.5; their implementation is deferred to v4.6. Files, uploads, batches,
+501 `unsupported_endpoint`. Stored Responses retrieval, deletion, input-item
+listing, and cancellation also return 501. Embeddings are served only for model
+groups configured with `output_modalities: [embeddings]`; other model groups
+return 400 `unsupported_capability` instead of silently producing vectors. Files, uploads, batches,
 images, audio, vector stores, assistants, threads, fine-tuning, realtime, videos,
 containers, conversations, agents, ChatKit threads, and skills are outside the
 v4.5 scope and return the same error. These errors have `message`, `type`,
 `param`, and `code` fields. See the [error reference](errors).
+
+`POST /v1/content_provenance_checks` is not implemented. After caller
+authentication, it returns an OpenAI-shaped `501 unsupported_endpoint` without
+dispatching to an upstream; missing or invalid caller credentials return 401.
 
 Responses input counting requires a native Responses target in the requested
 model group. It observes caller request rate and concurrency limits, but does not
@@ -253,7 +259,27 @@ default PR `make test` gate.
 
 For same-dialect OpenAI Chat, OpenAI Responses, and Anthropic Messages targets, caller `stream: true` requests set upstream streaming and proxy native SSE events incrementally, including compatible tool and usage events. Once any event is committed downstream, the router does not replay the request to a fallback target; caller cancellation cancels the upstream request. For a Responses caller using a Chat upstream, `responses_to_chat.streaming: true` enables incremental Chat SSE → Responses SSE (`chat_upstream_to_responses_caller`). The router forces upstream `stream_options.include_usage: true`, emits ordered Responses lifecycle and tool-argument events, and includes usage in the terminal response. `server.streaming.translator: synthesized` retains synthesized SSE from a unary upstream call. This bridge does not map Chat completion IDs into `previous_response_id` sessions. For Chat callers using Responses upstreams, `bridges.chat_to_responses.enabled: true` enables incremental Responses SSE → Chat SSE (`responses_upstream_to_chat_caller`) when `server.streaming.translator` is `incremental` (the default). Tool IDs appear on the first fragment, argument strings remain incremental, and terminal chunks carry finish reason and available usage. The `synthesized` setting uses a unary upstream call.
 
-If a request includes tools, structured-output fields, images, or an explicit max-token cap, the router filters the model group's target list before policy selection. Targets that do not satisfy the request shape are skipped. If no compatible target remains, the router returns `502 no-eligible-target` before sending an upstream request.
+If a request includes tools, structured-output fields, images, or an explicit max-token cap, the router filters the model group's target list before policy selection. Targets that do not satisfy the request shape are skipped. If no compatible target remains for Chat, Responses, or Messages, the router normally returns a 400 compatibility error before sending an upstream request. Media admission may reject unsupported input earlier. See [Error Reference](errors) for codes and exceptions.
+
+### Routing and compatibility error contracts
+
+The following table describes Chat, Responses, and Messages request failures raised before an upstream attempt. A caller must not retry an unchanged request expecting a transient recovery; change the request or ask the operator to update the configured group.
+
+| Status | `code` | `param` | When | Retry unchanged? |
+|---|---|---|---|---|
+| 400 | `unsupported_capability` | `tools`, `tool_choice`, `response_format`, `text.format`, `output_config.format`, `reasoning`, `logprobs`, `modalities`, the caller's output-cap field, `stream_options`, `parallel_tool_calls`, `include`, `truncation`, or `store` | Configured targets cannot serve a shared requested capability. | No; adjust the request or the target configuration. |
+| 400 | `unsupported_capability` | `messages`, `input`, or `null` | A rejected input or tool history cannot be translated, or the rejected targets share no field-specific cause. The router does not guess a field for mixed causes, target-only constraints, or generic byte limits. | No. |
+| 400 | `context_length_exceeded` | `messages` (Chat/Messages) or `input` (Responses) | Every rejected target shares a context or input-token limit. | No; reduce the context or change target. |
+| 400 | `unsupported_endpoint_for_model` | `model` | Every rejected target lacks the requested API dialect or required bridge validation. | No; choose an allowed model group. |
+| 400 | `unsupported_function_call_output` | `input` | A translated function output is not representable. | No; change the output shape. |
+| 400 | `unsupported_developer_content` or `developer_pii_unsupported` | `input` | Responses developer history cannot be translated safely, or the route's PII policy prevents that translation. | No; change the request or the configuration. |
+| 400 | `unsupported_modality` (as the error message on Messages) | absent on Messages; `messages` (Chat) or `input` (Responses) | Media admission rejects unsupported input before routing. | No; change the input. |
+| 400 | `continuation_unsupported` | `previous_response_id` | A Responses continuation cannot be preserved by the available route. | No; use a compatible stateful route or change the request. |
+| 502 | `no-eligible-target` | `null` for OpenAI-shaped errors; absent on Messages | Defensive empty-group case, an unsupported caller dialect, or contract filtering after ordinary eligibility. Normal configuration validation rejects empty groups. | Not unless the operator confirms a configuration change. |
+
+OpenAI-shaped errors use `error.type: invalid_request_error` for these codes; the 502 case uses its usual server-error envelope. Messages uses the Anthropic envelope: routing capability errors carry `error.type: invalid_request_error` with `error.code` and `error.param`, where `param` is `null` when the rejected targets share no single field-specific cause. Messages media admission returns `400` with `error.message: "unsupported_modality"` and no `code` or `param`, and the defensive empty-group `502` uses `error.type: api_error` without `code` or `param`.
+
+This table covers routing and media-admission errors, not every upstream error. Some earlier validation paths have different codes or Anthropic-shaped bodies; inspect the actual response and quote the request ID when escalating.
 
 If a request reaches an upstream provider and that provider rejects the translated shape, the terminal response is usually `502 upstream-failed` with safe details such as `error.details.error_class = upstream_bad_request`, `error.details.upstream_status`, `X-Router-Error-Class`, `X-Upstream-Status`, and a request ID. Treat that as provider/model/dialect/request-shape evidence, not a generic retry signal. See [Error Reference](./errors) and [Request Troubleshooting](../troubleshooting/requests) for the downstream contract and request-ID workflow.
 
@@ -271,7 +297,7 @@ server:
 
 When enabled, detection is based on request fields such as `input`, `instructions`, `reasoning`, `text`, `previous_response_id`, or `max_output_tokens`; it is not based on user agent, client name, or SDK name. The accepted subset on the Chat path is Responses-style `input`, `instructions`, `reasoning`, function `tools`, `tool_choice`, `text.format`, Chat-style `response_format` converted to `text.format`, `previous_response_id` only for groups with a native Responses target, one positive output cap field normalized to `max_output_tokens`, and `stream`. Sampling fields such as `temperature`, `top_p`, and `parallel_tool_calls` are preserved when the selected target path supports them.
 
-Unsupported fields such as `include`, `truncation`, `metadata`, `store`, mixed `messages` plus `input`, multiple output cap fields, provider-hosted tool descriptors, or conflicting `text.format` plus `response_format` return a clear 400-level compatibility error before upstream. Target-specific gaps such as an unvalidated Responses-to-Chat tool choice or reasoning bridge can still return `502 no-eligible-target` with safe filter diagnostics.
+Unsupported fields such as `include`, `truncation`, `metadata`, `store`, mixed `messages` plus `input`, multiple output cap fields, provider-hosted tool descriptors, or conflicting `text.format` plus `response_format` return a clear 400-level compatibility error before upstream. Target-specific gaps such as an unvalidated Responses-to-Chat tool choice or reasoning bridge can return a 400 compatibility error with safe filter diagnostics; see [Error Reference](errors).
 
 Example request:
 
@@ -345,7 +371,10 @@ cannot bypass it. Known beta-gated body fields are not silently stripped:
 `context_management` requires `context-management-2025-06-27`, `container`
 requires `code-execution-2025-08-25`, and `mcp_servers` requires
 `mcp-client-2025-04-04`. Presence without the matching permitted caller beta
-returns HTTP 400 naming the field before upstream. Unknown provider fields
+returns HTTP 400 naming the field before upstream. On Anthropic Messages only,
+`context_management: null` is treated as absent and is not forwarded; any
+non-null value still requires the matching caller beta and target allowlist.
+Unknown provider fields
 retain native passthrough semantics. Anthropic `thinking.type: adaptive` is a
 reasoning request, just like `enabled`, and excludes non-reasoning targets.
 
@@ -355,7 +384,7 @@ Tool-bearing Claude Code traffic has a stricter requirement. Use Anthropic Messa
 
 ### OpenAI requests to an Anthropic target
 
-An OpenAI Chat or Responses client can use an Anthropic target only if the request passes the target's dialect, modality, output-cap, reasoning and request-shape filters. For Responses requests, leading text-only system and developer messages are mapped in order to the Anthropic system prompt; developer content must be a string or a single text part. Multipart developer content, instructions after conversation items and non-text system or developer content are rejected rather than reordered or dropped. Responses developer histories are not eligible for Anthropic targets when the model group's PII filter is enabled; an eligible target in another dialect can still be selected. Responses developer histories bypass the response cache whenever Anthropic is a selected or fallback target. For translated function tools, the target must explicitly list the caller dialect in `request_shape_support.supported_inbound_dialects`, set `request_shape_support.validation_status: passed`, and declare both `tool_support.anthropic_messages: [client_tools]` and the matching caller capability (`tool_support.openai_chat: [tools]` or `tool_support.openai_responses: [function]`). An explicit tool choice additionally requires `tool_choice` support on both sides. These flags are claims about the exact provider, model and request shape; enable them only after direct and routed tests. Strict function schemas, provider-hosted tools and unsupported content/history shapes are rejected rather than silently weakened. Responses content with unsupported part metadata is rejected even without tools. Image parts with unsupported metadata or conflicting URL and file ID are rejected for Anthropic translation. When OpenAI Chat or Responses image input is translated to an Anthropic target, the image is forwarded but its OpenAI `detail` hint is ignored: Anthropic has no equivalent, so image processing quality and cost may differ. Translation diagnostics record the bounded `image-detail-ignored` reason without image contents or the hint value. Translated Responses messages with multiple non-empty text parts are rejected for non-system roles; Responses-to-Chat also rejects multiple system text parts, rather than altering text at part boundaries. Function-call output text arrays are supported separately.
+An OpenAI Chat or Responses client can use an Anthropic target only if the request passes the target's dialect, modality, output-cap, reasoning and request-shape filters. For Responses requests, leading text-only system and developer messages are mapped in order to the Anthropic system prompt; developer content must be a string or a single text part. Multipart developer content, instructions after conversation items and non-text system or developer content are rejected rather than reordered or dropped. Responses system or developer message histories are not eligible for Anthropic or Bedrock Messages targets when the model group's PII filter is enabled; an eligible target in another dialect can still be selected. When no alternative is eligible, system-only histories return `system_pii_unsupported` (other shape errors can take precedence). This fail-closed restriction prevents instruction text parts from creating an unfiltered match when joined for a Messages target; filtering and cache identity for translated instructions remain under review. Responses developer histories bypass the response cache whenever Anthropic is a selected or fallback target. For translated function tools, the target must explicitly list the caller dialect in `request_shape_support.supported_inbound_dialects`, set `request_shape_support.validation_status: passed`, and declare both `tool_support.anthropic_messages: [client_tools]` and the matching caller capability (`tool_support.openai_chat: [tools]` or `tool_support.openai_responses: [function]`). An explicit tool choice additionally requires `tool_choice` support on both sides. These flags are claims about the exact provider, model and request shape; enable them only after direct and routed tests. Strict function schemas, provider-hosted tools and unsupported content/history shapes are rejected rather than silently weakened. Responses content with unsupported part metadata is rejected even without tools. Image parts with unsupported metadata or conflicting URL and file ID are rejected for Anthropic translation. When OpenAI Chat or Responses image input is translated to an Anthropic target, the image is forwarded but its OpenAI `detail` hint is ignored: Anthropic has no equivalent, so image processing quality and cost may differ. Translation diagnostics record the bounded `image-detail-ignored` reason without image contents or the hint value. Translated Responses messages with multiple non-empty text parts are rejected for non-system roles; Responses-to-Chat also rejects multiple system text parts, rather than altering text at part boundaries. Function-call output text arrays are supported separately.
 
 For structured output, the target must declare `structured_output: true`. OpenAI `json_schema` is sent as Anthropic `output_config.format`; JSON syntax is checked before delivery, but schema conformance relies on the upstream. JSON-object mode adds a JSON-only instruction and validates the returned object. Both modes buffer translated streams before emitting output; combining them with tool requests or tool history is not supported. OpenAI Chat `logprobs` cannot be translated to Anthropic and such a target is ineligible.
 
@@ -371,7 +400,7 @@ Native same-dialect HTTP passthrough retains signed and redacted opaque reasonin
 
 For every route, also check the caller's group allow-list, the target's `input_modalities`, `honors_max_tokens`, `context_tokens`, `reasoning` and `request_shape_support` (including unsupported features and size limits). Targets with `force_store_false` cannot satisfy a `previous_response_id` continuation. See [model metadata](./model-metadata) and [routing](../routing/overview) for the complete configuration and eligibility controls. A passing mock is not proof that a real target supports these combinations.
 
-If a caller can see a group in `/v1/models` but `/anthropic/v1/messages` returns `502 no-eligible-target`, the token is authorized but the requested group has no target that satisfies the Messages request shape. For plain text, administrators should check whether non-native translated targets are missing `supported_inbound_dialects: [anthropic]` or whether all eligible Messages targets are `tool_only`. For tools, images, or thinking, the group needs target metadata for those exact Anthropic Messages capabilities.
+If a caller can see a group in `/v1/models` but `/anthropic/v1/messages` returns a 400 compatibility error, the token may be authorized but the requested group may have no target that satisfies the Messages request shape. See [Error Reference](errors). For plain text, administrators should check whether non-native translated targets are missing `supported_inbound_dialects: [anthropic]` or whether all eligible Messages targets are `tool_only`. For tools, images, or thinking, the group needs target metadata for those exact Anthropic Messages capabilities.
 
 ## Chat To Responses Bridge
 
@@ -398,6 +427,22 @@ Common safe filter reasons include `chat-to-responses-bridge-disabled`, `chat-to
 Tools and reasoning are filtered together. A request with tools and reasoning needs a target that supports both the caller's tool dialect and the requested reasoning control, or an explicitly validated bridge for both features. If no candidate supports the requested capabilities, the router returns `400 invalid_request_error` with an `unsupported_capability` code; candidate/filter diagnostics should show bounded reasons such as `reasoning`, `chat-to-responses-reasoning-unsupported`, or `responses-to-chat-reasoning` rather than an upstream attempt with the reasoning field stripped.
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
+
+### Known limitation: reasoning with tools on Chat Completions
+
+An OpenAI reasoning model can reject a request that combines `reasoning_effort`
+with tools on Chat Completions, because the provider accepts that combination
+only on its Responses surface. When such a target is the only candidate, the
+router forwards the request as configured and the rejection surfaces as
+`upstream-rejected`; the caller sees no field naming the incompatible
+combination.
+
+Until reasoning-with-tools support is declared per dialect and rejected before
+dispatch, route those requests to a model group whose targets use the
+`openai-responses` dialect. A Chat-dialect GPT target belongs in such a group
+only when the caller never sets `reasoning_effort` together with tools. The
+release gate enforces the same rule for its own GPT lanes: a `gpt` group that
+still lists a non-Responses target is refused with the fix named.
 
 ## Quotas And Output Caps
 
@@ -493,7 +538,7 @@ The router detects explicit reasoning requests in all supported caller dialects:
 - OpenAI Responses: `reasoning`.
 - Anthropic Messages: `thinking`.
 
-Reasoning is handled inside the requested model group. The router does not switch callers to another group and does not silently drop explicit reasoning controls. If no configured target in that group can satisfy the requested reasoning shape together with tools, images, structured outputs, and max-token cap behavior, the response is `502 no-eligible-target`.
+Reasoning is handled inside the requested model group. The router does not switch callers to another group and does not silently drop explicit reasoning controls. If no configured target in that group can satisfy the requested reasoning shape together with tools, images, structured outputs, and max-token cap behavior, the router returns a 400 compatibility error before upstream. See [Error Reference](errors) for codes and exceptions.
 
 Reasoning controls are dialect-specific. Validated cross-dialect bridges can map selected reasoning controls and visible output approximately, subject to the cross-dialect reasoning limits above; signatures and opaque foreign reasoning history are not portable. Validated Chat ↔ Responses bridges can map OpenAI reasoning effort where configured. Targets that reject `max_tokens` for reasoning traffic can be configured so the router sends `max_completion_tokens` instead.
 

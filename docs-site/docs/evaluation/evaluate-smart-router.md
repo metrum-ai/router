@@ -50,7 +50,7 @@ sanitized outcomes.
 6. Ask the administrator for the usage/report excerpt for the evaluation window.
 7. Confirm selected upstream provider/model, token counts, cost fields, latency, fallback behavior, and request status are visible without storing raw prompts or raw images.
 
-This path should prove both caller-visible behavior and operator controls. The caller sees stable model-group names, compatibility with its chosen API shape, allow-list enforcement, and clear errors such as `model-not-allowed` or `no-eligible-target`. The operator sees request-time evidence for target selection, cost, latency, attempts, fallback, and quota impact.
+This path should prove both caller-visible behavior and operator controls. The caller sees stable model-group names, compatibility with its chosen API shape, allow-list enforcement, and clear errors such as `model-not-allowed` or a 400 compatibility error; see [Error Reference](../reference/errors). The operator sees request-time evidence for target selection, cost, latency, attempts, fallback, and quota impact.
 
 ## Expected First Outputs
 
@@ -59,7 +59,7 @@ This path should prove both caller-visible behavior and operator controls. The c
 | `/v1/models` | JSON list of model group IDs allowed for the token. |
 | Chat smoke | Assistant returns the requested short text. |
 | Codex or Claude Code smoke | CLI returns the requested text or creates the requested disposable smoke file. |
-| Image smoke | Model reads the image through the same router group or returns `no-eligible-target` when the group has no validated image target. |
+| Image smoke | Model reads the image through the same router group or returns a 400 compatibility or modality error when configured targets cannot serve it. |
 | Usage report | Report groups requests by caller, project, model group, provider/model, status, latency, tokens, cache, and cost. |
 
 ## Proof Package To Request
@@ -98,7 +98,7 @@ For router-versus-fixed-model comparisons, pre-register the task set, control, m
 |---|---|---|
 | `401` or `403` before any model call | Token or endpoint mismatch | Verify base URL and router token. |
 | Expected group missing from `/v1/models` | Caller token is not allowed to use it | Ask the administrator to update access if intended. |
-| `no-eligible-target` for tools or images | Group exists, but no target satisfies that request shape | Use a compatible group or add a validated target. |
+| 400 compatibility or modality error for tools or images | Configured targets cannot satisfy that request shape | Use a compatible group or add a validated target; see [Error Reference](../reference/errors). |
 | Timeout on a long agent task | Upstream or per-attempt timeout is too small for the workload | Inspect request attempts and adjust target mix or timeout. |
 | A cheaper group fails the verifier | The group does not satisfy that workload contract | Keep it for simpler tasks or promote a stronger target for that workload. |
 

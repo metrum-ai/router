@@ -678,6 +678,19 @@ func (s *Service) maybeShadowRequest(groupName, callerDialect string, body []byt
 // using the same encoding, endpoint, and credential handling as the serving
 // path, then records aggregate counters. Streaming is disabled for replays.
 func (s *Service) executeShadowRequest(run *shadowRunState, callerDialect string, body []byte) {
+	// Recheck the live group policy in case it changed after sampling. Shadow
+	// bodies are unfiltered, so an enabled PII filter must fail closed here too.
+	cfg := s.configSnapshot.Load()
+	if cfg == nil {
+		cfg = s.cfg
+	}
+	if cfg == nil {
+		return
+	}
+	group, ok := cfg.Models[run.group]
+	if !ok || group.PIIFilter.Enabled {
+		return
+	}
 	req, err := decodeRequest(callerDialect, body, nil)
 	// Shadow targets bypass normal selection and may not honor the caller's
 	// no-store or reasoning-off intent. Skip without counting an attempted replay.
@@ -697,13 +710,6 @@ func (s *Service) executeShadowRequest(run *shadowRunState, callerDialect string
 	}
 	shadowReq := *req
 	shadowReq.Stream = false
-	cfg := s.configSnapshot.Load()
-	if cfg == nil {
-		cfg = s.cfg
-	}
-	if cfg == nil {
-		return
-	}
 	target, err := cfg.resolveTarget(run.group, Target{Provider: run.provider, Model: run.model, ModelRef: run.modelRef})
 	if err != nil {
 		return

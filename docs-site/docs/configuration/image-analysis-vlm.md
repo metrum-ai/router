@@ -7,7 +7,7 @@ doc_type: howto
 
 Metrum AI Router accepts image inputs through the OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages API shapes. Image-bearing requests can use the same deployment-defined router model-group names as text requests, but the router only selects upstream targets that advertise `image` in `input_modalities` and are validated for the inbound API skin and request shape.
 
-Model-group modality metadata is aggregate metadata. For example, a group can advertise image input because it contains a validated Responses target while having no eligible Anthropic Messages image target. Validate Chat, Responses, and Messages independently. If an authorized group returns `502 no-eligible-target`, inspect the requested dialect, image modality, tools, and output-cap requirements instead of treating another skin's image pass as sufficient.
+Model-group modality metadata is aggregate metadata. For example, a group can advertise image input because it contains a validated Responses target while having no eligible Anthropic Messages image target. Validate Chat, Responses, and Messages independently. If an authorized group returns a 400 compatibility or modality error, inspect the requested dialect, image modality, tools, and output-cap requirements instead of treating another skin's image pass as sufficient. See [Error Reference](../reference/errors).
 
 ## Configure A Vision-Capable Target
 

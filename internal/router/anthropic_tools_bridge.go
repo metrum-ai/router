@@ -79,7 +79,11 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 				calls = append(calls, map[string]any{"id": block["id"], "type": "function", "function": map[string]any{"name": block["name"], "arguments": string(args)}})
 			case "tool_result":
 				flush()
-				messages = append(messages, map[string]any{"role": "tool", "tool_call_id": block["tool_use_id"], "content": encodeOpenAIChatContent(IRMessage{Content: contentToText(block["content"]), Parts: decodeContentParts(block["content"])})})
+				text := contentToText(block["content"])
+				if exact, ok := toolResultText(block["content"]); ok {
+					text = exact
+				}
+				messages = append(messages, map[string]any{"role": "tool", "tool_call_id": block["tool_use_id"], "content": encodeOpenAIChatContent(IRMessage{Content: text, Parts: decodeContentParts(block["content"])})})
 			case "thinking", "redacted_thinking": // Provider-private thinking is not portable.
 			default:
 				return nil, fmt.Errorf("unsupported Anthropic tool bridge content type")

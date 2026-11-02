@@ -58,6 +58,11 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			}
 			// A failed/partial Write can still put bytes on the wire: forbid fallback.
 			result.Committed = true
+			// Opaque reasoning provenance (#622): bind provider-owned values to
+			// the target that minted them before the caller sees them.
+			if rc != nil && rc.wrapStreamFrame != nil {
+				e.Data = rc.wrapStreamFrame(e.Data)
+			}
 			if _, err := w.Write(e.Frame()); err != nil {
 				return upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: err}
 			}

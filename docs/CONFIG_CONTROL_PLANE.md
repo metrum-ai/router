@@ -295,7 +295,16 @@ replayed to the candidate off the caller's critical path — non-streaming,
 no caller identity, no request content retained — and fold into aggregate
 counters (requests, errors, latency, tokens, estimated cost) on the run row.
 `GET …/shadow` compares those counters with the group's served baseline from
-the existing usage telemetry for the run window.
+the existing usage telemetry for the run window. Shadow replay is skipped for
+requests evaluated against a locally active PII-enabled model group, in all
+filter modes; replay also rechecks the local group policy before dispatch. A
+replay already past that check can still complete after a configuration change,
+and revision propagation is per replica, not an instantaneous cluster-wide
+barrier. For a strict cutover: stop shadow runs and prevent their restart;
+confirm the stop revision has reached every replica; drain in-flight serving
+requests and replays; then activate the PII policy and confirm its revision on
+every replica before relying on it. This does not affect external routing-policy
+shadow mode, which is a separate feature.
 
 Lifecycle changes bump the runtime revision (poller/notifier propagation,
 same as config writes) and are audited as `shadow_start`, `shadow_stop`, and

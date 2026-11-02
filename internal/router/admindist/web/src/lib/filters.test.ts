@@ -13,6 +13,14 @@ function names(fields: ReadonlyArray<readonly [string, string, string]>) {
 }
 
 describe("admin report filters", () => {
+  test("renders CFO team rows without reclassifying unassigned usage", () => {
+    const tab = tabById("cfo");
+    if (!tab) throw new Error("cfo tab missing");
+    const rows = rowsForTab(tab, { byTeam: [{ team: "Support", costUsd: 2 }, { team: "Unassigned", unassigned: true, costUsd: 1 }] });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].unassigned).toBe(true);
+    expect(columnsForTab(tab, rows).map(column => column.key)).toContain("team");
+  });
   test("distinguishes free count-token events in request rows", () => {
     const tab = tabById("requests");
     if (!tab) throw new Error("requests tab missing");
@@ -50,7 +58,7 @@ describe("admin report help metadata", () => {
       expect(tab.metadata.dataSemantics.trim(), tab.id).not.toBe("");
       expect(tab.metadata.caveats.trim(), tab.id).not.toBe("");
       expect(tab.metadata.emptyState.trim(), tab.id).not.toBe("");
-      expect(tab.metadata.docsPath, tab.id).toContain(`#${tab.id}`);
+      expect(tab.metadata.docsPath, tab.id).toContain(tab.id === "cfo" ? "/operations/cfo-reporting" : `#${tab.id}`);
       expect(tab.metadata.commonFilters.length, tab.id).toBeGreaterThan(0);
       expect(tab.metadata.keyColumns.length, tab.id).toBeGreaterThan(0);
       expect(tab.metadata.relatedReports.length, tab.id).toBeGreaterThan(0);

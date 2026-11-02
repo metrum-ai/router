@@ -6365,7 +6365,7 @@ func TestUnsupportedOpenAIEndpoints(t *testing.T) {
 	}
 	defer svc.Close()
 	for _, tc := range []struct{ method, path string }{
-		{"POST", "/v1/completions"}, {"POST", "/v1/moderations"}, {"POST", "/v1/embeddings"},
+		{"POST", "/v1/completions"}, {"POST", "/v1/moderations"},
 		{"GET", "/v1/responses/resp_1"}, {"DELETE", "/v1/responses/resp_1"}, {"GET", "/v1/responses/resp_1/input_items"}, {"POST", "/v1/responses/resp_1/cancel"},
 		{"POST", "/v1/files"}, {"GET", "/v1/files/file_1"}, {"POST", "/v1/uploads"}, {"POST", "/v1/batches"}, {"POST", "/v1/images/generations"}, {"POST", "/v1/audio/speech"}, {"POST", "/v1/vector_stores"}, {"POST", "/v1/assistants"}, {"POST", "/v1/threads"}, {"POST", "/v1/fine_tuning/jobs"}, {"GET", "/v1/realtime"},
 		{"POST", "/v1/videos"}, {"GET", "/v1/videos/video_1"}, {"POST", "/v1/containers"}, {"GET", "/v1/containers/container_1"},
@@ -9908,7 +9908,7 @@ func TestPIIFilterReplacementLimitBlocksBeforeUpstream(t *testing.T) {
 	}
 }
 
-func TestPIIFilterCacheStoresRedactedResponseNotRestoredPII(t *testing.T) {
+func TestPIIFilterBypassesResponseCacheNotRestoredPII(t *testing.T) {
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -9949,8 +9949,13 @@ func TestPIIFilterCacheStoresRedactedResponseNotRestoredPII(t *testing.T) {
 	}
 	first := post("alice@example.com")
 	second := post("bob@example.com")
-	if calls.Load() != 1 {
-		t.Fatalf("upstream calls=%d, want cache hit on second request", calls.Load())
+	// PII-enabled groups bypass the response cache until cache identity is
+	// target-bound, so each request reaches the upstream.
+	if calls.Load() != 2 {
+		t.Fatalf("upstream calls=%d, want 2 because PII groups bypass the cache", calls.Load())
+	}
+	if stats := svc.cache.Stats(); stats.Items != 0 {
+		t.Fatalf("PII-enabled requests populated the response cache: %+v", stats)
 	}
 	if !strings.Contains(first, "[EMAIL_1]") || strings.Contains(first, "bob@example.com") {
 		t.Fatalf("first response=%s", first)
@@ -10024,13 +10029,13 @@ func TestContentCaptureResponseStoresRedactedPIIPlaceholders(t *testing.T) {
 	cacheRR := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(cacheRR, cacheReq)
 	if cacheRR.Code != http.StatusOK {
-		t.Fatalf("cache status=%d body=%s", cacheRR.Code, cacheRR.Body.String())
+		t.Fatalf("second status=%d body=%s", cacheRR.Code, cacheRR.Body.String())
 	}
-	if calls.Load() != 1 {
-		t.Fatalf("upstream calls=%d, want second response from cache", calls.Load())
+	if calls.Load() != 2 {
+		t.Fatalf("upstream calls=%d, want 2 because PII groups bypass the response cache", calls.Load())
 	}
 	if !strings.Contains(cacheRR.Body.String(), "[EMAIL_1]") {
-		t.Fatalf("cached response did not preserve PII placeholders: %s", cacheRR.Body.String())
+		t.Fatalf("second response did not preserve PII placeholders: %s", cacheRR.Body.String())
 	}
 	var cachedRow contentCaptureRecord
 	flushUsageForTest(t, svc)

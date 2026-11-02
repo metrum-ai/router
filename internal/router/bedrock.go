@@ -64,7 +64,14 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 		msg := bt.Message{Role: bt.ConversationRole(role)}
 		if role == "tool" {
 			msg.Role = bt.ConversationRoleUser
-			msg.Content = append(msg.Content, &bt.ContentBlockMemberToolResult{Value: bt.ToolResultBlock{ToolUseId: aws.String(stringValue(m["tool_call_id"])), Content: []bt.ToolResultContentBlock{&bt.ToolResultContentBlockMemberText{Value: contentToText(m["content"])}}}})
+			// Preserve the caller's exact ordered text for text-only tool results
+			// instead of flattening parts with an invented separator. Non-text tool
+			// result content keeps its existing handling in this conversion.
+			text := contentToText(m["content"])
+			if exact, ok := toolResultText(m["content"]); ok {
+				text = exact
+			}
+			msg.Content = append(msg.Content, &bt.ContentBlockMemberToolResult{Value: bt.ToolResultBlock{ToolUseId: aws.String(stringValue(m["tool_call_id"])), Content: []bt.ToolResultContentBlock{&bt.ToolResultContentBlockMemberText{Value: text}}}})
 		} else {
 			text := contentToText(m["content"])
 			if text != "" {
