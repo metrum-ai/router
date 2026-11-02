@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 const storageKey = "admin-global-filters-open-v1";
 
 type Props = {
-  activeTab: string;
   draftFilters: ReportFilters;
   filters: ReportFilters;
   onDraftChange: (filters: ReportFilters | ((current: ReportFilters) => ReportFilters)) => void;
@@ -22,12 +21,7 @@ type Props = {
   onOpenMobileNav: () => void;
 };
 
-export function markdownReportHref(activeTab: string, filters: ReportFilters): string {
-  const params = new URLSearchParams(Object.entries(filters).filter(([key, value]) => value.trim() && key !== "cursor" && key !== "offset"));
-  return `${activeTab === "cfo" ? "cfo/export.md" : "export.md"}?${params}`;
-}
-
-export function GlobalFilters({ activeTab, draftFilters, filters, onDraftChange, onClearTabFilters, onSubmit, onOpenMobileNav }: Props) {
+export function GlobalFilters({ draftFilters, filters, onDraftChange, onClearTabFilters, onSubmit, onOpenMobileNav }: Props) {
   const [expanded, setExpanded] = useState(() => {
     try {
       return window.localStorage.getItem(storageKey) === "true";
@@ -41,6 +35,9 @@ export function GlobalFilters({ activeTab, draftFilters, filters, onDraftChange,
     const value = filters[name]?.trim() || "";
     return value !== "" && value !== defaultValue;
   }).length;
+  const markdownParams = new URLSearchParams(
+    Object.entries(filters).filter(([key, value]) => value.trim() && key !== "cursor" && key !== "offset"),
+  );
 
   useEffect(() => {
     try {
@@ -61,7 +58,7 @@ export function GlobalFilters({ activeTab, draftFilters, filters, onDraftChange,
         <Button type="submit">Apply</Button>
         <a
           className="inline-flex h-9 items-center rounded-md border border-white/15 px-3 text-sm text-white hover:bg-white/8 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-metrum-blue"
-          href={markdownReportHref(activeTab, filters)}
+          href={`export.md?${markdownParams}`}
           aria-label="Markdown full report for current filters"
           title="Markdown full report for current filters"
         >

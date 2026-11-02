@@ -57,7 +57,6 @@ const sidebars = {
         "configuration/self-hosted-upstreams",
         "configuration/fine-tune-own-model",
         "operations/usage-reporting",
-        "operations/cfo-reporting",
         "operations/admin-browser-reports",
         "operations/switch-models-price-change",
         "troubleshooting/index",

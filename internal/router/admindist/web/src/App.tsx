@@ -27,10 +27,6 @@ function resetPagination(filters: ReportFilters): ReportFilters {
   return { ...filters, cursor: "", offset: "" };
 }
 
-export function reportForTab(activeTab: string, state?: { tab: string; report: ReportResponse }): ReportResponse | undefined {
-  return state?.tab === activeTab ? state.report : undefined;
-}
-
 type PageHistory = {
   previousCursors: string[];
   pageIndex: number | null;
@@ -40,7 +36,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(activeTabFromUrl);
   const [filters, setFilters] = useState<ReportFilters>(filtersFromUrl);
   const [draftFilters, setDraftFilters] = useState<ReportFilters>(filtersFromUrl);
-  const [report, setReport] = useState<{ tab: string; report: ReportResponse }>();
+  const [report, setReport] = useState<ReportResponse>();
   const [version, setVersion] = useState<VersionResponse>();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,7 +57,7 @@ export default function App() {
       const endpoint = nextTab.endpoint === "overview" ? "summary" : nextTab.endpoint;
       const nextReport = await fetchReport(endpoint, nextFilters);
       if (sequence !== loadSequence.current) return;
-      setReport({ tab: nextTab.id, report: nextReport });
+      setReport(nextReport);
     } catch (err) {
       if (sequence !== loadSequence.current) return;
       setError(err instanceof Error ? err.message : "Report request failed");
@@ -116,9 +112,6 @@ export default function App() {
   }
 
   function changeTab(tabId: string) {
-    ++loadSequence.current;
-    setReport(undefined);
-    setError("");
     setActiveTab(tabId);
     setFilters((current) => resetPagination(current));
     setDraftFilters((current) => resetPagination(current));
@@ -179,7 +172,6 @@ export default function App() {
           </div>
           <div className="border-t border-white/10 pt-4" data-admin-header-filters>
             <GlobalFilters
-              activeTab={activeTab}
               draftFilters={draftFilters}
               filters={filters}
               onDraftChange={setDraftFilters}
@@ -195,7 +187,7 @@ export default function App() {
         <div className="min-w-0">
           <ReportPanel
             tab={tab}
-            report={reportForTab(activeTab, report)}
+            report={report}
             filters={filters}
             pageIndex={pageHistory.pageIndex}
             canGoBack={pageHistory.previousCursors.length > 0}

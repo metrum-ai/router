@@ -1,3 +1,11 @@
+---
+title: Parallel tool-call live results
+doc_type: explanation
+---
+
+<!-- Copyright 2026 Metrum AI -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Parallel tool calls: live gate results
 
 Last run: 2026-11-02 (UTC), router `main` at `1ca83567`, live gate script `scripts/parallel_tool_live.py`.

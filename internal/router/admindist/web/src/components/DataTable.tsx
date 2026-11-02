@@ -20,7 +20,6 @@ type Props = {
   pageIndex?: number | null;
   canGoBack?: boolean;
   loading?: boolean;
-  allowLocalCsv?: boolean;
   onLimitChange?: (limit: string) => void;
   onPageChange?: (action: ReportPageAction, cursor?: string) => void;
   onSortChange?: (sort: string, direction: "asc" | "desc") => void;
@@ -28,14 +27,6 @@ type Props = {
 };
 
 const limitOptions = ["25", "50", "100", "250"];
-
-export function csvCell(value: unknown): string {
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  const text = String(value ?? "");
-  const trimmed = text.trimStart();
-  const safe = trimmed && ["=", "+", "-", "@"].includes(trimmed[0]) ? `'${text}` : text;
-  return `"${safe.replace(/"/g, '""')}"`;
-}
 
 export function DataTable({
   rows,
@@ -48,7 +39,6 @@ export function DataTable({
   pageIndex = 0,
   canGoBack = false,
   loading = false,
-  allowLocalCsv = true,
   onLimitChange,
   onPageChange,
   onSortChange,
@@ -107,6 +97,13 @@ export function DataTable({
     a.download = "admin-report.csv";
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function csvCell(value: unknown) {
+    const text = String(value ?? "");
+    const trimmed = text.trimStart();
+    const safe = trimmed && ["=", "+", "-", "@"].includes(trimmed[0]) ? `'${text}` : text;
+    return JSON.stringify(safe);
   }
 
   function renderCell(row: ReportRow, column: ReportColumn) {
@@ -171,9 +168,9 @@ export function DataTable({
         <Button type="button" variant="outline" onClick={onRefresh}>
           Refresh
         </Button>
-        {allowLocalCsv ? <Button type="button" variant="outline" onClick={exportCsv}>
+        <Button type="button" variant="outline" onClick={exportCsv}>
           {csvLabel}
-        </Button> : null}
+        </Button>
       </div>
       <p className="text-xs text-white/52" role="status" aria-live="polite">
         {countLabel}
