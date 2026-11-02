@@ -120,7 +120,8 @@ try:
                 routed = results['routed-' + group]['values']
                 if len(direct) != 5 or len(routed) != 5:
                     raise RuntimeError('Harbor task inventory mismatch ' + group)
-                if any(direct[k] == '1' and routed[k] != '1' for k in direct):
+                # Every task that passes directly must also pass through the router.
+                if any(d == '1' and r != '1' for d, r in zip(direct, routed)):
                     raise RuntimeError('Harbor baseline mismatch ' + group)
 finally:
     if proc:
