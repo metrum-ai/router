@@ -299,7 +299,7 @@ jobs:
         run: |
           python3 scripts/validate_trivy_k8s_ignores.py
           python3 scripts/validate_trivy_k8s_ignores_test.py
-          scripts/render_k8s_security.sh "$RUNNER_TEMP/security-rendered"
+          bash scripts/render_k8s_security.sh "$RUNNER_TEMP/security-rendered"
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
