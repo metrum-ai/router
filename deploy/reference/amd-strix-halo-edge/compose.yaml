@@ -43,6 +43,10 @@ services:
   vllm-tiny:
     <<: *vllm-service
     image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    # The ROCm image carries no entrypoint and its default CMD only pins the
+    # matching wheel, so the server is started explicitly; AMD's documented form
+    # is `vllm serve ...`.
+    entrypoint: ["vllm", "serve"]
     command:
       - --model
       - ${TINY_MODEL_ID:-Qwen/Qwen3-1.7B}
@@ -66,6 +70,10 @@ services:
   vllm-primary:
     <<: *vllm-service
     image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    # The ROCm image carries no entrypoint and its default CMD only pins the
+    # matching wheel, so the server is started explicitly; AMD's documented form
+    # is `vllm serve ...`.
+    entrypoint: ["vllm", "serve"]
     command:
       - --model
       - ${PRIMARY_MODEL_ID:-Qwen/Qwen3-30B-A3B-Instruct-2507}

@@ -221,7 +221,33 @@ def check_compose(tier: Path, locked: dict[str, str], problems: Problems) -> set
     for required in ("router",):
         if required not in services:
             problems.add(tier.name, "compose must define a router service")
+    check_rocm_entrypoint(tier, problems)
     return services
+
+
+def check_rocm_entrypoint(tier: Path, problems: Problems) -> None:
+    """A rocm/vllm service must start the server itself.
+
+    The official ROCm image carries no entrypoint and its default CMD only pins
+    the matching wheel, so a service that relies on the image defaults never
+    serves a model.
+    """
+    compose = load_yaml(tier / "compose.yaml", Problems())
+    if not isinstance(compose, dict):
+        return
+    services = compose.get("services")
+    if not isinstance(services, dict):
+        return
+    for name, service in services.items():
+        if not isinstance(service, dict):
+            continue
+        image = str(service.get("image", ""))
+        if not image.startswith("rocm/vllm:"):
+            continue
+        entrypoint = service.get("entrypoint")
+        rendered = entrypoint if isinstance(entrypoint, str) else " ".join(str(part) for part in entrypoint or [])
+        if "vllm" not in rendered or "serve" not in rendered:
+            problems.add(tier.name, f"service {name} uses rocm/vllm but does not set an explicit vllm serve entrypoint")
 
 
 def check_config(tier: Path, problems: Problems) -> set[str]:

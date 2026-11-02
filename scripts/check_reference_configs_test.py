@@ -108,6 +108,14 @@ class ReferenceConfigTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("unknown group local-ghost", result.stderr)
 
+    def test_rocm_server_without_explicit_entrypoint_is_rejected(self) -> None:
+        path = self.root / "amd-mi350p-datacenter" / "compose.yaml"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(text.replace("    entrypoint: [\"vllm\", \"serve\"]\n", "", 1), encoding="utf-8")
+        result = run(self.root)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("does not set an explicit vllm serve entrypoint", result.stderr)
+
     def test_literal_provider_key_is_rejected(self) -> None:
         path = self.root / "nvidia-datacenter" / "config.yaml"
         path.write_text(
