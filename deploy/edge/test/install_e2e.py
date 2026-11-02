@@ -98,7 +98,7 @@ class EdgeBundleInstallTest(unittest.TestCase):
         cls.port = free_port()
         cls.base_url = f"http://127.0.0.1:{cls.port}"
         cls.install = run([
-            str(INSTALL),
+            "bash", str(INSTALL),
             "--mode", "native",
             "--bin-dir", str(cls.bin_dir),
             "--data-dir", str(cls.data_dir),

@@ -105,7 +105,7 @@ case "$STATUS" in
     pass "escalate answered in ${ELAPSED}s from ${EDGE_ESCALATION_BASE_URL}"
     note "reports keep this as its own group, so off-box spend is separable" ;;
   401|403|502|503)
-    skip "escalate returned HTTP ${STATUS}: no usable key for ${EDGE_ESCALATION_KEY_ENV}, so there is no off-box answer (the documented fail-closed path, not a local fallback)"
+    skip "escalate returned HTTP ${STATUS} (upstream access denied): no usable key for ${EDGE_ESCALATION_KEY_ENV}, so there is no off-box answer -- the documented fail-closed path, not a local fallback"
     note "set ${EDGE_ESCALATION_KEY_ENV} in ${EDGE_ENV_FILE} and restart to demo a real escalation" ;;
   *)
     fail "escalate returned HTTP ${STATUS}: $(head -c 300 "$BODY_FILE")" ;;
