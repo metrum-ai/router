@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PII-enabled model groups, and recheck the policy before replay (#664). A
   replay already past that check can still finish after a config change; stop
   and drain shadow runs for a strict cutover.
+- Bypass response-cache reads and writes for requests evaluated against
+  PII-enabled model groups while target-bound cache identity is reconciled
+  (#670). This may increase upstream calls for those groups.
 
 ## [4.5.0] - 2026-11-04
 
