@@ -330,6 +330,12 @@ test-k8s-amd-instinct-local-serving:
 test-k8s-nvidia-llmd-compat:
 	bash scripts/test_k8s_nvidia_llmd_compat.sh
 
+# Live parallel tool-call gate (#656): real GPT and Claude, direct and routed.
+# Costs money; capped at $5 per run and never part of per-PR CI.
+.PHONY: test-parallel-tool-live
+test-parallel-tool-live:
+	uv run --with pyyaml python3 scripts/parallel_tool_live.py --out .out/parallel-tool-live.json
+
 # Fine-tuning operator example: only tiny synthetic rows; never trains a model.
 .PHONY: ft-example-test
 ft-example-test:
