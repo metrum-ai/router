@@ -422,9 +422,20 @@ def stage_harbor(outdir, host=None):
         identity = env("RELEASE_GATE_HARBOR_KEY")
         if identity:
             ssh += ["-i", identity]
-        ssh += [host, command]
+        # The caller token and base URL travel over stdin into a 0600 file on the
+        # host, never on a command line and never in the log.
+        secrets = {key: env(key) for key in ("ROUTER_BASE_URL", "HARBOR_ROUTER_TOKEN") if env(key)}
+        if secrets:
+            payload = "".join(f"export {k}={shlex.quote(v)}\n" for k, v in secrets.items())
+            subprocess.run(ssh + [host, "umask 077; cat > /dev/shm/release-gate-harbor.env"],
+                           input=payload, text=True, capture_output=True, check=False)
+            command = ". /dev/shm/release-gate-harbor.env; rm -f /dev/shm/release-gate-harbor.env; " + command
+            if not command.startswith(". "):
+                raise GateError("internal: remote Harbor command prefix lost")
+        else:
+            command = "echo 'blocked: ROUTER_BASE_URL and HARBOR_ROUTER_TOKEN are required for the Harbor stage' >&2; exit 2"
         with log_path.open("w") as logfile:
-            code = subprocess.run(ssh, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
+            code = subprocess.run(ssh + [host, command], stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
         return [{
             "stage": "B",
             "lane": f"harbor-direct/routed (both styles) on {host}",
@@ -532,7 +543,9 @@ def render(rows, sha, cap, spent, config_source):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default=env("RELEASE_GATE_CONFIG"), help="full-capability router config (required)")
-    parser.add_argument("--out", default=str(ROOT / ".out" / "release-gate"))
+    # Default outside the worktree: stage C refuses a dirty router checkout, and
+    # the gate's own output inside the repository would make it dirty.
+    parser.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "release-gate"))
     parser.add_argument("--cap", type=float, default=15.0)
     parser.add_argument("--stages", default="a,b,c,d")
     parser.add_argument("--allow-dirty", action="store_true")
