@@ -52,7 +52,7 @@ LANES = (("openai-responses", "gpt"), ("openai-responses", "claude"),
          ("openai-chat", "gpt"), ("openai-chat", "claude"),
          ("anthropic-messages", "gpt"), ("anthropic-messages", "claude"))
 DIRECT = (("openai-responses", "gpt"), ("anthropic-messages", "claude"))
-API = {"openai-responses": "openai-responses", "anthropic-messages": "anthropic-messages"}
+API = {"openai-responses": "openai-responses", "openai-chat": "openai-completions", "anthropic-messages": "anthropic-messages"}
 MARKER = "RELEASE-GATE-TOOL-4917"
 
 
