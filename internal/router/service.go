@@ -1483,8 +1483,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
+	// Shadow receives the original body before PII filtering. Never replay it
+	// for a PII-enabled group; doing so could bypass redaction or fail-on-match.
 	// Audio-output, explicit no-store, reasoning-off and opaque reasoning requests must not be shadow replayed.
-	if rc.rec.Endpoint != "responses.compact" && !(developerHistory && group.PIIFilter.Enabled) && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	if rc.rec.Endpoint != "responses.compact" && !group.PIIFilter.Enabled && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
