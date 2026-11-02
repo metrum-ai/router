@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
 """Mock upstream for a Docker/Harbor adapter replay; never contacts providers."""
 import http.server,json,threading,urllib.parse
 class Mock(http.server.BaseHTTPRequestHandler):

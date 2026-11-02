@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
 """Bounded Harbor provider relay; credentials read only from root-owned tmpfs.
 
 Not an independently sufficient lease/run controller. A runner must assert the

@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq

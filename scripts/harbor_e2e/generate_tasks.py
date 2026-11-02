@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
 """Generate five fixed synthetic Harbor tasks; offline-safe and deterministic."""
 from pathlib import Path
 
