@@ -416,7 +416,11 @@ def stage_harbor(outdir, host=None):
         quoted = " ".join(shlex.quote(part) for part in common[:-1] + ["--out", remote_out])
         command = f"cd ~/router && python3 scripts/harbor_promotion.py {quoted}"
         log_path = target / "harbor-remote.log"
-        ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", host, command]
+        ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
+        identity = env("RELEASE_GATE_HARBOR_KEY")
+        if identity:
+            ssh += ["-i", identity]
+        ssh += [host, command]
         with log_path.open("w") as logfile:
             code = subprocess.run(ssh, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
         return [{
@@ -450,11 +454,18 @@ def stage_compat_live(outdir, config):
     if not env("OPENAI_API_KEY") or not env("ANTHROPIC_API_KEY"):
         return [{"stage": "C", "lane": "live SDK suites", "task": "pinned testers", "result": "skipped", "note": "provider keys missing"}]
     target = outdir / "compat-live"
-    envs = dict(os.environ)
-    envs.update(COMPAT_LIVE_CONFIG=str(config), COMPAT_LIVE_OUT=str(target), COMPAT_LIVE_ROUTER_SOURCE=str(ROOT))
-    log_path = outdir / "compat-live.log"
-    with log_path.open("w") as logfile:
-        code = subprocess.run([sys.executable, str(ROOT / "scripts" / "compat_live.py")], cwd=ROOT / "scripts", env=envs, stdout=logfile, stderr=subprocess.STDOUT).returncode
+    # compat_live.py refuses to write anywhere inside the repository, so it stages
+    # outside the worktree and the gate copies its sanitized report back in.
+    with tempfile.TemporaryDirectory(prefix="release-gate-compat-") as staging:
+        envs = dict(os.environ)
+        envs.update(COMPAT_LIVE_CONFIG=str(config), COMPAT_LIVE_OUT=str(Path(staging) / "compat-live"), COMPAT_LIVE_ROUTER_SOURCE=str(ROOT))
+        log_path = outdir / "compat-live.log"
+        with log_path.open("w") as logfile:
+            code = subprocess.run([sys.executable, str(ROOT / "scripts" / "compat_live.py")], cwd=ROOT / "scripts", env=envs, stdout=logfile, stderr=subprocess.STDOUT).returncode
+        staged = Path(staging) / "compat-live"
+        if staged.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(staged, target, dirs_exist_ok=True)
     cost = 0.0
     for line in log_path.read_text(errors="replace").splitlines():
         match = re.search(r"after shutdown and audit drain: \$([0-9.]+)", line)
@@ -468,7 +479,6 @@ def stage_compat_live(outdir, config):
             "result": "pass" if code == 0 else "fail",
             "exit": code,
             "cost_usd": round(cost, 6),
-            "note": f"logs: {log_path.name}",
         }
     ]
 
