@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Skip candidate shadow replay for requests evaluated against locally active
+  PII-enabled model groups, and recheck the policy before replay (#664). A
+  replay already past that check can still finish after a config change; stop
+  and drain shadow runs for a strict cutover.
+
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the
