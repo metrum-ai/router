@@ -279,11 +279,25 @@ jobs:
           path: ${{ env.COMPAT_CACHE }}
           key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
 
+  parallel-fixtures:
+    name: Parallel tool stream fixtures
+    if: github.event_name != 'push'
+    runs-on: router-arc-small
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Replay parallel tool streams
+        run: go test ./internal/stream -run '^TestParallelThreeStreamTranslations$' -count=1
+
   ci:
     name: ci
     runs-on: router-arc-small
     if: always()
-    needs: [router, other-go, other, sbom, warm]
+    needs: [router, other-go, other, sbom, warm, parallel-fixtures]
     timeout-minutes: 5
     steps:
       - name: Require every lane
@@ -294,15 +308,16 @@ jobs:
           OTHER_RESULT: ${{ needs.other.result }}
           SBOM_RESULT: ${{ needs.sbom.result }}
           WARM_RESULT: ${{ needs.warm.result }}
+          PARALLEL_RESULT: ${{ needs.parallel-fixtures.result }}
         run: |
           if [ "$CI_EVENT" = push ]; then
             [ "$WARM_RESULT" = success ] || { echo "Main cache warm failed: $WARM_RESULT" >&2; exit 1; }
-            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT"; do
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT" "$PARALLEL_RESULT"; do
               [ "$result" = skipped ] || { echo "Unexpected push lane result: $result" >&2; exit 1; }
             done
           else
             [ "$WARM_RESULT" = skipped ] || { echo "Unexpected cache warm result: $WARM_RESULT" >&2; exit 1; }
-            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$PARALLEL_RESULT"; do
               [ "$result" = success ] || { echo "A required CI lane did not succeed: $result" >&2; exit 1; }
             done
             if [ "$CI_EVENT" = pull_request ]; then

@@ -1,0 +1,44 @@
+: Copyright 2026 Metrum AI
+: SPDX-License-Identifier: Apache-2.0
+: Synthetic canary, not a captured live-provider trace.
+
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_fixture","created_at":123}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_a","call_id":"call_a","name":"read","arguments":""}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_b","call_id":"call_b","name":"read","arguments":""}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":2,"item":{"type":"function_call","id":"fc_c","call_id":"call_c","name":"read","arguments":""}}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_a","delta":"{\"path\":\""}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":1,"item_id":"fc_b","delta":"{\"path\":\""}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":2,"item_id":"fc_c","delta":"{\"path\":\"c\"}"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"fc_a","delta":"a\"}"}
+
+event: response.function_call_arguments.delta
+data: {"type":"response.function_call_arguments.delta","output_index":1,"item_id":"fc_b","delta":"b\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","output_index":0,"item_id":"fc_a","arguments":"{\"path\":\"a\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","output_index":1,"item_id":"fc_b","arguments":"{\"path\":\"b\"}"}
+
+event: response.function_call_arguments.done
+data: {"type":"response.function_call_arguments.done","output_index":2,"item_id":"fc_c","arguments":"{\"path\":\"c\"}"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_fixture","usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}
+
+: end fixture
