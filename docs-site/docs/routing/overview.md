@@ -65,7 +65,7 @@ Request-shape filtering happens before the routing strategy runs. A weighted or 
 | Positive max-token cap | Target is not marked as unsafe for caller caps. |
 | Large input or output reserve | Estimated input plus requested output cap fits the target context window and configured request-shape limits. |
 
-If no target in the requested group satisfies the full request shape, the router returns `502 no-eligible-target` before sending an upstream request. Error details include the request ID and bounded requirement/reason labels, not prompts, tool schemas, images, tokens, provider keys, or deployment config.
+If no configured target in the requested group satisfies the full Chat, Responses, or Messages request shape, the router returns a 400 compatibility or modality error before sending an upstream request; see [Error Reference](../reference/errors) for codes and exceptions. OpenAI-shaped error details can include the request ID and bounded requirement/reason labels, not prompts, tool schemas, images, tokens, provider keys, or deployment config.
 
 ## Context And Large-Agent Payloads
 

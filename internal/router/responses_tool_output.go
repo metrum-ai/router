@@ -139,13 +139,17 @@ func anthropicImageMetadataUnsupported(req *IRRequest, caller string) bool {
 }
 
 func responsesHasDeveloper(req *IRRequest) bool {
+	return responsesHasInstructionRole(req, "developer")
+}
+
+func responsesHasInstructionRole(req *IRRequest, role string) bool {
 	if req == nil {
 		return false
 	}
 	for _, value := range valueAsSlice(req.Raw["input"]) {
 		item, _ := value.(map[string]any)
 		typ := stringValue(item["type"])
-		if (typ == "" || typ == "message") && stringValue(item["role"]) == "developer" {
+		if (typ == "" || typ == "message") && stringValue(item["role"]) == role {
 			return true
 		}
 	}

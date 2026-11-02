@@ -15,6 +15,7 @@ on:
       - "docs/**"
       - "docs-site/**"
       - "config.example.yaml"
+      - "Makefile"
       - "scripts/check_docs_*.py"
       - "scripts/validate_docs_*.py"
       - ".github/workflows/docs-qa.yml"
@@ -25,6 +26,9 @@ on:
       - "docs/**"
       - "docs-site/**"
       - "config.example.yaml"
+      - "Makefile"
+      - "scripts/check_docs_*.py"
+      - "scripts/validate_docs_*.py"
       - ".github/workflows/docs-qa.yml"
   workflow_dispatch:
 

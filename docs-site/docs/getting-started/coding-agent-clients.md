@@ -27,7 +27,7 @@ Metrum AI Router can serve coding-agent clients through deployment-defined model
 
 Successful smokes should prove task outcome, not just HTTP status. For workspace edit tasks, run a unit test or check an exact file diff. For image tasks, verify the answer against an expected result. For disallowed model groups, expect a safe router error and no upstream provider call.
 
-Different clients can see different effective target pools inside the same model group because they use different API surfaces. Codex uses OpenAI Responses, Claude Code uses Anthropic Messages, and many IDE clients use OpenAI Chat. A target validated for Chat tools is not automatically eligible for Responses function tools or Anthropic client tools. If one client receives `no-eligible-target` or appears to route to fewer upstreams than another client, ask the deployment admin to inspect effective provider-skin eligibility for that group.
+Different clients can see different effective target pools inside the same model group because they use different API surfaces. Codex uses OpenAI Responses, Claude Code uses Anthropic Messages, and many IDE clients use OpenAI Chat. A target validated for Chat tools is not automatically eligible for Responses function tools or Anthropic client tools. If one client receives a compatibility error or appears to route to fewer upstreams than another client, ask the deployment admin to inspect effective provider-skin eligibility for that group.
 
 Admins can validate production-safe coding-agent request shapes with sanitized smoke fixtures instead of captured customer prompts. A complete fixture set should cover Codex Responses reasoning/tools, Cursor Chat tools and bridge shapes, Claude Code thinking/tools, opencode/aider Chat flows, large tool schemas, provider-skin mismatch, no-eligible diagnostics, and upstream error classification. Run the fixtures against a dedicated smoke model group, not an active production group, and grant the test caller explicit access to that group in deployment config.
 
@@ -272,7 +272,7 @@ For Cursor, Continue.dev, Cline, Roo Code, SDK-based agents, LiteLLM adapters, a
 | Error | Meaning | Next step |
 |---|---|---|
 | `403` or model access failure | The token is not allowed to use that model group | Call `/v1/models` with the same token |
-| `502 no-eligible-target` | The group has no target for the request's dialect, tools, modality, structured output, or cap requirement | Use a compatible group or ask the deployment admin to validate and enable a target |
+| 400 compatibility or modality error | Configured targets cannot satisfy the request's dialect, tools, modality, structured output, or cap requirement | Use a compatible group or ask the deployment admin to validate and enable a target; see [Error Reference](../reference/errors) |
 | Reasoning request rejected | The group has no active target or bridge that can preserve the requested `reasoning_effort`, `reasoning`, or `thinking` control | Check `/v1/models`, request diagnostics, bridge metadata, and selected provider skin |
 | One client routes to fewer upstreams than another | The clients use different API surfaces and the group has different active targets per skin | Ask the admin to check provider catalog status for effective eligibility by skin |
 | Claude Code calls Anthropic directly | Environment still has direct Anthropic settings | Unset `ANTHROPIC_API_KEY` and check `ANTHROPIC_BASE_URL` |
