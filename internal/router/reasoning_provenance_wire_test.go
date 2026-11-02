@@ -97,7 +97,7 @@ func TestReasoningProvenanceWrapsAndUnwrapsSameOrigin(t *testing.T) {
 	binding := provenanceTestBinding(t, "enforce")
 	now := time.Now().UTC()
 	scope := provenanceOpenAIScope()
-	envelope := binding.wrapOutboundValue(reasoningKindEncryptedContent, "provider-ciphertext", scope, now, &reasoningProvenanceStats{})
+	envelope, _ := binding.wrapOutboundValue(reasoningKindEncryptedContent, "provider-ciphertext", scope, now, &reasoningProvenanceStats{})
 	if !strings.HasPrefix(envelope, "rtr_rz1.k1.") || len(envelope) <= len("provider-ciphertext") {
 		t.Fatalf("value was not wrapped: %q", envelope)
 	}
@@ -119,7 +119,7 @@ func TestReasoningProvenanceDropsForeignOrigin(t *testing.T) {
 		origin := provenanceOpenAIScope()
 		foreign := origin
 		foreign.KeyID = "acct-b"
-		envelope := binding.wrapOutboundValue(reasoningKindEncryptedContent, "ciphertext", foreign, now, &reasoningProvenanceStats{})
+		envelope, _ := binding.wrapOutboundValue(reasoningKindEncryptedContent, "ciphertext", foreign, now, &reasoningProvenanceStats{})
 		request := map[string]any{"input": []any{
 			map[string]any{"type": "reasoning", "encrypted_content": envelope},
 			map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": "keep me"}}},
@@ -159,8 +159,8 @@ func TestReasoningProvenanceAnthropicBlocks(t *testing.T) {
 	binding := provenanceTestBinding(t, "enforce")
 	now := time.Now().UTC()
 	scope := reasoningScope{Dialect: "anthropic", Provider: "mock", KeyID: "acct-a", Model: "claude-test"}
-	signature := binding.wrapOutboundValue(reasoningKindThinkingSig, "sig-1", scope, now, &reasoningProvenanceStats{})
-	redacted := binding.wrapOutboundValue(reasoningKindRedactedThinking, "opaque-redacted", scope, now, &reasoningProvenanceStats{})
+	signature, _ := binding.wrapOutboundValue(reasoningKindThinkingSig, "sig-1", scope, now, &reasoningProvenanceStats{})
+	redacted, _ := binding.wrapOutboundValue(reasoningKindRedactedThinking, "opaque-redacted", scope, now, &reasoningProvenanceStats{})
 	request := map[string]any{"messages": []any{
 		map[string]any{"role": "assistant", "content": []any{
 			map[string]any{"type": "thinking", "thinking": "reasoning text", "signature": signature},
@@ -179,7 +179,7 @@ func TestReasoningProvenanceAnthropicBlocks(t *testing.T) {
 
 	foreign := scope
 	foreign.KeyID = "acct-b"
-	foreignSignature := binding.wrapOutboundValue(reasoningKindThinkingSig, "sig-2", foreign, now, &reasoningProvenanceStats{})
+	foreignSignature, _ := binding.wrapOutboundValue(reasoningKindThinkingSig, "sig-2", foreign, now, &reasoningProvenanceStats{})
 	request["messages"].([]any)[0].(map[string]any)["content"] = []any{
 		map[string]any{"type": "thinking", "thinking": "reasoning text", "signature": foreignSignature},
 		map[string]any{"type": "tool_use", "id": "tu_1", "name": "lookup", "input": map[string]any{"q": "x"}},
@@ -235,8 +235,8 @@ func TestReasoningProvenanceOutboundRawAndFrames(t *testing.T) {
 		t.Fatalf("unrelated frame changed: %s", got)
 	}
 	// Already-bound values are not double wrapped.
-	envelope := binding.wrapOutboundValue(reasoningKindEncryptedContent, "value", scope, now, &reasoningProvenanceStats{})
-	if again := binding.wrapOutboundValue(reasoningKindEncryptedContent, envelope, scope, now, &reasoningProvenanceStats{}); again != envelope {
+	envelope, _ := binding.wrapOutboundValue(reasoningKindEncryptedContent, "value", scope, now, &reasoningProvenanceStats{})
+	if again, _ := binding.wrapOutboundValue(reasoningKindEncryptedContent, envelope, scope, now, &reasoningProvenanceStats{}); again != envelope {
 		t.Fatal("value was wrapped twice")
 	}
 }
@@ -287,7 +287,7 @@ func TestReasoningProvenanceEndToEndUnary(t *testing.T) {
 	svc := provenanceWireService(t, upstream, "enforce", nil)
 	binding := svc.provenance
 	scope := reasoningScope{Dialect: "openai-responses", Provider: "mock", KeyID: "acct-a", Model: "mock-model", Group: "native"}
-	envelope := binding.wrapOutboundValue(reasoningKindEncryptedContent, "prior-provider-ciphertext", scope, time.Now().UTC(), &reasoningProvenanceStats{})
+	envelope, _ := binding.wrapOutboundValue(reasoningKindEncryptedContent, "prior-provider-ciphertext", scope, time.Now().UTC(), &reasoningProvenanceStats{})
 	body := `{"model":"native","input":[{"type":"reasoning","encrypted_content":"` + envelope + `"},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":false}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
@@ -318,7 +318,7 @@ func TestReasoningProvenanceEndToEndCrossAccountDrop(t *testing.T) {
 	defer upstream.Close()
 	svc := provenanceWireService(t, upstream, "enforce", nil)
 	foreignScope := reasoningScope{Dialect: "openai-responses", Provider: "mock", KeyID: "acct-b", Model: "mock-model", Group: "native"}
-	envelope := svc.provenance.wrapOutboundValue(reasoningKindEncryptedContent, "foreign-ciphertext", foreignScope, time.Now().UTC(), &reasoningProvenanceStats{})
+	envelope, _ := svc.provenance.wrapOutboundValue(reasoningKindEncryptedContent, "foreign-ciphertext", foreignScope, time.Now().UTC(), &reasoningProvenanceStats{})
 	body := `{"model":"native","input":[{"type":"reasoning","encrypted_content":"` + envelope + `"},{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"stream":false}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
@@ -395,5 +395,60 @@ func TestReasoningProvenanceEndToEndStreaming(t *testing.T) {
 	sent, _ := replayBody.Load().(string)
 	if !strings.Contains(sent, "streamed-provider-ciphertext") || strings.Contains(sent, "rtr_rz1.") {
 		t.Fatalf("streamed history was not unwrapped for its origin: %s", sent)
+	}
+}
+
+// A provider value above the binding limit is never emitted unbound in enforce
+// mode; observe keeps it and traces the oversize class.
+func TestReasoningProvenanceOversizeOutbound(t *testing.T) {
+	now := time.Now().UTC()
+	scope := provenanceOpenAIScope()
+	atLimit := strings.Repeat("a", maxReasoningOpaqueBytes)
+	overLimit := atLimit + "b"
+	for _, mode := range []string{"observe", "enforce"} {
+		binding := provenanceTestBinding(t, mode)
+		var stats reasoningProvenanceStats
+		got, dropped := binding.wrapOutboundValue(reasoningKindEncryptedContent, overLimit, scope, now, &stats)
+		if stats.dropped["oversized"] != 1 {
+			t.Fatalf("%s: expected oversize class, got %s", mode, stats.summary())
+		}
+		if mode == "enforce" {
+			if !dropped || got != "" {
+				t.Fatalf("enforce emitted an unbound oversize value")
+			}
+		} else {
+			if dropped || got != overLimit {
+				t.Fatalf("observe must keep the oversize value")
+			}
+		}
+		// At the limit the value is bound, not dropped.
+		var limitStats reasoningProvenanceStats
+		bound, limitDrop := binding.wrapOutboundValue(reasoningKindEncryptedContent, atLimit, scope, now, &limitStats)
+		if limitDrop || limitStats.wrapped != 1 || !strings.HasPrefix(bound, reasoningEnvelopePrefix+".") {
+			t.Fatalf("%s: value at the limit was not bound: %s", mode, limitStats.summary())
+		}
+	}
+}
+
+// In enforce mode an oversize item is removed from the response document rather
+// than handed to the caller unbound.
+func TestReasoningProvenanceOversizeDropsResponseItem(t *testing.T) {
+	now := time.Now().UTC()
+	scope := provenanceOpenAIScope()
+	overLimit := strings.Repeat("a", maxReasoningOpaqueBytes+1)
+	raw := []byte(`{"output":[{"type":"reasoning","encrypted_content":"` + overLimit + `"},{"type":"message","content":[]}]}`)
+	enforce := provenanceTestBinding(t, "enforce")
+	var stats reasoningProvenanceStats
+	wrapped := enforce.wrapOutboundRaw(raw, scope, now, &stats)
+	if strings.Contains(string(wrapped), overLimit[:64]) || strings.Contains(string(wrapped), "reasoning") {
+		t.Fatalf("enforce returned an unbound oversize value: %d bytes", len(wrapped))
+	}
+	if stats.dropped["oversized"] != 1 {
+		t.Fatalf("expected oversize class: %s", stats.summary())
+	}
+	observe := provenanceTestBinding(t, "observe")
+	wrapped = observe.wrapOutboundRaw(raw, scope, now, &reasoningProvenanceStats{})
+	if !strings.Contains(string(wrapped), overLimit[:64]) {
+		t.Fatal("observe must pass the oversize value through")
 	}
 }

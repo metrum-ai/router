@@ -304,31 +304,44 @@ func (b reasoningProvenanceBinding) applyInbound(raw map[string]any, dialect str
 	return result, stats
 }
 
-// wrapOutboundValue binds a provider value to the served scope. On any failure
-// the original value is returned unchanged so a caller is never handed a
-// half-built envelope.
-func (b reasoningProvenanceBinding) wrapOutboundValue(kind reasoningKind, value string, scope reasoningScope, now time.Time, stats *reasoningProvenanceStats) string {
+// wrapOutboundValue binds a provider value to the served scope. It returns the
+// value to emit plus whether the containing object must be dropped. A value
+// that cannot be bound is never emitted unbound in enforce mode: observe keeps
+// it and traces, enforce removes it and traces.
+func (b reasoningProvenanceBinding) wrapOutboundValue(kind reasoningKind, value string, scope reasoningScope, now time.Time, stats *reasoningProvenanceStats) (string, bool) {
 	if !b.wraps() || value == "" {
-		return value
+		return value, false
 	}
 	if strings.HasPrefix(value, reasoningEnvelopePrefix+".") {
 		// Already bound (for example a native round trip through a stored item).
-		return value
+		return value, false
 	}
-	if kind == reasoningKindThinkingSig && len(value) > maxReasoningOpaqueBytes {
-		return value
+	if len(value) > maxReasoningOpaqueBytes {
+		return b.unboundValue(value, "oversized", stats)
 	}
 	envelope, err := b.key.wrap(scope, kind, value, now, b.ttl)
 	if err != nil {
-		if stats != nil {
-			stats.drop("wrap-failed")
+		class := "wrap-failed"
+		if errors.Is(err, errEnvelopeOpaqueLarge) || errors.Is(err, errEnvelopePayloadLarge) || errors.Is(err, errEnvelopeTooLarge) {
+			class = "oversized"
 		}
-		return value
+		return b.unboundValue(value, class, stats)
 	}
 	if stats != nil {
 		stats.wrapped++
 	}
-	return envelope
+	return envelope, false
+}
+
+// unboundValue applies the mode policy for a value that could not be bound.
+func (b reasoningProvenanceBinding) unboundValue(value, class string, stats *reasoningProvenanceStats) (string, bool) {
+	if stats != nil {
+		stats.drop(class)
+	}
+	if b.enforces() {
+		return "", true
+	}
+	return value, false
 }
 
 // wrapOutboundJSON binds opaque values inside a response document.
@@ -337,7 +350,7 @@ func (b reasoningProvenanceBinding) wrapOutboundJSON(document map[string]any, sc
 		return document
 	}
 	rewritten := rewriteOpaqueReasoningValues(document, func(kind reasoningKind, value string) (string, bool) {
-		return b.wrapOutboundValue(kind, value, scope, now, stats), false
+		return b.wrapOutboundValue(kind, value, scope, now, stats)
 	})
 	if result, ok := rewritten.(map[string]any); ok {
 		return result
@@ -441,7 +454,7 @@ func (b reasoningProvenanceBinding) wrapOutboundRaw(raw []byte, scope reasoningS
 		return raw
 	}
 	wrapped := rewriteOpaqueReasoningValues(document, func(kind reasoningKind, value string) (string, bool) {
-		return b.wrapOutboundValue(kind, value, scope, now, stats), false
+		return b.wrapOutboundValue(kind, value, scope, now, stats)
 	})
 	result, ok := wrapped.(map[string]any)
 	if !ok {
