@@ -33,7 +33,11 @@ class Relay(http.server.BaseHTTPRequestHandler):
    if not self.server.budget.take(length):self.send_error(429);return
   except (ValueError,TypeError,json.JSONDecodeError):self.send_error(400);return
   secrets=json.loads(pathlib.Path(self.server.secrets_path).read_text())
-  url=('https://api.openai.com/v1/'+('responses' if parsed.path.endswith('/responses') else 'chat/completions') if provider=='openai' else 'https://api.anthropic.com/v1/messages'+('?' + parsed.query if parsed.query else ''))
+  override=os.environ.get('RELAY_UPSTREAM_BASE','').rstrip('/')
+  if override:
+   url=override+('/v1/responses' if provider=='openai' and parsed.path.endswith('/responses') else '/v1/chat/completions' if provider=='openai' else '/v1/messages')
+  else:
+   url=('https://api.openai.com/v1/'+('responses' if parsed.path.endswith('/responses') else 'chat/completions') if provider=='openai' else 'https://api.anthropic.com/v1/messages'+('?' + parsed.query if parsed.query else ''))
   headers={'Content-Type':'application/json','Accept':'text/event-stream'}
   if provider=='openai':headers['Authorization']='Bearer '+secrets['openai']
   else:

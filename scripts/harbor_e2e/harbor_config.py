@@ -11,8 +11,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-GPT_MODEL = "gpt-4o-mini"
-CLAUDE_MODEL = "claude-haiku-4-5"
+GPT_MODEL = "gpt-4.1-mini"
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 
 def caller_tokens() -> dict[tuple[str, str], str]:
@@ -20,7 +20,7 @@ def caller_tokens() -> dict[tuple[str, str], str]:
     return {(style, group): f"harbor-{style}-{group}" for style in ("openai-responses", "anthropic-messages") for group in ("gpt", "claude")}
 
 
-def make_config(work: Path, router_port: int, relay_port: int, relay_host: str = "172.17.0.1") -> str:
+def make_config(work: Path, router_port: int, relay_port: int, relay_host: str = "172.17.0.1", upstream_base: str | None = None) -> str:
     callers = []
     for (style, group), token in caller_tokens().items():
         digest = hashlib.sha256(token.encode()).hexdigest()
@@ -38,6 +38,8 @@ def make_config(work: Path, router_port: int, relay_port: int, relay_host: str =
     )
     shape = "request_shape_support: {supported_inbound_dialects: [openai-chat, openai-responses, anthropic], validation_status: passed}"
     bridge = "bridges: {chat_to_responses: {enabled: true, text: true, tools: true, tool_choice: true, parallel_tool_calls: true, streaming: true}, responses_to_chat: {enabled: true, text: true, tools: true, tool_choice: true, streaming: true}}"
+    openai_base = f"{upstream_base}/openai/v1" if upstream_base else f"http://{relay_host}:{relay_port}/openai/v1"
+    anthropic_base = f"{upstream_base}/anthropic" if upstream_base else f"http://{relay_host}:{relay_port}/anthropic"
     return f"""server:
   listen: "0.0.0.0:{router_port}"
   identifiers: {{mode: passthrough}}
@@ -47,8 +49,8 @@ def make_config(work: Path, router_port: int, relay_port: int, relay_host: str =
   logging: {{path: "{work / 'router.jsonl'}"}}
 state_path: "{work / 'state.json'}"
 providers:
-  openai_direct: {{base_url: "http://{relay_host}:{relay_port}/openai/v1", dialect: openai-responses, api_key: "synthetic-upstream"}}
-  anthropic_direct: {{base_url: "http://{relay_host}:{relay_port}/anthropic", dialect: anthropic, api_key: "synthetic-upstream"}}
+  openai_direct: {{base_url: "{openai_base}", dialect: openai-responses, api_key: "synthetic-upstream"}}
+  anthropic_direct: {{base_url: "{anthropic_base}", dialect: anthropic, api_key: "synthetic-upstream"}}
 models:
   gpt:
     strategy: static

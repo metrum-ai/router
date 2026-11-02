@@ -24,7 +24,8 @@ ROOT=pathlib.Path(os.environ.get('HARBOR_E2E_ROOT','/root/harbor-e2e'))
 TMP=pathlib.Path(os.environ.get('HARBOR_E2E_CREDS','/run/harbor-e2e'))
 HOST=os.environ.get('HARBOR_E2E_HOST','172.17.0.1')
 SHA=os.environ.get('HARBOR_E2E_SHA','')
-if subprocess.check_output(['findmnt','-no','FSTYPE','--target',str(TMP)],text=True).strip()!='tmpfs':raise SystemExit('credential directory not tmpfs')
+SELFTEST=os.environ.get('HARBOR_E2E_SELFTEST')=='1'
+if not SELFTEST and subprocess.check_output(['findmnt','-no','FSTYPE','--target',str(TMP)],text=True).strip()!='tmpfs':raise SystemExit('credential directory not tmpfs')
 if (ROOT/'started').exists():raise SystemExit('already started; no repeat')
 (ROOT/'started').touch(); tasks=ROOT/'tasks';generate_tasks.generate(tasks)
 for p in (TMP/'provider-secrets.json',TMP/'router-token'):
@@ -39,46 +40,95 @@ def run(name,style,mode,group,port,path):
  rewards=list((ROOT/'jobs'/name).rglob('reward.txt'))
  vals=[p.read_text().strip() for p in rewards];print(json.dumps({'job':name,'exit':r.returncode,'count':len(vals),'passed':vals.count('1'),'values':vals}),flush=True)
  return {'exit':r.returncode,'values':vals}
-mock=mock_messages.start(HOST,18082)
-try:
- (TMP/'router-token').write_text('synthetic-replay')
- replay=run('offline-replay','anthropic-messages','routed','claude',18082,tasks/'hello')
- if replay['exit']!=0 or replay['values']!=['1'] or mock_messages.Mock.calls!=2:raise RuntimeError('Harbor Docker/adapter mock replay failed')
-finally:mock.shutdown();mock.server_close()
+if not SELFTEST:
+    mock = mock_messages.start(HOST, 18082)
+    try:
+        (TMP / 'router-token').write_text('synthetic-replay')
+        replay = run('offline-replay', 'anthropic-messages', 'routed', 'claude', 18082, tasks / 'hello')
+        if replay['exit'] != 0 or replay['values'] != ['1'] or mock_messages.Mock.calls != 2:
+            raise RuntimeError('Harbor Docker/adapter mock replay failed')
+    finally:
+        mock.shutdown()
+        mock.server_close()
 print('OFFLINE REPLAY PASSED; provider calls not yet made',flush=True)
-relay=guarded_relay.http.server.ThreadingHTTPServer((HOST,18081),guarded_relay.Relay)
-relay.budget=guarded_relay.Budget(max_calls=80,max_reserve=1.5);relay.secrets_path=TMP/'provider-secrets.json';relay.records_path=ROOT/'provider-usage.jsonl'
-threading.Thread(target=relay.serve_forever,daemon=True).start()
-# The router listens on the docker bridge so task containers can reach it; the
-# relay is reached by the router over loopback.
-config=make_config(TMP,18080,18081);(TMP/'router.yaml').write_text(config)
-tokens=harbor_config.caller_tokens()
-proc=None;results={}
+# --- one relay and one router for the whole matrix -------------------------
+# Binding per lane is what made a repeat attempt fail with "Address already in
+# use"; both are started once here and torn down once in the finally block.
+relay = guarded_relay.http.server.ThreadingHTTPServer((HOST, 18081), guarded_relay.Relay)
+relay.budget = guarded_relay.Budget(max_calls=80, max_reserve=1.5)
+relay.secrets_path = TMP / 'provider-secrets.json'
+relay.records_path = ROOT / 'provider-usage.jsonl'
+threading.Thread(target=relay.serve_forever, daemon=True).start()
+
+config = make_config(TMP, 18080, 18081, upstream_base=os.environ.get('HARBOR_E2E_UPSTREAM') or None)
+(TMP / 'router.yaml').write_text(config)
+tokens = harbor_config.caller_tokens()
+proc = None
+results = {}
 try:
- with (ROOT/'router-start.log').open('w') as f:
-  proc=subprocess.Popen([str(ROOT/'router'),'-config',str(TMP/'router.yaml')],env=baseenv,stdout=f,stderr=subprocess.STDOUT)
-  import urllib.request
-  for _ in range(240):
-   if proc.poll() is not None:raise RuntimeError('router failed')
-   try:
-    with urllib.request.urlopen(f'http://{HOST}:18080/readyz',timeout=1):break
-   except OSError:time.sleep(.25)
-  else:raise RuntimeError('router not ready')
-  lanes=[('direct','openai-responses','gpt'),('routed','openai-responses','gpt'),
-         ('direct','anthropic-messages','claude'),('routed','anthropic-messages','claude')]
-  for mode,style,group in lanes:
-   (TMP/'router-token').write_text(tokens[(style,group)])
-   name=mode+'-'+group
-   results[name]=run(name,style,mode,group,18081 if mode=='direct' else 18080,tasks)
-   (ROOT/'result.json').write_text(json.dumps({'sha':SHA,'jobs':results,'reserved_upper_usd':relay.budget.reserved,'requests':relay.budget.calls},indent=2)+'\n')
-   if len(results[name]['values'])!=5 or results[name]['exit']!=0:raise RuntimeError('incomplete Harbor job '+name)
-  for group in ('gpt','claude'):
-   direct=results['direct-'+group]['values'];routed=results['routed-'+group]['values']
-   if len(direct)!=5 or len(routed)!=5:raise RuntimeError('Harbor task inventory mismatch '+group)
-   if any(direct[k]=='1' and routed[k]!='1' for k in direct):raise RuntimeError('Harbor baseline mismatch '+group)
+    with (ROOT / 'router-start.log').open('w') as f:
+        proc = subprocess.Popen([str(ROOT / 'router'), '-config', str(TMP / 'router.yaml')], env=baseenv, stdout=f, stderr=subprocess.STDOUT)
+        import urllib.request
+        for _ in range(240):
+            if proc.poll() is not None:
+                raise RuntimeError('router failed')
+            try:
+                with urllib.request.urlopen(f'http://{HOST}:18080/readyz', timeout=1):
+                    break
+            except OSError:
+                time.sleep(.25)
+        else:
+            raise RuntimeError('router not ready')
+        lanes = [('direct', 'openai-responses', 'gpt'), ('routed', 'openai-responses', 'gpt'),
+                 ('direct', 'anthropic-messages', 'claude'), ('routed', 'anthropic-messages', 'claude')]
+        if SELFTEST:
+            # Spend-free local proof of the orchestration: relay and router bind
+            # once, every lane's token authenticates, and each lane's request
+            # traverses router -> relay -> local mock.
+            for mode, style, group in lanes:
+                (TMP / 'router-token').write_text(tokens[(style, group)])
+                name = mode + '-' + group
+                path = '/v1/responses' if style == 'openai-responses' else '/v1/messages'
+                body = json.dumps({'model': group, 'stream': True, 'max_output_tokens': 64,
+                                   'input': 'ping' if style == 'openai-responses' else None,
+                                   'max_tokens': 64 if style == 'anthropic-messages' else None,
+                                   'messages': [{'role': 'user', 'content': 'ping'}] if style == 'anthropic-messages' else None}).encode()
+                headers = {'Content-Type': 'application/json', 'stream': 'true'}
+                if style == 'openai-responses':
+                    headers['Authorization'] = 'Bearer ' + tokens[(style, group)]
+                else:
+                    headers['x-api-key'] = tokens[(style, group)]
+                    headers['anthropic-version'] = '2023-06-01'
+                body = json.dumps({k: v for k, v in json.loads(body).items() if v is not None}).encode()
+                req = urllib.request.Request(f'http://{HOST}:18080{path}', data=body, headers=headers, method='POST')
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    status = response.status
+                    response.read()
+                results[name] = {'exit': 0 if status == 200 else 1, 'values': ['1'] * 5 if status == 200 else ['0'] * 5}
+                print(json.dumps({'lane': name, 'status': status, 'selftest': True}), flush=True)
+            (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'jobs': results, 'selftest': True}, indent=2) + '\n')
+        else:
+            for mode, style, group in lanes:
+                (TMP / 'router-token').write_text(tokens[(style, group)])
+                name = mode + '-' + group
+                results[name] = run(name, style, mode, group, 18081 if mode == 'direct' else 18080, tasks)
+                (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'jobs': results, 'reserved_upper_usd': relay.budget.reserved, 'requests': relay.budget.calls}, indent=2) + '\n')
+                if len(results[name]['values']) != 5 or results[name]['exit'] != 0:
+                    raise RuntimeError('incomplete Harbor job ' + name)
+            for group in ('gpt', 'claude'):
+                direct = results['direct-' + group]['values']
+                routed = results['routed-' + group]['values']
+                if len(direct) != 5 or len(routed) != 5:
+                    raise RuntimeError('Harbor task inventory mismatch ' + group)
+                if any(direct[k] == '1' and routed[k] != '1' for k in direct):
+                    raise RuntimeError('Harbor baseline mismatch ' + group)
 finally:
- if proc:
-  proc.terminate()
-  try:proc.wait(15)
-  except subprocess.TimeoutExpired:proc.kill();proc.wait(5)
- relay.shutdown();relay.server_close()
+    if proc:
+        proc.terminate()
+        try:
+            proc.wait(15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(5)
+    relay.shutdown()
+    relay.server_close()
