@@ -14,6 +14,8 @@ Only the standard library is used so the suite runs on a bare host.
 Environment:
   ROUTER_TOKEN          required; caller token (never printed or written)
   OPENAI_API_KEY        optional; when empty the escalation check is skipped
+  RESTRICTED_TOKEN      optional; a caller token without the escalate group, used to prove
+                        that group grants are enforced
   REFERENCE_ADMIN_USER  optional; with REFERENCE_ADMIN_PASSWORD checks the admin UI
   REFERENCE_ADMIN_PASSWORD
 
@@ -150,6 +152,22 @@ def check_auth_negative(suite: Suite, base_url: str) -> None:
         suite.fail("auth-invalid", f"expected 401 or 403 with an unknown token, got {status}")
 
 
+def check_group_grant(suite: Suite, base_url: str, token: str, group: str = "escalate") -> None:
+    """A caller that was not granted a group must not reach it.
+
+    The router answers `404 model_not_found` here rather than `403`: the group does
+    not exist from that caller's point of view. Whatever the code, the point is
+    that the request does not reach the upstream.
+    """
+    status, text = request("POST", f"{base_url}/v1/chat/completions", token=token, body=completion_body(group))
+    if status in (403, 404):
+        suite.ok("group-grant", f"{group} is not reachable with a caller that was not granted it ({status})", group)
+    elif status == 200:
+        suite.fail("group-grant", f"{group} answered a caller that was not granted it", group)
+    else:
+        suite.skip("group-grant", f"unexpected {status}: {text[:160]}", group)
+
+
 def check_escalation(suite: Suite, base_url: str, token: str) -> None:
     if not os.environ.get("OPENAI_API_KEY"):
         suite.skip("escalation", "OPENAI_API_KEY is not set; the escalate group has no key to use", "escalate")
@@ -188,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         help="local group to complete (repeatable; default: local-tiny and local-chat)",
     )
     parser.add_argument("--out", default="", help="write the JSON result here instead of stdout")
+    parser.add_argument("--group-grant-check", default="escalate",
+                        help="group that RESTRICTED_TOKEN must not be able to reach")
     args = parser.parse_args(argv)
 
     token = os.environ.get("ROUTER_TOKEN", "")
@@ -203,6 +223,13 @@ def main(argv: list[str] | None = None) -> int:
     for group in groups:
         check_completion(suite, base_url, token, group)
     check_escalation(suite, base_url, token)
+    if os.environ.get("RESTRICTED_TOKEN"):
+        check_group_grant(suite, base_url, os.environ["RESTRICTED_TOKEN"], args.group_grant_check)
+    else:
+        suite.skip(
+            "group-grant",
+            "RESTRICTED_TOKEN is not set; a caller without the group is not exercised",
+        )
     check_auth_negative(suite, base_url)
     check_admin(suite, base_url)
 

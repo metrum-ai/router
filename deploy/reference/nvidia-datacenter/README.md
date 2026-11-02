@@ -51,7 +51,8 @@ Resolve or refresh a pin with `docker buildx imagetools inspect <image>`; update
 | `escalate` | static | `frontier-chat` on `frontier` | OpenAI-compatible frontier API, operator key |
 
 `escalate` is a separate group so a caller opts in explicitly, a caller without
-it receives `403`, and its spend appears as its own row in reports. A missing
+it receives `404 model_not_found` (the group is not visible to that caller), and
+its spend appears as its own row in reports. A missing
 `OPENAI_API_KEY` does not fall back to a local answer; the request fails at the
 upstream with the provider's authentication error.
 

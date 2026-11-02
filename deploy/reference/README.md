@@ -66,7 +66,8 @@ not, and say so in their Limits).
 - `escalate`: the escalation path off the box. It points at an
   OpenAI-compatible frontier endpoint (default `https://api.openai.com/v1`) with
   a key the operator supplies. Callers must be granted the group explicitly; a
-  caller without it gets `403`, not a silent local answer.
+  caller without it gets `404 model_not_found` (the group does not exist for that
+caller), not a silent local answer.
 
 Cost control is caller `quota` (requests and tokens per day and month) plus, for
 `dynamic_score` and `semantic` groups, `spend_ceiling`. There is no universal
@@ -101,6 +102,10 @@ docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
 deploy/reference/harness/functional_smoke.py <vendor>-<tier>   # /readyz, /v1/models, one completion per group, auth negatives
 deploy/reference/harness/concurrency_sweep.py <vendor>-<tier>  # sizing method from benchmarks/overhead/load.py
 ```
+
+The functional suite also proves group grants when `RESTRICTED_TOKEN` is set to a
+caller token that was not granted a group: such a request must not reach the
+upstream (the router answers `404 model_not_found`).
 
 Both accept `--out`/`--out-dir` so a run writes into the tier's `results/`;
 the model servers also publish on loopback, which is how the sweep measures the
