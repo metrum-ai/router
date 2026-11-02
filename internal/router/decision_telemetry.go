@@ -86,9 +86,7 @@ func (s *Service) recordEligibilityTelemetry(rc *requestContext, groupName strin
 		if len(rc.rec.DecisionFilterReasons) >= maxReasons {
 			break
 		}
-		if recordCandidates && len(rc.rec.DecisionCandidates) >= maxCandidates {
-			break
-		}
+		recordCandidateRow := recordCandidates && len(rc.rec.DecisionCandidates) < maxCandidates
 		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
 		reasons := s.requestFilterReasons(target, req, callerDialect, outDialect, estimate)
 		if len(reasons) == 0 {
@@ -103,7 +101,7 @@ func (s *Service) recordEligibilityTelemetry(rc *requestContext, groupName strin
 		// candidate rows the reason's candidate_index is the group target
 		// index, which is what an operator can line up with the config.
 		candidateIndex := i
-		if recordCandidates {
+		if recordCandidateRow {
 			candidateIndex = len(rc.rec.DecisionCandidates)
 			fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
 			rc.rec.DecisionCandidates = append(rc.rec.DecisionCandidates, decisionCandidateLogRecord{
