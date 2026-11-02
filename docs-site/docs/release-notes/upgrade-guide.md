@@ -110,6 +110,16 @@ new rows record the endpoint. Like the earlier expansions it is
 downgrading to a package that predates schema v11 requires restoring a
 pre-upgrade database backup.
 
+Usage migration `2026110201` (schema v12, dependent on v11, online) adds a
+metadata-only `response_affinity` table for future owner-bound stored Responses.
+It does not enable the feature or write affinity rows. Back up the usage database
+before applying the Required Migration Gate. This backup is an operator
+requirement: online `auto-safe` migration does not verify backup evidence. A
+downgrade to a pre-v12 package requires restoring a compatible pre-upgrade
+backup; there is no reverse migration. Future stored-response writes must first
+implement authenticated encryption and caller/tenant/project authorization, and
+integrate retention and legal holds with this table.
+
 Historical provenance remains empty/unknown. New estimated rollup counters
 start at zero, not a reconstruction of historical estimates. Historical nullable
 cache-write counts/prices remain unknown. Historical count calls cannot be

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add a dormant owner-bound Responses affinity metadata table in usage schema
+  12. This migration does not enable stored Responses; back up before the
+  migration gate and restore a pre-upgrade backup to downgrade (#665).
+
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the
