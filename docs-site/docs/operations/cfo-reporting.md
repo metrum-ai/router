@@ -1,3 +1,8 @@
+---
+title: CFO usage reporting
+doc_type: howto
+---
+
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
