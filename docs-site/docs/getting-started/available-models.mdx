@@ -55,7 +55,7 @@ The returned IDs are router model groups, not a full inventory of every upstream
 
 Each group is a policy contract. The platform team can change the upstream model or provider model mix, weights, fallbacks, TypeScript policy, tool support, VLM support, cost controls, and validation criteria behind the group without changing the caller-facing name.
 
-The same group can expose different effective target pools by API surface. OpenAI Chat clients use OpenAI Chat-compatible targets, Codex uses Responses-compatible targets, and Claude Code uses Anthropic Messages-compatible targets. If a group is listed but a specific client receives `no-eligible-target`, the group is allowed for that token but lacks an eligible target for that request shape.
+The same group can expose different effective target pools by API surface. OpenAI Chat clients use OpenAI Chat-compatible targets, Codex uses Responses-compatible targets, and Claude Code uses Anthropic Messages-compatible targets. If a group is listed but a specific client receives a 400 compatibility or modality error, the group may lack an eligible target for that request shape; see [Error Reference](../reference/errors).
 
 ## Why A Group May Be Missing
 
@@ -66,7 +66,7 @@ The same group can expose different effective target pools by API surface. OpenA
 | Expected group is missing | The token allow list does not include that group | Ask the deployment administrator to add access if intended |
 | No groups are listed | The caller token may be wrong, disabled, or scoped too narrowly | Verify the caller token and endpoint with the administrator |
 | `401` or `403` before a model list appears | Authentication failed or the caller token is not accepted by this deployment | Check the base URL and router token value |
-| A listed group returns `no-eligible-target` for tools or images | The group is allowed, but no target matches that request shape | Ask the administrator to enable a compatible target or use an allowed group designed for that client |
+| A listed group returns a 400 compatibility or modality error for tools or images | No configured target may match that request shape | Ask the administrator to enable a compatible target or use an allowed group designed for that client; see [Error Reference](../reference/errors) |
 
 ## For Administrators
 

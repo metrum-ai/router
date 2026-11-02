@@ -682,6 +682,8 @@ docs-origin-test:
 	python3 scripts/check_docs_origin_test.py
 
 docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
+	python3 scripts/check_docs_eligibility_errors_test.py
+	python3 scripts/check_docs_eligibility_errors.py
 	go run ./cmd/metrum-ai-routerctl config validate --config examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml
 	python3 scripts/check_docs_public_face.py
 	python3 scripts/check_docs_origin.py

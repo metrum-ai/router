@@ -23,7 +23,7 @@ Structured-output support is dialect-specific. A target that passes Chat Complet
 
 When a request includes structured-output fields, the router filters the requested model group's targets before strategy selection. The remaining target must also satisfy any other request requirements, such as tools, images, reasoning, streaming, and explicit max-token cap behavior.
 
-If no target in the requested group satisfies all requirements, the router returns `502 no-eligible-target` and does not call an upstream provider. If an eligible upstream rejects the schema or returns malformed output, the caller sees the provider or router error for that upstream attempt according to normal retry and fallback behavior.
+If no configured target in the requested group satisfies all requirements for Chat, Responses, or Messages, the router returns a 400 compatibility error and does not call an upstream provider. See [Error Reference](../reference/errors). If an eligible upstream rejects the schema or returns malformed output, the caller sees the provider or router error for that upstream attempt according to normal retry and fallback behavior.
 
 ## Chat Completions Example
 

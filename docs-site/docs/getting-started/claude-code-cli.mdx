@@ -27,7 +27,7 @@ Metrum AI Router can translate Messages client tools and their continuation hist
 - `tool_support.anthropic_messages: [client_tools]` records validation of this exact target's Messages tool bridge;
 - the active upstream skin also declares `openai_chat: [tools]` or `openai_responses: [function]` in `tool_support`.
 
-Explicit `tool_choice` additionally requires `tool_choice` in both the Anthropic and active upstream tool capability lists. Omitted choice is independent. Do not copy these declarations from a Chat-only smoke: first run Claude Code's streaming write/read continuation against each isolated target. The bridge preserves multiple calls, tool IDs, arguments, results, usage and tool stop reasons. Provider-private thinking is not portable; reasoning requests remain rejected by the existing bridge gate. Native Anthropic passthrough is unchanged. Targets without the distinct Messages tool evidence still return `502 no-eligible-target` without an upstream attempt.
+Explicit `tool_choice` additionally requires `tool_choice` in both the Anthropic and active upstream tool capability lists. Omitted choice is independent. Do not copy these declarations from a Chat-only smoke: first run Claude Code's streaming write/read continuation against each isolated target. The bridge preserves multiple calls, tool IDs, arguments, results, usage and tool stop reasons. Provider-private thinking is not portable; reasoning requests remain rejected by the existing bridge gate. Native Anthropic passthrough is unchanged. If no configured target has the distinct Messages tool evidence, the router returns a 400 compatibility error without an upstream attempt; see [Error Reference](../reference/errors).
 
 In v4.1.0 these translated tool routes remain unavailable; use a validated native Anthropic Messages tool target on that release.
 
@@ -54,7 +54,7 @@ curl "{{origin}}/v1/models" \
 
 Use one of the model group IDs returned by `/v1/models` for `--model` or `ANTHROPIC_MODEL`. See [Available Models And Access](./available-models) if you need to check which groups your token can request.
 
-The text check below proves only Anthropic Messages text routing. On v4.1.0,
+The text check below proves only Anthropic Messages text routing. On v4.1.0 (pre-4.5 behavior),
 Claude Code tool requests cannot use a group whose only eligible targets are
 Anthropic-to-OpenAI Chat or Responses text translations. In that setup, the
 tool request returns `502 no-eligible-target` before an upstream call. Use a
@@ -135,7 +135,7 @@ Messages tool target; Anthropic text translation alone will not run this smoke.
 
 Claude Code sends image work through the Anthropic Messages API shape when an image is attached in the conversation. Use a deployment-defined router model group that is allowed for the caller token **and** has validation evidence for image input on the Anthropic Messages surface. The router filters image-bearing Messages requests to targets that advertise `image` in `input_modalities` and are eligible for the inbound `anthropic` dialect and caller output cap.
 
-`/v1/models` confirms that the token may request the group, but group-level image metadata can be backed by a different API skin. Before rollout, run the Messages image smoke below. A `502 no-eligible-target` response means the group is authorized but has no target validated for that exact Messages image shape; ask the deployment administrator to add or enable a validated Anthropic Messages image target rather than retrying the same request.
+`/v1/models` confirms that the token may request the group, but group-level image metadata can be backed by a different API skin. Before rollout, run the Messages image smoke below. A 400 compatibility or modality error can mean no target is validated for that exact Messages image shape; ask the deployment administrator to add or enable a validated Anthropic Messages image target rather than retrying the same request. See [Error Reference](../reference/errors).
 
 For non-interactive validation, use the same Anthropic-compatible payload shape Claude Code sends:
 

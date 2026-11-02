@@ -53,7 +53,7 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 | `missing-model` | 400 | The request omitted `model` and no `server.default_model_group` is configured. | Set a model group allowed for your token. | Configure `server.default_model_group` if omitted model should be accepted. |
 | `model_not_found` | 404 | An OpenAI model is unknown or not available to this caller. Both cases have the same public response. | Use `/v1/models` to see allowed groups. | Check model configuration and caller access using internal diagnostics. |
 | `not_found_error` | 404 | An Anthropic model is unknown or unavailable to this caller. Both cases have the same public response. | Use `/v1/models` to see allowed groups. | Check model configuration and caller access using internal diagnostics. |
-| `unsupported_capability`, `unsupported_endpoint_for_model` | 400 | Configured targets cannot serve the requested OpenAI capability or dialect. | Adjust the indicated parameter or choose an allowed compatible model. | Add or enable a target with the required capability or dialect. |
+| `unsupported_capability`, `unsupported_endpoint_for_model` | 400 | Configured targets cannot serve the requested Chat, Responses, or Messages capability or dialect. | Adjust the indicated parameter or choose an allowed compatible model. | Add or enable a target with the required capability or dialect. |
 | `unsupported_endpoint` | 501 | The requested endpoint is not offered by the router. | Use a supported endpoint. | See [API Compatibility](api-compatibility). |
 | `key-disabled` | 403 | The matched caller token is configured but disabled. | Use an active caller token or ask for the token to be re-enabled. | Re-enable only if the caller token should still be trusted and assigned to active ownership records. |
 | `key-suspended` | 403 | The matched caller token is temporarily suspended. | Use another active caller token or wait for an administrator to restore access. | Review the suspension reason and reactivate only after the hold is cleared. |
@@ -64,7 +64,7 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 | `key-exhausted` | 403 | The caller token's lifetime token budget is exhausted or the request's reserved token budget would exceed the remaining lifetime budget. | Use a caller token with remaining budget, lower an unrealistic output cap, or ask for a new budget. | Inspect the caller token lifetime budget and issue or re-enable tokens according to policy. |
 | `pii-filter-blocked` | 400 | The requested model group is configured to reject requests that match PII filter rules, or the request exceeded the configured PII replacement cap. | Remove the sensitive value, reduce matched values, or use an approved workflow. | Review the model group's `pii_filter` rules, mode, and `max_replacements_per_request`. |
 | `pii-filter-failed` | 502 | The router could not apply the configured PII filter. | Retry after the administrator resolves configuration. | Check regex validation, filter limits, and request shape. |
-| `no-eligible-target` | 502 | Routing, contract, or policy filtering left no eligible upstream target. | Try a different allowed group only if instructed. | Inspect routing diagnostics and configured target constraints. |
+| `no-eligible-target` | 502 | No configured target, an inapplicable caller dialect, or subsequent contract filtering left no eligible upstream target. | Do not retry unchanged without an operator-directed configuration change. | Inspect routing diagnostics and configured target constraints. |
 | `routing-policy-error` | 502 | A TypeScript or enforced external routing policy failed, timed out, returned an invalid decision, or selected a target outside the eligible list. | Retry only if the operator says the policy failure is transient; otherwise provide the request ID. | Inspect safe policy execution/error telemetry, script concurrency, external-policy reachability and timeout, then restore the reviewed policy or use its documented baseline rollback. |
 | `upstream-rejected` | 400, 404, 413, 422 | A terminal upstream request or model error is preserved without exposing its body. | Check the request or contact the administrator with the request ID. | Inspect sanitized request attempts and provider status. |
 | `upstream-rate-limited` | 503 (or trusted router 429) | Eligible upstream attempts hit a provider-side rate limit. | Retry later with backoff, or contact the administrator with the request ID. | Inspect `request_attempts`, provider status, and upstream rate-limit policy. |
@@ -84,7 +84,7 @@ The error body, headers, diagnostics, and reports must not expose raw prompts, r
 
 ## Eligibility Requirements
 
-The `no-eligible-target` response includes a `requirements` list. Examples:
+OpenAI-shaped routing eligibility errors can include a `requirements` list. Examples:
 
 - `text`: request needs text input support.
 - `image`: request includes image input.

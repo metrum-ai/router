@@ -113,7 +113,7 @@ TypeScript and external policy strategies receive safe contract and validation m
 
 ## Errors And Reports
 
-If no target satisfies the request and contract, callers receive `502 no-eligible-target`. The error details include safe requirement buckets such as:
+If ordinary request eligibility leaves at least one target but none satisfies the contract, callers receive `502 no-eligible-target`. If ordinary eligibility rejects all configured targets first, Chat, Responses, and Messages instead return a 400 compatibility error. See [Error Reference](../reference/errors). Contract error details include safe requirement buckets such as:
 
 - `contract-required-api-shape`
 - `contract-required-modality`
