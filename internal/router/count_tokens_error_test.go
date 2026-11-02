@@ -11,7 +11,7 @@ import (
 )
 
 func TestCountTokensUpstreamErrorsAreAnthropicAndSanitized(t *testing.T) {
-	for _, tc := range []struct{ upstream, want int }{{400, 400}, {404, 404}, {429, 429}, {500, 502}} {
+	for _, tc := range []struct{ upstream, want int }{{400, 400}, {401, 401}, {429, 429}, {500, 502}} {
 		t.Run(http.StatusText(tc.upstream), func(t *testing.T) {
 			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.upstream)

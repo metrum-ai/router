@@ -68,11 +68,10 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	rc.rec.Strategy = group.Strategy
 	s.applyServingTargetRecord(rc, target)
 	// Bedrock uses a different CountTokens protocol; do not send an Anthropic
-	// HTTP endpoint or provider credentials to an unsupported transport.
-	if targetDialect(provider, target) != "anthropic" || isBedrock(provider) {
-		w.Header().Set("X-Metrum-Usage-Source", "estimated")
-		writeJSON(w, http.StatusOK, map[string]any{"input_tokens": estimateTokens(req)})
-		s.finish(rc, http.StatusOK, nil)
+	// HTTP endpoint or provider credentials to an unsupported transport. A
+	// target can also declare that its upstream has no count endpoint (#714).
+	if !targetServesCountTokens(provider, target) {
+		s.writeEstimatedCountTokens(w, rc, req)
 		return
 	}
 	body, err = countTokensModelBody(body, target.Model)
@@ -144,6 +143,15 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	if retry := resp.Header.Get("Retry-After"); retry != "" {
 		w.Header().Set("Retry-After", retry)
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		// A gateway can serve Messages without implementing count_tokens (#714).
+		// A count is advisory and free, so answer with the router's local
+		// estimate and mark it as estimated instead of surfacing an opaque
+		// upstream 404. Real provider failures keep their own classes below.
+		rc.trace("count_tokens_upstream_unsupported", "upstream does not implement count_tokens; served a local estimate", target, 0, http.StatusOK, "", false, 0)
+		s.writeEstimatedCountTokens(w, rc, req)
+		return
+	}
 	if resp.StatusCode >= 400 {
 		// Count-token errors are still caller-facing Anthropic errors. Preserve
 		// provider 4xx status, but never forward a body that may echo secrets.
@@ -167,4 +175,25 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(data)
 	s.finish(rc, resp.StatusCode, nil)
+}
+
+// targetServesCountTokens reports whether the router should call the target's
+// native Anthropic count endpoint. Bedrock uses a different CountTokens
+// protocol, non-Anthropic transports have no such endpoint, and a target can
+// declare count_tokens: false when its upstream (often a gateway) serves
+// Messages without implementing the count endpoint (#714).
+func targetServesCountTokens(provider ProviderConfig, target Target) bool {
+	if targetDialect(provider, target) != "anthropic" || isBedrock(provider) {
+		return false
+	}
+	return target.CountTokens == nil || *target.CountTokens
+}
+
+// writeEstimatedCountTokens answers a count request with the router's local
+// estimate and marks the source so callers can tell an estimate apart from a
+// provider-reported count.
+func (s *Service) writeEstimatedCountTokens(w http.ResponseWriter, rc *requestContext, req *IRRequest) {
+	w.Header().Set("X-Metrum-Usage-Source", "estimated")
+	writeJSON(w, http.StatusOK, map[string]any{"input_tokens": estimateTokens(req)})
+	s.finish(rc, http.StatusOK, nil)
 }
