@@ -283,7 +283,7 @@ func applyEmbeddingsPII(req *embeddingsRequest, cfg PIIFilterConfig) (piiFilterR
 
 // embeddingsUpstreamBody rebuilds the upstream request from validated fields so
 // no unvalidated caller field reaches the provider.
-func (r *embeddingsRequest) upstreamBody(model string) ([]byte, error) {
+func (r *embeddingsRequest) upstreamBody(model string, dimensions int) ([]byte, error) {
 	payload := map[string]any{"model": model}
 	if r.tokenArrays {
 		if len(r.tokens) == 1 {
@@ -296,8 +296,10 @@ func (r *embeddingsRequest) upstreamBody(model string) ([]byte, error) {
 	} else {
 		payload["input"] = r.texts
 	}
-	if r.Dimensions > 0 {
-		payload["dimensions"] = r.Dimensions
+	// Always send the effective dimensions, including a configured default, so
+	// the returned vector length matches the declared space and dimension.
+	if dimensions > 0 {
+		payload["dimensions"] = dimensions
 	}
 	if r.EncodingFormat != "" {
 		payload["encoding_format"] = r.EncodingFormat
@@ -501,7 +503,7 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 // response shape before any bytes reach the caller.
 func (s *Service) callEmbeddingsUpstream(ctx context.Context, w http.ResponseWriter, rc *requestContext, req *embeddingsRequest, target Target, dimensions int) ([]byte, Usage, string, error) {
 	provider := s.cfg.Provider[target.Provider]
-	body, err := req.upstreamBody(target.Model)
+	body, err := req.upstreamBody(target.Model, dimensions)
 	if err != nil {
 		return nil, Usage{}, "", upstreamError{Class: "encode_error", Err: err}
 	}

@@ -340,3 +340,20 @@ func TestEmbeddingsModelIdentityRequestedGroup(t *testing.T) {
 		t.Fatalf("caller-facing model=%q", body.Model)
 	}
 }
+
+func TestEmbeddingsSendsConfiguredDefaultDimensions(t *testing.T) {
+	stub := &embeddingsUpstreamStub{response: embeddingsVectorResponse(t, 8, 3)}
+	svc := embeddingsTestService(t, stub, nil)
+	// The stub returns 8-vector responses, so set the configured default to 8.
+	group := svc.cfg.Models["embed"]
+	group.Targets[0].EmbeddingDimensions = []int{3, 8}
+	group.Targets[0].DefaultEmbeddingDimensions = 8
+	svc.cfg.Models["embed"] = group
+	rr := embeddingsPost(t, svc, `{"model":"embed","input":"default dimensions"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := stub.lastBody.Load().(string); !strings.Contains(got, `"dimensions":8`) {
+		t.Fatalf("configured default dimensions were not forwarded: %s", got)
+	}
+}
