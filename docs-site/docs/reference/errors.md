@@ -97,6 +97,8 @@ OpenAI-shaped routing eligibility errors can include a `requirements` list. Exam
 
 Resolution is usually a configuration update. The model group must contain at least one enabled target whose provider dialect and metadata satisfy those requirements.
 
+A capability refusal that names a reasoning field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, `thinking` for Messages) with `code: unsupported_capability` can also mean that every candidate declares `reasoning.with_tools: false` and the request carried both a reasoning control and tools. The router refuses that combination before dispatch instead of forwarding a request the provider rejects; candidate telemetry shows the bounded reason `reasoning-with-tools`. Use a Responses-dialect target, or drop one of the two controls.
+
 When a model group has an optional contract, the same error can include safe `contract-*` requirement buckets. Examples include `contract-required-api-shape`, `contract-required-modality`, `contract-required-tools`, `contract-quality-floor`, `contract-validation-expired`, and `contract-no-validated-target`. These buckets mean the requested group was allowed for the caller, but no target inside that same group satisfied the configured contract after ordinary request eligibility.
 
 ## Max-Token Cap Errors

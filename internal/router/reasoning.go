@@ -258,7 +258,7 @@ func validateReasoningSupport(rs ReasoningSupport) error {
 	mode := strings.ToLower(strings.TrimSpace(rs.Mode))
 	control := strings.ToLower(strings.TrimSpace(rs.Control))
 	if !rs.Supported {
-		if mode != "" || control != "" || rs.DefaultOn || rs.MinBudgetTokens != 0 || rs.MaxBudgetTokens != 0 || rs.BudgetMustBeLessThanMaxTokens || rs.StreamBlock != "" || rs.RejectsMaxTokens || rs.RejectsTemperature || rs.RejectsTopP || rs.SupportsSummaries {
+		if mode != "" || control != "" || rs.DefaultOn || rs.MinBudgetTokens != 0 || rs.MaxBudgetTokens != 0 || rs.BudgetMustBeLessThanMaxTokens || rs.StreamBlock != "" || rs.RejectsMaxTokens || rs.RejectsTemperature || rs.RejectsTopP || rs.SupportsSummaries || rs.WithTools != nil {
 			return fmt.Errorf("unsupported reasoning target must not set reasoning details")
 		}
 		return nil
@@ -291,5 +291,25 @@ func validateReasoningSupport(rs ReasoningSupport) error {
 }
 
 func reasoningSupportEmpty(rs ReasoningSupport) bool {
-	return !rs.Supported && rs.Mode == "" && rs.Control == "" && !rs.DefaultOn && rs.MinBudgetTokens == 0 && rs.MaxBudgetTokens == 0 && !rs.BudgetMustBeLessThanMaxTokens && rs.StreamBlock == "" && !rs.RejectsMaxTokens && !rs.RejectsTemperature && !rs.RejectsTopP && !rs.SupportsSummaries
+	return !rs.Supported && rs.Mode == "" && rs.Control == "" && !rs.DefaultOn && rs.MinBudgetTokens == 0 && rs.MaxBudgetTokens == 0 && !rs.BudgetMustBeLessThanMaxTokens && rs.StreamBlock == "" && !rs.RejectsMaxTokens && !rs.RejectsTemperature && !rs.RejectsTopP && !rs.SupportsSummaries && rs.WithTools == nil
+}
+
+// reasoningWithToolsFilterReason reports whether the target declares that its
+// outbound dialect rejects a reasoning control together with function tools.
+// Such a request is refused before dispatch instead of being forwarded to a
+// provider that answers 400 (#703). Only the target's own outbound dialect is
+// consulted, so a Chat-dialect target that rejects the combination is filtered
+// while a Responses-dialect bridge target keeps its own declaration.
+func reasoningWithToolsFilterReason(target Target, outDialect string, req *IRRequest) string {
+	if req == nil || !requestRequiresReasoning(req) || len(req.Tools) == 0 {
+		return ""
+	}
+	if target.Reasoning.WithTools == nil || *target.Reasoning.WithTools {
+		return ""
+	}
+	switch normalizeDialect(outDialect) {
+	case "openai-chat", "openai-responses", "anthropic":
+		return "reasoning-with-tools"
+	}
+	return ""
 }

@@ -428,21 +428,27 @@ Tools and reasoning are filtered together. A request with tools and reasoning ne
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
 
-### Known limitation: reasoning with tools on Chat Completions
+### Reasoning with tools on Chat Completions
 
 An OpenAI reasoning model can reject a request that combines `reasoning_effort`
 with tools on Chat Completions, because the provider accepts that combination
-only on its Responses surface. When such a target is the only candidate, the
-router forwards the request as configured and the rejection surfaces as
-`upstream-rejected`; the caller sees no field naming the incompatible
-combination.
+only on its Responses surface. A target declares that limitation with
+`reasoning.with_tools: false`; the router then refuses the combination before
+dispatch with `400 invalid_request_error`, code `unsupported_capability`, and
+`param` naming the caller's own reasoning field (`reasoning_effort` for Chat,
+`reasoning` for Responses, `thinking` for Messages). No provider, model or
+target identifier appears in the response, and the refusal is attributed through
+the same #655 path as any other capability mismatch, with the bounded filter
+reason `reasoning-with-tools` in candidate telemetry.
 
-Until reasoning-with-tools support is declared per dialect and rejected before
-dispatch, route those requests to a model group whose targets use the
-`openai-responses` dialect. A Chat-dialect GPT target belongs in such a group
-only when the caller never sets `reasoning_effort` together with tools. The
-release gate enforces the same rule for its own GPT lanes: a `gpt` group that
-still lists a non-Responses target is refused with the fix named.
+Only the target's own outbound dialect is consulted, so a Chat-dialect target
+that rejects the combination is filtered while a Responses-dialect target behind
+the `chat_to_responses` bridge stays eligible for the same Chat request. A
+target that does not set the flag keeps today's behaviour: the request is
+forwarded as configured. When the flag is absent the caller can still route
+those requests to a model group whose targets use the `openai-responses`
+dialect; the release gate enforces the same rule for its own GPT lanes, where a
+`gpt` group that lists a non-Responses target is refused with the fix named.
 
 ## Quotas And Output Caps
 

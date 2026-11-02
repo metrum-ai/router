@@ -352,6 +352,16 @@ Declare reasoning support only after direct upstream and router-level smokes pas
 
 When a caller explicitly requests reasoning, the router filters the requested model group's targets to reasoning-capable targets before routing policy selection. If no configured target remains for Chat, Responses, or Messages, the caller receives a 400 compatibility error. OpenAI-shaped routing errors can include `reasoning` in the requirements; see [Error Reference](errors). Ordinary non-reasoning requests are not forced to reasoning targets unless the deployment configured those targets as part of the group policy.
 
+`with_tools` (default: unset) declares that this target's outbound dialect rejects a reasoning control together with function tools. OpenAI reasoning models on Chat Completions are the known case: they accept `reasoning_effort` alone but reject it when a `tools` array is present. Setting `with_tools: false` makes the router refuse that combination before dispatch with `400 unsupported_capability` and `param` naming the caller's reasoning field (`reasoning_effort`, `reasoning`, or `thinking`), with the bounded filter reason `reasoning-with-tools` in candidate telemetry. Leave the field unset to keep forwarding requests as configured, and use it only for a dialect where the rejection is established. Setting it on a target that declares no reasoning support is a configuration error.
+
+```yaml
+reasoning:
+  supported: true
+  mode: opt_in
+  control: effort_enum
+  with_tools: false   # Chat Completions rejects reasoning + function tools
+```
+
 `control: effort_enum` targets receive low/medium/high effort controls. `control: token_budget` targets receive Anthropic-style token budgets when the target dialect supports them. Cross-dialect translation uses conservative defaults and records safe scalar decision telemetry; it does not persist prompts, tool schemas, router tokens, provider keys, or full config.
 
 For end-to-end configuration, validation, and caller examples, see [Reasoning Routing](../configuration/reasoning-routing).
