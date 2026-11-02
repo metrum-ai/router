@@ -127,6 +127,11 @@ def prepare_config(source, workdir, port, db_path):
     text = Path(source).read_text(encoding="utf-8")
     text = re.sub(r"(?m)^(\s*)listen:\s*\S+", lambda m: f"{m.group(1)}listen: 127.0.0.1:{port}", text, count=1)
     text = re.sub(r"(?m)^(\s*)path:\s*\S*usage[^\s]*\.sqlite\s*$", lambda m: f"{m.group(1)}path: {db_path}", text)
+    # The release-candidate config guard requires absolute state and log paths,
+    # so the gate pins them inside its own output directory.
+    workdir_path = Path(workdir)
+    text = re.sub(r"(?m)^(\s*)state_path:\s*\S+", lambda m: f"{m.group(1)}state_path: {workdir_path / 'router-state.json'}", text, count=1)
+    text = re.sub(r"(?m)^(\s*)path:\s*requests\.jsonl\s*$", lambda m: f"{m.group(1)}path: {workdir_path / 'requests.jsonl'}", text, count=1)
     token = env("ROUTER_CALLER_TOKEN")
     if not token:
         raise GateError("ROUTER_CALLER_TOKEN is required")
@@ -447,7 +452,8 @@ def main():
 
     if "d" in stages:
         log("stage D: live parallel tool gate")
-        remaining = max(0.0, args.cap - spent)
+        # scripts/parallel_tool_live.py enforces its own hard ceiling of $5.
+        remaining = min(5.0, max(0.0, args.cap - spent))
         rows += stage_parallel(outdir, round(remaining, 2))
         spent += sum(row.get("cost_usd") or 0 for row in rows if row["stage"] == "D")
 
