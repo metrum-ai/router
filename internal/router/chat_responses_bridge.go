@@ -154,10 +154,14 @@ func chatMessagesToResponsesInput(req *IRRequest) []map[string]any {
 		case "system", "developer":
 			continue
 		case "tool":
+			text := contentToText(msg["content"])
+			if exact, ok := toolResultText(msg["content"]); ok {
+				text = exact
+			}
 			item := map[string]any{
 				"type":    "function_call_output",
 				"call_id": defaultString(stringValue(msg["tool_call_id"]), stringValue(msg["id"])),
-				"output":  contentToText(msg["content"]),
+				"output":  text,
 			}
 			if hasMediaParts(decodeContentParts(msg["content"])) {
 				item["output"] = chatContentToResponsesContent(msg["content"], true)
