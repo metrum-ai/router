@@ -91,7 +91,7 @@ models:
 
 In this example, `coding` is only a sample group name. Ordinary compatible requests can use all ordinary eligible targets. A request that includes `reasoning_effort`, Responses `reasoning`, or Messages `thinking` can use only the target with compatible `reasoning` metadata. If several targets remain, the weighted strategy still applies to those remaining targets.
 
-If no compatible target remains, the router returns `502 no-eligible-target` before sending an upstream request. The response requirements include `reasoning`.
+If no configured target remains for Chat, Responses, or Messages, the router returns a 400 compatibility error before sending an upstream request. OpenAI-shaped routing error requirements include `reasoning`. See [Error Reference](../reference/errors).
 
 Codex CLI sessions use OpenAI Responses and commonly send both function tools and a `reasoning` object. That request shape needs at least one **Responses** target in the requested group with both `tool_support.openai_responses` function tools and validated `reasoning` metadata (`supported: true` with a compatible control such as `effort_enum`). A Chat Completions target, or a Chat provider only labeled with `dialect: openai-responses` without Responses-catalog reasoning metadata, is not enough even when Responses+tools without reasoning still succeeds. Prefer a dedicated Responses provider skin for Codex rather than relying on dialect overrides. The reference config keeps MiniMax Responses and OpenAI `gpt-5.4-nano` as Responses reasoning-capable coding-group examples; deployments must keep equivalent metadata on the live coding groups they expose to Codex.
 
@@ -189,7 +189,7 @@ curl -i "$ROUTER_BASE_URL/v1/responses" \
   }'
 ```
 
-For a Chat bridge target without `responses_to_chat.reasoning`, expect `502 no-eligible-target` or a bounded bridge filter reason such as `responses-to-chat-reasoning` before upstream. A `previous_response_id` on the same stateless bridge should be filtered separately because stateless Chat targets cannot preserve Responses conversation state.
+For a Chat bridge target without `responses_to_chat.reasoning`, expect a 400 compatibility error and a bounded bridge filter reason such as `responses-to-chat-reasoning` before upstream; see [Error Reference](../reference/errors). A `previous_response_id` on the same stateless bridge should be filtered separately because stateless Chat targets cannot preserve Responses conversation state.
 
 ## Verify Model Metadata
 
@@ -284,8 +284,10 @@ Expected result:
 ```json
 {
   "error": {
-    "type": "no-eligible-target",
-    "message": "no eligible upstream target is configured for model \"text-only-test\" with openai-chat requests requiring text, reasoning, max_tokens",
+    "type": "invalid_request_error",
+    "code": "unsupported_capability",
+    "param": "reasoning",
+    "message": "no eligible upstream target is configured for model \"text-only-test\" with openai-chat requests requiring text, reasoning, max_tokens; unsupported request capability: reasoning",
     "details": {
       "model": "text-only-test",
       "dialect": "openai-chat",
@@ -306,7 +308,7 @@ Before enabling reasoning metadata in an active group:
 - use realistic output budgets for acceptance because reasoning-heavy models can spend small caps on internal reasoning and return empty final content;
 - run low-cap tests such as `max_tokens: 1`, `max_completion_tokens: 1`, or `max_output_tokens: 1` to prove cap forwarding, target skipping, or configured translation;
 - verify `/v1/models` exposes the intended reasoning metadata to allowed callers;
-- run a negative `no-eligible-target` test and confirm no upstream attempt is recorded;
+- run a negative compatibility-error test and confirm no upstream attempt is recorded;
 - query usage/reporting telemetry after success and failure cases to confirm selected provider/model, attempts, status, latency, throughput, token counts, cost fields, and safe reasoning metadata.
 
 If validation fails, remove the `reasoning` metadata or keep the target catalog-only until the exact request shape passes. Roll back by restoring the previous target metadata, relaxing a reasoning-only contract or dynamic-score hard filter, or reverting the group config from the deployment backup.

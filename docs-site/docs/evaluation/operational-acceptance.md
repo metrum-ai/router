@@ -55,7 +55,7 @@ Validate:
 Confirm:
 
 - caller-visible errors include request IDs;
-- `no-eligible-target` explains the missing dialect/tool/modality/cap requirement;
+- a 400 compatibility or modality error signals an unsupported dialect/tool/modality/cap requirement (see [Error Reference](../reference/errors));
 - upstream timeouts, rate limits, and provider failures are distinguishable in diagnostics, with field meanings cross-checked against the [Diagnostics Schema](../reference/diagnostics-schema);
 - request attempts and trace events are written without raw prompts, raw image payloads, raw tokens, token hashes, or provider keys.
 - ordinary router caller tokens cannot access `/admin/reports/*` and receive `403 reports-forbidden`.

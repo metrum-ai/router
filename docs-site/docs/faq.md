@@ -63,9 +63,9 @@ Admin report pages require browser-admin authentication and authorization. See [
 
 ## Routing And Capabilities
 
-### What does `502 no-eligible-target` mean?
+### What does an eligibility error mean?
 
-The allowed group exists, but no target in that group supports the request shape. See [Error Reference](./reference/errors), [Available Models And Access](./getting-started/available-models), and [Routing Strategy Decision Tree](./routing/strategy-decision-tree).
+For Chat, Responses, and Messages, a configured group with no target supporting the request shape normally returns a 400 compatibility or modality error. An empty group or a later contract-filter failure can return `502 no-eligible-target`. See [Error Reference](./reference/errors), [Available Models And Access](./getting-started/available-models), and [Routing Strategy Decision Tree](./routing/strategy-decision-tree).
 
 ### Which routing strategy should I use?
 
@@ -103,7 +103,7 @@ Use the Anthropic Messages-compatible setup in [Claude Code CLI](./getting-start
 
 ### Can Codex or Claude Code send images through the same coding group?
 
-Yes, when the deployment has validated multimodal tool-capable targets for the **exact API skins** used by those clients. A group's aggregate `image` modality may be backed by a Responses target for Codex without an Anthropic Messages image target for Claude Code. Run each documented image smoke before rollout; `502 no-eligible-target` means the group is allowed but no target satisfies that client's image shape. See [Codex CLI](./getting-started/codex-cli), [Claude Code CLI](./getting-started/claude-code-cli), and [Image Analysis And VLM Routing](./configuration/image-analysis-vlm).
+Yes, when the deployment has validated multimodal tool-capable targets for the **exact API skins** used by those clients. A group's aggregate `image` modality may be backed by a Responses target for Codex without an Anthropic Messages image target for Claude Code. Run each documented image smoke before rollout; a 400 compatibility or modality error may mean no target satisfies that client's image shape. See [Error Reference](./reference/errors). See [Codex CLI](./getting-started/codex-cli), [Claude Code CLI](./getting-started/claude-code-cli), and [Image Analysis And VLM Routing](./configuration/image-analysis-vlm).
 
 ### What should I do for `429 traffic-shaped`, quota, or rate-limit errors?
 

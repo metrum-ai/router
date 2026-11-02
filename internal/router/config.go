@@ -350,6 +350,9 @@ type ProviderModel struct {
 	Reasoning                          ReasoningSupport      `yaml:"reasoning" json:"reasoning,omitempty"`
 	InputModalities                    []string              `yaml:"input_modalities" json:"inputModalities,omitempty"`
 	OutputModalities                   []string              `yaml:"output_modalities" json:"outputModalities,omitempty"`
+	EmbeddingSpace                     string                `yaml:"embedding_space" json:"embeddingSpace,omitempty"`
+	EmbeddingDimensions                []int                 `yaml:"embedding_dimensions" json:"embeddingDimensions,omitempty"`
+	DefaultEmbeddingDimensions         int                   `yaml:"default_embedding_dimensions" json:"defaultEmbeddingDimensions,omitempty"`
 	HonorsMaxTokens                    *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
 	ForceStoreFalse                    bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
 	OutputTokenField                   string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
@@ -718,25 +721,35 @@ type Target struct {
 	InputPricePerMillionUSD      float64        `yaml:"input_price_per_million_usd" json:"inputPricePerMillionUsd,omitempty"`
 	OutputPricePerMillionUSD     float64        `yaml:"output_price_per_million_usd" json:"outputPricePerMillionUsd,omitempty"`
 	// CachedInputPricePerMillionUSD is nil when unknown/inherit; a non-nil zero means known free cache reads.
-	CachedInputPricePerMillionUSD      *float64              `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
-	ImageInputPricePerMillionTokensUSD float64               `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
-	ImageInputPricePerImageUSD         float64               `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
-	PricingSource                      string                `yaml:"pricing_source" json:"pricingSource,omitempty"`
-	PricingUpdatedAt                   string                `yaml:"pricing_updated_at" json:"pricingUpdatedAt,omitempty"`
-	PricingNotes                       string                `yaml:"pricing_notes" json:"pricingNotes,omitempty"`
-	ToolSupport                        ToolSupport           `yaml:"tool_support" json:"toolSupport,omitempty"`
-	Reasoning                          ReasoningSupport      `yaml:"reasoning" json:"reasoning,omitempty"`
-	InputModalities                    []string              `yaml:"input_modalities" json:"inputModalities,omitempty"`
-	OutputModalities                   []string              `yaml:"output_modalities" json:"outputModalities,omitempty"`
-	HonorsMaxTokens                    *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
-	ForceStoreFalse                    bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
-	OutputTokenField                   string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
-	ActivationEvidence                 ActivationEvidence    `yaml:"activation_evidence" json:"activationEvidence,omitempty"`
-	Validation                         *TargetValidation     `yaml:"validation" json:"validation,omitempty"`
-	TrafficShape                       TrafficShapeConfig    `yaml:"traffic_shape" json:"trafficShape,omitempty"`
-	RequestShapeSupport                RequestShapeSupport   `yaml:"request_shape_support" json:"requestShapeSupport,omitempty"`
-	ResponsesToChat                    ResponsesToChatBridge `yaml:"responses_to_chat" json:"responsesToChat,omitempty"`
-	Bridges                            BridgeSupport         `yaml:"bridges" json:"bridges,omitempty"`
+	CachedInputPricePerMillionUSD      *float64         `yaml:"cached_input_price_per_million_usd" json:"cachedInputPricePerMillionUsd,omitempty"`
+	ImageInputPricePerMillionTokensUSD float64          `yaml:"image_input_price_per_million_tokens_usd" json:"imageInputPricePerMillionTokensUsd,omitempty"`
+	ImageInputPricePerImageUSD         float64          `yaml:"image_input_price_per_image_usd" json:"imageInputPricePerImageUsd,omitempty"`
+	PricingSource                      string           `yaml:"pricing_source" json:"pricingSource,omitempty"`
+	PricingUpdatedAt                   string           `yaml:"pricing_updated_at" json:"pricingUpdatedAt,omitempty"`
+	PricingNotes                       string           `yaml:"pricing_notes" json:"pricingNotes,omitempty"`
+	ToolSupport                        ToolSupport      `yaml:"tool_support" json:"toolSupport,omitempty"`
+	Reasoning                          ReasoningSupport `yaml:"reasoning" json:"reasoning,omitempty"`
+	InputModalities                    []string         `yaml:"input_modalities" json:"inputModalities,omitempty"`
+	OutputModalities                   []string         `yaml:"output_modalities" json:"outputModalities,omitempty"`
+	// EmbeddingSpace names the vector space a target produces. Every target in an
+	// embeddings model group must declare the same space; the router never mixes
+	// spaces or dimensions across routing attempts.
+	EmbeddingSpace string `yaml:"embedding_space" json:"embeddingSpace,omitempty"`
+	// EmbeddingDimensions lists the output dimensions this target serves. A
+	// request for a dimension outside this list is never routed to the target.
+	EmbeddingDimensions []int `yaml:"embedding_dimensions" json:"embeddingDimensions,omitempty"`
+	// DefaultEmbeddingDimensions applies when a request omits dimensions. Zero
+	// means there is no default and such requests fail closed.
+	DefaultEmbeddingDimensions int                   `yaml:"default_embedding_dimensions" json:"defaultEmbeddingDimensions,omitempty"`
+	HonorsMaxTokens            *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
+	ForceStoreFalse            bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
+	OutputTokenField           string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
+	ActivationEvidence         ActivationEvidence    `yaml:"activation_evidence" json:"activationEvidence,omitempty"`
+	Validation                 *TargetValidation     `yaml:"validation" json:"validation,omitempty"`
+	TrafficShape               TrafficShapeConfig    `yaml:"traffic_shape" json:"trafficShape,omitempty"`
+	RequestShapeSupport        RequestShapeSupport   `yaml:"request_shape_support" json:"requestShapeSupport,omitempty"`
+	ResponsesToChat            ResponsesToChatBridge `yaml:"responses_to_chat" json:"responsesToChat,omitempty"`
+	Bridges                    BridgeSupport         `yaml:"bridges" json:"bridges,omitempty"`
 }
 
 type ResponsesToChatBridge struct {
@@ -1632,6 +1645,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 			m.Targets[i] = resolved
+		}
+		if err := validateEmbeddingGroup(name, m); err != nil {
+			return err
 		}
 		if err := c.validateModelGroupContract(name, m); err != nil {
 			return err
@@ -2971,6 +2987,15 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	}
 	if len(target.OutputModalities) == 0 {
 		target.OutputModalities = catalog.OutputModalities
+	}
+	if target.EmbeddingSpace == "" {
+		target.EmbeddingSpace = catalog.EmbeddingSpace
+	}
+	if len(target.EmbeddingDimensions) == 0 {
+		target.EmbeddingDimensions = catalog.EmbeddingDimensions
+	}
+	if target.DefaultEmbeddingDimensions == 0 {
+		target.DefaultEmbeddingDimensions = catalog.DefaultEmbeddingDimensions
 	}
 	if target.HonorsMaxTokens == nil {
 		target.HonorsMaxTokens = catalog.HonorsMaxTokens
