@@ -1,0 +1,201 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Edge bundle router configuration, rendered by install.sh.
+# Placeholders in this template are replaced by install.sh; do not edit the copy.
+#
+# Groups: local-tiny, local-chat (on-box models), escalate (off-box, operator key).
+server:
+  listen: @@LISTEN@@
+  default_model_group: local-chat
+  streaming:
+    translator: incremental
+  responses:
+    model_identity: upstream
+  identifiers:
+    mode: rewrite
+    transform:
+      current:
+        key_id: idk-edge-2026-11
+        key: ${ROUTER_ID_TRANSFORM_KEY}
+  usage_db:
+    enabled: true
+    driver: sqlite
+    path: @@DATA_DIR@@/state/usage.sqlite
+    migration_policy: deployment-job
+    drain_timeout_ms: 10000
+  logging:
+    path: @@DATA_DIR@@/logs/requests.jsonl
+    rotate_mb: 128
+    keep: 7
+  diagnostics:
+    enabled: true
+    retention_days: 7
+    store_sanitized_upstream_errors: true
+    max_error_bytes: 2048
+  cache:
+    enabled: false
+  admin_auth:
+    basic:
+      enabled: true
+      realm: Metrum AI Router Admin
+      allow_insecure_http: true
+      trusted_proxy_cidrs: []
+      users:
+        - username: admin
+          password_hash_env: METRUM_ADMIN_PASSWORD_HASH
+          subject: basic:admin
+          domain: edge/prod
+          permissions:
+            - admin:auth:read
+    sessions:
+      cookie_name: smart_router_admin_session
+      ttl: 8h
+      secure_cookies: false
+      same_site: strict
+    authorization:
+      enabled: true
+      source: static
+      policy:
+        - p, basic:admin, edge/prod, admin:reports, read|export|drilldown
+  admin_reports:
+    enabled: true
+    path_prefix: /admin/reports
+    default_since: 24h
+    max_range: 31d
+    max_rows: 500
+    export_markdown: true
+state_path: @@DATA_DIR@@/state/router-state.json
+
+providers:
+  # In-cluster (compose mode) or local-process (native mode) model servers.
+  local-tiny:
+    base_url: @@TINY_BASE_URL@@
+    dialect: openai-chat
+    api_key: ${LOCAL_VLLM_API_KEY}
+    api_key_env: LOCAL_VLLM_API_KEY
+    auth_scheme: bearer
+    models:
+      local-tiny:
+        model: local-tiny
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        input_modalities: [text]
+        output_modalities: [text]
+        pricing_notes: on-box GPU allocation; set chargeback values if reports need allocated cost
+  # The primary slot is named for its role: swapping the weights behind it does
+  # not change the group, the caller grants or any client.
+  local-primary:
+    base_url: @@PRIMARY_BASE_URL@@
+    dialect: openai-chat
+    api_key: ${LOCAL_VLLM_API_KEY}
+    api_key_env: LOCAL_VLLM_API_KEY
+    auth_scheme: bearer
+    models:
+      local-primary:
+        model: local-primary
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        input_modalities: [text]
+        output_modalities: [text]
+        pricing_notes: on-box GPU allocation; set chargeback values if reports need allocated cost
+  # Escalation off the box. Any OpenAI-compatible endpoint: a frontier API or a
+  # datacenter router. The key is the operator's and lives in the secret env file.
+  escalate:
+    base_url: @@ESCALATE_BASE_URL@@
+    dialect: openai-chat
+    api_key: ${@@ESCALATE_KEY_ENV@@}
+    api_key_env: @@ESCALATE_KEY_ENV@@
+    key_id: edge-escalation
+    models:
+      escalate-model:
+        model: @@ESCALATE_MODEL@@
+        input_price_per_million_usd: @@ESCALATE_INPUT_PRICE@@
+        output_price_per_million_usd: @@ESCALATE_OUTPUT_PRICE@@
+        pricing_source: @@ESCALATE_PRICING_SOURCE@@
+        pricing_updated_at: "2026-06-25"
+        input_modalities: [text]
+        output_modalities: [text]
+        pricing_notes: escalate prices must match the operator's own contract; refresh before relying on report cost columns
+
+models:
+  local-tiny:
+    strategy: static
+    targets:
+      - provider: local-tiny
+        model_ref: local-tiny
+        weight: 1
+  local-chat:
+    strategy: static
+    targets:
+      - provider: local-primary
+        model_ref: local-primary
+        weight: 1
+  escalate:
+    strategy: static
+    targets:
+      - provider: escalate
+        model_ref: escalate-model
+        weight: 1
+
+users:
+  - id: edge-operator
+    name: Edge Operator
+    type: service_account
+    status: active
+projects:
+  - id: edge
+    name: Edge
+    status: active
+project_memberships:
+  - user_id: edge-operator
+    project: edge
+    role: admin
+    status: active
+
+callers:
+  # Token hashes are written by install.sh from freshly generated tokens; the
+  # raw tokens live only in the secret directory.
+  - id: demo
+    owner_user: edge-operator
+    project: edge
+    environment: demo
+    status: active
+    token_hash: "@@DEMO_TOKEN_HASH@@"
+    token_id: "@@DEMO_TOKEN_ID@@"
+    allow:
+      - local-tiny
+      - local-chat
+      - escalate
+    rate:
+      rpm: 60
+      tpm: 100000
+      concurrent: 4
+    quota:
+      day:
+        requests: 500
+        tokens: 1000000
+      month:
+        requests: 0
+        tokens: 20000000
+      soft_pct: 80
+  # Small daily request budget so the bundle can demonstrate a real budget hit.
+  - id: demo-budget
+    owner_user: edge-operator
+    project: edge
+    environment: demo
+    status: active
+    token_hash: "@@BUDGET_TOKEN_HASH@@"
+    token_id: "@@BUDGET_TOKEN_ID@@"
+    allow:
+      - local-tiny
+      - local-chat
+    rate:
+      rpm: 30
+      tpm: 50000
+      concurrent: 2
+    quota:
+      day:
+        requests: @@BUDGET_DAILY_REQUESTS@@
+        tokens: 20000
+      soft_pct: 100
