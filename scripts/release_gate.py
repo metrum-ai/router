@@ -326,7 +326,7 @@ def stage_compat_live(outdir, config):
     envs.update(COMPAT_LIVE_CONFIG=str(config), COMPAT_LIVE_OUT=str(target), COMPAT_LIVE_ROUTER_SOURCE=str(ROOT))
     log_path = outdir / "compat-live.log"
     with log_path.open("w") as logfile:
-        code = subprocess.run([sys.executable, str(ROOT / "scripts" / "compat_live.py")], env=envs, stdout=logfile, stderr=subprocess.STDOUT).returncode
+        code = subprocess.run([sys.executable, str(ROOT / "scripts" / "compat_live.py")], cwd=ROOT / "scripts", env=envs, stdout=logfile, stderr=subprocess.STDOUT).returncode
     cost = 0.0
     for line in log_path.read_text(errors="replace").splitlines():
         match = re.search(r"after shutdown and audit drain: \$([0-9.]+)", line)
@@ -347,9 +347,12 @@ def stage_compat_live(outdir, config):
 
 def stage_parallel(outdir, cap):
     output = outdir / "parallel-tool-live.json"
-    code = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "parallel_tool_live.py"), "--out", str(output), "--router-bin", str(outdir / "router"), "--cap", str(cap)],
-    ).returncode
+    # The repo Makefile runs the parallel gate through uv because it needs
+    # PyYAML; mirror that instead of relying on the ambient interpreter.
+    command = ["uv", "run", "--with", "pyyaml", "python3", str(ROOT / "scripts" / "parallel_tool_live.py"), "--out", str(output), "--router-bin", str(outdir / "router"), "--cap", str(cap)]
+    if not shutil.which("uv"):
+        return [{"stage": "D", "lane": "parallel tool calls direct vs routed", "task": "live gate", "result": "skipped", "note": "uv is required to supply PyYAML"}]
+    code = subprocess.run(command, cwd=ROOT).returncode
     cost = 0.0
     if output.is_file():
         report = json.loads(output.read_text())
