@@ -152,7 +152,7 @@ def ensure_lanes_servable(source):
     missing = sorted(wanted - groups)
     if missing:
         raise GateError("the config declares no target group for: " + ", ".join(missing))
-    return len(LANES)
+    return len(LANES) + len(EXTRA_LANES)
 
 
 def prepare_config(source, workdir, port, db_path):
