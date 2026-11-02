@@ -416,6 +416,7 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/router_test_time_guard_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
+	$(PYTHON) scripts/tool_compat_matrix_test.py
 	$(PYTHON) scripts/ci_changes_test.py
 
 .PHONY: ci-examples
@@ -702,6 +703,8 @@ docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
 	python3 scripts/check_docs_origin.py
 	python3 scripts/validate_docs_versioning.py
 	python3 scripts/check_docs_sidebar.py
+	python3 scripts/tool_compat_matrix_test.py
+	python3 scripts/tool_compat_matrix.py --check
 	go run ./cmd/docs-config-example-check
 
 docs-build: docs-qa
