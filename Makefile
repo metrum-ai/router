@@ -330,6 +330,12 @@ test-k8s-amd-instinct-local-serving:
 test-k8s-nvidia-llmd-compat:
 	bash scripts/test_k8s_nvidia_llmd_compat.sh
 
+# Scripted v4.6 release gate: real providers, one result table with actual cost.
+# Needs RELEASE_GATE_CONFIG (full-capability config) and provider keys; capped.
+.PHONY: release-gate
+release-gate:
+	@$(PYTHON) scripts/release_gate.py --config "$${RELEASE_GATE_CONFIG}" --cap "$${RELEASE_GATE_CAP:-15}"
+
 # Live parallel tool-call gate (#656): real GPT and Claude, direct and routed.
 # Costs money; capped at $5 per run and never part of per-PR CI.
 .PHONY: test-parallel-tool-live

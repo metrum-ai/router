@@ -428,6 +428,22 @@ Tools and reasoning are filtered together. A request with tools and reasoning ne
 
 Bridge requests remain stateless unless a Chat-to-Responses target enables stateful sessions. A stateless bridge does not synthesize `previous_response_id` continuity for reasoning workflows. OpenAI Responses callers that send `previous_response_id` to a Chat-bridged target should expect a bridge filter reason unless that exact stateful behavior is documented for the target.
 
+### Known limitation: reasoning with tools on Chat Completions
+
+An OpenAI reasoning model can reject a request that combines `reasoning_effort`
+with tools on Chat Completions, because the provider accepts that combination
+only on its Responses surface. When such a target is the only candidate, the
+router forwards the request as configured and the rejection surfaces as
+`upstream-rejected`; the caller sees no field naming the incompatible
+combination.
+
+Until reasoning-with-tools support is declared per dialect and rejected before
+dispatch, route those requests to a model group whose targets use the
+`openai-responses` dialect. A Chat-dialect GPT target belongs in such a group
+only when the caller never sets `reasoning_effort` together with tools. The
+release gate enforces the same rule for its own GPT lanes: a `gpt` group that
+still lists a non-Responses target is refused with the fix named.
+
 ## Quotas And Output Caps
 
 Before an upstream call, the router reserves the estimated input tokens plus the requested output budget for token-based admission. Chat Completions requests use `max_tokens` or `max_completion_tokens`, Responses requests use `max_output_tokens`, and Messages requests use `max_tokens`. Messages requests without a caller cap reserve the router default output cap when the router injects one.
