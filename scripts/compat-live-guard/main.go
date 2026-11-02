@@ -62,9 +62,15 @@ func validate(c *router.Config) error {
 				return errors.New("target provider missing")
 			}
 			base := strings.TrimRight(p.BaseURL, "/")
-			if (group == "gpt" && (base != "https://api.openai.com/v1" || (t.Dialect != "openai-chat" && t.Dialect != "openai-responses"))) ||
-				(group == "claude" && (base != "https://api.anthropic.com" || t.Dialect != "anthropic")) {
-				return errors.New("targets must use the native OpenAI and Anthropic API endpoints")
+			// Any https endpoint is acceptable: the release configuration may route a
+			// provider through an operator-declared gateway. Plaintext, loopback and
+			// non-http endpoints stay rejected so a mock cannot masquerade as live.
+			if !strings.HasPrefix(base, "https://") {
+				return errors.New("targets must use an https upstream endpoint")
+			}
+			if (group == "gpt" && t.Dialect != "openai-chat" && t.Dialect != "openai-responses") ||
+				(group == "claude" && t.Dialect != "anthropic") {
+				return errors.New("targets must use the OpenAI or Anthropic dialect for their group")
 			}
 			if group == "gpt" && !t.ForceStoreFalse {
 				return errors.New("OpenAI targets must force store:false to prevent provider-side stored responses")

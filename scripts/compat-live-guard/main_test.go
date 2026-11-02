@@ -49,11 +49,12 @@ func TestValidateLiveSafety(t *testing.T) {
 		{"missing prices", func(c *router.Config) { c.Models["claude"].Targets[0].OutputPricePerMillionUSD = 0 }},
 		{"unknown validation status", func(c *router.Config) { c.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "assumed" }},
 		{"database source", func(c *router.Config) { c.Server.ConfigSource.Mode = "database" }},
-		{"fallback provider", func(c *router.Config) {
+		{"dialect does not match its group", func(c *router.Config) {
 			g := c.Models["claude"]
-			g.Targets[0].Provider = "openai"
+			g.Targets[0].Dialect = "openai-chat"
 			c.Models["claude"] = g
 		}},
+		{"plaintext upstream", func(c *router.Config) { c.Provider["anthropic"] = router.ProviderConfig{BaseURL: "http://127.0.0.1:18081"} }},
 		{"content capture", func(c *router.Config) { c.Server.ContentCapture.Enabled = true }},
 		{"upstream storage not disabled", func(c *router.Config) { c.Models["gpt"].Targets[0].ForceStoreFalse = false }},
 		{"existing state", func(c *router.Config) {
