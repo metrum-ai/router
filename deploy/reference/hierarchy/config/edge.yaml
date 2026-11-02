@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Edge tier of the layered deployment reference (#434).
-# Every ${...} value comes from the environment (compose env_file or the
-# operator's secret store); the router expands only ${NAME}, never a default.
+# Every environment reference here comes from the .env file (compose env_file
+# or the operator's secret store); the router expands the brace form only and
+# has no default-value syntax.
 server:
   listen: 0.0.0.0:8080
   default_model_group: edge-default

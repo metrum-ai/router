@@ -210,6 +210,15 @@ else
 fi
 AUTH="$(auth_header_file "${ACCESS_TOKEN}")"
 
+# Offline consistency check: every variable the configs reference must be
+# declared in env.example, so a copied .env cannot miss one.
+if python3 check_env.py --config config/edge.yaml --config config/dc.yaml \
+    --env env.example --compose docker-compose.yml >/dev/null; then
+  pass "env.example declares every variable the configs use"
+else
+  fail "env.example is missing a variable the configs use"
+fi
+
 echo
 echo "== 1. readiness and model groups"
 models_json="$(curl -sS --max-time 10 -K "$AUTH" "$EDGE_URL/v1/models")"
