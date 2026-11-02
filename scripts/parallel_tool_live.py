@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -166,10 +167,11 @@ class Gate:
             self.usage_unknown += 1
         return status, raw, cost
 
-    def cell(self, name: str, provider: str, base_url: str, headers: dict[str, str], routed: bool, model: str) -> None:
+    def cell(self, name: str, provider: str, base_url: str, headers: dict[str, str], routed: bool, model: str, group: str = "gate") -> None:
         result = {"cell": name, "provider": provider, "model": model, "routed": routed, "stream": True, "problems": [], "cost_usd": 0.0}
-        request_model = "gate" if routed else model
+        request_model = group if routed else model
         result["request_model"] = request_model
+        result["group"] = group if routed else None
         try:
             if provider == "anthropic":
                 turn1 = {"model": request_model, "max_tokens": MAX_OUTPUT, "stream": True, "system": "You are a tool-using agent.", "messages": [{"role": "user", "content": parallel_prompt()}], "tools": message_tool_schema()}
@@ -238,11 +240,21 @@ class Gate:
                         text += (choice.get("delta") or {}).get("content") or ""
             result["final_text"] = text[:4000]
             compact = "".join(text.split())
+            # Record exact (whitespace-sensitive) marker presence too: a model may
+            # reformat a multi-part result, which is different from a router
+            # changing the text, and both facts belong in the report.
+            result["markers_exact"] = {key: MARKERS[key] in text for key in ("a", "c")}
             for key in ("a", "c"):
                 if MARKERS[key] not in compact:
                     result["problems"].append(f"final answer missing marker {key}")
-            if "EMPTY" not in compact.upper():
-                result["problems"].append("final answer did not acknowledge the empty result")
+            # The empty result must be visible either as the requested word or as
+            # an explicitly empty block; inventing text for it is the failure case.
+            if "EMPTY" in compact.upper():
+                result["empty_result_shown_as"] = "word"
+            elif re.search(r"```\s*```", text):
+                result["empty_result_shown_as"] = "empty-block"
+            else:
+                result["problems"].append("final answer did not show the empty result")
         finally:
             self.cells.append(result)
 
@@ -253,17 +265,21 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
     targets = []
     if openai_key:
         providers["openai"] = {"base_url": "https://api.openai.com/v1", "dialect": "openai-chat", "api_key": "${OPENAI_API_KEY}", "api_key_env": "OPENAI_API_KEY"}
-        targets.append({"provider": "openai", "model": "gpt-4o-mini", "input_price_per_million_usd": 0.15, "output_price_per_million_usd": 0.6, "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-02", "tool_support": {"openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"], "anthropic_messages": ["client_tools", "tool_choice"]}})
+        targets.append({"provider": "openai", "model": "gpt-4o-mini", "input_price_per_million_usd": 0.15, "output_price_per_million_usd": 0.6, "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["openai-chat", "openai-responses", "anthropic"], "validation_status": "passed"}, "tool_support": {"openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"], "anthropic_messages": ["client_tools", "tool_choice"]}})
     if anthropic_key:
         providers["anthropic"] = {"base_url": "https://api.anthropic.com", "dialect": "anthropic", "api_key": "${ANTHROPIC_API_KEY}", "api_key_env": "ANTHROPIC_API_KEY"}
-        targets.append({"provider": "anthropic", "model": "claude-haiku-4-5", "input_price_per_million_usd": 1, "output_price_per_million_usd": 5, "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing", "pricing_updated_at": "2026-11-02", "tool_support": {"anthropic_messages": ["client_tools", "tool_choice"], "openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"]}})
+        targets.append({"provider": "anthropic", "model": "claude-haiku-4-5", "input_price_per_million_usd": 1, "output_price_per_million_usd": 5, "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["anthropic", "openai-chat", "openai-responses"], "validation_status": "passed"}, "tool_support": {"anthropic_messages": ["client_tools", "tool_choice"], "openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"]}})
     token_sha = hashlib.sha256(TOKEN.encode()).hexdigest()
     config = {
         "server": {"listen": f"127.0.0.1:{port}", "identifiers": {"mode": "passthrough"}, "default_model_group": "gate", "cache": {"enabled": False}, "usage_db": {"enabled": True, "driver": "sqlite", "path": str(temp / "usage.sqlite"), "migration_policy": "auto-safe"}, "logging": {"path": str(temp / "requests.jsonl")}},
         "state_path": str(temp / "state.json"),
         "providers": providers,
-        "models": {"gate": {"strategy": "static", "targets": targets}},
-        "callers": [{"id": "live-gate", "token_sha256": token_sha, "allow": ["gate"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
+        "models": {
+            "gate": {"strategy": "static", "targets": targets},
+            "gate-chat-to-messages": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
+            "gate-messages-to-chat": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+        },
+        "callers": [{"id": "live-gate", "token_sha256": token_sha, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
     }
     path = temp / "config.yaml"
     import yaml  # noqa: PLC0415 - optional dependency for this harness only
@@ -315,6 +331,11 @@ def main() -> int:
             if anthropic_key:
                 gate.cell("anthropic-messages-direct", "anthropic", "https://api.anthropic.com", {"x-api-key": anthropic_key, "anthropic-version": "2023-06-01"}, False, "claude-haiku-4-5")
                 gate.cell("anthropic-messages-routed", "anthropic", f"http://127.0.0.1:{port}", routed_headers_anthropic, True, "claude-haiku-4-5")
+            if openai_key and anthropic_key:
+                # Translated directions through the router: the caller keeps its
+                # own dialect and the router translates to the other provider.
+                gate.cell("chat-caller-to-messages-target", "openai-chat", f"http://127.0.0.1:{port}", routed_headers_openai, True, "claude-haiku-4-5", "gate-chat-to-messages")
+                gate.cell("messages-caller-to-chat-target", "anthropic", f"http://127.0.0.1:{port}", routed_headers_anthropic, True, "gpt-4o-mini", "gate-messages-to-chat")
         finally:
             process.terminate()
             try:

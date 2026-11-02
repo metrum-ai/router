@@ -1,6 +1,6 @@
 # Parallel tool calls: live gate results
 
-Last run: 2026-11-02 (UTC), router `main` at `77a61b3e`, live gate script `scripts/parallel_tool_live.py`.
+Last run: 2026-11-02 (UTC), router `main` at `1ca83567`, live gate script `scripts/parallel_tool_live.py`.
 
 This page states exactly which parallel-tool shapes are proven, and how. Offline coverage of the same matrix (translated directions, opt-out controls, awkward SSE fragment boundaries) lives in the repository test suite; this page is only about the live provider runs.
 
@@ -21,14 +21,16 @@ Every dispatch is preceded by a hard budget reservation and the run stops if rep
 | OpenAI Chat, through the router (`gpt-4o-mini`) | 3 | 200 | 200 | pass |
 | Anthropic Messages, direct (`claude-haiku-4-5`) | 3 | 200 | 200 | pass |
 | Anthropic Messages, through the router (`claude-haiku-4-5`) | 3 | 200 | 200 | pass |
+| Chat caller → Messages target, through the router | 3 | 200 | 200 | pass |
+| Messages caller → Chat target, through the router | 3 | 200 | 200 | pass |
 
-Router-recorded usage for the routed cells: 95 input / 64 output tokens and $0.00005265 for Chat; 631 input / 138 output tokens and $0.001321 for Messages. The direct cells are billed by the provider outside the router, so their cost is not in the router's usage rows.
+**Actual cost of this run:** $0.002815 summed from the router's own `request_usage` rows for the four routed cells, at the prices configured on the targets (Chat $0.15/$0.60 per million input/output, Messages $1/$5 per million). The two direct cells are invoiced by the provider outside the router and are therefore not in those rows. The run reserved $0.5141 of its $5 cap and never had to halt.
 
-**Actual cost of this run:** $0.002681 in router usage rows (list-rate calculation at the configured prices: Chat $0.15/$0.60 per million input/output, Messages $1/$5 per million), plus the two direct calls, which the provider invoices. The budget reserved $0.3424 and never had to halt.
+Marker observations worth recording separately from pass/fail: after the multi-part result, three cells reproduced the marker across the part boundary on separate lines (`GATE-A` / `-7731`), so the marker only matches once whitespace is ignored. That is a formatting effect of a two-part tool result seen from the model side; the router-level newline-injection defect in translated tool-result arrays is tracked separately in #672 and is not exercised as a pass condition here.
 
 ## Limits
 
-- Four cells only: native Chat and native Messages, both streaming, both direct and routed. Translated directions (Chat ↔ Messages, Responses ↔ Chat, Chat/Responses ↔ Messages), non-streaming requests, and the `parallel_tool_calls: false` / `disable_parallel_tool_use` opt-outs are covered by offline HTTP tests, **not** by this live run.
+- Six cells: native Chat and native Messages (streaming, direct and routed) plus the two translated directions Chat → Messages and Messages → Chat. The Responses-based directions (Responses ↔ Chat, Chat/Responses ↔ Messages), non-streaming requests and the `parallel_tool_calls: false` / `disable_parallel_tool_use` opt-outs are covered by offline HTTP tests, **not** by this live run.
 - Two cheap models on one day. Provider-side interleaving of argument fragments across calls is observed only when a provider chooses to interleave; this gate does not force it.
 - Turn 2 is a single reordered continuation, not a multi-round agent loop, and the final answer check is a marker echo, not a semantic judgement.
 - The direct cells bypass the router entirely, so they measure provider behaviour only.
