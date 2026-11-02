@@ -330,7 +330,7 @@ test-reference-configs:
 	uv run --with pyyaml python scripts/check_reference_configs.py
 	uv run --with pyyaml python -m unittest scripts/check_reference_configs_test.py -q
 	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
-	go build -buildvcs=false -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
+	go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
 	for tier in $(REFERENCE_TIERS); do \
 	  echo "validating deploy/reference/$$tier/config.yaml"; \
 	  $(REFERENCE_CONFIG_ENV) "$$tmp/routerctl" config validate \
