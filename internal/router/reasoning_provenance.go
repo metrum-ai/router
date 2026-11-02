@@ -6,7 +6,7 @@ package router
 // Opaque provider reasoning provenance (issue #622).
 //
 // Provider-owned reasoning continuations (OpenAI Responses `encrypted_content`,
-// Anthropic thinking signatures and `redacted_thinking`) are only meaningful to
+// Anthropic thinking signatures and `redacted_thinking` data) are only meaningful to
 // the provider account, model and dialect that minted them. This file defines
 // the binding envelope and its parser. It performs no request or response
 // wiring: nothing here is called until the observe/enforce phase lands.
@@ -70,13 +70,15 @@ var (
 // dotted envelope format.
 var reasoningEnvelopeKeyIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
 
-// reasoningKind names the opaque field an envelope wraps.
+// reasoningKind names the opaque field an envelope wraps. Anthropic
+// redacted_thinking carries its opaque payload in `data`, thinking in
+// `signature`, and OpenAI Responses reasoning in `encrypted_content`.
 type reasoningKind string
 
 const (
 	reasoningKindEncryptedContent reasoningKind = "openai-responses.encrypted_content"
 	reasoningKindThinkingSig      reasoningKind = "anthropic.thinking.signature"
-	reasoningKindRedactedThinking reasoningKind = "anthropic.redacted_thinking.signature"
+	reasoningKindRedactedThinking reasoningKind = "anthropic.redacted_thinking.data"
 )
 
 func (k reasoningKind) valid() bool {
