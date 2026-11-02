@@ -1914,6 +1914,53 @@ func committedStreamUsage(err error, req *IRRequest, dialect string, reservation
 	return Usage{}
 }
 
+// usageEndpoint returns bounded surface labels, never caller-supplied path IDs.
+// Both Anthropic path aliases describe the same Messages surface.
+func usageEndpoint(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return "unsupported"
+	}
+	path := r.URL.Path
+	switch r.Method {
+	case http.MethodPost:
+		switch path {
+		case "/v1/chat/completions":
+			return "chat.completions"
+		case "/v1/responses":
+			return "responses"
+		case "/v1/responses/input_tokens":
+			return "responses.input_tokens"
+		case "/v1/responses/compact":
+			return "responses.compact"
+		case "/v1/messages", "/anthropic/v1/messages":
+			return "messages"
+		case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
+			return "messages.count_tokens"
+		case "/v1/content-captures/purge-expired":
+			return "content_captures.purge_expired"
+		}
+	case http.MethodGet:
+		switch path {
+		case "/v1/models":
+			return "models.list"
+		case "/v1/codex/models.json":
+			return "models.codex"
+		case "/v1/usage":
+			return "usage"
+		case "/metrics":
+			return "metrics"
+		}
+		if strings.HasPrefix(path, "/v1/models/") {
+			return "models.retrieve"
+		}
+	case http.MethodDelete:
+		if strings.HasPrefix(path, "/v1/content-captures/") {
+			return "content_captures.delete"
+		}
+	}
+	return "unsupported"
+}
+
 func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
 	if dialect == "models" && isAnthropicModelRequest(r) {
 		dialect = "anthropic"
@@ -1947,6 +1994,7 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Client:               inferClient(r),
 			CallerIP:             ipInfo.Address,
 			InboundDialect:       dialect,
+			Endpoint:             usageEndpoint(r),
 			Cache:                "bypass",
 			QuotaState:           "ok",
 			KeyState:             "active",
@@ -1961,9 +2009,6 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 		rc.rec.RequestKind = "count_tokens"
 	case "/v1/responses/input_tokens":
 		rc.rec.RequestKind = "count_tokens"
-		rc.rec.Endpoint = "responses.input_tokens"
-	case "/v1/responses/compact":
-		rc.rec.Endpoint = "responses.compact"
 	}
 	// Recognized inactive credentials retain safe attribution, never authorization.
 	// Unknown credentials have no caller and cannot acquire a report domain.

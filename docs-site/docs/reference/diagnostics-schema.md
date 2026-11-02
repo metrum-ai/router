@@ -9,6 +9,16 @@ This reference documents the relational diagnostics, usage, reporting, retention
 
 The ordinary diagnostics schema stores scalar metadata only. It is designed for request tracing, usage accounting, latency and fallback triage, provider/model health, quota and traffic-shaping analysis, and report generation without storing raw request content.
 
+For new accounted requests, `request_usage.endpoint` is a bounded surface
+label. Inference labels are `chat.completions`, `responses`, and `messages`;
+counting and compaction use `messages.count_tokens`, `responses.input_tokens`,
+and `responses.compact`. Both Messages path aliases share a label. Model
+catalog, usage, metrics, and content-capture administration have separate
+labels; unsupported handled endpoints use `unsupported`. Labels never contain
+caller-supplied IDs. Rows from earlier versions can be empty; no historical
+backfill is performed. Health and other surfaces that do not create usage rows
+are not implied to do so by this column.
+
 ## Generated Schema
 
 <!-- @generated diagnostics-schema -->

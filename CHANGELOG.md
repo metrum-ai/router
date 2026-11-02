@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Populate `request_usage.endpoint` with bounded surface labels for new usage
+  rows, including Chat, Responses, Messages, counting and other accounted
+  surfaces. Historical empty values remain unchanged; usage schema stays at
+  version 11 (#653).
+
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the
@@ -322,8 +327,9 @@ Negative and partial results are published as such, not dropped.
   is unbilled and the audit record carries `endpoint=responses.input_tokens`.
 
 - The usage database moves to schema 11 (`2026103001`), which adds
-  `request_usage.endpoint` so usage rows record the surface each request used,
-  on SQLite and PostgreSQL. Apply it through the Required Migration Gate before
+  `request_usage.endpoint` on SQLite and PostgreSQL. In v4.5 only Responses
+  input-token and compact requests populate it. Apply it through the Required
+  Migration Gate before
   serving: with the default `deployment-job` policy the serving process only
   validates the ledger, and `auto-safe` applies it at startup solely on a
   reviewed single-node SQLite deployment. Existing rows cannot be classified

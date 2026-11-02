@@ -157,7 +157,7 @@ func TestCountTokensProxyUnbilled(t *testing.T) {
 		t.Fatalf("records=%d", len(records))
 	}
 	for _, row := range records {
-		if row.RequestKind != "count_tokens" || row.UsageSource != "none" || row.InputTokens != 0 || row.TotalTokens != 0 || row.TotalCostUSD != 0 || row.CostBilledUSD != 0 || row.UpstreamTotalTPS != nil {
+		if row.Endpoint != "messages.count_tokens" || row.RequestKind != "count_tokens" || row.UsageSource != "none" || row.InputTokens != 0 || row.TotalTokens != 0 || row.TotalCostUSD != 0 || row.CostBilledUSD != 0 || row.UpstreamTotalTPS != nil {
 			t.Fatalf("billed event: %+v", row)
 		}
 	}
