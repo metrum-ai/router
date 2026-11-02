@@ -461,10 +461,10 @@ def stage_harbor(outdir, host=None, sha=""):
             return subprocess.run(args, stdout=logfile, stderr=subprocess.STDOUT, text=True, **kwargs)
         # A previous attempt can leave the matrix router and relay running, which
         # would hold the ports and lock the binary the next attempt uploads.
-        run(ssh + [# The bracket keeps pkill from matching its own command line and killing
-                   # the ssh session before the cleanup runs.
-                   "pkill -f 'harbor-e2e/[r]outer' >/dev/null 2>&1 || true; "
-                   "pkill -f '[r]un_matrix.py' >/dev/null 2>&1 || true; sleep 1; "
+        # A previous attempt can leave the matrix router and relay bound, which
+        # holds the ports and locks the binary the next attempt uploads. Kill by
+        # listening port: pattern-matching a process would also match this shell.
+        run(ssh + ["fuser -k 18080/tcp 18081/tcp 18082/tcp >/dev/null 2>&1 || true; sleep 1; "
                    "rm -f /root/harbor-e2e/router; mkdir -p /root/harbor-e2e /run/harbor-e2e"])
         for name in HARBOR_FILES:
             run(scp + [str(HARBOR_BUNDLE / name), f"{host}:/root/harbor-e2e/{name}"])
