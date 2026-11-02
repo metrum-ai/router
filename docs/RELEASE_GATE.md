@@ -58,21 +58,39 @@ Without `RELEASE_GATE_HARBOR_HOST` the stage runs locally when Docker exists and
 reports `skipped` with the reason when it does not. A Harbor matrix is bounded
 evidence; the gate never upgrades it to a certification.
 
-## Harbor CLI version and Compose
+## Harbor stage: the Pi adapter matrix
 
-Stage B pins the Harbor CLI at **0.24.0**, the version the v4.5 gate was
-validated against, and runs it through `uvx --from harbor==0.24.0 harbor` so the
-host's `harbor` on `PATH` is irrelevant. The pin records the validated CLI; it
-does not by itself make the matrix pass.
+Stage B runs the matrix the v4.5 gate used, ported into `scripts/harbor_e2e/`:
 
-The current blocker is the example adapter, not the CLI version: the Codex
-adapter in `examples/harbor-algotune-pca` calls an MCP-registration hook that no
-`Codex` agent in the pinned CLI provides (other Harbor adapters do, Codex does
-not), so the trial fails with `'MetrumCodex' object has no attribute
-'_build_register_mcp_servers_command'` before any request reaches the router.
-Updating that adapter is tracked as follow-up work; until then the stage reports
-`blocked`, and the table says so rather than reporting a pass.
+- the **Pi agent adapter** (`metrum_pi_tmpfs.py`), which reads the router token
+  from a read-only tmpfs bind mount instead of any flag or environment value;
+- **five fixed synthetic tasks** (`generate_tasks.py`);
+- **four lanes**: direct and routed, in both API styles, against the GPT and
+  Claude groups, driven by `run_matrix.py`;
+- direct traffic goes through the spend-guarded relay (`guarded_relay.py`), so a
+  direct baseline is bounded and recorded like a routed one.
 
-The host also needs Docker Compose **v2** (`docker compose`); Harbor invokes it
-directly, and a host with only legacy `docker-compose` fails with
-`unknown flag: --project-name`.
+It runs on a Docker host reachable over SSH; the gate ships the bundle and its
+own router binary, runs `setup_remote.sh` (Docker CE with the Compose plugin and
+a Harbor virtualenv), installs the provider keys and the caller token into
+tmpfs, then runs the matrix and copies the result back.
+
+```bash
+export RELEASE_GATE_HARBOR_HOST=root@203.0.113.10
+export RELEASE_GATE_HARBOR_KEY=~/.ssh/gate-key
+export RELEASE_GATE_HARBOR_VERSION=0.25.0   # default: the CLI the v4.5 matrix ran 5/5 against
+make release-gate
+```
+
+Without `RELEASE_GATE_HARBOR_HOST` the stage reports `skipped` with the reason. A
+Harbor matrix is bounded evidence, never a certification.
+
+Compose **v2** is required: Harbor invokes `docker compose` directly, and a host
+with only the legacy `docker-compose` fails with `unknown flag: --project-name`.
+`setup_remote.sh` installs the plugin, so this only matters for a hand-built host.
+
+The example `examples/harbor-algotune-pca` Codex adapter is **not** used by the
+gate: it calls an MCP-registration hook that Harbor's Codex agent does not
+provide in the 0.25 line either, so a matrix built on it fails inside the adapter
+before reaching the router. The Pi adapter above has no such dependency and is
+the one the v4.5 matrix passed with.

@@ -391,104 +391,104 @@ def stage_pi(outdir, port, db, cap_state):
     return rows
 
 
-HARBOR_TASK_DEFAULT = "aider/polyglot_python_two-bucket"
-# The release gate pins the Harbor CLI the v4.5 gate was validated against. The
-# example agent adapter targets that API; a newer CLI breaks it until the
-# adapter is updated (tracked separately).
-HARBOR_VERSION_DEFAULT = "0.24.0"
+HARBOR_VERSION_DEFAULT = "0.25.0"   # the CLI the v4.5 Harbor matrix ran 5/5 against
+HARBOR_BUNDLE = ROOT / "scripts" / "harbor_e2e"
+HARBOR_FILES = ("generate_tasks.py", "metrum_pi_tmpfs.py", "guarded_relay.py",
+                "mock_messages.py", "run_matrix.py", "harbor_config.py", "setup_remote.sh")
 
 
-def harbor_shim(target):
-    """Write an executable shim that runs the pinned Harbor CLI through uvx.
+def harbor_remote_script(sha, router_port="18080", relay_port="18081"):
+    """The remote side of stage B: setup, credentials to tmpfs, matrix, teardown of creds."""
+    return f"""set -euo pipefail
+cd /root/harbor-e2e
+umask 077
+cat > /run/harbor-e2e/provider-secrets.json
+chmod 600 /run/harbor-e2e/provider-secrets.json
+python3 - <<'PYEOF'
+import hashlib, pathlib, sys
+sys.path.insert(0, '/root/harbor-e2e')
+import harbor_config
+tokens = harbor_config.caller_tokens()
+first = tokens[('anthropic-messages', 'claude')]
+pathlib.Path('/run/harbor-e2e/router-token').write_text(first)
+pathlib.Path('/run/harbor-e2e/router-token').chmod(0o600)
+PYEOF
+HARBOR_E2E_SHA={sha} HARBOR_BIN=/root/harbor-venv/bin/harbor \
+  python3 run_matrix.py > run.log 2>&1
+rc=$?
+cp -f /root/harbor-e2e/result.json /root/harbor-e2e/result.json.keep 2>/dev/null || true
+rm -f /run/harbor-e2e/provider-secrets.json /run/harbor-e2e/router-token
+exit $rc
+"""
 
-    Harbor 0.25 changed the Codex agent API the example adapter builds on, so
-    the gate pins the validated version instead of following whatever `harbor`
-    happens to be on PATH. Docker Compose v2 is required by Harbor itself.
-    """
-    version = env("RELEASE_GATE_HARBOR_VERSION") or HARBOR_VERSION_DEFAULT
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
-        raise GateError("RELEASE_GATE_HARBOR_VERSION must be a pinned x.y.z version")
-    shim = target / f"harbor-{version}"
-    shim.write_text(
-        "#!/bin/sh\n"
-        f"exec uvx --from harbor=={version} harbor \"$@\"\n",
-        encoding="utf-8",
-    )
-    shim.chmod(0o755)
-    return shim, version
 
+def stage_harbor(outdir, host=None, sha=""):
+    """Stage B: the Harbor matrix on a Docker host (Pi adapter, five tasks, four lanes).
 
-HARBOR_AGENTS_DEFAULT = "codex,claude-code"
-HARBOR_GROUPS_DEFAULT = "default,fast"
-
-
-def stage_harbor(outdir, host=None):
-    """Stage B: the bounded Harbor promotion matrix (<=4 cells by construction).
-
-    Runs on a Docker host, either this machine or the SSH host in
-    RELEASE_GATE_HARBOR_HOST. Missing Docker or missing Harbor inputs report
-    `skipped` with the reason; a matrix that runs reports its own verdict and is
-    never upgraded to a pass by this gate.
+    Needs `RELEASE_GATE_HARBOR_HOST` (ssh target) and `RELEASE_GATE_HARBOR_KEY`.
+    Without them the stage reports `skipped` with the reason. A matrix that runs
+    reports its own verdict; the gate never upgrades it to a pass.
     """
     target = outdir / "harbor"
     target.mkdir(parents=True, exist_ok=True)
-    promotion = ROOT / "scripts" / "harbor_promotion.py"
-    task = env("HARBOR_PROMOTION_TASK") or HARBOR_TASK_DEFAULT
-    common = ["--task", task,
-              "--agents", env("HARBOR_PROMOTION_AGENTS") or HARBOR_AGENTS_DEFAULT,
-              "--groups", env("HARBOR_PROMOTION_GROUPS") or HARBOR_GROUPS_DEFAULT,
-              "--confirm", task,
-              "--out", str(target)]
-    if host:
-        remote_out = env("RELEASE_GATE_HARBOR_REMOTE_OUT") or "~/harbor-out"
-        quoted = " ".join(shlex.quote(part) for part in common[:-2] + ["--out", remote_out])
-        command = f"cd ~/router && python3 scripts/harbor_promotion.py {quoted}"
-        log_path = target / "harbor-remote.log"
-        ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
-        identity = env("RELEASE_GATE_HARBOR_KEY")
-        if identity:
-            ssh += ["-i", identity]
-        # The caller token and base URL travel over stdin into a 0600 file on the
-        # host, never on a command line and never in the log.
-        secrets = {key: env(key) for key in ("ROUTER_BASE_URL", "HARBOR_ROUTER_TOKEN") if env(key)}
-        if secrets:
-            payload = "".join(f"export {k}={shlex.quote(v)}\n" for k, v in secrets.items())
-            subprocess.run(ssh + [host, "umask 077; cat > /dev/shm/release-gate-harbor.env"],
-                           input=payload, text=True, capture_output=True, check=False)
-            command = ". /dev/shm/release-gate-harbor.env; rm -f /dev/shm/release-gate-harbor.env; " + command
-            if not command.startswith(". "):
-                raise GateError("internal: remote Harbor command prefix lost")
-        else:
-            command = "echo 'blocked: ROUTER_BASE_URL and HARBOR_ROUTER_TOKEN are required for the Harbor stage' >&2; exit 2"
-        with log_path.open("w") as logfile:
-            code = subprocess.run(ssh + [host, command], stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
+    if not host:
         return [{
             "stage": "B",
-            "lane": f"harbor-direct/routed (both styles) on {host}",
-            "task": f"{HARBOR_TASK_DEFAULT}",
-            "result": "pass" if code == 0 else "blocked",
-            "note": f"remote log: {log_path.name}; a Harbor matrix is bounded evidence, not a certification",
-        }]
-    if not shutil.which("docker"):
-        return [{
-            "stage": "B",
-            "lane": "harbor-direct/routed (both styles)",
-            "task": "5 tasks",
+            "lane": "harbor direct/routed (both styles)",
+            "task": "5 synthetic tasks",
             "result": "skipped",
-            "note": "no container runtime and no RELEASE_GATE_HARBOR_HOST; Harbor needs a Docker host",
+            "note": "no RELEASE_GATE_HARBOR_HOST; the Harbor matrix needs a Docker host",
         }]
-    shim, version = harbor_shim(target)
+    identity = env("RELEASE_GATE_HARBOR_KEY")
+    version = env("RELEASE_GATE_HARBOR_VERSION") or HARBOR_VERSION_DEFAULT
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise GateError("RELEASE_GATE_HARBOR_VERSION must be a pinned x.y.z version")
+    ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
+    if identity:
+        ssh += ["-i", identity]
+    ssh += [host]
+    scp = ["scp", "-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]
+    if identity:
+        scp += ["-i", identity]
     log_path = target / "harbor.log"
-    envs = dict(os.environ, HARBOR_BIN=str(shim))
     with log_path.open("w") as logfile:
-        code = subprocess.run([sys.executable, str(promotion), *common], cwd=ROOT, env=envs, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
-    return [{
-        "stage": "B",
-        "lane": "harbor-direct/routed (both styles)",
-        "task": HARBOR_TASK_DEFAULT,
-        "result": "pass" if code == 0 else "blocked",
-        "note": f"log: {log_path.name}; bounded Harbor matrix, not a certification",
-    }]
+        def run(args, **kwargs):
+            return subprocess.run(args, stdout=logfile, stderr=subprocess.STDOUT, text=True, **kwargs)
+        run(ssh + ["mkdir -p /root/harbor-e2e /run/harbor-e2e"])
+        for name in HARBOR_FILES:
+            run(scp + [str(HARBOR_BUNDLE / name), f"{host}:/root/harbor-e2e/{name}"])
+        run(ssh + [f"HARBOR_VERSION={version} bash /root/harbor-e2e/setup_remote.sh"])
+        router = outdir / "router"
+        if not router.is_file():
+            return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
+                     "result": "blocked", "note": "the gate built no router binary to ship to the host"}]
+        run(scp + [str(router), f"{host}:/root/harbor-e2e/router"])
+        secrets = {k: env(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY") if env(k)}
+        if len(secrets) != 2:
+            return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
+                     "result": "skipped", "note": "provider keys missing; the matrix needs both"}]
+        code = run(ssh + [harbor_remote_script(sha)], input=json.dumps(secrets)).returncode
+        run(scp + [f"{host}:/root/harbor-e2e/result.json", str(target / "result.json")])
+        run(scp + [f"{host}:/root/harbor-e2e/run.log", str(target / "run.log")])
+    rows = []
+    result_path = target / "result.json"
+    if result_path.is_file():
+        payload = json.loads(result_path.read_text())
+        for lane, value in (payload.get("jobs") or {}).items():
+            values = value.get("values") or []
+            passed = sum(1 for v in values if str(v) == "1")
+            rows.append({
+                "stage": "B",
+                "lane": f"harbor-{lane}",
+                "task": f"{len(values)} tasks",
+                "result": "pass" if value.get("exit") == 0 and values and passed == len(values) else "fail",
+                "note": f"{passed}/{len(values)} rewards; bounded matrix, not a certification",
+            })
+    if not rows:
+        rows.append({"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
+                     "result": "pass" if code == 0 else "blocked",
+                     "note": "matrix produced no per-lane result; inspect harbor.log"})
+    return rows
 
 
 def stage_compat_live(outdir, config):
@@ -570,7 +570,11 @@ def render(rows, sha, cap, spent, config_source):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", default=env("RELEASE_GATE_CONFIG"), help="full-capability router config (required)")
+    parser.add_argument("--config", default=env("RELEASE_GATE_CONFIG"), help="full-capability router config for stages A/B/D (required)")
+    # The live-SDK stage legitimately wants a Chat-dialect target so its Chat and
+    # embeddings cases are eligible; the stage-A pin deliberately forbids one, so
+    # the two stages take separate configs.
+    parser.add_argument("--compat-config", default=env("RELEASE_GATE_COMPAT_CONFIG"), help="config for the live SDK stage (defaults to --config)")
     # Default outside the worktree: stage C refuses a dirty router checkout, and
     # the gate's own output inside the repository would make it dirty.
     parser.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "release-gate"))
@@ -582,6 +586,7 @@ def main():
     if not args.config or not Path(args.config).is_file():
         raise SystemExit("pass --config (or RELEASE_GATE_CONFIG) with a full-capability router config")
     ensure_gpt_responses_pinned(args.config)
+    compat_source = args.compat_config or args.config
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
     if dirty and not args.allow_dirty:
@@ -598,7 +603,7 @@ def main():
 
     log(f"release gate {sha} -> {outdir}")
     if "b" in stages:
-        rows += stage_harbor(outdir, env("RELEASE_GATE_HARBOR_HOST"))
+        rows += stage_harbor(outdir, env("RELEASE_GATE_HARBOR_HOST"), sha)
 
     router = outdir / "router"
     config = None
@@ -636,7 +641,7 @@ def main():
         stage_c.mkdir(parents=True, exist_ok=True)
         for stale in ("usage.sqlite", "router-state.json", "requests.jsonl"):
             (stage_c / stale).unlink(missing_ok=True)
-        config = prepare_config(args.config, stage_c, free_port(), stage_c / "usage.sqlite")
+        config = prepare_config(compat_source, stage_c, free_port(), stage_c / "usage.sqlite")
         rows += stage_compat_live(outdir, config)
         spent += sum(row.get("cost_usd") or 0 for row in rows if row["stage"] == "C")
 
