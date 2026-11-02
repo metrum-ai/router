@@ -470,12 +470,9 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	data, usage, usageSource, err := s.callEmbeddingsUpstream(r.Context(), w, rc, req, target, dimensions)
 	if err != nil {
 		var upstream upstreamError
-		if errors.As(err, &upstream) && upstream.StatusCode > 0 && upstream.StatusCode < 500 {
-			s.writeError(w, rc, upstream.StatusCode, "upstream-rejected")
-			return
-		}
-		if errors.As(err, &upstream) && upstream.TimedOut {
-			s.writeError(w, rc, http.StatusGatewayTimeout, "upstream-timeout")
+		if errors.As(err, &upstream) {
+			code, status := upstreamFailureResponse(upstream, rc)
+			s.writeError(w, rc, status, code)
 			return
 		}
 		s.writeError(w, rc, http.StatusBadGateway, "upstream-failed")
@@ -558,17 +555,14 @@ func (s *Service) callEmbeddingsUpstream(ctx context.Context, w http.ResponseWri
 		Dialect: "openai", EndpointHost: endpointHost(provider.BaseURL), DurationMS: ms, StatusCode: resp.StatusCode, Selected: true,
 	}
 	if resp.StatusCode >= 400 {
-		class := "upstream_rejected"
-		if resp.StatusCode >= 500 {
-			class = "upstream_failed"
-		}
-		attempt.ErrorClass = class
+		// Reuse the chat-path status classification so provider credential and
+		// billing failures never look like caller authentication failures.
+		classified := classifyUpstreamStatus(resp.StatusCode, payload)
+		attempt.ErrorClass = classified.Class
+		attempt.Retryable = classified.Retryable
 		rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
-		status := resp.StatusCode
-		if status >= 500 {
-			status = 0
-		}
-		return nil, Usage{}, "", upstreamError{Class: class, StatusCode: status, Message: "embedding upstream rejected the request"}
+		classified.Message = "embedding upstream rejected the request"
+		return nil, Usage{}, "", classified
 	}
 	rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
 	var parsed embeddingsUpstreamResponse

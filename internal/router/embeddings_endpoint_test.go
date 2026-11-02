@@ -227,16 +227,58 @@ func TestEmbeddingsResponseValidationFailsClosed(t *testing.T) {
 }
 
 func TestEmbeddingsUpstreamErrorsAreSanitized(t *testing.T) {
-	stub := &embeddingsUpstreamStub{status: http.StatusForbidden, response: `{"error":"provider secret detail"}`}
+	stub := &embeddingsUpstreamStub{status: http.StatusInternalServerError, response: `{"error":"provider secret detail"}`}
 	svc := embeddingsTestService(t, stub, nil)
 	rr := embeddingsPost(t, svc, `{"model":"embed","input":"x"}`)
-	if rr.Code != http.StatusForbidden || strings.Contains(rr.Body.String(), "provider secret detail") {
+	if rr.Code != http.StatusBadGateway || strings.Contains(rr.Body.String(), "provider secret detail") {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	stub2 := &embeddingsUpstreamStub{status: http.StatusInternalServerError, response: `{}`}
-	svc2 := embeddingsTestService(t, stub2, nil)
-	rr = embeddingsPost(t, svc2, `{"model":"embed","input":"x"}`)
-	if rr.Code != http.StatusBadGateway || strings.Contains(rr.Body.String(), "upstream secret") {
+}
+
+// Provider credential, billing and entitlement failures must not look like the
+// caller's own authentication failing (issue #530 semantics).
+func TestEmbeddingsUpstreamAccessFailuresMapTo503(t *testing.T) {
+	for name, status := range map[string]int{
+		"unauthorized": http.StatusUnauthorized,
+		"payment":      http.StatusPaymentRequired,
+		"forbidden":    http.StatusForbidden,
+	} {
+		stub := &embeddingsUpstreamStub{status: status, response: `{"error":{"message":"provider credential detail"}}`}
+		svc := embeddingsTestService(t, stub, nil)
+		rr := embeddingsPost(t, svc, `{"model":"embed","input":"x"}`)
+		if rr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s: status=%d body=%s", name, rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "upstream-access-denied") {
+			t.Fatalf("%s: wrong error code: %s", name, rr.Body.String())
+		}
+		if strings.Contains(rr.Body.String(), "provider credential detail") || strings.Contains(rr.Body.String(), "Bearer") {
+			t.Fatalf("%s: leaked provider detail: %s", name, rr.Body.String())
+		}
+	}
+}
+
+func TestEmbeddingsUpstreamClientErrorsStayRejected(t *testing.T) {
+	for name, status := range map[string]int{
+		"bad request":   http.StatusBadRequest,
+		"not found":     http.StatusNotFound,
+		"too large":     http.StatusRequestEntityTooLarge,
+		"unprocessable": http.StatusUnprocessableEntity,
+	} {
+		stub := &embeddingsUpstreamStub{status: status, response: `{"error":"provider body"}`}
+		svc := embeddingsTestService(t, stub, nil)
+		rr := embeddingsPost(t, svc, `{"model":"embed","input":"x"}`)
+		if rr.Code != status || !strings.Contains(rr.Body.String(), "upstream-rejected") {
+			t.Fatalf("%s: status=%d body=%s", name, rr.Code, rr.Body.String())
+		}
+	}
+}
+
+func TestEmbeddingsUpstreamRateLimitMapsTo503(t *testing.T) {
+	stub := &embeddingsUpstreamStub{status: http.StatusTooManyRequests, response: `{"error":"slow down"}`}
+	svc := embeddingsTestService(t, stub, nil)
+	rr := embeddingsPost(t, svc, `{"model":"embed","input":"x"}`)
+	if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), "upstream-rate-limited") {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 }
