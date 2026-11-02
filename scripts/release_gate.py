@@ -570,7 +570,11 @@ def render(rows, sha, cap, spent, config_source):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--config", default=env("RELEASE_GATE_CONFIG"), help="full-capability router config (required)")
+    parser.add_argument("--config", default=env("RELEASE_GATE_CONFIG"), help="full-capability router config for stages A/B/D (required)")
+    # The live-SDK stage legitimately wants a Chat-dialect target so its Chat and
+    # embeddings cases are eligible; the stage-A pin deliberately forbids one, so
+    # the two stages take separate configs.
+    parser.add_argument("--compat-config", default=env("RELEASE_GATE_COMPAT_CONFIG"), help="config for the live SDK stage (defaults to --config)")
     # Default outside the worktree: stage C refuses a dirty router checkout, and
     # the gate's own output inside the repository would make it dirty.
     parser.add_argument("--out", default=str(Path(tempfile.gettempdir()) / "release-gate"))
@@ -582,6 +586,7 @@ def main():
     if not args.config or not Path(args.config).is_file():
         raise SystemExit("pass --config (or RELEASE_GATE_CONFIG) with a full-capability router config")
     ensure_gpt_responses_pinned(args.config)
+    compat_source = args.compat_config or args.config
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
     if dirty and not args.allow_dirty:
@@ -636,7 +641,7 @@ def main():
         stage_c.mkdir(parents=True, exist_ok=True)
         for stale in ("usage.sqlite", "router-state.json", "requests.jsonl"):
             (stage_c / stale).unlink(missing_ok=True)
-        config = prepare_config(args.config, stage_c, free_port(), stage_c / "usage.sqlite")
+        config = prepare_config(compat_source, stage_c, free_port(), stage_c / "usage.sqlite")
         rows += stage_compat_live(outdir, config)
         spent += sum(row.get("cost_usd") or 0 for row in rows if row["stage"] == "C")
 
