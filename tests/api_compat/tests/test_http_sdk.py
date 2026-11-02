@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 from anthropic import Anthropic, AuthenticationError as AnthropicAuthenticationError
 from anthropic import omit
+from openai import omit as openai_omit
 from openai import AuthenticationError as OpenAIAuthenticationError
 from openai import OpenAI
 
@@ -54,9 +55,12 @@ def test_anthropic_sdk_messages_unary(router):
 
 
 def test_openai_sdk_missing_auth_rejects_with_zero_upstream(router):
-    client = OpenAI(base_url=router["base"] + "/v1", api_key="", max_retries=0)
+    # openai>=3 validates credentials at client construction, so supply a
+    # placeholder key and omit the Authorization header per request. The
+    # assertion under test is still the router's 401 with zero upstream calls.
+    client = OpenAI(base_url=router["base"] + "/v1", api_key="placeholder", max_retries=0)
     with pytest.raises(OpenAIAuthenticationError) as exc_info:
-        client.models.list()
+        client.models.list(extra_headers={"Authorization": openai_omit})
     assert exc_info.value.status_code == 401
     assert router["upstream"].calls == []
 
