@@ -407,9 +407,11 @@ def stage_harbor(outdir, host=None):
     target = outdir / "harbor"
     target.mkdir(parents=True, exist_ok=True)
     promotion = ROOT / "scripts" / "harbor_promotion.py"
-    common = ["--task", env("HARBOR_PROMOTION_TASK") or HARBOR_TASK_DEFAULT,
+    task = env("HARBOR_PROMOTION_TASK") or HARBOR_TASK_DEFAULT
+    common = ["--task", task,
               "--agents", env("HARBOR_PROMOTION_AGENTS") or HARBOR_AGENTS_DEFAULT,
               "--groups", env("HARBOR_PROMOTION_GROUPS") or HARBOR_GROUPS_DEFAULT,
+              "--confirm", task,
               "--out", str(target)]
     if host:
         remote_out = env("RELEASE_GATE_HARBOR_REMOTE_OUT") or "~/harbor-out"
