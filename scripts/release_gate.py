@@ -461,9 +461,10 @@ def stage_harbor(outdir, host=None, sha=""):
         router = outdir / "router"
         if not router.is_file():
             # Stage B can run before the stages that build the binary, so build it here.
-            with log_path.open("a") as logfile:
+            # Use a separate log file: the stage log handle is still open.
+            with (outdir / "router-build.log").open("w") as build_log:
                 build = subprocess.run(["go", "build", "-buildvcs=false", "-o", str(router), "./cmd/metrum-ai-router"],
-                                       cwd=ROOT, stdout=logfile, stderr=subprocess.STDOUT, text=True)
+                                       cwd=ROOT, stdout=build_log, stderr=subprocess.STDOUT, text=True)
             if build.returncode != 0 or not router.is_file():
                 return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
                          "result": "blocked", "note": "router build for the host failed; see harbor.log"}]
