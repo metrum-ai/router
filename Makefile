@@ -200,6 +200,11 @@ api-compat-ts:
 	npm ci --prefix tests/api_compat_ts --no-audit --no-fund
 	$(PYTHON) tests/api_compat_ts/run_suite.py
 
+# Per-hop latency and TTFT lanes against a loopback fixture backend (#587).
+.PHONY: hierarchy-latency
+hierarchy-latency:
+	python3 benchmarks/hierarchy-latency/run.py --requests 40 --concurrency 4 --warmup 2 --name dryrun
+
 # Local in-process concurrency proof; no providers or database resources.
 .PHONY: governance-load
 governance-load:
