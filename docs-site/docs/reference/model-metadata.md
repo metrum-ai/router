@@ -91,7 +91,7 @@ Capability labels:
 
 `openai_chat` and `openai_responses` are separate validation surfaces. Declare `structured_outputs` under `openai_chat` only after a direct upstream Chat Completions `response_format` smoke and a router-level Chat smoke pass for the exact provider, model ID, dialect, and skin. Declare it under `openai_responses` only after the same direct and router-level evidence exists for Responses `text.format`.
 
-Tool support and structured-output support are independent. A target may support tools but not structured outputs, structured outputs but not tools, or both. A request containing both tools and structured-output fields needs a target that satisfies both requirements. Unsupported targets are skipped before routing policy selection; if no compatible target remains, callers receive `502 no-eligible-target` and no upstream request is sent.
+Tool support and structured-output support are independent. A target may support tools but not structured outputs, structured outputs but not tools, or both. A request containing both tools and structured-output fields needs a target that satisfies both requirements. Unsupported targets are skipped before routing policy selection; if no configured target remains for Chat, Responses, or Messages, callers receive a 400 compatibility error and no upstream request is sent. See [Error Reference](errors).
 
 Provider-hosted tool types such as OpenAI Responses `mcp` or `sse` execute server-side at the upstream provider. The router rejects remote provider-hosted entries such as `mcp`, `sse`, file-search, code-interpreter, and computer-use tools by default before upstream. Generic hosted search or image-generation descriptors from compatible clients are stripped unless the deployment explicitly implements and validates those services. Do not use the reserved `provider_hosted` metadata label for caller traffic unless the deployment has an explicit allowlist and security review for provider-executed tool URLs.
 
@@ -111,7 +111,7 @@ reasoning:
 
 Use `control: effort_enum` for OpenAI-style values such as `low`, `medium`, and `high`. Use `control: token_budget` for Anthropic-style thinking budgets. Target-level overrides may add minimum/maximum budgets or provider quirks such as rejecting max-token, temperature, or top-p fields during reasoning.
 
-Effective reasoning is skin-specific. OpenAI Chat `reasoning_effort`, OpenAI Responses `reasoning`, and Anthropic Messages `thinking` each need a target that can preserve that exact shape through the resolved provider dialect or an explicitly validated bridge. A `tool_only` target does not advertise general model-list reasoning metadata unless the tested path is specifically tool-only. If no compatible target remains, the router returns `502 no-eligible-target` before upstream.
+Effective reasoning is skin-specific. OpenAI Chat `reasoning_effort`, OpenAI Responses `reasoning`, and Anthropic Messages `thinking` each need a target that can preserve that exact shape through the resolved provider dialect or an explicitly validated bridge. A `tool_only` target does not advertise general model-list reasoning metadata unless the tested path is specifically tool-only. If no configured target remains for Chat, Responses, or Messages, the router returns a 400 compatibility error before upstream; see [Error Reference](errors).
 
 Example target-level reasoning and bridge metadata:
 
@@ -270,7 +270,7 @@ request_shape_support:
   validation_notes: Router-level Anthropic Messages text translation passed for this target and group.
 ```
 
-Do not use `supported_inbound_dialects` as a shortcut for tools, images, or reasoning. Anthropic Messages client tools still require an Anthropic Messages-compatible provider skin with `tool_support.anthropic_messages`, or a separately validated bridge that documents the exact client-tool behavior. Image input needs `image` in `input_modalities`, and explicit `thinking` needs compatible reasoning metadata. If a group lacks a compatible target for the full Messages shape, callers receive `502 no-eligible-target` before upstream.
+Do not use `supported_inbound_dialects` as a shortcut for tools, images, or reasoning. Anthropic Messages client tools still require an Anthropic Messages-compatible provider skin with `tool_support.anthropic_messages`, or a separately validated bridge that documents the exact client-tool behavior. Image input needs `image` in `input_modalities`, and explicit `thinking` needs compatible reasoning metadata. If a configured group lacks a compatible target for the full Messages shape, callers receive a 400 compatibility or modality error before upstream; see [Error Reference](errors).
 
 Set `supports_large_coding_agent_payloads: true` only after a direct upstream smoke and a router-level smoke pass for the exact provider, model ID, dialect, account, and request shape. The validation note should include the date, approximate request bytes, tool count, serialized tool-schema size, output cap, and prompt-token scale. If that evidence is missing, leave the value unset or set it to `false` with a reason and keep the target in a restricted smoke group.
 
@@ -350,7 +350,7 @@ reasoning:
 
 Declare reasoning support only after direct upstream and router-level smokes pass for the exact provider, model ID, dialect, and API skin. OpenAI Chat, OpenAI Responses, and Anthropic Messages reasoning controls are separate validation surfaces. For OpenAI Responses effort metadata, validate each advertised effort level with a useful response and document provider output-cap minimums such as rejected tiny `max_output_tokens` values.
 
-When a caller explicitly requests reasoning, the router filters the requested model group's targets to reasoning-capable targets before routing policy selection. If none remain, the caller receives `502 no-eligible-target` with `reasoning` in the requirements. Ordinary non-reasoning requests are not forced to reasoning targets unless the deployment configured those targets as part of the group policy.
+When a caller explicitly requests reasoning, the router filters the requested model group's targets to reasoning-capable targets before routing policy selection. If no configured target remains for Chat, Responses, or Messages, the caller receives a 400 compatibility error. OpenAI-shaped routing errors can include `reasoning` in the requirements; see [Error Reference](errors). Ordinary non-reasoning requests are not forced to reasoning targets unless the deployment configured those targets as part of the group policy.
 
 `control: effort_enum` targets receive low/medium/high effort controls. `control: token_budget` targets receive Anthropic-style token budgets when the target dialect supports them. Cross-dialect translation uses conservative defaults and records safe scalar decision telemetry; it does not persist prompts, tool schemas, router tokens, provider keys, or full config.
 

@@ -286,7 +286,7 @@ Policy changes should be evidence-driven:
 | Safe config summary | Group-local diff showing changed targets, weights, strategies, contracts, policy URL, or script path without secrets |
 | Representative evaluation | Workload-specific tests such as unit tests, extraction accuracy, OCR targets, tool-call correctness, browser-control tasks, golden datasets, product acceptance tests, or agent benchmarks |
 | Direct upstream smokes | Text, tool, image, reasoning, streaming, and output-cap checks for the exact provider/model/dialect/skin being claimed |
-| Router smokes | Authenticated requests through each caller API shape plus negative no-eligible-target and forbidden-group checks |
+| Router smokes | Authenticated requests through each caller API shape plus negative compatibility-error and forbidden-group checks |
 | Report window | Usage report or admin report showing selected target mix, latency, throughput, cost, attempts, fallbacks, and safe policy labels |
 | Rollback trigger | Concrete threshold for disabling a target, reducing weight, relaxing a contract, or reverting to a simpler strategy |
 

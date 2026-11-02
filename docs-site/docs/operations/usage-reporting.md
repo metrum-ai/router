@@ -442,7 +442,7 @@ Reports use public token IDs and aggregated usage fields. They do not expose raw
 
 ## Decision Telemetry Smoke
 
-Decision telemetry is disabled unless the deployment sets `server.decision_telemetry.enabled: true`. After enabling it, administrators should run a text request, a negative no-eligible-target request such as a tool request against a target without tool support, a `dynamic_score` request, a script or external-policy success request if those strategies are enabled, a fail-closed policy request, an upstream failure followed by fallback success, and a `Cache-Control: no-cache` request. Then generate a Markdown report and confirm it includes a Decision Telemetry Summary with safe buckets such as `static`, `tool-support`, `external-policy-invalid-target`, `upstream_rate_limited`, or `cache-request-no-cache`, and open an admin request drilldown to confirm the `decisionTelemetry` child rows are present.
+Decision telemetry is disabled unless the deployment sets `server.decision_telemetry.enabled: true`. After enabling it, administrators should run a text request, a negative compatibility-error request such as a tool request against a target without tool support, a `dynamic_score` request, a script or external-policy success request if those strategies are enabled, a fail-closed policy request, an upstream failure followed by fallback success, and a `Cache-Control: no-cache` request. Then generate a Markdown report and confirm it includes a Decision Telemetry Summary with safe buckets such as `static`, `tool-support`, `external-policy-invalid-target`, `upstream_rate_limited`, or `cache-request-no-cache`, and open an admin request drilldown to confirm the `decisionTelemetry` child rows are present.
 
 ## Performance Triage
 
