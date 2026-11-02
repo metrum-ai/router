@@ -766,9 +766,26 @@ def main() -> int:
                         help="multi-node: write the two router configs and tokens here, print a manifest, and exit")
     parser.add_argument("--state-dir", default="",
                         help="multi-node: router state/log/usage directory on the router nodes (default: the work directory)")
+    parser.add_argument("--refresh-usage", type=Path, default=None,
+                        help="rewrite an existing report.json (and RESULT.md) from the given usage DBs")
     parser.add_argument("--name", default="run")
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
+
+    if args.refresh_usage is not None:
+        if not (args.edge_usage and args.dc_usage):
+            print("--refresh-usage needs --edge-usage and --dc-usage", file=sys.stderr)
+            return 2
+        document = json.loads(args.refresh_usage.read_text(encoding="utf-8"))
+        document["usage"] = {
+            "edge/1-hop": hop_usage(args.edge_usage, "hop-app", "hier-direct"),
+            "edge/2-hop": hop_usage(args.edge_usage, "hop-app", "hier"),
+            "dc/2-hop": hop_usage(args.dc_usage, "hop-router", "hier-dc"),
+        }
+        args.refresh_usage.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        (args.refresh_usage.parent / "RESULT.md").write_text(render_markdown(document), encoding="utf-8")
+        print(f"refreshed usage in {args.refresh_usage}")
+        return 0
 
     if bool(args.edge_url) != bool(args.dc_url):
         print("--edge-url and --dc-url must be given together", file=sys.stderr)
@@ -792,7 +809,9 @@ def main() -> int:
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     work = ROOT / ".out" / "hierarchy-latency" / f"{stamp}-{args.name}"
     work.mkdir(parents=True, exist_ok=False)
-    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    commit = os.environ.get("HIER_ROUTER_COMMIT", "") or subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
+    ).stdout.strip() or "unknown"
     child_env = dict(os.environ)
     for secret in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FIREWORKS_API_KEY"):
         child_env.pop(secret, None)
