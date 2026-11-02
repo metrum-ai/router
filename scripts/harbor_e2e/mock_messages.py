@@ -7,7 +7,16 @@ class Mock(http.server.BaseHTTPRequestHandler):
  calls=0
  def log_message(self,*a):pass
  def do_POST(self):
-  if urllib.parse.urlsplit(self.path).path!='/anthropic/v1/messages':self.send_error(404);return
+  path=urllib.parse.urlsplit(self.path).path
+  if path not in ('/anthropic/v1/messages','/v1/messages','/v1/responses','/openai/v1/responses'):self.send_error(404);return
+  if path in ('/v1/responses','/openai/v1/responses'):
+   body=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))));Mock.calls+=1
+   self.send_response(200);self.send_header('Content-Type','text/event-stream');self.end_headers()
+   for name,event in (('response.created',{'type':'response.created','response':{'id':'resp_selftest','object':'response','status':'in_progress','output':[]}}),
+                      ('response.output_text.delta',{'type':'response.output_text.delta','delta':'ok'}),
+                      ('response.completed',{'type':'response.completed','response':{'id':'resp_selftest','object':'response','status':'completed','output':[],'usage':{'input_tokens':3,'output_tokens':1,'total_tokens':4}}})):
+    self.wfile.write(('event: '+name+'\ndata: '+json.dumps(event)+'\n\n').encode());self.wfile.flush()
+   return
   body=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))));Mock.calls+=1
   if not body.get('stream'):self.send_error(400);return
   blocks=[b for m in body.get('messages',[]) if isinstance(m.get('content'),list) for b in m['content'] if isinstance(b,dict)]
