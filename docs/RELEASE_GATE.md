@@ -58,16 +58,38 @@ Without `RELEASE_GATE_HARBOR_HOST` the stage runs locally when Docker exists and
 reports `skipped` with the reason when it does not. A Harbor matrix is bounded
 evidence; the gate never upgrades it to a certification.
 
-## Harbor CLI version and Compose
+## Harbor stage: the Pi adapter matrix
 
-Stage B pins the Harbor CLI at **0.24.0**, the version the v4.5 gate was
-validated against, and runs it through `uvx --from harbor==0.24.0 harbor` so the
-host's `harbor` on `PATH` is irrelevant. Override with
-`RELEASE_GATE_HARBOR_VERSION` only when the example agent adapter has been
-updated for the newer CLI: Harbor 0.25 removed the Codex agent hook the example
-adapter builds on, and the matrix fails inside the adapter rather than at the
-router.
+Stage B runs the matrix the v4.5 gate used, ported into `scripts/harbor_e2e/`:
 
-The host also needs Docker Compose **v2** (`docker compose`); Harbor invokes it
-directly, and a host with only legacy `docker-compose` fails with
-`unknown flag: --project-name`.
+- the **Pi agent adapter** (`metrum_pi_tmpfs.py`), which reads the router token
+  from a read-only tmpfs bind mount instead of any flag or environment value;
+- **five fixed synthetic tasks** (`generate_tasks.py`);
+- **four lanes**: direct and routed, in both API styles, against the GPT and
+  Claude groups, driven by `run_matrix.py`;
+- direct traffic goes through the spend-guarded relay (`guarded_relay.py`), so a
+  direct baseline is bounded and recorded like a routed one.
+
+It runs on a Docker host reachable over SSH; the gate ships the bundle and its
+own router binary, runs `setup_remote.sh` (Docker CE with the Compose plugin and
+a Harbor virtualenv), installs the provider keys and the caller token into
+tmpfs, then executes the matrix and copies the result back.
+
+```bash
+export RELEASE_GATE_HARBOR_HOST=root@203.0.113.10
+export RELEASE_GATE_HARBOR_KEY=~/.ssh/gate-key
+export RELEASE_GATE_HARBOR_VERSION=0.25.0   # default; the CLI the v4.5 matrix ran 5/5 against
+make release-gate
+```
+
+Without `RELEASE_GATE_HARBOR_HOST` the stage reports `skipped` with the reason. A
+Harbor matrix is bounded evidence, never a certification, and the gate never
+upgrades it to a pass.
+
+Compose **v2** is required: Harbor invokes `docker compose` directly, and a host
+with only the legacy `docker-compose` fails with `unknown flag: --project-name`.
+The setup script installs the plugin, so this only matters for a hand-built host.
+
+The earlier `examples/harbor-algotune-pca` Codex adapter is **not** used by the
+gate: it targets a Codex agent API that Harbor's Codex adapter does not provide,
+so a matrix built on it fails inside the adapter before reaching the router.

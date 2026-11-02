@@ -69,26 +69,53 @@ class GptPinTest(unittest.TestCase):
         self.assertEqual(self.check(text), 1)
 
 
-class HarborPinTest(unittest.TestCase):
-    def test_shim_pins_the_validated_cli(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as raw:
-            shim, version = release_gate.harbor_shim(Path(raw))
-            text = shim.read_text(encoding="utf-8")
-            self.assertEqual(version, "0.24.0")
-            self.assertIn("uvx --from harbor==0.24.0 harbor", text)
-            self.assertTrue(shim.stat().st_mode & 0o111)
+class HarborStageTest(unittest.TestCase):
+    def test_matrix_bundle_is_present_and_pinned(self):
+        names = set(release_gate.HARBOR_FILES)
+        self.assertIn("metrum_pi_tmpfs.py", names)
+        self.assertIn("run_matrix.py", names)
+        for name in names:
+            self.assertTrue((release_gate.HARBOR_BUNDLE / name).is_file(), name)
+        self.assertEqual(release_gate.HARBOR_VERSION_DEFAULT, "0.25.0")
 
-    def test_rejects_an_unpinned_version(self):
-        import os
+    def test_matrix_generates_five_tasks_and_four_callers(self):
+        import hashlib
+        import pathlib
+        import sys
         import tempfile
+        sys.path.insert(0, str(release_gate.HARBOR_BUNDLE))
+        try:
+            import generate_tasks
+            import harbor_config
+
+            with tempfile.TemporaryDirectory() as raw:
+                generate_tasks.generate(pathlib.Path(raw) / "tasks")
+                tasks = sorted(p.name for p in (pathlib.Path(raw) / "tasks").iterdir())
+            self.assertEqual(tasks, ["edit", "hello", "json", "sum", "uppercase"])
+            tokens = harbor_config.caller_tokens()
+            self.assertEqual(len(tokens), 4)
+            config = harbor_config.make_config(pathlib.Path("/tmp/matrix"), 18080, 18081)
+            self.assertEqual(config.count("token_sha256"), 4)
+            self.assertIn("listen: \"0.0.0.0:18080\"", config)
+            for digest in (hashlib.sha256(t.encode()).hexdigest() for t in tokens.values()):
+                self.assertIn(digest, config)
+        finally:
+            sys.path.remove(str(release_gate.HARBOR_BUNDLE))
+
+    def test_stage_b_reports_skipped_without_a_host(self):
+        import pathlib
+        import tempfile
+
         with tempfile.TemporaryDirectory() as raw:
-            os.environ["RELEASE_GATE_HARBOR_VERSION"] = "latest"
-            try:
-                with self.assertRaises(release_gate.GateError):
-                    release_gate.harbor_shim(Path(raw))
-            finally:
-                del os.environ["RELEASE_GATE_HARBOR_VERSION"]
+            rows = release_gate.stage_harbor(pathlib.Path(raw), None, "0" * 40)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["result"], "skipped")
+        self.assertIn("RELEASE_GATE_HARBOR_HOST", rows[0]["note"])
+
+    def test_remote_script_never_puts_the_token_on_a_command_line(self):
+        script = release_gate.harbor_remote_script("a" * 40)
+        self.assertIn("/run/harbor-e2e/router-token", script)
+        self.assertIn("rm -f /run/harbor-e2e/provider-secrets.json", script)
 
 
 if __name__ == "__main__":
