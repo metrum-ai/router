@@ -401,6 +401,11 @@ def harbor_remote_script(sha, router_port="18080", relay_port="18081"):
     """The remote side of stage B: setup, credentials to tmpfs, matrix, teardown of creds."""
     return f"""set -euo pipefail
 cd /root/harbor-e2e
+# A previous attempt leaves a `started` guard, task dir and job dirs behind; a
+# stage run must be repeatable, so clear this run's state first.
+rm -rf started tasks jobs result.json provider-usage.jsonl router-start.log run.log offline-replay.log
+mkdir -p /run/harbor-e2e
+rm -f /run/harbor-e2e/provider-secrets.json /run/harbor-e2e/router-token
 umask 077
 cat > /run/harbor-e2e/provider-secrets.json
 chmod 600 /run/harbor-e2e/provider-secrets.json
