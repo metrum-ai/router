@@ -17,6 +17,8 @@ func publicEligibilityCause(reason string, req *IRRequest, dialect string) (rout
 	structured := "response_format"
 	if dialect == "openai-responses" {
 		structured = "text.format"
+	} else if dialect == "anthropic" {
+		structured = "output_config.format"
 	}
 	capField := req.MaxTokensField
 	switch reason {
@@ -25,11 +27,19 @@ func publicEligibilityCause(reason string, req *IRRequest, dialect string) (rout
 	case "tool-only-target", "gemini-request-shape-unsupported":
 		return routingErrorCause{"unsupported_capability", ""}, true
 	case "tool-support", "chat-to-responses-tools-unsupported", "responses-to-chat-tools-unsupported", "responses-to-chat-hosted-tools", "responses-to-chat-tool-type", "anthropic-bridge-server-tool-unsupported":
+		if len(req.Tools) == 0 {
+			return routingErrorCause{"unsupported_capability", input}, true
+		}
 		return routingErrorCause{"unsupported_capability", "tools"}, true
 	case "structured-output-support", "structured-output-unsupported", "chat-to-responses-structured-output-unsupported", "responses-to-chat-structured-output":
 		return routingErrorCause{"unsupported_capability", structured}, true
-	case "reasoning-support", "reasoning-control", "reasoning-controls-unsupported", "reasoning-disable-unsupported", "reasoning-default-on-unsupported", "anthropic-bridge-reasoning-unsupported", "anthropic-bridge-reasoning-summary-unsupported", "chat-to-responses-reasoning-unsupported", "responses-to-chat-reasoning", "reasoning-history-unsupported", "responses-to-chat-reasoning-history-unsupported":
+	case "reasoning-support", "reasoning-control", "reasoning-controls-unsupported", "reasoning-disable-unsupported", "reasoning-default-on-unsupported", "anthropic-bridge-reasoning-unsupported", "anthropic-bridge-reasoning-summary-unsupported", "chat-to-responses-reasoning-unsupported", "responses-to-chat-reasoning":
+		if !req.Reasoning.Requested && !req.Reasoning.Disabled {
+			return routingErrorCause{"unsupported_capability", ""}, true
+		}
 		return routingErrorCause{"unsupported_capability", "reasoning"}, true
+	case "reasoning-history-unsupported", "responses-to-chat-reasoning-history-unsupported":
+		return routingErrorCause{"unsupported_capability", input}, true
 	case "logprobs-unsupported":
 		return routingErrorCause{"unsupported_capability", "logprobs"}, true
 	case "input-modality-image", "input-modality-audio", "input-modality-video", "responses-to-chat-image", "chat-to-responses-image-unsupported", "anthropic-bridge-unrepresentable-content", "anthropic-bridge-unsupported-request", "responses-to-chat-content-unsupported", "responses-to-chat-function-call-output", "responses-to-chat-tool-result":

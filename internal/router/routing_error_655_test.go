@@ -12,6 +12,45 @@ import (
 	"testing"
 )
 
+func TestRoutingError655NoAbsentFieldBlame(t *testing.T) {
+	target := anthropicBridgeTarget()
+	target.Reasoning = ReasoningSupport{Supported: true, DefaultOn: true, Mode: reasoningModeAlwaysOn, Control: reasoningControlEffortEnum}
+	cases := []struct {
+		name, upstream, path, body string
+		target                     Target
+		param                      any
+	}{
+		{"tool-history-without-tools", "anthropic", "/v1/responses", `{"model":"native-stream","stream":true,"input":[{"role":"user","content":"hi"},{"type":"function_call","call_id":"c1","name":"read","arguments":"{}"},{"type":"function_call_output","call_id":"c1","output":"ok"}]}`, Target{Provider: "native", Model: "up"}, "input"},
+		{"unrequested-default-reasoning", "openai-chat", "/anthropic/v1/messages", `{"model":"native-stream","stream":true,"max_tokens":128,"messages":[{"role":"user","content":"hi"}]}`, target, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var hits atomic.Int32
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+			defer up.Close()
+			svc := nativeStreamTestService(t, up.URL, tc.upstream, []Target{tc.target})
+			r := httptest.NewRequest("POST", tc.path, strings.NewReader(tc.body))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			r.Header.Set("x-api-key", testToken)
+			r.Header.Set("anthropic-version", "2023-06-01")
+			w := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(w, r)
+			var got struct {
+				Error struct {
+					Code  string
+					Param any
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if w.Code != 400 || hits.Load() != 0 || got.Error.Code != "unsupported_capability" || got.Error.Param != tc.param {
+				t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+			}
+		})
+	}
+}
+
 func TestRoutingError655TranslatedFunctionOutput(t *testing.T) {
 	for _, tc := range []struct {
 		dialect string
