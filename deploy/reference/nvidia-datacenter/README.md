@@ -76,30 +76,51 @@ export OPENAI_API_KEY=            # optional; leave empty until escalation is wa
 docker compose config >/dev/null  # interpolation check before anything starts
 ```
 
-Serving binaries do not apply application DDL, so the reviewed migration job
-runs first, while the router is stopped
-(see [DOCKER_COMPOSE_INSTALL.md](../../../docs/DOCKER_COMPOSE_INSTALL.md)):
+Mint the caller before the stack starts. The router mounts `config.yaml` as a
+single file, so rewriting it under a running router would leave that container
+reading the old file (the request would fail with `401` until a restart). The
+token file goes to `state/`, which is mounted as a directory:
 
 ```sh
-for action in plan apply verify-serving status; do
+docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
+  router callers generate \
+  --owner-user reference-operator --project reference --env demo --key k1 \
+  --allow local-tiny,local-chat,escalate \
+  --config /app/config/config.yaml --write --token-out /app/state/demo.token
+chmod 0600 state/demo.token
+```
+
+Serving binaries do not apply application DDL, so the reviewed migration job runs
+next, while the router is stopped
+(see [DOCKER_COMPOSE_INSTALL.md](../../../docs/DOCKER_COMPOSE_INSTALL.md)).
+`verify-serving` refuses to pass while a bound data job is pending, so the job is
+resumed at checkpoint 0 first:
+
+```sh
+for action in plan apply; do
+  docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate \
+    router --action="$action" --driver=sqlite --db=/app/state/usage.sqlite --json
+done
+docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate \
+  router --action=resume --job=historical-usage-validation-v1 --checkpoint-ordinal=0 \
+  --driver=sqlite --db=/app/state/usage.sqlite --json
+for action in verify-serving status; do
   docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate \
     router --action="$action" --driver=sqlite --db=/app/state/usage.sqlite --json
 done
 ```
 
-Then start the stack and generate the demo caller token. The checked-in
-`token_sha256` is an all-zero placeholder that cannot authenticate anyone:
+Then start the stack and check the surface:
 
 ```sh
 docker compose up -d
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
-  router callers generate --config /app/config/config.yaml --id reference-demo \
-  --write /app/config/config.yaml
 curl -fsS http://127.0.0.1:8080/readyz
+TOKEN="$(cat state/demo.token)"
+curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/models
 ```
 
-First boot downloads ~37 GB of weights; the model servers report healthy only
-after that. `docker compose logs -f vllm-chat` shows progress.
+First boot downloads ~37 GB of weights; the model servers report healthy
+only after that. `docker compose logs -f vllm-chat` shows progress.
 
 Teardown: `docker compose down` (add `-v` to drop the weight cache).
 

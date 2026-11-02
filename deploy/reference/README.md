@@ -82,19 +82,21 @@ mkdir -p state logs config
 cp config.yaml config/config.yaml
 export ROUTER_IMAGE=metrum-ai-router:<version>-linux-<arch>   # required, never latest
 export LOCAL_VLLM_API_KEY="$(openssl rand -hex 24)"
+export ROUTER_ID_TRANSFORM_KEY="$(openssl rand -hex 64)"
 export REFERENCE_ADMIN_PASSWORD_HASH="$(htpasswd -bnBC 12 '' 'change-me' | tr -d ':\n')"
-export OPENAI_API_KEY=           # optional; leave empty to keep `escalate` unused
-docker compose up -d
-curl -fsS http://127.0.0.1:8080/readyz
+export OPENAI_API_KEY=            # optional; empty keeps `escalate` unused
+docker compose config >/dev/null
 ```
 
-Then generate the caller token the demo script uses (the checked-in
-`token_sha256` is an all-zero placeholder that cannot authenticate anyone):
+The tier README has the full sequence: mint the caller token, run the reviewed
+migration job (`plan`, `apply`, `resume`, `verify-serving`, `status`), then start
+the stack. Two details are load-bearing and easy to get wrong:
 
-```sh
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
-  router callers generate --config /app/config/config.yaml --id reference-demo
-```
+- the caller is generated **before** the router starts, because the router mounts
+  `config.yaml` as a single file and an atomic rewrite under a running router
+  would leave it reading the old file;
+- `verify-serving` fails until the bound data job is resumed at checkpoint 0, so
+  the documented order resumes it before verifying.
 
 ## Validate a tier
 

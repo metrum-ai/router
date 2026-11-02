@@ -56,25 +56,60 @@ cd deploy/reference/nvidia-gb10-edge
 mkdir -p state logs config
 cp config.yaml config/config.yaml
 
-export ROUTER_IMAGE=metrum-ai-router:<version>-linux-arm64
+export ROUTER_IMAGE=metrum-ai-router:<version>-linux-arm64   # required, never latest
 export LOCAL_VLLM_API_KEY="$(openssl rand -hex 24)"
 export ROUTER_ID_TRANSFORM_KEY="$(openssl rand -hex 64)"
 export REFERENCE_ADMIN_PASSWORD_HASH="$(htpasswd -bnBC 12 '' 'change-me' | tr -d ':\n')"
-export OPENAI_API_KEY=            # optional
+export OPENAI_API_KEY=            # optional; leave empty until escalation is wanted
 
-docker compose config >/dev/null
-for action in plan apply verify-serving status; do
+docker compose config >/dev/null  # interpolation check before anything starts
+```
+
+Mint the caller before the stack starts. The router mounts `config.yaml` as a
+single file, so rewriting it under a running router would leave that container
+reading the old file (the request would fail with `401` until a restart). The
+token file goes to `state/`, which is mounted as a directory:
+
+```sh
+docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
+  router callers generate \
+  --owner-user reference-operator --project reference --env demo --key k1 \
+  --allow local-tiny,local-chat,escalate \
+  --config /app/config/config.yaml --write --token-out /app/state/demo.token
+chmod 0600 state/demo.token
+```
+
+Serving binaries do not apply application DDL, so the reviewed migration job runs
+next, while the router is stopped
+(see [DOCKER_COMPOSE_INSTALL.md](../../../docs/DOCKER_COMPOSE_INSTALL.md)).
+`verify-serving` refuses to pass while a bound data job is pending, so the job is
+resumed at checkpoint 0 first:
+
+```sh
+for action in plan apply; do
   docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate \
     router --action="$action" --driver=sqlite --db=/app/state/usage.sqlite --json
 done
-docker compose up -d
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
-  router callers generate --config /app/config/config.yaml --id reference-demo --write /app/config/config.yaml
-curl -fsS http://127.0.0.1:8080/readyz
+docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate \
+  router --action=resume --job=historical-usage-validation-v1 --checkpoint-ordinal=0 \
+  --driver=sqlite --db=/app/state/usage.sqlite --json
+for action in verify-serving status; do
+  docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate \
+    router --action="$action" --driver=sqlite --db=/app/state/usage.sqlite --json
+done
 ```
 
-First boot downloads ~64 GB of weights. `docker compose logs -f vllm-primary`
-shows progress; the router starts only after both model servers are healthy.
+Then start the stack and check the surface:
+
+```sh
+docker compose up -d
+curl -fsS http://127.0.0.1:8080/readyz
+TOKEN="$(cat state/demo.token)"
+curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/models
+```
+
+First boot downloads ~64 GB of weights; the model servers report healthy
+only after that. `docker compose logs -f vllm-primary` shows progress.
 
 Teardown: `docker compose down` (add `-v` to drop the weight cache).
 
