@@ -51,6 +51,9 @@ TASKS = ("file", "edit", "quote")
 LANES = (("openai-responses", "gpt"), ("openai-responses", "claude"),
          ("openai-chat", "gpt"), ("openai-chat", "claude"),
          ("anthropic-messages", "gpt"), ("anthropic-messages", "claude"))
+# Additive lane: the production Chat shape — a Chat caller whose target is a
+# Responses target bridged with chat_to_responses, tools and reasoning enabled.
+EXTRA_LANES = (("openai-chat", "gpt-bridge"),)
 DIRECT = (("openai-responses", "gpt"), ("anthropic-messages", "claude"))
 API = {"openai-responses": "openai-responses", "openai-chat": "openai-completions", "anthropic-messages": "anthropic-messages"}
 MARKER = "RELEASE-GATE-TOOL-4917"
@@ -145,7 +148,7 @@ def ensure_lanes_servable(source):
         header = re.match(r"^  ([a-z0-9_-]+):\s*$", line)
         if header:
             groups.add(header.group(1))
-    wanted = {group for _, group in LANES}
+    wanted = {group for _, group in LANES + EXTRA_LANES}
     missing = sorted(wanted - groups)
     if missing:
         raise GateError("the config declares no target group for: " + ", ".join(missing))
@@ -282,7 +285,7 @@ def stage_pi(outdir, port, db, cap_state):
         "openai-responses": ("https://api.openai.com/v1", "gpt"),
         "anthropic-messages": ("https://api.anthropic.com", "claude"),
     }
-    lanes = [("routed", api, group) for api, group in LANES] + [("direct", api, group) for api, group in DIRECT]
+    lanes = [("routed", api, group) for api, group in LANES + EXTRA_LANES] + [("direct", api, group) for api, group in DIRECT]
     for mode, api, group in lanes:
         model = group
         for task in TASKS:
