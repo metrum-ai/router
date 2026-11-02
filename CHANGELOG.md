@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `POST /v1/content_provenance_checks` explicitly returns an authenticated
+  OpenAI-shaped `501 unsupported_endpoint` without upstream dispatch; the
+  operation is not implemented (#620).
+
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the
