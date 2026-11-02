@@ -329,6 +329,9 @@ def build_binaries(ctx: Ctx) -> None:
             ["go", "build", "-buildvcs=false", "-o", str(ctx.bin_dir / target), f"./cmd/{target}"],
             cwd=ROOT,
             check=True,
+            # Static binaries: the harness may be run on a node without a Go
+            # toolchain, and a run copy can be moved between hosts.
+            env={**os.environ, "CGO_ENABLED": "0"},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
