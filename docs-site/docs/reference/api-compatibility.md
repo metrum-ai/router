@@ -365,7 +365,10 @@ cannot bypass it. Known beta-gated body fields are not silently stripped:
 `context_management` requires `context-management-2025-06-27`, `container`
 requires `code-execution-2025-08-25`, and `mcp_servers` requires
 `mcp-client-2025-04-04`. Presence without the matching permitted caller beta
-returns HTTP 400 naming the field before upstream. Unknown provider fields
+returns HTTP 400 naming the field before upstream. On Anthropic Messages only,
+`context_management: null` is treated as absent and is not forwarded; any
+non-null value still requires the matching caller beta and target allowlist.
+Unknown provider fields
 retain native passthrough semantics. Anthropic `thinking.type: adaptive` is a
 reasoning request, just like `enabled`, and excludes non-reasoning targets.
 

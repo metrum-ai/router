@@ -25,5 +25,14 @@
 # Install the generated Helm chart separately for the router and mount config.yaml
 # from its runtime Secret; see docs/SHADEFORM_NVIDIA_LOCAL_SERVING_E2E.md.
 #
+# Security and writable paths:
+# Serving Pods run as UID/GID 10001 with dropped capabilities, RuntimeDefault
+# seccomp, and a read-only root. /cache and /tmp are ephemeral emptyDir volumes;
+# model weights must be downloaded again after Pod replacement. Provide adequate
+# ephemeral storage or replace /cache with an appropriately owned PVC. The
+# device plugin must grant this non-root identity access to allocated GPU devices.
+# Validate device access and model startup on the target cluster before rollout;
+# offline manifest checks do not exercise a GPU.
+#
 # Dry-run / CI:
 #   make test-k8s-nvidia-local-serving

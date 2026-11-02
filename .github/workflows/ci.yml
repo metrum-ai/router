@@ -157,7 +157,7 @@ jobs:
         with:
           path: ${{ env.COMPAT_CACHE }}
           key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
       - name: Compatibility, Python and optional examples
@@ -279,11 +279,42 @@ jobs:
           path: ${{ env.COMPAT_CACHE }}
           key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
 
+  k8s-security:
+    name: Rendered Kubernetes security
+    if: github.event_name != 'push'
+    runs-on: router-arc-small
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install pinned kustomize
+        run: |
+          mkdir -p "$RUNNER_TEMP/kustomize-bin"
+          GOMAXPROCS=2 GOBIN="$RUNNER_TEMP/kustomize-bin" go install sigs.k8s.io/kustomize/kustomize/v5@v5.6.0
+          echo "$RUNNER_TEMP/kustomize-bin" >> "$GITHUB_PATH"
+      - name: Validate suppressions and render complete overlays
+        run: |
+          python3 scripts/validate_trivy_k8s_ignores.py
+          python3 scripts/validate_trivy_k8s_ignores_test.py
+          bash scripts/render_k8s_security.sh "$RUNNER_TEMP/security-rendered"
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: ${{ runner.temp }}/security-rendered
+          trivyignores: .github/trivy-k8s-ignore.yaml
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          version: v0.76.1
+          cache: 'false'
+
   ci:
     name: ci
     runs-on: router-arc-small
     if: always()
-    needs: [router, other-go, other, sbom, warm]
+    needs: [router, other-go, other, sbom, warm, k8s-security]
     timeout-minutes: 5
     steps:
       - name: Require every lane
@@ -294,15 +325,16 @@ jobs:
           OTHER_RESULT: ${{ needs.other.result }}
           SBOM_RESULT: ${{ needs.sbom.result }}
           WARM_RESULT: ${{ needs.warm.result }}
+          K8S_SECURITY_RESULT: ${{ needs.k8s-security.result }}
         run: |
           if [ "$CI_EVENT" = push ]; then
             [ "$WARM_RESULT" = success ] || { echo "Main cache warm failed: $WARM_RESULT" >&2; exit 1; }
-            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT"; do
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT" "$K8S_SECURITY_RESULT"; do
               [ "$result" = skipped ] || { echo "Unexpected push lane result: $result" >&2; exit 1; }
             done
           else
             [ "$WARM_RESULT" = skipped ] || { echo "Unexpected cache warm result: $WARM_RESULT" >&2; exit 1; }
-            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT"; do
+            for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$K8S_SECURITY_RESULT"; do
               [ "$result" = success ] || { echo "A required CI lane did not succeed: $result" >&2; exit 1; }
             done
             if [ "$CI_EVENT" = pull_request ]; then

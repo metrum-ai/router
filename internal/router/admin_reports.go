@@ -970,6 +970,17 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleAdminReportSavings(w, r, subject, globalReports)
+	case r.URL.Path == prefix+"/api/cfo" || r.URL.Path == prefix+"/cfo/export.csv" || r.URL.Path == prefix+"/cfo/export.md":
+		if !s.requireAdminReportUsageStore(w) {
+			return
+		}
+		format := "json"
+		if strings.HasSuffix(r.URL.Path, "/export.csv") {
+			format = "csv"
+		} else if strings.HasSuffix(r.URL.Path, "/export.md") {
+			format = "markdown"
+		}
+		s.handleCFOReport(w, r, subject, globalReports, format)
 	case scalarOK:
 		if !s.requireAdminReportUsageStore(w) {
 			return
@@ -4749,7 +4760,7 @@ func adminScalarRowsFromAgg(data map[string]*adminScalarAgg, sortBy string, limi
 			if iSavings != jSavings {
 				return iSavings > jSavings
 			}
-		case "cost":
+		case "cost", "cfo_cost":
 			if out[i].CostUSD != out[j].CostUSD {
 				return out[i].CostUSD > out[j].CostUSD
 			}

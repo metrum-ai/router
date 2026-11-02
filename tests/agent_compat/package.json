@@ -9,6 +9,7 @@
     "@openai/codex": "0.162.0"
   },
   "overrides": {
-    "undici": "8.12.2"
+    "undici": "8.12.2",
+    "minimatch": "11.0.1"
   }
 }
