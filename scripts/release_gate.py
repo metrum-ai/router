@@ -54,6 +54,8 @@ LANES = (("openai-responses", "gpt"), ("openai-responses", "claude"),
 # Additive lane: the production Chat shape — a Chat caller whose target is a
 # Responses target bridged with chat_to_responses, tools and reasoning enabled.
 EXTRA_LANES = (("openai-chat", "gpt-bridge"),)
+# The bridged Chat lane is judged against a direct baseline on the same model.
+EXTRA_DIRECT = (("openai-chat", "gpt-bridge"),)
 DIRECT = (("openai-responses", "gpt"), ("anthropic-messages", "claude"))
 API = {"openai-responses": "openai-responses", "openai-chat": "openai-completions", "anthropic-messages": "anthropic-messages"}
 MARKER = "RELEASE-GATE-TOOL-4917"
@@ -283,9 +285,11 @@ def stage_pi(outdir, port, db, cap_state):
     base_routed = (f"http://127.0.0.1:{port}/v1", f"http://127.0.0.1:{port}")
     direct_base = {
         "openai-responses": ("https://api.openai.com/v1", "gpt"),
+        "openai-chat": ("https://api.openai.com/v1", "gpt-bridge"),
         "anthropic-messages": ("https://api.anthropic.com", "claude"),
     }
-    lanes = [("routed", api, group) for api, group in LANES + EXTRA_LANES] + [("direct", api, group) for api, group in DIRECT]
+    lanes = ([("routed", api, group) for api, group in LANES + EXTRA_LANES]
+             + [("direct", api, group) for api, group in DIRECT + EXTRA_DIRECT])
     for mode, api, group in lanes:
         model = group
         for task in TASKS:
@@ -298,7 +302,7 @@ def stage_pi(outdir, port, db, cap_state):
             else:
                 base, real_group = direct_base[api]
                 model = os.environ.get("RELEASE_GATE_DIRECT_" + real_group.upper(), "gpt-6-luna" if real_group == "gpt" else "claude-haiku-4-5-20251001")
-                token = env("OPENAI_API_KEY") if api == "openai-responses" else env("ANTHROPIC_API_KEY")
+                token = env("OPENAI_API_KEY") if api in ("openai-responses", "openai-chat") else env("ANTHROPIC_API_KEY")
             write_models(workdir / "agent", API[api], base, model)
             prompt = task_prompt(task, workdir)
             tools = {"file": "write,read", "edit": "read,edit,bash", "quote": "read"}[task]
