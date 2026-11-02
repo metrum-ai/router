@@ -49,6 +49,13 @@ Requirements: Go (to build the three binaries once), Python 3.10+, and `psql`
 for the Postgres backend. The harness writes `report.json` and `RESULT.md` under
 `.out/governance-load/<utc>-<name>/`.
 
+With `--backend postgres` the harness completes the reviewed migration gate
+itself (`apply` -> one checkpoint of `historical-usage-validation-v1` ->
+`verify-serving`), because the rendered config uses
+`migration_policy: deployment-job` and a router refuses to serve while the data
+job is pending. The DSN is read from `--dsn-env`; it is never a command-line
+argument.
+
 Nothing is printed that contains a caller token or a DSN. Caller tokens are
 generated into mode-0600 files and referenced by path. A Postgres DSN is read
 from the environment variable named by `--dsn-env` and handed to `psql` through

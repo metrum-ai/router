@@ -1782,26 +1782,34 @@ def migrate_sqlite(ctx: Ctx, path: Path) -> None:
 
 
 def migrate_usage_schema(ctx: Ctx) -> None:
-    """Apply the usage-schema deployment gate before serving from Postgres."""
-    subprocess.run(
-        [
-            str(ctx.bin_dir / "metrum-ai-router-migrate"),
-            "--action",
-            "apply",
-            "--driver",
-            "postgres",
-            "--dsn-env",
-            ctx.dsn_env,
-            "--scope",
-            "usage",
-            "--json",
-        ],
-        cwd=ctx.work,
-        env=ctx.child_env,
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+    """Complete the usage-schema deployment gate before serving from Postgres.
+
+    `apply` alone leaves the ledger at `state=pending` because the shipping data
+    job is still to run, and a router with `migration_policy: deployment-job`
+    then refuses to serve. Run the same three steps the operator runbook does:
+    apply, one checkpoint of the shipping data job, then verify-serving.
+    """
+    binary = str(ctx.bin_dir / "metrum-ai-router-migrate")
+    steps = (
+        ["--action", "apply", "--driver", "postgres", "--dsn-env", ctx.dsn_env, "--scope", "usage"],
+        ["--action", "resume", "--job", "historical-usage-validation-v1", "--checkpoint-ordinal", "0",
+         "--driver", "postgres", "--dsn-env", ctx.dsn_env, "--scope", "usage"],
+        ["--action", "verify-serving", "--driver", "postgres", "--dsn-env", ctx.dsn_env, "--scope", "usage"],
     )
+    for arguments in steps:
+        completed = subprocess.run(
+            [binary, *arguments],
+            cwd=ctx.work,
+            env=ctx.child_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if arguments[1] != "verify-serving" else subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"usage migration step {arguments[1]} failed: {(completed.stderr or '')[-400:]}"
+            )
 
 
 if __name__ == "__main__":
