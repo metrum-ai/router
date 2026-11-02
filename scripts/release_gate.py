@@ -405,7 +405,7 @@ cd /root/harbor-e2e
 # stage run must be repeatable, so clear this run's state first.
 rm -rf started tasks jobs result.json provider-usage.jsonl router-start.log run.log offline-replay.log
 mkdir -p /run/harbor-e2e
-rm -f /run/harbor-e2e/provider-secrets.json /run/harbor-e2e/router-token
+rm -rf /run/harbor-e2e/provider-secrets.json /run/harbor-e2e/router-token
 umask 077
 cat > /run/harbor-e2e/provider-secrets.json
 chmod 600 /run/harbor-e2e/provider-secrets.json
