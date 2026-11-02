@@ -1483,8 +1483,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow replay (#395): sampled requests are also sent to the group's
 	// shadow candidate off the critical path. Never blocks or fails the
 	// caller; replays are aggregate-only telemetry.
+	// Shadow receives the original body before PII filtering. Never replay it
+	// for a PII-enabled group; doing so could bypass redaction or fail-on-match.
 	// Audio-output, explicit no-store, reasoning-off and opaque reasoning requests must not be shadow replayed.
-	if rc.rec.Endpoint != "responses.compact" && !(developerHistory && group.PIIFilter.Enabled) && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	if rc.rec.Endpoint != "responses.compact" && !group.PIIFilter.Enabled && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -2319,12 +2321,12 @@ func adminBasicDummyHash() []byte {
 
 func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, req *IRRequest, callerDialect string, caller *callerRuntime, tokenID string) (decision, error) {
 	targets := append([]Target(nil), group.Targets...)
-	targets = s.targetsForRequest(rc, targets, req, callerDialect)
+	targets, rejectedReasons := s.filterTargetsForRequest(rc, targets, req, callerDialect)
 	if len(targets) == 0 {
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
 		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
-			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, req, callerDialect)
+			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, rejectedReasons, req, callerDialect)
 		}
 		return decision{}, err
 	}
@@ -3617,148 +3619,33 @@ func requestShapePassthrough(callerDialect, outDialect string, req *IRRequest) b
 	return callerDialect == outDialect && requestHasStructuredOutput(req) && (outDialect == "openai-responses" || outDialect == "openai-chat")
 }
 
-func (s *Service) capabilityMismatch(rc *requestContext, targets []Target, req *IRRequest, dialect string) (string, string) {
-	// Attribute failure to store only if the same request otherwise has an
-	// eligible target. Keep the original request estimate and all other gates.
-	if dialect == "openai-responses" && responsesExplicitNoStore(req) {
-		withoutStore := *req
-		withoutStore.Raw = make(map[string]any, len(req.Raw))
-		for key, value := range req.Raw {
-			if key != "store" {
-				withoutStore.Raw[key] = value
-			}
-		}
-		if len(s.targetsForRequest(rc, targets, &withoutStore, dialect)) > 0 {
-			return "unsupported_capability", "store"
-		}
-	}
-	if dialect == "openai-responses" && invalidResponsesFunctionOutput(req) {
-		return "unsupported_function_call_output", "input"
-	}
-	if dialect == "openai-responses" && responsesDeveloperMultipart(req) {
-		for _, target := range targets {
-			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
-				return "unsupported_developer_content", "input"
-			}
-		}
-	}
-	if dialect == "openai-responses" && invalidResponsesChatMessageContent(req) {
-		return "unsupported_capability", "input"
-	}
-	if dialect == "openai-responses" && invalidResponsesAnthropicMessageContent(req) {
-		for _, target := range targets {
-			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
-				return "unsupported_capability", "input"
-			}
-		}
-	}
-	var candidates []Target
-	for _, target := range targets {
-		out := targetDialect(s.cfg.Provider[target.Provider], target)
-		// Gemini's eligibility check validates the actual message shape; an
-		// empty synthetic request cannot establish whether the dialect exists.
-		if (normalizeDialect(out) == "gemini-generate-content" && normalizeDialect(dialect) == "openai-chat") || targetSupportsCallerDialect(target, &IRRequest{}, dialect, out) {
-			candidates = append(candidates, target)
-		}
-	}
-	if len(candidates) == 0 {
-		return "unsupported_endpoint_for_model", "model"
-	}
-	filter := func(keep func(Target, string) bool) bool {
-		next := make([]Target, 0, len(candidates))
-		for _, target := range candidates {
-			out := targetDialect(s.cfg.Provider[target.Provider], target)
-			if keep(target, out) {
-				next = append(next, target)
-			}
-		}
-		candidates = next
-		return len(next) != 0
-	}
-	if len(req.Tools) > 0 && !filter(func(t Target, out string) bool { return targetSupportsToolsForCallerDialect(t, dialect, out) }) {
-		return "unsupported_capability", "tools"
-	}
-	if requestHasStructuredOutput(req) && !filter(func(t Target, out string) bool {
-		if (dialect == "openai-chat" || dialect == "openai-responses") && out == "anthropic" {
-			_, schema := openAIJSONSchemaForAnthropic(req)
-			if (!schema && !openAIJSONObjectRequest(req)) || len(req.Tools) > 0 || openAIHasToolHistory(req, dialect) {
-				return false
-			}
-		}
-		return targetSupportsStructuredOutput(t, dialect, out, true)
-	}) {
-		if dialect == "openai-responses" {
-			return "unsupported_capability", "text.format"
-		}
-		return "unsupported_capability", "response_format"
-	}
-	if requestRequiresReasoning(req) && !filter(func(t Target, out string) bool { return targetCanSatisfyReasoning(t, out, req) }) {
-		return "unsupported_capability", "reasoning"
-	}
-	if dialect == "openai-chat" && boolValue(req.Raw["logprobs"]) && !filter(func(t Target, out string) bool { return out != "anthropic" }) {
-		return "unsupported_capability", "logprobs"
-	}
-	if requestHasImages(req) && !filter(func(t Target, out string) bool { return targetSupportsInputModalities(t, requestInputModalities(req)) }) {
-		if dialect == "openai-responses" {
-			return "unsupported_capability", "input"
-		}
-		return "unsupported_capability", "messages"
-	}
-	if rawKeyPresent(req.Raw, "tool_choice") {
-		return "unsupported_capability", "tool_choice"
-	}
-	if req.Stream {
-		return "unsupported_capability", "stream"
-	}
-	return "unsupported_capability", "model"
+func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *IRRequest, callerDialect string) []Target {
+	eligible, _ := s.filterTargetsForRequest(rc, targets, req, callerDialect)
+	return eligible
 }
 
-func (s *Service) targetsForRequest(rc *requestContext, targets []Target, req *IRRequest, callerDialect string) []Target {
+// filterTargetsForRequest records bounded reasons from the same decisions used
+// to select targets; attribution does not depend on optional telemetry.
+func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, req *IRRequest, callerDialect string) ([]Target, [][]string) {
 	// Counting does not require an inference bridge, tool execution support or
 	// room to generate output. In particular compaction counts can exceed the
 	// inference context limit; unsupported transports use a marked estimate.
 	if rc != nil && rc.rec.RequestKind == "count_tokens" {
-		return targets
+		return targets, nil
 	}
-	requiredModalities := requestInputModalities(req)
-	requiresStructuredOutput := requestHasStructuredOutput(req)
 	estimate := s.requestTokenEstimateForSelection(rc, req, callerDialect)
-	if len(req.Tools) == 0 {
-		out := make([]Target, 0, len(targets))
-		for _, target := range targets {
-			provider := s.cfg.Provider[target.Provider]
-			outDialect := targetDialect(provider, target)
-			fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
-			if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && !target.ToolOnly &&
-				targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
-				targetSupportsInputModalities(target, requiredModalities) &&
-				targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
-				targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
-				targetCanSatisfyReasoning(target, outDialect, req) &&
-				targetHonorsExplicitMaxTokens(target, req) &&
-				fit.FilterReason == "" {
-				out = append(out, target)
-			}
-		}
-		return out
-	}
 	out := make([]Target, 0, len(targets))
+	var rejected [][]string
 	for _, target := range targets {
-		provider := s.cfg.Provider[target.Provider]
-		outDialect := targetDialect(provider, target)
-		fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
-		if !(target.ForceStoreFalse && rawValuePresent(req.Raw, "previous_response_id")) && targetSupportsCallerDialect(target, req, callerDialect, outDialect) &&
-			targetSupportsToolsForCallerDialect(target, callerDialect, outDialect) &&
-			targetSupportsInputModalities(target, requiredModalities) &&
-			targetSupportsChatAudioOutput(target, req, callerDialect, outDialect) &&
-			targetSupportsStructuredOutput(target, callerDialect, outDialect, requiresStructuredOutput) &&
-			targetCanSatisfyReasoning(target, outDialect, req) &&
-			targetHonorsExplicitMaxTokens(target, req) &&
-			fit.FilterReason == "" {
+		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
+		reasons := s.targetEligibilityReasons(target, req, callerDialect, outDialect, estimate)
+		if len(reasons) == 0 {
 			out = append(out, target)
+		} else {
+			rejected = append(rejected, reasons)
 		}
 	}
-	return out
+	return out, rejected
 }
 
 func isChatToResponsesDialectPair(callerDialect, outDialect string) bool {
@@ -4631,13 +4518,25 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)
 	}
 	if rc != nil && rc.dialect == "anthropic" {
-		writeAnthropicError(w, rc, status, message)
+		if err.CapabilityMismatch && code != "continuation_unsupported" {
+			var param any
+			if err.MismatchParam != "" {
+				param = err.MismatchParam
+			}
+			w.Header().Set("Request-Id", rc.id)
+			writeJSON(w, status, map[string]any{"type": "error", "request_id": rc.id, "error": map[string]any{"type": "invalid_request_error", "code": err.MismatchCode, "param": param, "message": message}})
+		} else {
+			writeAnthropicError(w, rc, status, message)
+		}
 		return
 	}
 	publicType, publicCode := code, code
 	var param any
 	if err.CapabilityMismatch && code != "continuation_unsupported" {
-		publicType, publicCode, param = "invalid_request_error", err.MismatchCode, err.MismatchParam
+		publicType, publicCode = "invalid_request_error", err.MismatchCode
+		if err.MismatchParam != "" {
+			param = err.MismatchParam
+		}
 	}
 	if code == "continuation_unsupported" && (err.Dialect == "openai-chat" || err.Dialect == "openai-responses") {
 		publicType, param = "invalid_request_error", "previous_response_id"

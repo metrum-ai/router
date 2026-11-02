@@ -90,6 +90,7 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
       {loading ? <div className="rounded-lg border border-white/10 p-6 text-sm text-white/62">Loading report data...</div> : null}
       <TabFilterPanel tab={tab} columns={columns} supportedSortKeys={supportedSortKeys} filters={filters} onFiltersChange={onFiltersChange} />
       <MetricGrid summary={report?.summary} config={metricGridConfig} />
+      {tab.id === "cfo" && report && <CFOReportDetails report={report} filters={filters} />}
       {tab.id === "data-migrations" && rows.length > 0 ? (
         <details className="rounded-lg border border-white/10 bg-white/[0.035] p-4" data-migration-detail-panel>
           <summary className="cursor-pointer font-mono text-xs uppercase text-white/70">Migration detail and audit</summary>
@@ -98,7 +99,7 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
           </dl>
         </details>
       ) : null}
-      {tab.id === "savings" && report?.warnings?.length ? (
+      {(tab.id === "savings" || tab.id === "cfo") && report?.warnings?.length ? (
         <Card className="border-metrum-red/30 bg-metrum-red/10">
           <CardHeader>
             <CardTitle>Warnings</CardTitle>
@@ -114,6 +115,7 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
       ) : null}
       <ReportCharts charts={report?.charts} reportId={tab.id} />
       <DataTable
+        allowLocalCsv={tab.id !== "cfo"}
         rows={rows}
         columns={columns}
         initialSortKey={sortKey}
@@ -133,6 +135,31 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
   );
 }
 
+function CFOReportDetails({ report, filters }: { report: ReportResponse; filters: ReportFilters }) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => { if (value.trim()) params.set(key, value.trim()); });
+  const sections = [["Projects", report.byProject], ["Keys", report.byKey], ["Model groups", report.byModelGroup]] as const;
+  return <section className="space-y-3 rounded-lg border border-white/10 p-4 text-sm text-white/75">
+    <a className="underline" href={`cfo/export.csv?${params}`}>Download CFO CSV (requires export permission)</a>
+    <p>Baseline: {String(report.baseline?.baseline_name ?? "")} — source {String(report.baseline?.pricing_source ?? "")}, dated {String(report.baseline?.pricing_updated_at ?? "")}; input/output prices per million ${String(report.baseline?.baseline_input_price_per_million_usd ?? "")}/${String(report.baseline?.baseline_output_price_per_million_usd ?? "")}.</p>
+    <p>Top 5% user token share: {String(report.topUsers?.tokenSharePct ?? "unavailable")}% ({String(report.topUsers?.topUserCount ?? 0)} of {String(report.topUsers?.userCount ?? 0)} user buckets; unknown users share one bucket).</p>
+    {sections.map(([label, data]) => <details key={label}>
+      <summary>{label}{data?.pagination?.has_more ? " (top-N, truncated)" : ""}</summary>
+      <table className="mt-2 w-full text-left"><thead><tr><th>Key</th><th>Requests</th><th>Cost USD</th><th>Baseline USD</th><th>Savings USD</th></tr></thead>
+        <tbody>{(data?.rows || []).map((row, index) => <tr key={index}><td>{String(row.key ?? "")}</td><td>{String(row.requests ?? 0)}</td><td>{String(row.costUsd ?? 0)}</td><td>{String(row.baselineCostUsd ?? "")}</td><td>{String(row.savingsUsd ?? "")}</td></tr>)}</tbody></table>
+    </details>)}
+    <details><summary>Hourly cost and savings trend</summary>
+      <table className="mt-2 w-full text-left"><thead><tr><th>UTC</th><th>Tokens</th><th>Cost USD</th><th>Baseline USD</th><th>Savings USD</th></tr></thead>
+        <tbody>{(report.trend || []).map((row, index) => <tr key={index}><td>{String(row.timeUtc ?? "")}</td><td>{String(row.tokens ?? 0)}</td><td>{String(row.costUsd ?? 0)}</td><td>{String(row.baselineCostUsd ?? 0)}</td><td>{String(row.savingsUsd ?? 0)}</td></tr>)}</tbody></table>
+    </details>
+    <details><summary>Live token budgets (not historical USD budgets)</summary>
+      <p>{report.budgets?.available ? `Captured ${report.budgets.capturedAt}` : "Unavailable"}; current quotas do not reflect the selected historical period or model filters; quota rows are not linked to report keys. {report.budgets?.truncated ? "The first 500 authorized callers are shown." : ""}</p>
+      <table className="mt-2 w-full text-left"><thead><tr><th>Caller</th><th>Window</th><th>Used</th><th>Limit</th><th>Utilization %</th></tr></thead>
+        <tbody>{(report.budgets?.rows || []).map((row, index) => <tr key={index}><td>{String(row.callerId ?? "")}</td><td>{String(row.window ?? "")}</td><td>{String(row.usedTokens ?? 0)}</td><td>{String(row.limitTokens ?? 0)}</td><td>{String(row.utilizationPct ?? "unlimited")}</td></tr>)}</tbody></table>
+    </details>
+  </section>;
+}
+
 export function metricGridConfigForTab(tab: TabSpec, report?: ReportResponse): MetricGridConfig | undefined {
   if (tab.id === "data-migrations") {
     return {
@@ -142,6 +169,7 @@ export function metricGridConfigForTab(tab: TabSpec, report?: ReportResponse): M
       maxItems: 7,
     };
   }
+  if (tab.id === "cfo") return { priority: ["savingsUsd", "savingsPct", "totalCostUsd", "baselineCostUsd", "requests", "totalTokens"], labels: { savingsUsd: "Hypothetical savings", savingsPct: "Savings rate", totalCostUsd: "Recorded cost", baselineCostUsd: "Baseline cost" }, maxItems: 6 };
   if (!tab.savings) return undefined;
   const hasActualCost = typeof report?.summary?.actualCostUsd === "number" || typeof report?.summary?.actual_cost_usd === "number";
   return {

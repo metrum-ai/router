@@ -78,6 +78,13 @@ export type ReportResponse = {
   series?: ReportChart[];
   cache?: Record<string, unknown>;
   byToken?: ReportRow[];
+  byTeam?: ReportRow[];
+  byProject?: { rows?: ReportRow[]; pagination?: ReportPagination };
+  byKey?: { rows?: ReportRow[]; pagination?: ReportPagination };
+  byModelGroup?: { rows?: ReportRow[]; pagination?: ReportPagination };
+  topUsers?: Record<string, unknown>;
+  trend?: ReportRow[];
+  budgets?: { available?: boolean; truncated?: boolean; capturedAt?: string; rows?: ReportRow[] };
   byGroup?: ReportRow[];
   byProvider?: ReportRow[];
   byStatus?: ReportRow[];
@@ -481,6 +488,7 @@ const savingsHelpFilters = [...baseFilters, "baseline", "sort", "direction"];
 const securityHelpFilters = ["since", "caller_id", "caller_user", "project", "client", "status", "sort", "direction"];
 
 function docsPath(id: string) {
+  if (id === "cfo") return "/docs/operations/cfo-reporting";
   return `/docs/operations/admin-browser-reports#${id}`;
 }
 
@@ -489,6 +497,7 @@ function meta(id: string, metadata: Omit<ReportMetadata, "docsPath">): ReportMet
 }
 
 export const reportMetadataById = {
+  cfo: meta("cfo", { shortDescription: "Shows finance allocations and savings against a dated baseline.", purpose: "Review recorded spend by explicitly mapped team, project, key and model group and export a finance snapshot.", dataSemantics: "Usage-row aggregates and hypothetical baseline prices; token quota utilization is a separate live snapshot.", commonFilters: baseFilters, keyColumns: [{ key: "team", description: "Configured project-to-team mapping, or Unassigned." }, { key: "costUsd", description: "Stored usage-derived cost, not an invoice." }], caveats: "Raw retained rows only. Team mapping is current, not historical. Project, key and model-group lists can be truncated to top-N. Missing usage and quality are not inferred.", relatedReports: ["savings", "quotas-budgets"], emptyState: "No matching usage rows." }),
   "data-migrations": meta("data-migrations", { shortDescription: "Shows the checked-in migration contract and safe ledger state. This page is read-only.", purpose: "Use it before an upgrade or recovery to confirm compatibility, pending work, maintenance class, validation, audit timing, and rollback contract.", dataSemantics: "Checked-in metadata joined to scalar ledger state; SQL, DSNs, credentials, content, and write actions are excluded.", commonFilters: ["scope", "release", "state", "type", "date"], keyColumns: [{ key: "state", description: "Safe ledger state." }, { key: "rollbackClass", description: "Release rollback requirement." }], caveats: "Apply, retry, and recovery remain deployment-job CLI operations with approved evidence; this dashboard never performs them.", relatedReports: ["retention-status", "overview"], emptyState: "No migration definitions are registered for this deployment." }),
   overview: meta("overview", {
     shortDescription: "Shows overall usage, spend, latency, cache, fallback, and provider trends.",
@@ -1235,6 +1244,7 @@ export const tabSpecs: TabSpec[] = [
   { id: "groups", label: "Groups", endpoint: "summary", metadata: reportMeta("groups"), columns: defaultScalarColumns, filters: statusCacheFilters },
   { id: "providers", label: "Providers", endpoint: "summary", metadata: reportMeta("providers"), columns: defaultScalarColumns, filters: statusCacheFilters },
   { id: "tokens", label: "Keys", endpoint: "summary", metadata: reportMeta("tokens"), columns: defaultScalarColumns, filters: statusCacheFilters },
+  { id: "cfo", label: "CFO report", endpoint: "cfo", metadata: reportMeta("cfo"), columns: [{ key: "team", label: "Team" }, { key: "unassigned", label: "Unassigned" }, { key: "requests", label: "Requests" }, { key: "inputTokens", label: "Input tokens" }, { key: "outputTokens", label: "Output tokens" }, { key: "costUsd", label: "Cost", unit: "USD" }, { key: "baselineCostUsd", label: "Baseline", unit: "USD" }, { key: "savingsUsd", label: "Savings", unit: "USD" }], filters: ["baseline"] },
   { id: "savings", label: "Savings", endpoint: "savings", metadata: reportMeta("savings"), columns: savingsColumns, savings: true, filters: savingsFilters },
   { id: "savings-by-user", label: "Savings by user", endpoint: "savings-by-user", metadata: reportMeta("savings-by-user"), columns: savingsBreakdownColumns("User"), savings: true, filters: savingsFilters },
   { id: "savings-by-key", label: "Savings by key", endpoint: "savings-by-key", metadata: reportMeta("savings-by-key"), columns: savingsBreakdownColumns("Key"), savings: true, filters: savingsFilters },
@@ -1319,6 +1329,7 @@ export async function fetchVersion(): Promise<VersionResponse> {
 }
 
 export function rowsForTab(tab: TabSpec, report: ReportResponse): ReportRow[] {
+  if (tab.id === "cfo") return report.byTeam || [];
   if (tab.id === "groups") return report.byGroup || [];
   if (tab.id === "providers") return report.byProvider || [];
   if (tab.id === "tokens") return report.byToken || [];
