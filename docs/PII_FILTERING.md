@@ -7,9 +7,8 @@ Metrum AI Router supports model-group-level PII filtering through `models.<group
 - Filtering is configured per model group.
 - Rules are deployment-owned regular expressions with a typed `placeholder_prefix`.
 - The router applies filtering after caller auth, model access, and admission checks, and before target selection, cache-key generation, upstream encoding, routing-policy inputs, and provider calls.
-- Cache keys are computed from the redacted request.
+- Requests evaluated against PII-enabled groups bypass response-cache reads and writes, including when no rule matches. Existing entries are not purged; if filtering is later disabled, those entries can be used until expiry or cache reset. For a strict cutover, pause and drain in-flight requests and confirm every replica has loaded the enabled policy before resuming. In-flight requests evaluated before activation may still use or populate the cache.
 - Placeholder mappings are kept in memory for the request lifecycle only.
-- Restored responses are never stored in the shared response cache; cache entries keep redacted upstream text.
 - The request object passed to TypeScript scripts is the redacted request, so `ctx.request.raw` does not carry configured PII matches after filtering.
 - External routing policy services receive safe derived request context by default. If `external_policy.include_request: true` is explicitly enabled for a trusted service, the external policy `request` and `text` fields are built from the redacted request and do not carry configured PII matches after filtering.
 - Raw request bodies are redacted for both ordinary and tool passthrough requests while preserving tool-call IDs, tool schemas, model names, roles, image URLs by default, and provider metadata.
@@ -47,7 +46,7 @@ Before rollout:
 4. Confirm upstream receives placeholders, not raw matched values.
 5. Confirm usage DB, JSONL logs, diagnostics, and metrics contain only safe metadata.
 6. Confirm TypeScript payload captures contain placeholders in `ctx.request.raw`, not raw matched values. For external policies, confirm the default payload omits request mirrors; if `external_policy.include_request: true` is approved, confirm external policy `request` and `text` contain placeholders.
-7. Confirm cached redacted responses restore to the current request's placeholders and do not leak previous caller values.
+7. Confirm PII-enabled requests bypass response-cache reads and writes, including when a matching entry already exists.
 8. Confirm same-dialect native Chat and Messages streams preserve placeholders, record `pii-response-restoration-skipped-native-stream`, and do not expose raw matched values.
 9. Confirm requests over `max_replacements_per_request` return `pii-filter-blocked` and make no upstream attempt.
 

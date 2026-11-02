@@ -1679,7 +1679,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	callerID, project := cacheCallerScope(rc)
 	key := cacheKey(req, dec.Target, callerID, project)
-	if cacheable(req) {
+	// PII normalization can collapse instruction boundaries that the selected
+	// provider receives distinctly. Until cache identity is target-bound,
+	// never read a response cached under a PII-enabled group.
+	if cacheable(req) && !group.PIIFilter.Enabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
 			captureCached := *cached
@@ -1711,7 +1714,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.trace("cache_miss", "", dec.Target, 0, 0, "", false, 0)
 	} else {
 		rc.rec.Cache = "bypass"
-		s.recordCacheReasonTelemetry(rc, "bypass", cacheBypassReason(req), dec.Target)
+		reason := cacheBypassReason(req)
+		if group.PIIFilter.Enabled && cacheable(req) {
+			reason = "cache-pii-filter"
+		}
+		s.recordCacheReasonTelemetry(rc, "bypass", reason, dec.Target)
 		rc.trace("cache_bypass", "", dec.Target, 0, 0, "", false, 0)
 	}
 
@@ -1856,7 +1863,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
-		if cacheable(req) {
+		if cacheable(req) && !group.PIIFilter.Enabled {
 			putCaller, putProject := cacheCallerScope(rc)
 			s.cache.Put(cacheKey(req, served, putCaller, putProject), cacheResp)
 		}
