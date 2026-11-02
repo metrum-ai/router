@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when translating to Anthropic or Bedrock Messages; extend the existing
   developer-history PII guard to Bedrock. Other eligible targets remain
   available (#668).
+- `POST /v1/content_provenance_checks` explicitly returns an authenticated
+  OpenAI-shaped `501 unsupported_endpoint` without upstream dispatch; the
+  operation is not implemented (#620).
 
 - Bypass response-cache reads and writes for requests evaluated against
   PII-enabled model groups while target-bound cache identity is reconciled
