@@ -57,6 +57,13 @@ export ROUTER_REASONING_PROVENANCE_KEY="$(openssl rand -base64 48)"
 Start in `observe` to measure how much traffic depends on foreign history, then
 move to `enforce`.
 
+**Migration cost:** switching from `observe` to `enforce` drops every history item
+that was never wrapped, which is the whole history of conversations that started
+before wrapping was enabled. Expect one lost reasoning continuation per
+conversation at cutover; after that, each conversation continues normally. During
+the window immediately after the switch, `observe` traces on the same traffic
+show the size of that cohort before you commit.
+
 ## What is bound and where it lives
 
 Each opaque value is replaced by a router envelope in the same field the client
@@ -76,9 +83,12 @@ Supporting values are sized for real provider payloads: one bound value may be u
 to 256 KiB, the encoded payload up to 384 KiB and the whole envelope up to
 512 KiB.
 
-Clients echo history verbatim and are unaffected. Clients that inspect or
-rewrite `encrypted_content`, `signature` or `redacted_thinking.data` themselves
-are unsupported when provenance is enabled.
+**Enabling provenance changes the client-visible opaque bytes.** While `mode` is
+`observe` or `enforce`, the provider's `encrypted_content`, thinking `signature`
+and `redacted_thinking` data are replaced by router envelopes in both unary and
+streamed responses. Clients that echo history verbatim are unaffected; clients
+that store, compare, inspect or rewrite those fields themselves are not, and
+anything they cached from an `off` deployment will not be recognised afterwards.
 
 ## Behaviour on mismatch
 
@@ -130,7 +140,9 @@ its opaque items are forwarded only to the scope that minted them.
   `scope-mismatch`.
 - Enabling `enforce` drops history minted before wrapping and history the router
   did not mint: expect one lost continuation per conversation at cutover. Use
-  `observe` first.
+  `observe` first and watch its `unknown-origin` count.
+- Turning provenance on at all changes the opaque bytes clients see; treat it as a
+  client-visible change even in `observe`.
 - Anthropic `thinking` text is not bound; the block is dropped as a unit with its
   signature.
 - The TTL bounds how long a binding is accepted. It is not a provider validity
