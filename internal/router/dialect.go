@@ -1009,9 +1009,9 @@ func decodeContentParts(v any) []IRContentPart {
 			return nil
 		}
 		return []IRContentPart{{Type: "text", Text: x}}
-	case []any:
+	case []any, []map[string]any:
 		out := []IRContentPart{}
-		for _, item := range x {
+		for _, item := range valueAsSlice(x) {
 			if m, ok := item.(map[string]any); ok {
 				if _, hasContent := m["content"]; hasContent && stringValue(m["type"]) == "" {
 					out = append(out, decodeContentParts(m["content"])...)
@@ -1020,9 +1020,11 @@ func decodeContentParts(v any) []IRContentPart {
 				// Anthropic tool_result blocks may nest text and image blocks; surface
 				// them so image eligibility sees images that only appear in tool
 				// results (issue #94 ANTH-11).
-				if nested, ok := m["content"].([]any); ok && stringValue(m["type"]) == "tool_result" {
-					out = append(out, decodeContentParts(nested)...)
-					continue
+				if stringValue(m["type"]) == "tool_result" {
+					if nested := valueAsSlice(m["content"]); len(nested) > 0 {
+						out = append(out, decodeContentParts(nested)...)
+						continue
+					}
 				}
 			}
 			if part := decodeContentPart(item); part.Type != "" {
