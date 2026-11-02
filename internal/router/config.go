@@ -136,6 +136,7 @@ type AdminReportsConfig struct {
 	MaxRows        int                         `yaml:"max_rows" json:"max_rows"`
 	ExportMarkdown bool                        `yaml:"export_markdown" json:"export_markdown"`
 	Baselines      []AdminReportBaselineConfig `yaml:"baselines" json:"baselines"`
+	CFOTeams       map[string]string           `yaml:"cfo_teams" json:"cfo_teams,omitempty"`
 	Security       AdminSecurityReportsConfig  `yaml:"security" json:"security"`
 }
 
@@ -2375,6 +2376,22 @@ func validateAdminReports(cfg AdminReportsConfig, auth AdminAuthConfig, usage Us
 	}
 	if cfg.MaxRows <= 0 || cfg.MaxRows > 10000 {
 		return fmt.Errorf("server admin_reports max_rows must be between 1 and 10000")
+	}
+	if len(cfg.CFOTeams) > 500 {
+		return fmt.Errorf("server admin_reports cfo_teams allows at most 500 projects")
+	}
+	teams := make(map[string]bool)
+	for project, team := range cfg.CFOTeams {
+		if project == "" || team == "" || len(project) > 128 || len(team) > 128 || strings.TrimSpace(project) != project || strings.TrimSpace(team) != team || strings.ContainsAny(project+team, "\x00\r\n\t") {
+			return fmt.Errorf("server admin_reports cfo_teams requires nonempty, trimmed project and team names of at most 128 bytes")
+		}
+		if slugify(project) != project {
+			return fmt.Errorf("server admin_reports cfo_teams project keys must be canonical caller project IDs")
+		}
+		teams[team] = true
+	}
+	if len(teams) > 64 {
+		return fmt.Errorf("server admin_reports cfo_teams allows at most 64 teams")
 	}
 	if cfg.Security.RetentionDays == 0 {
 		cfg.Security.RetentionDays = 90

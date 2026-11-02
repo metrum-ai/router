@@ -6265,6 +6265,8 @@ func adminScalarAggSQLOrder(sortKey string, baseline adminSavingsBaselineDTO) st
 		return "SUM(total_cost_usd) DESC, " + tie
 	case "cost":
 		return "SUM(total_cost_usd) DESC, " + tie
+	case "cfo_cost":
+		return "SUM(cost_billed_usd) DESC, " + tie
 	case "tokens":
 		return "SUM(CASE WHEN total_tokens = 0 THEN input_tokens + output_tokens ELSE total_tokens END) DESC, " + tie
 	case "latency":

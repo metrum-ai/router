@@ -6,6 +6,17 @@ import { buildMetricEntries, type MetricGridConfig } from "./MetricGrid";
 import { metricGridConfigForTab } from "./ReportPanel";
 import { tabById, type TabSpec } from "@/lib/reports";
 
+describe("CFO metrics", () => {
+  test("labels calculated cost and baseline savings without calling them invoices", () => {
+    const tab = tabById("cfo");
+    if (!tab) throw new Error("cfo tab missing");
+    const config = metricGridConfigForTab(tab, { summary: { totalCostUsd: 0.1, savingsUsd: 0.2 } });
+    const entries = buildMetricEntries({ totalCostUsd: 0.1, savingsUsd: 0.2 }, config);
+    expect(entries.map((entry) => entry.label)).toContain("Recorded cost");
+    expect(entries.map((entry) => entry.label)).toContain("Hypothetical savings");
+  });
+});
+
 const savingsMetricConfig: MetricGridConfig = {
   priority: [
     "savingsUsd",

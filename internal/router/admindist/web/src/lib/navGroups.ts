@@ -52,7 +52,7 @@ export const navGroups: NavGroup[] = [
     id: "savings",
     label: "Savings",
     description: "Compare stored actual costs with selected source-dated baseline prices.",
-    tabIds: ["savings", "savings-by-user", "savings-by-key", "savings-by-group", "savings-by-project", "savings-by-provider-model"],
+    tabIds: ["cfo", "savings", "savings-by-user", "savings-by-key", "savings-by-group", "savings-by-project", "savings-by-provider-model"],
   },
   {
     id: "performance",
