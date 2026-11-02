@@ -970,3 +970,9 @@ clean:
 	rm -rf router router-token router-token-gen router-usage-report examples/cli-e2e-c/cli-e2e "$${DIST_DIR}"
 	rm -rf "$(DOCS_SITE_DIR)/build" "$(DOCS_SITE_DIR)/.docusaurus"
 	find "$(DOCS_EMBED_DIR)" -mindepth 1 ! -name .keep -exec rm -rf {} +
+
+# Scripted v4.6 release gate: real providers, one result table with actual cost.
+# Needs RELEASE_GATE_CONFIG (full-capability config) and provider keys; capped.
+.PHONY: release-gate
+release-gate:
+	@$(PYTHON) scripts/release_gate.py --config "$${RELEASE_GATE_CONFIG}" --cap "$${RELEASE_GATE_CAP:-15}"
