@@ -401,6 +401,11 @@ def harbor_remote_script(sha, router_port="18080", relay_port="18081"):
     """The remote side of stage B: setup, credentials to tmpfs, matrix, teardown of creds."""
     return f"""set -euo pipefail
 cd /root/harbor-e2e
+# A previous attempt leaves a `started` guard, task dir and job dirs behind; a
+# stage run must be repeatable, so clear this run's state first.
+rm -rf started tasks jobs result.json provider-usage.jsonl router-start.log run.log offline-replay.log
+mkdir -p /run/harbor-e2e
+rm -rf /run/harbor-e2e/provider-secrets.json /run/harbor-e2e/router-token
 umask 077
 cat > /run/harbor-e2e/provider-secrets.json
 chmod 600 /run/harbor-e2e/provider-secrets.json
@@ -454,21 +459,27 @@ def stage_harbor(outdir, host=None, sha=""):
     with log_path.open("w") as logfile:
         def run(args, **kwargs):
             return subprocess.run(args, stdout=logfile, stderr=subprocess.STDOUT, text=True, **kwargs)
-        run(ssh + ["mkdir -p /root/harbor-e2e /run/harbor-e2e"])
+        # A previous attempt can leave the matrix router and relay running, which
+        # would hold the ports and lock the binary the next attempt uploads.
+        run(ssh + ["pkill -f '/root/harbor-e2e/router' >/dev/null 2>&1 || true; "
+                   "pkill -f 'run_matrix.py' >/dev/null 2>&1 || true; sleep 1; "
+                   "rm -f /root/harbor-e2e/router; mkdir -p /root/harbor-e2e /run/harbor-e2e"])
         for name in HARBOR_FILES:
             run(scp + [str(HARBOR_BUNDLE / name), f"{host}:/root/harbor-e2e/{name}"])
         run(ssh + [f"HARBOR_VERSION={version} bash /root/harbor-e2e/setup_remote.sh"])
         router = outdir / "router"
         if not router.is_file():
             # Stage B can run before the stages that build the binary, so build it here.
-            with log_path.open("a") as logfile:
+            # Use a separate log file: the stage log handle is still open.
+            with (outdir / "router-build.log").open("w") as build_log:
                 build = subprocess.run(["go", "build", "-buildvcs=false", "-o", str(router), "./cmd/metrum-ai-router"],
-                                       cwd=ROOT, stdout=logfile, stderr=subprocess.STDOUT, text=True)
+                                       cwd=ROOT, stdout=build_log, stderr=subprocess.STDOUT, text=True)
             if build.returncode != 0 or not router.is_file():
                 return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
                          "result": "blocked", "note": "router build for the host failed; see harbor.log"}]
         run(scp + [str(router), f"{host}:/root/harbor-e2e/router"])
-        secrets = {k: env(k) for k in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY") if env(k)}
+        # The relay expects provider names, not environment variable names.
+        secrets = {name: env(var) for name, var in (("openai", "OPENAI_API_KEY"), ("anthropic", "ANTHROPIC_API_KEY")) if env(var)}
         if len(secrets) != 2:
             return [{"stage": "B", "lane": "harbor direct/routed (both styles)", "task": "5 synthetic tasks",
                      "result": "skipped", "note": "provider keys missing; the matrix needs both"}]
