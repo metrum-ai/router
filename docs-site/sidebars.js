@@ -111,6 +111,7 @@ const sidebars = {
         "evaluation/overview",
         "evaluation/performance-overhead",
         "evaluation/tool-call-proof",
+        "evaluation/parallel-tool-calls-live",
         "evaluation/evaluate-smart-router",
         "evaluation/prove-router-quality",
         "evaluation/api-compatibility-live",

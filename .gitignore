@@ -88,3 +88,6 @@ router-key-inventory-and-delivery-20260729.csv
 # Shadeform / ops credentials (never commit)
 ops.json
 **/ops.json
+
+# Local run artifacts, including the live parallel tool-call gate report.
+.out/
