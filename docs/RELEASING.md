@@ -24,6 +24,8 @@ creating the release. The action uses the workflow identity (OIDC) and the
 GitHub token; no separate signing secrets are required. Verify each downloaded
 asset and the checksum file with `gh attestation verify <file> -R metrum-ai/router`,
 then compare the archive's SHA-256 with the matching entry in `SHA256SUMS`.
+The `attestation` command set needs GitHub CLI 2.49.0 or newer; older releases
+fail with `unknown command "attestation" for "gh"`.
 Attestations apply to releases built after this workflow is deployed; they do
 not retroactively cover earlier releases.
 
