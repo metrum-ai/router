@@ -290,7 +290,7 @@ def stage_pi(outdir, port, db, cap_state):
             workdir = outdir / label
             workdir.mkdir(parents=True, exist_ok=True)
             if mode == "routed":
-                base = base_routed[0] if api == "openai-responses" else base_routed[1]
+                base = base_routed[0] if api in ("openai-responses", "openai-chat") else base_routed[1]
                 token = env("ROUTER_CALLER_TOKEN")
             else:
                 base, real_group = direct_base[api]
