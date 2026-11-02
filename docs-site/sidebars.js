@@ -56,6 +56,8 @@ const sidebars = {
         "configuration/reasoning-routing",
         "configuration/self-hosted-upstreams",
         "configuration/fine-tune-own-model",
+        "operations/embeddings",
+        "operations/reasoning-provenance",
         "operations/usage-reporting",
         "operations/cfo-reporting",
         "operations/admin-browser-reports",

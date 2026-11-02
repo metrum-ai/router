@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PII-enabled model groups, and recheck the policy before replay (#664). A
   replay already past that check can still finish after a config change; stop
   and drain shadow runs for a strict cutover.
+- Fail closed for Responses system-message histories on PII-enabled groups
+  when translating to Anthropic or Bedrock Messages; extend the existing
+  developer-history PII guard to Bedrock. Other eligible targets remain
+  available (#668).
+- `POST /v1/content_provenance_checks` explicitly returns an authenticated
+  OpenAI-shaped `501 unsupported_endpoint` without upstream dispatch; the
+  operation is not implemented (#620).
+- Populate `request_usage.endpoint` with bounded surface labels for new usage
+  rows, including Chat, Responses, Messages, counting and other accounted
+  surfaces. Historical empty values remain unchanged; usage schema stays at
+  version 11 (#653).
+- Bypass response-cache reads and writes for requests evaluated against
+  PII-enabled model groups while target-bound cache identity is reconciled
+  (#670). This may increase upstream calls for those groups.
 
 ## [4.5.0] - 2026-11-04
 

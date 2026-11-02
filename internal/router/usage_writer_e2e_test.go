@@ -153,6 +153,10 @@ func TestUsageWriterLocalhostToolContinuation(t *testing.T) {
 	if got := usageCount(t, svc.usage); got != 18 {
 		t.Fatalf("rows=%d want 18", got)
 	}
+	var endpointRows int64
+	if err := svc.usage.db.Model(&usageRecord{}).Where("endpoint = ?", "chat.completions").Count(&endpointRows).Error; err != nil || endpointRows != 18 {
+		t.Fatalf("streamed tool-continuation endpoint rows=%d err=%v", endpointRows, err)
+	}
 	var captures int64
 	if err := svc.usage.db.Model(&contentCaptureRecord{}).Where("encrypted = ?", true).Count(&captures).Error; err != nil {
 		t.Fatal(err)

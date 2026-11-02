@@ -248,3 +248,78 @@ func TestBedrockLive(t *testing.T) {
 		t.Fatalf("status %d: %s", r.StatusCode, b)
 	}
 }
+
+// Text-only multipart tool results must keep the caller's exact bytes; the
+// previous conversion inserted a newline between parts. Non-text tool result
+// content is unchanged here (see the limit noted in the issue).
+func TestBedrockToolResultText678(t *testing.T) {
+	t.Run("responses-caller", func(t *testing.T) {
+		raw := []byte(`{"model":"m","max_output_tokens":32,"input":[{"role":"user","content":[{"type":"input_text","text":"read"}]},{"type":"function_call","call_id":"call_1","name":"read","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":[{"type":"input_text","text":"marker-a-"},{"type":"input_text","text":""},{"type":"input_text","text":"multipart"}]}]}`)
+		req, err := decodeRequest("openai-responses", raw, http.Header{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := Target{ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true}, Bridges: BridgeSupport{ResponsesToChat: DialectBridgeSupport{Tools: true}}}
+		b, err := encodeResponsesToChatBridge("m", req, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in, err := bedrockInput(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := in.Messages[2].Content[0].(*bt.ContentBlockMemberToolResult)
+		text := block.Value.Content[0].(*bt.ToolResultContentBlockMemberText).Value
+		if text != "marker-a-multipart" {
+			t.Fatalf("text=%q body=%s", text, b)
+		}
+		if aws.ToString(block.Value.ToolUseId) != "call_1" {
+			t.Fatalf("tool id lost: %s", b)
+		}
+	})
+	t.Run("chat-caller", func(t *testing.T) {
+		body := []byte(`{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"read"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":[{"type":"text","text":"α"},{"type":"text","text":"β\n"},{"type":"text","text":""}]}]}`)
+		in, err := bedrockInput(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := in.Messages[2].Content[0].(*bt.ContentBlockMemberToolResult)
+		if got := block.Value.Content[0].(*bt.ToolResultContentBlockMemberText).Value; got != "αβ\n" {
+			t.Fatalf("text=%q", got)
+		}
+	})
+	t.Run("string-unchanged", func(t *testing.T) {
+		in, err := bedrockInput([]byte(`{"model":"m","messages":[{"role":"tool","tool_call_id":"call_1","content":"done\n"}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		block := in.Messages[0].Content[0].(*bt.ContentBlockMemberToolResult)
+		if got := block.Value.Content[0].(*bt.ToolResultContentBlockMemberText).Value; got != "done\n" {
+			t.Fatalf("text=%q", got)
+		}
+	})
+}
+
+// Translated Messages callers reach bedrockInput after the Anthropic-to-Chat
+// bridge, which builds typed part slices before JSON encoding.
+func TestBedrockToolResultText678MessagesBridge(t *testing.T) {
+	req, err := decodeRequest("anthropic", []byte(`{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"read"},{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"read","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":[{"type":"text","text":"marker-a-"},{"type":"text","text":"multipart"}]}]}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := encodeAnthropicToolsBridge("m", req, anthropicToolTarget(), "openai-chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := bedrockInput(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := in.Messages[2].Content[0].(*bt.ContentBlockMemberToolResult)
+	if got := block.Value.Content[0].(*bt.ToolResultContentBlockMemberText).Value; got != "marker-a-multipart" {
+		t.Fatalf("text=%q body=%s", got, b)
+	}
+	if aws.ToString(block.Value.ToolUseId) != "call_1" {
+		t.Fatalf("tool id lost: %s", b)
+	}
+}

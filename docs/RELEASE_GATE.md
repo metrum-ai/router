@@ -34,3 +34,26 @@ Notes on the current shape:
 - The config is the release candidate's own; cross-format lanes need the bridges the configuration declares as validated, and the table shows exactly which lanes were eligible.
 
 Copyright 2026 Metrum AI. SPDX-License-Identifier: Apache-2.0
+
+## GPT targets are pinned to the Responses dialect
+
+The gate refuses a config whose `gpt` group lists any target outside the
+`openai-responses` dialect. An OpenAI Chat target rejects a request that pairs
+`reasoning_effort` with tools (see the API compatibility known limitation), so a
+Messages-style lane that fell back to Chat would report an opaque
+`upstream-rejected` instead of exercising the translation the gate is meant to
+check. Pin the group to Responses-only targets; the gate names any stray target.
+
+## Running the Harbor stage on a Docker host
+
+Stage B runs the bounded Harbor promotion matrix (`scripts/harbor_promotion.py`,
+at most four cells). It needs a container runtime:
+
+```bash
+export RELEASE_GATE_HARBOR_HOST=root@203.0.113.10   # a Docker host with ~/router checked out
+make release-gate
+```
+
+Without `RELEASE_GATE_HARBOR_HOST` the stage runs locally when Docker exists and
+reports `skipped` with the reason when it does not. A Harbor matrix is bounded
+evidence; the gate never upgrades it to a certification.

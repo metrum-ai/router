@@ -32,6 +32,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import sqlite3
@@ -121,6 +122,100 @@ def last_rowid(db):
         return 0
     with sqlite3.connect(db, timeout=10) as conn:
         return conn.execute("select coalesce(max(rowid),0) from request_usage").fetchone()[0]
+
+
+GPT_GROUP = "gpt"
+GPT_PINNED_DIALECT = "openai-responses"
+
+
+def ensure_gpt_responses_pinned(source):
+    """Require the GPT group to target the Responses dialect only.
+
+    A Chat-dialect GPT target rejects reasoning-with-tools requests that arrive
+    from an Anthropic Messages caller upstream (issue #697), which turns a
+    router translation choice into an opaque `upstream-rejected`. The gate
+    therefore refuses a GPT group that still lists a non-Responses target and
+    names the fix, instead of reporting that upstream rejection as the only
+    symptom.
+    """
+    lines = Path(source).read_text(encoding="utf-8").splitlines()
+    header = re.compile(rf"^(\s*){re.escape(GPT_GROUP)}:\s*$")
+    start = None
+    indent = 0
+    for index, line in enumerate(lines):
+        match = header.match(line)
+        if match:
+            start, indent = index + 1, len(match.group(1))
+            break
+    if start is None:
+        raise GateError(f"the config must declare a {GPT_GROUP!r} model group for the gate lanes")
+    block = []
+    for line in lines[start:]:
+        if not line.strip():
+            block.append(line)
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            break
+        block.append(line)
+
+    # Only list items under the group's own `targets:` key are targets; other
+    # nested lists (tags, modality lists, tool support) are irrelevant here.
+    targets_indent = None
+    target_lines = []
+    for position, line in enumerate(block):
+        match = re.match(r"^(\s*)targets:\s*$", line)
+        if match:
+            targets_indent = len(match.group(1))
+            target_lines = block[position + 1:]
+            break
+    if targets_indent is None:
+        raise GateError(f"the {GPT_GROUP!r} group must declare a targets list")
+    trimmed = []
+    for line in target_lines:
+        if not line.strip():
+            trimmed.append(line)
+            continue
+        line_indent = len(line) - len(line.lstrip())
+        is_item = line.strip().startswith("- ")
+        if not is_item and line_indent <= targets_indent:
+            break
+        trimmed.append(line)
+
+    targets, current = [], None
+    item_indent = None
+    for line in trimmed:
+        stripped = line.strip()
+        line_indent = len(line) - len(line.lstrip())
+        body = stripped
+        if stripped.startswith("- "):
+            if item_indent is None:
+                item_indent = line_indent
+            if line_indent != item_indent:
+                # A nested list inside a target (tool support, modalities, tags).
+                continue
+            current = {"provider": "", "dialect": ""}
+            targets.append(current)
+            body = stripped[2:].strip()
+        if current is None:
+            continue
+        if item_indent is not None and line_indent > item_indent + 2:
+            continue
+        provider = re.match(r"^provider:\s*(\S+)\s*$", body)
+        if provider:
+            current["provider"] = provider.group(1)
+            continue
+        dialect = re.match(r"^dialect:\s*(\S+)\s*$", body)
+        if dialect:
+            current["dialect"] = dialect.group(1)
+    if not targets:
+        raise GateError(f"the {GPT_GROUP!r} group must declare at least one target")
+    strays = [f"{t['provider'] or '?'}:{t['dialect'] or 'unset'}" for t in targets if t["dialect"] != GPT_PINNED_DIALECT]
+    if strays:
+        raise GateError(
+            f"the {GPT_GROUP!r} group must target only {GPT_PINNED_DIALECT!r}; "
+            f"pin or remove these targets: {', '.join(strays)} (issue #697)"
+        )
+    return len(targets)
 
 
 def prepare_config(source, workdir, port, db_path):
@@ -296,26 +391,59 @@ def stage_pi(outdir, port, db, cap_state):
     return rows
 
 
-def stage_harbor(outdir):
-    if not shutil.which("docker"):
-        return [
-            {
-                "stage": "B",
-                "lane": "harbor-direct/routed (both styles)",
-                "task": "5 tasks",
-                "result": "skipped",
-                "note": "no container runtime available; needs a Docker host",
-            }
-        ]
-    return [
-        {
+HARBOR_TASK_DEFAULT = "aider/polyglot_python_two-bucket"
+HARBOR_AGENTS_DEFAULT = "codex,claude-code"
+HARBOR_GROUPS_DEFAULT = "default,fast"
+
+
+def stage_harbor(outdir, host=None):
+    """Stage B: the bounded Harbor promotion matrix (<=4 cells by construction).
+
+    Runs on a Docker host, either this machine or the SSH host in
+    RELEASE_GATE_HARBOR_HOST. Missing Docker or missing Harbor inputs report
+    `skipped` with the reason; a matrix that runs reports its own verdict and is
+    never upgraded to a pass by this gate.
+    """
+    target = outdir / "harbor"
+    target.mkdir(parents=True, exist_ok=True)
+    promotion = ROOT / "scripts" / "harbor_promotion.py"
+    common = ["--task", env("HARBOR_PROMOTION_TASK") or HARBOR_TASK_DEFAULT,
+              "--agents", env("HARBOR_PROMOTION_AGENTS") or HARBOR_AGENTS_DEFAULT,
+              "--groups", env("HARBOR_PROMOTION_GROUPS") or HARBOR_GROUPS_DEFAULT,
+              "--out", str(target)]
+    if host:
+        remote_out = env("RELEASE_GATE_HARBOR_REMOTE_OUT") or "~/harbor-out"
+        quoted = " ".join(shlex.quote(part) for part in common[:-1] + ["--out", remote_out])
+        command = f"cd ~/router && python3 scripts/harbor_promotion.py {quoted}"
+        log_path = target / "harbor-remote.log"
+        ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", host, command]
+        with log_path.open("w") as logfile:
+            code = subprocess.run(ssh, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
+        return [{
             "stage": "B",
-            "lane": "harbor",
+            "lane": f"harbor-direct/routed (both styles) on {host}",
+            "task": f"{HARBOR_TASK_DEFAULT}",
+            "result": "pass" if code == 0 else "blocked",
+            "note": f"remote log: {log_path.name}; a Harbor matrix is bounded evidence, not a certification",
+        }]
+    if not shutil.which("docker"):
+        return [{
+            "stage": "B",
+            "lane": "harbor-direct/routed (both styles)",
             "task": "5 tasks",
-            "result": "manual",
-            "note": "container runtime present but the Harbor task set is not scripted in this gate yet",
-        }
-    ]
+            "result": "skipped",
+            "note": "no container runtime and no RELEASE_GATE_HARBOR_HOST; Harbor needs a Docker host",
+        }]
+    log_path = target / "harbor.log"
+    with log_path.open("w") as logfile:
+        code = subprocess.run([sys.executable, str(promotion), *common], cwd=ROOT, stdout=logfile, stderr=subprocess.STDOUT, text=True).returncode
+    return [{
+        "stage": "B",
+        "lane": "harbor-direct/routed (both styles)",
+        "task": HARBOR_TASK_DEFAULT,
+        "result": "pass" if code == 0 else "blocked",
+        "note": f"log: {log_path.name}; bounded Harbor matrix, not a certification",
+    }]
 
 
 def stage_compat_live(outdir, config):
@@ -400,6 +528,7 @@ def main():
 
     if not args.config or not Path(args.config).is_file():
         raise SystemExit("pass --config (or RELEASE_GATE_CONFIG) with a full-capability router config")
+    ensure_gpt_responses_pinned(args.config)
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()
     if dirty and not args.allow_dirty:
@@ -416,7 +545,7 @@ def main():
 
     log(f"release gate {sha} -> {outdir}")
     if "b" in stages:
-        rows += stage_harbor(outdir)
+        rows += stage_harbor(outdir, env("RELEASE_GATE_HARBOR_HOST"))
 
     router = outdir / "router"
     config = None

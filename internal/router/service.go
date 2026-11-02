@@ -88,6 +88,9 @@ type Service struct {
 	configInstanceID   string
 	configLoaded       atomic.Value // configLoadedState
 	shadows            *shadowRuntime
+	// provenance binds opaque provider reasoning history to its origin (#622).
+	// It is off unless configured, and off changes no behaviour.
+	provenance reasoningProvenanceBinding
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -157,8 +160,12 @@ type requestContext struct {
 	pacedUpstreamStream    bool
 	chatStreamIncludeUsage bool
 	traceSeq               int
-	sanitizeTraceMessage   func(string, string) string
-	conversationKey        string
+	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
+	wrapStreamFrame func([]byte) []byte
+	// provenanceStats accumulates bounded value-free provenance diagnostics.
+	provenanceStats      reasoningProvenanceStats
+	sanitizeTraceMessage func(string, string) string
+	conversationKey      string
 	// modelIdentity is server.responses.model_identity captured at request
 	// start; see publicModel.
 	modelIdentity string
@@ -266,6 +273,13 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		_ = usage.Close()
 		return nil, err
 	}
+	provenance, err := newReasoningProvenanceBinding(cfg.Server.ReasoningProvenance, os.Getenv)
+	if err != nil {
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		return nil, err
+	}
 	s := &Service{
 		identifiers:        identifiers,
 		cfg:                cfg,
@@ -292,6 +306,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
 		shadows:            newShadowRuntime(),
+		provenance:         provenance,
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -628,8 +643,9 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /v1/responses", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
 	s.mux.HandleFunc("POST /v1/responses/input_tokens", s.handleResponsesInputTokens)
 	s.mux.HandleFunc("POST /v1/responses/compact", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
+	s.mux.HandleFunc("POST /v1/embeddings", s.handleEmbeddings)
 	for _, pattern := range []string{
-		"POST /v1/completions", "POST /v1/moderations", "POST /v1/embeddings",
+		"POST /v1/completions", "POST /v1/moderations", "POST /v1/content_provenance_checks",
 		"GET /v1/responses/{id}", "DELETE /v1/responses/{id}",
 		"GET /v1/responses/{id}/input_items", "POST /v1/responses/{id}/cancel",
 	} {
@@ -1419,22 +1435,30 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		group.Targets = native
 		req.NoCache = true
 	}
-	// Decide this Responses→Anthropic limitation on the original history,
-	// before PII processing or shadow replay. Other eligible dialects retain
-	// their existing request semantics and are never forced through Anthropic.
+	// Decide Responses→Anthropic limitations on the original history, before
+	// filtering or shadow replay. Until target-bound instruction filtering is
+	// implemented, system histories on PII-enabled groups are also excluded:
+	// independently safe text parts can form a match after concatenation.
 	developerHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && responsesHasDeveloper(req)
+	piiSystemHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && group.PIIFilter.Enabled && responsesHasInstructionRole(req, "system")
+	piiExclusionCode := "developer_pii_unsupported"
+	if !developerHistory {
+		piiExclusionCode = "system_pii_unsupported"
+	}
 	piiAnthropicExcluded := false
-	if developerHistory {
+	if developerHistory || piiSystemHistory {
 		var others []Target
-		hasAnthropic := false
+		hasGuardedTarget := false
 		for _, target := range group.Targets {
-			if targetDialect(s.cfg.Provider[target.Provider], target) == "anthropic" {
-				hasAnthropic = true
+			provider := s.cfg.Provider[target.Provider]
+			guarded := targetDialect(provider, target) == "anthropic" || (group.PIIFilter.Enabled && isBedrock(provider))
+			if guarded {
+				hasGuardedTarget = true
 			} else {
 				others = append(others, target)
 			}
 		}
-		if hasAnthropic {
+		if hasGuardedTarget {
 			// Pre-PII shape decisions use the real request bytes, but never use
 			// the unredacted token estimate to rule out post-PII alternatives.
 			earlyRC := *rc
@@ -1455,7 +1479,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				case responsesDeveloperOrderingInvalid(req):
 					code = "unsupported_capability"
 				case group.PIIFilter.Enabled && len(others) == 0:
-					code = "developer_pii_unsupported"
+					code = piiExclusionCode
 				}
 				if code != "" {
 					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: code, MismatchParam: "input"})
@@ -1463,7 +1487,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				}
 			}
 			if group.PIIFilter.Enabled {
-				// Never select or fall back to Anthropic on a PII-enabled group.
+				// Never select or fall back to a guarded target for these histories on a PII-enabled group.
 				piiAnthropicExcluded = true
 				group.Targets = others
 			}
@@ -1541,7 +1565,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				estimate := requestTokenEstimateFromIR(req, dialect, len(body))
 				filteredRC.rec.TokenEstimate = &estimate
 				if len(s.targetsForRequest(&filteredRC, group.Targets, req, dialect)) == 0 {
-					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: "developer_pii_unsupported", MismatchParam: "input"})
+					s.writeRoutingEligibilityError(w, rc, routingEligibilityError{Model: req.Model, Dialect: dialect, Requirements: []string{"input"}, CapabilityMismatch: true, MismatchCode: piiExclusionCode, MismatchParam: "input"})
 					return
 				}
 			}
@@ -1593,7 +1617,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if errors.As(err, &eligibilityErr) {
 			if piiAnthropicExcluded && len(s.targetsForRequest(rc, group.Targets, req, dialect)) == 0 {
 				eligibilityErr.CapabilityMismatch = true
-				eligibilityErr.MismatchCode = "developer_pii_unsupported"
+				eligibilityErr.MismatchCode = piiExclusionCode
 				eligibilityErr.MismatchParam = "input"
 			}
 			s.writeRoutingEligibilityError(w, rc, eligibilityErr)
@@ -1679,7 +1703,10 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	callerID, project := cacheCallerScope(rc)
 	key := cacheKey(req, dec.Target, callerID, project)
-	if cacheable(req) {
+	// PII normalization can collapse instruction boundaries that the selected
+	// provider receives distinctly. Until cache identity is target-bound,
+	// never read a response cached under a PII-enabled group.
+	if cacheable(req) && !group.PIIFilter.Enabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
 			captureCached := *cached
@@ -1711,7 +1738,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.trace("cache_miss", "", dec.Target, 0, 0, "", false, 0)
 	} else {
 		rc.rec.Cache = "bypass"
-		s.recordCacheReasonTelemetry(rc, "bypass", cacheBypassReason(req), dec.Target)
+		reason := cacheBypassReason(req)
+		if group.PIIFilter.Enabled && cacheable(req) {
+			reason = "cache-pii-filter"
+		}
+		s.recordCacheReasonTelemetry(rc, "bypass", reason, dec.Target)
 		rc.trace("cache_bypass", "", dec.Target, 0, 0, "", false, 0)
 	}
 
@@ -1856,7 +1887,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
-		if cacheable(req) {
+		if cacheable(req) && !group.PIIFilter.Enabled {
 			putCaller, putProject := cacheCallerScope(rc)
 			s.cache.Put(cacheKey(req, served, putCaller, putProject), cacheResp)
 		}
@@ -1916,6 +1947,53 @@ func committedStreamUsage(err error, req *IRRequest, dialect string, reservation
 	return Usage{}
 }
 
+// usageEndpoint returns bounded surface labels, never caller-supplied path IDs.
+// Both Anthropic path aliases describe the same Messages surface.
+func usageEndpoint(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return "unsupported"
+	}
+	path := r.URL.Path
+	switch r.Method {
+	case http.MethodPost:
+		switch path {
+		case "/v1/chat/completions":
+			return "chat.completions"
+		case "/v1/responses":
+			return "responses"
+		case "/v1/responses/input_tokens":
+			return "responses.input_tokens"
+		case "/v1/responses/compact":
+			return "responses.compact"
+		case "/v1/messages", "/anthropic/v1/messages":
+			return "messages"
+		case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
+			return "messages.count_tokens"
+		case "/v1/content-captures/purge-expired":
+			return "content_captures.purge_expired"
+		}
+	case http.MethodGet:
+		switch path {
+		case "/v1/models":
+			return "models.list"
+		case "/v1/codex/models.json":
+			return "models.codex"
+		case "/v1/usage":
+			return "usage"
+		case "/metrics":
+			return "metrics"
+		}
+		if strings.HasPrefix(path, "/v1/models/") {
+			return "models.retrieve"
+		}
+	case http.MethodDelete:
+		if strings.HasPrefix(path, "/v1/content-captures/") {
+			return "content_captures.delete"
+		}
+	}
+	return "unsupported"
+}
+
 func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
 	if dialect == "models" && isAnthropicModelRequest(r) {
 		dialect = "anthropic"
@@ -1949,6 +2027,7 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Client:               inferClient(r),
 			CallerIP:             ipInfo.Address,
 			InboundDialect:       dialect,
+			Endpoint:             usageEndpoint(r),
 			Cache:                "bypass",
 			QuotaState:           "ok",
 			KeyState:             "active",
@@ -1963,9 +2042,6 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 		rc.rec.RequestKind = "count_tokens"
 	case "/v1/responses/input_tokens":
 		rc.rec.RequestKind = "count_tokens"
-		rc.rec.Endpoint = "responses.input_tokens"
-	case "/v1/responses/compact":
-		rc.rec.Endpoint = "responses.compact"
 	}
 	// Recognized inactive credentials retain safe attribution, never authorization.
 	// Unknown credentials have no caller and cannot acquire a report domain.
@@ -2736,6 +2812,24 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
 	}
 	req = cleanReq
+	// Opaque reasoning provenance (#622): unwrap history minted for this target
+	// and drop it for every other target. Off by default, so nothing changes
+	// unless an operator enables observe or enforce.
+	provenanceScope := reasoningScopeFor(target, provider, outDialect, groupName)
+	if !s.provenance.off() && req != nil && reasoningHistoryPresent(req) {
+		adjusted, stats := s.provenance.applyInbound(req.Raw, outDialect, provenanceScope, time.Now().UTC())
+		if !stats.empty() {
+			encoded, encodeErr := json.Marshal(adjusted)
+			if encodeErr == nil {
+				if decoded, decodeErr := decodeRequest(callerDialect, encoded, http.Header{}); decodeErr == nil {
+					decoded.Stream = req.Stream
+					req = decoded
+				}
+			}
+			mergeProvenanceStats(&rc.provenanceStats, stats)
+			rc.trace("reasoning_provenance_inbound", stats.summary(), target, attemptIndex, 0, "", false, 0)
+		}
+	}
 	passthrough := requestShapePassthrough(callerDialect, outDialect, req)
 	bridge := isResponsesToChatBridge(callerDialect, outDialect, target)
 	chatResponsesBridge := isChatToResponsesBridge(callerDialect, outDialect, target)
@@ -3013,6 +3107,15 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if anthropicBridge {
 			proxy = anthropicBridgeProxy(callerDialect, requestRequiresReasoning(req))
 		}
+		// Opaque reasoning provenance (#622): bind values in streamed frames.
+		rc.wrapStreamFrame = nil
+		if s.provenance.wraps() {
+			scope := provenanceScope
+			streamStats := &rc.provenanceStats
+			rc.wrapStreamFrame = func(frame []byte) []byte {
+				return s.provenance.wrapOutboundFrame(frame, scope, time.Now().UTC(), streamStats)
+			}
+		}
 		// Experiment profiles (#379): scope-matched requests deliver through a
 		// pacing writer that injects the configured TTFT delay and output
 		// pacing. Every other request keeps the original writer untouched.
@@ -3085,6 +3188,16 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	}
 	attempt.DurationMS = durationMillis(time.Since(start))
 	attempt.ResponseBytes = int64(len(raw))
+	// Opaque reasoning provenance (#622): bind provider-owned values to the
+	// served target before they are decoded and returned to the caller.
+	if s.provenance.wraps() {
+		var wrapStats reasoningProvenanceStats
+		raw = s.provenance.wrapOutboundRaw(raw, provenanceScope, time.Now().UTC(), &wrapStats)
+		if !wrapStats.empty() {
+			mergeProvenanceStats(&rc.provenanceStats, wrapStats)
+			rc.trace("reasoning_provenance_outbound", wrapStats.summary(), target, attemptIndex, 0, "", false, 0)
+		}
+	}
 	if bridge {
 		resp, err := decodeResponsesToChatBridge(raw, target.Model)
 		if err != nil {
@@ -4513,6 +4626,9 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 	}
 	if err.CapabilityMismatch && err.MismatchCode == "developer_pii_unsupported" {
 		message = "developer-role history is not supported with PII filtering on this route"
+	}
+	if err.CapabilityMismatch && err.MismatchCode == "system_pii_unsupported" {
+		message = "system-role history is not supported with PII filtering on this route"
 	}
 	if err.CapabilityMismatch && err.MismatchCode == "unsupported_capability" && err.MismatchParam != "" && err.MismatchParam != "model" {
 		message += fmt.Sprintf("; unsupported request capability: %s", err.MismatchParam)

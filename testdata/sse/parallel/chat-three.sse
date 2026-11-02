@@ -1,0 +1,15 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+: Synthetic canary, not a captured live-provider trace.
+
+data: {"id":"chat_fixture","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read","arguments":"{\"path\":\""}},{"index":1,"id":"call_b","type":"function","function":{"name":"read","arguments":"{\"path\":\""}},{"index":2,"id":"call_c","type":"function","function":{"name":"read","arguments":"{\"path\":\""}}]},"finish_reason":null}]}
+
+data: {"id":"chat_fixture","choices":[{"index":0,"delta":{"tool_calls":[{"index":2,"function":{"arguments":"c\"}"}},{"index":0,"function":{"arguments":"a\"}"}},{"index":1,"function":{"arguments":"b\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chat_fixture","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}
+
+data: [DONE]
+
+: end fixture

@@ -139,6 +139,9 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 				downstreamStart = time.Now()
 			}
 			rawFrame = rewriter.rewrite(rawFrame, dialect)
+			if rc != nil && rc.wrapStreamFrame != nil {
+				rawFrame = rc.wrapStreamFrame(rawFrame)
+			}
 			if _, writeErr := w.Write(rawFrame); writeErr != nil {
 				return result, upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: writeErr}
 			}

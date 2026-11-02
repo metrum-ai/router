@@ -91,6 +91,19 @@ type ServerConfig struct {
 	// default, must be scoped to experiment callers/groups/targets, and never
 	// change traffic that does not match a scope.
 	ExperimentProfiles map[string]ExperimentProfileConfig `yaml:"experiment_profiles" json:"experimentProfiles,omitempty"`
+	// ReasoningProvenance binds opaque provider reasoning history to the
+	// provider account, model and dialect that minted it (#622).
+	ReasoningProvenance ReasoningProvenanceConfig `yaml:"reasoning_provenance" json:"reasoningProvenance,omitempty"`
+}
+
+// ReasoningProvenanceConfig controls opaque reasoning provenance binding.
+// Mode is off by default, so no client-visible bytes change unless an operator
+// enables observe or enforce.
+type ReasoningProvenanceConfig struct {
+	Mode   string `yaml:"mode" json:"mode"`
+	KeyEnv string `yaml:"key_env" json:"keyEnv,omitempty"`
+	KeyID  string `yaml:"key_id" json:"keyId,omitempty"`
+	TTL    string `yaml:"ttl" json:"ttl,omitempty"`
 }
 
 type OpenAICompatibilityConfig struct {
@@ -1355,6 +1368,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateExperimentProfiles(c.Server.ExperimentProfiles); err != nil {
+		return err
+	}
+	if err := validateReasoningProvenanceConfig(c.Server.ReasoningProvenance); err != nil {
 		return err
 	}
 	if _, err := c.validateAccounts(); err != nil {
