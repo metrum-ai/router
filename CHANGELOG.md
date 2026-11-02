@@ -110,10 +110,11 @@ gate and a rollback to 4.5.0 needs no database restore for schema reasons.
 - A Chat Completions caller that combines tools with `reasoning_effort` is
   affected, not only an Anthropic caller. A Chat-dialect target lets the provider
   reject it (`400 upstream-rejected`); a Responses target behind the
-  `chat_to_responses` bridge is not eligible for that shape and reports
-  `400 unsupported_endpoint_for_model` with `param: model` and the requirement
-  `openai-chat_tool_passthrough`. Avoid the combination from a Chat caller until
-  #703 lands (#697).
+  `chat_to_responses` bridge reports `400 unsupported_endpoint_for_model` with
+  `param: model` for a target that does not declare `openai-chat` in
+  `supported_inbound_dialects`; declaring it makes the Chat caller eligible.
+  Avoid tools plus `reasoning_effort` from a Chat caller against a Chat target
+  until #703 lands (#697).
 
 ### Security
 

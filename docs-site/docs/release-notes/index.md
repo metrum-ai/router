@@ -82,9 +82,12 @@ history passes through exactly as before.
   Routing that caller to a Responses target through the `chat_to_responses`
   bridge does not currently make it eligible either: the router reports
   `400 unsupported_endpoint_for_model` with `param: model` and the requirement
-  `openai-chat_tool_passthrough`. Practical guidance until #703 lands: do not
-  combine tools with `reasoning_effort` from a Chat caller, or call the
-  Responses surface directly.
+  `openai-chat_tool_passthrough` — that refusal comes from the target not
+  declaring `openai-chat` in `request_shape_support.supported_inbound_dialects`,
+  not from the bridge itself. Practical guidance until #703 lands: a Chat caller
+  that sends tools needs a Responses target that declares the `openai-chat`
+  inbound dialect; without that declaration the router refuses before dispatch.
+  Calling the Responses surface directly also works.
 
 ### Proof and Evidence
 
