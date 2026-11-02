@@ -413,7 +413,7 @@ def stage_harbor(outdir, host=None):
               "--out", str(target)]
     if host:
         remote_out = env("RELEASE_GATE_HARBOR_REMOTE_OUT") or "~/harbor-out"
-        quoted = " ".join(shlex.quote(part) for part in common[:-1] + ["--out", remote_out])
+        quoted = " ".join(shlex.quote(part) for part in common[:-2] + ["--out", remote_out])
         command = f"cd ~/router && python3 scripts/harbor_promotion.py {quoted}"
         log_path = target / "harbor-remote.log"
         ssh = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new"]

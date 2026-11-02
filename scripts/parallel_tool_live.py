@@ -251,7 +251,7 @@ class Gate:
             # an explicitly empty block; inventing text for it is the failure case.
             if "EMPTY" in compact.upper():
                 result["empty_result_shown_as"] = "word"
-            elif re.search(r"```\s*```", text):
+            elif re.search(r"`+\s*`+", text):
                 result["empty_result_shown_as"] = "empty-block"
             else:
                 result["problems"].append("final answer did not show the empty result")
