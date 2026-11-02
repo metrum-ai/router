@@ -232,3 +232,32 @@ func FuzzParseReasoningEnvelope(f *testing.F) {
 		}
 	})
 }
+
+// Values at the limit must bind and round trip; one byte over must be refused
+// with the oversize class so the wiring can pass through or drop it.
+func TestReasoningEnvelopeAtSizeLimit(t *testing.T) {
+	key := provenanceTestKey(t, "k1")
+	now := time.Unix(1_800_000_000, 0)
+	scope := provenanceTestScope()
+	atLimit := strings.Repeat("a", maxReasoningOpaqueBytes)
+	envelope, err := key.wrap(scope, reasoningKindEncryptedContent, atLimit, now, time.Hour)
+	if err != nil {
+		t.Fatalf("value at the limit was refused: %v", err)
+	}
+	if len(envelope) > maxReasoningEnvelopeBytes {
+		t.Fatalf("envelope at the limit exceeds its own bound: %d", len(envelope))
+	}
+	got, err := parseReasoningEnvelope(key, envelope, scope, reasoningKindEncryptedContent, now)
+	if err != nil {
+		t.Fatalf("envelope at the limit was refused: %v", err)
+	}
+	if len(got) != len(atLimit) {
+		t.Fatalf("unexpected round-trip length: %d", len(got))
+	}
+	if _, err := key.wrap(scope, reasoningKindEncryptedContent, atLimit+"b", now, time.Hour); !errors.Is(err, errEnvelopeOpaqueLarge) {
+		t.Fatalf("value over the limit accepted: %v", err)
+	}
+	if reason := reasoningProvenanceReason(errEnvelopeOpaqueLarge); reason != "oversized" {
+		t.Fatalf("oversize class changed: %s", reason)
+	}
+}

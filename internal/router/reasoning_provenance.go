@@ -30,13 +30,18 @@ const (
 	reasoningProvenanceVersion = 1
 	// reasoningEnvelopePrefix marks a router-owned opaque reasoning value.
 	reasoningEnvelopePrefix = "rtr_rz1"
-	// maxReasoningEnvelopeBytes bounds the whole client-visible value so a
-	// hostile or corrupted history item cannot amplify parsing cost.
-	maxReasoningEnvelopeBytes = 16 << 10
-	// maxReasoningPayloadBytes bounds the decoded payload section.
-	maxReasoningPayloadBytes = 12 << 10
-	// maxReasoningOpaqueBytes bounds the wrapped provider value itself.
-	maxReasoningOpaqueBytes = 8 << 10
+	// maxReasoningOpaqueBytes bounds the wrapped provider value itself. Provider
+	// values are not small: OpenAI Responses encrypted_content grows with the
+	// reasoning turn, and Anthropic thinking signatures and redacted_thinking
+	// data are opaque blobs. 256 KiB leaves room for both without letting a
+	// single history item dominate request parsing.
+	maxReasoningOpaqueBytes = 256 << 10
+	// maxReasoningPayloadBytes bounds the decoded payload section: base64 of one
+	// maximum opaque value plus JSON overhead, rounded up.
+	maxReasoningPayloadBytes = 384 << 10
+	// maxReasoningEnvelopeBytes bounds the whole client-visible value: base64 of
+	// one maximum payload plus the prefix, key id and MAC, rounded up.
+	maxReasoningEnvelopeBytes = 512 << 10
 	// reasoningProvenanceMaxTTL bounds how long a binding may stay valid.
 	reasoningProvenanceMaxTTL = 30 * 24 * time.Hour
 	// reasoningProvenanceClockSkew tolerates small clock differences when
