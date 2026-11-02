@@ -35,6 +35,10 @@ containers, conversations, agents, ChatKit threads, and skills are outside the
 v4.5 scope and return the same error. These errors have `message`, `type`,
 `param`, and `code` fields. See the [error reference](errors).
 
+`POST /v1/content_provenance_checks` is not implemented. After caller
+authentication, it returns an OpenAI-shaped `501 unsupported_endpoint` without
+dispatching to an upstream; missing or invalid caller credentials return 401.
+
 Responses input counting requires a native Responses target in the requested
 model group. It observes caller request rate and concurrency limits, but does not
 bill tokens; the audit record has `endpoint=responses.input_tokens`. A request

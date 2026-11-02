@@ -629,7 +629,7 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("POST /v1/responses/input_tokens", s.handleResponsesInputTokens)
 	s.mux.HandleFunc("POST /v1/responses/compact", func(w http.ResponseWriter, r *http.Request) { s.handleLLM(w, r, "openai-responses") })
 	for _, pattern := range []string{
-		"POST /v1/completions", "POST /v1/moderations", "POST /v1/embeddings",
+		"POST /v1/completions", "POST /v1/moderations", "POST /v1/embeddings", "POST /v1/content_provenance_checks",
 		"GET /v1/responses/{id}", "DELETE /v1/responses/{id}",
 		"GET /v1/responses/{id}/input_items", "POST /v1/responses/{id}/cancel",
 	} {
