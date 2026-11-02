@@ -1718,7 +1718,9 @@ def main() -> int:
         # Fail closed on a DSN that would put credentials on a command line.
         parse_dsn(os.environ[args.dsn_env])
     work = new_workdir(args.name)
-    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    commit = os.environ.get("GOVLOAD_ROUTER_COMMIT", "") or subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
+    ).stdout.strip() or "unknown"
     child_env = dict(os.environ)
     child_env.pop("OPENAI_API_KEY", None)
     ctx = Ctx(
