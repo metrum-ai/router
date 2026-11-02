@@ -11,10 +11,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/metrum-ai/router/internal/router"
 )
+
+// liveBases is the allowlist of upstream endpoints a metered run may point at,
+// per model group. It names the live provider hosts plus the gateway the
+// approved release configuration routes the claude group through. Anything
+// else (a mock, a loopback proxy, a typo) is refused before any request.
+var liveBases = map[string][]string{
+	"gpt":    {"https://api.openai.com/v1"},
+	"claude": {"https://api.anthropic.com", "https://openrouter.ai/api"},
+}
 
 func validate(c *router.Config) error {
 	if mode := strings.ToLower(strings.TrimSpace(c.Server.ConfigSource.Mode)); mode != "" && mode != "yaml" {
@@ -62,11 +72,11 @@ func validate(c *router.Config) error {
 				return errors.New("target provider missing")
 			}
 			base := strings.TrimRight(p.BaseURL, "/")
-			// Any https endpoint is acceptable: the release configuration may route a
-			// provider through an operator-declared gateway. Plaintext, loopback and
-			// non-http endpoints stay rejected so a mock cannot masquerade as live.
-			if !strings.HasPrefix(base, "https://") {
-				return errors.New("targets must use an https upstream endpoint")
+			// Only named live hosts are acceptable. An allowlist (not any https,
+			// not any non-loopback host) keeps an https mock or a mispointed
+			// provider out of a metered run.
+			if !slices.Contains(liveBases[group], base) {
+				return fmt.Errorf("targets in group %q must use a live endpoint, one of: %s", group, strings.Join(liveBases[group], ", "))
 			}
 			if (group == "gpt" && t.Dialect != "openai-chat" && t.Dialect != "openai-responses") ||
 				(group == "claude" && t.Dialect != "anthropic") {
