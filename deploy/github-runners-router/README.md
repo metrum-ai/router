@@ -52,6 +52,10 @@ Tokens expire in about an hour. If containers loop on registration errors, run `
 
 ## Design notes
 
+- The image installs its tools as root, then runs the base entrypoint and jobs as
+  the `runner` user with `RUN_AS_ROOT=false`. Validate runner registration,
+  work-volume ownership, and bubblewrap support in the target environment before
+  rollout; these require a container runtime and cannot be proven by manifest scans.
 - **3 replicas** (`gha-router-1..3`) so concurrent CI jobs do not share one host `dpkg` lock.
 - **Privileged** containers so nested `bubblewrap` user namespaces work for LRP.
 - **AppArmor is not required**; LRP CI uses bubblewrap namespaces only.
