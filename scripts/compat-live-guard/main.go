@@ -50,8 +50,12 @@ func validate(c *router.Config) error {
 			return errors.New("gpt and claude groups must exist with content capture disabled")
 		}
 		for _, t := range g.Targets {
-			if t.RequestShapeSupport.ValidationStatus != "limited" || t.InputPricePerMillionUSD <= 0 || t.OutputPricePerMillionUSD <= 0 || t.PricingSource == "" {
-				return errors.New("targets must have limited validation, positive token prices and a pricing source")
+			// `passed` is accepted alongside `limited`: the cross-dialect paths
+			// require a validated target, so a run that must exercise them cannot
+			// present `limited` targets. Both are explicit operator declarations.
+			status := strings.ToLower(strings.TrimSpace(t.RequestShapeSupport.ValidationStatus))
+			if (status != "limited" && status != "passed") || t.InputPricePerMillionUSD <= 0 || t.OutputPricePerMillionUSD <= 0 || t.PricingSource == "" {
+				return errors.New("targets must declare limited or passed validation, positive token prices and a pricing source")
 			}
 			p, ok := c.Provider[t.Provider]
 			if !ok {

@@ -30,6 +30,15 @@ func fixture(t *testing.T) *router.Config {
 	}
 }
 
+func TestPassedValidationIsAccepted(t *testing.T) {
+	cfg := fixture(t)
+	cfg.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "passed"
+	cfg.Models["claude"].Targets[0].RequestShapeSupport.ValidationStatus = "passed"
+	if err := validate(cfg); err != nil {
+		t.Fatalf("passed validation must be accepted for cross-dialect lanes: %v", err)
+	}
+}
+
 func TestValidateLiveSafety(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -38,7 +47,7 @@ func TestValidateLiveSafety(t *testing.T) {
 		{"unlimited quota", func(c *router.Config) { c.Callers[0].Key.LifetimeTokens = 0 }},
 		{"too large quota", func(c *router.Config) { c.Callers[0].Quota.Day.Tokens = 200001 }},
 		{"missing prices", func(c *router.Config) { c.Models["claude"].Targets[0].OutputPricePerMillionUSD = 0 }},
-		{"overstated validation", func(c *router.Config) { c.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "passed" }},
+		{"unknown validation status", func(c *router.Config) { c.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "assumed" }},
 		{"database source", func(c *router.Config) { c.Server.ConfigSource.Mode = "database" }},
 		{"fallback provider", func(c *router.Config) {
 			g := c.Models["claude"]
