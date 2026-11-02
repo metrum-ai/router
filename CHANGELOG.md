@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   developer-history PII guard to Bedrock. Other eligible targets remain
   available (#668).
 
+- Bypass response-cache reads and writes for requests evaluated against
+  PII-enabled model groups while target-bound cache identity is reconciled
+  (#670). This may increase upstream calls for those groups.
 ## [4.5.0] - 2026-11-04
 
 Proof release: each claim below ships with the run, the configuration and the

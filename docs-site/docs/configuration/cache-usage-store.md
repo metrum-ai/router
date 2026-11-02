@@ -53,7 +53,7 @@ server:
 
 ## Schema
 
-`server.cache` covers eligible deterministic unary responses. Tool-bearing agent requests and image-bearing requests bypass response caching.
+`server.cache` covers eligible deterministic unary responses. Tool-bearing and image-bearing requests bypass response caching. Requests evaluated against PII-enabled model groups also bypass cache reads and writes, even when no rule matches. Existing entries are not purged and can become eligible again if filtering is disabled, until expiry or cache reset. Configuration changes do not fence in-flight requests: for a strict cutover, pause and drain requests and confirm all replicas have loaded the enabled policy before resuming. The bounded diagnostic reason for otherwise cacheable requests is `cache-pii-filter`.
 
 `usage_db` enables relational usage persistence. Inference logging only enqueues
 telemetry; a single background SQL writer flushes up to 256 requests every 250 ms
