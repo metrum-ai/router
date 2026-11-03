@@ -30,6 +30,25 @@ func fixture(t *testing.T) *router.Config {
 	}
 }
 
+func TestPassedValidationIsAccepted(t *testing.T) {
+	cfg := fixture(t)
+	cfg.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "passed"
+	cfg.Models["claude"].Targets[0].RequestShapeSupport.ValidationStatus = "passed"
+	if err := validate(cfg); err != nil {
+		t.Fatalf("passed validation must be accepted for cross-dialect lanes: %v", err)
+	}
+}
+
+func TestOpenRouterClaudeBaseIsAccepted(t *testing.T) {
+	// The approved release configuration routes the claude group through this
+	// gateway, so it must pass the allowlist.
+	cfg := fixture(t)
+	cfg.Provider["anthropic"] = router.ProviderConfig{BaseURL: "https://openrouter.ai/api/"}
+	if err := validate(cfg); err != nil {
+		t.Fatalf("openrouter claude base must be accepted: %v", err)
+	}
+}
+
 func TestValidateLiveSafety(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -38,12 +57,29 @@ func TestValidateLiveSafety(t *testing.T) {
 		{"unlimited quota", func(c *router.Config) { c.Callers[0].Key.LifetimeTokens = 0 }},
 		{"too large quota", func(c *router.Config) { c.Callers[0].Quota.Day.Tokens = 200001 }},
 		{"missing prices", func(c *router.Config) { c.Models["claude"].Targets[0].OutputPricePerMillionUSD = 0 }},
-		{"overstated validation", func(c *router.Config) { c.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "passed" }},
+		{"unknown validation status", func(c *router.Config) { c.Models["gpt"].Targets[0].RequestShapeSupport.ValidationStatus = "assumed" }},
 		{"database source", func(c *router.Config) { c.Server.ConfigSource.Mode = "database" }},
 		{"fallback provider", func(c *router.Config) {
 			g := c.Models["claude"]
 			g.Targets[0].Provider = "openai"
 			c.Models["claude"] = g
+		}},
+		{"dialect does not match its group", func(c *router.Config) {
+			g := c.Models["claude"]
+			g.Targets[0].Dialect = "openai-chat"
+			c.Models["claude"] = g
+		}},
+		{"plaintext upstream", func(c *router.Config) {
+			c.Provider["anthropic"] = router.ProviderConfig{BaseURL: "http://127.0.0.1:18081"}
+		}},
+		{"https loopback upstream", func(c *router.Config) {
+			c.Provider["anthropic"] = router.ProviderConfig{BaseURL: "https://127.0.0.1:8443"}
+		}},
+		{"https mock upstream", func(c *router.Config) {
+			c.Provider["anthropic"] = router.ProviderConfig{BaseURL: "https://mock.example.com/v1"}
+		}},
+		{"native host in the wrong group", func(c *router.Config) {
+			c.Provider["openai"] = router.ProviderConfig{BaseURL: "https://api.anthropic.com"}
 		}},
 		{"content capture", func(c *router.Config) { c.Server.ContentCapture.Enabled = true }},
 		{"upstream storage not disabled", func(c *router.Config) { c.Models["gpt"].Targets[0].ForceStoreFalse = false }},
