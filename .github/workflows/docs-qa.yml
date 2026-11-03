@@ -61,11 +61,11 @@ jobs:
   # docs-qa checks Markdown, configuration and links with Python and Go, but it
   # never compiles the site. A page can therefore break the MDX build that
   # make docker-image, release packaging and the gate image depend on (#753).
-  # This job compiles the site exactly as release packaging does. It runs on a
-  # GitHub-hosted runner: the self-hosted small runner was starved and lost
+  # This job compiles the site exactly as release packaging does. It runs on the
+  # standard ARC pool, not the small one: the small runner was starved and lost
   # communication during the first attempt at this build.
   docs-site-build:
-    runs-on: ubuntu-22.04
+    runs-on: router-arc
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
