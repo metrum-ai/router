@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 // The assembled instruction a translated target receives is built from several
@@ -244,29 +243,64 @@ func TestInstructionBoundaryCacheIdentity645(t *testing.T) {
 	}
 }
 
-// TestResponsesSystemHistoryStillFailsClosed645 records the remaining limit:
-// Responses system-message histories stay excluded from Anthropic and Bedrock
-// Messages targets on PII-enabled groups until the fail-closed limitation is
-// removed under independent security review.
-func TestResponsesSystemHistoryStillFailsClosed645(t *testing.T) {
-	var hits atomic.Int32
-	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"id":"msg","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
-	}))
-	defer upstreamServer.Close()
-	svc := nativeStreamTestService(t, upstreamServer.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
-		cfg.Server.Cache = CacheConfig{Enabled: true, MaxBytes: 1 << 20, DefaultTTL: time.Minute}
-		piiInstructionGroup(cfg, "redact_only", spanningPartsRule)
-	})
-	body := `{"model":"native-stream","temperature":0,"input":[{"role":"system","content":[{"type":"input_text","text":"sec"},{"type":"input_text","text":"ret"}]},{"role":"user","content":"hi"}]}`
-	r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
-	r.Header.Set("Authorization", "Bearer "+testToken)
-	w := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(w, r)
-	if hits.Load() != 0 || w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), `"code":"system_pii_unsupported"`) {
-		t.Fatalf("system history must stay fail-closed: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+// TestResponsesSystemHistoryScopeGuard645 pins the scope boundary of the lifted
+// guard: a Responses system history is served when the system or messages scope
+// can redact the assembled instruction, and still fails closed when an operator
+// disables both scopes, because the router would otherwise forward instruction
+// text it cannot filter.
+func TestResponsesSystemHistoryScopeGuard645(t *testing.T) {
+	cases := []struct {
+		name      string
+		applyTo   *PIIFilterApplyTo
+		wantCode  int
+		wantHits  int32
+		wantGuard bool
+	}{
+		{"default-scopes", nil, http.StatusOK, 1, false},
+		{"system-only", &PIIFilterApplyTo{System: boolPtr(true), Messages: boolPtr(false)}, http.StatusOK, 1, false},
+		{"messages-only", &PIIFilterApplyTo{System: boolPtr(false), Messages: boolPtr(true)}, http.StatusOK, 1, false},
+		{"both-disabled", &PIIFilterApplyTo{System: boolPtr(false), Messages: boolPtr(false)}, http.StatusBadRequest, 0, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var hits atomic.Int32
+			var upstream map[string]any
+			upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				data, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(data, &upstream)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"id":"msg","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+			}))
+			defer upstreamServer.Close()
+			svc := nativeStreamTestService(t, upstreamServer.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+				group := cfg.Models["native-stream"]
+				group.PIIFilter = testPIIFilterConfig("redact_only")
+				group.PIIFilter.Rules = []PIIFilterRule{spanningPartsRule}
+				if c.applyTo != nil {
+					group.PIIFilter.ApplyTo = *c.applyTo
+				}
+				cfg.Models["native-stream"] = group
+			})
+			body := `{"model":"native-stream","temperature":0,"input":[{"role":"system","content":[{"type":"input_text","text":"sec"},{"type":"input_text","text":"ret"}]},{"role":"user","content":"hi"}]}`
+			r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
+			r.Header.Set("Authorization", "Bearer "+testToken)
+			w := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(w, r)
+			if w.Code != c.wantCode || hits.Load() != c.wantHits {
+				t.Fatalf("status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+			}
+			system, _ := upstream["system"].(string)
+			if c.wantGuard {
+				if !strings.Contains(w.Body.String(), `"code":"system_pii_unsupported"`) {
+					t.Fatalf("missing fail-closed code: %s", w.Body.String())
+				}
+				return
+			}
+			if !strings.Contains(system, "[SECRET_1]") || strings.Contains(system, "secret") {
+				t.Fatalf("transmitted instruction not filtered: %q", system)
+			}
+		})
 	}
 }
 
@@ -506,5 +540,59 @@ func TestAnthropicArraySystemScope645(t *testing.T) {
 	}
 	if system := upstream["system"]; system == nil || !strings.Contains(fmt.Sprint(system), "[EMAIL_1]") {
 		t.Fatalf("upstream system prompt not filtered: %#v", upstream["system"])
+	}
+}
+
+// TestResponsesDeveloperHistoryStillExcluded645 keeps the other half of the
+// fail-closed behaviour: developer-role histories stay off Anthropic and Bedrock
+// Messages targets on PII-enabled groups.
+func TestResponsesDeveloperHistoryStillExcluded645(t *testing.T) {
+	var hits atomic.Int32
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"msg","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+	}))
+	defer upstreamServer.Close()
+	svc := nativeStreamTestService(t, upstreamServer.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		piiInstructionGroup(cfg, "redact_only", spanningPartsRule)
+	})
+	body := `{"model":"native-stream","temperature":0,"input":[{"role":"developer","content":"be careful"},{"role":"user","content":"hi"}]}`
+	r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if hits.Load() != 0 || w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "developer") {
+		t.Fatalf("developer history must stay excluded: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+	}
+}
+
+// TestResponsesSystemHistoryReplacementLimit645 proves that exhausting the
+// replacement cap on an assembled instruction fails closed before dispatch,
+// rather than forwarding the part of the text the filter could not replace.
+func TestResponsesSystemHistoryReplacementLimit645(t *testing.T) {
+	var hits atomic.Int32
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"msg","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+	}))
+	defer upstreamServer.Close()
+	svc := nativeStreamTestService(t, upstreamServer.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter = testPIIFilterConfig("redact_only")
+		group.PIIFilter.Rules = []PIIFilterRule{{Name: "ssn", Expression: `\b\d{3}-\d{2}-\d{4}\b`, PlaceholderPrefix: "US_SSN"}}
+		group.PIIFilter.MaxReplacementsPerRequest = 1
+		cfg.Models["native-stream"] = group
+	})
+	// Two distinct matches exceed the cap; a repeated identical match would share
+	// one placeholder and must not trip the limit.
+	body := `{"model":"native-stream","temperature":0,"input":[{"role":"system","content":"accounts 111-22-3333 and 444-55-6666"},{"role":"user","content":"hi"}]}`
+	r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if hits.Load() != 0 || w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "pii-filter-blocked") {
+		t.Fatalf("replacement limit must fail closed: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 	}
 }

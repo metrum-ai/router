@@ -5,6 +5,7 @@ package router
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,20 +13,22 @@ import (
 	"testing"
 )
 
+// A PII-enabled group with a Responses system history now offers Messages
+// targets, because the assembled instruction is filtered at its transmitted
+// boundary (#645). The Anthropic attempt must carry placeholders only, and a
+// failure there must fail over to the native target without shadow replay.
 func TestSystemPIIMixedTargets668(t *testing.T) {
 	for _, nativeFails := range []bool{false, true} {
 		t.Run(fmt.Sprintf("native_fails=%t", nativeFails), func(t *testing.T) {
 			var anthHits, nativeHits atomic.Int32
-			unblock := make(chan struct{})
+			var anthBody atomic.Value
 			anth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if strings.HasPrefix(r.UserAgent(), "metrum-ai-router-shadow/") {
-					<-unblock
-				}
+				data, _ := io.ReadAll(r.Body)
+				anthBody.Store(string(data))
 				anthHits.Add(1)
 				w.WriteHeader(500)
 			}))
 			defer anth.Close()
-			defer close(unblock)
 			native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				nativeHits.Add(1)
 				if nativeFails {
@@ -38,10 +41,7 @@ func TestSystemPIIMixedTargets668(t *testing.T) {
 			defer native.Close()
 			svc := nativeStreamTestService(t, anth.URL, "anthropic", []Target{anthropicToolTarget(), {Provider: "oai", Model: "native-model"}}, func(cfg *Config) {
 				cfg.Provider["oai"] = ProviderConfig{BaseURL: native.URL, Dialect: "openai-responses", APIKey: "provider-key"}
-				group := cfg.Models["native-stream"]
-				group.PIIFilter = testPIIFilterConfig("redact_only")
-				group.PIIFilter.Rules = []PIIFilterRule{{Name: "secret", Expression: "secret", PlaceholderPrefix: "SECRET"}}
-				cfg.Models["native-stream"] = group
+				piiInstructionGroup(cfg, "redact_only", PIIFilterRule{Name: "secret", Expression: "secret", PlaceholderPrefix: "SECRET"})
 			})
 			runs := map[string]*shadowRunState{"native-stream": {runID: "test", group: "native-stream", provider: "mock", model: "mock-model", rate: 1}}
 			svc.shadows.runs.Store(&runs)
@@ -50,14 +50,27 @@ func TestSystemPIIMixedTargets668(t *testing.T) {
 			r.Header.Set("Authorization", "Bearer "+testToken)
 			w := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(w, r)
-			if anthHits.Load() != 0 || nativeHits.Load() == 0 || len(svc.shadows.slots) != 0 {
-				t.Fatalf("anthropic=%d native=%d shadow=%d status=%d", anthHits.Load(), nativeHits.Load(), len(svc.shadows.slots), w.Code)
+			if anthHits.Load() == 0 {
+				t.Fatalf("filtered system history must be eligible for a Messages target: status=%d body=%s", w.Code, w.Body.String())
 			}
-			if !nativeFails && w.Code != 200 {
+			sent, _ := anthBody.Load().(string)
+			if strings.Contains(sent, "secret") {
+				t.Fatalf("assembled instruction reached the Messages target unfiltered: %s", sent)
+			}
+			if !strings.Contains(sent, "[SECRET_1]") {
+				t.Fatalf("Messages target did not receive the placeholder: %s", sent)
+			}
+			if nativeHits.Load() == 0 {
+				t.Fatal("failover to the native target did not happen")
+			}
+			if len(svc.shadows.slots) != 0 {
+				t.Fatalf("PII-enabled request was shadow replayed: %d", len(svc.shadows.slots))
+			}
+			if !nativeFails && w.Code != http.StatusOK {
 				t.Fatalf("native route status=%d body=%s", w.Code, w.Body.String())
 			}
-			if nativeFails && w.Code == 200 {
-				t.Fatal("native failure must not silently use excluded target")
+			if nativeFails && w.Code == http.StatusOK {
+				t.Fatal("native failure must not report success")
 			}
 		})
 	}
