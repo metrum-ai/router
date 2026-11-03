@@ -12,17 +12,6 @@ server:
     # (for example big-coder) and redacts upstream names from caller errors.
     # Usage rows, attempt rows and admin reports keep the upstream either way.
     model_identity: upstream
-  # Optional owner-bound stored Responses affinity (#533). Off by default.
-  # Enabling any group requires a durable usage_db and server.retention, and a
-  # native Responses target in every listed group. The key is 32 bytes, hex or
-  # base64, read from the named environment variable and never stored.
-  # responses_affinity:
-  #   enabled_groups: [support-chat]
-  #   key_env: ROUTER_RESPONSES_AFFINITY_KEY
-  #   key_id: affinity-2026-11
-  #   retention_days: 30        # local TTL; also the default purge class period
-  #   # previous_key_env: ROUTER_RESPONSES_AFFINITY_KEY_PREVIOUS
-  #   # previous_key_id: affinity-2026-09
   identifiers:
     mode: rewrite
     transform:
@@ -1605,6 +1594,22 @@ providers:
           anthropic_messages:
           - client_tools
 models:
+  # Tool-aware routing example (#436). Opt-in and observe-only until the group's
+  # request log shows the failures enforcement would act on. See
+  # docs/TOOL_AWARE_ROUTING.md before enabling mode: enforce.
+  # tool-aware-agent:
+  #   strategy: tool_aware
+  #   tool_routing:
+  #     mode: observe
+  #     cold_start: configured_weight
+  #     min_samples: 20
+  #     window_seconds: 900
+  #     validate: {arguments_json: true, schema: basic, name_must_be_offered: true}
+  #     recovery: {max_retries_same_target: 1, max_escalations: 1, on_exhausted: deliver_last}
+  #     streaming: {hold_until_validated: false}
+  #   targets:
+  #     - {provider: openai, model_ref: gpt-5.4-nano, weight: 100}
+  #     - {provider: openai, model_ref: gpt-5.4-mini, weight: 1}
   # Catalog-only Learned Routing Policy experiment. Do not activate until exact
   # provider/model/dialect/caller-shape validation and protected evaluation pass.
   # See docs/LEARNED_ROUTING_POLICY.md. Group names here are deployment examples.
@@ -1714,24 +1719,6 @@ models:
     targets:
     - provider: openai
       model_ref: gpt-5.4
-  # Starter declaration for a Chat-dialect reasoning model: OpenAI Chat
-  # Completions accepts reasoning_effort alone but rejects it together with a
-  # tools array (#697). With `with_tools: false` the router refuses that
-  # combination with 400 unsupported_capability before dispatch instead of
-  # forwarding it to a provider 400 (#703). Leave the field unset for targets
-  # that accept reasoning with tools.
-  # reasoning-smoke-chat:
-  #   strategy: static
-  #   targets:
-  #   - provider: compatible-openai-chat   # any openai-chat provider
-  #     model_ref: gpt-chat-reasoning
-  #     tool_support:
-  #       openai_chat: [tools, tool_choice]
-  #     reasoning:
-  #       supported: true
-  #       mode: opt_in
-  #       control: effort_enum
-  #       with_tools: false
   reasoning-smoke:
     strategy: failover
     targets:
