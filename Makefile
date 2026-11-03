@@ -411,13 +411,13 @@ ci-windows:
 	done
 
 ci-python: secret-contract capability-smoke-contracts
+	python3 benchmarks/governance-load/test_harness.py
 	python3 scripts/check_source_headers.py
 	$(MAKE) validate-build-metadata
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/hierarchy_release_gate_test.py
-	python3 benchmarks/governance-load/test_harness.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
@@ -444,6 +444,7 @@ compat-mock:
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.
 test-fast: secret-contract capability-smoke-contracts
+	python3 benchmarks/governance-load/test_harness.py
 	go test $$(go list ./... | grep -v '/internal/router$$') -timeout=15m
 	# Temporary while router-arc uses shared-CPU nodes; revert when dedicated c-8 capacity returns. Refs #367.
 	bash -o pipefail -c "go test ./internal/router -timeout=30m -json | $(PYTHON) scripts/router_test_time_guard.py"
@@ -453,7 +454,6 @@ test-fast: secret-contract capability-smoke-contracts
 	"$${MAKE:-make}" harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/hierarchy_release_gate_test.py
-	python3 benchmarks/governance-load/test_harness.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
