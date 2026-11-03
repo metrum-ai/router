@@ -115,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--requests-per-worker", type=int, default=8)
     parser.add_argument("--output-tokens", type=int, default=256)
     parser.add_argument("--prompt-tokens", type=int, default=2000)
+    parser.add_argument("--timeout", type=float, default=float(os.environ.get("SWEEP_TIMEOUT_SECONDS", "180")),
+                        help="per-socket inactivity timeout passed to the load driver")
     parser.add_argument("--p95-target-ms", type=float, default=float(os.environ.get("SWEEP_P95_TARGET_MS", "8000")))
     parser.add_argument("--out-dir", default="", help="run directory; raw driver output goes to <out>/raw")
     args = parser.parse_args(argv)
@@ -157,6 +159,8 @@ def main(argv: list[str] | None = None) -> int:
         str(args.repetitions),
         "--requests-per-worker",
         str(args.requests_per_worker),
+        "--timeout",
+        str(args.timeout),
         "--output-dir",
         str(raw_dir),
     ]
