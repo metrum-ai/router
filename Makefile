@@ -254,6 +254,16 @@ eval-bigcodebench:
 eval-report:
 	$(PYTHON) scripts/inspect_coding_eval.py report --log-dir "$${EVAL_LOG_DIR}" --suite "$${EVAL_SUITE}" --policy "$${EVAL_POLICY}"
 
+# Direct-provider differential canary (ARCH-05). Opt-in and paid: it sends the
+# fixed canary probes to a direct provider/model and to the same model pinned
+# through the router, then fails on a router regression. Never part of test-fast.
+# See docs/EVALUATION_INFRA.md; bounds: CANARY_MAX_COST_USD (default 0.50).
+eval-canary:
+	$(PYTHON) scripts/direct_provider_canary.py run --report-out "$${CANARY_REPORT:-canary.json}"
+
+eval-canary-validate:
+	$(PYTHON) scripts/direct_provider_canary.py validate "$${CANARY_REPORT:-canary.json}"
+
 # A small, authenticated router-group check for explicitly enabled CI only.
 eval-ci-smoke:
 	$(PYTHON) scripts/inspect_coding_eval.py smoke
@@ -420,6 +430,7 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
+	uv run --with pyyaml python scripts/direct_provider_canary_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	$(PYTHON) benchmarks/overhead/decision_smoke.py
@@ -457,6 +468,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
+	uv run --with pyyaml python scripts/direct_provider_canary_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
 	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q

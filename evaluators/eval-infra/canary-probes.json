@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "note": "Fixed, checkable probes for the direct-provider differential canary (ARCH-05, metrum-ai/router#330). The checker is pure and local: no model grading. A nonce is generated per run and injected into the prompts, so a canned answer cannot pass.",
+  "probes": [
+    {
+      "id": "nonce-echo",
+      "kind": "exact_text",
+      "max_tokens": 32,
+      "prompt": "Reply with exactly this token and nothing else, with no punctuation or quotes: CANARY-{nonce}"
+    },
+    {
+      "id": "json-arithmetic",
+      "kind": "json_int_field",
+      "max_tokens": 64,
+      "field": "answer",
+      "a": 17,
+      "b": 25,
+      "prompt": "Reply with only one compact JSON object and no other text: {{\"answer\": <sum>}} where <sum> is the integer sum of {a} and {b}."
+    },
+    {
+      "id": "bounded-answer",
+      "kind": "max_words",
+      "max_tokens": 24,
+      "max_words": 3,
+      "prompt": "Answer in at most three words: what is the result of two plus two?"
+    },
+    {
+      "id": "nonce-in-sentence",
+      "kind": "contains_text",
+      "max_tokens": 48,
+      "prompt": "Write one short sentence that contains the token CANARY-{nonce} verbatim."
+    }
+  ]
+}

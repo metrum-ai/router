@@ -61,11 +61,45 @@ python3 scripts/eval_report_schema.py path/to/report.json
 Missing controls or insufficient samples are reported as violations; they
 cannot silently become certification.
 
+## Direct-provider differential canary (ARCH-05)
+
+The last ARCH-05 layer compares the router against the provider itself. The same
+fixed probes go to the exact provider/model (`canary-direct`) and to the same
+model pinned through the router (`canary-router-pinned`); a divergence needs the
+outside reference, so router-only tests cannot produce it.
+
+- Probes and their pure local checks live in
+  `evaluators/eval-infra/canary-probes.json`. A nonce is generated per run and
+  injected into the prompts, so a canned answer cannot pass. No model grades
+  another model.
+- The report uses the same schema as the other cells, so the preregistered
+  latency and cost gates apply unchanged. Both canary cells are preregistered in
+  the matrix with `allowed_error_rate: 0.10`.
+- The hard gate is a **router regression**: a probe the direct call passed and
+  the router call failed. A probe only the direct call failed is provider noise
+  and is reported as such, never counted against the router.
+
+```sh
+# offline: probes, classification, report and gates against local servers
+python3 scripts/direct_provider_canary_test.py
+
+# live, paid, opt-in (never part of test-fast)
+CANARY_DIRECT_BASE_URL=... CANARY_DIRECT_API_KEY=... CANARY_DIRECT_MODEL=... \
+CANARY_ROUTER_BASE_URL=... CANARY_ROUTER_API_KEY=... CANARY_ROUTER_MODEL_GROUP=... \
+make eval-canary CANARY_REPORT=canary.json
+make eval-canary-validate CANARY_REPORT=canary.json
+```
+
+`CANARY_MAX_COST_USD` (default `0.50`) bounds the run: the direct side stops the
+run before the router side if it is already over budget. Exit codes: `0` pass,
+`1` gate violation, `2` configuration error.
+
 ## What still needs paid runs (tracked on #330)
 
 - Nightly repeated trials of the `nightly-live` cells (EVAL-01/03/05) —
   real provider calls.
-- Direct-provider differential canary layer (ARCH-05 live runs).
+- Live runs of the direct-provider differential canary (ARCH-05): the layer is
+  implemented and offline-tested; a recorded live run needs bounded spend.
 - Real-client runs with images and reasoning (AGENT-06).
 - Live Harbor coverage beyond HARBOR-01 (HARBOR-02…HARBOR-18).
 

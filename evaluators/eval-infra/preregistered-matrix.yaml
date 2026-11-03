@@ -45,6 +45,26 @@ cells:
     allowed_score_delta: 0.0
     allowed_error_rate: 0.0
 
+  # ARCH-05 differential canary: the same fixed probes go to the exact
+  # provider/model (canary-direct) and to the same model pinned through the
+  # router (canary-router-pinned). A probe the direct call passed and the
+  # router call failed is a router regression and fails the run; a probe only
+  # the direct call failed is provider noise and is reported as such.
+  - id: canary-direct
+    suite: canary-differential
+    mode: direct
+    environment: nightly-live   # opt-in, bounded spend
+    sample_size: 4
+    allowed_score_delta: 0.0
+    allowed_error_rate: 0.10
+  - id: canary-router-pinned
+    suite: canary-differential
+    mode: fixed-router
+    environment: nightly-live
+    sample_size: 4
+    allowed_score_delta: 0.0
+    allowed_error_rate: 0.10
+
 # ARCH-06: pairwise coverage of the supported request-shape matrix plus
 # mandatory high-risk triples. Excluded combinations are enumerated
 # explicitly; nothing is silently untested.
