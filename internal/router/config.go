@@ -758,16 +758,20 @@ type Target struct {
 	EmbeddingDimensions []int `yaml:"embedding_dimensions" json:"embeddingDimensions,omitempty"`
 	// DefaultEmbeddingDimensions applies when a request omits dimensions. Zero
 	// means there is no default and such requests fail closed.
-	DefaultEmbeddingDimensions int                   `yaml:"default_embedding_dimensions" json:"defaultEmbeddingDimensions,omitempty"`
-	HonorsMaxTokens            *bool                 `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
-	ForceStoreFalse            bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
-	OutputTokenField           string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
-	ActivationEvidence         ActivationEvidence    `yaml:"activation_evidence" json:"activationEvidence,omitempty"`
-	Validation                 *TargetValidation     `yaml:"validation" json:"validation,omitempty"`
-	TrafficShape               TrafficShapeConfig    `yaml:"traffic_shape" json:"trafficShape,omitempty"`
-	RequestShapeSupport        RequestShapeSupport   `yaml:"request_shape_support" json:"requestShapeSupport,omitempty"`
-	ResponsesToChat            ResponsesToChatBridge `yaml:"responses_to_chat" json:"responsesToChat,omitempty"`
-	Bridges                    BridgeSupport         `yaml:"bridges" json:"bridges,omitempty"`
+	DefaultEmbeddingDimensions int   `yaml:"default_embedding_dimensions" json:"defaultEmbeddingDimensions,omitempty"`
+	HonorsMaxTokens            *bool `yaml:"honors_max_tokens" json:"honorsMaxTokens,omitempty"`
+	// CountTokens, when explicitly false, declares that the upstream
+	// implements no Anthropic count_tokens endpoint (common for gateways that
+	// serve Messages only). The router then answers from its local estimate.
+	CountTokens         *bool                 `yaml:"count_tokens" json:"countTokens,omitempty"`
+	ForceStoreFalse     bool                  `yaml:"force_store_false" json:"forceStoreFalse,omitempty"`
+	OutputTokenField    string                `yaml:"output_token_field" json:"outputTokenField,omitempty"`
+	ActivationEvidence  ActivationEvidence    `yaml:"activation_evidence" json:"activationEvidence,omitempty"`
+	Validation          *TargetValidation     `yaml:"validation" json:"validation,omitempty"`
+	TrafficShape        TrafficShapeConfig    `yaml:"traffic_shape" json:"trafficShape,omitempty"`
+	RequestShapeSupport RequestShapeSupport   `yaml:"request_shape_support" json:"requestShapeSupport,omitempty"`
+	ResponsesToChat     ResponsesToChatBridge `yaml:"responses_to_chat" json:"responsesToChat,omitempty"`
+	Bridges             BridgeSupport         `yaml:"bridges" json:"bridges,omitempty"`
 }
 
 type ResponsesToChatBridge struct {

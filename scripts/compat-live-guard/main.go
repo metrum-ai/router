@@ -11,10 +11,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/metrum-ai/router/internal/router"
 )
+
+// liveBases is the allowlist of upstream endpoints a metered run may point at,
+// per model group. It names the live provider hosts plus the gateway the
+// approved release configuration routes the claude group through. Anything
+// else (a mock, a loopback proxy, a typo) is refused before any request.
+var liveBases = map[string][]string{
+	"gpt":    {"https://api.openai.com/v1"},
+	"claude": {"https://api.anthropic.com", "https://openrouter.ai/api"},
+}
 
 func validate(c *router.Config) error {
 	if mode := strings.ToLower(strings.TrimSpace(c.Server.ConfigSource.Mode)); mode != "" && mode != "yaml" {
@@ -50,17 +60,27 @@ func validate(c *router.Config) error {
 			return errors.New("gpt and claude groups must exist with content capture disabled")
 		}
 		for _, t := range g.Targets {
-			if t.RequestShapeSupport.ValidationStatus != "limited" || t.InputPricePerMillionUSD <= 0 || t.OutputPricePerMillionUSD <= 0 || t.PricingSource == "" {
-				return errors.New("targets must have limited validation, positive token prices and a pricing source")
+			// `passed` is accepted alongside `limited`: the cross-dialect paths
+			// require a validated target, so a run that must exercise them cannot
+			// present `limited` targets. Both are explicit operator declarations.
+			status := strings.ToLower(strings.TrimSpace(t.RequestShapeSupport.ValidationStatus))
+			if (status != "limited" && status != "passed") || t.InputPricePerMillionUSD <= 0 || t.OutputPricePerMillionUSD <= 0 || t.PricingSource == "" {
+				return errors.New("targets must declare limited or passed validation, positive token prices and a pricing source")
 			}
 			p, ok := c.Provider[t.Provider]
 			if !ok {
 				return errors.New("target provider missing")
 			}
 			base := strings.TrimRight(p.BaseURL, "/")
-			if (group == "gpt" && (base != "https://api.openai.com/v1" || (t.Dialect != "openai-chat" && t.Dialect != "openai-responses"))) ||
-				(group == "claude" && (base != "https://api.anthropic.com" || t.Dialect != "anthropic")) {
-				return errors.New("targets must use the native OpenAI and Anthropic API endpoints")
+			// Only named live hosts are acceptable. An allowlist (not any https,
+			// not any non-loopback host) keeps an https mock or a mispointed
+			// provider out of a metered run.
+			if !slices.Contains(liveBases[group], base) {
+				return fmt.Errorf("targets in group %q must use a live endpoint, one of: %s", group, strings.Join(liveBases[group], ", "))
+			}
+			if (group == "gpt" && t.Dialect != "openai-chat" && t.Dialect != "openai-responses") ||
+				(group == "claude" && t.Dialect != "anthropic") {
+				return errors.New("targets must use the OpenAI or Anthropic dialect for their group")
 			}
 			if group == "gpt" && !t.ForceStoreFalse {
 				return errors.New("OpenAI targets must force store:false to prevent provider-side stored responses")

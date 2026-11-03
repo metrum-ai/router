@@ -51,7 +51,7 @@ same token admission and metering as Responses. It bypasses the response cache;
 
 Anthropic legacy `/v1/complete`, message batches, beta files, and skills are
 not planned for v4.5 and return authenticated 501 errors in Anthropic format.
-`/v1/messages/count_tokens` remains supported.
+`/v1/messages/count_tokens` remains supported. For an Anthropic Messages target the router forwards the call to the target's own count endpoint and returns the provider's count with `X-Metrum-Usage-Source: reported`. When the target declares `count_tokens: false`, or when the target's count endpoint answers `404` without the provider's own typed error body (a gateway can serve Messages without implementing the route), the router answers with its local estimate and `X-Metrum-Usage-Source: estimated` instead of surfacing an opaque upstream error. A `404` that is the provider's typed `not_found_error` (for example an unknown or misconfigured model) is a real routing failure and keeps its `404 upstream-rejected` class; it is never masked by an estimate. Other provider failures keep their classes: a `401` or `429` stays a provider 4xx, and `5xx` becomes `502 upstream-failed`. See [Model Metadata](model-metadata#anthropic-count-tokens).
 
 Anthropic-compatible clients use the `/anthropic` base URL:
 

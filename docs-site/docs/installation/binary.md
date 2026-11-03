@@ -39,8 +39,9 @@ Router process; it neither provisions nor binds RDS.
 
 Download the ZIP matching the Windows host architecture and `SHA256SUMS` from
 the official GitHub release. Install the [GitHub CLI](https://cli.github.com/)
-and verify both downloaded files before extracting. In PowerShell, replace
-`vX.Y.Z` and the architecture with the downloaded filename:
+(2.49.0 or newer: the `attestation` command set does not exist in older
+releases) and verify both downloaded files before extracting. In PowerShell,
+replace `vX.Y.Z` and the architecture with the downloaded filename:
 
 ```powershell
 $zip = ".\metrum-ai-router-vX.Y.Z-windows-amd64.zip"

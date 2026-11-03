@@ -1,0 +1,981 @@
+{
+  "schema_version": 1,
+  "updated": "2026-11-02",
+  "clients": [
+    {
+      "id": "pi",
+      "name": "pi",
+      "version": "1.4.0",
+      "pin": "tests/agent_compat/package-lock.json",
+      "surfaces": [
+        "openai-chat"
+      ]
+    },
+    {
+      "id": "langgraph",
+      "name": "LangGraph",
+      "version": "1.2.18",
+      "pin": "tests/agent_compat/uv.lock",
+      "surfaces": [
+        "openai-chat"
+      ]
+    },
+    {
+      "id": "openai-agents",
+      "name": "OpenAI Agents SDK",
+      "version": "0.24.0",
+      "pin": "tests/agent_compat/uv.lock",
+      "surfaces": [
+        "openai-chat"
+      ]
+    },
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "version": "2.1.296",
+      "pin": "tests/agent_compat/package-lock.json",
+      "surfaces": [
+        "anthropic-messages"
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex CLI",
+      "version": "0.162.0",
+      "pin": "tests/agent_compat/package-lock.json",
+      "surfaces": [
+        "openai-responses"
+      ]
+    },
+    {
+      "id": "openai-sdk",
+      "name": "OpenAI SDK compatibility tester",
+      "version": "5935805",
+      "pin": "scripts/compat_mock.py",
+      "surfaces": [
+        "openai-chat",
+        "openai-responses"
+      ]
+    },
+    {
+      "id": "anthropic-sdk",
+      "name": "Anthropic SDK compatibility tester",
+      "version": "799b0bc",
+      "pin": "scripts/compat_mock.py",
+      "surfaces": [
+        "anthropic-messages"
+      ]
+    },
+    {
+      "id": "parallel-gate",
+      "name": "Parallel tool-call gate (HTTP probe)",
+      "version": "scripts/parallel_tool_live.py",
+      "pin": "scripts/parallel_tool_live.py",
+      "surfaces": [
+        "openai-chat",
+        "anthropic-messages"
+      ]
+    }
+  ],
+  "not_covered_clients": [
+    {
+      "id": "opencode",
+      "name": "opencode",
+      "version": "fixtures in scripts/coding_agent_matrix.py",
+      "reason": "Only a workload fixture verifier exists; no cell runs the real client through a tool loop, so no compatibility is claimed."
+    },
+    {
+      "id": "aider",
+      "name": "aider",
+      "version": "fixtures in scripts/coding_agent_matrix.py",
+      "reason": "Only a workload fixture verifier exists; no cell runs the real client through a tool loop, so no compatibility is claimed."
+    }
+  ],
+  "cells": [
+    {
+      "id": "pi-chat-same-dialect-stream",
+      "client": "pi",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0,
+        1,
+        2,
+        3,
+        5
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "pi-chat-same-dialect-parallel",
+      "client": "pi",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls"
+      ],
+      "depths": [
+        1
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "pi-chat-to-responses-stream",
+      "client": "pi",
+      "surface": "openai-chat",
+      "upstream": "openai-responses",
+      "path": "chat_to_responses",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "pi-chat-to-messages-stream",
+      "client": "pi",
+      "surface": "openai-chat",
+      "upstream": "anthropic-messages",
+      "path": "chat_to_messages",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0
+      ],
+      "tier": "live",
+      "status": "fail",
+      "issue": 627,
+      "note": "One routed run answered from the stream as if the file could not be read although the tool result carried the marker; the translated continuation body was exact and the cause is not established.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/627"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "5be713f6d5c3311d020dedb53306ca5acdd036de",
+        "runner": "manual",
+        "detail": "single routed Pi Chat -> Messages observation, HTTP 200",
+        "cost": {
+          "usd": null,
+          "source": "not_recorded",
+          "scope": "run"
+        }
+      }
+    },
+    {
+      "id": "langgraph-chat-same-dialect-stream",
+      "client": "langgraph",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0,
+        1,
+        2,
+        3,
+        5
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "langgraph-chat-same-dialect-parallel",
+      "client": "langgraph",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls"
+      ],
+      "depths": [
+        1
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "langgraph-chat-to-responses-stream",
+      "client": "langgraph",
+      "surface": "openai-chat",
+      "upstream": "openai-responses",
+      "path": "chat_to_responses",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "langgraph-chat-to-messages-stream",
+      "client": "langgraph",
+      "surface": "openai-chat",
+      "upstream": "anthropic-messages",
+      "path": "chat_to_messages",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "No LangGraph Chat -> Anthropic Messages cell exists. The only such client evidence is the Pi live observation tracked in #627, and it covers a different client.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "openai-agents-chat-same-dialect-stream",
+      "client": "openai-agents",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0,
+        1,
+        2,
+        3,
+        5
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "openai-agents-chat-same-dialect-parallel",
+      "client": "openai-agents",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls"
+      ],
+      "depths": [
+        1
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "openai-agents-chat-same-dialect-strict-json",
+      "client": "openai-agents",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "strict_json",
+        "tool_call"
+      ],
+      "depths": [
+        0,
+        1,
+        3
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "openai-agents-chat-to-responses-strict-json",
+      "client": "openai-agents",
+      "surface": "openai-chat",
+      "upstream": "openai-responses",
+      "path": "chat_to_responses",
+      "features": [
+        "streaming",
+        "strict_json",
+        "tool_call"
+      ],
+      "depths": [
+        0
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "openai-agents-chat-to-messages-stream",
+      "client": "openai-agents",
+      "surface": "openai-chat",
+      "upstream": "anthropic-messages",
+      "path": "chat_to_messages",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "No OpenAI Agents SDK Chat -> Anthropic Messages cell exists; the #539 translation gaps are closed but no client cell was added for this direction.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/api-compatibility-live.md#scope-and-evidence"
+      }
+    },
+    {
+      "id": "claude-code-messages-same-dialect-stream",
+      "client": "claude-code",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "claude-code-messages-same-dialect-thinking-cache",
+      "client": "claude-code",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call",
+        "thinking",
+        "cache_control"
+      ],
+      "depths": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "claude-code-messages-to-chat-stream",
+      "client": "claude-code",
+      "surface": "anthropic-messages",
+      "upstream": "openai-chat",
+      "path": "messages_to_chat",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "claude-code-messages-same-dialect-thinking-live",
+      "client": "claude-code",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "thinking",
+        "cache_control",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "The thinking and cache cells use synthetic blocks. Live provider signatures, cache behaviour and thinking continuity for Claude Code were not run on a recorded commit with a recorded cost.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/tool-call-proof.md#limits"
+      }
+    },
+    {
+      "id": "codex-responses-same-dialect-stream",
+      "client": "codex",
+      "surface": "openai-responses",
+      "upstream": "openai-responses",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "depths": [
+        0,
+        1,
+        2,
+        3,
+        5
+      ],
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "ci",
+        "ref": ".github/workflows/agent-tool-compat.yml"
+      }
+    },
+    {
+      "id": "codex-responses-to-chat-stream",
+      "client": "codex",
+      "surface": "openai-responses",
+      "upstream": "openai-chat",
+      "path": "responses_to_chat",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "No Codex cell runs through a Responses-to-Chat bridged target; bridge tool shapes are only covered by router unit and HTTP tests.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs/CODING_AGENT_E2E_MATRIX.md#production-smoke-matrix"
+      }
+    },
+    {
+      "id": "codex-responses-provider-hosted-tools",
+      "client": "codex",
+      "surface": "openai-responses",
+      "upstream": "openai-responses",
+      "path": "same-dialect",
+      "features": [
+        "provider_hosted_tools"
+      ],
+      "tier": "unsupported",
+      "status": "unsupported",
+      "doc": "docs-site/docs/reference/api-compatibility.md#tool-calls",
+      "note": "Codex runs with web_search disabled because provider-hosted tool descriptors are rejected before dispatch with 400 provider-hosted-tools-forbidden.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "tests/agent_compat/README.md#current-coverage-and-limits"
+      }
+    },
+    {
+      "id": "openai-sdk-chat-same-dialect-tools",
+      "client": "openai-sdk",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "suite": "chat_completions_tools",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "openai-sdk-chat-same-dialect-tools-stream",
+      "client": "openai-sdk",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "suite": "chat_completions_tools_stream",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "openai-sdk-chat-to-responses-tools",
+      "client": "openai-sdk",
+      "surface": "openai-chat",
+      "upstream": "openai-responses",
+      "path": "chat_to_responses",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "The pinned OpenAI SDK tester is run per dialect; no SDK-tester cell sends Chat tool calls to a Responses upstream. Client-level bridge evidence exists only for the agent clients.",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "openai-sdk-chat-to-messages-tools",
+      "client": "openai-sdk",
+      "surface": "openai-chat",
+      "upstream": "anthropic-messages",
+      "path": "chat_to_messages",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "No recorded per-suite tools classification exists for this lane on a pinned commit; the full-capability live lanes publish supported-suite pass counts, not per-suite tool results.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/api-compatibility-live.md#latest-final-sha-live-gate"
+      }
+    },
+    {
+      "id": "openai-sdk-responses-same-dialect-tools",
+      "client": "openai-sdk",
+      "surface": "openai-responses",
+      "upstream": "openai-responses",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "suite": "responses_tools",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "openai-sdk-responses-same-dialect-tools-stream",
+      "client": "openai-sdk",
+      "surface": "openai-responses",
+      "upstream": "openai-responses",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "suite": "responses_tools_stream",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "openai-sdk-responses-to-chat-tools",
+      "client": "openai-sdk",
+      "surface": "openai-responses",
+      "upstream": "openai-chat",
+      "path": "responses_to_chat",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "The pinned OpenAI SDK tester is not run through a Responses-to-Chat bridge target; that direction is covered only by router HTTP tests.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/api-compatibility-live.md#scope-and-evidence"
+      }
+    },
+    {
+      "id": "anthropic-sdk-messages-same-dialect-tools",
+      "client": "anthropic-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "suite": "messages_tools",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "anthropic-sdk-messages-same-dialect-tools-stream",
+      "client": "anthropic-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "tool_call"
+      ],
+      "suite": "messages_tools_stream",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "anthropic-sdk-messages-same-dialect-thinking",
+      "client": "anthropic-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "thinking"
+      ],
+      "suite": "messages_thinking",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "anthropic-sdk-messages-same-dialect-cache",
+      "client": "anthropic-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "cache_control"
+      ],
+      "suite": "messages_prompt_cache",
+      "tier": "mock",
+      "status": "pass",
+      "evidence": {
+        "kind": "code",
+        "ref": "scripts/compat_mock.py"
+      }
+    },
+    {
+      "id": "anthropic-sdk-messages-to-chat-tools",
+      "client": "anthropic-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "openai-chat",
+      "path": "messages_to_chat",
+      "features": [
+        "streaming",
+        "tool_call",
+        "thinking"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Anthropic thinking is not translated across dialects and the historical limited config rejected these shapes before dispatch; no pinned per-suite tools cell exists for this lane.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/reference/api-compatibility.md#cross-dialect-reasoning-limits"
+      }
+    },
+    {
+      "id": "parallel-gate-chat-direct",
+      "client": "parallel-gate",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "live",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "direct provider call, three tool calls in turn 1, out-of-order results in turn 2",
+        "cost": {
+          "usd": null,
+          "source": "provider_invoiced",
+          "scope": "cell"
+        }
+      }
+    },
+    {
+      "id": "parallel-gate-chat-through-router",
+      "client": "parallel-gate",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "live",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "routed through the router, same shape as the direct cell",
+        "cost": {
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
+      }
+    },
+    {
+      "id": "parallel-gate-chat-to-messages",
+      "client": "parallel-gate",
+      "surface": "openai-chat",
+      "upstream": "anthropic-messages",
+      "path": "chat_to_messages",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "live",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "Chat caller to Messages target through the router",
+        "cost": {
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
+      }
+    },
+    {
+      "id": "parallel-gate-chat-to-responses",
+      "client": "parallel-gate",
+      "surface": "openai-chat",
+      "upstream": "openai-responses",
+      "path": "chat_to_responses",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "The parallel gate ran same-dialect and the two cross-dialect directions to and from Messages; Chat to Responses parallel calls are not part of it.",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      }
+    },
+    {
+      "id": "parallel-gate-messages-direct",
+      "client": "parallel-gate",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "live",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "direct provider call, three tool_use blocks in turn 1",
+        "cost": {
+          "usd": null,
+          "source": "provider_invoiced",
+          "scope": "cell"
+        }
+      }
+    },
+    {
+      "id": "parallel-gate-messages-through-router",
+      "client": "parallel-gate",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "live",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "routed through the router, same shape as the direct cell",
+        "cost": {
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
+      }
+    },
+    {
+      "id": "parallel-gate-messages-to-chat",
+      "client": "parallel-gate",
+      "surface": "anthropic-messages",
+      "upstream": "openai-chat",
+      "path": "messages_to_chat",
+      "features": [
+        "streaming",
+        "parallel_calls",
+        "tool_call"
+      ],
+      "tier": "live",
+      "status": "pass",
+      "evidence": {
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
+      },
+      "live": {
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "Messages caller to Chat target through the router",
+        "cost": {
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
+      }
+    }
+  ],
+  "router_cells": [
+    {
+      "id": "router-bedrock-media-in-tool-result",
+      "area": "Bedrock Converse tool-result translation",
+      "features": [
+        "media_in_tool_result",
+        "tool_call"
+      ],
+      "tier": "unit",
+      "status": "fail",
+      "issue": 694,
+      "note": "Image, document and audio parts inside a Chat role:tool result are dropped by contentToText; no Bedrock endpoint was called.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/694"
+      }
+    },
+    {
+      "id": "router-reasoning-with-tools-chat",
+      "area": "eligibility: reasoning with tools per dialect",
+      "features": [
+        "thinking",
+        "tool_call"
+      ],
+      "tier": "unsupported",
+      "status": "unsupported",
+      "doc": "docs-site/docs/reference/api-compatibility.md#known-limitation-reasoning-with-tools-on-chat-completions",
+      "note": "Declared as a known limitation: a Chat-dialect reasoning model may reject reasoning with tools and the caller sees upstream-rejected. Fail-closed capability declaration is #703.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/703"
+      }
+    }
+  ],
+  "limits": [
+    "A mock cell proves a client and the router exchange the expected shapes against a scripted upstream; it does not prove live provider behaviour for the same request.",
+    "A live row is one recorded run on the named commit, not a pass rate; the parallel gate is a two-turn HTTP probe, not a named client library run.",
+    "Combinations and depth values that are not listed are untested, never passing.",
+    "Provider-hosted tools are rejected before dispatch with 400 provider-hosted-tools-forbidden by contract; no cell claims them as supported.",
+    "Costs come from the router's usage rows at configured list prices or from the provider's own bill; they are not invoices unless the row says so, and a run-scoped cost is not a per-cell attribution.",
+    "opencode and aider have no cell; their fixtures verify a workload, not a real client tool loop.",
+    "Nightly live automation is not enabled yet because the required Actions secrets do not exist (issue #572), so no cell is updated on a schedule."
+  ]
+}
