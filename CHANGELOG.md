@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in `strategy: tool_aware` model groups with a `tool_routing` block. In
+  `mode: observe` (the default) every other behaviour is unchanged: the router
+  decodes the upstream's tool calls, validates them against the caller's
+  arguments (JSON, the documented basic JSON-Schema subset, tool names and a
+  forced `tool_choice`), records the first failure class per attempt, and keeps
+  windowed reliability counters per target. `mode: enforce` adds one
+  same-target retry and bounded escalation to the next eligible target when a
+  call fails validation, stops at the request deadline and the effective spend
+  ceiling, bills discarded attempts to the request's usage and quota, and
+  delivers the last response unchanged when the budget is spent. Groups without
+  the block never run this code. See `docs/TOOL_AWARE_ROUTING.md` (#436).
+
+### Added
+
 - Direct-provider differential canary (evaluation layer ARCH-05 of #330): fixed,
   locally checked probes sent to an exact provider/model and to the same model
   pinned through the router, with a report that reuses the evaluation report

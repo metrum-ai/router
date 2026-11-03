@@ -429,10 +429,13 @@ type ModelGroup struct {
 	ScriptHTTP          ScriptHTTPConfig         `yaml:"script_http"`
 	ExternalPolicy      ExternalPolicyConfig     `yaml:"external_policy"`
 	IntelligentRouting  IntelligentRoutingConfig `yaml:"intelligent_routing"`
-	RoutingPolicy       RoutingPolicyConfig      `yaml:"routing_policy"`
-	Contract            *ModelGroupContract      `yaml:"contract" json:"contract,omitempty"`
-	PIIFilter           PIIFilterConfig          `yaml:"pii_filter"`
-	ContentCapture      ContentCaptureConfig     `yaml:"content_capture"`
+	// ToolRouting opts a `tool_aware` group into tool-call validation telemetry.
+	// It is inert (and rejected) on every other strategy.
+	ToolRouting    ToolRoutingConfig    `yaml:"tool_routing" json:"toolRouting,omitempty"`
+	RoutingPolicy  RoutingPolicyConfig  `yaml:"routing_policy"`
+	Contract       *ModelGroupContract  `yaml:"contract" json:"contract,omitempty"`
+	PIIFilter      PIIFilterConfig      `yaml:"pii_filter"`
+	ContentCapture ContentCaptureConfig `yaml:"content_capture"`
 	// SpendCeiling optionally caps semantic/dynamic_score escalation for this group.
 	// Weighted and other strategies ignore it. Merge with caller spend_ceiling when both set.
 	SpendCeiling     SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling,omitempty"`
@@ -716,6 +719,123 @@ type IntelligentDecisionModel struct {
 	Provider string `yaml:"provider" json:"provider"`
 	ModelRef string `yaml:"model_ref" json:"modelRef"`
 	Dialect  string `yaml:"dialect" json:"dialect"`
+}
+
+// ToolRoutingConfig is the opt-in policy for `strategy: tool_aware`. The zero
+// value means "not configured", so no group changes behaviour by default.
+//
+// This release ships observe mode only: validation results are recorded in the
+// request log, and routing order stays the configured weight order. Scoring,
+// retries and escalation arrive with their own reviewed change (#436 slice C).
+type ToolRoutingConfig struct {
+	Mode          string                    `yaml:"mode" json:"mode,omitempty"`
+	ColdStart     string                    `yaml:"cold_start" json:"coldStart,omitempty"`
+	MinSamples    int                       `yaml:"min_samples" json:"minSamples,omitempty"`
+	WindowSeconds int                       `yaml:"window_seconds" json:"windowSeconds,omitempty"`
+	Validate      ToolRoutingValidateConfig `yaml:"validate" json:"validate,omitempty"`
+}
+
+// ToolRoutingValidateConfig selects which checks run on a decoded response.
+// Pointers keep "unset" distinct from an explicit false so defaults can change
+// without silently flipping a deployment.
+type ToolRoutingValidateConfig struct {
+	ArgumentsJSON     *bool  `yaml:"arguments_json" json:"argumentsJson,omitempty"`
+	Schema            string `yaml:"schema" json:"schema,omitempty"`
+	NameMustBeOffered *bool  `yaml:"name_must_be_offered" json:"nameMustBeOffered,omitempty"`
+}
+
+const (
+	toolRoutingModeObserve   = "observe"
+	toolRoutingModeEnforce   = "enforce"
+	toolRoutingColdStart     = "configured_weight"
+	toolRoutingDefaultMinObs = 20
+	toolRoutingMaxMinObs     = 1000
+	toolRoutingMaxWindowSec  = 86400
+)
+
+func toolRoutingEmpty(c ToolRoutingConfig) bool {
+	return c.Mode == "" && c.ColdStart == "" && c.MinSamples == 0 && c.WindowSeconds == 0 &&
+		c.Validate.ArgumentsJSON == nil && c.Validate.Schema == "" && c.Validate.NameMustBeOffered == nil
+}
+
+// configured reports whether a group opted in. Callers use it as the single
+// guard on the tool-aware path.
+func (c ToolRoutingConfig) configured() bool {
+	return !toolRoutingEmpty(c)
+}
+
+// mode returns the effective mode: observe unless configured otherwise.
+func (c ToolRoutingConfig) mode() string {
+	if c.Mode == "" {
+		return toolRoutingModeObserve
+	}
+	return strings.ToLower(strings.TrimSpace(c.Mode))
+}
+
+func (c ToolRoutingConfig) minSamples() int {
+	if c.MinSamples <= 0 {
+		return toolRoutingDefaultMinObs
+	}
+	return c.MinSamples
+}
+
+func (c ToolRoutingConfig) windowSeconds() int {
+	if c.WindowSeconds <= 0 {
+		return defaultToolRoutingWindowSeconds
+	}
+	return c.WindowSeconds
+}
+
+func (c ToolRoutingConfig) validationOptions() toolValidationOptions {
+	options := toolValidationOptions{ArgumentsJSON: true, Schema: toolSchemaModeBasic, NameMustBeOffered: true}
+	if c.Validate.ArgumentsJSON != nil {
+		options.ArgumentsJSON = *c.Validate.ArgumentsJSON
+	}
+	if schema := strings.ToLower(strings.TrimSpace(c.Validate.Schema)); schema != "" {
+		options.Schema = schema
+	}
+	if c.Validate.NameMustBeOffered != nil {
+		options.NameMustBeOffered = *c.Validate.NameMustBeOffered
+	}
+	return options
+}
+
+func validateToolRouting(name, strategy string, c ToolRoutingConfig) error {
+	if !c.configured() {
+		if strings.EqualFold(strategy, "tool_aware") {
+			return fmt.Errorf("model group %s uses tool_aware strategy but has no tool_routing block", name)
+		}
+		return nil
+	}
+	if !strings.EqualFold(strategy, "tool_aware") {
+		return fmt.Errorf("model group %s configures tool_routing but does not use tool_aware strategy", name)
+	}
+	switch c.mode() {
+	case toolRoutingModeObserve:
+	case toolRoutingModeEnforce:
+		// Enforce needs the reliability store and the bounded recovery path, which
+		// are not in this release. Refusing it keeps the config honest.
+		return fmt.Errorf("model group %s tool_routing mode enforce is not available yet; use observe", name)
+	default:
+		return fmt.Errorf("model group %s tool_routing mode must be observe (enforce is not available yet)", name)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.ColdStart)) {
+	case "", toolRoutingColdStart:
+	default:
+		return fmt.Errorf("model group %s tool_routing cold_start must be %s", name, toolRoutingColdStart)
+	}
+	if c.MinSamples < 0 || c.MinSamples > toolRoutingMaxMinObs {
+		return fmt.Errorf("model group %s tool_routing min_samples must be between 0 and %d", name, toolRoutingMaxMinObs)
+	}
+	if c.WindowSeconds < 0 || c.WindowSeconds > toolRoutingMaxWindowSec {
+		return fmt.Errorf("model group %s tool_routing window_seconds must be between 0 and %d", name, toolRoutingMaxWindowSec)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Validate.Schema)) {
+	case "", toolSchemaModeOff, toolSchemaModeBasic:
+	default:
+		return fmt.Errorf("model group %s tool_routing validate.schema must be off or basic", name)
+	}
+	return nil
 }
 
 type Target struct {
@@ -1563,6 +1683,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			if err := validateDynamicScorePolicy(name, m.RoutingPolicy.DynamicScore); err != nil {
 				return err
 			}
+		}
+		if err := validateToolRouting(name, m.Strategy, m.ToolRouting); err != nil {
+			return err
 		}
 		if strings.EqualFold(m.Strategy, "intelligent") {
 			if err := validateIntelligentRoutingPolicy(name, m.IntelligentRouting, c.Provider); err != nil {

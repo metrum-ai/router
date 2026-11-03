@@ -175,6 +175,8 @@ type attemptLogRecord struct {
 	RetryAfterMS     int64                          `json:"retry_after_ms,omitempty"`
 	ReasoningTokens  *int                           `json:"reasoning_tokens,omitempty"`
 	ErrorDetails     []upstreamErrorDetailLogRecord `json:"error_details,omitempty"`
+	// ToolValidation is set only for groups with a tool_routing block.
+	ToolValidation *toolValidationLogRecord `json:"tool_validation,omitempty"`
 }
 
 type upstreamErrorDetailLogRecord struct {
