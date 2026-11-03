@@ -114,3 +114,52 @@ PostgreSQL serving, several hosts, real provider usage, network partitions,
 provider tokenizers, or concurrent migrations, and it is not a universal
 overspend bound. PostgreSQL runs, the cloud-hosted variant and the complete
 #573 acceptance are still open.
+
+## Dedicated-node runs: SQLite and PostgreSQL (2026-11-03)
+
+- Harness commit `708cdb3e26` (static binaries from the same commit).
+- Nodes: one dedicated load-generator droplet (Intel Xeon Platinum 8358, 8 vCPU,
+  16 GiB) and one dedicated PostgreSQL droplet (same CPU class, 8 vCPU,
+  `postgres:18-bookworm`); the synthetic upstream runs on the load generator and
+  the routers run as local processes there, so router and load generator share
+  one node in this run (the per-hop runs use separate nodes).
+- Backend: SQLite (`auto-safe` migration, throwaway file) and PostgreSQL 18
+  (reviewed gate: `apply` -> `historical-usage-validation-v1` checkpoint 0 ->
+  `verify-serving`).
+- Raw reports: `router / v47-package / 587`, snapshot `bb4aed02` (same evidence
+  bundle).
+- Result: 37 of 37 harness checks pass on SQLite and 37 of 37 on PostgreSQL
+  (across the two PostgreSQL invocations), $0 hosted cost.
+
+| Scenario | SQLite | PostgreSQL |
+|---|---|---|
+| sustained (70 s, 16 workers) | highest rolling 60 s window 5,980 tokens against a 6,000 TPM limit; 598 admitted, 215/s peak | same: 5,980 / 6,000; 598 admitted |
+| auth | 401 / 401 / 403 for missing / wrong / disabled; 2 upstream calls; per-key attribution exact | 20/20 checks across auth, cancel, PII |
+| cancel | cancelled after 2 events; 15 tokens settled as `estimated`; slot released | same |
+| pii-failover | 16 primary failures -> 16 fallback deliveries; no raw PII anywhere; 16 `pii_filter_applied` rows | 8 -> 8, no raw PII, 8 rows |
+| dollar-budget | $0.010692 actual against a $0.01 budget: 6.92% overspend | $0.010746: 7.46% overspend |
+| crash-restart | restart in 0.90 s; 3,880 of 4,000 tokens settled; 194 of 199 admitted rows kept | restart in 3.11 s (PostgreSQL reconnect); 3,880 of 4,000; 194 of 199 |
+| multiprocess | 2 processes, 1.98x the per-process budget; each state file accurate (1,980 + 1,980) | same 1.98x; usage rows shared in PostgreSQL |
+
+What the dedicated-node runs add to the local picture:
+
+- The Postgres path needs the full reviewed gate. `router-migrate --action apply`
+  alone leaves the ledger at `state=pending`, and a router with
+  `migration_policy: deployment-job` then refuses to serve. The harness now runs
+  apply -> data job -> verify-serving, and that is what a deployment must do.
+- Crash recovery is slower on PostgreSQL (3.1 s vs 0.9 s) because the router
+  reconnects, but the quota continuity and row-loss behaviour are the same: the
+  quota state is a per-process file, so the counters survive while the async
+  usage writer can lose the last rows.
+- The multiprocess budget multiplication and the shared-state-file lost update
+  are properties of the quota-store design, not of the database: they reproduce
+  identically on PostgreSQL.
+
+### Limits of these runs
+
+One dedicated node ran both the router processes and the load generator, so the
+latency figures here are not the per-hop latency evidence (that run has separate
+nodes). The upstream is the same synthetic fixture, the models are not real
+providers, and the runs are bounded windows rather than a soak. PostgreSQL was a
+single instance on one node: no replication, failover or lock contention from
+other writers.
