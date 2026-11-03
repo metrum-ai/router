@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason's `candidate_index` is the position of the target in the group's
   `targets` list (#716).
 
+- Add the dormant `response_affinity` usage table in schema 12 as the
+  foundation for owner-bound stored Responses. It stores only keyed lookup and
+  token fingerprints, protected upstream ids, the exact provider/account/model
+  identity, tenant/project/environment and local lifecycle metadata, with
+  uniqueness scoped to the owner domain; it has no bearer-token, prompt or
+  response-content column. The migration enables no stored Responses endpoint,
+  writes no rows and changes no request behavior: stored Responses affinity
+  stays off by default and is enabled per model group only by later reviewed
+  changes. Back up before the migration gate and restore a pre-upgrade backup
+  to downgrade (#665).
+
 ## [4.6.0] - 2026-11-02
 
 Security, PII and tool-compatibility release. No usage-database migration is
