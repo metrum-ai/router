@@ -329,6 +329,20 @@ models:
           type: disabled
 ```
 
+### Anthropic Count Tokens
+
+`count_tokens` (default `true`) declares whether an Anthropic Messages target's upstream implements `POST /v1/messages/count_tokens`. Set it to `false` for a target or gateway that serves Messages but has no count endpoint, such as an Anthropic-compatible proxy with a reduced surface. The router then never calls that endpoint for the target and answers `count_tokens` requests from its local estimate, marked `X-Metrum-Usage-Source: estimated`; caller-visible error text is unchanged. An undeclared target whose count endpoint returns `404` without a provider-typed error body is handled the same way, so a gateway that lacks the route does not turn a Claude Code compaction check into an `upstream-rejected` failure. A `404` carrying the provider's own typed `not_found_error` — an unknown or misconfigured model — keeps its `404 upstream-rejected` class instead of becoming an estimate. Other provider statuses keep their own classes (`401`/`429` as provider 4xx, `5xx` as `502 upstream-failed`).
+
+```yaml
+models:
+  deployment-defined-group:
+    targets:
+      - provider: anthropic-compatible-gateway
+        model: provider/claude-model
+        dialect: anthropic
+        count_tokens: false
+```
+
 Responses targets use `max_output_tokens`; Anthropic Messages targets use `max_tokens`. Store output-cap quirks as target metadata, for example `min_requested_output_tokens`, `honors_max_tokens: false`, or `output_token_field: max_completion_tokens`, so tiny caller caps can be forwarded, translated, or filtered consistently. A model that supports reasoning with realistic budgets may still reject or exhaust tiny caps; document that as a cap behavior caveat rather than as broad reasoning failure.
 
 ## Reasoning And Thinking
