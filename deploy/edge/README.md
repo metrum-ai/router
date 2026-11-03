@@ -44,14 +44,56 @@ tar -xzf "metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"   # yields bin/
 ```
 
 `--bin-dir` takes that extracted `bin/` directory; it must contain
-`metrum-ai-router`, `metrum-ai-routerctl` and `metrum-ai-router-migrate`. The
-docker path instead needs a router image through `--router-image`.
+`metrum-ai-router`, `metrum-ai-routerctl` and `metrum-ai-router-migrate`.
 
-The bundle files and the release are separately versioned: these scripts read the
-router's own configuration and command-line surface, which has not changed across
-4.6.x and 4.7.x, but nothing pins that for you. Record the release tag and the
-commit you cloned in your run notes, and if you download individual files with
-`curl` instead of cloning, pin the commit in the URL rather than using `main`.
+### The router image for docker mode
+
+**No container image is published**: releases ship binary archives only (checked
+anonymously against Docker Hub and GHCR, 2026-11-03). Docker mode therefore needs an
+image you build yourself from public inputs, and there are two ways to do it. Run the
+build inside the extracted package directory, whose `bin/` holds static binaries.
+
+*Wrap the release binaries* — seconds, no toolchain:
+
+```dockerfile
+# Dockerfile.router
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates
+COPY metrum-ai-router-<version>-linux-<arch>/bin/ /app/bin/
+COPY metrum-ai-router-<version>-linux-<arch>/LICENSE metrum-ai-router-<version>-linux-<arch>/NOTICE /app/
+WORKDIR /app
+USER 65532:65532
+ENTRYPOINT ["/app/bin/metrum-ai-router"]
+```
+
+```sh
+docker build -f Dockerfile.router -t metrum-ai-router:<version>-linux-<arch> .
+```
+
+Keep `ca-certificates`: the router calls HTTPS upstreams, including the escalation
+provider, and a scratch image without them fails those calls.
+
+*Build the shipped Dockerfile* — the canonical image, including the bundled docs site
+and admin UI, needs Go and Node, which the Dockerfile's builder stage supplies:
+
+```sh
+git clone https://github.com/metrum-ai/router && cd router
+git checkout <tag>                    # the release tag you are deploying
+docker build --build-arg VERSION=<tag> --build-arg COMMIT=<sha> \
+  --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -t metrum-ai-router:<tag>-linux-amd64 .
+```
+
+Either way, pass that tag to `--router-image` and record its image id in your run
+notes.
+
+The bundle files and the release are separately versioned. What is known today: the
+bundle scripts in this directory were exercised end to end against **v4.6.0** (an
+unassisted install and demo by an outside agent, see the reference run notes) and the
+4.7.x tree is what the reference deployments use. Older or newer releases are not
+claimed. Pin both sides in your run notes — the release tag and the commit you cloned
+— and if you download individual files with `curl` instead of cloning, pin the commit
+in the URL rather than using `main`.
 
 ## Two modes
 
@@ -146,9 +188,14 @@ to the router container. For a real provider, put the key in that file under
 `${OPENAI_API_KEY}` — and recreate the router so it re-reads it:
 
 ```sh
-sudoedit <data-dir>/secrets/env      # OPENAI_API_KEY='sk-...'
-docker compose --env-file <data-dir>/secrets/env \
-  -f <data-dir>/compose/compose.yaml -f <data-dir>/compose/compose.amd.yaml \
+DATA_DIR="${HOME}/metrum-edge"          # the --data-dir you installed with
+sudoedit "$DATA_DIR/secrets/env"        # OPENAI_API_KEY='sk-...'
+
+# install.env records the accelerator and the paths, so this works on either vendor
+. "$DATA_DIR/install.env"
+docker compose --env-file "$EDGE_ENV_FILE" \
+  -f "$EDGE_DATA_DIR/compose/compose.yaml" \
+  -f "$EDGE_DATA_DIR/compose/compose.${EDGE_ACCELERATOR}.yaml" \
   up -d --no-deps --force-recreate router
 ```
 
@@ -208,7 +255,7 @@ export EDGE_TINY_UTILIZATION=0.16
 sudo -E bash install.sh --router-image metrum-ai-router:<version>-linux-amd64
 ```
 
-| Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests at 8K |
+| Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests at 8K (computed, not measured) |
 |---|---|---|---|---|---|---|
 | `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.16 | 7.7 GB | 1.3 GiB | 1 |
 | `local-chat` | Qwen3-8B | 16.4 GB | 0.82 | 39.4 GB | 20.0 GiB | 17 |
