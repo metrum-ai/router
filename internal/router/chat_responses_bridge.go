@@ -80,7 +80,7 @@ func encodeChatToResponsesBridge(model string, req *IRRequest, target Target, pr
 		"stream": req != nil && req.Stream,
 	}
 	if req != nil {
-		if instructions := chatInstructions(req); instructions != "" {
+		if instructions := targetInstruction(req, "openai-chat", "openai-responses"); instructions != "" {
 			body["instructions"] = instructions
 		}
 		if req.MaxTokens > 0 {

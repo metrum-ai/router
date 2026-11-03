@@ -120,7 +120,7 @@ func (s *Service) handleResponsesInputTokens(w http.ResponseWriter, r *http.Requ
 		addRouterWarningHeaders(w.Header(), ad.WarningText)
 		rc.rec.Warnings = append(rc.rec.Warnings, ad.WarningText)
 	}
-	pii, err := applyPIIFilter(req, group.PIIFilter)
+	pii, err := applyPIIFilter(req, group.PIIFilter, "openai-responses")
 	if err != nil {
 		var blocked piiFilterBlockedError
 		if errors.As(err, &blocked) {

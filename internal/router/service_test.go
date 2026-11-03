@@ -13591,8 +13591,8 @@ func TestFallbackAttributesServingTargetPricingCostsCacheAndObservations(t *test
 			if err != nil {
 				t.Fatal(err)
 			}
-			primaryKey := cacheKey(decoded, Target{Provider: "mock", Model: "primary-expensive"}, "alice", "metrum-insights")
-			fallbackKey := cacheKey(decoded, Target{Provider: "mock", Model: "fallback-cheap"}, "alice", "metrum-insights")
+			primaryKey := targetCacheKey(decoded, svc.cfg.Provider["mock"], Target{Provider: "mock", Model: "primary-expensive"}, "alice", "metrum-insights", "openai-chat")
+			fallbackKey := targetCacheKey(decoded, svc.cfg.Provider["mock"], Target{Provider: "mock", Model: "fallback-cheap"}, "alice", "metrum-insights", "openai-chat")
 			if _, ok := svc.cache.Get(primaryKey); ok {
 				t.Fatal("fallback response stored under failed primary cache key")
 			}
