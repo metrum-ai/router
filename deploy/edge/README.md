@@ -8,7 +8,8 @@ Installs, in one command:
 - the **router** (`metrum-ai-router`, operator-supplied image);
 - a **local model stack** on official upstream images, sized for a Strix Halo
   class box (128 GB unified memory) and pinned by digest;
-- the **default model groups** `local-tiny`, `local-chat` and `escalate`;
+- the **default model groups** `local-tiny`, `local-chat` and `escalate` (three;
+  a reference tier that adds `local-coder` has four);
 - the **escalation path** to any OpenAI-compatible endpoint (frontier API or a
   datacenter router) with the operator's own key;
 - the **admin UI and spend reports** at `/admin/reports/`;
@@ -24,6 +25,34 @@ Everything lives under `--data-dir` (default `$HOME/metrum-edge`):
 `config/config.yaml` (groups), `secrets/` (tokens and environment, mode 0600),
 `state/` (usage database), `logs/`, `compose/`, `install.env`.
 
+## Get the bundle
+
+Everything is public, and the installer does not fetch anything for you:
+
+```sh
+# the bundle files (no build step; they are scripts and manifests)
+git clone --depth 1 https://github.com/metrum-ai/router
+cd router/deploy/edge
+
+# the router binaries: an official release archive, not a container image
+ARCH=amd64                       # or arm64
+VERSION=v4.6.0                   # pin one; record it in your run notes
+curl -fLO "https://github.com/metrum-ai/router/releases/download/${VERSION}/metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"
+curl -fLO "https://github.com/metrum-ai/router/releases/download/${VERSION}/SHA256SUMS"
+sha256sum -c --ignore-missing SHA256SUMS
+tar -xzf "metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"   # yields bin/
+```
+
+`--bin-dir` takes that extracted `bin/` directory; it must contain
+`metrum-ai-router`, `metrum-ai-routerctl` and `metrum-ai-router-migrate`. The
+docker path instead needs a router image through `--router-image`.
+
+The bundle files and the release are separately versioned: these scripts read the
+router's own configuration and command-line surface, which has not changed across
+4.6.x and 4.7.x, but nothing pins that for you. Record the release tag and the
+commit you cloned in your run notes, and if you download individual files with
+`curl` instead of cloning, pin the commit in the URL rather than using `main`.
+
 ## Two modes
 
 | Mode | What runs | Use it for |
@@ -31,9 +60,12 @@ Everything lives under `--data-dir` (default `$HOME/metrum-edge`):
 | `--mode docker` (default) | vLLM model servers in containers on the GPU, the router in a container | the real deployment |
 | `--mode native` | the router binary plus three **CPU mock upstreams**; no containers, no GPU | evaluation, air-gapped trials, CI install test |
 
-Native mode's upstreams are a scripted OpenAI-compatible mock. They prove the
-install path, group routing, quotas and reports; they produce no model output and
-are not quality or performance evidence. Native mode also refuses to upgrade
+Native mode's upstreams are a scripted OpenAI-compatible mock, including the third
+one behind `escalate`: the demo's escalation step exercises routing, group
+separation and reporting, and **it does not leave the box or call a provider**, no
+matter what key or `--escalation-url` you supply. Native mode proves the install
+path, group routing, quotas, budgets and reports; it produces no model output, and
+its token counts and costs are mock arithmetic rather than inference or billing. Native mode also refuses to upgrade
 (`upgrade.sh`) because there is no managed image to replace.
 
 ## Hardware bill of materials
@@ -105,6 +137,26 @@ for each; a skip is not a pass, and the script exits non-zero if anything failed
 | 2. escalation | `escalate` leaves the box through the operator's endpoint; without a usable key it fails closed with an upstream error (`upstream-access-denied` for a rejected key, `upstream-rejected` when no key is sent) instead of quietly answering locally |
 | 3. budget hit | the `demo-budget` caller is refused with `429 quota-exhausted` once its day request budget is spent |
 | 4. spend report | `routerctl usage summary` prints tokens and cost from the router's own usage rows, with the escalation spend separable from the on-box groups |
+
+## Supplying the escalation key (docker mode)
+
+The bundle writes its secret environment to `secrets/env` (mode 0600) and passes it
+to the router container. For a real provider, put the key in that file under
+**`OPENAI_API_KEY`** — the rendered configuration's escalation provider reads
+`${OPENAI_API_KEY}` — and recreate the router so it re-reads it:
+
+```sh
+sudoedit <data-dir>/secrets/env      # OPENAI_API_KEY='sk-...'
+docker compose --env-file <data-dir>/secrets/env \
+  -f <data-dir>/compose/compose.yaml -f <data-dir>/compose/compose.amd.yaml \
+  up -d --no-deps --force-recreate router
+```
+
+`--escalation-key-env NAME` changes which variable the *renderer* points the
+provider at; it does not create the variable. If you set that flag, the same name
+is what you must put in `secrets/env`. A missing key leaves the group failing
+closed with an upstream error, which is the intended behaviour — never a silent
+local answer. (Native mode ignores all of this: its escalation target is a mock.)
 
 ## Upgrade and uninstall
 
@@ -181,7 +233,7 @@ checklist instead of claiming the result. Observer checklist:
 | 1 | Read only this README | No questions needed to start | — |
 | 2 | `install.sh` with the router image and the box's key | Ends with "Edge bundle installed" | ≤ 20 min (weights already cached) |
 | 3 | `demo.sh` | Four PASS lines, or SKIP with the escalation key missing | ≤ 5 min |
-| 4 | Admin UI at `/admin/reports/` | Report page renders with the four groups | ≤ 5 min |
+| 4 | Admin UI at `/admin/reports/` | Report page renders with the three groups | ≤ 5 min |
 | 5 | One real request through the local group from the engineer's own client | Answer returns, usage row appears | ≤ 10 min |
 | 6 | `upgrade.sh --config-only` then `demo.sh` | Router ready again, demo passes | ≤ 10 min |
 | 7 | `uninstall.sh`, then reinstall | Data kept, reinstall reuses tokens | ≤ 10 min |

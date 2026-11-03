@@ -98,11 +98,19 @@ fi
 echo
 
 # 2. escalation --------------------------------------------------------------
-echo "2. escalation off the box"
+if [ "${EDGE_MODE:-docker}" = "native" ]; then
+  echo "2. escalation group (native mode: answered by a loopback mock, not a provider)"
+else
+  echo "2. escalation off the box"
+fi
 ask "$DEMO_TOKEN" escalate "In one sentence, when should a task leave a local model?"
 if [ "$STATUS" = "200" ]; then
   pass "escalate answered in ${ELAPSED}s from ${EDGE_ESCALATION_BASE_URL}"
-  note "reports keep this as its own group, so off-box spend is separable"
+  if [ "${EDGE_MODE:-docker}" = "native" ]; then
+    note "native mode substitutes a loopback mock for escalation: routing and reporting are proven, a provider call is not"
+  else
+    note "reports keep this as its own group, so off-box spend is separable"
+  fi
 elif printf '%s' "$(head -c 400 "$BODY_FILE")" | grep -qi 'upstream'; then
   # The router reports a provider-side refusal (missing key, rejected key,
   # unreachable endpoint) as an upstream error. That is the fail-closed path: the
@@ -169,7 +177,11 @@ if [ -n "$report" ]; then
   else
     skip "report generated but had no local-chat group rows after ${attempt} attempt(s); see ${report_file}"
   fi
-  note "on-box groups carry zero price by default: the GPU is already paid for"
+  if [ "${EDGE_MODE:-docker}" = "native" ]; then
+    note "on-box groups carry zero price by default; token counts here come from mocks, not from model inference"
+  else
+    note "on-box groups carry zero price by default: the GPU is already paid for"
+  fi
   note "escalate rows carry the contract price from ${EDGE_CONFIG}"
 fi
 echo

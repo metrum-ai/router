@@ -501,9 +501,15 @@ write_install_env() {
 }
 
 summary() {
+  local MODE_MODE_LINE
+  if [ "$MODE" = "native" ]; then
+    MODE_MODE_LINE="native mode: router plus CPU mock upstreams (no accelerator, no containers)"
+  else
+    MODE_MODE_LINE="docker mode: $ACCELERATOR model servers in containers"
+  fi
   cat <<EOF
 
-Edge bundle installed ($MODE mode, $ACCELERATOR model servers).
+Edge bundle installed ($MODE_MODE_LINE).
 
   router            $BASE_URL
   admin UI          $BASE_URL/admin/reports/   (user: admin)
