@@ -142,6 +142,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled these routes keep the documented `501 unsupported_endpoint` behavior
   (#533).
 
+- `POST /v1/responses/{id}/cancel` is served for enabled affinity groups with
+  the same owner, expiry and target checks as the other stored-response
+  operations, forwarding the cancellation to the pinned provider account and
+  recording the local `cancelled` state. Unknown, expired and other-caller ids
+  keep returning the same 404 before any upstream call; affinity disabled keeps
+  the documented `501 unsupported_endpoint` behavior (#533).
+
+- Stored Responses affinity metadata now follows the retention policy: enabling
+  the feature requires `server.retention` to be on, a `responses_affinity`
+  retention class is provided (defaulting to the configured local TTL, 30 days)
+  and the existing retention job purges expired affinity rows in bounded
+  batches. Legal holds on that class block deletion by their time range, and the
+  expiry check still makes a row unusable as soon as its local TTL passes.
+  Releasing a hold makes the row eligible again; neither expiry nor purge claims
+  upstream deletion (#533).
+
 ## [4.6.0] - 2026-11-02
 
 Security, PII and tool-compatibility release. No usage-database migration is
