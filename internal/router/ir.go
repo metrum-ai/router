@@ -54,16 +54,21 @@ type IRContentPart struct {
 
 type IRResponse struct {
 	anthropicStreamUsage map[string]any
-	ID                   string            `json:"id"`
-	Model                string            `json:"model"`
-	Text                 string            `json:"text"`
-	StopReason           string            `json:"stop_reason"`
-	Usage                Usage             `json:"usage"`
-	Raw                  map[string]any    `json:"raw,omitempty"`
-	RawResponse          bool              `json:"raw_response,omitempty"`
-	Streamed             bool              `json:"-"`
-	Warnings             []string          `json:"warnings,omitempty"`
-	Headers              map[string]string `json:"headers,omitempty"`
+	ID                   string         `json:"id"`
+	Model                string         `json:"model"`
+	Text                 string         `json:"text"`
+	StopReason           string         `json:"stop_reason"`
+	Usage                Usage          `json:"usage"`
+	Raw                  map[string]any `json:"raw,omitempty"`
+	RawResponse          bool           `json:"raw_response,omitempty"`
+	Streamed             bool           `json:"-"`
+	// ToolCalls is the normalized tool-call view of this response. It is decoded
+	// for routing reliability and validation only; caller bytes are always built
+	// from Raw, never from this field.
+	ToolCalls          []IRToolCall      `json:"-"`
+	ToolCallsTruncated bool              `json:"-"`
+	Warnings           []string          `json:"warnings,omitempty"`
+	Headers            map[string]string `json:"headers,omitempty"`
 }
 
 type Usage struct {

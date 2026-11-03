@@ -660,6 +660,7 @@ func decodeUpstreamResponse(dialect string, raw []byte, model string) (*IRRespon
 		return nil, err
 	}
 	resp := &IRResponse{Model: model, Raw: m}
+	resp.ToolCalls, resp.ToolCallsTruncated = truncatedToolCalls(toolCallsFromResponse(dialect, m))
 	switch dialect {
 	case "anthropic":
 		if parts, ok := m["content"].([]any); ok {
@@ -769,6 +770,7 @@ func decodeResponsesPassthrough(raw []byte, model string) (*IRResponse, error) {
 		return nil, err
 	}
 	resp := &IRResponse{Model: model, Raw: m, RawResponse: true}
+	resp.ToolCalls, resp.ToolCallsTruncated = truncatedToolCalls(toolCallsFromResponse("openai-responses", m))
 	resp.ID = stringValue(m["id"])
 	resp.Text = stringValue(m["output_text"])
 	if resp.Text == "" {
@@ -787,6 +789,7 @@ func decodeChatPassthrough(raw []byte, model string) (*IRResponse, error) {
 		return nil, err
 	}
 	resp := &IRResponse{Model: model, Raw: m, RawResponse: true}
+	resp.ToolCalls, resp.ToolCallsTruncated = truncatedToolCalls(toolCallsFromResponse("openai-chat", m))
 	resp.ID = stringValue(m["id"])
 	if choices, ok := m["choices"].([]any); ok && len(choices) > 0 {
 		if ch, ok := choices[0].(map[string]any); ok {
@@ -809,6 +812,7 @@ func decodeAnthropicPassthrough(raw []byte, model string) (*IRResponse, error) {
 		return nil, err
 	}
 	resp := &IRResponse{Model: model, Raw: m, RawResponse: true}
+	resp.ToolCalls, resp.ToolCallsTruncated = truncatedToolCalls(toolCallsFromResponse("anthropic", m))
 	resp.ID = stringValue(m["id"])
 	resp.Text = textFromContentParts(valueAsSlice(m["content"]))
 	resp.StopReason = stringValue(m["stop_reason"])
