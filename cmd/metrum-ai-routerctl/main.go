@@ -606,10 +606,23 @@ func callersCommand(args []string) {
 		tokenOut := fs.String("token-out", "", "new mode-0600 token file; must not already exist")
 		configPath := fs.String("config", "", "optional config to merge hashed caller into")
 		writeCfg := fs.Bool("write", false, "merge hashed caller into --config")
+		replaceCfg := fs.Bool("replace", false, "with --write, replace an existing caller that has the same id")
 		hashFormat, hashIterations := addTokenHashFlags(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*tokenOut) == "" {
 			die("token-out is required")
+		}
+		if *replaceCfg && !*writeCfg {
+			die("--replace requires --write")
+		}
+		// Load the target config before minting so a broken or missing config
+		// cannot leave a token file behind for a caller that was never written.
+		var cfg *router.Config
+		if *writeCfg {
+			if strings.TrimSpace(*configPath) == "" {
+				die("--write requires --config")
+			}
+			cfg = loadConfigRaw(*configPath)
 		}
 		generated, err := router.GenerateCallerToken(router.TokenGenerateOptions{
 			OwnerUser: *owner, Project: *project, Environment: *environment, KeySlug: *key, Allow: splitCSV(*allow),
@@ -618,19 +631,37 @@ func callersCommand(args []string) {
 		if err != nil {
 			die("generate caller token: %v", err)
 		}
+		// Callers are credentials: a silently replaced entry invalidates a token
+		// another process already holds (#755). Refuse before writing anything.
+		if *writeCfg && !*replaceCfg {
+			for _, existing := range cfg.Callers {
+				if existing.ID == generated.Caller.ID {
+					die("caller %q already exists in %s; refusing to replace its credential (pass --replace to replace that caller, or a distinct --owner-user/--project/--env for a separate caller)", generated.Caller.ID, *configPath)
+				}
+			}
+		}
 		if err := writeNewPrivateFile(*tokenOut, []byte(generated.Token+"\n")); err != nil {
 			die("write token: %v", err)
 		}
 		activation := "configuration-controller-required"
 		backup := ""
+		callerAction := ""
 		if *writeCfg {
-			if strings.TrimSpace(*configPath) == "" {
-				die("--write requires --config")
-			}
-			cfg := loadConfigRaw(*configPath)
 			smartrouterctl.EnsureAccountDirectory(cfg, generated.Caller.OwnerUser, generated.Caller.Project)
-			if err := smartrouterctl.MergeCaller(cfg, generated.Caller); err != nil {
+			if *replaceCfg {
+				replaced, err := smartrouterctl.UpsertCaller(cfg, generated.Caller)
+				if err != nil {
+					die("replace caller: %v", err)
+				}
+				if replaced {
+					callerAction = "replaced"
+				} else {
+					callerAction = "added"
+				}
+			} else if err := smartrouterctl.MergeCaller(cfg, generated.Caller); err != nil {
 				die("merge caller: %v", err)
+			} else {
+				callerAction = "added"
 			}
 			backup, err = smartrouterctl.WriteConfigAtomic(*configPath, cfg)
 			if err != nil {
@@ -646,6 +677,9 @@ func callersCommand(args []string) {
 		}
 		if backup != "" {
 			out["config_backup"] = filepath.Base(backup)
+		}
+		if callerAction != "" {
+			out["caller_action"] = callerAction
 		}
 		writeJSON(out)
 	case "revoke":

@@ -2574,7 +2574,9 @@ callers:
 # Each caller id, token_hash, and non-empty token_id must be unique.
 # token_hash is a salted PBKDF2-HMAC-SHA3-512 verifier in the self-describing
 # form pbkdf2-sha3-512:i=<iterations>:<salt>:<key>; generate it with
-# `metrum-ai-routerctl callers generate` (new token) or `callers hash`
+# `metrum-ai-routerctl callers generate` (new token; with `--config --write` it
+# merges by caller id and refuses an existing id unless `--replace` is also given)
+# or `callers hash`
 # (existing token). token_hash requires token_id, and one caller's token_id
 # must not be an underscore-delimited prefix of another's. The deprecated
 # token_sha256 (unsalted SHA-256 hex) still works but logs a startup warning;

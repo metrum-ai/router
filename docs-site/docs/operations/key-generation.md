@@ -60,6 +60,29 @@ Callers see only allowed groups when they call `/v1/models`. See [Available Mode
 
 Generate a new router token, add its hashed caller entry to config, reload or restart the router, then move clients to the new token and mark the old caller token `status: rotated` before deleting it from active config. Reports continue to use the public token IDs and caller IDs captured on historical rows.
 
+**Re-minting the same caller needs `--replace` (behaviour change for scripts).** A
+caller id is `<owner-user>-<project>-<env>`, so minting again for the same owner,
+project and environment targets a caller that already exists. `callers generate
+--config … --write` now refuses that and exits with an error instead of replacing
+the existing caller; add `--replace` to re-mint and rotate that caller's verifier
+on purpose. There are two supported shapes:
+
+```bash
+# rotate the verifier of one existing caller (replaces that caller only)
+metrum-ai-routerctl callers generate --owner-user ops --project p --env run \
+  --key k2 --allow local-tiny --config config.yaml --write --replace \
+  --token-out ops-p-run-k2.token
+
+# add a separate caller instead (distinct id, existing callers untouched)
+metrum-ai-routerctl callers generate --owner-user ops --project p-budget --env run \
+  --key k1 --allow local-tiny --config config.yaml --write \
+  --token-out ops-p-budget-run-k1.token
+```
+
+A script that re-mints the same id without `--replace` fails loudly rather than
+silently invalidating a token another process already holds. Prefer `callers
+rotate --id <caller-id>` when the goal is only to roll that caller's token.
+
 To suspend access without deleting history, set the caller token `status: suspended`, `disabled`, `expired`, or `rotated` and restart or reload the deployment. Disabling a user, project, or project membership should be done by removing or correcting active caller-token references first, because config validation requires active account references for all enabled caller tokens.
 
 After each issue, rotation, or disablement, ask the caller to run `/v1/models`. That response is the source of truth for the model groups the caller token can request.
@@ -71,9 +94,16 @@ Generating a token is not the same as activating it.
 - **Self-hosted / file-owned installs:** use `metrum-ai-routerctl callers generate`
   (or `router-token-gen`) to create a mode-`0600` token file. Pass `--config` with
   `--write` to merge the hashed caller into local `config.yaml`, then reload or
-  restart the router. Use `callers rotate` to replace the hash and emit a new token
-  file, or `callers revoke` to disable a caller. The CLI never activates config on a
-  remote managed hostname or signs licenses.
+  restart the router. `--write` adds the caller next to the existing ones: the
+  caller id is `<owner-user>-<project>-<env>`, so a second mint for the same
+  owner, project and environment collides with the first, and the command refuses
+  rather than replacing a credential another process may already hold. Pass
+  `--replace` (with `--write`) to replace that one caller's entry with the minted
+  defaults deliberately, or use a
+  distinct `--owner-user`, `--project` or `--env` for a separate caller. Use
+  `callers rotate` to replace the hash and emit a new token file, or `callers
+  revoke` to disable a caller. The CLI never activates config on a remote managed
+  hostname or signs licenses.
 
 Never paste raw tokens, token hashes, or provider keys into tickets, chat, or public docs. Distribute the raw token once over an approved channel, then confirm access with `/v1/models`.
 
