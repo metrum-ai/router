@@ -313,6 +313,15 @@ capability-smoke-unit: capability-smoke-contracts
 capability-smoke-live:
 	@$(PYTHON) scripts/provider_capability_smoke.py live
 
+# Edge bundle (#432): renders a real deployment, installs it in native mode
+# against CPU mock upstreams, runs the demo (local-first, escalation, budget hit,
+# spend report) and exercises upgrade-plan/uninstall. No accelerator, no
+# container runtime, and no network beyond the module cache.
+.PHONY: test-edge-bundle
+test-edge-bundle:
+	bash -n deploy/edge/install.sh deploy/edge/demo.sh deploy/edge/upgrade.sh deploy/edge/uninstall.sh
+	uv run --with pyyaml python deploy/edge/test/install_e2e.py
+
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
 
 # Offline gate for nvidia-local-serving blueprint + Kustomize overlay.
@@ -415,6 +424,7 @@ ci-python: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
+	$(MAKE) test-edge-bundle
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
 	$(PYTHON) scripts/tool_compat_matrix_test.py
