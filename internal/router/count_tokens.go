@@ -68,11 +68,10 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	rc.rec.Strategy = group.Strategy
 	s.applyServingTargetRecord(rc, target)
 	// Bedrock uses a different CountTokens protocol; do not send an Anthropic
-	// HTTP endpoint or provider credentials to an unsupported transport.
-	if targetDialect(provider, target) != "anthropic" || isBedrock(provider) {
-		w.Header().Set("X-Metrum-Usage-Source", "estimated")
-		writeJSON(w, http.StatusOK, map[string]any{"input_tokens": estimateTokens(req)})
-		s.finish(rc, http.StatusOK, nil)
+	// HTTP endpoint or provider credentials to an unsupported transport. A
+	// target can also declare that its upstream has no count endpoint (#714).
+	if !targetServesCountTokens(provider, target) {
+		s.writeEstimatedCountTokens(w, rc, req)
 		return
 	}
 	body, err = countTokensModelBody(body, target.Model)
@@ -144,6 +143,17 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	if retry := resp.Header.Get("Retry-After"); retry != "" {
 		w.Header().Set("Retry-After", retry)
 	}
+	if resp.StatusCode == http.StatusNotFound && !anthropicTypedNotFoundError(data) {
+		// A gateway can serve Messages without implementing count_tokens (#714)
+		// and answers with a plain missing-route body. A count is advisory and
+		// free, so answer with the router's local estimate and mark it as
+		// estimated. The provider's own typed not_found_error (an unknown or
+		// misconfigured model) is a real routing failure and keeps the class
+		// below instead of being masked by an estimate.
+		rc.trace("count_tokens_upstream_unsupported", "upstream does not implement count_tokens; served a local estimate", target, 0, http.StatusOK, "", false, 0)
+		s.writeEstimatedCountTokens(w, rc, req)
+		return
+	}
 	if resp.StatusCode >= 400 {
 		// Count-token errors are still caller-facing Anthropic errors. Preserve
 		// provider 4xx status, but never forward a body that may echo secrets.
@@ -167,4 +177,48 @@ func (s *Service) serveCountTokens(w http.ResponseWriter, r *http.Request, rc *r
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(data)
 	s.finish(rc, resp.StatusCode, nil)
+}
+
+// targetServesCountTokens reports whether the router should call the target's
+// native Anthropic count endpoint. Bedrock uses a different CountTokens
+// protocol, non-Anthropic transports have no such endpoint, and a target can
+// declare count_tokens: false when its upstream (often a gateway) serves
+// Messages without implementing the count endpoint (#714).
+func targetServesCountTokens(provider ProviderConfig, target Target) bool {
+	if targetDialect(provider, target) != "anthropic" || isBedrock(provider) {
+		return false
+	}
+	return target.CountTokens == nil || *target.CountTokens
+}
+
+// anthropicTypedNotFoundError reports whether an upstream 404 body is the
+// Anthropic API's own typed error envelope, for example an unknown or
+// misconfigured model:
+//
+//	{"type":"error","error":{"type":"not_found_error","message":"..."}}
+//
+// A gateway that has no count route answers with an untyped body such as
+// {"error":{"message":"Not Found","code":404}}, which this reports as false so
+// the caller still gets a usable estimate (#714).
+func anthropicTypedNotFoundError(body []byte) bool {
+	var envelope struct {
+		Type  string `json:"type"`
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(envelope.Type), "error") &&
+		strings.EqualFold(strings.TrimSpace(envelope.Error.Type), "not_found_error")
+}
+
+// writeEstimatedCountTokens answers a count request with the router's local
+// estimate and marks the source so callers can tell an estimate apart from a
+// provider-reported count.
+func (s *Service) writeEstimatedCountTokens(w http.ResponseWriter, rc *requestContext, req *IRRequest) {
+	w.Header().Set("X-Metrum-Usage-Source", "estimated")
+	writeJSON(w, http.StatusOK, map[string]any{"input_tokens": estimateTokens(req)})
+	s.finish(rc, http.StatusOK, nil)
 }

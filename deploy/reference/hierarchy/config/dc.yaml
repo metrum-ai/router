@@ -1,0 +1,134 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Datacenter tier of the layered deployment reference (#434).
+# Owns the frontier credentials, accepts the edge router's token as a caller,
+# and records its own usage rows. Cache stays off: the edge is the nearest safe
+# cache.
+server:
+  listen: 0.0.0.0:8080
+  default_model_group: dc-frontier
+  identifiers:
+    mode: rewrite
+    transform:
+      current:
+        key_id: ${ROUTER_ID_TRANSFORM_KEY_ID}
+        key: ${ROUTER_ID_TRANSFORM_KEY}
+  cache:
+    enabled: false
+  logging:
+    path: ${DC_LOG_PATH}
+    rotate_mb: 256
+    keep: 7
+  usage_db:
+    enabled: true
+    driver: ${DC_USAGE_DRIVER}
+    path: ${DC_USAGE_PATH}
+    dsn: ${DC_USAGE_DSN}
+    migration_policy: deployment-job
+    drain_timeout_ms: 10000
+  diagnostics:
+    enabled: true
+    retention_days: 14
+    store_sanitized_upstream_errors: true
+    max_error_bytes: 2048
+  upstream:
+    max_router_hops: ${MAX_ROUTER_HOPS}
+    timeout_ms: ${DC_UPSTREAM_TIMEOUT_MS}
+    max_response_bytes: 33554432
+
+state_path: ${DC_STATE_PATH}
+
+providers:
+  # Terminal hop: a hosted frontier API or a self-hosted vLLM/SGLang endpoint.
+  # The demo stack points this at the loopback frontier fixture.
+  frontier:
+    base_url: ${FRONTIER_BASE_URL}
+    dialect: openai-chat
+    auth_scheme: bearer
+    api_key: ${FRONTIER_API_KEY}
+    key_id: frontier
+    models:
+      # A quoted key: an unquoted environment reference at line start is not
+      # valid YAML, so the key is quoted.
+      "${FRONTIER_MODEL}":
+        model: ${FRONTIER_MODEL}
+        input_price_per_million_usd: ${FRONTIER_INPUT_PRICE_USD_PER_MTOK}
+        output_price_per_million_usd: ${FRONTIER_OUTPUT_PRICE_USD_PER_MTOK}
+        pricing_source: ${FRONTIER_PRICING_SOURCE}
+        pricing_updated_at: "${FRONTIER_PRICING_UPDATED_AT}"
+        input_modalities: [text]
+        output_modalities: [text]
+
+  # The edge is reachable from the datacenter tier so a request can loop back
+  # for edge-local models; this is also how the loop-protection check drives a
+  # real cycle. Give it its own model namespace.
+  edge_loopback:
+    base_url: ${EDGE_ROUTER_URL}
+    dialect: openai-chat
+    auth_scheme: bearer
+    api_key: ${DC_LOOPBACK_TOKEN}
+    key_id: edge-loopback
+    upstream_kind: router
+    models:
+      edge-loop-demo:
+        model: edge-loop-demo
+
+models:
+  dc-frontier:
+    strategy: static
+    targets:
+      - provider: frontier
+        model_ref: ${FRONTIER_MODEL}
+
+  # Deliberate cycle for the loop-protection check. The edge has a matching
+  # `edge-loop-demo` group that routes back here, so a request bounces until
+  # the hop limit answers 508.
+  loop-demo:
+    strategy: static
+    targets:
+      - provider: edge_loopback
+        model_ref: edge-loop-demo
+
+users:
+  - id: ${DC_OWNER_USER}
+    name: Datacenter Operations
+    type: service_account
+    status: active
+
+projects:
+  - id: ${DC_PROJECT}
+    name: Datacenter Production
+    status: active
+
+project_memberships:
+  - user_id: ${DC_OWNER_USER}
+    project: ${DC_PROJECT}
+    role: admin
+    status: active
+
+callers:
+  # The edge router authenticates here with its own token. Its usage rows are
+  # therefore attributable to the edge hop, not to the original caller.
+  - id: ${DC_CALLER_ID}
+    owner_user: ${DC_OWNER_USER}
+    project: ${DC_PROJECT}
+    environment: ${DC_ENVIRONMENT}
+    status: active
+    token_hash: "${DC_CALLER_TOKEN_HASH}"
+    token_id: ${DC_CALLER_TOKEN_ID}
+    allow: [dc-frontier, loop-demo]
+    rate:
+      rpm: ${DC_CALLER_RPM}
+      tpm: ${DC_CALLER_TPM}
+      concurrent: ${DC_CALLER_CONCURRENT}
+    quota:
+      day:
+        requests: 0
+        tokens: 0
+      month:
+        tokens: 0
+      soft_pct: 80
+    key:
+      lifetime_tokens: 0
+      soft_pct: 0

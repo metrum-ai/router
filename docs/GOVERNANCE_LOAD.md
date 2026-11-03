@@ -52,3 +52,114 @@ accounting, retries, PII filtering, exports, or cost-denominated budgets.
 PostgreSQL and SQLite-backed acceptance, mixed streamed/unary requests, PII
 and audit-export load tests, release security findings and the complete
 overspend-bound analysis remain open under #431.
+
+# Shipped-binary governance harness (#573)
+
+`benchmarks/governance-load/` extends the bounded in-process evidence above by
+starting real `metrum-ai-router` processes with PBKDF2 caller tokens, driving
+HTTP load against a deterministic loopback OpenAI-Chat upstream, and reading the
+usage and security-access rows back from the configured store. It covers
+sustained limits, current authentication, PII on streaming/retry/failover paths,
+cancelled-stream settlement, dollar-budget conversion, crash/restart and several
+router processes. It runs with SQLite or PostgreSQL. `make governance-load-v47`
+runs every scenario locally against SQLite; see the harness README for the
+Postgres invocation and the scenario inventory.
+
+This is a local dry run with synthetic usage, not the complete #573 acceptance
+evidence. It makes no hosted calls and costs $0.
+
+## Local dry run
+
+- Date: 2026-11-02 UTC.
+- Router: `1d6fc8b0a6` (harness commit; no product code changed by it).
+- Host: AMD Ryzen 7 7730U, 16 visible CPUs, Linux x86_64; Go 1.27.3.
+- Backend: SQLite (`auto-safe` migration), loopback upstream returning synthetic
+  usage of 12 prompt + 8 completion tokens (240 for the dollar-budget case).
+- Command: `make governance-load-v47` (duration 70 s, 16 workers).
+- Result: 37 of 37 harness checks pass, $0 hosted cost.
+
+| Scenario | Measurement |
+|---|---|
+| sustained | 11,960 tokens settled in 73.4 s; highest rolling 60 s window 5,980 tokens against a 6,000 TPM limit; peak 214 admitted requests/s; 35,704 rejections, all `tpm-exceeded`; admitted p50 44 ms, p99 840 ms |
+| auth | missing token 401, wrong secret 401, disabled caller 403, both valid callers 200; 2 upstream calls total; 2 `api_auth_failed` audit rows; per-key `caller_id`/`token_id` attribution exact |
+| cancel | stream cancelled after 2 events (TCP reset); cancelled request settled 15 tokens as `usage_source=estimated` with status 499; the concurrency slot was released (second attempt admitted after a first 429) |
+| pii-failover | 16 requests, 16 primary failures, 16 fallback deliveries; no raw email or phone in either upstream, the request log or the usage rows; 16 `pii_filter_applied` rows with placeholders at the upstream |
+| dollar-budget | $0.01 budget as a 44,400-token budget; 198 admitted; actual list-price cost $0.010692, a 6.92% overspend, when the upstream reports 240 tokens against a local estimate of about 20 |
+| crash-restart | `SIGKILL` after 80 admitted requests, restart in 0.90 s; then admitted until `quota-exhausted`; 3,920 of a 4,000-token day budget settled; 196 of 199 admitted requests have usage rows (async writer lost 3) |
+| multiprocess | 2 processes, 2,000-token budget each: 198 admitted / 3,960 tokens, 1.98× the per-process budget; each process's own state file is accurate (1,980 + 1,980). With one shared state path the same 3,960 tokens settle but the persisted counter reads 1,980 |
+
+## What changed in the picture
+
+- The TPM limit is a rolling-window allowance, not a smooth refill: the whole
+  minute allowance can be admitted in the first seconds, and a client that keeps
+  retrying sees only rejections until the window frees capacity.
+- A dollar budget is a token budget at a pinned price. There is no cumulative
+  USD budget control. Overspend comes from settlement above the local
+  reservation estimate, and is bounded by the number of reservations in flight
+  when the budget boundary is crossed: 7.46% here with 16 in flight.
+- The quota state is one JSON file per process. Two processes multiply the
+  configured budget (1.98× for two), and sharing the file makes the persisted
+  counter understate spend because the last writer wins. Run one state file per
+  process, and use PostgreSQL for accounting across replicas.
+- Async usage persistence is best effort: a `SIGKILL` lost 3 of 199 admitted
+  rows while the quota counters stayed correct.
+- Rejected requests also write usage rows; the sustained run wrote more than
+  35,000 rows for rejections, which is a real write-amplification cost of
+  auditing every rejection.
+
+## Limits
+
+This is a single-host SQLite run with a synthetic upstream. It does not cover
+PostgreSQL serving, several hosts, real provider usage, network partitions,
+provider tokenizers, or concurrent migrations, and it is not a universal
+overspend bound. PostgreSQL runs, the cloud-hosted variant and the complete
+#573 acceptance are still open.
+
+## Dedicated-node runs: SQLite and PostgreSQL (2026-11-03)
+
+- Harness commit `708cdb3e26` (static binaries from the same commit).
+- Nodes: one dedicated load-generator droplet (Intel Xeon Platinum 8358, 8 vCPU,
+  16 GiB) and one dedicated PostgreSQL droplet (same CPU class, 8 vCPU,
+  `postgres:18-bookworm`); the synthetic upstream runs on the load generator and
+  the routers run as local processes there, so router and load generator share
+  one node in this run (the per-hop runs use separate nodes).
+- Backend: SQLite (`auto-safe` migration, throwaway file) and PostgreSQL 18
+  (reviewed gate: `apply` -> `historical-usage-validation-v1` checkpoint 0 ->
+  `verify-serving`).
+- Raw reports: `router / v47-package / 587`, snapshot `bb4aed02` (same evidence
+  bundle).
+- Result: 37 of 37 harness checks pass on SQLite and 37 of 37 on PostgreSQL
+  (across the two PostgreSQL invocations), $0 hosted cost.
+
+| Scenario | SQLite | PostgreSQL |
+|---|---|---|
+| sustained (70 s, 16 workers) | highest rolling 60 s window 5,980 tokens against a 6,000 TPM limit; 598 admitted, 215/s peak | same: 5,980 / 6,000; 598 admitted |
+| auth | 401 / 401 / 403 for missing / wrong / disabled; 2 upstream calls; per-key attribution exact | 20/20 checks across auth, cancel, PII |
+| cancel | cancelled after 2 events; 15 tokens settled as `estimated`; slot released | same |
+| pii-failover | 16 primary failures -> 16 fallback deliveries; no raw PII anywhere; 16 `pii_filter_applied` rows | 8 -> 8, no raw PII, 8 rows |
+| dollar-budget | $0.010692 actual against a $0.01 budget: 6.92% overspend | $0.010746: 7.46% overspend |
+| crash-restart | restart in 0.90 s; 3,880 of 4,000 tokens settled; 194 of 199 admitted rows kept | restart in 3.11 s (PostgreSQL reconnect); 3,880 of 4,000; 194 of 199 |
+| multiprocess | 2 processes, 1.98x the per-process budget; each state file accurate (1,980 + 1,980) | same 1.98x; usage rows shared in PostgreSQL |
+
+What the dedicated-node runs add to the local picture:
+
+- The Postgres path needs the full reviewed gate. `router-migrate --action apply`
+  alone leaves the ledger at `state=pending`, and a router with
+  `migration_policy: deployment-job` then refuses to serve. The harness now runs
+  apply -> data job -> verify-serving, and that is what a deployment must do.
+- Crash recovery is slower on PostgreSQL (3.1 s vs 0.9 s) because the router
+  reconnects, but the quota continuity and row-loss behaviour are the same: the
+  quota state is a per-process file, so the counters survive while the async
+  usage writer can lose the last rows.
+- The multiprocess budget multiplication and the shared-state-file lost update
+  are properties of the quota-store design, not of the database: they reproduce
+  identically on PostgreSQL.
+
+### Limits of these runs
+
+One dedicated node ran both the router processes and the load generator, so the
+latency figures here are not the per-hop latency evidence (that run has separate
+nodes). The upstream is the same synthetic fixture, the models are not real
+providers, and the runs are bounded windows rather than a soak. PostgreSQL was a
+single instance on one node: no replication, failover or lock contention from
+other writers.

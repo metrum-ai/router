@@ -21,7 +21,9 @@ Every directory has **the same file set**:
 
 `scripts/check_reference_configs.py` enforces the file set, the image policy, the
 README sections, the digest pins and a valid router configuration. It runs in CI
-(`make test-reference-configs`).
+(`make test-reference-configs`). It owns the directories that ship an
+`images.lock` (or a `SIZING.md`); any other directory under this one — an
+experiment, a matrix, a scratch area — is outside the contract and is left alone.
 
 ## Tiers
 
