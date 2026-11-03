@@ -85,6 +85,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller it refused. Previously a second mint for the same owner, project and
   environment silently replaced the first caller, so the earlier token started
   answering `401` (#755).
+  **Behaviour change for scripts:** re-minting a caller with the same
+  `<owner-user>-<project>-<env>` id, for example to rotate its key, now requires
+  `--replace`; without it the command exits with an error and changes nothing.
+  Use `--replace` to rotate that one caller, a distinct
+  `--owner-user`/`--project`/`--env` to add a separate caller, or
+  `callers rotate --id …` when only the verifier should change.
 - `POST /v1/messages/count_tokens` no longer surfaces `404 upstream-rejected`
   when a gateway has no count route. An upstream `404` whose body is not the
   provider's own typed `not_found_error` is answered with the router's local
