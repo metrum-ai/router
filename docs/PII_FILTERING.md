@@ -15,11 +15,12 @@ Metrum AI Router supports model-group-level PII filtering through `models.<group
 
 ## Modes
 
-- `redact_only`: replace configured matches with placeholders before upstream calls.
-- `redact_and_restore`: redact before upstream and restore placeholders in buffered downstream text responses. Same-dialect native OpenAI Chat and Anthropic Messages streams preserve placeholders in caller-visible SSE; the router does not buffer native streams or attempt unsafe per-chunk restoration when a placeholder may span upstream chunks.
+- `redact_only`: replace configured matches with placeholders before upstream calls. This is the only redacting mode that passes validation.
 - `fail_on_match`: reject matching requests before target selection and upstream calls.
 
 `fail_on_match: true` forces blocking behavior regardless of mode.
+
+Restoration is not configurable. Startup validation rejects `mode: redact_and_restore` and any explicit `restore_response` value with `F-011: pii-filter-redact-and-restore-unsupported` (`validatePIIFilter` in `internal/router/config.go`), so placeholders are caller-visible on every path, buffered and streaming. The restore code path (`piiRestoreEnabled`, `restorePIIPlaceholders`) and the `pii-response-restoration-skipped-native-stream` warning remain in the tree but cannot be reached from a validated configuration; the router never buffers native streams to restore placeholders that may span upstream chunks. Lifting F-011 is tracked separately and requires the canonical instruction and cache-identity work plus an independent security review.
 
 When a request would exceed `max_replacements_per_request`, the router fails closed with `pii-filter-blocked` before selecting or calling an upstream target. The limit is not a fail-open truncation control; raise the configured cap only after testing that logs, diagnostics, policy payloads, and upstream requests still contain placeholders rather than raw matched values.
 
@@ -47,7 +48,7 @@ Before rollout:
 5. Confirm usage DB, JSONL logs, diagnostics, and metrics contain only safe metadata.
 6. Confirm TypeScript payload captures contain placeholders in `ctx.request.raw`, not raw matched values. For external policies, confirm the default payload omits request mirrors; if `external_policy.include_request: true` is approved, confirm external policy `request` and `text` contain placeholders.
 7. Confirm PII-enabled requests bypass response-cache reads and writes, including when a matching entry already exists.
-8. Confirm same-dialect native Chat and Messages streams preserve placeholders, record `pii-response-restoration-skipped-native-stream`, and do not expose raw matched values.
+8. Confirm same-dialect native Chat and Messages streams return placeholders to the caller and do not expose raw matched values. Restoration is unreachable while F-011 rejects `redact_and_restore` and `restore_response`, so a configuration that sets either must fail startup.
 9. Confirm requests over `max_replacements_per_request` return `pii-filter-blocked` and make no upstream attempt.
 
 ## Limitations

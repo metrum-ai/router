@@ -428,6 +428,7 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
+	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
@@ -439,6 +440,7 @@ ci-python: secret-contract capability-smoke-contracts
 	$(MAKE) test-reference-configs
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
+	$(PYTHON) scripts/tool_compat_matrix_test.py
 	$(PYTHON) scripts/ci_changes_test.py
 
 .PHONY: ci-examples
@@ -463,6 +465,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/api_compat_bootstrap_test.py
 	"$${MAKE:-make}" harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
+	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
@@ -725,6 +728,8 @@ docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
 	python3 scripts/check_docs_origin.py
 	python3 scripts/validate_docs_versioning.py
 	python3 scripts/check_docs_sidebar.py
+	python3 scripts/tool_compat_matrix_test.py
+	python3 scripts/tool_compat_matrix.py --check
 	go run ./cmd/docs-config-example-check
 
 docs-build: docs-qa
