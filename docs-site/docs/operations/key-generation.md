@@ -71,9 +71,16 @@ Generating a token is not the same as activating it.
 - **Self-hosted / file-owned installs:** use `metrum-ai-routerctl callers generate`
   (or `router-token-gen`) to create a mode-`0600` token file. Pass `--config` with
   `--write` to merge the hashed caller into local `config.yaml`, then reload or
-  restart the router. Use `callers rotate` to replace the hash and emit a new token
-  file, or `callers revoke` to disable a caller. The CLI never activates config on a
-  remote managed hostname or signs licenses.
+  restart the router. `--write` adds the caller next to the existing ones: the
+  caller id is `<owner-user>-<project>-<env>`, so a second mint for the same
+  owner, project and environment collides with the first, and the command refuses
+  rather than replacing a credential another process may already hold. Pass
+  `--replace` (with `--write`) to replace that one caller's entry with the minted
+  defaults deliberately, or use a
+  distinct `--owner-user`, `--project` or `--env` for a separate caller. Use
+  `callers rotate` to replace the hash and emit a new token file, or `callers
+  revoke` to disable a caller. The CLI never activates config on a remote managed
+  hostname or signs licenses.
 
 Never paste raw tokens, token hashes, or provider keys into tickets, chat, or public docs. Distribute the raw token once over an approved channel, then confirm access with `/v1/models`.
 

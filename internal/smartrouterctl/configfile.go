@@ -142,19 +142,44 @@ func UpsertModelGroup(cfg *router.Config, name, strategy string, targets []route
 	return nil
 }
 
-// MergeCaller inserts or replaces a caller by ID.
+// MergeCaller appends a caller whose ID is not present and refuses to touch an
+// existing one. Callers are credentials: replacing a caller silently would
+// invalidate a token another process already holds (issue #755). Use
+// UpsertCaller for an explicit replacement.
 func MergeCaller(cfg *router.Config, caller router.CallerConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config is required")
+	}
 	if strings.TrimSpace(caller.ID) == "" {
 		return fmt.Errorf("caller id is required")
 	}
-	for i, existing := range cfg.Callers {
+	for _, existing := range cfg.Callers {
 		if existing.ID == caller.ID {
-			cfg.Callers[i] = caller
-			return nil
+			return fmt.Errorf("caller %q already exists; pass --replace to replace that caller", caller.ID)
 		}
 	}
 	cfg.Callers = append(cfg.Callers, caller)
 	return nil
+}
+
+// UpsertCaller inserts or replaces a caller by ID and leaves every other caller
+// untouched. Callers that replace an existing entry are an explicit operator
+// choice, so only the named entry changes.
+func UpsertCaller(cfg *router.Config, caller router.CallerConfig) (replaced bool, err error) {
+	if cfg == nil {
+		return false, fmt.Errorf("config is required")
+	}
+	if strings.TrimSpace(caller.ID) == "" {
+		return false, fmt.Errorf("caller id is required")
+	}
+	for i, existing := range cfg.Callers {
+		if existing.ID == caller.ID {
+			cfg.Callers[i] = caller
+			return true, nil
+		}
+	}
+	cfg.Callers = append(cfg.Callers, caller)
+	return false, nil
 }
 
 // RevokeCaller sets caller status to disabled.
