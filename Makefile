@@ -205,6 +205,16 @@ api-compat-ts:
 governance-load:
 	go test -race ./internal/router -run '^TestGovernanceLoad' -count=1 -v
 
+# Shipped-binary governance load harness (#573); local mocks, no hosted calls.
+.PHONY: governance-load-v47
+governance-load-v47:
+	python3 benchmarks/governance-load/test_harness.py
+	python3 benchmarks/governance-load/harness.py \
+	  --scenario auth --scenario cancel --scenario pii-failover \
+	  --scenario sustained --scenario dollar-budget \
+	  --scenario crash-restart --scenario multiprocess \
+	  --backend sqlite --duration 70 --workers 16 --name local
+
 # Local d3-adapter/fake-model plain/shadow/enforce wiring; not a benchmark.
 .PHONY: overhead-decision-smoke
 overhead-decision-smoke:
@@ -410,6 +420,7 @@ ci-windows:
 	done
 
 ci-python: secret-contract capability-smoke-contracts
+	python3 benchmarks/governance-load/test_harness.py
 	python3 scripts/check_source_headers.py
 	$(MAKE) validate-build-metadata
 	python3 scripts/outcome_calibrated_policy_test.py
@@ -444,6 +455,7 @@ compat-mock:
 # Pull-request gate. Credential-free and free of disposable uv/Go environments.
 # go test ./... covers focused Go packages, including capability and architecture.
 test-fast: secret-contract capability-smoke-contracts
+	python3 benchmarks/governance-load/test_harness.py
 	go test $$(go list ./... | grep -v '/internal/router$$') -timeout=15m
 	# Temporary while router-arc uses shared-CPU nodes; revert when dedicated c-8 capacity returns. Refs #367.
 	bash -o pipefail -c "go test ./internal/router -timeout=30m -json | $(PYTHON) scripts/router_test_time_guard.py"
