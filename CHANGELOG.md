@@ -82,6 +82,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason's `candidate_index` is the position of the target in the group's
   `targets` list (#716).
 
+- Unary Responses responses now encode the caller-facing `id`, output item ids
+  and call ids, matching the streamed surface, **only** when stored-response
+  affinity is enabled for the requested group. A stock deployment with affinity
+  off keeps its existing caller-visible ids and bytes unchanged (#533).
+- When stored-response affinity is configured for any model group, a
+  `previous_response_id` sent to a group that does not enable it is refused with
+  `400 stored_response_unsupported` instead of forwarding the provider id, so
+  ownership cannot be bypassed through another group that uses the same account
+  (#533).
+
+- Owner-bound stored Responses affinity for model groups listed in
+  `server.responses_affinity.enabled_groups`, off by default. For a stored
+  native Responses request the router records keyed, encrypted affinity
+  metadata (owning caller-token fingerprint, keyed response lookup hash,
+  provider/account/model/dialect identity, lifecycle and expiry) before the id
+  is exposed, and a `previous_response_id` follow-up is pinned to the recorded
+  account instead of being re-routed. A missing, expired or other-caller id
+  returns the same `404 response_not_found` before any upstream call, and an
+  unavailable pinned target returns `409 response_target_unavailable`. With no
+  group enabled no row is written, no lookup runs and request/response bytes
+  are unchanged. Retention purge, legal holds, get/delete/input-items/cancel
+  and docs follow in later reviewed changes (#533).
+
 - Add the dormant `response_affinity` usage table in schema 12 as the
   foundation for owner-bound stored Responses. It stores only keyed lookup and
   token fingerprints, protected upstream ids, the exact provider/account/model
