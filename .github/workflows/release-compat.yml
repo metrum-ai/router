@@ -33,5 +33,7 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
+      # The agent client chain matrix is not repeated here: release.yml gates
+      # the release on it through hierarchy-matrix.yml (#434).
       - name: SDK, Harbor, and agent mock suites
-        run: make api-compat-mock api-compat-ts harbor-local agent-tool-mock agent-chain-mock
+        run: make api-compat-mock api-compat-ts harbor-local agent-tool-mock

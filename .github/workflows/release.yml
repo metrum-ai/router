@@ -17,7 +17,17 @@ permissions:
   contents: read
 
 jobs:
+  # Required release step (#434): every hierarchy compatibility cell must pass,
+  # or be covered by a reviewed exception in
+  # tests/agent_compat/release-exceptions.json. Packaging does not start until
+  # this job is green.
+  hierarchy-matrix:
+    uses: ./.github/workflows/hierarchy-matrix.yml
+    permissions:
+      contents: read
+
   package:
+    needs: hierarchy-matrix
     runs-on: router-arc
     timeout-minutes: 90
     permissions:
