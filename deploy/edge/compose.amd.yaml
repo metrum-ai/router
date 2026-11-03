@@ -1,0 +1,38 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Edge bundle accelerator overlay: AMD (Strix Halo class, gfx1151).
+# The image tag names the architecture, so the pin cannot resolve to a build for
+# another GPU family. The pin matches deploy/reference/amd-strix-halo-edge/images.lock.
+# The ROCm vLLM image runs as root inside its own container and needs no added
+# capabilities; the device nodes are passed in explicitly and nothing is mounted
+# from the host besides the cache volume and the run directory.
+
+services:
+  vllm-tiny:
+    image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    group_add: [video, render]
+    devices: ["/dev/kfd", "/dev/dri"]
+    # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
+    # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
+    entrypoint: ["vllm", "serve"]
+    environment:
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
+
+  vllm-primary:
+    image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:unconfined
+    group_add: [video, render]
+    devices: ["/dev/kfd", "/dev/dri"]
+    # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
+    # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
+    entrypoint: ["vllm", "serve"]
+    environment:
+      HIP_VISIBLE_DEVICES: "0"
+      ROCR_VISIBLE_DEVICES: "0"
