@@ -647,12 +647,14 @@ def sqlite_rows(path: Path, sql: str) -> list[dict]:
         connection.close()
 
 
-def hop_usage(path: Path, caller_id: str, group: str | None = None) -> dict:
+def hop_usage(path: Path, caller_id: str, group: str | None = None, since: str | None = None) -> dict:
     if not path.exists():
         return {"available": False}
     where = f"caller_id = '{caller_id}'"
     if group:
         where += f" AND resolved_group = '{group}'"
+    if since:
+        where += f" AND ts >= '{since}'"
     rows = sqlite_rows(
         path,
         "SELECT status, stream, latency_ms, ttfb_ms, upstream_duration_ms, total_tokens, target_provider "
@@ -766,6 +768,8 @@ def main() -> int:
                         help="multi-node: write the two router configs and tokens here, print a manifest, and exit")
     parser.add_argument("--state-dir", default="",
                         help="multi-node: router state/log/usage directory on the router nodes (default: the work directory)")
+    parser.add_argument("--usage-since", default="",
+                        help="ISO UTC timestamp; only count usage rows at or after it (keeps one run's rows)")
     parser.add_argument("--refresh-usage", type=Path, default=None,
                         help="rewrite an existing report.json (and RESULT.md) from the given usage DBs")
     parser.add_argument("--name", default="run")
@@ -777,10 +781,11 @@ def main() -> int:
             print("--refresh-usage needs --edge-usage and --dc-usage", file=sys.stderr)
             return 2
         document = json.loads(args.refresh_usage.read_text(encoding="utf-8"))
+        since = args.usage_since or None
         document["usage"] = {
-            "edge/1-hop": hop_usage(args.edge_usage, "hop-app", "hier-direct"),
-            "edge/2-hop": hop_usage(args.edge_usage, "hop-app", "hier"),
-            "dc/2-hop": hop_usage(args.dc_usage, "hop-router", "hier-dc"),
+            "edge/1-hop": hop_usage(args.edge_usage, "hop-app", "hier-direct", since),
+            "edge/2-hop": hop_usage(args.edge_usage, "hop-app", "hier", since),
+            "dc/2-hop": hop_usage(args.dc_usage, "hop-router", "hier-dc", since),
         }
         args.refresh_usage.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         (args.refresh_usage.parent / "RESULT.md").write_text(render_markdown(document), encoding="utf-8")
