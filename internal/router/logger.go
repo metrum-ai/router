@@ -37,44 +37,48 @@ type adminReportQueryFailureLogRecord struct {
 }
 
 type logRecord struct {
-	CacheWritePricePerMillionUSD       *float64                         `json:"cache_write_price_per_million_usd,omitempty"`
-	RequestKind                        string                           `json:"request_kind,omitempty"`
-	Endpoint                           string                           `json:"endpoint,omitempty"`
-	UsageSource                        string                           `json:"usage_source"`
-	TS                                 string                           `json:"ts"`
-	RequestID                          string                           `json:"request_id"`
-	CallerID                           string                           `json:"caller_id"`
-	CallerUser                         string                           `json:"caller_user"`
-	CallerProject                      string                           `json:"caller_project"`
-	CallerEnvironment                  string                           `json:"caller_environment"`
-	CallerIP                           string                           `json:"caller_ip"`
-	TokenID                            string                           `json:"token_id"`
-	Client                             string                           `json:"client"`
-	InboundDialect                     string                           `json:"inbound_dialect"`
-	RequestedModel                     string                           `json:"requested_model"`
-	ResolvedGroup                      string                           `json:"resolved_group"`
-	Strategy                           string                           `json:"strategy"`
-	ClassLabel                         *string                          `json:"class_label"`
-	TargetProvider                     string                           `json:"target_provider"`
-	TargetModel                        string                           `json:"target_model"`
-	TargetDialect                      string                           `json:"target_dialect"`
-	TargetRegion                       string                           `json:"target_region,omitempty"`
-	StreamMode                         string                           `json:"stream_mode,omitempty"`
-	StreamUnknownEvents                int                              `json:"stream_unknown_events,omitempty"`
-	Stream                             bool                             `json:"stream"`
-	Cache                              string                           `json:"cache"`
-	Status                             int                              `json:"status"`
-	Attempts                           int                              `json:"attempts"`
-	FallbackUsed                       bool                             `json:"fallback_used"`
-	LatencyMS                          int64                            `json:"latency_ms"`
-	TTFBMS                             *int64                           `json:"ttfb_ms"`
-	UpstreamMS                         *int64                           `json:"upstream_duration_ms"`
-	DownstreamMS                       *int64                           `json:"downstream_duration_ms"`
-	UpstreamOutputTPS                  *float64                         `json:"upstream_output_tokens_per_sec"`
-	UpstreamTotalTPS                   *float64                         `json:"upstream_total_tokens_per_sec"`
-	DownstreamOutputTPS                *float64                         `json:"downstream_output_tokens_per_sec"`
-	DownstreamTotalTPS                 *float64                         `json:"downstream_total_tokens_per_sec"`
-	Usage                              Usage                            `json:"usage"`
+	CacheWritePricePerMillionUSD *float64 `json:"cache_write_price_per_million_usd,omitempty"`
+	RequestKind                  string   `json:"request_kind,omitempty"`
+	Endpoint                     string   `json:"endpoint,omitempty"`
+	UsageSource                  string   `json:"usage_source"`
+	TS                           string   `json:"ts"`
+	RequestID                    string   `json:"request_id"`
+	CallerID                     string   `json:"caller_id"`
+	CallerUser                   string   `json:"caller_user"`
+	CallerProject                string   `json:"caller_project"`
+	CallerEnvironment            string   `json:"caller_environment"`
+	CallerIP                     string   `json:"caller_ip"`
+	TokenID                      string   `json:"token_id"`
+	Client                       string   `json:"client"`
+	InboundDialect               string   `json:"inbound_dialect"`
+	RequestedModel               string   `json:"requested_model"`
+	ResolvedGroup                string   `json:"resolved_group"`
+	Strategy                     string   `json:"strategy"`
+	ClassLabel                   *string  `json:"class_label"`
+	TargetProvider               string   `json:"target_provider"`
+	TargetModel                  string   `json:"target_model"`
+	TargetDialect                string   `json:"target_dialect"`
+	TargetRegion                 string   `json:"target_region,omitempty"`
+	StreamMode                   string   `json:"stream_mode,omitempty"`
+	StreamUnknownEvents          int      `json:"stream_unknown_events,omitempty"`
+	Stream                       bool     `json:"stream"`
+	Cache                        string   `json:"cache"`
+	Status                       int      `json:"status"`
+	Attempts                     int      `json:"attempts"`
+	FallbackUsed                 bool     `json:"fallback_used"`
+	LatencyMS                    int64    `json:"latency_ms"`
+	TTFBMS                       *int64   `json:"ttfb_ms"`
+	UpstreamMS                   *int64   `json:"upstream_duration_ms"`
+	DownstreamMS                 *int64   `json:"downstream_duration_ms"`
+	UpstreamOutputTPS            *float64 `json:"upstream_output_tokens_per_sec"`
+	UpstreamTotalTPS             *float64 `json:"upstream_total_tokens_per_sec"`
+	DownstreamOutputTPS          *float64 `json:"downstream_output_tokens_per_sec"`
+	DownstreamTotalTPS           *float64 `json:"downstream_total_tokens_per_sec"`
+	Usage                        Usage    `json:"usage"`
+	// DiscardedUsage is the token usage of tool-recovery attempts that were not
+	// delivered. It is merged into Usage before quota settlement and cost
+	// calculation so a retry cannot escape quota or hide its spend.
+	DiscardedUsage                     Usage                            `json:"-"`
 	ReasoningCoverageMeasured          bool                             `json:"reasoning_coverage_measured,omitempty"`
 	ReasoningAttemptCount              int                              `json:"reasoning_attempt_count,omitempty"`
 	ReasoningSuccessfulAttemptCount    int                              `json:"reasoning_successful_attempt_count,omitempty"`
@@ -177,6 +181,12 @@ type attemptLogRecord struct {
 	ErrorDetails     []upstreamErrorDetailLogRecord `json:"error_details,omitempty"`
 	// ToolValidation is set only for groups with a tool_routing block.
 	ToolValidation *toolValidationLogRecord `json:"tool_validation,omitempty"`
+	// InputTokens/OutputTokens/ListCostUSD describe a discarded attempt (a tool
+	// recovery retry or escalation). They are recorded so retry cost is visible
+	// instead of free; the request usage row still bills the delivered attempt.
+	InputTokens  int     `json:"input_tokens,omitempty"`
+	OutputTokens int     `json:"output_tokens,omitempty"`
+	ListCostUSD  float64 `json:"list_cost_usd,omitempty"`
 }
 
 type upstreamErrorDetailLogRecord struct {

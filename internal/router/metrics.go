@@ -49,6 +49,10 @@ type metricValues struct {
 	CacheBypass              int64
 	Attempts                 int64
 	Fallbacks                int64
+	ToolCallsValid           int64
+	ToolCallsInvalid         int64
+	ToolRetries              int64
+	ToolEscalations          int64
 	UpstreamOutputTPSSum     float64
 	UpstreamOutputTPSCount   int64
 	DownstreamOutputTPSSum   float64
@@ -135,6 +139,19 @@ func (m *metricsStore) Observe(rec logRecord) {
 		values.CacheMisses++
 	default:
 		values.CacheBypass++
+	}
+	for _, attempt := range rec.AttemptsDetail {
+		if attempt.ToolValidation == nil {
+			continue
+		}
+		values.ToolCallsValid += int64(attempt.ToolValidation.Valid)
+		values.ToolCallsInvalid += int64(attempt.ToolValidation.Invalid)
+		switch attempt.ToolValidation.Action {
+		case "retried":
+			values.ToolRetries++
+		case "escalated":
+			values.ToolEscalations++
+		}
 	}
 	values.Attempts += int64(rec.Attempts)
 	if rec.FallbackUsed {
@@ -313,6 +330,10 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 		writeMetric(&b, "metrum_ai_router_cache_bypass_total", labelText, values.CacheBypass)
 		writeMetric(&b, "metrum_ai_router_upstream_attempts_total", labelText, values.Attempts)
 		writeMetric(&b, "metrum_ai_router_fallbacks_total", labelText, values.Fallbacks)
+		writeMetric(&b, "metrum_ai_router_tool_call_valid_total", labelText, values.ToolCallsValid)
+		writeMetric(&b, "metrum_ai_router_tool_call_invalid_total", labelText, values.ToolCallsInvalid)
+		writeMetric(&b, "metrum_ai_router_tool_call_retries_total", labelText, values.ToolRetries)
+		writeMetric(&b, "metrum_ai_router_tool_call_escalations_total", labelText, values.ToolEscalations)
 		writeFloatMetric(&b, "metrum_ai_router_upstream_output_tokens_per_second_sum", labelText, values.UpstreamOutputTPSSum)
 		writeMetric(&b, "metrum_ai_router_upstream_output_tokens_per_second_count", labelText, values.UpstreamOutputTPSCount)
 		writeFloatMetric(&b, "metrum_ai_router_downstream_output_tokens_per_second_sum", labelText, values.DownstreamOutputTPSSum)
