@@ -194,6 +194,34 @@ an air-gapped install is the same command with the inputs pre-staged:
    The escalation group is unavailable until a key is supplied, which is the normal
    air-gapped posture.
 
+## Smaller GPU: the 48 GB profile
+
+The default stack is sized for 128 GB of unified memory because of the 30B-class
+primary model. On a 48 GB card the bundle runs the same groups with a smaller
+primary; nothing else changes (group names, caller grants, demo, reports):
+
+```sh
+export EDGE_PRIMARY_MODEL=Qwen/Qwen3-8B
+export EDGE_PRIMARY_REVISION=b968826d9c46dd6066d109eabc6255188de91218
+export EDGE_PRIMARY_UTILIZATION=0.82
+export EDGE_TINY_UTILIZATION=0.16
+sudo -E bash install.sh --router-image metrum-ai-router:<version>-linux-amd64
+```
+
+| Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests at 8K |
+|---|---|---|---|---|---|---|
+| `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.16 | 7.7 GB | 1.3 GiB | 1 |
+| `local-chat` | Qwen3-8B | 16.4 GB | 0.82 | 39.4 GB | 20.0 GiB | 17 |
+
+Arithmetic from the sizing method above, with a 3 GiB per-slot overhead allowance;
+`deploy/reference/harness/kv_math.py` reproduces the rows. Disk: ~20 GB of
+checkpoints plus the ~25 GB model-server image, so ≥ 100 GB free.
+
+Two things to expect on a card this size: the tiny slot keeps only about one
+8K-context request in flight (it is a smoke and classification slot, not a chat
+slot), and the primary is an 8B model rather than the default 30B-class one — the
+`local-chat` group name, its grants and every client stay exactly the same.
+
 ## Troubleshooting
 
 | Symptom | What to check |
