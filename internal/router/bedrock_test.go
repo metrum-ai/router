@@ -323,3 +323,55 @@ func TestBedrockToolResultText678MessagesBridge(t *testing.T) {
 		t.Fatalf("tool id lost: %s", b)
 	}
 }
+
+// Media inside a tool result must never be reduced to text silently (issue #694):
+// the adapter rejects non-text content it cannot represent instead.
+func TestBedrockToolResultMediaRejected694(t *testing.T) {
+	const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
+	cases := []struct{ name, body, part string }{
+		{"chat-image-part", `{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"shot"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"shot","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":[{"type":"text","text":"chart"},{"type":"image_url","image_url":{"url":"` + png + `"}}]}]}`, "image_url"},
+		{"chat-audio-part", `{"model":"m","max_tokens":32,"messages":[{"role":"tool","tool_call_id":"call_1","content":[{"type":"text","text":"clip"},{"type":"input_audio","input_audio":{"data":"AA==","format":"wav"}}]}]}`, "input_audio"},
+		{"chat-media-object", `{"model":"m","max_tokens":32,"messages":[{"role":"tool","tool_call_id":"call_1","content":{"type":"image_url","image_url":{"url":"` + png + `"}}}]}`, "image_url"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in, err := bedrockInput([]byte(c.body))
+			if err == nil {
+				t.Fatalf("tool-result media was silently dropped: %+v", in.Messages)
+			}
+			if !strings.Contains(err.Error(), c.part) {
+				t.Fatalf("error must name the unsupported part %q: %v", c.part, err)
+			}
+		})
+	}
+
+	// The Anthropic bridge carries a tool_result image into Chat as a typed part,
+	// so the same rejection applies to a translated Messages caller.
+	t.Run("messages-tool-result-image", func(t *testing.T) {
+		req, err := decodeRequest("anthropic", []byte(`{"model":"m","max_tokens":32,"messages":[{"role":"user","content":"shot"},{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"shot","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":[{"type":"text","text":"chart"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}]}]}`), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := encodeAnthropicToolsBridge("m", req, anthropicToolTarget(), "openai-chat")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if in, err := bedrockInput(b); err == nil {
+			t.Fatalf("translated tool-result image was silently dropped: %+v body=%s", in.Messages, b)
+		} else if !strings.Contains(err.Error(), "image_url") {
+			t.Fatalf("error must name the unsupported part: %v body=%s", err, b)
+		}
+	})
+
+	// The rejection happens before dispatch and surfaces as a client error.
+	t.Run("client-error", func(t *testing.T) {
+		r, err := bedrockDo(context.Background(), "us-east-1", []byte(cases[0].body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		if r.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status=%d", r.StatusCode)
+		}
+	})
+}

@@ -36,6 +36,27 @@ func bedrockMaxTokens(n int) *int32 {
 	return aws.Int32(int32(n))
 }
 
+// bedrockNonTextContentType names the first content part the Converse adapter
+// cannot represent. Only text parts are supported here, so media inside
+// messages, system prompts or tool results fails loudly instead of being
+// silently reduced to text by contentToText (issue #694).
+func bedrockNonTextContentType(content any) (string, bool) {
+	switch v := content.(type) {
+	case []any:
+		for _, p := range v {
+			m, _ := p.(map[string]any)
+			if typ := stringValue(m["type"]); typ != "text" {
+				return typ, true
+			}
+		}
+	case map[string]any:
+		if typ := stringValue(v["type"]); typ != "text" {
+			return typ, true
+		}
+	}
+	return "", false
+}
+
 // bedrockInput consumes the router's canonical Chat bridge, preserving tool IDs.
 func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 	var raw map[string]any
@@ -58,15 +79,22 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 		m, _ := v.(map[string]any)
 		role := stringValue(m["role"])
 		if role == "system" || role == "developer" {
+			if typ, unsupported := bedrockNonTextContentType(m["content"]); unsupported {
+				return nil, fmt.Errorf("Bedrock system content type %q is not supported", typ)
+			}
 			in.System = append(in.System, &bt.SystemContentBlockMemberText{Value: contentToText(m["content"])})
 			continue
 		}
 		msg := bt.Message{Role: bt.ConversationRole(role)}
 		if role == "tool" {
 			msg.Role = bt.ConversationRoleUser
+			// Converse has no representable target for media in a tool result here,
+			// so reject it explicitly instead of returning text only.
+			if typ, unsupported := bedrockNonTextContentType(m["content"]); unsupported {
+				return nil, fmt.Errorf("Bedrock tool result content type %q is not supported", typ)
+			}
 			// Preserve the caller's exact ordered text for text-only tool results
-			// instead of flattening parts with an invented separator. Non-text tool
-			// result content keeps its existing handling in this conversion.
+			// instead of flattening parts with an invented separator.
 			text := contentToText(m["content"])
 			if exact, ok := toolResultText(m["content"]); ok {
 				text = exact
@@ -78,13 +106,8 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 				msg.Content = append(msg.Content, &bt.ContentBlockMemberText{Value: text})
 			}
 			// Reject images explicitly rather than silently dropping them.
-			if parts, ok := m["content"].([]any); ok {
-				for _, p := range parts {
-					x, _ := p.(map[string]any)
-					if stringValue(x["type"]) != "text" {
-						return nil, fmt.Errorf("Bedrock content type %q is not supported", x["type"])
-					}
-				}
+			if typ, unsupported := bedrockNonTextContentType(m["content"]); unsupported {
+				return nil, fmt.Errorf("Bedrock content type %q is not supported", typ)
 			}
 			calls, _ := m["tool_calls"].([]any)
 			for _, c := range calls {
