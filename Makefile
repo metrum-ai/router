@@ -338,8 +338,9 @@ test-edge-bundle:
 # upstream images pinned by digest, README sections, and a config that the
 # router's own loader accepts. No hardware and no registry access.
 .PHONY: test-reference-configs
-REFERENCE_TIERS := $(patsubst deploy/reference/%/,%,$(wildcard deploy/reference/*/))
-REFERENCE_TIERS := $(filter-out harness,$(REFERENCE_TIERS))
+# A reference tier is a directory that ships an images.lock; anything else under
+# deploy/reference/ (a matrix, an experiment) is outside the contract.
+REFERENCE_TIERS := $(patsubst deploy/reference/%/,%,$(dir $(wildcard deploy/reference/*/images.lock)))
 # A bcrypt hash is required by the admin-auth block; the value never leaves CI.
 REFERENCE_CONFIG_ENV := REFERENCE_ADMIN_PASSWORD_HASH='$$2b$$12$$o8v1ntt3UOcyHUoCRKF4.eYHga/4SHaiGlOTrw8YEcp97knODcP/m' \
 	LOCAL_VLLM_API_KEY=reference-config-check \
