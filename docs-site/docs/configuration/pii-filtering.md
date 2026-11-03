@@ -17,8 +17,7 @@ models:
     strategy: weighted
     pii_filter:
       enabled: true
-      mode: redact_and_restore
-      restore_response: true
+      mode: redact_only
       max_replacements_per_request: 200
       apply_to:
         system: true
@@ -53,24 +52,36 @@ is sent upstream as:
 Email [EMAIL_1] or call [PHONE_1].
 ```
 
-When `mode: redact_and_restore` or `restore_response: true` is enabled,
-buffered downstream text responses that contain `[EMAIL_1]` or `[PHONE_1]`
-are restored for the original caller. Same-dialect native OpenAI Chat and
-Anthropic Messages streams preserve placeholders because the router does not
-buffer arbitrary SSE boundaries. Placeholder mappings are kept in memory for
-the request lifecycle and are not persisted by default.
+Placeholder mappings are kept in memory for the request lifecycle and are not
+persisted by default.
+
+When a request exceeds `max_replacements_per_request`, the router returns
+`pii-filter-blocked` before target selection or any upstream call. Treat the cap
+as a fail-closed safety limit, not as a partial-redaction mode.
+
+Placeholders are caller-visible on every path, including buffered responses and
+router-generated SSE. Response restoration is **not configurable**: startup
+validation rejects `mode: redact_and_restore` and any explicit
+`restore_response` value with
+`F-011: pii-filter-redact-and-restore-unsupported`. The router does not buffer
+streams to restore placeholders and does not attempt unsafe per-chunk
+restoration when a placeholder could span upstream chunks. See
+[Architecture Limitations](../reference/architecture-limitations).
 
 ## Modes
 
 - `redact_only`: send placeholders upstream and return placeholders downstream.
-- `redact_and_restore`: send placeholders upstream and restore placeholders in
-  buffered downstream text responses; native Chat and Messages SSE preserves
-  placeholders.
-- `fail_on_match`: reject the request before upstream target selection when any rule matches.
+- `fail_on_match`: reject the request before upstream target selection when any
+  rule matches.
 
-`fail_on_match: true` can also be used with a mode to force blocking behavior.
+`fail_on_match: true` can also be used with `redact_only` to force blocking
+behavior. An omitted `mode` defaults to `redact_only`, and an omitted `apply_to`
+scope defaults to `true` for `system`, `messages`, `responses_input` and
+`tool_results`, while `image_urls` defaults to `false`.
 
-If a request would exceed `max_replacements_per_request`, the router returns `pii-filter-blocked` before target selection or any upstream call. Treat the cap as a fail-closed safety limit, not as a partial-redaction mode.
+`redact_and_restore` and `restore_response` are rejected by
+configuration validation (F-011), so a group that needs placeholders removed
+from caller-visible text must restore them in the caller.
 
 ## Request Surfaces
 
@@ -144,20 +155,9 @@ curl "$ROUTER_BASE_URL/anthropic/v1/messages" \
 ```
 
 For all three APIs, the upstream target receives placeholders such as
-`[EMAIL_1]` and `[US_SSN_1]`.
-
-| Response path | `redact_and_restore` behavior |
-| --- | --- |
-| Non-streaming Chat, Responses, or Messages | Restores placeholders in buffered downstream text. |
-| Same-dialect OpenAI Chat or Anthropic Messages native SSE | Preserves placeholders in caller-visible events; the router logs a safe restoration-skipped warning. |
-| OpenAI Responses or cross-dialect router-generated SSE | Restores buffered text after upstream decode, before emitting router-generated events. |
-
-If caller-visible placeholders are unacceptable for a native stream, use a
-non-streaming request or choose a workflow that does not require restoration.
-Do not assume `redact_only` will restore them—it intentionally returns
-placeholders on every path. See [Privacy And Data
-Handling](../privacy) and [Native Stream
-Failures](../reference/errors#native-stream-failures).
+`[EMAIL_1]` and `[US_SSN_1]`, and the caller receives the same placeholders back:
+restoration is rejected by configuration validation (F-011) on unary and
+streaming paths alike.
 
 ## Logging And Usage
 
@@ -198,7 +198,8 @@ Check the upstream capture, router logs, and usage rows for the same `X-Request-
 Also test a request with more matches than `max_replacements_per_request`; it should fail with `pii-filter-blocked` and produce no upstream request.
 
 Repeat the Chat request with `"stream": true` against a same-dialect test
-target. Confirm the upstream receives placeholders, caller-visible SSE keeps
-the placeholders, and logs contain only the safe
-`pii-response-restoration-skipped-native-stream` warning—not the matched
-values or placeholder map.
+target. Confirm the upstream receives placeholders and that caller-visible SSE
+keeps the same placeholders, so no raw matched value crosses either boundary.
+A `pii_filter` with `mode: redact_and_restore` or `restore_response` must fail
+startup with `F-011: pii-filter-redact-and-restore-unsupported` rather than
+silently serving placeholders.

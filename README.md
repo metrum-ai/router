@@ -445,7 +445,7 @@ secret surface. Illustrative: one leaked key forces rotation across every
 caller that shared it, often a multi-day outage window. Scripts and external
 policies receive safe identifiers only. Provider keys are injected server-side.
 Optional `pii_filter` runs before cache key, routing input, and upstream call
-(`redact_only`, `redact_and_restore`, `fail_on_match`). Content capture is
+(`redact_only`, `fail_on_match`; restoration is rejected by validation). Content capture is
 opt-in, redacted, and AES-256-GCM encrypted.
 ([TypeScript Routing](#typescript-routing), [PII Filtering](#pii-filtering),
 `internal/router/content_capture.go`)
@@ -1197,7 +1197,7 @@ outputs, and reasoning signals), use
 
 ## PII Filtering
 
-Model groups can configure `pii_filter` rules to replace matched text with typed placeholders before target selection, cache-key generation, routing-policy inputs, and upstream provider calls. The redacted request object is the source of truth for TypeScript script `ctx.request.raw` and for external policy `request`/`text` only when `external_policy.include_request: true` is explicitly enabled; external policy services otherwise receive safe derived context without raw request mirrors. Modes support `redact_only`, `redact_and_restore`, and `fail_on_match`. Response restoration applies to buffered responses; same-dialect native Chat and Anthropic streams preserve placeholders because safely restoring mappings that may span arbitrary SSE chunks would require buffering and defeat native streaming. If a request exceeds `max_replacements_per_request`, the router fails closed with `pii-filter-blocked` before any upstream call. Usage logs and the usage database store only safe scalar metadata such as applied flag, mode, replacement count, and matched-rule count; raw matched values and placeholder mappings remain in memory for the request lifecycle by default.
+Model groups can configure `pii_filter` rules to replace matched text with typed placeholders before target selection, cache-key generation, routing-policy inputs, and upstream provider calls. The redacted request object is the source of truth for TypeScript script `ctx.request.raw` and for external policy `request`/`text` only when `external_policy.include_request: true` is explicitly enabled; external policy services otherwise receive safe derived context without raw request mirrors. The configurable modes are `redact_only` and `fail_on_match`, and `fail_on_match: true` can be combined with `redact_only`. Response restoration is rejected at startup: `mode: redact_and_restore` and any explicit `restore_response` value fail with `F-011: pii-filter-redact-and-restore-unsupported`, so placeholders are caller-visible on unary and streaming paths alike; the router does not buffer streams to restore mappings that may span arbitrary SSE chunks. If a request exceeds `max_replacements_per_request`, the router fails closed with `pii-filter-blocked` before any upstream call. Usage logs and the usage database store only safe scalar metadata such as applied flag, mode, replacement count, and matched-rule count; raw matched values and placeholder mappings remain in memory for the request lifecycle by default.
 
 See `docs/PII_FILTERING.md` and the Docusaurus PII Filtering page for configuration examples and smoke-test guidance.
 
