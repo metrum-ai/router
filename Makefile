@@ -445,6 +445,7 @@ ci-windows:
 ci-python: secret-contract capability-smoke-contracts
 	python3 benchmarks/governance-load/test_harness.py
 	python3 scripts/check_source_headers.py
+	$(MAKE) test-reference-configs
 	$(MAKE) validate-build-metadata
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
@@ -459,7 +460,6 @@ ci-python: secret-contract capability-smoke-contracts
 	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
 	$(MAKE) test-edge-bundle
-	$(MAKE) test-reference-configs
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
 	$(PYTHON) scripts/tool_compat_matrix_test.py
