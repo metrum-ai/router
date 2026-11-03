@@ -1,0 +1,93 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Layered deployment reference (#434): edge router -> datacenter router ->
+# frontier. The demo frontier keeps the stack credential-free; point
+# FRONTIER_BASE_URL / FRONTIER_API_KEY at a real frontier API or a self-hosted
+# vLLM endpoint for a production shape.
+#
+# Usage:
+#   cp env.example .env   # fill in the token hashes, tokens and identifier key
+#   docker compose --env-file .env up -d
+#   ./verify.sh --compose
+name: metrum-router-hierarchy
+
+services:
+  postgres:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_USER: router
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: edge_usage
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker-init.sql:/docker-entrypoint-initdb.d/10-second-database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U router -d edge_usage"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # One database per hop: the two tiers keep separate usage stores, which is
+  # what makes per-hop cost and latency readable independently.
+  migrate:
+    image: ${ROUTER_IMAGE:?set ROUTER_IMAGE in .env}
+    entrypoint: ["/app/bin/metrum-ai-router-migrate"]
+    command:
+      - "--action=apply"
+      - "--driver=postgres"
+      - "--dsn-env=EDGE_USAGE_DSN"
+      - "--scope=usage"
+      - "--json"
+    environment:
+      EDGE_USAGE_DSN: ${EDGE_USAGE_DSN:?set EDGE_USAGE_DSN in .env}
+      DC_USAGE_DSN: ${DC_USAGE_DSN:?set DC_USAGE_DSN in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  frontier-echo:
+    image: ${PYTHON_IMAGE:-python:3.12-slim}
+    command: ["python3", "/app/echo.py", "--host", "0.0.0.0", "--port", "9100"]
+    volumes:
+      - ./demo-frontier:/app:ro
+    restart: unless-stopped
+
+  dc:
+    image: ${ROUTER_IMAGE:?set ROUTER_IMAGE in .env}
+    command: ["/app/bin/metrum-ai-router", "-config", "/etc/router/dc.yaml"]
+    env_file: .env
+    ports:
+      - "${DC_LISTEN_PORT:-8081}:8080"
+    volumes:
+      - ./config/dc.yaml:/etc/router/dc.yaml:ro
+      - dc-state:/var/lib/router
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      frontier-echo:
+        condition: service_started
+    restart: unless-stopped
+
+  edge:
+    image: ${ROUTER_IMAGE:?set ROUTER_IMAGE in .env}
+    command: ["/app/bin/metrum-ai-router", "-config", "/etc/router/edge.yaml"]
+    env_file: .env
+    ports:
+      - "${EDGE_LISTEN_PORT:-8080}:8080"
+    volumes:
+      - ./config/edge.yaml:/etc/router/edge.yaml:ro
+      - edge-state:/var/lib/router
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      dc:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  edge-state:
+  dc-state:
