@@ -1327,6 +1327,14 @@ func (c *Config) attemptChainBudgetMS() int {
 			budget = chain
 		}
 	}
+	// Stay inside the same 24-hour ceiling the explicit values use, so a group
+	// with a very large target count cannot derive a default that validation
+	// would then reject.
+	const maxServerTimeoutMS = 24 * 60 * 60 * 1000
+	margin := int((60 * time.Second).Milliseconds())
+	if budget > maxServerTimeoutMS-2*margin {
+		budget = maxServerTimeoutMS - 2*margin
+	}
 	return budget
 }
 

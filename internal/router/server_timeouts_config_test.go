@@ -163,3 +163,19 @@ func TestExplicitWriteTimeoutBelowBudgetIsPreserved(t *testing.T) {
 		t.Fatalf("explicit write timeout = %d, want it preserved", cfg.Server.WriteTimeoutMS)
 	}
 }
+
+// A very large target count cannot derive a default that validation rejects.
+func TestAttemptChainBudgetStaysUnderCeiling(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	targets := make([]Target, 0, 200)
+	for i := 0; i < 200; i++ {
+		targets = append(targets, Target{Provider: "mock", Model: "mock-model", TimeoutMS: 60 * 60 * 1000})
+	}
+	cfg.Models["default"] = ModelGroup{Strategy: "failover", Targets: targets}
+	if _, err := New(cfg); err != nil {
+		t.Fatalf("derived write default must stay valid: %v", err)
+	}
+	if cfg.Server.WriteTimeoutMS <= 0 || cfg.Server.WriteTimeoutMS >= 24*60*60*1000 {
+		t.Fatalf("derived write default %d outside (0, 24h)", cfg.Server.WriteTimeoutMS)
+	}
+}
