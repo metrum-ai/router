@@ -304,10 +304,16 @@ def main():
                                    "min": min(values), "max": max(values)}
                 variance.append(record)
         exclusive_json(out / "summary.json", {"pairs": summaries, "delta_variance": variance})
-    except (ProbeError, OSError, socket.timeout, threading.BrokenBarrierError, http.client.HTTPException, ValueError):
-        # Do not expose provider response bodies, URLs or credentials. Raw output
-        # remains partial and is never accompanied by a complete summary.
-        raise SystemExit("load failed; partial samples retained, no complete summary")
+    except (ProbeError, OSError, socket.timeout, threading.BrokenBarrierError, http.client.HTTPException, ValueError) as exc:
+        # Name the failure, never the body: a lane that dies on "HTTP status 429" or
+        # "Connection reset by peer" is diagnosable, one that dies on a generic
+        # message costs a rented window. Response bodies, URLs and credentials stay
+        # out of this string; raw output remains partial with no complete summary.
+        detail = f"{type(exc).__name__}: {exc}"[:300]
+        raise SystemExit(
+            "load failed; partial samples retained, no complete summary "
+            f"(first failure in this run: {detail})"
+        )
     print("completed; inspect private output directory")
 
 
