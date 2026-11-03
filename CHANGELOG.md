@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Direct-provider differential canary (evaluation layer ARCH-05 of #330): fixed,
+  locally checked probes sent to an exact provider/model and to the same model
+  pinned through the router, with a report that reuses the evaluation report
+  schema and fails on a router regression. Offline-tested in the PR gate; live
+  runs stay opt-in and bounded (`make eval-canary`).
+
 - `reasoning.with_tools` target metadata. Setting it to `false` declares that
   the target's outbound dialect rejects a reasoning control together with
   function tools, as OpenAI reasoning models do on Chat Completions. The router
