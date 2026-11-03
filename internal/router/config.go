@@ -67,7 +67,14 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Streaming           StreamingConfig           `yaml:"streaming" json:"streaming"`
+	Streaming StreamingConfig `yaml:"streaming" json:"streaming"`
+	// HTTP server deadlines (#759). Zero selects the default. The write
+	// deadline is absolute, so it defaults above the upstream budget; event
+	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
+	ReadTimeoutMS       int                       `yaml:"read_timeout_ms" json:"readTimeoutMs,omitempty"`
+	WriteTimeoutMS      int                       `yaml:"write_timeout_ms" json:"writeTimeoutMs,omitempty"`
+	IdleTimeoutMS       int                       `yaml:"idle_timeout_ms" json:"idleTimeoutMs,omitempty"`
+	StreamIdleTimeoutMS int                       `yaml:"stream_idle_timeout_ms" json:"streamIdleTimeoutMs,omitempty"`
 	Responses           ResponsesConfig           `yaml:"responses" json:"responses"`
 	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
@@ -1401,6 +1408,24 @@ func (c *Config) setDefaults() {
 	if c.Server.Upstream.TimeoutMS == 0 {
 		c.Server.Upstream.TimeoutMS = int((10 * time.Minute).Milliseconds())
 	}
+	if c.Server.ReadTimeoutMS == 0 {
+		c.Server.ReadTimeoutMS = int((60 * time.Second).Milliseconds())
+	}
+	if c.Server.WriteTimeoutMS == 0 {
+		// The absolute write deadline must not decide when a slow generation is
+		// given up on: default it above the upstream budget so the upstream or
+		// target timeout is the bound that fires, with a minute of margin for
+		// response writing (#759).
+		c.Server.WriteTimeoutMS = c.Server.Upstream.TimeoutMS + int((60 * time.Second).Milliseconds())
+	}
+	if c.Server.IdleTimeoutMS == 0 {
+		c.Server.IdleTimeoutMS = int((120 * time.Second).Milliseconds())
+	}
+	if c.Server.StreamIdleTimeoutMS == 0 {
+		// Progress deadline for event streams: a stream that keeps writing is
+		// extended on every write, a stalled stream ends after this window.
+		c.Server.StreamIdleTimeoutMS = int((120 * time.Second).Milliseconds())
+	}
 	if c.Server.Upstream.MaxResponseBytes == 0 {
 		c.Server.Upstream.MaxResponseBytes = 32 << 20
 	}
@@ -1518,6 +1543,22 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if c.Server.Upstream.TimeoutMS < 0 {
 		return fmt.Errorf("server upstream timeout_ms cannot be negative")
+	}
+	for _, timeout := range []struct {
+		name  string
+		value int
+	}{
+		{"read_timeout_ms", c.Server.ReadTimeoutMS},
+		{"write_timeout_ms", c.Server.WriteTimeoutMS},
+		{"idle_timeout_ms", c.Server.IdleTimeoutMS},
+		{"stream_idle_timeout_ms", c.Server.StreamIdleTimeoutMS},
+	} {
+		if timeout.value < 0 {
+			return fmt.Errorf("server %s cannot be negative", timeout.name)
+		}
+		if timeout.value > 24*60*60*1000 {
+			return fmt.Errorf("server %s cannot exceed 24 hours", timeout.name)
+		}
 	}
 	if c.Server.Upstream.DefaultAttemptTimeoutMS < 0 {
 		return fmt.Errorf("server upstream default_attempt_timeout_ms cannot be negative")

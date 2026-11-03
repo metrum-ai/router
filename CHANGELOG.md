@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Configurable HTTP server deadlines: `server.read_timeout_ms`,
+  `server.write_timeout_ms`, `server.idle_timeout_ms` and
+  `server.stream_idle_timeout_ms` (zero selects the default; negatives, values
+  over 24 hours and a stream idle window above the write deadline are
+  rejected). The absolute write default now sits above the upstream budget, and
+  event streams get a progress deadline that every successful write extends, so
+  a long streamed answer is no longer cut off at a fixed 120 s while a stalled
+  stream still ends with a clear `upstream_timeout` attempt (#759).
+
 - Stored Responses affinity is new in v4.7: the authenticated-encryption
   envelope used for upstream ids has no earlier released format, so there is no
   stored-response metadata to migrate and no compatibility path with v4.6.0

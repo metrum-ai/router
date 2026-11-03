@@ -63,6 +63,19 @@ server:
     max_filter_reasons: 256
     record_candidates: true
     record_cache_reasons: true
+  # HTTP server connection deadlines in milliseconds. Zero selects the default.
+  # The write deadline is absolute for a whole response, so it defaults above
+  # server.upstream.timeout_ms: a slow generation is given up by the upstream
+  # timeout, not by the HTTP server. Event streams additionally receive a
+  # progress deadline: every successful stream write extends the connection
+  # deadline by stream_idle_timeout_ms, so a long answer survives while a
+  # stream that stops producing data (or a downstream that stops reading)
+  # ends after that window with a clear timeout class. Unary responses keep
+  # the absolute write deadline.
+  read_timeout_ms: 60000        # reading the request body
+  write_timeout_ms: 660000      # absolute response deadline; default = upstream + 60s
+  idle_timeout_ms: 120000       # keep-alive idle connection
+  stream_idle_timeout_ms: 120000  # event-stream progress deadline (no data for this long ends the stream)
   upstream:
     # Maximum Metrum AI Router hops per data-plane request (default 16; 1..128).
     max_router_hops: 16

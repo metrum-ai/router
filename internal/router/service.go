@@ -403,7 +403,9 @@ func newUpstreamHTTPClient(cfg UpstreamConfig) *http.Client {
 }
 
 func (s *Service) Handler() http.Handler {
-	return s.mux
+	// Event streams get a progress deadline instead of the server's absolute
+	// write deadline; unary responses are untouched (#759).
+	return s.withStreamProgressDeadline(s.mux)
 }
 
 func (s *Service) Close() {
@@ -3211,9 +3213,23 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			// actually serves it, including after a fallback.
 			s.bindResponsesAffinityTarget(rc, req, target, outDialect)
 		}
-		streamResult, streamErr := proxy(attemptCtx, pw, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
+		// A stream that stops producing data must not hold the caller for the
+		// whole upstream timeout (#759): the idle reader closes the upstream
+		// body after stream_idle_timeout_ms without a read, which ends the
+		// response with a clear attempt error instead of a silent stall.
+		streamBody := httpResp.Body
+		streamIdle := s.streamIdleTimeout()
+		var idleBody *streamIdleReader
+		if streamIdle > 0 {
+			idleBody = newStreamIdleReader(httpResp.Body, streamIdle)
+			streamBody = idleBody
+		}
+		streamResult, streamErr := proxy(attemptCtx, pw, streamBody, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
 			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))
+		}
+		if idleBody != nil {
+			_ = idleBody.Close()
 		}
 		_ = httpResp.Body.Close()
 		if cancel != nil {
@@ -3224,6 +3240,17 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ReasoningTokens = streamResult.Response.Usage.ReasoningTokens
 		if streamErr != nil {
 			upErr := classifyError(streamErr)
+			if errors.Is(streamErr, errStreamIdleTimeout) {
+				// A clear, classifiable timeout with its own message; the
+				// attempt and usage rows record it.
+				upErr = upstreamError{
+					Class:     "upstream_timeout",
+					Message:   "upstream stream made no progress within the configured stream_idle_timeout_ms",
+					Retryable: !streamResult.Committed,
+					TimedOut:  true,
+					Err:       streamErr,
+				}
+			}
 			upErr.Committed = streamResult.Committed
 			if streamResult.Response != nil {
 				upErr.PartialText = streamResult.Response.Text

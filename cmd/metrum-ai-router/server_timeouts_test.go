@@ -5,17 +5,45 @@ package main
 
 import (
 	"bytes"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/metrum-ai/router/internal/router"
 )
 
-func TestDefaultHTTPServerTimeoutsPositive(t *testing.T) {
-	read, write, idle := defaultHTTPServerTimeouts()
-	if read <= 0 || write <= 0 || idle <= 0 {
-		t.Fatalf("timeouts must be positive: read=%v write=%v idle=%v", read, write, idle)
+func TestServerTimeoutsDeriveFromConfig(t *testing.T) {
+	cfg := loadStartupConfig(t, startupBaseConfig, "127.0.0.1:0")
+	timeouts := serverTimeoutsFor(cfg)
+	if timeouts.read <= 0 || timeouts.write <= 0 || timeouts.idle <= 0 || timeouts.streamIdle <= 0 {
+		t.Fatalf("timeouts must be positive: %+v", timeouts)
+	}
+	// Defaults: the absolute write deadline sits above the upstream budget so a
+	// slow generation is given up by the upstream timeout, not by http.Server.
+	upstream := time.Duration(cfg.Server.Upstream.TimeoutMS) * time.Millisecond
+	if timeouts.write <= upstream {
+		t.Fatalf("default write timeout %s must exceed the upstream timeout %s", timeouts.write, upstream)
+	}
+}
+
+func TestServerTimeoutsHonorConfiguredValues(t *testing.T) {
+	cfg := loadStartupConfig(t, startupBaseConfig, "127.0.0.1:0")
+	cfg.Server.ReadTimeoutMS = 5000
+	cfg.Server.WriteTimeoutMS = 9000
+	cfg.Server.IdleTimeoutMS = 7000
+	cfg.Server.StreamIdleTimeoutMS = 3000
+	timeouts := serverTimeoutsFor(cfg)
+	if timeouts.read != 5*time.Second || timeouts.write != 9*time.Second || timeouts.idle != 7*time.Second || timeouts.streamIdle != 3*time.Second {
+		t.Fatalf("configured timeouts not applied: %+v", timeouts)
+	}
+	srv := &http.Server{}
+	applyServerTimeouts(srv, timeouts)
+	if srv.ReadTimeout != 5*time.Second || srv.WriteTimeout != 9*time.Second || srv.IdleTimeout != 7*time.Second || srv.ReadHeaderTimeout != timeouts.readHeader {
+		t.Fatalf("http.Server timeouts not applied: %+v", srv)
 	}
 }
 
@@ -67,6 +95,25 @@ const startupRedisBridge = `        bridges:
 // TestStartupErrorsNeverPrintSecretValues runs the router binary against
 // configs whose secret env vars hold a sentinel and fail at load time and at
 // initialization, and checks the sentinel never reaches stdout or stderr.
+// loadStartupConfig writes the given YAML to a temp dir and loads it through
+// the same loader the binary uses, so defaults and validation both run.
+func loadStartupConfig(t *testing.T, body, listen string) *router.Config {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	body = strings.ReplaceAll(body, "LOGDIR", dir)
+	body = strings.ReplaceAll(body, "127.0.0.1:0", listen)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ROUTER_MAIN_TEST_API_KEY", "startup-test-key")
+	cfg, err := router.LoadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	return cfg
+}
+
 func TestStartupErrorsNeverPrintSecretValues(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs the router binary")

@@ -8,6 +8,14 @@
 server:
   listen: :8080
   default_model_group: local-chat
+  # Long agent turns and edge-class local models stream for minutes (#432/#434).
+  # The write deadline is absolute, so it stays above the upstream budget and
+  # event streams use the progress deadline: each successful stream write
+  # extends it by stream_idle_timeout_ms, a stalled stream ends at that window.
+  read_timeout_ms: 60000
+  write_timeout_ms: 660000
+  idle_timeout_ms: 120000
+  stream_idle_timeout_ms: 120000
   streaming:
     translator: incremental
   responses:
