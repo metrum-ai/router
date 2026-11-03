@@ -345,9 +345,15 @@ def admin_password_hash(ctx: Ctx) -> str:
     is passed to child processes by environment variable only; the config file
     names the variable, never the hash.
     """
+    provided = ctx.child_env.get("HARNESS_ADMIN_PASSWORD_HASH", "").strip()
+    if provided:
+        # A measurement host without a Go toolchain gets the harness-only admin
+        # bcrypt hash from the environment; the config file still names the
+        # variable, never the hash.
+        if not provided.startswith("$2"):
+            raise RuntimeError("HARNESS_ADMIN_PASSWORD_HASH must be a bcrypt hash")
+        return provided
     source = ctx.work / "gen_admin_hash.go"
-    if source.exists():
-        return ctx.child_env["HARNESS_ADMIN_PASSWORD_HASH"]
     program = (
         "package main\n\nimport (\n\t\"fmt\"\n\n\t\"golang.org/x/crypto/bcrypt\"\n)\n\n"
         "func main() {\n\th, err := bcrypt.GenerateFromPassword([]byte(\"harness-admin-password\"), 10)\n"
