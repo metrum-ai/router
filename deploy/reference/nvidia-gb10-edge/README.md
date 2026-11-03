@@ -145,9 +145,14 @@ Vast containers, all destroyed; windows and rates are in
 
 ## Limits
 
-- Kernel support for this GPU compute capability is **verified for the
-  `local-tiny` slot only** (see Measured results). The 30B `local-chat` slot did
-  not finish starting on the rented GB10 container, so it stays unverified.
+- **Not validated on GB10 hardware.** This tier ships with a **functional check
+  only**: the pinned arm64 image was run on a GB10 container offered by a rental
+  provider, where it loaded and served the `local-tiny` slot through the router. No
+  GB10 machine has run this tier's `compose.yaml`, no 30B `local-chat` slot has
+  served from a GB10, and no latency or concurrency has been measured on this
+  hardware. Hardware validation is tracked for v5.0.0; until then, treat every
+  number in `SIZING.md` as arithmetic and the tier as unproven beyond that one
+  functional check.
 - Unified memory is shared with the CPU and the container runtime;
   `SIZING.md` assumes 85 % of the pool for the two slots.
 - One 30B-class model fits beside the tiny slot. Two do not, so this tier has no
