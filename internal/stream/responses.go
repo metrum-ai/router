@@ -16,8 +16,14 @@ type Responses struct {
 	IDs IdentifierEncoder
 	// PublicModel, when set, replaces response.model on re-marshalled
 	// response objects sent to the caller.
-	PublicModel        string
+	PublicModel string
+	// OnResponseID, when set, is called with the upstream response id before
+	// it is rewritten for the caller. Returning an error aborts the stream
+	// before the id-bearing event reaches the caller, so a router that cannot
+	// durably own the id never exposes it.
+	OnResponseID       func(string) error
 	UnknownEvents      int
+	idReported         bool
 	terminal, finished bool
 }
 
@@ -66,6 +72,15 @@ func (t *Responses) Next(up Event) ([]Event, error) {
 		var response map[string]json.RawMessage
 		if json.Unmarshal(raw, &response) != nil || response == nil {
 			return nil, errors.New("stream: invalid response object")
+		}
+		if t.OnResponseID != nil && !t.idReported {
+			var upstreamID string
+			if json.Unmarshal(response["id"], &upstreamID) == nil && upstreamID != "" {
+				if err := t.OnResponseID(upstreamID); err != nil {
+					return nil, err
+				}
+				t.idReported = true
+			}
 		}
 		rewrite(response, "id")
 		if t.PublicModel != "" {
