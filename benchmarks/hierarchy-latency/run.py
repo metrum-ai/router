@@ -790,7 +790,9 @@ def main() -> int:
     if bool(args.edge_url) != bool(args.dc_url):
         print("--edge-url and --dc-url must be given together", file=sys.stderr)
         return 2
-    remote = bool(args.edge_url)
+    # Bootstrap renders the configs and generates the tokens, so it behaves like
+    # a local run for setup purposes even when it is given remote addresses.
+    remote = bool(args.edge_url) and args.bootstrap is None
     if args.backend_url:
         if not args.model:
             print("--backend-url needs --model", file=sys.stderr)
