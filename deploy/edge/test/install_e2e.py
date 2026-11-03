@@ -307,6 +307,72 @@ class EdgeBundleComposeTest(unittest.TestCase):
                 self.assertIn("image", service, f"{overlay_name} must pin {name}'s image")
 
 
+class EdgeBundleOverlayMergeTest(unittest.TestCase):
+    """Compose merges sequences by appending, so an overlay that repeats a base entry
+    makes the file invalid ("array items must be unique"). Compose 2.26 refuses it at
+    `docker compose config`; CI has no container runtime, so the same rule is applied
+    here to every overlay."""
+
+    def setUp(self) -> None:
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover
+            self.skipTest("PyYAML is not installed")
+        self.yaml = yaml
+
+    def load(self, name: str) -> dict:
+        return self.yaml.safe_load((EDGE / name).read_text(encoding="utf-8"))
+
+    @staticmethod
+    def merge(base: object, overlay: object) -> object:
+        if isinstance(base, dict) and isinstance(overlay, dict):
+            merged = dict(base)
+            for key, value in overlay.items():
+                merged[key] = EdgeBundleOverlayMergeTest.merge(merged[key], value) if key in merged else value
+            return merged
+        if isinstance(base, list) and isinstance(overlay, list):
+            return list(base) + list(overlay)
+        return overlay
+
+    @staticmethod
+    def duplicates(value: object, path: str = "") -> list[str]:
+        found: list[str] = []
+        if isinstance(value, dict):
+            for key, item in value.items():
+                found += EdgeBundleOverlayMergeTest.duplicates(item, f"{path}.{key}")
+        elif isinstance(value, list):
+            seen = {}
+            for item in value:
+                marker = repr(item)
+                if marker in seen:
+                    found.append(f"{path}: duplicate {marker}")
+                seen[marker] = True
+                found += EdgeBundleOverlayMergeTest.duplicates(item, path)
+        return found
+
+    def test_every_overlay_merges_into_valid_compose(self) -> None:
+        base = self.load("compose.yaml")
+        for overlay_name in ("compose.amd.yaml", "compose.nvidia.yaml"):
+            merged = self.merge(base, self.load(overlay_name))
+            problems = self.duplicates(merged)
+            self.assertEqual(problems, [], f"{overlay_name} produces duplicate sequence entries: {problems}")
+
+
+class EdgeBundleRuntimeDocsTest(unittest.TestCase):
+    """The realistic runtime on AMD development platforms is rootless Podman, and a
+    single-file read-only config mount breaks caller minting. Both were hit on
+    hardware; the docs must carry the guidance."""
+
+    def test_readmes_cover_rootless_podman_and_config_mount(self) -> None:
+        edge = (EDGE / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Rootless Podman", edge)
+        self.assertIn("podman unshare chown", edge)
+        for tier in ("amd-strix-halo-edge", "amd-mi350p-datacenter", "nvidia-datacenter", "nvidia-gb10-edge"):
+            text = (ROOT / "deploy" / "reference" / tier / "README.md").read_text(encoding="utf-8")
+            self.assertIn("Rootless Podman", text, tier)
+            self.assertIn("mount the configuration", text.lower(), tier)
+
+
 class EdgeBundlePinTest(unittest.TestCase):
     """The bundle must not drift from the reference configuration pins."""
 

@@ -161,6 +161,17 @@ outstanding. No cost is claimed before it is known.
 - Digest pins were resolved on the date in `images.lock` and are not updated
   automatically.
 
+## Rootless Podman
+
+AMD development platforms often run Podman, rootless by default. The `chown -R
+65532:65532` above is correct for rootful Docker and wrong for rootless Podman,
+where container uid 65532 is a *mapped* host uid: use
+`podman unshare chown -R 65532:65532 config state logs` instead, or run the stack
+rootful. Mint the caller **before** the stack starts — the configuration is mounted
+as a single read-only file, so a later `--write` has nothing to write beside it; if
+you must mint afterwards, mount the configuration directory read-write for that step or
+point `ROUTER_CONFIG_BACKUP_DIR` at a writable directory.
+
 ## Rerun
 
 ```sh

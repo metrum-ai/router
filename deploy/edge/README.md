@@ -142,6 +142,37 @@ an air-gapped install is the same command with the inputs pre-staged:
    The escalation group is unavailable until a key is supplied, which is the normal
    air-gapped posture.
 
+## Rootless Podman
+
+Podman is the default container runtime on several AMD platforms, and it is
+**rootless** by default. Two things behave differently there, both learned on
+hardware:
+
+1. **Ownership.** A bind mount in a rootless container sees container uid 65532 as a
+   *mapped* host uid, not the literal `65532`. `chown -R 65532:65532 config state
+   logs` on the host therefore produces `permission denied`. Chown inside the user
+   namespace instead:
+
+   ```sh
+   podman unshare chown -R 65532:65532 config state logs
+   ```
+
+   Or run the stack rootful (`sudo podman system service --time=0
+   unix://$PWD/podman.sock` and point `DOCKER_HOST` at it), which keeps the
+   documented `chown` correct.
+2. **Minting a caller after the stack is up.** The configuration is mounted as a
+   single read-only file, so `callers generate --write` has no writable sibling for
+   its backup or its atomic temp file. Mint the caller **before** `up` (the deploy
+   sequence does), or mount the configuration directory read-write for that one step,
+   or set `ROUTER_CONFIG_BACKUP_DIR` to a writable directory you control. Since
+   2026-11 the tool writes its backup to that directory when the mount is read-only
+   and fails with a message naming this remedy rather than a bare permission error.
+
+Compose under Podman: `podman compose` (or `docker compose` on a host where `docker`
+is Podman's emulation) reads the same files, and every overlay must survive the same
+merge — `docker compose config` (or `podman compose config`) is the check, and CI runs
+an equivalent structural check for each overlay.
+
 ## Troubleshooting
 
 | Symptom | What to check |
