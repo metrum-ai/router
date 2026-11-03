@@ -37,14 +37,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 LOAD_DRIVER = ROOT / "benchmarks" / "overhead" / "load.py"
 
-# Fixed synthetic prompt: 2 000 tokens of repeated filler keeps the prefill cost
-# comparable between lanes without carrying any content that must not be shared.
+# Fixed synthetic prompt: repeated filler keeps the prefill cost comparable
+# between lanes without carrying content that must not be shared. The trailing
+# instruction matters: the driver requires every response to report exactly
+# `--output-tokens`, so the model has to run to the length limit instead of
+# stopping at an end-of-sequence token within the first few dozen tokens.
 FILLER = "The quick brown fox jumps over the lazy dog. "
+INSTRUCTION = (
+    "\n\nCount upward from 1, one integer per line. Do not stop, do not summarize, "
+    "do not add commentary: keep producing the next integer until you are cut off."
+)
 
 
 def synthetic_prompt(tokens: int) -> str:
     # ~12 tokens per repetition is close enough for a fixed, reproducible body.
-    return FILLER * max(1, tokens // 12)
+    return FILLER * max(1, tokens // 12) + INSTRUCTION
 
 
 def percentile(values: list[float], p: float) -> float | None:
