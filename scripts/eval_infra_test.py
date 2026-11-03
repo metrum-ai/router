@@ -109,6 +109,36 @@ def main() -> int:
     rejects(lambda r: r["cells"][0].update({"passes": 5}), "passes <= attempts")
     rejects(lambda r: r["cells"][0]["task_results"][0].pop("cost_usd"), "missing 'cost_usd'")
 
+    # AGENT-01: a pinned baseline plus a separately reported current-stable
+    # canary, reported next to the baseline and never instead of it.
+    paired_report = json.loads(json.dumps(report))
+    paired_report["cells"][0]["provenance"]["baseline_kind"] = "pinned"
+    stable = json.loads(json.dumps(report["cells"][0]))
+    stable["cell_id"] = "api-compat-dynamic-current-stable"
+    stable["provenance"] = dict(
+        stable["provenance"],
+        baseline_kind="current-stable",
+        baseline_of="api-compat-dynamic",
+        client_versions={"openai": "7.46.0"},
+    )
+    paired_report["cells"].append(stable)
+    require(R.validate_report(paired_report, doc) == [], "pinned baseline plus current-stable canary must pass")
+
+    def rejects_paired(mutate, text):
+        broken = json.loads(json.dumps(paired_report))
+        mutate(broken)
+        try:
+            R.validate_report(broken, doc)
+        except R.ReportError as exc:
+            require(text in str(exc), f"{text!r} not in {exc}")
+            return
+        raise AssertionError(f"expected rejection containing {text!r}")
+
+    rejects_paired(lambda r: r["cells"][1]["provenance"].pop("baseline_of"), "baseline_of")
+    rejects_paired(lambda r: r["cells"][1]["provenance"].update({"baseline_of": "missing-cell"}), "missing cell")
+    rejects_paired(lambda r: r["cells"][0]["provenance"].pop("baseline_kind"), "'pinned'")
+    rejects_paired(lambda r: r["cells"][1]["provenance"].update({"baseline_kind": "latest"}), "baseline_kind")
+
     # CLI smoke on the real matrix file.
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "eval_infra_matrix.py")], capture_output=True, text=True)
     require(out.returncode == 0 and "pairwise" in out.stdout, f"matrix CLI failed: {out.stderr}")
