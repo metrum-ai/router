@@ -8,6 +8,14 @@
 server:
   listen: 0.0.0.0:8080
   default_model_group: edge-default
+  # Long agent turns and edge-class local models stream for minutes (#432/#434).
+  # The write deadline is absolute, so it stays above the upstream budget and
+  # event streams use the progress deadline: each successful stream write
+  # extends it by stream_idle_timeout_ms, a stalled stream ends at that window.
+  read_timeout_ms: 60000
+  write_timeout_ms: 660000
+  idle_timeout_ms: 120000
+  stream_idle_timeout_ms: 120000
   identifiers:
     # Rewrite caller-visible upstream identifiers. Generate the key with
     # openssl rand -hex 64 (64 bytes); passthrough would expose provider names to callers.

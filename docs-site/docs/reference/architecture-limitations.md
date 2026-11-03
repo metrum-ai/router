@@ -57,6 +57,45 @@ The router does not replace host, cluster, database, ingress, identity-provider,
 secret-manager, provider-account, or client security. Operators must validate
 those controls and the exact upstream model/API combinations they enable.
 
+## Server Connection Deadlines
+
+The four HTTP server deadlines are configurable; zero selects the default and
+negative values and values above 24 hours are rejected at load.
+
+| Key | Default | Bound |
+| --- | --- | --- |
+| `server.read_timeout_ms` | 60000 | reading the request body |
+| `server.write_timeout_ms` | `server.upstream.timeout_ms` + 60000 (660000 by default) | absolute deadline for one response |
+| `server.idle_timeout_ms` | 120000 | keep-alive idle connection |
+| `server.stream_idle_timeout_ms` | 120000 | progress deadline for an event stream |
+
+Go's `http.Server.WriteTimeout` is absolute for the whole response, so a long
+answer used to be cut off while it was still being written. The write default now
+follows the worst-case attempt chain — the largest attempt budget
+(`targets[].timeout_ms`, `models.*.attempt_timeout_ms`, or
+`server.upstream.default_attempt_timeout_ms`, at least `server.upstream.timeout_ms`)
+times the number of targets a group can try, plus 60 s — so a slow attempt and a
+fallback chain are given up by the attempt/upstream timeouts, which record a clear
+error class and a usage row, not by the HTTP server. Setting
+`server.write_timeout_ms` explicitly is allowed; the loader warns when it is
+below that chain budget.
+
+Event streams (`Content-Type: text/event-stream`) additionally get a *progress*
+deadline: every successful stream write or flush extends the connection write
+deadline by `server.stream_idle_timeout_ms`. A stream that keeps delivering data
+therefore outlives the absolute write deadline. The upstream idle window starts
+at the **first data byte**, not at the response headers, so an upstream that
+reasons or prefills for minutes before its first token is bounded by the
+attempt/upstream timeout rather than by this window. A mid-stream silent gap
+longer than `server.stream_idle_timeout_ms`, or a downstream that stops reading,
+ends the stream and is recorded as `upstream_timeout` with a stream-idle cause.
+Unary responses are never extended, so their absolute bound is unchanged.
+
+Edge and hierarchy reference deployments set these explicitly; see
+`deploy/reference/hierarchy/config/edge.yaml`, `.../dc.yaml`,
+`deploy/reference/amd-strix-halo-edge/config.yaml` and
+`deploy/reference/nvidia-gb10-edge/config.yaml`.
+
 ## Explicit Limitations And Non-Goals
 
 - Model-group names and provider availability are deployment-defined; the

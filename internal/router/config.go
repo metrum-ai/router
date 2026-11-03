@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -67,7 +68,14 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Streaming           StreamingConfig           `yaml:"streaming" json:"streaming"`
+	Streaming StreamingConfig `yaml:"streaming" json:"streaming"`
+	// HTTP server deadlines (#759). Zero selects the default. The write
+	// deadline is absolute, so it defaults above the upstream budget; event
+	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
+	ReadTimeoutMS       int                       `yaml:"read_timeout_ms" json:"readTimeoutMs,omitempty"`
+	WriteTimeoutMS      int                       `yaml:"write_timeout_ms" json:"writeTimeoutMs,omitempty"`
+	IdleTimeoutMS       int                       `yaml:"idle_timeout_ms" json:"idleTimeoutMs,omitempty"`
+	StreamIdleTimeoutMS int                       `yaml:"stream_idle_timeout_ms" json:"streamIdleTimeoutMs,omitempty"`
 	Responses           ResponsesConfig           `yaml:"responses" json:"responses"`
 	Identifiers         IdentifierConfig          `yaml:"identifiers"`
 	Listen              string                    `yaml:"listen"`
@@ -1286,6 +1294,50 @@ func validEnvName(k string) bool {
 	return true
 }
 
+// attemptChainBudgetMS is the worst-case wall-clock budget of one request's
+// attempt chain: for each model group, the largest attempt budget (per-target
+// timeout_ms, group attempt_timeout_ms, or default_attempt_timeout_ms, at least
+// the upstream timeout) times the number of targets that can be tried, with the
+// upstream timeout as the floor. The server write deadline defaults above it so
+// attempts, not the HTTP server, decide when a slow generation is given up.
+func (c *Config) attemptChainBudgetMS() int {
+	upstream := c.Server.Upstream.TimeoutMS
+	if upstream <= 0 {
+		upstream = int((10 * time.Minute).Milliseconds())
+	}
+	budget := upstream
+	for _, group := range c.Models {
+		perAttempt := group.AttemptTimeoutMS
+		if perAttempt <= 0 {
+			perAttempt = c.Server.Upstream.DefaultAttemptTimeoutMS
+		}
+		if perAttempt <= 0 {
+			perAttempt = upstream
+		}
+		for _, target := range group.Targets {
+			if target.TimeoutMS > perAttempt {
+				perAttempt = target.TimeoutMS
+			}
+		}
+		attempts := len(group.Targets)
+		if attempts < 1 {
+			attempts = 1
+		}
+		if chain := perAttempt * attempts; chain > budget {
+			budget = chain
+		}
+	}
+	// Stay inside the same 24-hour ceiling the explicit values use, so a group
+	// with a very large target count cannot derive a default that validation
+	// would then reject.
+	const maxServerTimeoutMS = 24 * 60 * 60 * 1000
+	margin := int((60 * time.Second).Milliseconds())
+	if budget > maxServerTimeoutMS-2*margin {
+		budget = maxServerTimeoutMS - 2*margin
+	}
+	return budget
+}
+
 func (c *Config) setDefaults() {
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
@@ -1400,6 +1452,27 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.Upstream.TimeoutMS == 0 {
 		c.Server.Upstream.TimeoutMS = int((10 * time.Minute).Milliseconds())
+	}
+	if c.Server.ReadTimeoutMS == 0 {
+		c.Server.ReadTimeoutMS = int((60 * time.Second).Milliseconds())
+	}
+	if budget := c.attemptChainBudgetMS(); c.Server.WriteTimeoutMS == 0 {
+		// The absolute write deadline must not decide when a slow generation is
+		// given up on (#759). Default it above the worst-case attempt chain —
+		// the largest attempt budget times the most targets a request can try,
+		// which covers per-group, per-target and fallback budgets — plus a
+		// minute of margin for response writing (#760 review item 2).
+		c.Server.WriteTimeoutMS = budget + int((60 * time.Second).Milliseconds())
+	} else if c.Server.WriteTimeoutMS < budget {
+		log.Printf("WARNING: server.write_timeout_ms=%d is below the configured attempt chain budget %d; a slow attempt or a fallback chain can be cut by the HTTP server (see docs-site/docs/reference/architecture-limitations.md)", c.Server.WriteTimeoutMS, budget)
+	}
+	if c.Server.IdleTimeoutMS == 0 {
+		c.Server.IdleTimeoutMS = int((120 * time.Second).Milliseconds())
+	}
+	if c.Server.StreamIdleTimeoutMS == 0 {
+		// Progress deadline for event streams: a stream that keeps writing is
+		// extended on every write, a stalled stream ends after this window.
+		c.Server.StreamIdleTimeoutMS = int((120 * time.Second).Milliseconds())
 	}
 	if c.Server.Upstream.MaxResponseBytes == 0 {
 		c.Server.Upstream.MaxResponseBytes = 32 << 20
@@ -1518,6 +1591,22 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if c.Server.Upstream.TimeoutMS < 0 {
 		return fmt.Errorf("server upstream timeout_ms cannot be negative")
+	}
+	for _, timeout := range []struct {
+		name  string
+		value int
+	}{
+		{"read_timeout_ms", c.Server.ReadTimeoutMS},
+		{"write_timeout_ms", c.Server.WriteTimeoutMS},
+		{"idle_timeout_ms", c.Server.IdleTimeoutMS},
+		{"stream_idle_timeout_ms", c.Server.StreamIdleTimeoutMS},
+	} {
+		if timeout.value < 0 {
+			return fmt.Errorf("server %s cannot be negative", timeout.name)
+		}
+		if timeout.value > 24*60*60*1000 {
+			return fmt.Errorf("server %s cannot exceed 24 hours", timeout.name)
+		}
 	}
 	if c.Server.Upstream.DefaultAttemptTimeoutMS < 0 {
 		return fmt.Errorf("server upstream default_attempt_timeout_ms cannot be negative")
