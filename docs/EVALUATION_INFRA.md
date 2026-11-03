@@ -58,6 +58,26 @@ excluded.
 python3 scripts/eval_report_schema.py path/to/report.json
 ```
 
+### Pinned baseline and current-stable canary (AGENT-01)
+
+AGENT-01 requires the supported pinned baseline and, separately reported, a
+current-stable canary. A cell declares which one it is in provenance:
+
+```json
+"provenance": {"baseline_kind": "pinned", "client_versions": {"openai": "7.45.1"}}
+```
+
+```json
+"provenance": {"baseline_kind": "current-stable", "baseline_of": "<pinned cell_id>", "client_versions": {"openai": "7.46.0"}}
+```
+
+`baseline_kind` accepts `pinned` or `current-stable`. A current-stable cell must
+name its pinned baseline in `baseline_of`, and the validator rejects a report
+where that cell is missing, where the referenced cell is not itself
+`baseline_kind: pinned`, or where the canary is present without its baseline.
+The pinned baseline is therefore never replaced by the canary; both are reported
+side by side.
+
 Missing controls or insufficient samples are reported as violations; they
 cannot silently become certification.
 

@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned through the router, with a report that reuses the evaluation report
   schema and fails on a router regression. Offline-tested in the PR gate; live
   runs stay opt-in and bounded (`make eval-canary`).
+- Evaluation reports distinguish a pinned baseline from a separately reported
+  current-stable canary (`provenance.baseline_kind`, `provenance.baseline_of`):
+  the validator rejects a canary reported without its pinned baseline, so a
+  current-stable client row can never replace the pinned one (AGENT-01, #330).
 
 - `reasoning.with_tools` target metadata. Setting it to `false` declares that
   the target's outbound dialect rejects a reasoning control together with

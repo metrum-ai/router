@@ -33,6 +33,7 @@ REQUIRED_TOP = ("schema_version", "run_id", "started_utc", "cells")
 REQUIRED_CELL = ("cell_id", "mode", "attempts", "passes", "task_results")
 REQUIRED_TASK = ("task_id", "outcome", "time_to_first_event_ms", "completion_latency_ms", "tool_turns", "cost_usd")
 OUTCOMES = ("pass", "fail", "error", "skipped")
+BASELINE_KINDS = ("pinned", "current-stable")
 
 
 class ReportError(ValueError):
@@ -64,6 +65,8 @@ def validate_report(report: dict, matrix_doc: dict | None = None) -> list[str]:
     if not isinstance(cells, list) or not cells:
         raise ReportError("report must contain at least one cell")
     seen = set()
+    baseline_kinds: dict[str, str | None] = {}
+    baselines: list[tuple[str, str]] = []
     for cell in cells:
         if not isinstance(cell, dict):
             raise ReportError("cell must be an object")
@@ -74,6 +77,7 @@ def validate_report(report: dict, matrix_doc: dict | None = None) -> list[str]:
         if cell_id in seen:
             raise ReportError(f"duplicate cell {cell_id!r}")
         seen.add(cell_id)
+        baseline_kinds[cell_id] = ((cell.get("provenance") or {}).get("baseline_kind"))
         attempts, passes = cell["attempts"], cell["passes"]
         if not isinstance(attempts, int) or attempts < 1 or not isinstance(passes, int) or passes < 0 or passes > attempts:
             raise ReportError(f"cell {cell_id!r}: need attempts >= 1 and 0 <= passes <= attempts")
@@ -97,6 +101,20 @@ def validate_report(report: dict, matrix_doc: dict | None = None) -> list[str]:
         for name, digest in (provenance.get("task_image_digests") or {}).items():
             if not isinstance(digest, str) or not digest.startswith("sha256:"):
                 raise ReportError(f"cell {cell_id!r}: task image {name!r} must be a sha256 digest")
+        # AGENT-01: a current-stable canary is reported next to its pinned
+        # baseline, never instead of it.
+        baseline_kind = provenance.get("baseline_kind")
+        if baseline_kind is not None and baseline_kind not in BASELINE_KINDS:
+            raise ReportError(
+                f"cell {cell_id!r}: baseline_kind must be one of {sorted(BASELINE_KINDS)}, got {baseline_kind!r}"
+            )
+        if baseline_kind == "current-stable":
+            baseline_of = provenance.get("baseline_of")
+            if not isinstance(baseline_of, str) or not baseline_of:
+                raise ReportError(
+                    f"cell {cell_id!r}: a current-stable canary must set provenance.baseline_of to its pinned baseline cell"
+                )
+            baselines.append((cell_id, baseline_of))
 
         # Preregistered sample size must be met (EVAL-03).
         pre = preregistered.get(cell_id)
@@ -139,6 +157,14 @@ def validate_report(report: dict, matrix_doc: dict | None = None) -> list[str]:
             paired = cell["paired_baseline"]
             if not isinstance(paired, dict) or not isinstance(paired.get("wins"), int) or not isinstance(paired.get("losses"), int):
                 raise ReportError(f"cell {cell_id!r}: paired_baseline must record wins/losses")
+
+    for cell_id, baseline_of in baselines:
+        if baseline_of not in seen:
+            raise ReportError(f"cell {cell_id!r}: baseline_of names missing cell {baseline_of!r}")
+        if baseline_kinds.get(baseline_of) != "pinned":
+            raise ReportError(
+                f"cell {cell_id!r}: baseline_of must name a cell whose provenance.baseline_kind is 'pinned'"
+            )
     return violations
 
 
