@@ -10,6 +10,11 @@ group, quotas and spend report can be exercised end to end on a machine that has
 no accelerator (CI included). It does not produce model output and must never be
 described as a model or as quality evidence.
 
+The server is a test double, not a load target: it answers from a fixed script and
+its connection handling is stdlib-simple, so a run that opens dozens of concurrent
+keep-alive connections can see resets from it before any router in front does. Use
+it to exercise procedure (groups, quotas, reports, auth), never to measure a box.
+
 Environment:
   MOCK_PORT         listen port (default 18081)
   MOCK_SERVED_NAME  served model name (default local-tiny)
@@ -169,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
     state = State(args.served_name, api_key or None, args.label)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_factory(state))
     server.daemon_threads = True
+    # Small bursts arrive faster than the stdlib default backlog of 5 can absorb.
+    server.request_queue_size = 128
     sys.stderr.write(
         f"mock-upstream: {args.served_name} on 127.0.0.1:{args.port} "
         f"(auth {'on' if state.api_key else 'off'}, not a model)\n"
