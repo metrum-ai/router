@@ -566,3 +566,33 @@ func TestResponsesDeveloperHistoryStillExcluded645(t *testing.T) {
 		t.Fatalf("developer history must stay excluded: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
 	}
 }
+
+// TestResponsesSystemHistoryReplacementLimit645 proves that exhausting the
+// replacement cap on an assembled instruction fails closed before dispatch,
+// rather than forwarding the part of the text the filter could not replace.
+func TestResponsesSystemHistoryReplacementLimit645(t *testing.T) {
+	var hits atomic.Int32
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"msg","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":1}}`)
+	}))
+	defer upstreamServer.Close()
+	svc := nativeStreamTestService(t, upstreamServer.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter = testPIIFilterConfig("redact_only")
+		group.PIIFilter.Rules = []PIIFilterRule{{Name: "ssn", Expression: `\b\d{3}-\d{2}-\d{4}\b`, PlaceholderPrefix: "US_SSN"}}
+		group.PIIFilter.MaxReplacementsPerRequest = 1
+		cfg.Models["native-stream"] = group
+	})
+	// Two distinct matches exceed the cap; a repeated identical match would share
+	// one placeholder and must not trip the limit.
+	body := `{"model":"native-stream","temperature":0,"input":[{"role":"system","content":"accounts 111-22-3333 and 444-55-6666"},{"role":"user","content":"hi"}]}`
+	r := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(body))
+	r.Header.Set("Authorization", "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, r)
+	if hits.Load() != 0 || w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "pii-filter-blocked") {
+		t.Fatalf("replacement limit must fail closed: status=%d hits=%d body=%s", w.Code, hits.Load(), w.Body.String())
+	}
+}
