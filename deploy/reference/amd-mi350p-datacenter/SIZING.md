@@ -49,18 +49,20 @@ model and the tiny slot share one card.
 
 | Slot | `gpu_memory_utilization` | Budget | − weights | − 2 GB overhead | KV pool | Context | Requests at that context |
 |---|---|---|---|---|---|---|---|
-| `local-tiny` | 0.05 | 7.2 GB | 3.8 GB | 1.8 GB | 1.8 GB | 8 192 | 2 |
-| `local-chat` | 0.50 | 72.0 GB | 39.0 GB | 37.0 GB | 37.0 GB | 8 192 | 18 |
-| `local-coder` | 0.43 | 61.9 GB | 30.9 GB | 28.9 GB | 28.9 GB | 8 192 | 38 |
+| `local-tiny` | 0.09 | 13.0 GB | 9.6 GB | 6.6 GB | 6.6 GB | 8 192 | 7 |
+| `local-chat` | 0.46 | 66.2 GB | 33.2 GB | 30.2 GB | 30.2 GB | 8 192 | 15 |
+| `local-coder` | 0.43 | 61.9 GB | 30.9 GB | 27.9 GB | 27.9 GB | 8 192 | 37 |
 
-0.98 of the card is allocated across the three slots.
+0.98 of the card is allocated across the three slots. The overhead allowance is
+3 GiB per slot: on hardware, vLLM refuses a slot that leaves less, failing with
+`No available memory for the cache blocks`.
 
 ## Expected, not measured
 
 | Claim | Value | Basis |
 |---|---|---|
-| Concurrent 8K-context agents, `local-chat` | **estimate: 18, memory bound** | table above; the rate bound is not yet measured |
-| Concurrent 8K-context agents, `local-coder` | **estimate: 38, memory bound** | the sparse 3B-active path also has a lower per-token cost |
+| Concurrent 8K-context agents, `local-chat` | **estimate: 15, memory bound** | table above; the rate bound is not yet measured |
+| Concurrent 8K-context agents, `local-coder` | **estimate: 37, memory bound** | the sparse 3B-active path also has a lower per-token cost |
 | Concurrent 8K-context agents, both groups | **estimate: bounded by 144 GB, not by a slot** | mixed traffic shares the same HBM |
 | Decode throughput | unknown | must be measured; FP8 32B on one MI350P |
 

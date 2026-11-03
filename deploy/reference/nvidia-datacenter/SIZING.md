@@ -60,18 +60,20 @@ Model facts are pinned in `images.lock` (Hugging Face revisions). KV arithmetic:
 
 | Slot | `gpu_memory_utilization` | Budget | − weights | − 2 GB overhead | KV pool | Context | Requests at that context |
 |---|---|---|---|---|---|---|---|
-| `local-tiny` | 0.08 | 6.4 GB | 3.0 GB | 1.0 GB | 1.0 GB | 8 192 | 1 |
-| `local-chat` | 0.88 | 70.4 GB | 37.4 GB | 35.4 GB | 35.4 GB | 8 192 | 17 |
+| `local-tiny` | 0.12 | 9.6 GB | 6.2 GB | 3.2 GB | 3.2 GB | 8 192 | 3 |
+| `local-chat` | 0.84 | 67.2 GB | 34.2 GB | 31.2 GB | 31.2 GB | 8 192 | 15 |
 
 The two slots share one GPU (0.96 of it allocated; the remaining 4 % is left for
-driver and NCCL buffers).
+driver and NCCL buffers). The overhead allowance is 3 GiB per slot: a smaller one
+was tried on hardware and vLLM refused to start the tiny slot with
+`No available memory for the cache blocks` at `gpu_memory_utilization=0.06`.
 
 ## Expected, not measured
 
 | Claim | Value | Basis |
 |---|---|---|
-| Concurrent 8K-context chat agents | **estimate: 12–17, memory bound** | the table above; the rate bound is not yet measured |
-| Concurrent agents without the tail | **estimate: 40+ at 2K context** | 35.4 GB ÷ 0.5 GB per 2K request |
+| Concurrent 8K-context chat agents | **estimate: 15, memory bound** | the table above; the rate bound is not yet measured |
+| Concurrent agents without the tail | **estimate: 60+ at 2K context** | 31.2 GB ÷ 0.5 GB per 2K request |
 | Output throughput on `local-chat` | unknown | must be measured; FP8 32B on a 80 GB class card |
 
 These rows are arithmetic, not results. `results/README.md` records what was

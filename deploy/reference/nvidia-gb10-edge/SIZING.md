@@ -53,18 +53,20 @@ reports the number it reached, including zero if that is the answer.
 
 | Slot | `gpu_memory_utilization` | Budget | − weights | − 2 GB overhead | KV pool | Context | Requests at that context |
 |---|---|---|---|---|---|---|---|
-| `local-tiny` | 0.05 | 6.4 GB | 3.0 GB | 1.0 GB | 1.0 GB | 8 192 | 1 |
-| `local-chat` | 0.80 | 102.4 GB | 41.4 GB | 39.4 GB | 39.4 GB | 8 192 | 52 |
+| `local-tiny` | 0.09 | 11.5 GB | 8.1 GB | 5.1 GB | 5.1 GB | 8 192 | 5 |
+| `local-chat` | 0.76 | 97.3 GB | 36.3 GB | 33.3 GB | 33.3 GB | 8 192 | 44 |
 
 0.85 of the unified pool is allocated to the two slots; the remaining ~19 GB is
-left to the operating system and the router.
+left to the operating system and the router. The overhead allowance is 3 GiB per
+slot: vLLM refuses a slot that leaves less (seen on hardware as
+`No available memory for the cache blocks`).
 
 ## Expected, not measured
 
 | Claim | Value | Basis |
 |---|---|---|
-| Concurrent 8K-context agents on `local-chat` | **estimate: memory allows 52; bandwidth bound is unknown and lower** | the table above; the rate bound is the number that matters on this box |
-| Concurrent agents at 2K context | **estimate: memory allows 200+; bandwidth bound is lower** | 39.4 GB ÷ 0.19 GB per 2K request |
+| Concurrent 8K-context agents on `local-chat` | **estimate: memory allows 44; bandwidth bound is unknown and lower** | the table above; the rate bound is the number that matters on this box |
+| Concurrent agents at 2K context | **estimate: memory allows 175+; bandwidth bound is lower** | 33.3 GB ÷ 0.19 GB per 2K request |
 | Decode throughput | unknown | the sparse 3.3B-active path is what makes an edge MoE usable; it must be measured |
 
 These rows are arithmetic. `results/README.md` records what was measured, on

@@ -57,7 +57,7 @@ services:
       - --max-model-len
       - ${MAX_MODEL_LEN:-8192}
       - --gpu-memory-utilization
-      - ${TINY_GPU_MEMORY_UTILIZATION:-0.05}
+      - ${TINY_GPU_MEMORY_UTILIZATION:-0.09}
       - --api-key
       - ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
       - --host
@@ -84,7 +84,7 @@ services:
       - --max-model-len
       - ${MAX_MODEL_LEN:-8192}
       - --gpu-memory-utilization
-      - ${PRIMARY_GPU_MEMORY_UTILIZATION:-0.80}
+      - ${PRIMARY_GPU_MEMORY_UTILIZATION:-0.76}
       - --api-key
       - ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
       - --host

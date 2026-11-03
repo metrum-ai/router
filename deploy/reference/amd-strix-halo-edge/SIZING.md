@@ -49,11 +49,13 @@ one pool, so the numbers below are one 128 GB budget, not a VRAM figure.
 
 | Slot | `gpu_memory_utilization` | Budget | − weights | − 2 GB overhead | KV pool | Context | Requests at that context |
 |---|---|---|---|---|---|---|---|
-| `local-tiny` | 0.05 | 6.4 GB | 3.0 GB | 1.0 GB | 1.0 GB | 8 192 | 1 |
-| `local-chat` | 0.80 | 102.4 GB | 41.4 GB | 39.4 GB | 39.4 GB | 8 192 | 52 |
+| `local-tiny` | 0.09 | 11.5 GB | 8.1 GB | 5.1 GB | 5.1 GB | 8 192 | 5 |
+| `local-chat` | 0.76 | 97.3 GB | 36.3 GB | 33.3 GB | 33.3 GB | 8 192 | 44 |
 
 0.85 of the unified pool is allocated to the two slots; the rest stays with the
-operating system, the desktop session and the router.
+operating system, the desktop session and the router. The overhead allowance is
+3 GiB per slot: vLLM refuses a slot that leaves less, failing on hardware with
+`No available memory for the cache blocks`.
 
 ## Prerequisite: the GPU must be able to map the pool
 
@@ -74,8 +76,8 @@ of this configuration; the README records what the box was set to for the run.
 
 | Claim | Value | Basis |
 |---|---|---|
-| Concurrent 8K-context agents on `local-chat` | **estimate: memory allows 52; bandwidth bound is much lower** | table above; 256 GB/s shared with the CPU is the real limit |
-| Concurrent agents at 2K context | **estimate: memory allows 200+; bandwidth bound is lower** | 39.4 GB ÷ 0.19 GB per 2K request |
+| Concurrent 8K-context agents on `local-chat` | **estimate: memory allows 44; bandwidth bound is much lower** | table above; 256 GB/s shared with the CPU is the real limit |
+| Concurrent agents at 2K context | **estimate: memory allows 175+; bandwidth bound is lower** | 33.3 GB ÷ 0.19 GB per 2K request |
 | Decode throughput | unknown | a 3.3B-active MoE on LPDDR5X must be measured, not extrapolated |
 
 These rows are arithmetic. `results/README.md` records what was measured, on
