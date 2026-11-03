@@ -181,10 +181,14 @@ def main(argv: list[str] | None = None) -> int:
             for lane in ("direct", "router"):
                 phases.append(reduce_phase(samples, lane, count, streaming))
 
-    expected = args.repetitions * args.requests_per_worker
+    # Each cell has `workers x repetitions x requests_per_worker` requests per lane,
+    # so the completeness check has to scale with the worker count. Comparing against
+    # the one-worker figure marked every larger cell incomplete and reported a
+    # sustained concurrency of 1 even when every cell was full.
     router_rows = [row for row in phases if row["lane"] == "router" and not row["streaming"]]
     sustained = 0
     for row in sorted(router_rows, key=lambda item: item["workers"]):
+        expected = row["workers"] * args.repetitions * args.requests_per_worker
         complete = row["requests"] == expected
         within = row["p95_ms"] is not None and row["p95_ms"] <= args.p95_target_ms
         if complete and within:
@@ -204,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         "requests_per_worker": args.requests_per_worker,
         "p95_target_ms": args.p95_target_ms,
         "sustained_workers": sustained,
-        "requests_planned_per_cell": expected,
+        "requests_planned_per_cell": "workers x repetitions x requests_per_worker",
         "sustained_definition": "highest non-streaming router worker count whose p95 end-to-end latency is inside "
         "p95_target_ms with every planned request completed; streaming TTFT is reported separately",
         "failures": "a failed request aborts the load driver and leaves no summary, so a written sweep has none",
