@@ -121,24 +121,33 @@ direct-lane baseline; nothing but the router listens on a non-loopback address.
 
 ## Measured results
 
-**Pending.** No hardware run is committed for this tier yet. The run records the
-functional suite per group, the concurrency sweep (p95 latency and the
-zero-failure worker count for the routed and direct lanes), the exact system,
-driver versions, image digests and model revisions, and raw output under
-`results/`. `SIZING.md` holds the arithmetic the run is meant to check.
+Check of record: [`results/2026-11-03-24a6bbfe9c/`](results/2026-11-03-24a6bbfe9c/)
+on a rented **GB10 container** (Vast). The pinned arm64 member of
+`vllm/vllm-openai:v0.33.0` loaded on GB10, captured CUDA graphs, served
+`local-tiny`, and the tier's group answered through the router.
+
+| Item | Result |
+|---|---|
+| Pinned arm64 image on GB10 | pass: vLLM 0.33.0, FlashAttention 2, `/health` 200, exact token accounting |
+| `local-tiny` group through the router | pass: functional suite 6 passed, 0 failed, 3 skipped |
+| `local-chat` slot (Qwen3-30B-A3B) | **not proven**: one host initialised the engine but never came up within 15 min; another had no egress |
+| Co-located compose deployment | **not possible on that provider**: Vast GPU instances are unprivileged containers |
+| Concurrency and latency | **not measured**: the direct lane needs loopback |
+
+So the "kernel support unverified" limit below is now resolved for the tiny slot on
+GB10 and remains open for the 30B slot.
 
 ## Actual cost
 
-**Pending.** This tier is hardware a team owns rather than a rental, so the cost
-section will carry either the invoice for the system or, when the box is
-leveraged rather than bought, `estimate (hours × list rate), invoice pending`
-with the rate it used. No cost is claimed before it is known.
+**estimate (hours × list rate), invoice pending: about $0.25** across four short
+Vast containers, all destroyed; windows and rates are in
+[`results/2026-11-03-24a6bbfe9c/cost.md`](results/2026-11-03-24a6bbfe9c/cost.md).
 
 ## Limits
 
-- Kernel support for this GPU compute capability is **not verified** by this
-  repository. If the pinned image has no kernels for it, vLLM will fail at
-  startup or fall back to slow JIT; confirm before promising this tier.
+- Kernel support for this GPU compute capability is **verified for the
+  `local-tiny` slot only** (see Measured results). The 30B `local-chat` slot did
+  not finish starting on the rented GB10 container, so it stays unverified.
 - Unified memory is shared with the CPU and the container runtime;
   `SIZING.md` assumes 85 % of the pool for the two slots.
 - One 30B-class model fits beside the tiny slot. Two do not, so this tier has no

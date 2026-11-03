@@ -1,0 +1,62 @@
+{
+  "schema": "metrum.ai/reference-functional-suite/v1",
+  "tier": "nvidia-gb10-edge",
+  "base_url": "http://127.0.0.1:18099",
+  "commit": "24a6bbfe9cfa5e1a44f9ff9f5851fb5210aae9e3",
+  "finished_at": "2026-11-03T01:15:56Z",
+  "groups": [
+    "local-tiny"
+  ],
+  "checks": [
+    {
+      "check": "readyz",
+      "status": "pass",
+      "detail": "200"
+    },
+    {
+      "check": "models",
+      "status": "pass",
+      "detail": "2 group(s) advertised"
+    },
+    {
+      "check": "completion",
+      "status": "pass",
+      "detail": "65 chars",
+      "group": "local-tiny"
+    },
+    {
+      "check": "escalation",
+      "status": "skip",
+      "detail": "OPENAI_API_KEY is not set; the escalate group has no key to use",
+      "group": "escalate"
+    },
+    {
+      "check": "group-grant",
+      "status": "skip",
+      "detail": "RESTRICTED_TOKEN is not set; a caller without the group is not exercised"
+    },
+    {
+      "check": "auth-required",
+      "status": "pass",
+      "detail": "401 without a token"
+    },
+    {
+      "check": "auth-invalid",
+      "status": "pass",
+      "detail": "401 with an unknown token"
+    },
+    {
+      "check": "admin-requires-auth",
+      "status": "pass",
+      "detail": "401 without credentials"
+    },
+    {
+      "check": "admin-ui",
+      "status": "skip",
+      "detail": "REFERENCE_ADMIN_USER/REFERENCE_ADMIN_PASSWORD not set"
+    }
+  ],
+  "passed": 6,
+  "failed": 0,
+  "skipped": 3
+}

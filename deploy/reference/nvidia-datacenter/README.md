@@ -132,23 +132,35 @@ direct-lane baseline; nothing but the router listens on a non-loopback address.
 
 ## Measured results
 
-**Pending.** No hardware run is committed for this tier yet, so this section
-claims nothing. When the run happens it records, on a named commit:
+Run of record: [`results/2026-11-03-e956434e36/`](results/2026-11-03-e956434e36/)
+on one rented **H100 PCIe 80 GB** (driver 570.195.03), deployed from this tier's
+`compose.yaml` unmodified, router co-located with both model servers.
 
-- the functional suite result (`harness/functional_smoke.sh`), per group;
-- the concurrency sweep (`harness/concurrency_sweep.sh`) with p95 latency and
-  zero-failure worker counts for the router lane and the direct vLLM lane;
-- the exact hardware, driver, image digests and model revisions;
-- raw output committed under `results/`.
+| Item | Result |
+|---|---|
+| Deployment as committed | pass: both model servers healthy, `/readyz` 200, caller token authenticates |
+| Functional suite | **8 passed, 0 failed**, admin UI auth exercised (200 with credentials, 401 without) |
+| Escalation group | **not run on this box** — no provider key is placed on rented hardware. Escalation is proven by the v47-hier #434 run. |
+| Caller group grants | **not proven** — the restricted caller did not reach the configuration before the router restarted |
+| Concurrency sweep | **not completed** — no p95 and no sustained-concurrency number is claimed |
+| Hardware-stage findings | five, all carried into this tree; see `FAILURES.md` in the run directory |
 
-`SIZING.md` carries the arithmetic estimate that the run is meant to check.
+The sweep aborted in the 32-worker cells because the generated harness caller
+carried default rate ceilings (24 x `429 concurrency-exceeded`, 3 x `429
+tpm-exceeded` in the request log). Raising the harness caller to
+`concurrent=64`, `tpm=2 000 000`, `rpm=600` fixed the cause, but the rental window
+closed before a clean sweep finished. **This tier currently has no measured
+concurrency figure**; `SIZING.md` still carries only arithmetic.
+
+Raw driver output for the three partial attempts and the full failure list are in
+the same directory.
 
 ## Actual cost
 
-**Pending.** The tier is priced from the provider's billing API when the run
-happens (hours × the invoice's hourly rate), and the number lands here with the
-rental window. No cost is claimed before it is incurred; there is no list-rate
-arithmetic in this section.
+**estimate (hours × list rate), invoice pending: 2.07 h × $2.50/h = $5.18** for the
+run of record. The provider exposes no per-instance billing endpoint, so the
+invoiced number has to come from the account invoice; the arithmetic and the exact
+window are in [`results/2026-11-03-e956434e36/cost.md`](results/2026-11-03-e956434e36/cost.md).
 
 ## Limits
 

@@ -123,6 +123,13 @@ RUN_COMMIT=$(git rev-parse HEAD) ROUTER_TOKEN=... \
   python3 deploy/reference/harness/run_tier.py <vendor>-<tier>
 ```
 
+Two run prerequisites the hardware taught us, both about the *harness*, not the
+router: the caller used for a sweep needs `rate.concurrent` above the worker count
+(a 32-worker cell is refused by a caller limited to the demo defaults, which shows
+up as `429 concurrency-exceeded`), and the fixed prompt must ask for continuous
+output, because the driver requires every response to report exactly
+`--output-tokens` and a plain filler prompt stops at end-of-sequence.
+
 It writes `results/<date>-<commit>/` with `ENV.md`, `functional.json`,
 `sweep.json` and the sweep's raw driver output. A failed suite or sweep keeps the
 partial evidence and exits non-zero: the directory is then a record, not a pass. A run is only evidence
