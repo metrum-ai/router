@@ -116,6 +116,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes. Back up before the migration gate and restore a pre-upgrade backup
   to downgrade (#665).
 
+- Serve the stored Responses operations for enabled affinity groups:
+  `GET /v1/responses/{id}` (including `stream=true`), `GET
+  /v1/responses/{id}/input_items` and `DELETE /v1/responses/{id}` are forwarded
+  to the recorded provider account after the same owner, expiry and target
+  checks as continuation. A missing, expired or other-caller id returns the same
+  `404 response_not_found` before any upstream call; an unavailable target
+  returns `409 response_target_unavailable`; DELETE records a local tombstone and
+  the confirmed (or not-found) upstream deletion state. Caller-visible ids are
+  rewritten on these surfaces under `identifiers.mode: rewrite`. With affinity
+  disabled these routes keep the documented `501 unsupported_endpoint` behavior
+  (#533).
+
 ## [4.6.0] - 2026-11-02
 
 Security, PII and tool-compatibility release. No usage-database migration is
