@@ -135,6 +135,16 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(matrix.check_page(data), [])
         self.assertIn("Every cell states what is proven", first)
 
+    def test_render_emits_mdx_safe_html(self):
+        # A bare <br> is an unclosed JSX tag in MDX and breaks the docs-site
+        # build; every rendered HTML tag must be self-closing or closed.
+        rendered = matrix.render(matrix.load(matrix.MATRIX_PATH))
+        self.assertNotIn("<br>", rendered)
+        for tag in ("<br/>",):
+            if tag in rendered:
+                self.assertGreater(rendered.count(tag), 0)
+        self.assertNotRegex(rendered, r"<br\s*>")
+
     def test_page_drift_is_reported(self):
         data = matrix.load(matrix.MATRIX_PATH)
         with tempfile.TemporaryDirectory() as temp:

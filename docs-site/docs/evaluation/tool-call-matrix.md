@@ -41,8 +41,8 @@ Clients with no cell yet, and why:
 | pi 1.4.0 | pass (mock) | pass (mock) | fail (live) | — | — |
 | LangGraph 1.2.18 | pass (mock) | pass (mock) | not covered | — | — |
 | OpenAI Agents SDK 0.24.0 | pass (mock) | pass (mock) | not covered | — | — |
-| Claude Code 2.1.296 | not covered<br>pass (mock) | — | — | — | pass (mock) |
-| Codex CLI 0.162.0 | pass (mock)<br>unsupported | — | — | not covered | — |
+| Claude Code 2.1.296 | not covered<br/>pass (mock) | — | — | — | pass (mock) |
+| Codex CLI 0.162.0 | pass (mock)<br/>unsupported | — | — | not covered | — |
 | OpenAI SDK compatibility tester 5935805 | pass (mock) | not covered | not covered | not covered | — |
 | Anthropic SDK compatibility tester 799b0bc | pass (mock) | — | — | — | not covered |
 | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | pass (live) | not covered | pass (live) | — | pass (live) |

@@ -57,3 +57,29 @@ jobs:
           cache: true
       - name: make docs-qa
         run: make docs-qa
+
+  # docs-qa checks Markdown, configuration and links with Python and Go, but it
+  # never compiles the site. A page can therefore break the MDX build that
+  # make docker-image, release packaging and the gate image depend on (#753).
+  # This job compiles the site exactly as release packaging does. It runs on the
+  # standard ARC pool, not the small one: the small runner was starved and lost
+  # communication during the first attempt at this build.
+  docs-site-build:
+    runs-on: router-arc
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: npm ci
+        working-directory: docs-site
+        run: npm ci --no-audit --no-fund
+      - name: docusaurus production build
+        working-directory: docs-site
+        env:
+          DOCS_ROUTER_VERSION: ci
+          DOCS_ROUTER_BUILD_DATE: "1970-01-01T00:00:00Z"
+        run: npm run build

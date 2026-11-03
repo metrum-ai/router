@@ -470,7 +470,10 @@ def render(matrix: dict) -> str:
             if not matching:
                 row.append("—")
                 continue
-            row.append("<br>".join(sorted({result_label(cell) for cell in matching})))
+            # MDX treats a bare <br> as an unclosed JSX tag (it fails the
+            # docs-site build). Emit the self-closing form, which is valid MDX and
+            # still renders as a line break in a GFM table cell.
+            row.append("<br/>".join(sorted({result_label(cell) for cell in matching})))
         add("| " + " | ".join(row) + " |")
     add("")
     add(
