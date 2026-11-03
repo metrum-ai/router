@@ -5,6 +5,7 @@ package router
 
 import (
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -134,6 +135,14 @@ func (s *Service) recordToolValidation(rc *requestContext, groupName string, req
 		Action:             "observed",
 	}
 	attempt.ToolValidation = record
+	if s.toolReliability != nil {
+		s.toolReliability.observe(
+			toolReliabilityKey(groupName, attempt.Provider, attempt.Model),
+			validation,
+			toolReliabilityWindow(cfg),
+			time.Now().UTC(),
+		)
+	}
 	if validation.Invalid > 0 && rc != nil {
 		rc.trace(
 			"tool_call_invalid",

@@ -76,6 +76,7 @@ type Service struct {
 	bridgeSessions     *bridgeSessionBackends
 	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
+	toolReliability    *toolReliabilityStore
 	affinity           *dynamicAffinityStore
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
@@ -314,6 +315,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		bridgeSessions:     bridgeSessions,
 		scripts:            map[string]*scriptStrategy{},
 		observations:       newDynamicObservationStore(),
+		toolReliability:    newToolReliabilityStore(),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		contentCaptureKeys: contentCaptureKeys,
@@ -2515,11 +2517,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 			}
 		}
 	case "tool_aware":
-		// Ordering is deterministic and starts from the configured target order.
-		// Reliability scoring replaces it only once a target has evidence, and
-		// enforcement arrives with its own reviewed change (#436). A group that
-		// does not opt in never reaches this case.
-		targets = append([]Target(nil), targets...)
+		// Ordering is deterministic: the configured target order until a target
+		// has enough reliability evidence, then the best-scoring target first.
+		// A group that does not opt in never reaches this case.
+		targets = s.orderToolAwareTargets(groupName, group.ToolRouting, targets, len(req.Tools) > 0)
 	case "dynamic_score":
 		return s.pickDynamicScore(rc, groupName, group, req, callerDialect, caller, targets)
 	case "script":
