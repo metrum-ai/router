@@ -111,6 +111,16 @@ func (s *Service) handleStoredResponseOperation(w http.ResponseWriter, r *http.R
 	defer s.quota.Release(rc.caller)
 	rc.rec.QuotaState = ad.QuotaState
 	rc.rec.KeyState = ad.KeyState
+	switch op {
+	case storedResponseGet:
+		rc.rec.Endpoint = "responses.get"
+	case storedResponseDelete:
+		rc.rec.Endpoint = "responses.delete"
+	case storedResponseInputItems:
+		rc.rec.Endpoint = "responses.input_items"
+	case storedResponseCancel:
+		rc.rec.Endpoint = "responses.cancel"
+	}
 
 	row, target, groupName, err := s.resolveStoredResponse(r, rc)
 	if err != nil {
@@ -132,16 +142,6 @@ func (s *Service) handleStoredResponseOperation(w http.ResponseWriter, r *http.R
 	rc.rec.TargetModel = target.Model
 	rc.trace(op.traceAction(), "stored response operation", *target, 0, 0, "", false, 0)
 
-	switch op {
-	case storedResponseGet:
-		rc.rec.Endpoint = "responses.get"
-	case storedResponseDelete:
-		rc.rec.Endpoint = "responses.delete"
-	case storedResponseInputItems:
-		rc.rec.Endpoint = "responses.input_items"
-	case storedResponseCancel:
-		rc.rec.Endpoint = "responses.cancel"
-	}
 	if op == storedResponseGet && strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("stream")), "true") {
 		s.forwardStoredResponseStream(w, r, rc, row, *target, groupName, upstreamID)
 		return

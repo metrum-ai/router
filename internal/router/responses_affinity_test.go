@@ -1335,3 +1335,30 @@ func TestResponsesAffinityOffStockRewriteGolden(t *testing.T) {
 		t.Fatalf("stock rewrite-mode body changed:\n got %s\nwant %s", got, want)
 	}
 }
+
+func TestStoredResponseLowercaseBearerFallsBackToAPIKey(t *testing.T) {
+	t.Setenv("TEST_RESPONSES_AFFINITY_KEY", affinityKeyMaterial())
+	upstream := &affinityUpstream{}
+	server := httptest.NewServer(upstream)
+	defer server.Close()
+	svc, _ := affinityTestService(t, server.URL, t.TempDir(), func(cfg *Config) {
+		cfg.Server.ResponsesAffinity = ResponsesAffinityConfig{EnabledGroups: []string{"stored"}, KeyEnv: "TEST_RESPONSES_AFFINITY_KEY", KeyID: "affinity-1"}
+	})
+	req := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"stored","input":"hello"}`))
+	req.Header.Set("Authorization", "bearer not-the-token")
+	req.Header.Set("X-API-Key", affinityTestToken)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	rows := affinityRows(t, svc)
+	if len(rows) != 1 {
+		t.Fatalf("rows=%d", len(rows))
+	}
+	want := svc.responsesAffinity.current.fingerprintOwner(affinityTestToken)
+	if rows[0].OwnerTokenFingerprint != want {
+		t.Fatal("fingerprint did not use the token authenticate() selected")
+	}
+}
