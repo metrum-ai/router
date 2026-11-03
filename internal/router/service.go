@@ -2475,6 +2475,12 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 				}, nil
 			}
 		}
+	case "tool_aware":
+		// Ordering is deterministic and starts from the configured target order.
+		// Reliability scoring replaces it only once a target has evidence, and
+		// enforcement arrives with its own reviewed change (#436). A group that
+		// does not opt in never reaches this case.
+		targets = append([]Target(nil), targets...)
 	case "dynamic_score":
 		return s.pickDynamicScore(rc, groupName, group, req, callerDialect, caller, targets)
 	case "script":
@@ -2746,6 +2752,7 @@ func (s *Service) callUpstreams(ctx context.Context, w http.ResponseWriter, rc *
 		}
 		if err == nil {
 			attempt.Selected = true
+			s.recordToolValidation(rc, dec.GroupName, req, resp, &attempt)
 			rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
 			if i > 0 {
 				markFallbackTransitionSucceeded(rc, attemptIndex)
