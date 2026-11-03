@@ -63,8 +63,10 @@ instead of inventing a cell. Ingesting with `--write` regenerates the page; use
 `--compare` with the previous matrix in the same job to fail the run on a
 regression rather than on any single flake.
 
-The schedule itself is not enabled: it needs repository Actions secrets that do
-not exist yet (issue #572, `NEEDS CHETAN`). Until then a live row is a recorded
-authorized run.
+The nightly workflow (`.github/workflows/agent-tool-compat-live.yml`) runs the
+live gate, converts it with `scripts/tool_compat_live_matrix.py report`, ingests
+the result and compares it against the committed baseline. It is main-only,
+uses the protected `evaluation` environment, reserves before every dispatch,
+and refuses to start once the monthly ceiling recorded in its ledger is spent.
 
 Copyright 2026 Metrum AI. SPDX-License-Identifier: Apache-2.0

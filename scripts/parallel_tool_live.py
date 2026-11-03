@@ -34,7 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from parallel_live_budget import Budget, read_usage  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN = "live-parallel-gate-token"
+# The gate always mints its own router caller: the default local token for a
+# developer run, or the value a CI job supplies through PARALLEL_LIVE_TOKEN so a
+# dedicated rotating token can be used without ever committing its hash.
+TOKEN = os.environ.get("PARALLEL_LIVE_TOKEN") or "live-parallel-gate-token"
 MAX_OUTPUT = 256
 MARKERS = {"a": "GATE-A-7731", "b": "GATE-B-4192", "c": "GATE-C-6605"}
 
