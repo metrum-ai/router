@@ -961,8 +961,8 @@
       ],
       "tier": "unsupported",
       "status": "unsupported",
-      "doc": "docs-site/docs/reference/api-compatibility.md#known-limitation-reasoning-with-tools-on-chat-completions",
-      "note": "Declared as a known limitation: a Chat-dialect reasoning model may reject reasoning with tools and the caller sees upstream-rejected. Fail-closed capability declaration is #703.",
+      "doc": "docs-site/docs/reference/api-compatibility.md#reasoning-with-tools-on-chat-completions",
+      "note": "Unsupported by default. A target whose outbound dialect rejects reasoning with tools declares `reasoning.with_tools: false`; the router then refuses the combination with `400 unsupported_capability` and the caller-side param (`reasoning_effort`, `reasoning` or `thinking`) before dispatch. A target that does not declare it still forwards the request and the provider answer surfaces as `upstream-rejected`.",
       "evidence": {
         "kind": "issue",
         "ref": "https://github.com/metrum-ai/router/issues/703"
