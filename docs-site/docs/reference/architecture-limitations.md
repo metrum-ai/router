@@ -115,6 +115,24 @@ Governance](../security-governance/overview), and the [Upgrade
 Guide](../release-notes/upgrade-guide).
 
 
+## Stored Responses
+
+`POST /v1/responses` is the only Responses surface served without opt-in. The
+stored-response operations (`GET`, `DELETE`, input items, cancel and
+`previous_response_id` pinning) require explicit enablement per model group with
+`server.responses_affinity.enabled_groups`, a durable usage database and a
+retention policy, and they support native Responses targets only. With no group
+enabled the stored routes keep returning `501 unsupported_endpoint` and
+continuation keeps the earlier best-effort behaviour.
+
+Local affinity metadata expires after its configured TTL (30 days by default)
+and is removed by the retention job; expiry and purge remove router metadata
+only and do not assert that the provider deleted its copy. Ownership is the exact
+caller token, so a rotated or deleted token loses access to its earlier records;
+there is no tenant-admin transfer path. Background Responses are not supported in
+this release, so a `stream=true` retrieval is forwarded but refused by providers
+that only stream background responses.
+
 ## Identifier transformation
 
 `server.identifiers.mode` defaults to `rewrite`. Configure a 64-byte random

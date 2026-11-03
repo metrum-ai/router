@@ -14,10 +14,9 @@ package router
 //
 // The router never stores response content or bearer tokens. It stores a keyed
 // fingerprint of the owning token, a keyed lookup hash of the client-visible
-// response id, and the upstream id under authenticated encryption. The
-// retention purge and legal-hold integration for this table arrive in a later
-// slice; until then rows carry an expiry timestamp and no purge job deletes
-// them.
+// response id, and the upstream id under authenticated encryption. Rows carry
+// an expiry timestamp and are removed by the responses_affinity retention class,
+// whose purge and legal-hold matching live in usage_db.go.
 
 import (
 	"crypto/aes"
@@ -348,6 +347,12 @@ type responsesAffinityRequest struct {
 	captured  bool
 	failed    bool
 	storeOnce bool
+	// captureState is the lifecycle state known when the id is recorded: a
+	// unary response is normally already terminal, while a stream starts
+	// in_progress and is updated at its terminal event.
+	captureState string
+	// row is the persisted record, available after a successful capture.
+	row *responseAffinityRecord
 }
 
 func (s *Service) callerTokenForAffinity(r *http.Request) string {
@@ -507,7 +512,28 @@ func (s *Service) bindResponsesAffinityTarget(rc *requestContext, req *IRRequest
 		rc.affinityCapture = func(upstreamID string) error {
 			return s.captureResponsesAffinity(rc, upstreamID)
 		}
+		rc.affinityTerminal = func(state string) {
+			if rc.affinity.row != nil {
+				s.recordAffinityState(rc, rc.affinity.row, state)
+			}
+		}
 	}
+}
+
+// affinityStateFromResponse derives the lifecycle state from a unary response.
+func affinityStateFromResponse(resp *IRResponse) string {
+	if resp == nil {
+		return "in_progress"
+	}
+	status := strings.ToLower(strings.TrimSpace(stringValue(resp.Raw["status"])))
+	if status == "" {
+		status = strings.ToLower(strings.TrimSpace(resp.StopReason))
+	}
+	switch status {
+	case "completed", "cancelled", "incomplete", "failed":
+		return status
+	}
+	return "in_progress"
 }
 
 func (s *Service) responsesAffinityStorageActive(rc *requestContext) bool {
@@ -550,6 +576,10 @@ func (s *Service) captureResponsesAffinity(rc *requestContext, upstreamID string
 	// transform is deterministic, so the caller's encoded id decodes back to
 	// this value before lookup and key rotation does not change the hash input.
 	now := time.Now().UTC()
+	lifecycle := state.captureState
+	if lifecycle == "" {
+		lifecycle = "in_progress"
+	}
 	row := responseAffinityRecord{
 		OwnerTokenFingerprint: state.owner.Fingerprints[state.runtime.current.id],
 		OwnerFingerprintKeyID: state.runtime.current.id,
@@ -563,7 +593,7 @@ func (s *Service) captureResponsesAffinity(rc *requestContext, upstreamID string
 		ModelGroup:            rc.rec.ResolvedGroup,
 		ProviderDialect:       targetDialect(s.cfg.Provider[state.target.Provider], *state.target),
 		Endpoint:              "responses",
-		State:                 "in_progress",
+		State:                 lifecycle,
 		CreatedAt:             formatUsageTime(now),
 		UpdatedAt:             formatUsageTime(now),
 		ExpiresAt:             formatUsageTime(now.Add(state.runtime.retention)),
@@ -585,6 +615,7 @@ func (s *Service) captureResponsesAffinity(rc *requestContext, upstreamID string
 		return err
 	}
 	state.captured = true
+	state.row = &row
 	if state.previous == nil {
 		rc.trace("response_affinity_stored", "stored-response affinity recorded", *state.target, 0, 0, "", false, 0)
 	}

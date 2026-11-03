@@ -175,10 +175,18 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			result.Done = true
 			result.Terminal = true
 			reason = stream.StopComplete
+			state := "completed"
 			for _, e := range events {
-				if e.Type == "error" || e.Type == "response.failed" {
+				switch e.Type {
+				case "error", "response.failed":
 					reason = stream.StopError
+					state = "failed"
+				case "response.incomplete":
+					state = "incomplete"
 				}
+			}
+			if rc != nil && rc.affinityTerminal != nil {
+				rc.affinityTerminal(state)
 			}
 			return result, nil
 		}

@@ -12,6 +12,17 @@ server:
     # (for example big-coder) and redacts upstream names from caller errors.
     # Usage rows, attempt rows and admin reports keep the upstream either way.
     model_identity: upstream
+  # Optional owner-bound stored Responses affinity (#533). Off by default.
+  # Enabling any group requires a durable usage_db and server.retention, and a
+  # native Responses target in every listed group. The key is 32 bytes, hex or
+  # base64, read from the named environment variable and never stored.
+  # responses_affinity:
+  #   enabled_groups: [support-chat]
+  #   key_env: ROUTER_RESPONSES_AFFINITY_KEY
+  #   key_id: affinity-2026-11
+  #   retention_days: 30        # local TTL; also the default purge class period
+  #   # previous_key_env: ROUTER_RESPONSES_AFFINITY_KEY_PREVIOUS
+  #   # previous_key_id: affinity-2026-09
   identifiers:
     mode: rewrite
     transform:

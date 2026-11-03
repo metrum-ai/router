@@ -4091,6 +4091,8 @@ func retentionTablesForClass(dataClass string) []retentionTableSpec {
 		return []retentionTableSpec{{DataClass: retentionDataClassContentCapture, TableName: "request_content_captures", TSColumn: "ts"}}
 	case retentionDataClassUsageDetail:
 		return []retentionTableSpec{{DataClass: retentionDataClassUsageDetail, TableName: "request_usage", TSColumn: "ts"}}
+	case retentionDataClassResponsesAffinity:
+		return []retentionTableSpec{{DataClass: retentionDataClassResponsesAffinity, TableName: "response_affinity", TSColumn: "created_at"}}
 	default:
 		return nil
 	}
@@ -4167,7 +4169,7 @@ func runRetentionTable(tx *gorm.DB, class RetentionClassConfig, table retentionT
 
 func retentionPurgeSupported(dataClass string) bool {
 	switch normalizeRetentionDataClass(dataClass) {
-	case retentionDataClassUsageDiagnostics, retentionDataClassContentCapture, retentionDataClassUsageDetail:
+	case retentionDataClassUsageDiagnostics, retentionDataClassContentCapture, retentionDataClassUsageDetail, retentionDataClassResponsesAffinity:
 		return true
 	default:
 		return false
@@ -4198,6 +4200,21 @@ func countHeldRowsBefore(tx *gorm.DB, table retentionTableSpec, cutoff string) (
 				AND (h.start_ts = '' OR u.ts >= h.start_ts)
 				AND (h.end_ts = '' OR u.ts < h.end_ts)
 			)`, table.TableName)
+		err := tx.Raw(query, cutoff, true, table.DataClass).Scan(&count).Error
+		return count, err
+	}
+	if table.TableName == "response_affinity" {
+		// Stored-response affinity rows are owned by a caller token, not by a
+		// request id, so a hold matches by data class and its time range only.
+		query := fmt.Sprintf(`SELECT COUNT(*) FROM %s r
+			WHERE r.%s < ?
+			AND EXISTS (
+				SELECT 1 FROM legal_holds h
+				WHERE h.active = ?
+				AND h.data_class = ?
+				AND (h.start_ts = '' OR r.%s >= h.start_ts)
+				AND (h.end_ts = '' OR r.%s < h.end_ts)
+			)`, table.TableName, table.TSColumn, table.TSColumn, table.TSColumn)
 		err := tx.Raw(query, cutoff, true, table.DataClass).Scan(&count).Error
 		return count, err
 	}
@@ -4277,6 +4294,8 @@ func deleteRetentionBatch(tx *gorm.DB, table retentionTableSpec, cutoff string, 
 				return deleted, err
 			}
 			res = tx.Where("id = ?", key.ID).Delete(&contentCaptureRecord{})
+		case "response_affinity":
+			res = tx.Where("id = ?", key.ID).Delete(&responseAffinityRecord{})
 		case "request_usage":
 			res = tx.Where("request_id = ?", key.RequestID).Delete(&usageRecord{})
 		default:
@@ -4373,6 +4392,18 @@ func selectRetentionDeleteKeys(tx *gorm.DB, table retentionTableSpec, cutoff str
 			FROM request_content_captures r
 			WHERE r.ts < ? ` + baseHoldClause + `
 			ORDER BY r.ts ASC, r.request_id ASC, r.id ASC
+			LIMIT ?`
+	case "response_affinity":
+		query = `SELECT r.id AS id, r.created_at AS request_id
+			FROM response_affinity r
+			WHERE r.created_at < ? ` + `AND NOT EXISTS (
+				SELECT 1 FROM legal_holds h
+				WHERE h.active = ?
+				AND h.data_class = ?
+				AND (h.start_ts = '' OR r.created_at >= h.start_ts)
+				AND (h.end_ts = '' OR r.created_at < h.end_ts)
+			)` + `
+			ORDER BY r.created_at ASC, r.id ASC
 			LIMIT ?`
 	case "request_usage":
 		query = `SELECT r.request_id AS request_id

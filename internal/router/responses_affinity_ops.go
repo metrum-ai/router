@@ -32,20 +32,29 @@ const (
 	storedResponseGet storedResponseOperation = iota
 	storedResponseDelete
 	storedResponseInputItems
+	storedResponseCancel
 )
 
 func (op storedResponseOperation) method() string {
-	if op == storedResponseDelete {
+	switch op {
+	case storedResponseDelete:
 		return http.MethodDelete
+	case storedResponseCancel:
+		return http.MethodPost
+	default:
+		return http.MethodGet
 	}
-	return http.MethodGet
 }
 
 func (op storedResponseOperation) suffix() string {
-	if op == storedResponseInputItems {
+	switch op {
+	case storedResponseInputItems:
 		return "/input_items"
+	case storedResponseCancel:
+		return "/cancel"
+	default:
+		return ""
 	}
-	return ""
 }
 
 func (op storedResponseOperation) traceAction() string {
@@ -54,6 +63,8 @@ func (op storedResponseOperation) traceAction() string {
 		return "stored_response_delete"
 	case storedResponseInputItems:
 		return "stored_response_input_items"
+	case storedResponseCancel:
+		return "stored_response_cancel"
 	default:
 		return "stored_response_get"
 	}
@@ -69,6 +80,10 @@ func (s *Service) handleStoredResponseDelete(w http.ResponseWriter, r *http.Requ
 
 func (s *Service) handleStoredResponseInputItems(w http.ResponseWriter, r *http.Request) {
 	s.handleStoredResponseOperation(w, r, storedResponseInputItems)
+}
+
+func (s *Service) handleStoredResponseCancel(w http.ResponseWriter, r *http.Request) {
+	s.handleStoredResponseOperation(w, r, storedResponseCancel)
 }
 
 func (s *Service) handleStoredResponseOperation(w http.ResponseWriter, r *http.Request, op storedResponseOperation) {
@@ -124,6 +139,8 @@ func (s *Service) handleStoredResponseOperation(w http.ResponseWriter, r *http.R
 		rc.rec.Endpoint = "responses.delete"
 	case storedResponseInputItems:
 		rc.rec.Endpoint = "responses.input_items"
+	case storedResponseCancel:
+		rc.rec.Endpoint = "responses.cancel"
 	}
 	if op == storedResponseGet && strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("stream")), "true") {
 		s.forwardStoredResponseStream(w, r, rc, row, *target, groupName, upstreamID)
@@ -303,7 +320,7 @@ func (s *Service) forwardStoredResponseUnary(w http.ResponseWriter, r *http.Requ
 	switch op {
 	case storedResponseDelete:
 		s.markAffinityDeleted(rc, row, "confirmed")
-	case storedResponseGet:
+	case storedResponseGet, storedResponseCancel:
 		s.recordStoredResponseStatus(rc, row, raw)
 	}
 	body := s.rewriteStoredResponseBody(raw, row.ModelGroup)
@@ -390,6 +407,11 @@ func (s *Service) writeStoredResponseUpstreamStatus(w http.ResponseWriter, rc *r
 			s.markAffinityDeleted(rc, row, "not_found")
 		}
 		s.writeResponsesAffinityError(w, rc, affinityClientError{status: http.StatusNotFound, code: "response_not_found", message: "The response was not found."})
+	case http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusConflict:
+		// The request itself is not acceptable at the provider (for example a
+		// cancel of an already completed response): keep the client error class
+		// instead of reporting a router/upstream failure.
+		s.writeError(w, rc, status, "upstream-rejected")
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusPaymentRequired:
 		s.writeError(w, rc, http.StatusServiceUnavailable, "upstream-access-denied")
 	case http.StatusTooManyRequests:

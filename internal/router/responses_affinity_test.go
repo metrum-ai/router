@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -92,6 +93,11 @@ func (u *affinityUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		u.mu.Unlock()
 		u.serveStoredOperation(w, r)
 		return
+	case http.MethodPost:
+		if strings.HasSuffix(r.URL.Path, "/cancel") {
+			u.serveStoredOperation(w, r)
+			return
+		}
 	}
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
@@ -140,6 +146,8 @@ func affinityTestService(t *testing.T, upstreamURL, dir string, mutate func(*Con
 	cfg := testConfig(t, upstreamURL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
 	cfg.Server.Identifiers = IdentifierConfig{Mode: "passthrough"}
+	// Affinity requires an explicit retention policy for its metadata.
+	cfg.Server.Retention = RetentionConfig{Enabled: true}
 	cfg.Provider["native"] = ProviderConfig{BaseURL: upstreamURL + "/v1", Dialect: "openai-responses", APIKey: "provider-key", KeyID: "acct-a"}
 	cfg.Provider["native-b"] = ProviderConfig{BaseURL: upstreamURL + "/v1", Dialect: "openai-responses", APIKey: "provider-key-b", KeyID: "acct-b"}
 	cfg.Models["stored"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "native", Model: "resp-model"}}}
@@ -260,7 +268,7 @@ func TestResponsesAffinityCreateAndContinuationPin(t *testing.T) {
 	if strings.Contains(row.ResponseLookupHash, upstreamID) || strings.Contains(row.UpstreamIDCiphertext, upstreamID) {
 		t.Fatal("row exposes the upstream id in plaintext")
 	}
-	if row.ExpiresAt == "" || row.State != "in_progress" {
+	if row.ExpiresAt == "" || row.State != "completed" {
 		t.Fatalf("row lifecycle=%#v", row)
 	}
 
@@ -352,6 +360,7 @@ func TestResponsesAffinityUnavailableTargetReturns409(t *testing.T) {
 	cfg2 := testConfig(t, server.URL, "provider-key", dir)
 	cfg2.Server.UsageDB = UsageDBConfig{Driver: "sqlite", Path: filepath.Join(dir, "usage.sqlite"), MigrationPolicy: usageDBMigrationPolicyAutoSafe}
 	cfg2.Server.Identifiers = IdentifierConfig{Mode: "passthrough"}
+	cfg2.Server.Retention = RetentionConfig{Enabled: true}
 	cfg2.Provider["native-b"] = ProviderConfig{BaseURL: server.URL + "/v1", Dialect: "openai-responses", APIKey: "provider-key-b", KeyID: "acct-b"}
 	cfg2.Models["stored"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "native-b", Model: "resp-model-b"}}}
 	cfg2.Callers[0].Allow = append(cfg2.Callers[0].Allow, "stored")
@@ -468,7 +477,7 @@ func TestResponsesAffinityStreamingCreateStoresBeforeExposingID(t *testing.T) {
 		t.Fatalf("stream requests=%d", upstream.streams)
 	}
 	rows := affinityRows(t, svc)
-	if len(rows) != 1 || rows[0].UpstreamIDCiphertext == "" {
+	if len(rows) != 1 || rows[0].UpstreamIDCiphertext == "" || rows[0].State != "completed" {
 		t.Fatalf("stream create rows=%#v", rows)
 	}
 	rr = postAffinity(t, svc, affinityTestToken, `{"model":"stored","input":"follow","previous_response_id":"resp_up_1"}`)
@@ -574,6 +583,15 @@ func TestResponsesAffinityConfigValidation(t *testing.T) {
 			t.Fatal("startup must fail without key material")
 		}
 	})
+	t.Run("affinity requires retention", func(t *testing.T) {
+		cfg := base()
+		cfg.Server.Retention = RetentionConfig{}
+		cfg.Server.ResponsesAffinity = ResponsesAffinityConfig{EnabledGroups: []string{"stored"}, KeyEnv: "TEST_RESPONSES_AFFINITY_KEY", KeyID: "k"}
+		cfg.setDefaults()
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "retention") {
+			t.Fatalf("error=%v, want retention requirement", err)
+		}
+	})
 	t.Run("usage db disabled fails startup", func(t *testing.T) {
 		cfg := base()
 		disabled := false
@@ -587,7 +605,7 @@ func TestResponsesAffinityConfigValidation(t *testing.T) {
 
 func (u *affinityUpstream) serveStoredOperation(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/responses/")
-	id := strings.TrimSuffix(path, "/input_items")
+	id := strings.TrimSuffix(strings.TrimSuffix(path, "/input_items"), "/cancel")
 	u.mu.Lock()
 	deleted := u.deleted[id]
 	status := u.status[id]
@@ -602,6 +620,20 @@ func (u *affinityUpstream) serveStoredOperation(w http.ResponseWriter, r *http.R
 		return
 	}
 	switch r.Method {
+	case http.MethodPost:
+		u.mu.Lock()
+		cancelStatus := u.cancelStatus
+		if cancelStatus == 0 {
+			u.status[id] = "cancelled"
+		}
+		u.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if cancelStatus != 0 {
+			w.WriteHeader(cancelStatus)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"message": "cannot cancel", "type": "invalid_request_error"}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "response", "status": "cancelled"})
 	case http.MethodDelete:
 		u.mu.Lock()
 		u.deleted[id] = true
@@ -644,6 +676,7 @@ func TestStoredResponseOperationsDisabled501(t *testing.T) {
 		{http.MethodGet, "/v1/responses/resp_1"},
 		{http.MethodDelete, "/v1/responses/resp_1"},
 		{http.MethodGet, "/v1/responses/resp_1/input_items"},
+		{http.MethodPost, "/v1/responses/resp_1/cancel"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		req.Header.Set("Authorization", "Bearer "+affinityTestToken)
@@ -711,6 +744,17 @@ func TestStoredResponseGetDeleteInputItems(t *testing.T) {
 		t.Fatalf("input_items body=%s", rr.Body.String())
 	}
 
+	rr = storedAffinityDo(t, svc, http.MethodPost, "/v1/responses/"+id+"/cancel", affinityTestToken)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("cancel status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if upstream.lastOp() != "POST /v1/responses/"+id+"/cancel" {
+		t.Fatalf("cancel upstream op=%q", upstream.lastOp())
+	}
+	if rows := affinityRows(t, svc); len(rows) != 1 || rows[0].State != "cancelled" {
+		t.Fatalf("cancel state rows=%#v", rows)
+	}
+
 	before := upstream.opCount()
 	rr = storedAffinityDo(t, svc, http.MethodGet, "/v1/responses/"+id, affinityTestSecondToken)
 	if rr.Code != http.StatusNotFound || upstream.opCount() != before {
@@ -741,7 +785,11 @@ func TestStoredResponseGetDeleteInputItems(t *testing.T) {
 		t.Fatalf("second create status=%d", rr.Code)
 	}
 	secondID := stringValue(decodeJSONBody(t, rr.Body.String())["id"])
-	if err := svc.usage.db.Model(&responseAffinityRecord{}).Where("tenant = ?", "alice").Where("state = ?", "in_progress").Update("expires_at", formatUsageTime(time.Now().UTC().Add(-time.Hour))).Error; err != nil {
+	var second responseAffinityRecord
+	if err := svc.usage.db.Order("id DESC").First(&second).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.usage.db.Model(&responseAffinityRecord{}).Where("id = ?", second.ID).Update("expires_at", formatUsageTime(time.Now().UTC().Add(-time.Hour))).Error; err != nil {
 		t.Fatal(err)
 	}
 	before = upstream.opCount()
@@ -980,6 +1028,98 @@ func TestStoredResponseModelIdentityRedaction(t *testing.T) {
 	}
 }
 
+func TestStoredResponseCancelKeepsProviderClientError(t *testing.T) {
+	svc, upstream := storedAffinityService(t, false)
+	rr := postAffinity(t, svc, affinityTestToken, `{"model":"stored","input":"hello"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	id := stringValue(decodeJSONBody(t, rr.Body.String())["id"])
+	upstream.mu.Lock()
+	upstream.cancelStatus = http.StatusBadRequest
+	upstream.mu.Unlock()
+	rr = storedAffinityDo(t, svc, http.MethodPost, "/v1/responses/"+id+"/cancel", affinityTestToken)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("cancel status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "upstream-rejected") {
+		t.Fatalf("cancel body=%s", rr.Body.String())
+	}
+	rows := affinityRows(t, svc)
+	if len(rows) != 1 || rows[0].State == "cancelled" {
+		t.Fatalf("rejected cancel changed state: %#v", rows)
+	}
+}
+
+func TestResponsesAffinityRetentionHonorsLegalHold(t *testing.T) {
+	store, err := OpenUsageStore(uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	old := now.Add(-40 * 24 * time.Hour)
+	fresh := now.Add(-2 * 24 * time.Hour)
+	held := testResponseAffinityRow()
+	held.ResponseLookupHash = "held"
+	held.CreatedAt = formatUsageTime(old)
+	held.UpdatedAt = formatUsageTime(old)
+	held.ExpiresAt = formatUsageTime(old.Add(30 * 24 * time.Hour))
+	free := testResponseAffinityRow()
+	free.ResponseLookupHash = "free"
+	free.CreatedAt = formatUsageTime(old.Add(time.Hour))
+	free.UpdatedAt = formatUsageTime(old.Add(time.Hour))
+	free.ExpiresAt = formatUsageTime(old.Add(time.Hour).Add(30 * 24 * time.Hour))
+	recent := testResponseAffinityRow()
+	recent.ResponseLookupHash = "recent"
+	recent.CreatedAt = formatUsageTime(fresh)
+	recent.UpdatedAt = formatUsageTime(fresh)
+	recent.ExpiresAt = formatUsageTime(fresh.Add(30 * 24 * time.Hour))
+	for _, row := range []*responseAffinityRecord{&held, &free, &recent} {
+		if err := store.db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.db.Create(&legalHoldRecord{
+		HoldID:     "hold-affinity-1",
+		DataClass:  retentionDataClassResponsesAffinity,
+		Active:     true,
+		StartTS:    formatUsageTime(old.Add(-time.Hour)),
+		EndTS:      formatUsageTime(old.Add(30 * time.Minute)),
+		ReasonCode: "litigation",
+		Subject:    "matter-533",
+		CreatedBy:  "unit-test",
+		CreatedAt:  formatUsageTime(now),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	cfg := retentionTestConfig(retentionDataClassResponsesAffinity, 30)
+	cfg.DryRun = boolPtr(false)
+	result, err := store.runRetentionJob(RetentionStatusOptions{Config: cfg, Now: now, RequestedBy: "unit-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := tableResultFor(t, result, "response_affinity")
+	if table.CandidateRows != 2 || table.HeldRows != 1 || table.DeletedRows != 1 {
+		t.Fatalf("retention table=%#v", table)
+	}
+	var remaining []responseAffinityRecord
+	if err := store.db.Order("id ASC").Find(&remaining).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 2 || remaining[0].ResponseLookupHash != "held" || remaining[1].ResponseLookupHash != "recent" {
+		t.Fatalf("remaining rows=%#v", remaining)
+	}
+	// Releasing the hold makes the held row purgeable on the next run.
+	if err := store.db.Model(&legalHoldRecord{}).Where("hold_id = ?", "hold-affinity-1").Update("active", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.runRetentionJob(RetentionStatusOptions{Config: cfg, Now: now, RequestedBy: "unit-test"}); err != nil {
+		t.Fatal(err)
+	}
+	assertTableCount(t, store, &responseAffinityRecord{}, 1)
+}
+
 // Stock rewrite-mode deployments with affinity off must keep their existing
 // caller-visible ids: the stored-Responses id encoding is opt-in per group.
 func TestResponsesAffinityOffKeepsStockRewriteIDs(t *testing.T) {
@@ -1070,13 +1210,41 @@ func TestStoredResponseIsBoundToOwnerToken(t *testing.T) {
 	})
 	rr := postAffinity(t, svc, affinityTestToken, `{"model":"stored","input":"hello"}`)
 	if rr.Code != http.StatusOK {
-		t.Fatalf("create status=%d body=%s", rr.Code, rr.Body.String())
+		t.Fatalf("create status=%d", rr.Code)
 	}
 	id := stringValue(decodeJSONBody(t, rr.Body.String())["id"])
 	before := upstream.opCount()
 	rr = storedAffinityDo(t, svc, http.MethodGet, "/v1/responses/"+id, affinityTestSecondToken)
 	if rr.Code != http.StatusNotFound || upstream.opCount() != before {
 		t.Fatalf("same-owner other-token get status=%d ops=%d->%d body=%s", rr.Code, before, upstream.opCount(), rr.Body.String())
+	}
+}
+
+func TestStoredResponseProjectMismatchIsNotFound(t *testing.T) {
+	t.Setenv("TEST_RESPONSES_AFFINITY_KEY", affinityKeyMaterial())
+	upstream := &affinityUpstream{}
+	server := httptest.NewServer(upstream)
+	defer server.Close()
+	svc, _ := affinityTestService(t, server.URL, t.TempDir(), func(cfg *Config) {
+		for i := range cfg.Callers {
+			if cfg.Callers[i].ID == "bob" {
+				cfg.Callers[i].OwnerUser = "alice"
+				cfg.Callers[i].User = "alice"
+				cfg.Callers[i].Project = "another-project"
+				cfg.Callers[i].Environment = "test"
+			}
+		}
+		cfg.Server.ResponsesAffinity = ResponsesAffinityConfig{EnabledGroups: []string{"stored"}, KeyEnv: "TEST_RESPONSES_AFFINITY_KEY", KeyID: "affinity-1"}
+	})
+	rr := postAffinity(t, svc, affinityTestToken, `{"model":"stored","input":"hello"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create status=%d", rr.Code)
+	}
+	id := stringValue(decodeJSONBody(t, rr.Body.String())["id"])
+	before := upstream.opCount()
+	rr = storedAffinityDo(t, svc, http.MethodGet, "/v1/responses/"+id, affinityTestSecondToken)
+	if rr.Code != http.StatusNotFound || upstream.opCount() != before {
+		t.Fatalf("project mismatch status=%d ops=%d->%d body=%s", rr.Code, before, upstream.opCount(), rr.Body.String())
 	}
 }
 
@@ -1118,7 +1286,6 @@ func TestStoredResponsePaginationCursorIsDecoded(t *testing.T) {
 	if !strings.Contains(query, "after=msg_up_1") {
 		t.Fatalf("cursor was not decoded before forwarding: %q", query)
 	}
-	// A malformed cursor is an unknown id and never reaches the provider.
 	before := upstream.opCount()
 	rr = storedAffinityDo(t, svc, http.MethodGet, "/v1/responses/"+id+"/input_items?after=mr_not-a-real-cursor", affinityTestToken)
 	if rr.Code != http.StatusNotFound || upstream.opCount() != before {
@@ -1145,30 +1312,26 @@ func TestStoredResponseStreamErrorBeforeCommitReturnsError(t *testing.T) {
 	}
 }
 
-func TestStoredResponseProjectMismatchIsNotFound(t *testing.T) {
-	t.Setenv("TEST_RESPONSES_AFFINITY_KEY", affinityKeyMaterial())
-	upstream := &affinityUpstream{}
-	server := httptest.NewServer(upstream)
-	defer server.Close()
-	svc, _ := affinityTestService(t, server.URL, t.TempDir(), func(cfg *Config) {
-		for i := range cfg.Callers {
-			if cfg.Callers[i].ID == "bob" {
-				cfg.Callers[i].OwnerUser = "alice"
-				cfg.Callers[i].User = "alice"
-				cfg.Callers[i].Project = "another-project"
-				cfg.Callers[i].Environment = "test"
-			}
-		}
-		cfg.Server.ResponsesAffinity = ResponsesAffinityConfig{EnabledGroups: []string{"stored"}, KeyEnv: "TEST_RESPONSES_AFFINITY_KEY", KeyID: "affinity-1"}
+// TestResponsesAffinityOffStockRewriteGolden pins the whole unary
+// /v1/responses body for a stock rewrite-mode deployment with affinity off to
+// a literal fixture. Main's behavior is decode + writeJSON, so the expected
+// bytes are the canonical (sorted-key) encoding plus the encoder newline; the
+// nested ids and model must be untouched.
+func TestResponsesAffinityOffStockRewriteGolden(t *testing.T) {
+	const golden = `{"created_at":1700000000,"id":"resp_golden","model":"gpt-upstream","object":"response","output":[{"content":[{"text":"ok","type":"output_text"}],"id":"msg_golden","role":"assistant","type":"message"}],"status":"completed","usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}`
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, golden)
+	}))
+	defer upstream.Close()
+	svc, _ := affinityTestService(t, upstream.URL, t.TempDir(), func(cfg *Config) {
+		cfg.Server.Identifiers = identifierTestConfig()
 	})
 	rr := postAffinity(t, svc, affinityTestToken, `{"model":"stored","input":"hello"}`)
 	if rr.Code != http.StatusOK {
-		t.Fatalf("create status=%d body=%s", rr.Code, rr.Body.String())
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
-	id := stringValue(decodeJSONBody(t, rr.Body.String())["id"])
-	before := upstream.count()
-	rr = postAffinity(t, svc, affinityTestSecondToken, fmt.Sprintf(`{"model":"stored","input":"steal","previous_response_id":%q}`, id))
-	if rr.Code != http.StatusNotFound || upstream.count() != before {
-		t.Fatalf("project mismatch continuation status=%d ops=%d->%d body=%s", rr.Code, before, upstream.count(), rr.Body.String())
+	if got, want := rr.Body.String(), golden+"\n"; got != want {
+		t.Fatalf("stock rewrite-mode body changed:\n got %s\nwant %s", got, want)
 	}
 }

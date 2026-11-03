@@ -176,6 +176,9 @@ type requestContext struct {
 	// affinityCapture stores the upstream id before it is exposed to the
 	// caller; it is nil unless affinity storage is in effect for this request.
 	affinityCapture func(upstreamID string) error
+	// affinityTerminal records the final lifecycle state of a streamed stored
+	// response, once its id has been captured.
+	affinityTerminal func(state string)
 }
 
 type upstreamError struct {
@@ -661,10 +664,10 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/responses/{id}", s.handleStoredResponseGet)
 	s.mux.HandleFunc("DELETE /v1/responses/{id}", s.handleStoredResponseDelete)
 	s.mux.HandleFunc("GET /v1/responses/{id}/input_items", s.handleStoredResponseInputItems)
+	s.mux.HandleFunc("POST /v1/responses/{id}/cancel", s.handleStoredResponseCancel)
 	s.mux.HandleFunc("POST /v1/embeddings", s.handleEmbeddings)
 	for _, pattern := range []string{
 		"POST /v1/completions", "POST /v1/moderations", "POST /v1/content_provenance_checks",
-		"POST /v1/responses/{id}/cancel",
 	} {
 		s.mux.HandleFunc(pattern, s.handleUnsupportedOpenAIEndpoint)
 	}
@@ -1935,6 +1938,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = append(rc.rec.Warnings, resp.Warnings...)
 		if !resp.Streamed {
 			s.bindResponsesAffinityTarget(rc, req, served, dialect)
+			if rc.affinity != nil {
+				rc.affinity.captureState = affinityStateFromResponse(resp)
+			}
 			if s.responsesAffinityStorageActive(rc) {
 				if err := s.captureResponsesAffinity(rc, resp.ID); err != nil {
 					code := "response_affinity_store_failed"
