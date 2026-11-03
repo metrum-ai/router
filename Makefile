@@ -347,6 +347,29 @@ test-edge-bundle:
 	bash -n deploy/edge/install.sh deploy/edge/demo.sh deploy/edge/upgrade.sh deploy/edge/uninstall.sh
 	uv run --with pyyaml python deploy/edge/test/install_e2e.py
 
+# Gate for deploy/reference/<vendor>-<tier>: one file set per tier, official
+# upstream images pinned by digest, README sections, and a config that the
+# router's own loader accepts. No hardware and no registry access.
+.PHONY: test-reference-configs
+# A reference tier is a directory that ships an images.lock; anything else under
+# deploy/reference/ (a matrix, an experiment) is outside the contract.
+REFERENCE_TIERS := $(patsubst deploy/reference/%/,%,$(dir $(wildcard deploy/reference/*/images.lock)))
+# A bcrypt hash is required by the admin-auth block; the value never leaves CI.
+REFERENCE_CONFIG_ENV := REFERENCE_ADMIN_PASSWORD_HASH='$$2b$$12$$o8v1ntt3UOcyHUoCRKF4.eYHga/4SHaiGlOTrw8YEcp97knODcP/m' \
+	LOCAL_VLLM_API_KEY=reference-config-check \
+	ROUTER_ID_TRANSFORM_KEY=00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+test-reference-configs:
+	uv run --with pyyaml python scripts/check_reference_configs.py
+	uv run --with pyyaml python -m unittest scripts/check_reference_configs_test.py -q
+	@tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
+	for tier in $(REFERENCE_TIERS); do \
+	  echo "validating deploy/reference/$$tier/config.yaml"; \
+	  $(REFERENCE_CONFIG_ENV) "$$tmp/routerctl" config validate \
+	    --config "deploy/reference/$$tier/config.yaml" >/dev/null || exit 1; \
+	done
+
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
 
 # Offline gate for nvidia-local-serving blueprint + Kustomize overlay.
@@ -437,6 +460,7 @@ ci-windows:
 ci-python: secret-contract capability-smoke-contracts
 	python3 benchmarks/governance-load/test_harness.py
 	python3 scripts/check_source_headers.py
+	$(MAKE) test-reference-configs
 	$(MAKE) validate-build-metadata
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test

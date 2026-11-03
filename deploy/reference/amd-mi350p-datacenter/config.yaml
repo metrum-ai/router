@@ -1,0 +1,219 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reference configuration: amd-mi350p-datacenter
+# 1x AMD Instinct MI350P (144 GB HBM3E, gfx950), official ROCm vLLM image.
+# All four groups: this card has the memory for a chat model and a coder model
+# beside the tiny slot. Same group names, callers and admin surfaces as every
+# other tier; only the providers' base_url and the served names' weights differ.
+#
+# Secrets come from the environment and never appear here:
+#   LOCAL_VLLM_API_KEY, REFERENCE_ADMIN_PASSWORD_HASH, ROUTER_ID_TRANSFORM_KEY,
+#   OPENAI_API_KEY (only for the `escalate` group).
+server:
+  listen: :8080
+  default_model_group: local-chat
+  streaming:
+    translator: incremental
+  responses:
+    model_identity: upstream
+  identifiers:
+    mode: rewrite
+    transform:
+      current:
+        key_id: idk-reference-2026-11
+        key: ${ROUTER_ID_TRANSFORM_KEY}
+  usage_db:
+    enabled: true
+    driver: sqlite
+    path: /app/state/usage.sqlite
+    # Serving binaries do not apply application DDL. Run the reviewed
+    # metrum-ai-router-migrate sequence from README.md before the first start.
+    migration_policy: deployment-job
+    drain_timeout_ms: 10000
+  logging:
+    path: /app/logs/requests.jsonl
+    rotate_mb: 256
+    keep: 14
+  diagnostics:
+    enabled: true
+    retention_days: 14
+    store_sanitized_upstream_errors: true
+    max_error_bytes: 2048
+  cache:
+    enabled: false
+  admin_auth:
+    basic:
+      enabled: true
+      realm: Metrum AI Router Admin
+      # The reference deployment binds the router to loopback. Put a TLS
+      # reverse proxy in front before exposing this surface off the box.
+      allow_insecure_http: true
+      trusted_proxy_cidrs: []
+      users:
+        - username: admin
+          password_hash_env: REFERENCE_ADMIN_PASSWORD_HASH
+          subject: basic:admin
+          domain: example/prod
+          permissions:
+            - admin:auth:read
+    sessions:
+      cookie_name: smart_router_admin_session
+      ttl: 8h
+      secure_cookies: false
+      same_site: strict
+    authorization:
+      enabled: true
+      source: static
+      policy:
+        # Admin UI and spend reports for the reference operator; nothing else.
+        - p, basic:admin, example/prod, admin:reports, read|export|drilldown
+  admin_reports:
+    enabled: true
+    path_prefix: /admin/reports
+    default_since: 24h
+    max_range: 31d
+    max_rows: 500
+    export_markdown: true
+state_path: /app/state/router-state.json
+
+providers:
+  # In-cluster model servers. Prices are zero: the GPU is already paid for, so
+  # usage rows report tokens and latency, not a per-token charge. Set chargeback
+  # values here if reports should carry an allocated cost.
+  local-tiny:
+    base_url: http://vllm-tiny:8000/v1
+    dialect: openai-chat
+    api_key: ${LOCAL_VLLM_API_KEY}
+    api_key_env: LOCAL_VLLM_API_KEY
+    auth_scheme: bearer
+    models:
+      local-tiny:
+        model: local-tiny
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        input_modalities: [text]
+        output_modalities: [text]
+        pricing_notes: in-cluster GPU allocation; set chargeback values if reports need allocated cost
+  local-chat:
+    base_url: http://vllm-chat:8000/v1
+    dialect: openai-chat
+    api_key: ${LOCAL_VLLM_API_KEY}
+    api_key_env: LOCAL_VLLM_API_KEY
+    auth_scheme: bearer
+    models:
+      local-chat:
+        model: local-chat
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        input_modalities: [text]
+        output_modalities: [text]
+        pricing_notes: in-cluster GPU allocation; set chargeback values if reports need allocated cost
+  local-coder:
+    base_url: http://vllm-coder:8000/v1
+    dialect: openai-chat
+    api_key: ${LOCAL_VLLM_API_KEY}
+    api_key_env: LOCAL_VLLM_API_KEY
+    auth_scheme: bearer
+    models:
+      local-coder:
+        model: local-coder
+        input_price_per_million_usd: 0
+        output_price_per_million_usd: 0
+        input_modalities: [text]
+        output_modalities: [text]
+        pricing_notes: in-cluster GPU allocation; set chargeback values if reports need allocated cost
+  # Escalation path off the box. Official OpenAI-compatible endpoint; the key is
+  # supplied by the operator. An unset key leaves the group unusable by design:
+  # the caller gets an upstream authentication error, never a silent local answer.
+  frontier:
+    base_url: https://api.openai.com/v1
+    dialect: openai-chat
+    api_key: ${OPENAI_API_KEY}
+    api_key_env: OPENAI_API_KEY
+    key_id: frontier-openai
+    models:
+      frontier-chat:
+        model: gpt-5.4
+        input_price_per_million_usd: 2.5
+        output_price_per_million_usd: 15.0
+        pricing_source: https://developers.openai.com/api/docs/pricing
+        pricing_updated_at: "2026-06-25"
+        input_modalities: [text, image]
+        output_modalities: [text]
+
+models:
+  local-tiny:
+    strategy: static
+    targets:
+      - provider: local-tiny
+        model_ref: local-tiny
+        weight: 1
+  local-chat:
+    strategy: static
+    targets:
+      - provider: local-chat
+        model_ref: local-chat
+        weight: 1
+  local-coder:
+    strategy: static
+    targets:
+      - provider: local-coder
+        model_ref: local-coder
+        weight: 1
+  # Off-box escalation. Separate group so a caller opts in explicitly and the
+  # spend shows up as its own group in reports.
+  escalate:
+    strategy: static
+    targets:
+      - provider: frontier
+        model_ref: frontier-chat
+        weight: 1
+
+users:
+  - id: reference-operator
+    name: Reference Operator
+    type: service_account
+    status: active
+projects:
+  - id: reference
+    name: Reference
+    status: active
+project_memberships:
+  - user_id: reference-operator
+    project: reference
+    role: admin
+    status: active
+
+callers:
+  # Placeholder hash: cannot authenticate anyone until
+  # `metrum-ai-routerctl callers generate` writes a real token (README.md).
+  - id: reference-demo
+    owner_user: reference-operator
+    project: reference
+    environment: demo
+    status: active
+    token_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    token_id: rtr_metrum_reference_demo_k1
+    allow:
+      - local-tiny
+      - local-chat
+      - local-coder
+      - escalate
+    rate:
+      rpm: 120
+      tpm: 200000
+      concurrent: 8
+    # Cost control that does apply to static groups: request and token quotas.
+    quota:
+      day:
+        requests: 2000
+        tokens: 4000000
+      month:
+        requests: 0
+        tokens: 100000000
+      soft_pct: 80
+    key:
+      lifetime_tokens: 0
+      soft_pct: 90
+      on_exhaust: disable

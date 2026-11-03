@@ -1,0 +1,117 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reference deployment: nvidia-gb10-edge
+# 1x NVIDIA GB10 system (128 GB unified memory, arm64).
+# Model-server image pins must match images.lock; scripts/check_reference_configs.py
+# fails when they drift. The router image is supplied by the operator.
+name: metrum-router-reference-nvidia-gb10-edge
+
+x-vllm-service: &vllm-service
+  restart: unless-stopped
+  ipc: host
+  shm_size: 8gb
+  security_opt:
+    - no-new-privileges:true
+  environment:
+    HF_HOME: /cache
+    HF_HUB_ENABLE_HF_TRANSFER: "1"
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  volumes:
+    - hf-cache:/cache
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - >-
+        python3 -c "import urllib.request,sys;
+        sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"
+    interval: 15s
+    timeout: 5s
+    retries: 20
+    start_period: 60m
+
+services:
+  vllm-tiny:
+    <<: *vllm-service
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    command:
+      - --model
+      - ${TINY_MODEL_ID:-Qwen/Qwen3-1.7B}
+      - --revision
+      - ${TINY_MODEL_REVISION:-70d244cc86ccca08cf5af4e1e306ecf908b1ad5e}
+      - --served-model-name
+      - local-tiny
+      - --max-model-len
+      - ${MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${TINY_GPU_MEMORY_UTILIZATION:-0.09}
+      - --api-key
+      - ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - 127.0.0.1:${TINY_VLLM_PORT:-8002}:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vllm-primary:
+    <<: *vllm-service
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    command:
+      - --model
+      - ${PRIMARY_MODEL_ID:-Qwen/Qwen3-30B-A3B-Instruct-2507}
+      - --revision
+      - ${PRIMARY_MODEL_REVISION:-0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe}
+      - --served-model-name
+      - local-chat
+      - --max-model-len
+      - ${MAX_MODEL_LEN:-8192}
+      - --gpu-memory-utilization
+      - ${PRIMARY_GPU_MEMORY_UTILIZATION:-0.76}
+      - --api-key
+      - ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    ports:
+      - 127.0.0.1:${PRIMARY_VLLM_PORT:-8001}:8000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  router:
+    image: ${ROUTER_IMAGE:?set ROUTER_IMAGE to the router runtime image, for example metrum-ai-router:<version>-linux-arm64}
+    restart: unless-stopped
+    command: ["--config", "/app/config/config.yaml"]
+    working_dir: /app/state
+    environment:
+      ROUTER_ID_TRANSFORM_KEY: ${ROUTER_ID_TRANSFORM_KEY:?set ROUTER_ID_TRANSFORM_KEY to 64 random bytes, hex or base64}
+      LOCAL_VLLM_API_KEY: ${LOCAL_VLLM_API_KEY:?set LOCAL_VLLM_API_KEY}
+      REFERENCE_ADMIN_PASSWORD_HASH: ${REFERENCE_ADMIN_PASSWORD_HASH:?set REFERENCE_ADMIN_PASSWORD_HASH to a bcrypt hash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - 127.0.0.1:${ROUTER_HTTP_PORT:-8080}:8080
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./state:/app/state
+      - ./logs:/app/logs
+    depends_on:
+      vllm-tiny:
+        condition: service_healthy
+      vllm-primary:
+        condition: service_healthy
+
+volumes:
+  hf-cache:

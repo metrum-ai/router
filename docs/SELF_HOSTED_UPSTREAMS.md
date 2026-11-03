@@ -12,6 +12,16 @@ Upstream references checked on 2026-06-17:
 - SGLang multimodal language models: https://docs.sglang.io/docs/supported-models/multimodal_language_models
 - SGLang tool parser: https://docs.sglang.io/docs/advanced_features/tool_parser
 
+## Reference deployments
+
+`deploy/reference/<vendor>-<tier>/` holds deployable reference configurations for
+one mid-range NVIDIA datacenter GPU, an NVIDIA GB10 edge system, an AMD Instinct
+MI350P and an AMD Strix Halo edge system. Each tier has the same file set
+(`config.yaml` model groups, `compose.yaml`, `images.lock`, `SIZING.md`, README,
+`results/`) and uses only official upstream images pinned by digest, so moving
+between vendors is a configuration change. Start from the tier README; the
+model-group shape and the escalation group are identical across tiers.
+
 ## Configuration Pattern
 
 Use `dialect: openai-chat` for vLLM or SGLang `/v1/chat/completions` services. Use `dialect: openai-responses` only after validating the upstream's `/v1/responses` behavior with the exact client and tool path.
