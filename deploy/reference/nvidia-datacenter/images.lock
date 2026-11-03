@@ -1,0 +1,42 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Pinned inputs for reference tier: nvidia-datacenter.
+# Resolved on 2026-11-02 with:
+#   docker buildx imagetools inspect vllm/vllm-openai:v0.33.0
+# The digest is the manifest-list digest, so the same pin serves amd64 and
+# arm64 hosts. scripts/check_reference_configs.py fails when compose.yaml and
+# this file disagree.
+schema: metrum.ai/reference-images/v1
+tier: nvidia-datacenter
+updated: "2026-11-02"
+
+router:
+  # Operator-supplied: the router image comes from the release the operator
+  # deploys and this repository does not own that registry path.
+  reference: metrum-ai-router:<version>-linux-amd64
+  digest: operator-supplied
+  note: Required as ROUTER_IMAGE by compose.yaml; never latest, never a moving tag.
+
+images:
+  - name: vllm
+    role: model-server
+    image: vllm/vllm-openai:v0.33.0
+    digest: sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
+    source: https://hub.docker.com/r/vllm/vllm-openai
+    platforms: [linux/amd64, linux/arm64]
+    note: Official upstream vLLM OpenAI-compatible server image, used by both local slots.
+
+models:
+  - id: Qwen/Qwen3-1.7B
+    revision: 70d244cc86ccca08cf5af4e1e306ecf908b1ad5e
+    license: Apache-2.0
+    slot: local-tiny
+    served_name: local-tiny
+    note: Always-resident smoke and classification model.
+  - id: Qwen/Qwen3-32B
+    revision: 9216db5781bf21249d130ec9da846c4624c16137
+    license: Apache-2.0
+    slot: local-chat
+    served_name: local-chat
+    note: Primary local chat model; FP8 weights so it fits an 80 GB card beside the other slots.
