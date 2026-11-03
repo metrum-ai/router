@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Stored Responses affinity is new in v4.7: the authenticated-encryption
+  envelope used for upstream ids has no earlier released format, so there is no
+  stored-response metadata to migrate and no compatibility path with v4.6.0
+  (#533).
+
 ### Added
 
 - Opt-in `strategy: tool_aware` model groups with a `tool_routing` block. In

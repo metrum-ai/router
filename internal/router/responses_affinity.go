@@ -359,14 +359,11 @@ func (s *Service) callerTokenForAffinity(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if header := strings.TrimSpace(r.Header.Get("Authorization")); header != "" {
-		const prefix = "Bearer "
-		if len(header) > len(prefix) && strings.EqualFold(header[:len(prefix)], prefix) {
-			return strings.TrimSpace(header[len(prefix):])
-		}
+	// Mirror authenticate() exactly: only a case-sensitive "Bearer " prefix
+	// selects the Authorization value; anything else falls back to X-API-Key.
+	if header := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(header, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
 	}
-	// authenticate() accepts X-API-Key when the Authorization header is absent
-	// or not a bearer token; the affinity fingerprint must use that same token.
 	return strings.TrimSpace(r.Header.Get("X-API-Key"))
 }
 

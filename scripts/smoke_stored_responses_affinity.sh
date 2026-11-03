@@ -95,9 +95,10 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
-python3 - "$PORT" "$TOKEN" "$WORKDIR/evidence" <<'PY'
-import json, pathlib, sys, urllib.error, urllib.request
-port, token, out = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
+SMOKE_CALLER_TOKEN="$TOKEN" python3 - "$PORT" "$WORKDIR/evidence" <<'PY'
+import json, os, pathlib, sys, urllib.error, urllib.request
+port, out = sys.argv[1], pathlib.Path(sys.argv[2])
+token = os.environ["SMOKE_CALLER_TOKEN"]
 out.mkdir(parents=True, exist_ok=True)
 base = f"http://127.0.0.1:{port}"
 def call(method, path, body=None):

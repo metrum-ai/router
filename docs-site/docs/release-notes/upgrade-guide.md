@@ -213,6 +213,9 @@ legal holds in that later work), an unavailable pinned target will return `409`
 targets are in scope. The table has no bearer-token, prompt or response-content
 column and the migration writes no rows.
 
+The upstream-id envelope this table stores is introduced with schema v12 and has
+no earlier released format, so there is no stored-response metadata to migrate.
+
 Back up the usage database before applying the Required Migration Gate. This
 backup is an operator requirement: online `auto-safe` migration does not verify
 backup evidence. A downgrade to a pre-v12 package requires restoring a
