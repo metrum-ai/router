@@ -49,6 +49,9 @@ func (s *Service) targetEligibilityReasons(target Target, req *IRRequest, caller
 	if reason := reasoningFilterReason(target, out, req); reason != "" {
 		reasons = append(reasons, reason)
 	}
+	if reason := reasoningWithToolsFilterReason(target, out, req); reason != "" {
+		reasons = append(reasons, reason)
+	}
 	if !targetHonorsExplicitMaxTokens(target, req) {
 		reasons = append(reasons, "max-tokens-honored")
 	}

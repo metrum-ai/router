@@ -31,6 +31,14 @@ providers:
         output_modalities: [text]
         tool_support:
           openai_chat: [tools, tool_choice]
+        reasoning:
+          supported: true
+          mode: opt_in
+          control: effort_enum
+          # OpenAI Chat Completions rejects reasoning_effort together with
+          # tools on this surface; declare it so the router refuses the
+          # combination before dispatch instead of forwarding a provider 400.
+          with_tools: false
       sol:
         model: gpt-5.6-sol
         input_price_per_million_usd: 4.00
@@ -42,6 +50,14 @@ providers:
         output_modalities: [text]
         tool_support:
           openai_chat: [tools, tool_choice]
+        reasoning:
+          supported: true
+          mode: opt_in
+          control: effort_enum
+          # OpenAI Chat Completions rejects reasoning_effort together with
+          # tools on this surface; declare it so the router refuses the
+          # combination before dispatch instead of forwarding a provider 400.
+          with_tools: false
       astra:
         model: gpt-6-astra
         input_price_per_million_usd: 10.00
@@ -53,6 +69,14 @@ providers:
         output_modalities: [text]
         tool_support:
           openai_chat: [tools, tool_choice]
+        reasoning:
+          supported: true
+          mode: opt_in
+          control: effort_enum
+          # OpenAI Chat Completions rejects reasoning_effort together with
+          # tools on this surface; declare it so the router refuses the
+          # combination before dispatch instead of forwarding a provider 400.
+          with_tools: false
 
 models:
   openjev-routing-demo:

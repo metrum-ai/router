@@ -59,6 +59,43 @@ reasoning:
   supports_summaries: true
 ```
 
+## Reasoning With Tools
+
+Some reasoning models accept a reasoning control alone but reject it when the
+same request carries function tools. OpenAI reasoning models on Chat Completions
+are the known case: the provider expects the Responses API for that combination.
+Declare the limitation on the target so the router refuses it before dispatch
+instead of forwarding a request the provider answers with `400`:
+
+```yaml
+providers:
+  compatible-openai-chat:
+    dialect: openai-chat
+    models:
+      gpt-chat-reasoning:
+        model: provider/model-id
+        tool_support:
+          openai_chat: [tools, tool_choice]
+        reasoning:
+          supported: true
+          mode: opt_in
+          control: effort_enum
+          with_tools: false
+```
+
+With that declaration, a request that carries tools and an explicit reasoning
+control is answered with `400 invalid_request_error`, code
+`unsupported_capability`, and `param` naming the caller's own field
+(`reasoning_effort`, `reasoning`, or `thinking`) before any upstream call. The
+error body and the diagnostic rows carry no provider, model, or target
+identifier; candidate telemetry shows the bounded reason `reasoning-with-tools`.
+
+The declaration is scoped to the target's own outbound dialect. A Chat request
+with tools and reasoning can still be served by a Responses-dialect target
+through the `chat_to_responses` bridge when the bridge and target metadata allow
+it. Leaving `with_tools` unset keeps today's behaviour: the router forwards the
+request as configured.
+
 ## Bridge Reasoning
 
 Reasoning can cross an explicit bridge only when both the bridge flag and target reasoning metadata say the exact shape was validated. For Chat-to-Responses targets, set `bridges.chat_to_responses.reasoning: true` only after a router smoke proves Chat `reasoning_effort` reaches the upstream as Responses `reasoning.effort`. For Responses-to-Chat targets, set `responses_to_chat.reasoning: true` only after a router smoke proves Responses `reasoning.effort` reaches the upstream as Chat `reasoning_effort`.

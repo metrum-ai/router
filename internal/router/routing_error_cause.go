@@ -38,6 +38,10 @@ func publicEligibilityCause(reason string, req *IRRequest, dialect string) (rout
 			return routingErrorCause{"unsupported_capability", ""}, true
 		}
 		return routingErrorCause{"unsupported_capability", "reasoning"}, true
+	case "reasoning-with-tools":
+		// Name only the caller's own reasoning field; never a provider, model
+		// or target identifier.
+		return routingErrorCause{"unsupported_capability", reasoningCallerField(req, dialect)}, true
 	case "reasoning-history-unsupported", "responses-to-chat-reasoning-history-unsupported":
 		return routingErrorCause{"unsupported_capability", input}, true
 	case "logprobs-unsupported":
@@ -80,6 +84,23 @@ func publicEligibilityCause(reason string, req *IRRequest, dialect string) (rout
 		}
 	}
 	return routingErrorCause{}, false
+}
+
+// reasoningCallerField is the caller's own reasoning field for a typed
+// capability refusal.
+func reasoningCallerField(req *IRRequest, dialect string) string {
+	source := ""
+	if req != nil {
+		source = req.Reasoning.Source
+	}
+	switch {
+	case source == "anthropic_thinking", normalizeDialect(dialect) == "anthropic":
+		return "thinking"
+	case source == "openai_responses_reasoning", normalizeDialect(dialect) == "openai-responses":
+		return "reasoning"
+	default:
+		return "reasoning_effort"
+	}
 }
 
 // commonRoutingCause returns only a cause shared by every rejected target.

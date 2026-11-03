@@ -1703,6 +1703,24 @@ models:
     targets:
     - provider: openai
       model_ref: gpt-5.4
+  # Starter declaration for a Chat-dialect reasoning model: OpenAI Chat
+  # Completions accepts reasoning_effort alone but rejects it together with a
+  # tools array (#697). With `with_tools: false` the router refuses that
+  # combination with 400 unsupported_capability before dispatch instead of
+  # forwarding it to a provider 400 (#703). Leave the field unset for targets
+  # that accept reasoning with tools.
+  # reasoning-smoke-chat:
+  #   strategy: static
+  #   targets:
+  #   - provider: compatible-openai-chat   # any openai-chat provider
+  #     model_ref: gpt-chat-reasoning
+  #     tool_support:
+  #       openai_chat: [tools, tool_choice]
+  #     reasoning:
+  #       supported: true
+  #       mode: opt_in
+  #       control: effort_enum
+  #       with_tools: false
   reasoning-smoke:
     strategy: failover
     targets:

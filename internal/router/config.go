@@ -412,6 +412,11 @@ type ReasoningSupport struct {
 	RejectsTemperature            bool   `yaml:"rejects_temperature" json:"rejectsTemperature,omitempty"`
 	RejectsTopP                   bool   `yaml:"rejects_top_p" json:"rejectsTopP,omitempty"`
 	SupportsSummaries             bool   `yaml:"supports_summaries" json:"supportsSummaries,omitempty"`
+	// WithTools, when explicitly false, declares that this target's outbound
+	// dialect rejects a reasoning control together with function tools, for
+	// example OpenAI Chat reasoning_effort plus a tools array (#703). Unset
+	// means "not declared as unsupported" and keeps the target eligible.
+	WithTools *bool `yaml:"with_tools" json:"withTools,omitempty"`
 }
 
 type ModelGroup struct {

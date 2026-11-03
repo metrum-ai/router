@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `reasoning.with_tools` target metadata. Setting it to `false` declares that
+  the target's outbound dialect rejects a reasoning control together with
+  function tools, as OpenAI reasoning models do on Chat Completions. The router
+  then refuses that combination before dispatch with `400 unsupported_capability`
+  and `param` naming the caller's own reasoning field (`reasoning_effort`,
+  `reasoning`, or `thinking`), with the bounded filter reason
+  `reasoning-with-tools` in candidate telemetry. Unset keeps today's behaviour,
+  so existing configurations do not change routing (#703).
+
 - `count_tokens` target metadata for Anthropic Messages targets, default
   `true`. A target or gateway that serves Messages without implementing
   `POST /v1/messages/count_tokens` can declare `count_tokens: false`; the router
