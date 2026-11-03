@@ -13,7 +13,7 @@ and an escalation group off the box.
 |---|---|
 | GPU | 1× AMD Instinct MI350P, 144 GB HBM3E, PCIe dual-slot (gfx950) |
 | Host | x86_64, ≥ 32 vCPU, ≥ 256 GB RAM, PCIe 4.0 x16 slot with adequate airflow |
-| Disk | ≥ 500 GB free for weights and caches (`hf-cache` volume) |
+| Disk | ≥ 300 GB free for the checkpoint downloads, the images and the weight cache (`hf-cache` volume) |
 | Driver | `amdgpu` kernel driver with ROCm kernel support for gfx950, `/dev/kfd` and `/dev/dri` present |
 | Runtime | Docker Engine 27+ and Compose v2; the container gets `/dev/kfd`, `/dev/dri`, and the `video` and `render` groups |
 | Network | Outbound HTTPS to `huggingface.co` and the escalation endpoint; inbound only to the router port |
@@ -116,7 +116,7 @@ TOKEN="$(cat state/demo.token)"
 curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/models
 ```
 
-First boot downloads ~68 GB of weights; the model servers report healthy
+First boot downloads ~125 GB of checkpoints (both large models are BF16 repositories; FP8 is applied at load, not at download) and pulls ~30 GB of image; the model servers report healthy
 only after that. `docker compose logs -f vllm-chat` shows progress.
 
 Teardown: `docker compose down` (add `-v` to drop the weight cache).

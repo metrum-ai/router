@@ -15,7 +15,7 @@ frontier key.
 |---|---|
 | GPU | 1× NVIDIA H100 80 GB (H200/A100 80 GB also fit this table; adjust `SIZING.md` if the card differs) |
 | Host | x86_64, ≥ 32 vCPU, ≥ 256 GB RAM |
-| Disk | ≥ 500 GB free for weights and caches (`hf-cache` volume) |
+| Disk | ≥ 200 GB free for the checkpoint download, the image and the weight cache (`hf-cache` volume) |
 | Driver | NVIDIA driver with container runtime ≥ 1.16 and `nvidia-container-toolkit` |
 | Network | Outbound HTTPS to `huggingface.co` and the frontier API; inbound only to the router port |
 | OS | Tested target: Ubuntu 24.04 LTS with Docker Engine 27+ and Compose v2 |
@@ -122,7 +122,7 @@ TOKEN="$(cat state/demo.token)"
 curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/models
 ```
 
-First boot downloads ~37 GB of weights; the model servers report healthy
+First boot downloads ~67 GB of checkpoints (Qwen3-32B is a BF16 repository; FP8 is applied at load, not at download) and pulls ~25 GB of image; the model servers report healthy
 only after that. `docker compose logs -f vllm-chat` shows progress.
 
 Teardown: `docker compose down` (add `-v` to drop the weight cache).

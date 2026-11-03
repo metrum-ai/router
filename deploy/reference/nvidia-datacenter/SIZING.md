@@ -78,6 +78,14 @@ These rows are arithmetic, not results. `results/README.md` records what was
 actually measured, on which commit, and the tier README carries the number that
 replaced them.
 
+## Disk versus memory
+
+`--quantization fp8` is a **load-time** quantization: vLLM downloads the published
+BF16 checkpoint and converts it while loading. Resident memory follows the FP8
+column above; disk follows the BF16 repository size (Qwen3-32B is ~64 GB), plus a
+second copy for any model the same box also serves. A sizing plan that budgets
+disk from the FP8 number will fill the disk on first boot.
+
 ## Limits of this method
 
 - KV bytes assume a dense 2-byte cache and no prefix sharing. vLLM may enable

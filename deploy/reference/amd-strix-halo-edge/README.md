@@ -14,7 +14,7 @@ work that should not stay on the desk.
 |---|---|
 | System | 1× AMD Ryzen AI MAX+ 395 (Strix Halo, gfx1151, RDNA 3.5) with 128 GB unified LPDDR5X |
 | GPU memory window | `amdgpu` GTT window large enough for ~110 GB (see `SIZING.md`); BIOS/firmware with a small VRAM carve-out and the rest reachable through GTT |
-| Disk | ≥ 200 GB free for weights and caches (`hf-cache` volume) |
+| Disk | ≥ 150 GB free for the checkpoint download, the image and the weight cache (`hf-cache` volume) |
 | Driver | `amdgpu` kernel driver with ROCm 7.x userspace for gfx1151; `/dev/kfd` and `/dev/dri` present |
 | Runtime | Docker Engine 27+ and Compose v2; the container gets `/dev/kfd`, `/dev/dri`, and the `video` and `render` groups |
 | Network | Outbound HTTPS to `huggingface.co` and the escalation endpoint; inbound only to the router port |
@@ -118,7 +118,7 @@ TOKEN="$(cat state/demo.token)"
 curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/models
 ```
 
-First boot downloads ~64 GB of weights; the model servers report healthy
+First boot downloads ~64 GB of checkpoints and pulls ~30 GB of image; the model servers report healthy
 only after that. `docker compose logs -f vllm-primary` shows progress.
 
 Teardown: `docker compose down` (add `-v` to drop the weight cache).

@@ -12,7 +12,7 @@ an escalation group for the work that should not stay on the desk.
 | Item | Requirement |
 |---|---|
 | System | 1× NVIDIA GB10 system, 128 GB unified LPDDR5X, arm64 CPU |
-| Disk | ≥ 200 GB free for weights and caches (`hf-cache` volume) |
+| Disk | ≥ 150 GB free for the checkpoint download, the image and the weight cache (`hf-cache` volume) |
 | Driver | NVIDIA driver and container runtime shipped with the system image, `nvidia-container-toolkit` installed |
 | Network | Outbound HTTPS to `huggingface.co` and the escalation endpoint; inbound only to the router port |
 | OS | Tested target: Ubuntu 24.04 LTS arm64 with Docker Engine 27+ and Compose v2 |
@@ -111,7 +111,7 @@ TOKEN="$(cat state/demo.token)"
 curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/v1/models
 ```
 
-First boot downloads ~64 GB of weights; the model servers report healthy
+First boot downloads ~64 GB of checkpoints and pulls ~25 GB of image; the model servers report healthy
 only after that. `docker compose logs -f vllm-primary` shows progress.
 
 Teardown: `docker compose down` (add `-v` to drop the weight cache).
