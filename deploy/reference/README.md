@@ -125,12 +125,26 @@ RUN_COMMIT=$(git rev-parse HEAD) ROUTER_TOKEN=... \
   python3 deploy/reference/harness/run_tier.py <vendor>-<tier>
 ```
 
-Two run prerequisites the hardware taught us, both about the *harness*, not the
-router: the caller used for a sweep needs `rate.concurrent` above the worker count
-(a 32-worker cell is refused by a caller limited to the demo defaults, which shows
-up as `429 concurrency-exceeded`), and the fixed prompt must ask for continuous
-output, because the driver requires every response to report exactly
-`--output-tokens` and a plain filler prompt stops at end-of-sequence.
+**Run prerequisites the hardware taught us.** All of these are about the run, not
+about the router, and each one cost a rented window before it was understood:
+
+1. **The harness caller must be unthrottled.** A sweep issues thousands of
+   requests in a couple of minutes, so any bound on that caller (rpm, tpm,
+   concurrent, or the day/month request and token quotas) becomes a `429` in the
+   middle of a cell and aborts the run. The hardware bootstrap clears them
+   (`rpm: 0`, `tpm: 0`, `concurrent: 0`, quota `requests: 0`, `tokens: 0` on the
+   generated run caller only); every real caller in the tier config keeps its
+   quota.
+2. **Mint the caller before the router starts.** The router mounts `config.yaml`
+   as a single file, so an atomic rewrite under a running router leaves it reading
+   the old file and the new token answers `401`.
+3. **Mint a second, restricted caller for the grant check.** A token whose
+   `allow` list omits a group must not reach it; the router answers
+   `404 model_not_found`, and the suite checks that when `RESTRICTED_TOKEN` is set.
+4. **Never name a group the tier does not define** in a caller's `allow` list: the
+   router refuses to start with `caller ... allows unknown model group ...`. That
+   is fail-closed and correct — the mistake is in the script that builds the list,
+   and the make target's checker catches it for the committed configs.
 
 It writes `results/<date>-<commit>/` with `ENV.md`, `functional.json`,
 `sweep.json` and the sweep's raw driver output. A failed suite or sweep keeps the
