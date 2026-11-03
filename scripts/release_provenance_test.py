@@ -15,7 +15,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release.yml"
-PIN = "96278af6caaf10aea03fd8d33a09a777ca52d62f"  # attest-build-provenance v3.2.0
+PIN = "4d101475d8b20a2381f78447822ac1eab6504dd8"  # attest-build-provenance v4.2.2
 SUBJECTS = {
     "dist/metrum-ai-router-*.tar.gz",
     "dist/metrum-ai-router-*.zip",

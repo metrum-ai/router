@@ -42,7 +42,7 @@ Capabilities are **per model**, not inferred from a family name. Existing `input
 
 Chat, Responses and Anthropic Messages inputs map system/messages, function tool declarations, automatic/required/specific tool choice, tool results, temperature, output cap and stops. Chat/Responses/Anthropic streaming uses the existing incremental SSE bridges. Tool IDs and streamed argument fragments survive conversion. Responses function history additionally requires the persisted `bridges.responses_to_chat.tools: true` capability, alongside the legacy `responses_to_chat` bridge flags. This is stateless full-history continuation; `previous_response_id` is not supported by this bridge.
 
-Vision, documents, provider-hosted tools, structured-output guarantees, reasoning controls/content, cache-control blocks and multimodal outputs are **not advertised** by this adapter. Non-text Chat content is rejected rather than silently discarded. Do not advertise vision merely because an AWS model family supports it. Forced tool choice is still subject to the selected model's Converse support; AWS validation errors remain 400s.
+Vision, documents, provider-hosted tools, structured-output guarantees, reasoning controls/content, cache-control blocks and multimodal outputs are **not advertised** by this adapter. Non-text Chat content is rejected rather than silently discarded, including media inside a tool result: a tool result that carries an image, document or audio part is refused before dispatch (HTTP 400 naming the part) instead of being sent as text only. Do not advertise vision merely because an AWS model family supports it. Forced tool choice is still subject to the selected model's Converse support; AWS validation errors remain 400s.
 
 ## Usage, prices and errors
 

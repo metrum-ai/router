@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   class too (`401`/`429` stay provider 4xx, `5xx` becomes `502
   upstream-failed`) (#714).
 
+- Per-target routing filter reasons are stored even when `record_candidates`
+  is `false`. The candidate rows and the bounded reason rows now have
+  independent switches, so a pre-dispatch eligibility refusal keeps its
+  `request_target_filter_reasons` evidence; with no candidate rows the
+  reason's `candidate_index` is the position of the target in the group's
+  `targets` list (#716).
+
 ## [4.6.0] - 2026-11-02
 
 Security, PII and tool-compatibility release. No usage-database migration is

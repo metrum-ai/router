@@ -81,16 +81,13 @@ func (s *Service) recordEligibilityTelemetry(rc *requestContext, groupName strin
 		maxReasons = 256
 	}
 	recordCandidates := cfg.RecordCandidates == nil || *cfg.RecordCandidates
-	if !recordCandidates {
-		return
-	}
 	estimate := s.requestTokenEstimateForSelection(rc, req, callerDialect)
 	for i, target := range group.Targets {
-		if len(rc.rec.DecisionCandidates) >= maxCandidates {
+		if len(rc.rec.DecisionFilterReasons) >= maxReasons {
 			break
 		}
+		recordCandidateRow := recordCandidates && len(rc.rec.DecisionCandidates) < maxCandidates
 		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
-		fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
 		reasons := s.requestFilterReasons(target, req, callerDialect, outDialect, estimate)
 		if len(reasons) == 0 {
 			reason := s.contractFilterReason(groupName, group, target, req, callerDialect, outDialect)
@@ -98,47 +95,56 @@ func (s *Service) recordEligibilityTelemetry(rc *requestContext, groupName strin
 				reasons = append(reasons, reason)
 			}
 		}
-		candidateIndex := len(rc.rec.DecisionCandidates)
-		rc.rec.DecisionCandidates = append(rc.rec.DecisionCandidates, decisionCandidateLogRecord{
-			CandidateIndex:              candidateIndex,
-			GroupTargetIndex:            i,
-			Provider:                    target.Provider,
-			Model:                       target.Model,
-			ModelRef:                    target.ModelRef,
-			Dialect:                     outDialect,
-			Weight:                      target.Weight,
-			ToolOnly:                    target.ToolOnly,
-			ContextTokens:               target.ContextTokens,
-			MaxEstimatedInputTokens:     fit.MaxEstimatedInputTokens,
-			MaxRequestedOutputTokens:    fit.MaxRequestedOutputTokens,
-			MaxRequestBytes:             fit.MaxRequestBytes,
-			MaxToolSchemaBytes:          fit.MaxToolSchemaBytes,
-			EstimatedTotalInputTokens:   fit.Estimate.EstimatedTotalInputTokens,
-			RequestedOutputCapTokens:    fit.Estimate.RequestedOutputCapTokens,
-			EstimatedTotalWithOutputCap: fit.EstimatedTotalWithOutputCap,
-			RequestBytes:                fit.Estimate.RequestBytes,
-			ToolSchemaBytes:             fit.ToolSchemaBytes,
-			ContextHeadroomTokens:       fit.ContextHeadroomTokens,
-			ContextFit:                  fit.ContextFit,
-			RequestBytesFit:             fit.RequestBytesFit,
-			ToolSchemaFit:               fit.ToolSchemaFit,
-			EligibilityDecision:         fit.EligibilityDecision,
-			EligibilityReason:           fit.EligibilityReason,
-			InputImage:                  targetSupportsInputModalities(target, []string{"image"}),
-			OutputImage:                 stringSliceContains(defaultModalities(target.OutputModalities), "image"),
-			ToolSupport:                 targetSupportsTools(target, outDialect),
-			ForcedToolChoice:            targetSupportsClientTools(target, outDialect, true),
-			StructuredOutput:            targetSupportsStructuredOutput(target, callerDialect, outDialect, true),
-			HonorsMaxTokens:             target.HonorsMaxTokens == nil || *target.HonorsMaxTokens,
-			ReasoningSupport:            targetSupportsReasoning(target),
-			ReasoningMode:               target.Reasoning.Mode,
-			ReasoningControl:            target.Reasoning.Control,
-			ReasoningDefault:            target.Reasoning.DefaultOn || defaultThinkingEnabled(target),
-			ReasoningStream:             target.Reasoning.StreamBlock,
-			ValidationStatus:            decisionCandidateValidationStatus(target.Validation),
-			ValidationAge:               validationAgeBucket(target.Validation, time.Now().UTC()),
-			Eligible:                    len(reasons) == 0,
-		})
+		// Reasons are recorded independently of the candidate rows: #716
+		// showed that record_candidates: false also discarded every per-target
+		// reason even though max_filter_reasons is a separate switch. Without
+		// candidate rows the reason's candidate_index is the group target
+		// index, which is what an operator can line up with the config.
+		candidateIndex := i
+		if recordCandidateRow {
+			candidateIndex = len(rc.rec.DecisionCandidates)
+			fit := s.targetRequestShapeFit(target, req, callerDialect, outDialect, estimate)
+			rc.rec.DecisionCandidates = append(rc.rec.DecisionCandidates, decisionCandidateLogRecord{
+				CandidateIndex:              candidateIndex,
+				GroupTargetIndex:            i,
+				Provider:                    target.Provider,
+				Model:                       target.Model,
+				ModelRef:                    target.ModelRef,
+				Dialect:                     outDialect,
+				Weight:                      target.Weight,
+				ToolOnly:                    target.ToolOnly,
+				ContextTokens:               target.ContextTokens,
+				MaxEstimatedInputTokens:     fit.MaxEstimatedInputTokens,
+				MaxRequestedOutputTokens:    fit.MaxRequestedOutputTokens,
+				MaxRequestBytes:             fit.MaxRequestBytes,
+				MaxToolSchemaBytes:          fit.MaxToolSchemaBytes,
+				EstimatedTotalInputTokens:   fit.Estimate.EstimatedTotalInputTokens,
+				RequestedOutputCapTokens:    fit.Estimate.RequestedOutputCapTokens,
+				EstimatedTotalWithOutputCap: fit.EstimatedTotalWithOutputCap,
+				RequestBytes:                fit.Estimate.RequestBytes,
+				ToolSchemaBytes:             fit.ToolSchemaBytes,
+				ContextHeadroomTokens:       fit.ContextHeadroomTokens,
+				ContextFit:                  fit.ContextFit,
+				RequestBytesFit:             fit.RequestBytesFit,
+				ToolSchemaFit:               fit.ToolSchemaFit,
+				EligibilityDecision:         fit.EligibilityDecision,
+				EligibilityReason:           fit.EligibilityReason,
+				InputImage:                  targetSupportsInputModalities(target, []string{"image"}),
+				OutputImage:                 stringSliceContains(defaultModalities(target.OutputModalities), "image"),
+				ToolSupport:                 targetSupportsTools(target, outDialect),
+				ForcedToolChoice:            targetSupportsClientTools(target, outDialect, true),
+				StructuredOutput:            targetSupportsStructuredOutput(target, callerDialect, outDialect, true),
+				HonorsMaxTokens:             target.HonorsMaxTokens == nil || *target.HonorsMaxTokens,
+				ReasoningSupport:            targetSupportsReasoning(target),
+				ReasoningMode:               target.Reasoning.Mode,
+				ReasoningControl:            target.Reasoning.Control,
+				ReasoningDefault:            target.Reasoning.DefaultOn || defaultThinkingEnabled(target),
+				ReasoningStream:             target.Reasoning.StreamBlock,
+				ValidationStatus:            decisionCandidateValidationStatus(target.Validation),
+				ValidationAge:               validationAgeBucket(target.Validation, time.Now().UTC()),
+				Eligible:                    len(reasons) == 0,
+			})
+		}
 		for _, reason := range reasons {
 			if len(rc.rec.DecisionFilterReasons) >= maxReasons {
 				break

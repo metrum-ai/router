@@ -246,6 +246,29 @@ def assert_agent_chain_workflow() -> None:
             "agent chain nightly must retain per-cell results on failure")
 
 
+def assert_hierarchy_release_gate() -> None:
+    matrix = read(WORKFLOWS / "hierarchy-matrix.yml")
+    require("workflow_call:" in matrix and "workflow_dispatch:" in matrix,
+            "hierarchy matrix must be callable from the release workflow and runnable alone")
+    require("secrets." not in matrix, "hierarchy matrix must stay credential-free")
+    require("make agent-chain-mock" in matrix and "run_codex_chain.py" in matrix,
+            "hierarchy matrix lost a shipped suite")
+    matrix_jobs = jobs(matrix)
+    for name in ("agent-chain", "codex-chain"):
+        require("scripts/hierarchy_release_gate.py" in matrix_jobs.get(name, ""),
+                f"hierarchy matrix job {name} must decide with the release gate script")
+    require("release-exceptions.json" in matrix and "if: always()" in matrix,
+            "hierarchy matrix must review exceptions and retain per-cell results")
+    release = jobs(read(WORKFLOWS / "release.yml"))
+    require("uses: ./.github/workflows/hierarchy-matrix.yml" in release.get("hierarchy-matrix", ""),
+            "release workflow no longer calls the hierarchy matrix")
+    require("needs: hierarchy-matrix" in release.get("package", ""),
+            "release packaging must depend on the hierarchy matrix")
+    compat = read(WORKFLOWS / "release-compat.yml")
+    require("agent-chain-mock" not in compat,
+            "the agent chain matrix must not run twice on a tag build")
+
+
 def assert_arc_runners() -> None:
     small_jobs = {
         "admin-typecheck.yml": {"admin-typecheck"},
@@ -274,7 +297,8 @@ def assert_arc_runners() -> None:
             continue
         for name, body in jobs(text).items():
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
-                    (path.name == "agent-chain-nightly.yml" and name == "codex-chain-sandbox")):
+                    (path.name in ("agent-chain-nightly.yml", "hierarchy-matrix.yml") and
+                     name in ("codex-chain-sandbox", "codex-chain"))):
                 # Codex needs unprivileged namespaces absent from ARC. These VM
                 # jobs are credential-free and execute only local mock fixtures.
                 require(re.search(r"(?m)^    runs-on: ubuntu-22\.04$", body) is not None,
@@ -283,6 +307,11 @@ def assert_arc_runners() -> None:
                         "Codex VM exception is only for the offline sandbox matrix")
                 if path.name == "agent-tool-compat.yml":
                     require("make agent-tool-mock-codex" in body, "Codex PR smoke was removed")
+                continue
+            if "uses: ./.github/workflows/" in body:
+                # A reusable-workflow call job has no runner of its own; the
+                # called workflow's jobs are checked when that file is read.
+                require(name != "package", f"{path.name}/{name} must not be a reusable-workflow call")
                 continue
             runner = "router-arc-small" if name in small_jobs.get(path.name, set()) else "router-arc"
             require(re.search(rf"(?m)^    runs-on: {re.escape(runner)}$", body) is not None,
@@ -441,6 +470,7 @@ def main() -> int:
     assert_retirement_topology()
     assert_provider_workflows()
     assert_agent_chain_workflow()
+    assert_hierarchy_release_gate()
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")
