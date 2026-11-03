@@ -80,6 +80,7 @@ hard-dollar ledger, and a static group does not consult `spend_ceiling`;
 cd deploy/reference/<vendor>-<tier>
 mkdir -p state logs config
 cp config.yaml config/config.yaml
+sudo chown -R 65532:65532 config state logs   # the runtime image runs as 65532
 export ROUTER_IMAGE=metrum-ai-router:<version>-linux-<arch>   # required, never latest
 export LOCAL_VLLM_API_KEY="$(openssl rand -hex 24)"
 export ROUTER_ID_TRANSFORM_KEY="$(openssl rand -hex 64)"

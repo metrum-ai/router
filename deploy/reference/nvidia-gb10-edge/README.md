@@ -55,6 +55,9 @@ Cost control on these static groups is the caller `quota` (1 000 requests and
 cd deploy/reference/nvidia-gb10-edge
 mkdir -p state logs config
 cp config.yaml config/config.yaml
+# The runtime image runs as uid/gid 65532, so the directories it writes must
+# belong to that identity (see DOCKER_COMPOSE_INSTALL.md).
+sudo chown -R 65532:65532 config state logs
 
 export ROUTER_IMAGE=metrum-ai-router:<version>-linux-arm64   # required, never latest
 export LOCAL_VLLM_API_KEY="$(openssl rand -hex 24)"
