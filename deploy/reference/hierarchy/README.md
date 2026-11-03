@@ -171,3 +171,25 @@ caller, so its usage rows are attributable to the edge hop.
   folded cross-tier cost total, shared cache invalidation, or that the demo
   frontier is a model. It also does not replace the tier-specific reference
   configurations for AMD/NVIDIA/Intel hardware.
+
+## Validated tiers (2026-11-03)
+
+The reference config was run on rented dedicated nodes with real inference
+backends, one process per tier on its own node, plus the verification procedure
+above. Evidence: `router / v47-package / 587`, snapshot `bb4aed02`.
+
+| Tier | Hardware | Serving stack | Result |
+|---|---|---|---|
+| Datacenter (AMD) | AMD Instinct MI325X (SKU M3250101, 274.5 GB VRAM), 20 vCPU | official `rocm/vllm@sha256:e0ea9a10b729573ea8598bdc073bda0ea382fe1037eec7c0761b6fa7f46baaf4`, vLLM 0.29.1, `Qwen/Qwen2.5-1.5B-Instruct` | two-hop chain 200; per-hop additions +2.33 ms TTFT p50 (one hop) and +3.12 ms (two hops); per-hop usage rows for every hop; loop protection 508 |
+| Datacenter (Intel CPU) | Intel Xeon Gold 6548N, 16 vCPU | official `vllm/vllm-openai-cpu@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5`, vLLM 0.33.0, `Qwen/Qwen2.5-0.5B-Instruct` | same topology; two-hop chain 200; TTFT p50 268.8 ms direct, 274.8 ms two hops |
+| Edge | not yet run on edge-class hardware | — | pending: the edge tier is a router with no local model in this deployment; hardware evidence for a GB10/Strix-Halo edge box is tracked separately |
+
+`bash verify.sh --local` passed all checks on a dedicated node (hop-header
+hygiene, loop 508, edge cache hit, both hops' usage rows, env/config drift
+check). The compose path uses the same configs and the same script; it was not
+exercised in the measurement window because the run used one process per tier
+directly.
+
+What this does **not** establish: the cross-hop request-ID correlation and folded
+cost total above are still absent, and none of these runs exercised a hosted
+frontier API, a real edge device, or more than one DC tier.
