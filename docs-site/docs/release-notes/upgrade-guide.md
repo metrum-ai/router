@@ -203,6 +203,27 @@ expansions schema v11 is `restore-required`: package rollback never runs a
 reverse migration, so downgrading to a package that predates schema v11
 requires restoring a pre-upgrade database backup.
 
+Usage migration `2026110201` (schema v12, dependent on v11, online) adds the
+dormant `response_affinity` table for owner-bound stored Responses. It is
+metadata only and enables nothing: stored Responses affinity stays off by
+default and is enabled per model group in later reviewed changes, the agreed
+local affinity TTL is 30 days (configurable, integrated with retention and
+legal holds in that later work), an unavailable pinned target will return `409`
+`response_target_unavailable` instead of re-routing, and only native Responses
+targets are in scope. The table has no bearer-token, prompt or response-content
+column and the migration writes no rows.
+
+Back up the usage database before applying the Required Migration Gate. This
+backup is an operator requirement: online `auto-safe` migration does not verify
+backup evidence. A downgrade to a pre-v12 package requires restoring a
+compatible pre-upgrade backup; package rollback never runs a reverse migration.
+Migration tests exercise a reverse step that drops the table and its ledger
+rows on disposable SQLite and PostgreSQL databases; that step is destructive and
+is not a supported production downgrade. Future stored-response writes must
+first implement authenticated encryption and key lifecycle, caller-token
+ownership with tenant/project authorization, and retention and legal-hold
+integration with this table.
+
 Historical provenance remains empty/unknown. New estimated rollup counters
 start at zero, not a reconstruction of historical estimates. Historical nullable
 cache-write counts/prices remain unknown. Historical count calls cannot be

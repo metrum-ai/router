@@ -97,13 +97,6 @@ class EdgeBundleInstallTest(unittest.TestCase):
         cls.data_dir = cls.tmp / "data"
         cls.port = free_port()
         cls.base_url = f"http://127.0.0.1:{cls.port}"
-        # Fixed mock ports collide with any other local stack on the same host, so
-        # each test run gets its own three ports.
-        cls.mock_env = {
-            "EDGE_TINY_VLLM_PORT": str(free_port()),
-            "EDGE_PRIMARY_VLLM_PORT": str(free_port()),
-            "EDGE_ESCALATION_PORT": str(free_port()),
-        }
         cls.install = run([
             "bash", str(INSTALL),
             "--mode", "native",
@@ -111,7 +104,7 @@ class EdgeBundleInstallTest(unittest.TestCase):
             "--data-dir", str(cls.data_dir),
             "--port", str(cls.port),
             "--budget-daily-requests", "2",
-        ], env=cls.mock_env)
+        ])
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -194,7 +187,7 @@ class EdgeBundleInstallTest(unittest.TestCase):
     def test_07_reinstall_is_idempotent(self) -> None:
         token_before = (self.data_dir / "secrets" / "demo.token").read_text(encoding="utf-8").strip()
         again = run(["bash", str(INSTALL), "--mode", "native", "--bin-dir", str(self.bin_dir),
-                     "--data-dir", str(self.data_dir), "--port", str(self.port)], env=self.mock_env)
+                     "--data-dir", str(self.data_dir), "--port", str(self.port)])
         self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
         token_after = (self.data_dir / "secrets" / "demo.token").read_text(encoding="utf-8").strip()
         self.assertEqual(token_before, token_after, "a re-install must not rotate caller tokens")
