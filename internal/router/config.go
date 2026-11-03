@@ -94,6 +94,9 @@ type ServerConfig struct {
 	// ReasoningProvenance binds opaque provider reasoning history to the
 	// provider account, model and dialect that minted it (#622).
 	ReasoningProvenance ReasoningProvenanceConfig `yaml:"reasoning_provenance" json:"reasoningProvenance,omitempty"`
+	// ResponsesAffinity enables owner-bound stored Responses affinity for
+	// explicitly listed model groups (#533). It is off by default.
+	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
 }
 
 // ReasoningProvenanceConfig controls opaque reasoning provenance binding.
@@ -1287,6 +1290,28 @@ func (c *Config) setDefaults() {
 		defaultContentCaptureConfig(&group.ContentCapture)
 		c.Models[name] = group
 	}
+	if c.Server.ResponsesAffinity.enabled() && c.Server.ResponsesAffinity.RetentionDays == 0 {
+		c.Server.ResponsesAffinity.RetentionDays = responsesAffinityDefaultRetentionDays
+	}
+	// Stored-response affinity metadata must follow the operator's retention
+	// policy. When the feature is enabled and retention is on, add the class if
+	// the operator did not configure it explicitly; an explicit entry wins.
+	if c.Server.ResponsesAffinity.enabled() && c.Server.Retention.Enabled {
+		seen := false
+		for _, class := range c.Server.Retention.Classes {
+			if class.DataClass == retentionDataClassResponsesAffinity {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			c.Server.Retention.Classes = append(c.Server.Retention.Classes, RetentionClassConfig{
+				DataClass:     retentionDataClassResponsesAffinity,
+				RetentionDays: c.Server.ResponsesAffinity.RetentionDays,
+				BatchSize:     c.Server.Retention.DefaultBatchSize,
+			})
+		}
+	}
 }
 
 func (c *Config) Validate() error {
@@ -1381,6 +1406,24 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if err := validateReasoningProvenanceConfig(c.Server.ReasoningProvenance); err != nil {
 		return err
+	}
+	if err := validateResponsesAffinityConfig(c.Server.ResponsesAffinity, c.Models, c.Provider, c.Server.UsageDB); err != nil {
+		return err
+	}
+	if c.Server.ResponsesAffinity.enabled() {
+		if !c.Server.Retention.Enabled {
+			return fmt.Errorf("server responses_affinity requires server retention enabled with a %q class", retentionDataClassResponsesAffinity)
+		}
+		found := false
+		for _, class := range c.Server.Retention.Classes {
+			if class.DataClass == retentionDataClassResponsesAffinity {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("server responses_affinity requires a %q retention class", retentionDataClassResponsesAffinity)
+		}
 	}
 	if _, err := c.validateAccounts(); err != nil {
 		return err
@@ -2586,6 +2629,7 @@ const (
 	retentionDataClassContentCapture    = "content_capture"
 	retentionDataClassDecisionTelemetry = "decision_telemetry"
 	retentionDataClassUsageDetail       = "usage_detail"
+	retentionDataClassResponsesAffinity = "responses_affinity"
 )
 
 func defaultRetentionConfig(cfg *RetentionConfig) {
@@ -2721,7 +2765,7 @@ func normalizeRetentionDataClass(v string) string {
 
 func knownRetentionDataClass(v string) bool {
 	switch v {
-	case retentionDataClassUsageDiagnostics, retentionDataClassDecisionTelemetry, retentionDataClassSecurityAccess, retentionDataClassContentCapture, retentionDataClassUsageDetail:
+	case retentionDataClassUsageDiagnostics, retentionDataClassDecisionTelemetry, retentionDataClassSecurityAccess, retentionDataClassContentCapture, retentionDataClassUsageDetail, retentionDataClassResponsesAffinity:
 		return true
 	default:
 		return false

@@ -30,7 +30,10 @@ func TestUsageEndpointBoundedLabels(t *testing.T) {
 		{"DELETE", "/v1/content-captures/private-id", "content_captures.delete"},
 		{"POST", "/v1/content-captures/purge-expired", "content_captures.purge_expired"},
 		{"POST", "/v1/models/private-id", "unsupported"},
-		{"GET", "/v1/responses/private-id", "unsupported"},
+		{"GET", "/v1/responses/private-id", "responses.get"},
+		{"DELETE", "/v1/responses/private-id", "responses.delete"},
+		{"GET", "/v1/responses/private-id/input_items", "responses.input_items"},
+		{"POST", "/v1/responses/private-id/cancel", "responses.cancel"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method+tc.path, func(t *testing.T) {

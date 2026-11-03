@@ -66,6 +66,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason's `candidate_index` is the position of the target in the group's
   `targets` list (#716).
 
+- Unary Responses responses now encode the caller-facing `id`, output item ids
+  and call ids, matching the streamed surface, **only** when stored-response
+  affinity is enabled for the requested group. A stock deployment with affinity
+  off keeps its existing caller-visible ids and bytes unchanged (#533).
+- When stored-response affinity is configured for any model group, a
+  `previous_response_id` sent to a group that does not enable it is refused with
+  `400 stored_response_unsupported` instead of forwarding the provider id, so
+  ownership cannot be bypassed through another group that uses the same account
+  (#533).
+
+- Serve the stored Responses operations for enabled affinity groups:
+  `GET /v1/responses/{id}` (including `stream=true`), `GET
+  /v1/responses/{id}/input_items` and `DELETE /v1/responses/{id}` are forwarded
+  to the recorded provider account after the same owner, expiry and target
+  checks as continuation. A missing, expired or other-caller id returns the same
+  `404 response_not_found` before any upstream call; an unavailable target
+  returns `409 response_target_unavailable`; DELETE records a local tombstone and
+  the confirmed (or not-found) upstream deletion state. Caller-visible ids are
+  rewritten on these surfaces under `identifiers.mode: rewrite`. With affinity
+  disabled these routes keep the documented `501 unsupported_endpoint` behavior
+  (#533).
+
+- Owner-bound stored Responses affinity for model groups listed in
+  `server.responses_affinity.enabled_groups`, off by default. For a stored
+  native Responses request the router records keyed, encrypted affinity
+  metadata (owning caller-token fingerprint, keyed response lookup hash,
+  provider/account/model/dialect identity, lifecycle and expiry) before the id
+  is exposed, and a `previous_response_id` follow-up is pinned to the recorded
+  account instead of being re-routed. A missing, expired or other-caller id
+  returns the same `404 response_not_found` before any upstream call, and an
+  unavailable pinned target returns `409 response_target_unavailable`. With no
+  group enabled no row is written, no lookup runs and request/response bytes
+  are unchanged. Retention purge, legal holds, get/delete/input-items/cancel
+  and docs follow in later reviewed changes (#533).
+
 - Add the dormant `response_affinity` usage table in schema 12 as the
   foundation for owner-bound stored Responses. It stores only keyed lookup and
   token fingerprints, protected upstream ids, the exact provider/account/model
@@ -76,6 +111,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stays off by default and is enabled per model group only by later reviewed
   changes. Back up before the migration gate and restore a pre-upgrade backup
   to downgrade (#665).
+
+- `POST /v1/responses/{id}/cancel` is served for enabled affinity groups with
+  the same owner, expiry and target checks as the other stored-response
+  operations, forwarding the cancellation to the pinned provider account and
+  recording the local `cancelled` state. Unknown, expired and other-caller ids
+  keep returning the same 404 before any upstream call; affinity disabled keeps
+  the documented `501 unsupported_endpoint` behavior (#533).
+
+- Stored Responses affinity metadata now follows the retention policy: enabling
+  the feature requires `server.retention` to be on, a `responses_affinity`
+  retention class is provided (defaulting to the configured local TTL, 30 days)
+  and the existing retention job purges expired affinity rows in bounded
+  batches. Legal holds on that class block deletion by their time range, and the
+  expiry check still makes a row unusable as soon as its local TTL passes.
+  Releasing a hold makes the row eligible again; neither expiry nor purge claims
+  upstream deletion (#533).
 
 ## [4.6.0] - 2026-11-02
 
