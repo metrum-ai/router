@@ -7,26 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- `count_tokens` target metadata for Anthropic Messages targets, default
-  `true`. A target or gateway that serves Messages without implementing
-  `POST /v1/messages/count_tokens` can declare `count_tokens: false`; the router
-  then answers count requests from its local estimate, marked
-  `X-Metrum-Usage-Source: estimated`, instead of calling an endpoint that does
-  not exist (#714).
-
 ### Fixed
-
-- `POST /v1/messages/count_tokens` no longer surfaces `404 upstream-rejected`
-  when a gateway has no count route. An upstream `404` whose body is not the
-  provider's own typed `not_found_error` is answered with the router's local
-  estimate and the `estimated` marker, with a bounded trace event and no
-  provider/model/target identifiers in caller text. A typed provider
-  `not_found_error` (an unknown or misconfigured model) keeps its existing
-  `404 upstream-rejected` class, and every other provider status keeps its
-  class too (`401`/`429` stay provider 4xx, `5xx` becomes `502
-  upstream-failed`) (#714).
 
 - Per-target routing filter reasons are stored even when `record_candidates`
   is `false`. The candidate rows and the bounded reason rows now have
