@@ -142,21 +142,35 @@ func newStreamIdleReader(body io.ReadCloser, idle time.Duration) *streamIdleRead
 }
 
 func (r *streamIdleReader) watch() {
-	timer := time.NewTimer(r.idle)
-	defer timer.Stop()
+	// The idle window starts at the first data byte, not at the response
+	// headers: a reasoning model or a long edge prefill can send headers and
+	// then stay silent for minutes, and that time is bounded by the
+	// attempt/upstream timeout instead (#760 review item 1).
+	var timer *time.Timer
+	var timeout <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-r.stop:
 			return
 		case <-r.activity:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-				default:
+			if timer == nil {
+				timer = time.NewTimer(r.idle)
+			} else {
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
 				}
+				timer.Reset(r.idle)
 			}
-			timer.Reset(r.idle)
-		case <-timer.C:
+			timeout = timer.C
+		case <-timeout:
 			r.stalled.Store(true)
 			// Closing the body unblocks the pending Read with an error, so the
 			// proxy returns and the caller's connection closes now.

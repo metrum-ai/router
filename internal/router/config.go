@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -1293,6 +1294,42 @@ func validEnvName(k string) bool {
 	return true
 }
 
+// attemptChainBudgetMS is the worst-case wall-clock budget of one request's
+// attempt chain: for each model group, the largest attempt budget (per-target
+// timeout_ms, group attempt_timeout_ms, or default_attempt_timeout_ms, at least
+// the upstream timeout) times the number of targets that can be tried, with the
+// upstream timeout as the floor. The server write deadline defaults above it so
+// attempts, not the HTTP server, decide when a slow generation is given up.
+func (c *Config) attemptChainBudgetMS() int {
+	upstream := c.Server.Upstream.TimeoutMS
+	if upstream <= 0 {
+		upstream = int((10 * time.Minute).Milliseconds())
+	}
+	budget := upstream
+	for _, group := range c.Models {
+		perAttempt := group.AttemptTimeoutMS
+		if perAttempt <= 0 {
+			perAttempt = c.Server.Upstream.DefaultAttemptTimeoutMS
+		}
+		if perAttempt <= 0 {
+			perAttempt = upstream
+		}
+		for _, target := range group.Targets {
+			if target.TimeoutMS > perAttempt {
+				perAttempt = target.TimeoutMS
+			}
+		}
+		attempts := len(group.Targets)
+		if attempts < 1 {
+			attempts = 1
+		}
+		if chain := perAttempt * attempts; chain > budget {
+			budget = chain
+		}
+	}
+	return budget
+}
+
 func (c *Config) setDefaults() {
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
@@ -1411,12 +1448,15 @@ func (c *Config) setDefaults() {
 	if c.Server.ReadTimeoutMS == 0 {
 		c.Server.ReadTimeoutMS = int((60 * time.Second).Milliseconds())
 	}
-	if c.Server.WriteTimeoutMS == 0 {
+	if budget := c.attemptChainBudgetMS(); c.Server.WriteTimeoutMS == 0 {
 		// The absolute write deadline must not decide when a slow generation is
-		// given up on: default it above the upstream budget so the upstream or
-		// target timeout is the bound that fires, with a minute of margin for
-		// response writing (#759).
-		c.Server.WriteTimeoutMS = c.Server.Upstream.TimeoutMS + int((60 * time.Second).Milliseconds())
+		// given up on (#759). Default it above the worst-case attempt chain —
+		// the largest attempt budget times the most targets a request can try,
+		// which covers per-group, per-target and fallback budgets — plus a
+		// minute of margin for response writing (#760 review item 2).
+		c.Server.WriteTimeoutMS = budget + int((60 * time.Second).Milliseconds())
+	} else if c.Server.WriteTimeoutMS < budget {
+		log.Printf("WARNING: server.write_timeout_ms=%d is below the configured attempt chain budget %d; a slow attempt or a fallback chain can be cut by the HTTP server (see docs-site/docs/reference/architecture-limitations.md)", c.Server.WriteTimeoutMS, budget)
 	}
 	if c.Server.IdleTimeoutMS == 0 {
 		c.Server.IdleTimeoutMS = int((120 * time.Second).Milliseconds())

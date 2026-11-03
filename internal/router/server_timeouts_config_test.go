@@ -94,3 +94,72 @@ func TestServerTimeoutZeroSelectsDefault(t *testing.T) {
 		}
 	}
 }
+
+// The write default follows the worst-case attempt chain, so a per-group or
+// per-target budget larger than the upstream timeout cannot be cut by the HTTP
+// server (#760 review item 2).
+func TestAttemptChainBudgetDrivesWriteDefault(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Models["default"] = ModelGroup{
+		Strategy:         "failover",
+		AttemptTimeoutMS: 900000,
+		Targets: []Target{
+			{Provider: "mock", Model: "mock-model"},
+			{Provider: "mock", Model: "mock-model-2"},
+		},
+	}
+	if _, err := New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.WriteTimeoutMS < 2*900000 {
+		t.Fatalf("write default %d must cover the attempt chain 2x900000", cfg.Server.WriteTimeoutMS)
+	}
+
+	// A per-target timeout larger than the group budget is the worst case.
+	cfg = testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Models["default"] = ModelGroup{
+		Strategy: "failover",
+		Targets: []Target{
+			{Provider: "mock", Model: "mock-model", TimeoutMS: 1200000},
+			{Provider: "mock", Model: "mock-model-2"},
+		},
+	}
+	if _, err := New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.WriteTimeoutMS < 2*1200000 {
+		t.Fatalf("write default %d must cover 2 attempts with a 1200000ms target budget", cfg.Server.WriteTimeoutMS)
+	}
+
+	// default_attempt_timeout_ms participates too.
+	cfg = testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Server.Upstream.DefaultAttemptTimeoutMS = 1000000
+	cfg.Models["default"] = ModelGroup{
+		Strategy: "failover",
+		Targets: []Target{
+			{Provider: "mock", Model: "mock-model"},
+			{Provider: "mock", Model: "mock-model-2"},
+			{Provider: "mock", Model: "mock-model-3"},
+		},
+	}
+	if _, err := New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.WriteTimeoutMS < 3*1000000 {
+		t.Fatalf("write default %d must cover 3x1000000 via default_attempt_timeout_ms", cfg.Server.WriteTimeoutMS)
+	}
+}
+
+// An explicitly small write timeout is allowed, and the loader warns instead of
+// silently capping the attempt chain.
+func TestExplicitWriteTimeoutBelowBudgetIsPreserved(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Server.WriteTimeoutMS = 5000
+	cfg.Models["default"] = ModelGroup{Strategy: "static", AttemptTimeoutMS: 600000, Targets: []Target{{Provider: "mock", Model: "mock-model"}}}
+	if _, err := New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.WriteTimeoutMS != 5000 {
+		t.Fatalf("explicit write timeout = %d, want it preserved", cfg.Server.WriteTimeoutMS)
+	}
+}

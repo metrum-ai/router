@@ -3245,7 +3245,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 				// attempt and usage rows record it.
 				upErr = upstreamError{
 					Class:     "upstream_timeout",
-					Message:   "upstream stream made no progress within the configured stream_idle_timeout_ms",
+					Message:   "stream idle timeout: upstream stream made no progress within the configured stream_idle_timeout_ms",
 					Retryable: !streamResult.Committed,
 					TimedOut:  true,
 					Err:       streamErr,
