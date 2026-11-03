@@ -16,6 +16,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `X-Metrum-Usage-Source: estimated`, instead of calling an endpoint that does
   not exist (#714).
 
+### Security
+
+- PII filtering now also filters each translated instruction text at its
+  transmitted boundary, not only the individual raw values. A pattern that
+  matches only after a target assembles a system prompt from several messages or
+  text parts (for example a Chat caller's leading system messages joined for a
+  Responses or Anthropic target) is replaced with a placeholder before dispatch.
+  Operator scopes still govern it: a translated instruction is filtered when
+  either `apply_to.system` or `apply_to.messages` is enabled. Scope ownership
+  also follows the value, not only the field: `apply_to.system` now covers
+  instruction text in `system`/`developer` messages and in `content` fields on
+  those items, and `apply_to.responses_input` covers the Responses `input`
+  array and its items. Both rules only widen redaction for configurations that
+  already enabled a scope. Responses
+  system-message histories remain excluded from Anthropic and Bedrock Messages
+  targets on PII-enabled groups (`system_pii_unsupported`) until that fail-closed
+  limitation is removed under independent security review (#645).
+- Response-cache identity for translated targets now includes the exact
+  instruction text the target receives, so two requests whose normalized
+  representation is identical but whose transmitted instructions differ can no
+  longer share a cache entry (#645).
+
 ### Fixed
 
 - `POST /v1/messages/count_tokens` no longer surfaces `404 upstream-rejected`

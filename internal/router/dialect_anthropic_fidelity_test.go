@@ -380,8 +380,8 @@ func TestCacheKeyHashesDecodedStop(t *testing.T) {
 		t.Fatalf("decoded Stop without field=%#v, want empty", withoutStop.Stop)
 	}
 	target := Target{Provider: "mock", Model: "chat-model"}
-	withKey := cacheKey(withStop, target, "caller-a", "proj")
-	withoutKey := cacheKey(withoutStop, target, "caller-a", "proj")
+	withKey := cacheKey(withStop, target, "caller-a", "proj", "")
+	withoutKey := cacheKey(withoutStop, target, "caller-a", "proj", "")
 	if withKey == withoutKey {
 		t.Fatalf("cache key ignored decoded stop: %s", withKey)
 	}
@@ -406,7 +406,7 @@ func TestCacheKeyHashesDecodedStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	anthropicTarget := Target{Provider: "anthropic", Model: "claude"}
-	if cacheKey(otherStop, anthropicTarget, "caller-a", "proj") == cacheKey(samePromptNoStop, anthropicTarget, "caller-a", "proj") {
+	if cacheKey(otherStop, anthropicTarget, "caller-a", "proj", "") == cacheKey(samePromptNoStop, anthropicTarget, "caller-a", "proj", "") {
 		t.Fatal("anthropic cache key ignored decoded stop_sequences")
 	}
 }

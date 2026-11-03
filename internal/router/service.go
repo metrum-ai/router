@@ -1556,7 +1556,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		addRouterWarningHeaders(w.Header(), ad.WarningText)
 		rc.rec.Warnings = append(rc.rec.Warnings, ad.WarningText)
 	}
-	piiResult, err := applyPIIFilter(req, group.PIIFilter)
+	piiResult, err := applyPIIFilter(req, group.PIIFilter, dialect)
 	if err != nil {
 		var blocked piiFilterBlockedError
 		if errors.As(err, &blocked) {
@@ -1702,7 +1702,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 	}
 	callerID, project := cacheCallerScope(rc)
-	key := cacheKey(req, dec.Target, callerID, project)
+	key := targetCacheKey(req, s.cfg.Provider[dec.Target.Provider], dec.Target, callerID, project, dialect)
 	// PII normalization can collapse instruction boundaries that the selected
 	// provider receives distinctly. Until cache identity is target-bound,
 	// never read a response cached under a PII-enabled group.
@@ -1889,7 +1889,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// payload so PII placeholders remain redacted in cache.
 		if cacheable(req) && !group.PIIFilter.Enabled {
 			putCaller, putProject := cacheCallerScope(rc)
-			s.cache.Put(cacheKey(req, served, putCaller, putProject), cacheResp)
+			s.cache.Put(targetCacheKey(req, s.cfg.Provider[served.Provider], served, putCaller, putProject, dialect), cacheResp)
 		}
 		rc.rec.QuotaState = quotaState
 		rc.rec.KeyState = keyState
@@ -2823,6 +2823,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			if encodeErr == nil {
 				if decoded, decodeErr := decodeRequest(callerDialect, encoded, http.Header{}); decodeErr == nil {
 					decoded.Stream = req.Stream
+					// The re-decode cannot reproduce the filtered instruction text;
+					// carry it so bridges keep transmitting what the filter saw (#645).
+					decoded.Instructions = req.Instructions
 					req = decoded
 				}
 			}
@@ -2881,14 +2884,19 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect)
 	} else {
 		upReq := req
-		if jsonObject {
-			copyReq := *req
-			copyReq.System = strings.TrimSpace(req.System + "\nReturn only a valid JSON object. Do not use Markdown fences or any text outside the object.")
+		if translatedOpenAI && outDialect == "anthropic" {
+			// A Chat caller's leading system messages are folded into req.System,
+			// so both dialects must transmit the canonical instruction the filter
+			// and cache identity saw, not the raw field (#645).
+			copyReq := *upReq
+			copyReq.System = targetInstruction(upReq, callerDialect, "anthropic")
 			upReq = &copyReq
 		}
-		if callerDialect == "openai-responses" && outDialect == "anthropic" {
+		if jsonObject {
+			// The JSON-object directive is router-added instruction text; apply it
+			// after the canonical instruction so it is never discarded.
 			copyReq := *upReq
-			copyReq.System = responsesAnthropicSystemPrompt(upReq)
+			copyReq.System = strings.TrimSpace(upReq.System + "\nReturn only a valid JSON object. Do not use Markdown fences or any text outside the object.")
 			upReq = &copyReq
 		}
 		upReqBody, err = encodeUpstreamForTarget(outDialect, target.Model, upReq, target)

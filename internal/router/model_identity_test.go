@@ -427,7 +427,7 @@ func TestModelIdentityCacheHit(t *testing.T) {
 		})
 	}
 	req := &IRRequest{Model: miGroup, Messages: []IRMessage{{Role: "user", Content: "cache me"}}}
-	if cacheKey(req, miTargets()[0], "alice", "p") == cacheKey(req, miTargets()[1], "alice", "p") {
+	if cacheKey(req, miTargets()[0], "alice", "p", "") == cacheKey(req, miTargets()[1], "alice", "p", "") {
 		t.Fatal("cache key collapsed two upstream targets")
 	}
 }

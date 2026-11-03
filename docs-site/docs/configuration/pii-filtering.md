@@ -95,6 +95,12 @@ PII filtering applies to normalized text across supported caller APIs:
 
 The router preserves image parts, tool-call IDs, tool schemas, usage fields, request IDs, provider metadata, and model metadata. Image URLs are not filtered unless `apply_to.image_urls: true`.
 
+Scope ownership follows what a value is, not only which field holds it: `apply_to.system` covers instruction text in `system`/`developer` messages and in `content` fields on those items, and `apply_to.responses_input` covers the caller's Responses `input` array including its items.
+
+Translated targets build a system prompt from several caller messages or text parts. The router filters that assembled instruction at the boundary where it is transmitted, so a pattern that only matches after the join (for example a value split across two leading system messages) is replaced with a placeholder before dispatch. The instruction is filtered when `apply_to.system` or `apply_to.messages` is enabled; disabling both leaves it unfiltered. The same text is part of response-cache identity, so two requests whose transmitted instructions differ cannot share a cache entry.
+
+Responses system-message histories are still excluded from Anthropic and Bedrock Messages targets on PII-enabled groups (`system_pii_unsupported`), and Responses developer-role histories stay excluded from them; an eligible target in another dialect can still be selected.
+
 TypeScript routing scripts receive the same redacted request object used for target selection and upstream calls, including `ctx.request.raw`. External routing policy services receive only safe derived context by default. If `external_policy.include_request: true` is explicitly enabled for a trusted policy service, the external payload includes redacted `request` and `text` fields. Placeholder mappings remain request-local and are not sent to policy code.
 
 ## Governed content capture

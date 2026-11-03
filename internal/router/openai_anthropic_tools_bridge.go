@@ -278,8 +278,10 @@ func encodeOpenAIToolsToAnthropic(model, caller string, req *IRRequest, target T
 		return nil, fmt.Errorf("missing messages")
 	}
 	body := map[string]any{"model": model, "messages": messages, "max_tokens": effectiveMaxTokens(req, 1024), "stream": false}
-	if len(system) > 0 {
-		body["system"] = strings.Join(system, "\n\n")
+	// Use the canonical instruction text so a PII-filtered assembled prompt is
+	// transmitted exactly as the filter and cache identity saw it (#645).
+	if prompt := transmittedInstruction(req, "anthropic-tools", strings.Join(system, "\n\n")); prompt != "" {
+		body["system"] = prompt
 	}
 	if req.Temperature != nil {
 		body["temperature"] = *req.Temperature
