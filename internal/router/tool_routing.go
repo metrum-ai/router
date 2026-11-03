@@ -4,6 +4,9 @@
 package router
 
 import (
+	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -198,4 +201,251 @@ func sanitizeToolValidationTraceClass(class string) string {
 		return class[:maxLoggedToolNameBytes]
 	}
 	return class
+}
+
+// recoverToolCall applies the bounded recovery policy to a completed,
+// non-streaming response whose tool calls failed validation. It retries the
+// same target first, then escalates through the remaining eligible targets, and
+// never runs after the first client byte. It returns the response to deliver
+// (the last one received, or the original when the budget is spent) and the
+// updated attempt accounting. Upstream transport errors during recovery keep
+// the last usable response instead of replacing it with an error.
+func (s *Service) recoverToolCall(ctx context.Context, rc *requestContext, caller *callerRuntime, callerDialect string, req *IRRequest, dec decision, resp *IRResponse, attempts int, fallbackUsed bool) (*IRResponse, int, bool) {
+	cfg, ok := s.toolAwareGroup(dec.GroupName)
+	if !ok || cfg.mode() != toolRoutingModeEnforce || resp == nil {
+		return resp, attempts, fallbackUsed
+	}
+	options := toolValidationOptionsForRequest(cfg, req)
+	validation := validateToolCalls(resp.ToolCalls, req.Tools, resp.StopReason, options)
+	if validation.Invalid == 0 {
+		return resp, attempts, fallbackUsed
+	}
+	markAttemptToolAction(rc, attempts, "delivered_invalid")
+	if req.Stream {
+		// Streamed tool-call bytes are already on the wire by the time the call is
+		// complete, so a retry cannot replace them. This is the stated limit of
+		// this release: streamed responses are observed, never retried.
+		markAttemptToolAction(rc, attempts, "observed_streaming")
+		if rc != nil {
+			rc.trace("tool_recovery_skipped", "streaming response already delivered", dec.Target, attempts, http.StatusOK, validation.FirstFailure, false, 0)
+		}
+		return resp, attempts, fallbackUsed
+	}
+
+	targets := append([]Target{dec.Target}, dec.Fallbacks...)
+	if len(targets) == 0 {
+		return resp, attempts, fallbackUsed
+	}
+	// Retry the target that actually served this response, not the primary: a
+	// fallback attempt must be retried where it ran and escalated from there.
+	index := servedTargetIndex(rc, attempts, targets)
+	// The group/caller spend ceiling also bounds recovery: a target the request
+	// may not escalate to is not retried into.
+	ceiling := effectiveSpendCeiling(caller, s.cfg.Models[dec.GroupName])
+	allowed := map[string]bool{}
+	if ceiling.configured() {
+		kept, filtered := filterTargetsBySpendCeiling(targets, req, ceiling)
+		for _, target := range kept {
+			allowed[targetKey(target)] = true
+		}
+		if len(filtered) > 0 && rc != nil {
+			rc.trace("tool_recovery_ceiling_filtered", fmt.Sprintf("%d target(s) excluded by spend_ceiling", len(filtered)), dec.Target, attempts, http.StatusOK, spendCeilingReason, false, 0)
+		}
+	}
+	deadline := ctx
+	retriesLeft := cfg.Recovery.MaxRetriesSameTarget
+	escalationsLeft := cfg.Recovery.MaxEscalations
+	last := resp
+	for {
+		if err := deadline.Err(); err != nil {
+			if rc != nil {
+				rc.trace("tool_recovery_deadline", "request deadline reached during tool recovery", targets[index], attempts, http.StatusOK, "deadline_exceeded", true, 0)
+			}
+			return last, attempts, fallbackUsed
+		}
+		action := ""
+		switch {
+		case retriesLeft > 0:
+			if !targetAllowed(allowed, ceiling, targets[index]) {
+				if rc != nil {
+					rc.trace("tool_recovery_ceiling_blocked", "retry target exceeds spend ceiling", targets[index], attempts, http.StatusOK, spendCeilingReason, false, 0)
+				}
+				retriesLeft = 0
+				continue
+			}
+			retriesLeft--
+			action = "retried"
+		case escalationsLeft > 0 && index+1 < len(targets):
+			next := targets[index+1]
+			if !targetAllowed(allowed, ceiling, next) {
+				if rc != nil {
+					rc.trace("tool_recovery_ceiling_blocked", "escalation target exceeds spend ceiling", next, attempts, http.StatusOK, spendCeilingReason, false, 0)
+				}
+				escalationsLeft = 0
+				continue
+			}
+			index++
+			escalationsLeft--
+			action = "escalated"
+		default:
+			return last, attempts, fallbackUsed
+		}
+		attemptIndex := len(rc.rec.AttemptsDetail) + 1
+		next, attempt, err := s.callOne(ctx, nil, rc, callerDialect, req, dec.GroupName, targets[index], attemptIndex)
+		if err != nil {
+			if attempt.ErrorMessage != "" {
+				attempt.ErrorMessage = s.sanitizeDiagnosticError(attempt.ErrorMessage)
+			}
+			rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
+			attempts = attemptIndex
+			if rc != nil {
+				rc.trace("tool_recovery_stopped", err.Error(), targets[index], attemptIndex, attempt.StatusCode, attempt.ErrorClass, false, attempt.DurationMS)
+			}
+			return last, attempts, fallbackUsed
+		}
+		attempt.Selected = false
+		s.recordToolValidation(rc, dec.GroupName, req, next, &attempt)
+		if attempt.ToolValidation != nil {
+			attempt.ToolValidation.Action = action
+		}
+		rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
+		attempts = attemptIndex
+		// The previous response is discarded by this attempt, so its usage is
+		// recorded for cost reporting.
+		recordDiscardedUsage(rc, attempts-1, last)
+		if rc != nil {
+			rc.rec.DiscardedUsage = addUsage(rc.rec.DiscardedUsage, last.Usage)
+		}
+		last = next
+		nextValidation := validateToolCalls(next.ToolCalls, req.Tools, next.StopReason, options)
+		if nextValidation.Invalid == 0 {
+			markSelectedAttempt(rc, attemptIndex)
+			if index > 0 {
+				fallbackUsed = true
+			}
+			if rc != nil {
+				rc.trace("tool_recovery_succeeded", action, targets[index], attemptIndex, http.StatusOK, "", false, attempt.DurationMS)
+			}
+			return next, attempts, fallbackUsed
+		}
+	}
+}
+
+// markSelectedAttempt clears the selected flag on every attempt and sets it on
+// the one that is actually delivered.
+func markSelectedAttempt(rc *requestContext, index int) {
+	if rc == nil {
+		return
+	}
+	for position := range rc.rec.AttemptsDetail {
+		rc.rec.AttemptsDetail[position].Selected = rc.rec.AttemptsDetail[position].Index == index
+	}
+}
+
+func markAttemptToolAction(rc *requestContext, attemptIndex int, action string) {
+	if rc == nil {
+		return
+	}
+	for position := range rc.rec.AttemptsDetail {
+		if rc.rec.AttemptsDetail[position].Index != attemptIndex {
+			continue
+		}
+		if rc.rec.AttemptsDetail[position].ToolValidation == nil {
+			rc.rec.AttemptsDetail[position].ToolValidation = &toolValidationLogRecord{Mode: toolRoutingModeEnforce}
+		}
+		rc.rec.AttemptsDetail[position].ToolValidation.Action = action
+		return
+	}
+}
+
+func recordDiscardedUsage(rc *requestContext, attemptIndex int, resp *IRResponse) {
+	if rc == nil || resp == nil {
+		return
+	}
+	for position := range rc.rec.AttemptsDetail {
+		if rc.rec.AttemptsDetail[position].Index != attemptIndex {
+			continue
+		}
+		rc.rec.AttemptsDetail[position].InputTokens = resp.Usage.InputTokens
+		rc.rec.AttemptsDetail[position].OutputTokens = resp.Usage.OutputTokens
+		return
+	}
+}
+
+func targetKey(target Target) string {
+	return target.Provider + "|" + target.Model + "|" + target.Dialect
+}
+
+// targetAllowed reports whether recovery may retry or escalate to a target. An
+// unconfigured ceiling allows every target.
+func targetAllowed(allowed map[string]bool, ceiling SpendCeilingConfig, target Target) bool {
+	if !ceiling.configured() {
+		return true
+	}
+	return allowed[targetKey(target)]
+}
+
+// servedTargetIndex maps the index of the attempt that produced the response
+// back to its position in the delivered target order, so recovery retries the
+// target that actually served it.
+func servedTargetIndex(rc *requestContext, attemptIndex int, targets []Target) int {
+	if rc == nil || attemptIndex <= 0 {
+		return 0
+	}
+	var served attemptLogRecord
+	found := false
+	for _, attempt := range rc.rec.AttemptsDetail {
+		if attempt.Index == attemptIndex {
+			served = attempt
+			found = true
+			break
+		}
+	}
+	if !found {
+		return 0
+	}
+	for position, target := range targets {
+		if target.Provider != served.Provider || target.Model != served.Model {
+			continue
+		}
+		if served.Dialect != "" && target.Dialect != "" && target.Dialect != served.Dialect {
+			continue
+		}
+		return position
+	}
+	return 0
+}
+
+// addUsage returns left+right token totals. Optional counters are summed only
+// when both sides report them, keeping "unreported" distinct from zero.
+func addUsage(left, right Usage) Usage {
+	sum := Usage{
+		InputTokens:                   left.InputTokens + right.InputTokens,
+		OutputTokens:                  left.OutputTokens + right.OutputTokens,
+		TotalTokens:                   left.TotalTokens + right.TotalTokens,
+		InputImageTokens:              left.InputImageTokens + right.InputImageTokens,
+		UpstreamReportedInputCostUSD:  left.UpstreamReportedInputCostUSD + right.UpstreamReportedInputCostUSD,
+		UpstreamReportedOutputCostUSD: left.UpstreamReportedOutputCostUSD + right.UpstreamReportedOutputCostUSD,
+		UpstreamReportedTotalCostUSD:  left.UpstreamReportedTotalCostUSD + right.UpstreamReportedTotalCostUSD,
+	}
+	if sum.TotalTokens == 0 {
+		sum.TotalTokens = sum.InputTokens + sum.OutputTokens
+	}
+	addOptionalInt := func(left, right *int) *int {
+		if left == nil && right == nil {
+			return nil
+		}
+		var value int
+		if left != nil {
+			value += *left
+		}
+		if right != nil {
+			value += *right
+		}
+		return &value
+	}
+	sum.CachedInputTokens = addOptionalInt(left.CachedInputTokens, right.CachedInputTokens)
+	sum.CacheWriteInputTokens = addOptionalInt(left.CacheWriteInputTokens, right.CacheWriteInputTokens)
+	sum.ReasoningTokens = addOptionalInt(left.ReasoningTokens, right.ReasoningTokens)
+	return sum
 }

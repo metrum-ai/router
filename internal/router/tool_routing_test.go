@@ -245,19 +245,24 @@ func TestValidateToolRoutingConfig(t *testing.T) {
 		{name: "absent block on tool_aware", strategy: "tool_aware", config: ToolRoutingConfig{}, want: "has no tool_routing block"},
 		{name: "block on other strategy", strategy: "weighted", config: ToolRoutingConfig{Mode: "observe"}, want: "does not use tool_aware strategy"},
 		{name: "observe mode", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "observe"}, want: ""},
-		{name: "enforce not available", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "enforce"}, want: "not available yet"},
-		{name: "unknown mode", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "shadow"}, want: "mode must be observe"},
+		{name: "enforce without budget", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "enforce"}, want: "without a recovery budget"},
+		{name: "enforce with retry budget", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "enforce", Recovery: ToolRoutingRecoveryConfig{MaxRetriesSameTarget: 1}}, want: ""},
+		{name: "unknown mode", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "shadow"}, want: "mode must be observe or enforce"},
 		{name: "cold start", strategy: "tool_aware", config: ToolRoutingConfig{ColdStart: "configured_weight"}, want: ""},
 		{name: "bad cold start", strategy: "tool_aware", config: ToolRoutingConfig{ColdStart: "random"}, want: "cold_start must be"},
 		{name: "bad schema mode", strategy: "tool_aware", config: ToolRoutingConfig{Validate: ToolRoutingValidateConfig{Schema: "strict"}}, want: "validate.schema must be off or basic"},
 		{name: "schema off", strategy: "tool_aware", config: ToolRoutingConfig{Validate: ToolRoutingValidateConfig{Schema: "off"}}, want: ""},
 		{name: "min samples too high", strategy: "tool_aware", config: ToolRoutingConfig{MinSamples: toolRoutingMaxMinObs + 1}, want: "min_samples must be"},
+		{name: "recovery in observe mode", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "observe", Recovery: ToolRoutingRecoveryConfig{MaxEscalations: 1}}, want: "without mode enforce"},
+		{name: "retries over cap", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "enforce", Recovery: ToolRoutingRecoveryConfig{MaxRetriesSameTarget: 3}}, want: "max_retries_same_target must be between"},
+		{name: "escalations over target count", strategy: "tool_aware", config: ToolRoutingConfig{Mode: "enforce", Recovery: ToolRoutingRecoveryConfig{MaxEscalations: 2}}, want: "max_escalations must be at most 0"},
+		{name: "streaming hold not available", strategy: "tool_aware", config: ToolRoutingConfig{Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true}}, want: "hold_until_validated is not available yet"},
 		{name: "negative window", strategy: "tool_aware", config: ToolRoutingConfig{WindowSeconds: -1}, want: "window_seconds must be"},
 		{name: "explicit false toggles still configured", strategy: "tool_aware", config: ToolRoutingConfig{Validate: ToolRoutingValidateConfig{ArgumentsJSON: &disabled, NameMustBeOffered: &enabled}}, want: ""},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			err := validateToolRouting("agent-tools", testCase.strategy, testCase.config)
+			err := validateToolRouting("agent-tools", testCase.strategy, testCase.config, 1)
 			if testCase.want == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -361,7 +366,7 @@ func TestToolAwareStrategyKeepsConfiguredOrder(t *testing.T) {
 }
 
 func TestToolAwarePickUnknownStrategyNotReachableWithoutBlock(t *testing.T) {
-	err := validateToolRouting("group", "tool_aware", ToolRoutingConfig{MinSamples: -1})
+	err := validateToolRouting("group", "tool_aware", ToolRoutingConfig{MinSamples: -1}, 1)
 	if err == nil || !errors.Is(err, err) {
 		if err == nil {
 			t.Fatal("expected a configuration error")

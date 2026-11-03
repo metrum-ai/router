@@ -728,11 +728,28 @@ type IntelligentDecisionModel struct {
 // request log, and routing order stays the configured weight order. Scoring,
 // retries and escalation arrive with their own reviewed change (#436 slice C).
 type ToolRoutingConfig struct {
-	Mode          string                    `yaml:"mode" json:"mode,omitempty"`
-	ColdStart     string                    `yaml:"cold_start" json:"coldStart,omitempty"`
-	MinSamples    int                       `yaml:"min_samples" json:"minSamples,omitempty"`
-	WindowSeconds int                       `yaml:"window_seconds" json:"windowSeconds,omitempty"`
-	Validate      ToolRoutingValidateConfig `yaml:"validate" json:"validate,omitempty"`
+	Mode          string                     `yaml:"mode" json:"mode,omitempty"`
+	ColdStart     string                     `yaml:"cold_start" json:"coldStart,omitempty"`
+	MinSamples    int                        `yaml:"min_samples" json:"minSamples,omitempty"`
+	WindowSeconds int                        `yaml:"window_seconds" json:"windowSeconds,omitempty"`
+	Validate      ToolRoutingValidateConfig  `yaml:"validate" json:"validate,omitempty"`
+	Recovery      ToolRoutingRecoveryConfig  `yaml:"recovery" json:"recovery,omitempty"`
+	Streaming     ToolRoutingStreamingConfig `yaml:"streaming" json:"streaming,omitempty"`
+}
+
+// ToolRoutingRecoveryConfig bounds same-target retries and escalation to the
+// next eligible target. Both are hard caps, never unbounded retry loops.
+type ToolRoutingRecoveryConfig struct {
+	MaxRetriesSameTarget int    `yaml:"max_retries_same_target" json:"maxRetriesSameTarget,omitempty"`
+	MaxEscalations       int    `yaml:"max_escalations" json:"maxEscalations,omitempty"`
+	OnExhausted          string `yaml:"on_exhausted" json:"onExhausted,omitempty"`
+}
+
+// ToolRoutingStreamingConfig is not implemented yet: hold_until_validated must
+// stay false so a streamed response is delivered exactly as the upstream sent
+// it and recovery cannot claim something it does not do.
+type ToolRoutingStreamingConfig struct {
+	HoldUntilValidated bool `yaml:"hold_until_validated" json:"holdUntilValidated,omitempty"`
 }
 
 // ToolRoutingValidateConfig selects which checks run on a decoded response.
@@ -755,7 +772,21 @@ const (
 
 func toolRoutingEmpty(c ToolRoutingConfig) bool {
 	return c.Mode == "" && c.ColdStart == "" && c.MinSamples == 0 && c.WindowSeconds == 0 &&
-		c.Validate.ArgumentsJSON == nil && c.Validate.Schema == "" && c.Validate.NameMustBeOffered == nil
+		c.Validate.ArgumentsJSON == nil && c.Validate.Schema == "" && c.Validate.NameMustBeOffered == nil &&
+		c.Recovery.MaxRetriesSameTarget == 0 && c.Recovery.MaxEscalations == 0 &&
+		c.Recovery.OnExhausted == "" && !c.Streaming.HoldUntilValidated
+}
+
+const (
+	toolRoutingOnExhaustedDeliverLast = "deliver_last"
+	toolRoutingMaxSameTargetRetries   = 2
+)
+
+func (c ToolRoutingConfig) onExhausted() string {
+	if c.Recovery.OnExhausted == "" {
+		return toolRoutingOnExhaustedDeliverLast
+	}
+	return strings.ToLower(strings.TrimSpace(c.Recovery.OnExhausted))
 }
 
 // configured reports whether a group opted in. Callers use it as the single
@@ -800,7 +831,7 @@ func (c ToolRoutingConfig) validationOptions() toolValidationOptions {
 	return options
 }
 
-func validateToolRouting(name, strategy string, c ToolRoutingConfig) error {
+func validateToolRouting(name, strategy string, c ToolRoutingConfig, targetCount int) error {
 	if !c.configured() {
 		if strings.EqualFold(strategy, "tool_aware") {
 			return fmt.Errorf("model group %s uses tool_aware strategy but has no tool_routing block", name)
@@ -812,12 +843,30 @@ func validateToolRouting(name, strategy string, c ToolRoutingConfig) error {
 	}
 	switch c.mode() {
 	case toolRoutingModeObserve:
+		if c.Recovery.MaxRetriesSameTarget != 0 || c.Recovery.MaxEscalations != 0 {
+			return fmt.Errorf("model group %s configures tool_routing.recovery without mode enforce", name)
+		}
 	case toolRoutingModeEnforce:
-		// Enforce needs the reliability store and the bounded recovery path, which
-		// are not in this release. Refusing it keeps the config honest.
-		return fmt.Errorf("model group %s tool_routing mode enforce is not available yet; use observe", name)
+		if c.Recovery.MaxRetriesSameTarget == 0 && c.Recovery.MaxEscalations == 0 {
+			return fmt.Errorf("model group %s uses tool_routing mode enforce without a recovery budget (set max_retries_same_target or max_escalations)", name)
+		}
 	default:
-		return fmt.Errorf("model group %s tool_routing mode must be observe (enforce is not available yet)", name)
+		return fmt.Errorf("model group %s tool_routing mode must be observe or enforce", name)
+	}
+	if c.Recovery.MaxRetriesSameTarget < 0 || c.Recovery.MaxRetriesSameTarget > toolRoutingMaxSameTargetRetries {
+		return fmt.Errorf("model group %s tool_routing recovery.max_retries_same_target must be between 0 and %d", name, toolRoutingMaxSameTargetRetries)
+	}
+	if c.Recovery.MaxEscalations < 0 {
+		return fmt.Errorf("model group %s tool_routing recovery.max_escalations must not be negative", name)
+	}
+	if c.Recovery.MaxEscalations > targetCount-1 {
+		return fmt.Errorf("model group %s tool_routing recovery.max_escalations must be at most %d (eligible targets minus one)", name, targetCount-1)
+	}
+	if c.onExhausted() != toolRoutingOnExhaustedDeliverLast {
+		return fmt.Errorf("model group %s tool_routing recovery.on_exhausted must be %s", name, toolRoutingOnExhaustedDeliverLast)
+	}
+	if c.Streaming.HoldUntilValidated {
+		return fmt.Errorf("model group %s tool_routing streaming.hold_until_validated is not available yet", name)
 	}
 	switch strings.ToLower(strings.TrimSpace(c.ColdStart)) {
 	case "", toolRoutingColdStart:
@@ -1718,7 +1767,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 		}
-		if err := validateToolRouting(name, m.Strategy, m.ToolRouting); err != nil {
+		if err := validateToolRouting(name, m.Strategy, m.ToolRouting, len(m.Targets)); err != nil {
 			return err
 		}
 		if strings.EqualFold(m.Strategy, "intelligent") {

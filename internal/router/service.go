@@ -1825,6 +1825,18 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	} else {
 		rc.rec.UpstreamMS = &upstreamMS
 	}
+	if err == nil && resp != nil {
+		// Tool-call recovery runs only for groups that opt into enforce mode and
+		// only before anything has been written to the caller.
+		resp, attempts, fallbackUsed = s.recoverToolCall(r.Context(), rc, rc.caller, dialect, req, dec, resp, attempts, fallbackUsed)
+		if rc.rec.DiscardedUsage.InputTokens > 0 || rc.rec.DiscardedUsage.OutputTokens > 0 || rc.rec.DiscardedUsage.TotalTokens > 0 {
+			// Billing, quota settlement, spend accounting and the usage row all read
+			// resp.Usage, so discarded attempts are folded in here rather than only
+			// being logged.
+			resp.Usage = addUsage(resp.Usage, rc.rec.DiscardedUsage)
+			rc.rec.DiscardedUsage = Usage{}
+		}
+	}
 	rc.rec.Attempts = attempts
 	rc.rec.FallbackUsed = fallbackUsed
 	if err != nil {
