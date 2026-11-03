@@ -38,10 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instruction text in `system`/`developer` messages and in `content` fields on
   those items, and `apply_to.responses_input` covers the Responses `input`
   array and its items. Both rules only widen redaction for configurations that
-  already enabled a scope. Responses
-  system-message histories remain excluded from Anthropic and Bedrock Messages
-  targets on PII-enabled groups (`system_pii_unsupported`) until that fail-closed
-  limitation is removed under independent security review (#645).
+  already enabled a scope.
+- Responses system-message histories are now served by Anthropic and Bedrock
+  Messages targets on PII-enabled groups instead of failing closed: the
+  assembled instruction is filtered at its transmitted boundary, so
+  `redact_only` sends placeholders, `fail_on_match` blocks before dispatch, and
+  response-cache identity includes the transmitted instruction. A group that
+  disables both `apply_to.system` and `apply_to.messages` still fails closed with
+  `system_pii_unsupported` because the router cannot redact that instruction.
+  Responses developer-role histories remain excluded (`developer_pii_unsupported`)
+  (#645).
 - Response-cache identity for translated targets now includes the exact
   instruction text the target receives, so two requests whose normalized
   representation is identical but whose transmitted instructions differ can no

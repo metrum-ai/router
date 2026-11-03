@@ -1436,11 +1436,15 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		req.NoCache = true
 	}
 	// Decide Responses→Anthropic limitations on the original history, before
-	// filtering or shadow replay. Until target-bound instruction filtering is
-	// implemented, system histories on PII-enabled groups are also excluded:
-	// independently safe text parts can form a match after concatenation.
+	// filtering or shadow replay. A system history on a PII-enabled group is now
+	// served by Messages targets because the assembled instruction is filtered at
+	// its transmitted boundary (#645). When the operator disables both the system
+	// and messages scopes the router cannot redact that instruction, so guarded
+	// targets stay excluded instead of forwarding instruction text unfiltered.
 	developerHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && responsesHasDeveloper(req)
-	piiSystemHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && group.PIIFilter.Enabled && responsesHasInstructionRole(req, "system")
+	instructionApply := normalizePIIApplyTo(group.PIIFilter.ApplyTo)
+	piiSystemHistory := dialect == "openai-responses" && rc.rec.Endpoint != "responses.compact" && group.PIIFilter.Enabled &&
+		!instructionApply.system && !instructionApply.messages && responsesHasInstructionRole(req, "system")
 	piiExclusionCode := "developer_pii_unsupported"
 	if !developerHistory {
 		piiExclusionCode = "system_pii_unsupported"
