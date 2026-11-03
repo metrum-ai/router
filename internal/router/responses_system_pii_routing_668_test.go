@@ -20,6 +20,12 @@ import (
 // reaches Messages targets because the assembled instruction is filtered at its
 // transmitted boundary, while shape-invalid histories and Messages targets that
 // cannot carry the shape still refuse before any dispatch.
+//
+// Every "bedrock" row expects no dispatch: the Responses→Chat shape gate rejects
+// these histories for a Bedrock Messages transport, so there is no Bedrock
+// instruction surface for them at all (whether or not PII filtering is on). The
+// rows stay here so that a future Bedrock assembly cannot start forwarding
+// unfiltered instruction text without failing this test.
 func TestSystemPIITransportAndShape668(t *testing.T) {
 	inputs := []struct {
 		name, path, input string
