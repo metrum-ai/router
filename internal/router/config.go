@@ -94,6 +94,9 @@ type ServerConfig struct {
 	// ReasoningProvenance binds opaque provider reasoning history to the
 	// provider account, model and dialect that minted it (#622).
 	ReasoningProvenance ReasoningProvenanceConfig `yaml:"reasoning_provenance" json:"reasoningProvenance,omitempty"`
+	// ResponsesAffinity enables owner-bound stored Responses affinity for
+	// explicitly listed model groups (#533). It is off by default.
+	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
 }
 
 // ReasoningProvenanceConfig controls opaque reasoning provenance binding.
@@ -1287,6 +1290,9 @@ func (c *Config) setDefaults() {
 		defaultContentCaptureConfig(&group.ContentCapture)
 		c.Models[name] = group
 	}
+	if c.Server.ResponsesAffinity.enabled() && c.Server.ResponsesAffinity.RetentionDays == 0 {
+		c.Server.ResponsesAffinity.RetentionDays = responsesAffinityDefaultRetentionDays
+	}
 }
 
 func (c *Config) Validate() error {
@@ -1380,6 +1386,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateReasoningProvenanceConfig(c.Server.ReasoningProvenance); err != nil {
+		return err
+	}
+	if err := validateResponsesAffinityConfig(c.Server.ResponsesAffinity, c.Models, c.Provider, c.Server.UsageDB); err != nil {
 		return err
 	}
 	if _, err := c.validateAccounts(); err != nil {

@@ -34,6 +34,11 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			rc.trace("upstream_first_byte", "", Target{}, 0, 0, "", false, durationMillis(time.Since(rc.start)))
 		}}
 	}
+	if rc != nil && rc.affinityCapture != nil {
+		if native, ok := t.(*stream.Responses); ok {
+			native.OnResponseID = rc.affinityCapture
+		}
+	}
 	f := stream.NewFramer(body, maxBytes)
 	reason := stream.StopError
 	var started time.Time
@@ -158,6 +163,9 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			mergeStreamUsage(&result.Response.Usage, Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
 		}
 		if err != nil && !errors.Is(err, stream.ErrTerminal) {
+			if rc != nil && rc.affinity != nil && rc.affinity.failed {
+				return result, upstreamError{Class: "response_affinity_store_failed", Message: "stored response affinity could not be persisted", Retryable: false, Fallbackable: false, Err: err}
+			}
 			return result, upstreamError{Class: "stream_translator_error", Message: "invalid upstream stream event", Err: err}
 		}
 		if writeErr := emit(events); writeErr != nil {

@@ -77,6 +77,7 @@ type Service struct {
 	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
 	affinity           *dynamicAffinityStore
+	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
@@ -169,6 +170,12 @@ type requestContext struct {
 	// modelIdentity is server.responses.model_identity captured at request
 	// start; see publicModel.
 	modelIdentity string
+	// affinity is set only when owner-bound stored Responses affinity is
+	// enabled for the requested group (#533). It never changes bytes otherwise.
+	affinity *responsesAffinityRequest
+	// affinityCapture stores the upstream id before it is exposed to the
+	// caller; it is nil unless affinity storage is in effect for this request.
+	affinityCapture func(upstreamID string) error
 }
 
 type upstreamError struct {
@@ -280,6 +287,13 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		_ = usage.Close()
 		return nil, err
 	}
+	responsesAffinity, err := newResponsesAffinities(cfg.Server.ResponsesAffinity, usage, os.Getenv)
+	if err != nil {
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		return nil, err
+	}
 	s := &Service{
 		identifiers:        identifiers,
 		cfg:                cfg,
@@ -307,6 +321,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		configInstanceID:   newConfigAdminInstanceID(),
 		shadows:            newShadowRuntime(),
 		provenance:         provenance,
+		responsesAffinity:  responsesAffinity,
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -1411,6 +1426,14 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}})
 		return
 	}
+	pinnedAffinityTarget, affinityErr := s.beginResponsesAffinity(rc, r, req.Model, group, req, dialect)
+	if affinityErr != nil {
+		s.writeResponsesAffinityError(w, rc, affinityErr)
+		return
+	}
+	if pinnedAffinityTarget != nil {
+		pinResponsesAffinityTarget(&group, pinnedAffinityTarget)
+	}
 	if rc.rec.Endpoint == "responses.compact" {
 		if rawValuePresent(req.Raw, "previous_response_id") {
 			// Stored response ownership and target affinity are not implemented yet.
@@ -1510,7 +1533,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// Shadow receives the original body before PII filtering. Never replay it
 	// for a PII-enabled group; doing so could bypass redaction or fail-on-match.
 	// Audio-output, explicit no-store, reasoning-off and opaque reasoning requests must not be shadow replayed.
-	if rc.rec.Endpoint != "responses.compact" && !group.PIIFilter.Enabled && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) {
+	if rc.rec.Endpoint != "responses.compact" && !group.PIIFilter.Enabled && !requestWantsChatAudioOutput(req, dialect) && !reasoningHistoryPresent(req) && !openAIReasoningExplicitlyDisabled(req) && !(dialect == "openai-responses" && responsesExplicitNoStore(req)) && !s.responsesAffinityBlocksShadow(req.Model, dialect, req) {
 		s.maybeShadowRequest(req.Model, dialect, body)
 	}
 	if group.Contract != nil {
@@ -1905,6 +1928,16 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		resp.Warnings = append(resp.Warnings, resp.Usage.Warnings...)
 		rc.rec.Warnings = append(rc.rec.Warnings, resp.Warnings...)
 		if !resp.Streamed {
+			s.bindResponsesAffinityTarget(rc, req, served, dialect)
+			if s.responsesAffinityStorageActive(rc) {
+				if err := s.captureResponsesAffinity(rc, resp.ID); err != nil {
+					code := "response_affinity_store_failed"
+					rc.rec.ErrorClass = code
+					rc.rec.ErrorMessage = code
+					s.writeError(w, rc, http.StatusServiceUnavailable, code)
+					return
+				}
+			}
 			s.writeIR(w, dialect, resp, req.Stream, rc)
 		}
 		s.finish(rc, http.StatusOK, nil)
@@ -3141,6 +3174,11 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 				pw = &experimentPacingWriter{ResponseWriter: w, ctx: attemptCtx, pacer: pacer}
 			}
 		}
+		if rc != nil && rc.affinity != nil && normalizeDialect(outDialect) == "openai-responses" {
+			// The stream itself must be attributed to the attempt target that
+			// actually serves it, including after a fallback.
+			s.bindResponsesAffinityTarget(rc, req, target, outDialect)
+		}
 		streamResult, streamErr := proxy(attemptCtx, pw, httpResp.Body, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
 			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))
@@ -4080,7 +4118,7 @@ func (s *Service) writeIR(w http.ResponseWriter, dialect string, resp *IRRespons
 		if pacer != nil {
 			pacer.holdForResponse(rc.ctx, resp.Usage.OutputTokens)
 		}
-		s.writeIRResponse(w, dialect, resp, rc.publicModel())
+		s.writeIRResponse(w, dialect, resp, rc.publicModel(), rc != nil && rc.affinity != nil)
 	}
 	if pacer != nil && pacer.injectedMS > 0 {
 		rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), Target{}, 0, 0, "", false, int64(pacer.injectedMS))
@@ -4089,14 +4127,21 @@ func (s *Service) writeIR(w http.ResponseWriter, dialect string, resp *IRRespons
 	rc.rec.DownstreamMS = &downstreamMS
 }
 
-func (s *Service) writeIRResponse(w http.ResponseWriter, dialect string, resp *IRResponse, publicModel string) {
+// writeIRResponse writes a unary response. rewriteIDs is set only for
+// affinity-enabled stored Responses requests, so stock rewrite-mode
+// deployments keep their pre-v4.7 caller-visible ids.
+func (s *Service) writeIRResponse(w http.ResponseWriter, dialect string, resp *IRResponse, publicModel string, rewriteIDs bool) {
 	switch dialect {
 	case "anthropic":
 		writeJSON(w, http.StatusOK, encodeAnthropicResponse(resp, publicModel))
 	case "openai-chat":
 		writeJSON(w, http.StatusOK, encodeChatResponse(resp, publicModel))
 	case "openai-responses":
-		writeJSON(w, http.StatusOK, encodeResponsesResponse(resp, publicModel))
+		body := encodeResponsesResponse(resp, publicModel)
+		if rewriteIDs && s.identifiers != nil {
+			body = rewriteResponsesMapIDs(body, s.identifiers)
+		}
+		writeJSON(w, http.StatusOK, body)
 	default:
 		writeJSON(w, http.StatusOK, resp)
 	}
@@ -4922,6 +4967,8 @@ func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int
 		return "upstream-loop-detected", http.StatusLoopDetected
 	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large":
 		return err.Class, http.StatusBadGateway
+	case err.Class == "response_affinity_store_failed":
+		return "response-affinity-unavailable", http.StatusServiceUnavailable
 	case err.Canceled:
 		return "client-canceled", 499
 	case err.TimedOut || err.Class == "upstream_timeout":
