@@ -1,0 +1,194 @@
+{
+  "schema": "agent-canary-smoke/v1",
+  "date": "2026-11-03",
+  "purpose": "AGENT-06 real-client image and reasoning validation (v4.7.0 item of #330), bounded hosted calls",
+  "client": {
+    "pi": "1.4.0",
+    "provider_entry": "metrum (openai-completions, isolated PI_CODING_AGENT_DIR)"
+  },
+  "router": {
+    "mode": "local listener 127.0.0.1:18131, identifiers.mode=passthrough, sqlite usage DB",
+    "target_model": "gpt-5.4-nano (OpenAI Chat), input_modalities text+image, tool_support openai_chat tools+tool_choice",
+    "task_image_digests": {
+      "nonce-image.png": "sha256:2573004112b4fe27bc2786dbbb03cf6605e7bc3bdd903916b38c447a475f4118"
+    }
+  },
+  "runs": [
+    {
+      "id": "image-reading",
+      "command": "pi -p --no-session --provider metrum --model agent-smoke --thinking off --mode json '@nonce2.png' 'What six-digit number is printed in this image? Reply with only the number.'",
+      "exit": 0,
+      "answer": "739182",
+      "expected": "739182",
+      "pass": true,
+      "note": "the answer exists only inside the image, so the image traversed the router to the upstream"
+    },
+    {
+      "id": "reasoning-only",
+      "command": "pi -p --no-session --provider metrum --model agent-smoke --thinking high --no-tools --mode json 'Compute 17*23 + 19*7. Reply with only the integer.'",
+      "exit": 0,
+      "reasoning_effort_bucket": "high",
+      "pass": true,
+      "note": "a real client's high reasoning effort reached the upstream through the router (telemetry bucket high)"
+    },
+    {
+      "id": "declared-refusal",
+      "command": "pi ... --model agent-smoke-declared (default thinking medium with pi tools)",
+      "exit": 0,
+      "router_status": 400,
+      "code": "unsupported_capability",
+      "param": "reasoning_effort",
+      "upstream_attempts": 0,
+      "pass": true,
+      "note": "with reasoning.with_tools: false declared (#703), a real client's reasoning+tools shape on a Chat target fails closed with a typed 4xx and zero upstream calls instead of a provider 400"
+    }
+  ],
+  "usage_rows": [
+    {
+      "ts": "2026-11-03T18:32:43.888314305Z",
+      "status": 400,
+      "requested_model": "agent-smoke",
+      "target_model": "",
+      "inbound_dialect": "openai-chat",
+      "target_dialect": "",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_tokens": null,
+      "cost_usd": 0.0,
+      "error": "no-eligible-target"
+    },
+    {
+      "ts": "2026-11-03T18:32:56.032358201Z",
+      "status": 400,
+      "requested_model": "agent-smoke",
+      "target_model": "gpt-5.4-nano",
+      "inbound_dialect": "openai-chat",
+      "target_dialect": "openai-chat",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_tokens": null,
+      "cost_usd": 0.0,
+      "error": "upstream-rejected"
+    },
+    {
+      "ts": "2026-11-03T18:33:06.282637978Z",
+      "status": 200,
+      "requested_model": "agent-smoke",
+      "target_model": "gpt-5.4-nano",
+      "inbound_dialect": "openai-chat",
+      "target_dialect": "openai-chat",
+      "input_tokens": 4282,
+      "output_tokens": 5,
+      "reasoning_tokens": 0,
+      "cost_usd": 0.00086265,
+      "error": ""
+    },
+    {
+      "ts": "2026-11-03T18:33:12.281817566Z",
+      "status": 200,
+      "requested_model": "agent-smoke",
+      "target_model": "gpt-5.4-nano",
+      "inbound_dialect": "openai-chat",
+      "target_dialect": "openai-chat",
+      "input_tokens": 459,
+      "output_tokens": 4,
+      "reasoning_tokens": 0,
+      "cost_usd": 9.68e-05,
+      "error": ""
+    },
+    {
+      "ts": "2026-11-03T18:33:37.985353327Z",
+      "status": 400,
+      "requested_model": "agent-smoke-declared",
+      "target_model": "",
+      "inbound_dialect": "openai-chat",
+      "target_dialect": "",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_tokens": null,
+      "cost_usd": 0.0,
+      "error": "no-eligible-target"
+    },
+    {
+      "ts": "2026-11-03T18:33:41.985878750Z",
+      "status": 400,
+      "requested_model": "agent-smoke-declared",
+      "target_model": "",
+      "inbound_dialect": "openai-chat",
+      "target_dialect": "",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_tokens": null,
+      "cost_usd": 0.0,
+      "error": "no-eligible-target"
+    }
+  ],
+  "request_shapes": [
+    {
+      "ts": "2026-11-03T18:32:43.839Z",
+      "status": 400,
+      "requested_model": "agent-smoke",
+      "error": "no-eligible-target",
+      "attempts": 0,
+      "reasoning_effort_bucket": "medium",
+      "image_count": 1,
+      "tool_count": 4
+    },
+    {
+      "ts": "2026-11-03T18:32:55.989Z",
+      "status": 400,
+      "requested_model": "agent-smoke",
+      "error": "upstream-rejected",
+      "attempts": 1,
+      "reasoning_effort_bucket": "medium",
+      "image_count": 1,
+      "tool_count": 4
+    },
+    {
+      "ts": "2026-11-03T18:33:06.226Z",
+      "status": 200,
+      "requested_model": "agent-smoke",
+      "error": null,
+      "attempts": 1,
+      "reasoning_effort_bucket": "none",
+      "image_count": 1,
+      "tool_count": 4
+    },
+    {
+      "ts": "2026-11-03T18:33:12.091Z",
+      "status": 200,
+      "requested_model": "agent-smoke",
+      "error": null,
+      "attempts": 1,
+      "reasoning_effort_bucket": "high",
+      "image_count": null,
+      "tool_count": null
+    },
+    {
+      "ts": "2026-11-03T18:33:37.957Z",
+      "status": 400,
+      "requested_model": "agent-smoke-declared",
+      "error": "no-eligible-target",
+      "attempts": 0,
+      "reasoning_effort_bucket": "medium",
+      "image_count": null,
+      "tool_count": 4
+    },
+    {
+      "ts": "2026-11-03T18:33:41.885Z",
+      "status": 400,
+      "requested_model": "agent-smoke-declared",
+      "error": "no-eligible-target",
+      "attempts": 0,
+      "reasoning_effort_bucket": "medium",
+      "image_count": null,
+      "tool_count": 1
+    }
+  ],
+  "cost_usd_total": 0.00095945,
+  "limits": [
+    "one image turn and one reasoning turn per client: a smoke, not a certification",
+    "pi's default reasoning+tools shape is provider-rejected on a Chat target unless the target declares reasoning.with_tools: false",
+    "the image answer depends on the model's OCR accuracy; the nonce is a fixed six-digit number"
+  ]
+}

@@ -114,6 +114,30 @@ make eval-canary-validate CANARY_REPORT=canary.json
 run before the router side if it is already over budget. Exit codes: `0` pass,
 `1` gate violation, `2` configuration error.
 
+### Pinned baseline and current-stable canary rows (AGENT-01)
+
+The canary runs twice and merges the two reports, so the pinned baseline and the
+current-stable canary are reported side by side and the canary can never replace
+its baseline:
+
+```sh
+# pinned: the exact dated model on both sides
+... CANARY_DIRECT_MODEL=gpt-4o-mini-2024-07-18 ... \
+  python3 scripts/direct_provider_canary.py run --baseline-kind pinned --report-out pinned.json
+
+# current-stable: the alias that currently resolves to it
+... CANARY_DIRECT_MODEL=gpt-4o-mini ... \
+  python3 scripts/direct_provider_canary.py run --baseline-kind current-stable --report-out stable.json
+
+python3 scripts/direct_provider_canary.py merge --pinned pinned.json --current-stable stable.json \
+  --report-out canary.json
+```
+
+`merge` refuses runs whose cells or probe sets differ, refuses a report whose
+pinned cells do not declare `baseline_kind: pinned`, and sets each
+`<cell>-current-stable` row's `provenance.baseline_of` to its pinned cell before
+validating the merged report with the same schema and gates.
+
 ## What still needs paid runs (tracked on #330)
 
 - Nightly repeated trials of the `nightly-live` cells (EVAL-01/03/05) —

@@ -296,7 +296,7 @@ def gate_violations(report: dict) -> list[str]:
     return violations
 
 
-def validate_report(report: dict, matrix_path: Path = DEFAULT_MATRIX) -> list[str]:
+def validate_report(report: dict, matrix_path: Path = DEFAULT_MATRIX, *, require_baseline_link: bool = True) -> list[str]:
     """Validate the schema with the shared validator, then the canary gate."""
     sys.path.insert(0, str(ROOT / "scripts"))
     import eval_report_schema  # noqa: PLC0415 - local import keeps the offline path explicit
@@ -313,13 +313,21 @@ def validate_report(report: dict, matrix_path: Path = DEFAULT_MATRIX) -> list[st
             )
         else:
             matrix_doc = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
-    violations = eval_report_schema.validate_report(report, matrix_doc)
+    violations = eval_report_schema.validate_report(report, matrix_doc, require_baseline_link=require_baseline_link)
     violations.extend(gate_violations(report))
     return violations
 
 
-def _provenance(direct: SideConfig, router: SideConfig, nonce_seed: int, nonce: str, task_image_digests: dict) -> dict:
-    return {
+def _provenance(
+    direct: SideConfig,
+    router: SideConfig,
+    nonce_seed: int,
+    nonce: str,
+    task_image_digests: dict,
+    baseline_kind: str = "",
+    baseline_of: str = "",
+) -> dict:
+    out = {
         "client_versions": {
             "direct_provider_canary": "v1",
             "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
@@ -331,9 +339,24 @@ def _provenance(direct: SideConfig, router: SideConfig, nonce_seed: int, nonce: 
         "nonce": nonce,
         "task_image_digests": task_image_digests,
     }
+    if baseline_kind:
+        out["baseline_kind"] = baseline_kind
+    if baseline_of:
+        out["baseline_of"] = baseline_of
+    return out
+
+
+def _validate_baseline_flags(kind: str, of: str) -> None:
+    if kind and kind not in ("pinned", "current-stable"):
+        raise CanaryError("--baseline-kind must be 'pinned' or 'current-stable'")
+    if kind == "current-stable" and of:
+        raise CanaryError("a current-stable run must not set --baseline-of; merge sets it")
+    if of and kind != "pinned":
+        raise CanaryError("--baseline-of is only valid with --baseline-kind pinned")
 
 
 def run_command(args) -> int:
+    _validate_baseline_flags(args.baseline_kind, args.baseline_of)
     probes = load_probes(args.probes)
     direct_prices = _price_pair(args.direct_prices)
     router_prices = _price_pair(args.router_prices)
@@ -359,7 +382,7 @@ def run_command(args) -> int:
     report = build_report(
         run,
         probes,
-        _provenance(direct, router, seed, nonce, json.loads(args.task_image_digests)),
+        _provenance(direct, router, seed, nonce, json.loads(args.task_image_digests), args.baseline_kind, args.baseline_of),
         f"canary-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{os.getpid()}",
         started_utc,
     )
@@ -368,7 +391,9 @@ def run_command(args) -> int:
         Path(args.report_out).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     if args.markdown_out:
         Path(args.markdown_out).write_text(render_markdown(report), encoding="utf-8")
-    violations = validate_report(report, args.matrix)
+    # A current-stable run is an intermediate artifact: its per-cell baseline
+    # link is established by `merge`, which validates the pair.
+    violations = validate_report(report, args.matrix, require_baseline_link=args.baseline_kind != "current-stable")
     counts = report["canary"]["classification"]
     print(
         f"canary: {report['canary']['probes']} probes; both_pass={counts['both_pass']} "
@@ -408,6 +433,101 @@ def render_markdown(report: dict) -> str:
     )
 
 
+def _probe_ids(cell: dict) -> list[str]:
+    return sorted(str(task.get("task_id")) for task in cell.get("task_results") or [])
+
+
+def merge_reports(pinned: dict, current_stable: dict, run_id: str, started_utc: str) -> dict:
+    """Combine a pinned-baseline run and a current-stable canary run (AGENT-01).
+
+    The current-stable cells are suffixed and linked to their pinned baseline, so
+    the canary is reported next to the baseline, never instead of it.
+    """
+    for label, report in (("pinned", pinned), ("current-stable", current_stable)):
+        if not isinstance(report, dict) or report.get("schema_version") != SCHEMA_VERSION:
+            raise CanaryError(f"{label} report must be a version {SCHEMA_VERSION} object")
+        if not report.get("cells"):
+            raise CanaryError(f"{label} report has no cells")
+    pinned_kinds = {(c.get("provenance") or {}).get("baseline_kind") for c in pinned["cells"]}
+    if pinned_kinds != {"pinned"}:
+        raise CanaryError("pinned report cells must all declare provenance.baseline_kind: pinned")
+    for cell in current_stable["cells"]:
+        if (cell.get("provenance") or {}).get("baseline_kind") != "current-stable":
+            raise CanaryError("current-stable report cells must declare provenance.baseline_kind: current-stable")
+        if (cell.get("provenance") or {}).get("baseline_of"):
+            raise CanaryError("current-stable report already carries baseline_of; merge sets it from the pinned run")
+
+    pinned_ids = {c["cell_id"]: c for c in pinned["cells"]}
+    stable_ids = {c["cell_id"]: c for c in current_stable["cells"]}
+    if set(pinned_ids) != set(stable_ids):
+        raise CanaryError(f"cell ids differ between runs: pinned={sorted(pinned_ids)} current-stable={sorted(stable_ids)}")
+    for cell_id, cell in pinned_ids.items():
+        if _probe_ids(cell) != _probe_ids(stable_ids[cell_id]):
+            raise CanaryError(f"probe sets differ for {cell_id!r}; refusing to compare different workloads")
+
+    cells: list[dict] = []
+    for cell_id in pinned_ids:
+        cells.append(pinned_ids[cell_id])
+    for cell_id in sorted(stable_ids):
+        cell = json.loads(json.dumps(stable_ids[cell_id]))
+        cell["cell_id"] = f"{cell_id}-current-stable"
+        cell["provenance"]["baseline_of"] = cell_id
+        cells.append(cell)
+
+    def classification_sum(reports: tuple[dict, ...]) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for report in reports:
+            for name, value in ((report.get("canary") or {}).get("classification") or {}).items():
+                out[name] = out.get(name, 0) + int(value)
+        return out
+
+    merged = {
+        "schema_version": SCHEMA_VERSION,
+        "run_id": run_id,
+        "started_utc": started_utc,
+        "canary": {
+            "probes": sum(int((r.get("canary") or {}).get("probes") or 0) for r in (pinned, current_stable)),
+            "runs": 2,
+            "classification": classification_sum((pinned, current_stable)),
+            "allowed_router_regressions": 0,
+            "allowed_error_rate": ALLOWED_ERROR_RATE,
+            "cost_usd_total": round(
+                float((pinned.get("canary") or {}).get("cost_usd_total") or 0)
+                + float((current_stable.get("canary") or {}).get("cost_usd_total") or 0),
+                9,
+            ),
+            "cost_basis": "provider usage x listed per-million prices (not invoice-reconciled)",
+            "baseline_of": "pinned cells in this report",
+        },
+        "cells": cells,
+    }
+    return merged
+
+
+def merge_command(args) -> int:
+    pinned = json.loads(Path(args.pinned).read_text(encoding="utf-8"))
+    stable = json.loads(Path(args.current_stable).read_text(encoding="utf-8"))
+    started = args.started_utc or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    run_id = args.run_id or f"canary-baseline-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{os.getpid()}"
+    merged = merge_reports(pinned, stable, run_id, started)
+    if args.report_out:
+        Path(args.report_out).write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+    if args.markdown_out:
+        Path(args.markdown_out).write_text(render_markdown(merged), encoding="utf-8")
+    violations = validate_report(merged, args.matrix)
+    counts = merged["canary"]["classification"]
+    print(
+        f"merged canary: {len(merged['cells'])} cells; both_pass={counts.get('both_pass', 0)} "
+        f"router_regression={counts.get('router_regression', 0)} cost ${merged['canary']['cost_usd_total']:.6f}"
+    )
+    if violations:
+        for violation in violations:
+            print(f"canary gate violation: {violation}", file=sys.stderr)
+        return 1
+    print("merged canary ok: pinned and current-stable rows, schema valid, no router regression")
+    return 0
+
+
 def validate_command(args) -> int:
     report = json.loads(Path(args.report).read_text(encoding="utf-8"))
     violations = validate_report(report, args.matrix)
@@ -432,9 +552,29 @@ def main(argv: list[str] | None = None) -> int:
         default="{}",
         help='JSON object of sha256 task/container digests for provenance, e.g. \'{"sandbox":"sha256:..."}\'',
     )
+    run_parser.add_argument(
+        "--baseline-kind",
+        default="",
+        choices=["", "pinned", "current-stable"],
+        help="AGENT-01 baseline role recorded in provenance (pinned baseline or current-stable canary)",
+    )
+    run_parser.add_argument(
+        "--baseline-of",
+        default="",
+        help="cell id this pinned cell is the baseline of (recorded in provenance)",
+    )
     run_parser.add_argument("--direct-prices", default="0.20,1.25", help="direct input,output USD per million tokens")
     run_parser.add_argument("--router-prices", default="0.20,1.25", help="router input,output USD per million tokens")
     run_parser.set_defaults(func=run_command)
+    merge_parser = sub.add_parser("merge", help="combine a pinned-baseline run and a current-stable canary run")
+    merge_parser.add_argument("--pinned", type=Path, required=True)
+    merge_parser.add_argument("--current-stable", type=Path, required=True)
+    merge_parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
+    merge_parser.add_argument("--run-id", default="")
+    merge_parser.add_argument("--started-utc", default="")
+    merge_parser.add_argument("--report-out", type=Path)
+    merge_parser.add_argument("--markdown-out", type=Path)
+    merge_parser.set_defaults(func=merge_command)
     validate_parser = sub.add_parser("validate", help="validate a recorded canary report")
     validate_parser.add_argument("report", type=Path)
     validate_parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
