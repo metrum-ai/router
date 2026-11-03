@@ -132,35 +132,51 @@ direct-lane baseline; nothing but the router listens on a non-loopback address.
 
 ## Measured results
 
-Run of record: [`results/2026-11-03-e956434e36/`](results/2026-11-03-e956434e36/)
-on one rented **H100 PCIe 80 GB** (driver 570.195.03), deployed from this tier's
-`compose.yaml` unmodified, router co-located with both model servers.
+Run of record: [`results/2026-11-03-c2f077fece7d/`](results/2026-11-03-c2f077fece7d/)
+on one rented **H100 PCIe 80 GB** (driver 570.195.03, commit `c2f077fe`), deployed
+from this tier's `compose.yaml` unmodified with the router co-located.
 
 | Item | Result |
 |---|---|
 | Deployment as committed | pass: both model servers healthy, `/readyz` 200, caller token authenticates |
-| Functional suite | **8 passed, 0 failed**, admin UI auth exercised (200 with credentials, 401 without) |
-| Escalation group | **not run on this box** — no provider key is placed on rented hardware. Escalation is proven by the v47-hier #434 run. |
-| Caller group grants | **not proven** — the restricted caller did not reach the configuration before the router restarted |
-| Concurrency sweep | **not completed** — no p95 and no sustained-concurrency number is claimed |
-| Hardware-stage findings | five, all carried into this tree; see `FAILURES.md` in the run directory |
+| Functional suite | **8 passed, 0 failed**, 2 skipped (escalation not run on rented hardware; the restricted-caller check hit #755) |
+| Admin UI auth | pass: `200` with credentials, `401` without |
+| Concurrency sweep | **complete**: 1/8/32 workers × streaming and non-streaming × router and direct = 3 936 samples, zero failed requests |
+| Sustained concurrency | **32 workers**, the largest cell, at p95 ≤ 8 000 ms |
+| Suite token / group grants | not proven by the suite; `404 model_not_found` for a caller without the group was verified by hand (#755 dropped the harness caller when a second caller was minted) |
 
-The sweep aborted in the 32-worker cells because the generated harness caller
-carried default rate ceilings (24 x `429 concurrency-exceeded`, 3 x `429
-tpm-exceeded` in the request log). Raising the harness caller to
-`concurrent=64`, `tpm=2 000 000`, `rpm=600` fixed the cause, but the rental window
-closed before a clean sweep finished. **This tier currently has no measured
-concurrency figure**; `SIZING.md` still carries only arithmetic.
+### Router overhead against the direct lane
 
-Raw driver output for the three partial attempts and the full failure list are in
-the same directory.
+256 output tokens, ~1 700-token prompt, temperature 0, three repetitions per cell.
+
+| Workers | Lane | p50 | p95 | p99 |
+|---|---|---|---|---|
+| 1 | direct | 5 269 ms | 5 270 ms | 5 270 ms |
+| 1 | router | 5 272 ms | 5 273 ms | 5 274 ms |
+| 8 | direct | 5 695 ms | 5 698 ms | 5 702 ms |
+| 8 | router | 5 695 ms | 5 702 ms | 5 720 ms |
+| 32 | direct | 6 467 ms | 6 502 ms | 6 532 ms |
+| 32 | router | 6 472 ms | 6 511 ms | 6 541 ms |
+
+Streaming (time to first content token): p50/p95 **34/36 ms** at 1 worker, 65/73 ms at
+8, and **77/129 ms** at 32 workers through the router (direct: 77/122 ms). The router's
+added latency is **under 10 ms at every cell** — 9 ms at p95 with 32 concurrent
+256-token requests.
+
+These are one card, one commit, one context length. They say nothing about a
+different GPU, a longer context or a different model revision.
+
+Raw samples, the stack logs and the image digests are in the shared artifact library,
+snapshot `dd5889b2` (product `router`, project `v47-package`, task
+`433-h100-concurrency`).
 
 ## Actual cost
 
-**estimate (hours × list rate), invoice pending: 2.07 h × $2.50/h = $5.18** for the
-run of record. The provider exposes no per-instance billing endpoint, so the
-invoiced number has to come from the account invoice; the arithmetic and the exact
-window are in [`results/2026-11-03-e956434e36/cost.md`](results/2026-11-03-e956434e36/cost.md).
+**estimate (hours × list rate), invoice pending: 1.317 h × $2.50/h = $3.29** for this
+run, plus $5.18 for the earlier window on the same tier. The provider exposes no
+per-instance billing endpoint, so the invoiced number has to come from the account
+invoice; the arithmetic and the exact window are in
+[`results/2026-11-03-c2f077fece7d/cost.md`](results/2026-11-03-c2f077fece7d/cost.md).
 
 ## Limits
 
