@@ -23,6 +23,10 @@ type IRRequest struct {
 	Metadata       map[string]string `json:"metadata,omitempty"`
 	Raw            map[string]any    `json:"raw,omitempty"`
 	NoCache        bool              `json:"no_cache,omitempty"`
+	// Instructions holds the post-filter instruction text per translated
+	// surface, so PII filtering, cache identity and the bridge that transmits it
+	// all use the same target-bound representation (issue #645).
+	Instructions map[string]string `json:"-"`
 }
 
 type ReasoningIntent struct {

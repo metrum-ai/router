@@ -48,7 +48,7 @@ func newCache(cfg CacheConfig) *responseCache {
 	}
 }
 
-func cacheKey(req *IRRequest, target Target, callerID, project string) string {
+func cacheKey(req *IRRequest, target Target, callerID, project, instruction string) string {
 	type normalized struct {
 		CallerID           string          `json:"caller_id,omitempty"`
 		Project            string          `json:"project,omitempty"`
@@ -72,6 +72,7 @@ func cacheKey(req *IRRequest, target Target, callerID, project string) string {
 		N                  any             `json:"n,omitempty"`
 		Provider           string          `json:"provider"`
 		TargetModel        string          `json:"target_model"`
+		Instruction        string          `json:"instruction,omitempty"`
 	}
 	n := normalized{
 		CallerID:       callerID,
@@ -88,6 +89,7 @@ func cacheKey(req *IRRequest, target Target, callerID, project string) string {
 		Reasoning:      req.Reasoning,
 		Provider:       target.Provider,
 		TargetModel:    target.Model,
+		Instruction:    instruction,
 	}
 	if req.Raw != nil {
 		n.TopP = req.Raw["top_p"]
@@ -108,6 +110,13 @@ func cacheKey(req *IRRequest, target Target, callerID, project string) string {
 	raw, _ := json.Marshal(n)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+// targetCacheKey is the cache identity for a resolved target: the normalized
+// request plus the exact instruction text that target transmits, so a
+// normalized-translation collision cannot share an entry (issue #645).
+func targetCacheKey(req *IRRequest, provider ProviderConfig, target Target, callerID, project, callerDialect string) string {
+	return cacheKey(req, target, callerID, project, instructionBoundaryKey(req, callerDialect, targetDialect(provider, target)))
 }
 
 // cacheRawFieldAllowlist enumerates Raw keys that are either represented in the

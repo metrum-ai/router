@@ -32,7 +32,7 @@ type compiledPIIRule struct {
 	re     *regexp.Regexp
 }
 
-func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig) (piiFilterResult, error) {
+func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiFilterResult, error) {
 	result := piiFilterResult{RuleCounts: map[string]int{}}
 	if req == nil || !cfg.Enabled {
 		return result, nil
@@ -54,6 +54,14 @@ func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig) (piiFilterResult, error
 		placeholderFor: map[string]string{},
 	}
 	apply := normalizePIIApplyTo(cfg.ApplyTo)
+	// Snapshot and redact every instruction text this caller can transmit before
+	// the individual raw values are filtered: a match may span parts or messages
+	// even though no single raw value contains it (#645).
+	callerDialect := ""
+	if len(caller) > 0 {
+		callerDialect = caller[0]
+	}
+	redactTargetInstructions(req, callerDialect, apply, state)
 	if apply.system {
 		req.System = state.redact(req.System)
 	}
@@ -77,24 +85,32 @@ func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig) (piiFilterResult, error
 			}
 		}
 	}
-	if apply.messages {
-		for i := range req.Messages {
-			if hasImageParts(req.Messages[i].Parts) {
-				for j := range req.Messages[i].Parts {
-					if req.Messages[i].Parts[j].Type == "text" {
-						req.Messages[i].Parts[j].Text = state.redact(req.Messages[i].Parts[j].Text)
-					}
-					if req.Messages[i].Parts[j].Type == "image" && apply.imageURLs {
-						req.Messages[i].Parts[j].ImageURL = state.redact(req.Messages[i].Parts[j].ImageURL)
-					}
+	// A caller's `input` array is the message list for Responses requests, so the
+	// responses_input scope governs those messages directly.
+	responsesInputMessages := apply.responsesInput && normalizeDialect(callerDialect) == "openai-responses"
+	for i := range req.Messages {
+		role := strings.ToLower(strings.TrimSpace(req.Messages[i].Role))
+		// Instruction-role messages are instruction text: the system scope governs
+		// them even when the messages scope is disabled (#645).
+		instructionRole := apply.system && (role == "system" || role == "developer")
+		if !apply.messages && !instructionRole && !responsesInputMessages {
+			continue
+		}
+		if hasImageParts(req.Messages[i].Parts) {
+			for j := range req.Messages[i].Parts {
+				if req.Messages[i].Parts[j].Type == "text" {
+					req.Messages[i].Parts[j].Text = state.redact(req.Messages[i].Parts[j].Text)
 				}
-				req.Messages[i].Content = textFromIRParts(req.Messages[i].Parts)
-			} else {
-				req.Messages[i].Content = state.redact(req.Messages[i].Content)
-				for j := range req.Messages[i].Parts {
-					if req.Messages[i].Parts[j].Type == "text" {
-						req.Messages[i].Parts[j].Text = req.Messages[i].Content
-					}
+				if req.Messages[i].Parts[j].Type == "image" && apply.imageURLs {
+					req.Messages[i].Parts[j].ImageURL = state.redact(req.Messages[i].Parts[j].ImageURL)
+				}
+			}
+			req.Messages[i].Content = textFromIRParts(req.Messages[i].Parts)
+		} else {
+			req.Messages[i].Content = state.redact(req.Messages[i].Content)
+			for j := range req.Messages[i].Parts {
+				if req.Messages[i].Parts[j].Type == "text" {
+					req.Messages[i].Parts[j].Text = req.Messages[i].Content
 				}
 			}
 		}
@@ -272,9 +288,11 @@ func redactRawPayload(raw map[string]any, state *piiRedactionState, apply normal
 }
 
 type rawPIIContext struct {
-	key          string
-	inContent    bool
-	inToolResult bool
+	key           string
+	inContent     bool
+	inToolResult  bool
+	inInstruction bool // Inside a system or developer message/item.
+	inInput       bool // Inside the caller's `input` array.
 }
 
 func redactRawValue(v any, ctx rawPIIContext, state *piiRedactionState, apply normalizedPIIApplyTo) any {
@@ -291,15 +309,31 @@ func redactRawValue(v any, ctx rawPIIContext, state *piiRedactionState, apply no
 			if ctx.key == "content" || ctx.key == "input" {
 				child.inContent = true
 			}
+			if ctx.key == "input" {
+				child.inInput = true
+			}
+			// An Anthropic `system` or Responses `instructions` array carries
+			// instruction text in its blocks.
+			if ctx.key == "system" || ctx.key == "instructions" {
+				child.inInstruction = true
+			}
 			out[i] = redactRawValue(item, child, state, apply)
 		}
 		return out
 	case map[string]any:
-		childToolResult := ctx.inToolResult || strings.EqualFold(stringValue(x["role"]), "tool")
+		role := strings.ToLower(strings.TrimSpace(stringValue(x["role"])))
+		childToolResult := ctx.inToolResult || role == "tool"
+		childInstruction := ctx.inInstruction || role == "system" || role == "developer"
 		out := make(map[string]any, len(x))
 		for k, value := range x {
 			key := strings.ToLower(k)
-			child := rawPIIContext{key: key, inContent: ctx.inContent, inToolResult: childToolResult}
+			child := rawPIIContext{
+				key:           key,
+				inContent:     ctx.inContent,
+				inToolResult:  childToolResult,
+				inInstruction: childInstruction || key == "system" || key == "instructions",
+				inInput:       ctx.inInput || key == "input",
+			}
 			if key == "content" || key == "input" || key == "text" {
 				child.inContent = true
 			}
@@ -318,18 +352,23 @@ func shouldRedactRawString(ctx rawPIIContext, apply normalizedPIIApplyTo) bool {
 	case "input":
 		return apply.responsesInput
 	case "text":
-		return apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult)
+		return apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult) ||
+			(apply.system && ctx.inInstruction) || (apply.responsesInput && ctx.inInput)
 	case "content":
 		if ctx.inToolResult {
 			return apply.toolResults
 		}
-		return apply.messages
+		// Instruction-role content is instruction text: system scope governs it even
+		// when the value sits in a message/item `content` field. Content inside the
+		// caller's Responses `input` array is governed by responses_input.
+		return apply.messages || (apply.system && ctx.inInstruction) || (apply.responsesInput && ctx.inInput)
 	case "image_url", "url":
 		return apply.imageURLs
 	case "id", "tool_call_id", "call_id", "name", "model", "role", "type":
 		return false
 	default:
-		return ctx.inContent && (apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult))
+		return ctx.inContent && (apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult) ||
+			(apply.system && ctx.inInstruction) || (apply.responsesInput && ctx.inInput))
 	}
 }
 

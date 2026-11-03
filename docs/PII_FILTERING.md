@@ -12,6 +12,9 @@ Metrum AI Router supports model-group-level PII filtering through `models.<group
 - The request object passed to TypeScript scripts is the redacted request, so `ctx.request.raw` does not carry configured PII matches after filtering.
 - External routing policy services receive safe derived request context by default. If `external_policy.include_request: true` is explicitly enabled for a trusted service, the external policy `request` and `text` fields are built from the redacted request and do not carry configured PII matches after filtering.
 - Raw request bodies are redacted for both ordinary and tool passthrough requests while preserving tool-call IDs, tool schemas, model names, roles, image URLs by default, and provider metadata.
+- Scope ownership follows what a value is, not only which key holds it: `apply_to.system` covers instruction text wherever it sits (a `system`/`developer` message or a `content` field on such an item), and `apply_to.responses_input` covers the caller's Responses `input` array, including its items.
+- Translated targets assemble a system prompt from several caller messages or text parts. `assembleTargetInstruction` is the single canonical representation for that text: the filter redacts each surface the caller can transmit, the bridge transmits the stored redacted text, and the response-cache key includes it. A match that exists only after the join is therefore replaced before dispatch, and two different transmitted instructions cannot share a cache entry. The instruction is filtered when `apply_to.system` or `apply_to.messages` is enabled; disabling both keeps the documented passthrough.
+- Remaining limit: Responses system-message histories are still excluded from Anthropic and Bedrock Messages targets on PII-enabled groups (`system_pii_unsupported`), and developer-role histories stay excluded. Lifting that fail-closed guard is tracked in the same issue and requires an independent security review.
 
 ## Modes
 
@@ -47,7 +50,7 @@ Before rollout:
 4. Confirm upstream receives placeholders, not raw matched values.
 5. Confirm usage DB, JSONL logs, diagnostics, and metrics contain only safe metadata.
 6. Confirm TypeScript payload captures contain placeholders in `ctx.request.raw`, not raw matched values. For external policies, confirm the default payload omits request mirrors; if `external_policy.include_request: true` is approved, confirm external policy `request` and `text` contain placeholders.
-7. Confirm PII-enabled requests bypass response-cache reads and writes, including when a matching entry already exists.
+7. Confirm PII-enabled requests bypass response-cache reads and writes, including when a matching entry already exists, and that two requests whose transmitted instructions differ in any part get different cache keys (`targetCacheKey`).
 8. Confirm same-dialect native Chat and Messages streams return placeholders to the caller and do not expose raw matched values. Restoration is unreachable while F-011 rejects `redact_and_restore` and `restore_response`, so a configuration that sets either must fail startup.
 9. Confirm requests over `max_replacements_per_request` return `pii-filter-blocked` and make no upstream attempt.
 

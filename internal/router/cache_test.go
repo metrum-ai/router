@@ -80,8 +80,8 @@ func TestCacheKeyDistinguishesOpenAIChatCapField(t *testing.T) {
 	}
 
 	target := Target{Provider: "openai_chat", Model: "chat-model"}
-	maxTokensKey := cacheKey(maxTokensReq, target, "caller-a", "proj")
-	maxCompletionTokensKey := cacheKey(maxCompletionTokensReq, target, "caller-a", "proj")
+	maxTokensKey := cacheKey(maxTokensReq, target, "caller-a", "proj", "")
+	maxCompletionTokensKey := cacheKey(maxCompletionTokensReq, target, "caller-a", "proj", "")
 	if maxTokensKey == maxCompletionTokensKey {
 		t.Fatalf("cache key reused across cap fields: %s", maxTokensKey)
 	}
@@ -96,8 +96,8 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Raw:         map[string]any{},
 	}
 	target := Target{Provider: "mock", Model: "m"}
-	a := cacheKey(base, target, "caller-a", "proj-1")
-	b := cacheKey(base, target, "caller-b", "proj-1")
+	a := cacheKey(base, target, "caller-a", "proj-1", "")
+	b := cacheKey(base, target, "caller-b", "proj-1", "")
 	if a == b {
 		t.Fatal("cache key must include caller id")
 	}
@@ -107,7 +107,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"top_p": 0.9},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withTopP, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withTopP, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include top_p")
 	}
 	withSeed := &IRRequest{
@@ -116,7 +116,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"seed": 7},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withSeed, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withSeed, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include seed")
 	}
 	withPrev := &IRRequest{
@@ -125,7 +125,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"previous_response_id": "resp_1"},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withPrev, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withPrev, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include previous_response_id")
 	}
 	withThinking := &IRRequest{
@@ -135,7 +135,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Thinking:    map[string]any{"type": "enabled", "budget_tokens": 256},
 		Raw:         map[string]any{},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withThinking, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withThinking, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include thinking")
 	}
 	withFreq := &IRRequest{
@@ -144,7 +144,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"frequency_penalty": 0.5},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withFreq, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withFreq, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include frequency_penalty")
 	}
 	withPresence := &IRRequest{
@@ -153,7 +153,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"presence_penalty": 0.25},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withPresence, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withPresence, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include presence_penalty")
 	}
 	withBias := &IRRequest{
@@ -162,7 +162,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"logit_bias": map[string]any{"42": 1}},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withBias, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withBias, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include logit_bias")
 	}
 	withChoices := &IRRequest{
@@ -171,7 +171,7 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 		Temperature: &zero,
 		Raw:         map[string]any{"n": 2},
 	}
-	if cacheKey(base, target, "caller-a", "proj-1") == cacheKey(withChoices, target, "caller-a", "proj-1") {
+	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withChoices, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include n")
 	}
 }

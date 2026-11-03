@@ -42,7 +42,7 @@ func TestPIICacheBypassExistingAndDisabledControl670(t *testing.T) {
 				t.Fatal(err)
 			}
 			caller := svc.cfg.Callers[0]
-			key := cacheKey(req, target, caller.ID, callerProject(caller))
+			key := cacheKey(req, target, caller.ID, callerProject(caller), instructionBoundaryKey(req, "openai-responses", "openai-responses"))
 			svc.cache.Put(key, &IRResponse{Text: "stale-answer", Model: "model"})
 			if _, ok := svc.cache.Get(key); !ok {
 				t.Fatal("failed to seed existing cache entry")
