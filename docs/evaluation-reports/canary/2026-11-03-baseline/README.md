@@ -12,6 +12,14 @@ baseline** and the **current-stable canary** are reported side by side.
 | pinned | `gpt-4o-mini-2024-07-18` | `pinned` (same exact model) | `pinned` |
 | current-stable | `gpt-4o-mini` (alias) | `stable` (same alias) | `current-stable`, `baseline_of` the pinned cells |
 
+Cell ids are `<pinned cell id>-current-stable`: `canary-direct` and
+`canary-router-pinned` are the pinned-baseline cells, and the `-current-stable`
+suffix marks the canary re-run, which links back through
+`provenance.baseline_of`. The suffix is independent of the deployment's model
+group names, so `canary-router-pinned-current-stable` is a canary row on the
+pinned-router path (in this run the router group was called `stable`), not a
+second "stable" baseline.
+
 Each run sends the four fixed canary probes direct and through the router.
 Result: **8/8 probes pass on both sides across both runs, 0 router regressions,
 0 provider-only failures**, cost **$0.000164** usage-derived from the listed
