@@ -58,7 +58,11 @@ jobs:
 
       # The spend ledger is the only durable memory between runs. Cache entries
       # are immutable, so each run writes its own key and restores the newest
-      # one by prefix.
+      # one by prefix. Limits: if the entry is evicted (cache retention or the
+      # 10 GB per-repository budget), the guard restarts the month from 0 and
+      # prints a warning; a cache miss on a month that already has runs is
+      # undercounted by definition, so treat that warning as "verify this month
+      # by hand" rather than "no spend".
       - name: Restore the monthly spend ledger
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -79,8 +83,8 @@ jobs:
 
       - name: Live gate (reserve before every dispatch)
         env:
-          # Dedicated least-privilege project keys, rotated by the supervisor;
-          # they are only ever read into the environment of this step.
+          # Dedicated least-privilege project keys, rotated before expiry; they
+          # are only ever read into the environment of this step.
           OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.COMPAT_MATRIX_ANTHROPIC_API_KEY }}
           # The gate builds its own disposable router and mints the caller token
@@ -125,9 +129,11 @@ jobs:
           data = json.loads(report.read_text())
           cost = Decimal(str(data.get("cost", {}).get("usd", 0)))
           spent = "unknown"
+          month = __import__("os").environ.get("MONTH") or __import__("datetime").datetime.now(
+              __import__("datetime").timezone.utc).strftime("%Y-%m")
           if ledger.exists():
               monthly = json.loads(ledger.read_text())["monthly"]
-              spent = f"${Decimal(str(max(monthly.values()))):.8f} this month" if monthly else "$0"
+              spent = f"${Decimal(str(monthly.get(month, 0))):.8f} for {month}"
           print(f"Run cost (router usage rows): **${cost:.8f}** · ledger: {spent}\n")
           print("| Cell | Status | Detail |")
           print("| --- | --- | --- |")
@@ -138,25 +144,14 @@ jobs:
               print(f"\nFailing cells need a triage issue before release: {', '.join(failed)}")
           PY
 
-      - name: Record actual cost in the ledger
+      - name: Record the run cost in the ledger (report, else gate report, else the cap)
         if: always()
         run: |
           set -uo pipefail
-          python3 - <<'PY'
-          import json
-          import subprocess
-          from pathlib import Path
-
-          report = Path("tmp/compat-matrix/matrix-live.json")
-          cost = "0"
-          if report.exists():
-              cost = str(json.loads(report.read_text())["cost"]["usd"])
-          subprocess.run([
-              "python3", "scripts/tool_compat_live_matrix.py", "record",
-              "--ledger", "tmp/compat-matrix/spend.json", "--month", __import__("os").environ["MONTH"],
-              "--cost-usd", cost, "--run-id", __import__("os").environ["GITHUB_RUN_ID"],
-          ], check=False)
-          PY
+          python3 scripts/tool_compat_live_matrix.py record-run             --ledger "$LEDGER" --month "$MONTH" \
+            --report tmp/compat-matrix/matrix-live.json \
+            --gate tmp/compat-matrix/gate.json \
+            --cap "$RUN_CAP_USD" --run-id "$GITHUB_RUN_ID"
 
       - name: Save the monthly spend ledger
         if: always()

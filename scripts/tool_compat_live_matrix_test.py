@@ -102,7 +102,119 @@ class ReportTest(unittest.TestCase):
             self.assertEqual(json.loads(out_path.read_text(encoding="utf-8"))["date"], "2026-11-03")
 
 
+class ChargedCostTest(unittest.TestCase):
+    def test_charges_the_larger_of_router_rows_and_list_rate(self):
+        # Direct cells are invoiced outside the router, so the gate's list-rate
+        # figure is the only place they appear.
+        raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}], list_rate_usage_usd=0.0031)
+        charged, reason = live.charged_cost_usd(raw)
+        self.assertEqual(charged, Decimal("0.0031"))
+        self.assertEqual(reason, live.DIRECT_CELL_CHARGE_LABEL)
+        raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0041}], list_rate_usage_usd=0.0031)
+        charged, reason = live.charged_cost_usd(raw)
+        self.assertEqual(charged, Decimal("0.0041"))
+        self.assertEqual(reason, "router usage rows")
+
+    def test_unknown_usage_or_halted_charges_the_reservation(self):
+        raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}],
+                          list_rate_usage_usd=0.0002, reserved_usd=0.5, unknown_usage_turns=1)
+        charged, reason = live.charged_cost_usd(raw)
+        self.assertEqual(charged, Decimal("0.5"))
+        self.assertIn("reserved", reason)
+        raw = gate_report(router_usage_rows=[], list_rate_usage_usd=0, reserved_usd=0.25, halted=True)
+        charged, reason = live.charged_cost_usd(raw)
+        self.assertEqual(charged, Decimal("0.25"))
+        self.assertIn("reserved", reason)
+
+    def test_report_cost_uses_the_charged_amount_and_label(self):
+        raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}], list_rate_usage_usd=0.0031)
+        report = live.build_report(raw, "2026-11-03", "abcdef123")
+        self.assertAlmostEqual(report["cost"]["usd"], 0.0031, places=8)
+        self.assertEqual(report["cost"]["note"], live.DIRECT_CELL_CHARGE_LABEL)
+        self.assertAlmostEqual(report["cost"]["router_usage_rows_usd"], 0.0001, places=8)
+
+    def test_invalid_usage_fields_fail_closed(self):
+        raw = gate_report(unknown_usage_turns=-1)
+        with self.assertRaises(live.ReportError):
+            live.charged_cost_usd(raw)
+        raw = gate_report(list_rate_usage_usd="not-a-number")
+        with self.assertRaises(live.ReportError):
+            live.charged_cost_usd(raw)
+        raw = gate_report(reserved_usd="not-a-number", halted=True)
+        with self.assertRaises(live.ReportError):
+            live.charged_cost_usd(raw)
+
+
+class RecordedRunChargeTest(unittest.TestCase):
+    def test_report_wins_when_present(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "report.json"
+            gate = Path(temp) / "gate.json"
+            report.write_text(json.dumps({"cost": {"usd": 0.002, "note": "router usage rows"}}), encoding="utf-8")
+            gate.write_text(json.dumps(gate_report()), encoding="utf-8")
+            charged, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
+            self.assertEqual(charged, Decimal("0.002"))
+            self.assertEqual(reason, "router usage rows")
+
+    def test_gate_report_is_used_when_the_matrix_report_is_missing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "matrix-live.json"
+            gate = Path(temp) / "gate.json"
+            gate.write_text(json.dumps(gate_report(router_usage_rows=[{"total_cost_usd": 0.0004}],
+                                                   list_rate_usage_usd=0.0009)), encoding="utf-8")
+            charged, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
+            self.assertEqual(charged, Decimal("0.0009"))
+            self.assertIn("gate report only", reason)
+
+    def test_neither_report_charges_the_run_cap(self):
+        with tempfile.TemporaryDirectory() as temp:
+            charged, reason = live.charge_for_recorded_run(
+                Path(temp) / "matrix-live.json", Path(temp) / "gate.json", Decimal("1")
+            )
+            self.assertEqual(charged, Decimal("1"))
+            self.assertIn("run cap", reason)
+
+    def test_unreadable_reports_charge_the_run_cap(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "matrix-live.json"
+            report.write_text("{broken", encoding="utf-8")
+            charged, reason = live.charge_for_recorded_run(report, Path(temp) / "gate.json", Decimal("1"))
+            self.assertEqual(charged, Decimal("1"))
+            self.assertIn("run cap", reason)
+            gate = Path(temp) / "gate.json"
+            report.unlink()
+            gate.write_text("{broken", encoding="utf-8")
+            charged, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
+            self.assertEqual(charged, Decimal("1"))
+            self.assertIn("run cap", reason)
+
+    def test_record_run_command_writes_the_ledger(self):
+        import sys
+
+        with tempfile.TemporaryDirectory() as temp:
+            ledger = Path(temp) / "spend.json"
+            report = Path(temp) / "matrix-live.json"
+            report.write_text(json.dumps({"cost": {"usd": 0.0012, "note": "router usage rows"}}), encoding="utf-8")
+            argv = sys.argv
+            sys.argv = ["tool_compat_live_matrix.py", "record-run", "--ledger", str(ledger),
+                        "--month", "2026-11", "--report", str(report),
+                        "--gate", str(Path(temp) / "gate.json"), "--cap", "1", "--run-id", "run-1"]
+            try:
+                self.assertEqual(live.main(), 0)
+            finally:
+                sys.argv = argv
+            data = json.loads(ledger.read_text(encoding="utf-8"))
+            self.assertAlmostEqual(data["monthly"]["2026-11"], 0.0012, places=8)
+
+
 class LedgerTest(unittest.TestCase):
+    def test_ledger_miss_warns_but_a_present_ledger_does_not(self):
+        with tempfile.TemporaryDirectory() as temp:
+            missing = Path(temp) / "spend.json"
+            self.assertIn("cache miss", live.ledger_miss_warning(missing, "2026-11"))
+            missing.write_text(json.dumps({"monthly": {"2026-11": 1.0}, "runs": []}), encoding="utf-8")
+            self.assertEqual(live.ledger_miss_warning(missing, "2026-11"), "")
+
     def test_guard_allows_then_refuses(self):
         ledger = {"monthly": {"2026-11": 8.5}, "runs": []}
         allowed, spent, _ = live.guard(ledger, "2026-11", Decimal("10"), Decimal("1"))

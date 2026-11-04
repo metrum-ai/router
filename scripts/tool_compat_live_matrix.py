@@ -69,11 +69,46 @@ def router_cost_usd(raw: dict) -> Decimal:
     return total
 
 
+DIRECT_CELL_CHARGE_LABEL = "usage rows + list-rate estimate for direct cells"
+
+
+def charged_cost_usd(raw: dict) -> tuple[Decimal, str]:
+    """Cost to charge for one run.
+
+    Router usage rows cover the routed cells only; the direct cells are invoiced
+    by the provider outside the router and are priced by the gate at list rates.
+    The run is therefore charged the larger of the two, so the monthly guard
+    cannot undercount. When any turn has unknown usage, or the gate halted, the
+    reservation is charged instead: an unknown outcome must never be cheap.
+    """
+    router_usage = router_cost_usd(raw)
+    try:
+        list_rate = Decimal(str(raw.get("list_rate_usage_usd") or 0))
+    except InvalidOperation as exc:
+        raise ReportError(f"unparseable list_rate_usage_usd: {raw.get('list_rate_usage_usd')!r}") from exc
+    unknown = raw.get("unknown_usage_turns") or 0
+    if isinstance(unknown, bool) or not isinstance(unknown, int) or unknown < 0:
+        raise ReportError(f"unknown_usage_turns must be a nonnegative int, got {unknown!r}")
+    halted = bool(raw.get("halted"))
+    if unknown > 0 or halted:
+        try:
+            reserved = Decimal(str(raw.get("reserved_usd") or 0))
+        except InvalidOperation as exc:
+            raise ReportError(f"unparseable reserved_usd: {raw.get('reserved_usd')!r}") from exc
+        reason = "reserved (unknown usage or halted run)"
+        return max(reserved, router_usage), reason
+    charged = max(router_usage, list_rate)
+    if list_rate > router_usage:
+        return charged, DIRECT_CELL_CHARGE_LABEL
+    return charged, "router usage rows"
+
+
 def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-compat-live") -> dict:
     cells = raw.get("cells")
     if not isinstance(cells, list) or not cells:
         raise ReportError("gate report has no cells")
     usage = router_cost_usd(raw)
+    charged, charge_reason = charged_cost_usd(raw)
     out_cells = []
     seen = set()
     for cell in cells:
@@ -101,7 +136,13 @@ def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-co
         "date": date,
         "commit": commit,
         "runner": runner,
-        "cost": {"usd": float(usage), "source": "usage_rows", "scope": "run"},
+        "cost": {
+            "usd": float(charged),
+            "source": "usage_rows",
+            "scope": "run",
+            "note": charge_reason,
+            "router_usage_rows_usd": float(usage),
+        },
         "cells": out_cells,
     }
     return report
@@ -117,6 +158,39 @@ def load_ledger(path: Path) -> dict:
     if not isinstance(data, dict) or not isinstance(data.get("monthly"), dict) or not isinstance(data.get("runs"), list):
         raise ReportError(f"ledger {path} has an unexpected shape")
     return data
+
+
+def charge_for_recorded_run(report_path: Path, gate_path: Path, run_cap: Decimal) -> tuple[Decimal, str]:
+    """Cost to put in the ledger, even when the run did not finish.
+
+    A run that produced a report charges its report cost; a run that only
+    produced a raw gate report charges that; a run that produced neither charges
+    the full per-run cap, so a crashed or killed job cannot spend unrecorded.
+    """
+    if report_path.exists():
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+            return Decimal(str(data["cost"]["usd"])), str(data["cost"].get("note") or "report cost")
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, InvalidOperation) as exc:
+            return run_cap, f"report unreadable ({type(exc).__name__}): charging the run cap"
+    if gate_path.exists():
+        try:
+            raw = json.loads(gate_path.read_text(encoding="utf-8"))
+            charged, reason = charged_cost_usd(raw)
+            return charged, f"gate report only: {reason}"
+        except (OSError, json.JSONDecodeError, ReportError) as exc:
+            return run_cap, f"gate report unreadable ({type(exc).__name__}): charging the run cap"
+    return run_cap, "no report produced after the gate started: charging the run cap"
+
+
+def ledger_miss_warning(ledger_path: Path, month: str) -> str:
+    if not ledger_path.exists():
+        return (
+            f"ledger not restored (cache miss or eviction): starting {month} from 0;"
+            " an evicted ledger entry undercounts this month, so review the month's runs"
+            " before assuming the ceiling is intact"
+        )
+    return ""
 
 
 def guard(ledger: dict, month: str, monthly_usd: Decimal, run_cap: Decimal) -> tuple[bool, Decimal, str]:
@@ -154,6 +228,16 @@ def main() -> int:
     guard_parser.add_argument("--monthly-usd", required=True)
     guard_parser.add_argument("--run-cap", required=True)
 
+    record_run_parser = sub.add_parser(
+        "record-run", help="charge a run to the ledger from its report, its gate report, or the run cap"
+    )
+    record_run_parser.add_argument("--ledger", type=Path, required=True)
+    record_run_parser.add_argument("--month", required=True)
+    record_run_parser.add_argument("--report", type=Path, required=True)
+    record_run_parser.add_argument("--gate", type=Path, required=True)
+    record_run_parser.add_argument("--cap", required=True)
+    record_run_parser.add_argument("--run-id", default="local")
+
     record_parser = sub.add_parser("record", help="add a run's actual cost to the ledger")
     record_parser.add_argument("--ledger", type=Path, required=True)
     record_parser.add_argument("--month", required=True)
@@ -172,12 +256,24 @@ def main() -> int:
                               "router_cost_usd": report["cost"]["usd"]}), file=sys.stderr)
             return 0
         if args.command == "guard":
+            warning = ledger_miss_warning(args.ledger, args.month)
+            if warning:
+                print(f"::warning::{warning}", file=sys.stderr)
             ledger = load_ledger(args.ledger)
             allowed, spent, message = guard(ledger, args.month, Decimal(args.monthly_usd), Decimal(args.run_cap))
             print(message)
             print(json.dumps({"allowed": allowed, "month": args.month, "cap": args.run_cap,
                               "spent": float(spent), "monthly": args.monthly_usd}))
             return 0 if allowed else 1
+        if args.command == "record-run":
+            charged, reason = charge_for_recorded_run(args.report, args.gate, Decimal(args.cap))
+            ledger = load_ledger(args.ledger)
+            ledger = record(ledger, args.month, charged, args.run_id)
+            args.ledger.parent.mkdir(parents=True, exist_ok=True)
+            args.ledger.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+            print(json.dumps({"month": args.month, "charged_usd": float(charged),
+                              "reason": reason, "spent": ledger["monthly"][args.month]}))
+            return 0
         ledger = load_ledger(args.ledger)
         ledger = record(ledger, args.month, Decimal(args.cost_usd), args.run_id)
         args.ledger.parent.mkdir(parents=True, exist_ok=True)
