@@ -200,8 +200,13 @@ docker compose --env-file "$EDGE_ENV_FILE" \
 ```
 
 `--escalation-key-env NAME` changes which variable the *renderer* points the
-provider at; it does not create the variable. If you set that flag, the same name
-is what you must put in `secrets/env`. A missing key leaves the group failing
+provider at, but **docker mode can only deliver two names into the router
+container**: `compose.yaml` passes `OPENAI_API_KEY` and `EDGE_ESCALATION_API_KEY`,
+and nothing else reaches that process. Any other `NAME` is written into the
+configuration and then never resolves, so the escalation group fails closed with an
+upstream authentication error. Use `OPENAI_API_KEY` (the default) or
+`EDGE_ESCALATION_API_KEY`; if you need a third name, add it to the router's
+`environment:` in the compose file as well. A missing key leaves the group failing
 closed with an upstream error, which is the intended behaviour — never a silent
 local answer. (Native mode ignores all of this: its escalation target is a mock.)
 
