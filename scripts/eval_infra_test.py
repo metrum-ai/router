@@ -139,6 +139,19 @@ def main() -> int:
     rejects_paired(lambda r: r["cells"][0]["provenance"].pop("baseline_kind"), "'pinned'")
     rejects_paired(lambda r: r["cells"][1]["provenance"].update({"baseline_kind": "latest"}), "baseline_kind")
 
+    # An intermediate current-stable run may omit the per-cell link; the merged
+    # report is always validated with the link required.
+    intermediate = json.loads(json.dumps(paired_report))
+    intermediate["cells"][1]["provenance"].pop("baseline_of")
+    require(R.validate_report(intermediate, doc, require_baseline_link=False) == [],
+            "intermediate current-stable run may omit baseline_of")
+    try:
+        R.validate_report(intermediate, doc)
+    except R.ReportError as exc:
+        require("baseline_of" in str(exc), str(exc))
+    else:
+        raise AssertionError("a reported current-stable canary still needs its pinned baseline link")
+
     # CLI smoke on the real matrix file.
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "eval_infra_matrix.py")], capture_output=True, text=True)
     require(out.returncode == 0 and "pairwise" in out.stdout, f"matrix CLI failed: {out.stderr}")

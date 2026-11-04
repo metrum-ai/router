@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "run_id": "canary-baseline-20261103",
+  "started_utc": "2026-11-03T18:31:00Z",
+  "canary": {
+    "probes": 8,
+    "runs": 2,
+    "classification": {
+      "both_pass": 8,
+      "both_fail": 0,
+      "router_regression": 0,
+      "provider_only_fail": 0
+    },
+    "allowed_router_regressions": 0,
+    "allowed_error_rate": 0.1,
+    "cost_usd_total": 0.0001638,
+    "cost_basis": "provider usage x listed per-million prices (not invoice-reconciled)",
+    "baseline_of": "pinned cells in this report"
+  },
+  "cells": [
+    {
+      "cell_id": "canary-direct",
+      "mode": "direct",
+      "attempts": 4,
+      "passes": 4,
+      "observed_error_rate": 0.0,
+      "provenance": {
+        "client_versions": {
+          "direct_provider_canary": "v1",
+          "python": "3.14.10"
+        },
+        "canary_probe_version": 1,
+        "direct_model": "gpt-4o-mini-2024-07-18",
+        "router_model_group": "pinned",
+        "seed": 330,
+        "nonce": "330-1673c0a8",
+        "task_image_digests": {},
+        "baseline_kind": "pinned"
+      },
+      "task_results": [
+        {
+          "task_id": "nonce-echo",
+          "outcome": "pass",
+          "time_to_first_event_ms": 711.001,
+          "completion_latency_ms": 711.001,
+          "tool_turns": 0,
+          "cost_usd": 1.155e-05,
+          "detail": ""
+        },
+        {
+          "task_id": "json-arithmetic",
+          "outcome": "pass",
+          "time_to_first_event_ms": 578.029,
+          "completion_latency_ms": 578.029,
+          "tool_turns": 0,
+          "cost_usd": 9e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "bounded-answer",
+          "outcome": "pass",
+          "time_to_first_event_ms": 505.502,
+          "completion_latency_ms": 505.502,
+          "tool_turns": 0,
+          "cost_usd": 4.65e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "nonce-in-sentence",
+          "outcome": "pass",
+          "time_to_first_event_ms": 954.469,
+          "completion_latency_ms": 954.469,
+          "tool_turns": 0,
+          "cost_usd": 1.695e-05,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "cell_id": "canary-router-pinned",
+      "mode": "fixed-router",
+      "attempts": 4,
+      "passes": 4,
+      "observed_error_rate": 0.0,
+      "provenance": {
+        "client_versions": {
+          "direct_provider_canary": "v1",
+          "python": "3.14.10"
+        },
+        "canary_probe_version": 1,
+        "direct_model": "gpt-4o-mini-2024-07-18",
+        "router_model_group": "pinned",
+        "seed": 330,
+        "nonce": "330-1673c0a8",
+        "task_image_digests": {},
+        "baseline_kind": "pinned"
+      },
+      "task_results": [
+        {
+          "task_id": "nonce-echo",
+          "outcome": "pass",
+          "time_to_first_event_ms": 6053.172,
+          "completion_latency_ms": 6053.172,
+          "tool_turns": 0,
+          "cost_usd": 1.155e-05,
+          "detail": ""
+        },
+        {
+          "task_id": "json-arithmetic",
+          "outcome": "pass",
+          "time_to_first_event_ms": 812.263,
+          "completion_latency_ms": 812.263,
+          "tool_turns": 0,
+          "cost_usd": 9e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "bounded-answer",
+          "outcome": "pass",
+          "time_to_first_event_ms": 429.754,
+          "completion_latency_ms": 429.754,
+          "tool_turns": 0,
+          "cost_usd": 4.65e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "nonce-in-sentence",
+          "outcome": "pass",
+          "time_to_first_event_ms": 997.778,
+          "completion_latency_ms": 997.778,
+          "tool_turns": 0,
+          "cost_usd": 1.695e-05,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "cell_id": "canary-direct-current-stable",
+      "mode": "direct",
+      "attempts": 4,
+      "passes": 4,
+      "observed_error_rate": 0.0,
+      "provenance": {
+        "client_versions": {
+          "direct_provider_canary": "v1",
+          "python": "3.14.10"
+        },
+        "canary_probe_version": 1,
+        "direct_model": "gpt-4o-mini",
+        "router_model_group": "stable",
+        "seed": 330,
+        "nonce": "330-bbbdbaa7",
+        "task_image_digests": {},
+        "baseline_kind": "current-stable",
+        "baseline_of": "canary-direct"
+      },
+      "task_results": [
+        {
+          "task_id": "nonce-echo",
+          "outcome": "pass",
+          "time_to_first_event_ms": 517.151,
+          "completion_latency_ms": 517.151,
+          "tool_turns": 0,
+          "cost_usd": 1.005e-05,
+          "detail": ""
+        },
+        {
+          "task_id": "json-arithmetic",
+          "outcome": "pass",
+          "time_to_first_event_ms": 490.135,
+          "completion_latency_ms": 490.135,
+          "tool_turns": 0,
+          "cost_usd": 9e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "bounded-answer",
+          "outcome": "pass",
+          "time_to_first_event_ms": 440.034,
+          "completion_latency_ms": 440.034,
+          "tool_turns": 0,
+          "cost_usd": 4.65e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "nonce-in-sentence",
+          "outcome": "pass",
+          "time_to_first_event_ms": 870.352,
+          "completion_latency_ms": 870.352,
+          "tool_turns": 0,
+          "cost_usd": 1.605e-05,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "cell_id": "canary-router-pinned-current-stable",
+      "mode": "fixed-router",
+      "attempts": 4,
+      "passes": 4,
+      "observed_error_rate": 0.0,
+      "provenance": {
+        "client_versions": {
+          "direct_provider_canary": "v1",
+          "python": "3.14.10"
+        },
+        "canary_probe_version": 1,
+        "direct_model": "gpt-4o-mini",
+        "router_model_group": "stable",
+        "seed": 330,
+        "nonce": "330-bbbdbaa7",
+        "task_image_digests": {},
+        "baseline_kind": "current-stable",
+        "baseline_of": "canary-router-pinned"
+      },
+      "task_results": [
+        {
+          "task_id": "nonce-echo",
+          "outcome": "pass",
+          "time_to_first_event_ms": 478.063,
+          "completion_latency_ms": 478.063,
+          "tool_turns": 0,
+          "cost_usd": 1.005e-05,
+          "detail": ""
+        },
+        {
+          "task_id": "json-arithmetic",
+          "outcome": "pass",
+          "time_to_first_event_ms": 578.658,
+          "completion_latency_ms": 578.658,
+          "tool_turns": 0,
+          "cost_usd": 9e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "bounded-answer",
+          "outcome": "pass",
+          "time_to_first_event_ms": 430.196,
+          "completion_latency_ms": 430.196,
+          "tool_turns": 0,
+          "cost_usd": 4.65e-06,
+          "detail": ""
+        },
+        {
+          "task_id": "nonce-in-sentence",
+          "outcome": "pass",
+          "time_to_first_event_ms": 832.295,
+          "completion_latency_ms": 832.295,
+          "tool_turns": 0,
+          "cost_usd": 1.605e-05,
+          "detail": ""
+        }
+      ]
+    }
+  ]
+}

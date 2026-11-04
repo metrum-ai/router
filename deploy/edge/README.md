@@ -8,7 +8,8 @@ Installs, in one command:
 - the **router** (`metrum-ai-router`, operator-supplied image);
 - a **local model stack** on official upstream images, sized for a Strix Halo
   class box (128 GB unified memory) and pinned by digest;
-- the **default model groups** `local-tiny`, `local-chat` and `escalate`;
+- the **default model groups** `local-tiny`, `local-chat` and `escalate` (three;
+  a reference tier that adds `local-coder` has four);
 - the **escalation path** to any OpenAI-compatible endpoint (frontier API or a
   datacenter router) with the operator's own key;
 - the **admin UI and spend reports** at `/admin/reports/`;
@@ -24,6 +25,76 @@ Everything lives under `--data-dir` (default `$HOME/metrum-edge`):
 `config/config.yaml` (groups), `secrets/` (tokens and environment, mode 0600),
 `state/` (usage database), `logs/`, `compose/`, `install.env`.
 
+## Get the bundle
+
+Everything is public, and the installer does not fetch anything for you:
+
+```sh
+# the bundle files (no build step; they are scripts and manifests)
+git clone --depth 1 https://github.com/metrum-ai/router
+cd router/deploy/edge
+
+# the router binaries: an official release archive, not a container image
+ARCH=amd64                       # or arm64
+VERSION=v4.6.0                   # pin one; record it in your run notes
+curl -fLO "https://github.com/metrum-ai/router/releases/download/${VERSION}/metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"
+curl -fLO "https://github.com/metrum-ai/router/releases/download/${VERSION}/SHA256SUMS"
+sha256sum -c --ignore-missing SHA256SUMS
+tar -xzf "metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"   # yields bin/
+```
+
+`--bin-dir` takes that extracted `bin/` directory; it must contain
+`metrum-ai-router`, `metrum-ai-routerctl` and `metrum-ai-router-migrate`.
+
+### The router image for docker mode
+
+**No container image is published**: releases ship binary archives only (checked
+anonymously against Docker Hub and GHCR, 2026-11-03). Docker mode therefore needs an
+image you build yourself from public inputs, and there are two ways to do it. Run the
+build inside the extracted package directory, whose `bin/` holds static binaries.
+
+*Wrap the release binaries* — seconds, no toolchain:
+
+```dockerfile
+# Dockerfile.router
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates
+COPY metrum-ai-router-<version>-linux-<arch>/bin/ /app/bin/
+COPY metrum-ai-router-<version>-linux-<arch>/LICENSE metrum-ai-router-<version>-linux-<arch>/NOTICE /app/
+WORKDIR /app
+USER 65532:65532
+ENTRYPOINT ["/app/bin/metrum-ai-router"]
+```
+
+```sh
+docker build -f Dockerfile.router -t metrum-ai-router:<version>-linux-<arch> .
+```
+
+Keep `ca-certificates`: the router calls HTTPS upstreams, including the escalation
+provider, and a scratch image without them fails those calls.
+
+*Build the shipped Dockerfile* — the canonical image, including the bundled docs site
+and admin UI, needs Go and Node, which the Dockerfile's builder stage supplies:
+
+```sh
+git clone https://github.com/metrum-ai/router && cd router
+git checkout <tag>                    # the release tag you are deploying
+docker build --build-arg VERSION=<tag> --build-arg COMMIT=<sha> \
+  --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  -t metrum-ai-router:<tag>-linux-amd64 .
+```
+
+Either way, pass that tag to `--router-image` and record its image id in your run
+notes.
+
+The bundle files and the release are separately versioned. What is known today: the
+bundle scripts in this directory were exercised end to end against **v4.6.0** (an
+unassisted install and demo by an outside agent, see the reference run notes) and the
+4.7.x tree is what the reference deployments use. Older or newer releases are not
+claimed. Pin both sides in your run notes — the release tag and the commit you cloned
+— and if you download individual files with `curl` instead of cloning, pin the commit
+in the URL rather than using `main`.
+
 ## Two modes
 
 | Mode | What runs | Use it for |
@@ -31,9 +102,12 @@ Everything lives under `--data-dir` (default `$HOME/metrum-edge`):
 | `--mode docker` (default) | vLLM model servers in containers on the GPU, the router in a container | the real deployment |
 | `--mode native` | the router binary plus three **CPU mock upstreams**; no containers, no GPU | evaluation, air-gapped trials, CI install test |
 
-Native mode's upstreams are a scripted OpenAI-compatible mock. They prove the
-install path, group routing, quotas and reports; they produce no model output and
-are not quality or performance evidence. Native mode also refuses to upgrade
+Native mode's upstreams are a scripted OpenAI-compatible mock, including the third
+one behind `escalate`: the demo's escalation step exercises routing, group
+separation and reporting, and **it does not leave the box or call a provider**, no
+matter what key or `--escalation-url` you supply. Native mode proves the install
+path, group routing, quotas, budgets and reports; it produces no model output, and
+its token counts and costs are mock arithmetic rather than inference or billing. Native mode also refuses to upgrade
 (`upgrade.sh`) because there is no managed image to replace.
 
 ## Hardware bill of materials
@@ -106,6 +180,36 @@ for each; a skip is not a pass, and the script exits non-zero if anything failed
 | 3. budget hit | the `demo-budget` caller is refused with `429 quota-exhausted` once its day request budget is spent |
 | 4. spend report | `routerctl usage summary` prints tokens and cost from the router's own usage rows, with the escalation spend separable from the on-box groups |
 
+## Supplying the escalation key (docker mode)
+
+The bundle writes its secret environment to `secrets/env` (mode 0600) and passes it
+to the router container. For a real provider, put the key in that file under
+**`OPENAI_API_KEY`** — the rendered configuration's escalation provider reads
+`${OPENAI_API_KEY}` — and recreate the router so it re-reads it:
+
+```sh
+DATA_DIR="${HOME}/metrum-edge"          # the --data-dir you installed with
+sudoedit "$DATA_DIR/secrets/env"        # OPENAI_API_KEY='sk-...'
+
+# install.env records the accelerator and the paths, so this works on either vendor
+. "$DATA_DIR/install.env"
+docker compose --env-file "$EDGE_ENV_FILE" \
+  -f "$EDGE_DATA_DIR/compose/compose.yaml" \
+  -f "$EDGE_DATA_DIR/compose/compose.${EDGE_ACCELERATOR}.yaml" \
+  up -d --no-deps --force-recreate router
+```
+
+`--escalation-key-env NAME` changes which variable the *renderer* points the
+provider at, but **docker mode can only deliver two names into the router
+container**: `compose.yaml` passes `OPENAI_API_KEY` and `EDGE_ESCALATION_API_KEY`,
+and nothing else reaches that process. Any other `NAME` is written into the
+configuration and then never resolves, so the escalation group fails closed with an
+upstream authentication error. Use `OPENAI_API_KEY` (the default) or
+`EDGE_ESCALATION_API_KEY`; if you need a third name, add it to the router's
+`environment:` in the compose file as well. A missing key leaves the group failing
+closed with an upstream error, which is the intended behaviour — never a silent
+local answer. (Native mode ignores all of this: its escalation target is a mock.)
+
 ## Upgrade and uninstall
 
 ```sh
@@ -141,6 +245,34 @@ an air-gapped install is the same command with the inputs pre-staged:
    model servers fail closed on a missing weight instead of hanging on a download.
    The escalation group is unavailable until a key is supplied, which is the normal
    air-gapped posture.
+
+## Smaller GPU: the 48 GB profile
+
+The default stack is sized for 128 GB of unified memory because of the 30B-class
+primary model. On a 48 GB card the bundle runs the same groups with a smaller
+primary; nothing else changes (group names, caller grants, demo, reports):
+
+```sh
+export EDGE_PRIMARY_MODEL=Qwen/Qwen3-8B
+export EDGE_PRIMARY_REVISION=b968826d9c46dd6066d109eabc6255188de91218
+export EDGE_PRIMARY_UTILIZATION=0.82
+export EDGE_TINY_UTILIZATION=0.16
+sudo -E bash install.sh --router-image metrum-ai-router:<version>-linux-amd64
+```
+
+| Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests at 8K (computed, not measured) |
+|---|---|---|---|---|---|---|
+| `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.16 | 7.7 GB | 1.3 GiB | 1 |
+| `local-chat` | Qwen3-8B | 16.4 GB | 0.82 | 39.4 GB | 20.0 GiB | 17 |
+
+Arithmetic from the sizing method above, with a 3 GiB per-slot overhead allowance;
+`deploy/reference/harness/kv_math.py` reproduces the rows. Disk: ~20 GB of
+checkpoints plus the ~25 GB model-server image, so ≥ 100 GB free.
+
+Two things to expect on a card this size: the tiny slot keeps only about one
+8K-context request in flight (it is a smoke and classification slot, not a chat
+slot), and the primary is an 8B model rather than the default 30B-class one — the
+`local-chat` group name, its grants and every client stay exactly the same.
 
 ## Rootless Podman
 
@@ -218,7 +350,7 @@ checklist instead of claiming the result. Observer checklist:
 | 1 | Read only this README | No questions needed to start | — |
 | 2 | `install.sh` with the router image and the box's key | Ends with "Edge bundle installed" | ≤ 20 min (weights already cached) |
 | 3 | `demo.sh` | Four PASS lines, or SKIP with the escalation key missing | ≤ 5 min |
-| 4 | Admin UI at `/admin/reports/` | Report page renders with the four groups | ≤ 5 min |
+| 4 | Admin UI at `/admin/reports/` | Report page renders with the three groups | ≤ 5 min |
 | 5 | One real request through the local group from the engineer's own client | Answer returns, usage row appears | ≤ 10 min |
 | 6 | `upgrade.sh --config-only` then `demo.sh` | Router ready again, demo passes | ≤ 10 min |
 | 7 | `uninstall.sh`, then reinstall | Data kept, reinstall reuses tokens | ≤ 10 min |

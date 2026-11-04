@@ -218,7 +218,97 @@ def end_to_end(tmp: Path) -> None:
         router_ok2.shutdown()
 
 
+def _report_with(kind: str, passes: int = 4) -> dict:
+    tasks = [
+        {"task_id": f"p{i}", "outcome": "pass" if i < passes else "fail",
+         "time_to_first_event_ms": 1.0, "completion_latency_ms": 1.0, "tool_turns": 0, "cost_usd": 0.0001}
+        for i in range(4)
+    ]
+    return {
+        "schema_version": 1,
+        "run_id": f"run-{kind}",
+        "started_utc": "2026-11-03T00:00:00Z",
+        "canary": {
+            "probes": 4,
+            "classification": {"both_pass": passes, "both_fail": 0, "router_regression": 0, "provider_only_fail": 4 - passes},
+            "allowed_router_regressions": 0,
+            "allowed_error_rate": 0.1,
+            "cost_usd_total": 0.0004,
+            "cost_basis": "provider usage x listed per-million prices (not invoice-reconciled)",
+        },
+        "cells": [
+            {"cell_id": C.DIRECT_CELL, "mode": "direct", "attempts": 4, "passes": passes,
+             "provenance": {"client_versions": {"direct_provider_canary": "v1"}, "seed": 330, "baseline_kind": kind},
+             "task_results": json.loads(json.dumps(tasks))},
+            {"cell_id": C.ROUTER_CELL, "mode": "fixed-router", "attempts": 4, "passes": passes,
+             "provenance": {"client_versions": {"direct_provider_canary": "v1"}, "seed": 330, "baseline_kind": kind},
+             "task_results": json.loads(json.dumps(tasks))},
+        ],
+    }
+
+
+def merge_cases(tmp: Path) -> None:
+    pinned = _report_with("pinned")
+    stable = _report_with("current-stable", passes=3)
+    merged = C.merge_reports(pinned, stable, "canary-baseline-test", "2026-11-03T00:00:00Z")
+    ids = [c["cell_id"] for c in merged["cells"]]
+    require(ids == [C.DIRECT_CELL, C.ROUTER_CELL, C.DIRECT_CELL + "-current-stable", C.ROUTER_CELL + "-current-stable"],
+            f"merged cell ids: {ids}")
+    for cell in merged["cells"][2:]:
+        require(cell["provenance"]["baseline_of"] == cell["cell_id"].removesuffix("-current-stable"),
+                f"current-stable row must link its pinned baseline: {cell['provenance']}")
+    require(merged["canary"]["runs"] == 2 and merged["canary"]["probes"] == 8, f"merged canary block: {merged['canary']}")
+    require(merged["canary"]["classification"]["both_pass"] == 7, f"classification sum: {merged['canary']['classification']}")
+    violations = C.validate_report(merged)
+    require(not violations, f"merged report must validate: {violations}")
+
+    # CLI: merge two recorded runs and validate the result.
+    pinned_path, stable_path, out_path = tmp / "pinned.json", tmp / "stable.json", tmp / "merged.json"
+    pinned_path.write_text(json.dumps(pinned))
+    stable_path.write_text(json.dumps(stable))
+    merge = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "direct_provider_canary.py"), "merge",
+         "--pinned", str(pinned_path), "--current-stable", str(stable_path), "--report-out", str(out_path)],
+        capture_output=True, text=True,
+    )
+    require(merge.returncode == 0, f"merge CLI failed: {merge.stdout}\n{merge.stderr}")
+    validate = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "direct_provider_canary.py"), "validate", str(out_path)],
+        capture_output=True, text=True,
+    )
+    require(validate.returncode == 0, f"merged report must validate: {validate.stdout}\n{validate.stderr}")
+
+    # Rejections.
+    def rejects(mutate, text):
+        broken_pinned = json.loads(json.dumps(pinned))
+        broken_stable = json.loads(json.dumps(stable))
+        mutate(broken_pinned, broken_stable)
+        try:
+            C.merge_reports(broken_pinned, broken_stable, "r", "2026-11-03T00:00:00Z")
+        except C.CanaryError as exc:
+            require(text in str(exc), f"{text!r} not in {exc}")
+            return
+        raise AssertionError(f"expected merge rejection containing {text!r}")
+
+    rejects(lambda p, s: p["cells"][0]["provenance"].pop("baseline_kind"), "pinned")
+    rejects(lambda p, s: s["cells"][0]["provenance"].update({"baseline_kind": "pinned"}), "current-stable")
+    rejects(lambda p, s: s["cells"][0]["provenance"].update({"baseline_of": C.DIRECT_CELL}), "baseline_of")
+    rejects(lambda p, s: s["cells"][0].update({"cell_id": "other"}), "cell ids differ")
+    rejects(lambda p, s: s["cells"][0]["task_results"].pop(), "probe sets differ")
+
+
 def config_errors() -> None:
+    # Baseline flags are validated before any call is made.
+    for extra, text in (
+        (["--baseline-kind", "nope"], "baseline-kind"),
+        (["--baseline-kind", "current-stable", "--baseline-of", C.DIRECT_CELL], "must not set --baseline-of"),
+        (["--baseline-of", C.DIRECT_CELL], "only valid with --baseline-kind pinned"),
+    ):
+        run = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "direct_provider_canary.py"), "run"] + extra,
+            capture_output=True, text=True, env={k: v for k, v in os.environ.items() if not k.startswith("CANARY_")},
+        )
+        require(run.returncode == 2 and text in run.stderr, f"{extra}: rc={run.returncode} err={run.stderr}")
     env = {k: v for k, v in os.environ.items() if not k.startswith("CANARY_")}
     run = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "direct_provider_canary.py"), "run"],
@@ -234,6 +324,7 @@ def main() -> int:
     classify_cases()
     with tempfile.TemporaryDirectory() as tmp:
         end_to_end(Path(tmp))
+        merge_cases(Path(tmp))
     config_errors()
     print("direct-provider differential canary tests passed")
     return 0
