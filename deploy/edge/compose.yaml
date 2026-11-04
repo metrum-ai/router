@@ -93,7 +93,9 @@ services:
     ports:
       - ${EDGE_BIND_ADDRESS:-127.0.0.1}:${EDGE_ROUTER_PORT:-8080}:8080
     volumes:
-      - ${EDGE_DATA_DIR:?set EDGE_DATA_DIR}/config/config.yaml:/app/config/config.yaml:ro
+      # The directory, not the file, so a one-off `compose run -v ...:rw` can
+      # override it when a caller is minted after the stack starts.
+      - ${EDGE_DATA_DIR:?set EDGE_DATA_DIR}/config:/app/config:ro
       - ${EDGE_DATA_DIR}/state:/app/state
       - ${EDGE_DATA_DIR}/logs:/app/logs
     depends_on:

@@ -144,34 +144,33 @@ an air-gapped install is the same command with the inputs pre-staged:
 
 ## Rootless Podman
 
-Podman is the default container runtime on several AMD platforms, and it is
-**rootless** by default. Two things behave differently there, both learned on
-hardware:
+Podman is the default container runtime on several AMD platforms and is **rootless** by
+default. A hardware run found two differences; the remedies are **not yet verified on
+hardware** — that run stopped before it could apply them — so treat them as the
+starting point rather than a tested path:
 
-1. **Ownership.** A bind mount in a rootless container sees container uid 65532 as a
-   *mapped* host uid, not the literal `65532`. `chown -R 65532:65532 config state
-   logs` on the host therefore produces `permission denied`. Chown inside the user
-   namespace instead:
+1. **Ownership.** A rootless container sees container uid 65532 as a *mapped* host uid,
+   so the host `chown -R 65532:65532 config state logs` yields `permission denied`.
+   Chown inside the user namespace instead, or run everything with `sudo` (rootful
+   Podman), where the documented `chown` is correct:
 
    ```sh
    podman unshare chown -R 65532:65532 config state logs
    ```
+2. **Minting a caller after the stack is up.** The configuration is mounted read-only,
+   so the writer has nothing writable to rename its temp file onto — minting before
+   `up` does not help either, because `compose run` uses the service's mounts. Override
+   the mount for that one run:
 
-   Or run the stack rootful (`sudo podman system service --time=0
-   unix://$PWD/podman.sock` and point `DOCKER_HOST` at it), which keeps the
-   documented `chown` correct.
-2. **Minting a caller after the stack is up.** The configuration is mounted as a
-   single read-only file, so `callers generate --write` has no writable sibling for
-   its backup or its atomic temp file. Mint the caller **before** `up` (the deploy
-   sequence does), or mount the configuration directory read-write for that one step,
-   or set `ROUTER_CONFIG_BACKUP_DIR` to a writable directory you control. Since
-   2026-11 the tool writes its backup to that directory when the mount is read-only
-   and fails with a message naming this remedy rather than a bare permission error.
+   ```sh
+   docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" \
+     --entrypoint /app/bin/metrum-ai-routerctl router callers generate ...
+   ```
 
-Compose under Podman: `podman compose` (or `docker compose` on a host where `docker`
-is Podman's emulation) reads the same files, and every overlay must survive the same
-merge — `docker compose config` (or `podman compose config`) is the check, and CI runs
-an equivalent structural check for each overlay.
+Compose under Podman (`podman compose`, or `docker compose` where `docker` is Podman's
+emulation) reads the same files, so every overlay must survive the same merge;
+`docker compose config`/`podman compose config` is the check, and CI runs an
+equivalent structural check for each overlay.
 
 ## Troubleshooting
 

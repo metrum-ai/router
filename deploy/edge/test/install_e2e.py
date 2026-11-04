@@ -283,7 +283,8 @@ class EdgeBundleComposeTest(unittest.TestCase):
         self.assertTrue(router["image"].startswith("${ROUTER_IMAGE:?"))
         self.assertTrue(router["ports"][0].endswith(":8080"), router["ports"][0])
         self.assertIn("127.0.0.1", router["ports"][0])
-        self.assertTrue(any("config.yaml" in mount for mount in router["volumes"]))
+        self.assertTrue(any(mount.rsplit(":", 2)[-2].startswith("/app/config") for mount in router["volumes"]),
+                        "the router must mount the configuration")
         self.assertTrue(any("state" in mount for mount in router["volumes"]))
         for required in ("vllm-tiny", "vllm-primary"):
             self.assertIn(required, router["depends_on"])
@@ -311,7 +312,13 @@ class EdgeBundleOverlayMergeTest(unittest.TestCase):
     """Compose merges sequences by appending, so an overlay that repeats a base entry
     makes the file invalid ("array items must be unique"). Compose 2.26 refuses it at
     `docker compose config`; CI has no container runtime, so the same rule is applied
-    here to every overlay."""
+    here to every overlay.
+
+    Deliberately stricter than Compose for *override-type* lists (a short list such as
+    `ports` or `entrypoint` that an operator means to replace): Compose replaces some
+    of those rather than appending, while this check rejects any duplicate item
+    anywhere. That is the safe direction - it fails on a file Compose might accept,
+    never passes one Compose rejects."""
 
     def setUp(self) -> None:
         try:
@@ -367,10 +374,62 @@ class EdgeBundleRuntimeDocsTest(unittest.TestCase):
         edge = (EDGE / "README.md").read_text(encoding="utf-8")
         self.assertIn("Rootless Podman", edge)
         self.assertIn("podman unshare chown", edge)
+        self.assertIn("/app/config:rw", edge, "the edge README must document the writable override for a late mint")
+        self.assertIn("not yet verified on hardware", " ".join(edge.lower().split()),
+                      "the rootless remedies must be marked unverified until a hardware run proves them")
         for tier in ("amd-strix-halo-edge", "amd-mi350p-datacenter", "nvidia-datacenter", "nvidia-gb10-edge"):
             text = (ROOT / "deploy" / "reference" / tier / "README.md").read_text(encoding="utf-8")
             self.assertIn("Rootless Podman", text, tier)
-            self.assertIn("mount the configuration", text.lower(), tier)
+            self.assertIn("podman unshare chown", text, tier)
+            self.assertIn("/app/config:rw", text, tier)
+            self.assertIn("not yet verified on hardware", " ".join(text.lower().split()), tier)
+
+
+class ReferenceMintStepTest(unittest.TestCase):
+    """The documented caller-mint step must be able to write the configuration.
+
+    A hardware run failed at exactly this step: the procedure ran
+    `compose run ... callers generate --write` while `config.yaml` was mounted as a
+    single read-only file, so the writer had nowhere to put its temp file and the
+    rename could not land. Both halves of the fix are asserted here: the compose file
+    mounts the config *directory* (so a one-run override is possible at all) and the
+    documented command overrides it read-write.
+    """
+
+    def setUp(self) -> None:
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover
+            self.skipTest("PyYAML is not installed")
+        self.yaml = yaml
+
+    def readme_commands(self, tier: str) -> list[str]:
+        text = (ROOT / "deploy" / "reference" / tier / "README.md").read_text(encoding="utf-8")
+        marker = "callers generate"
+        commands: list[str] = []
+        for block in text.split("```"):
+            if marker in block and "callers" in block:
+                commands.append(block)
+        return commands
+
+    def test_compose_mounts_the_config_directory(self) -> None:
+        for tier in ("amd-mi350p-datacenter", "amd-strix-halo-edge", "nvidia-datacenter", "nvidia-gb10-edge"):
+            compose = self.yaml.safe_load((ROOT / "deploy" / "reference" / tier / "compose.yaml").read_text(encoding="utf-8"))
+            router = compose["services"]["router"]
+            mounts = [mount for mount in router["volumes"] if mount.rsplit(":", 2)[-2].startswith("/app/config")]
+            self.assertTrue(mounts, f"{tier}: router must mount the configuration")
+            for mount in mounts:
+                _, target, mode = mount.rsplit(":", 2)
+                self.assertEqual(target, "/app/config", f"{tier}: mount the config directory, not a file ({mount})")
+                self.assertEqual(mode, "ro", f"{tier}: the router's own mount should stay read-only ({mount})")
+
+    def test_documented_mint_overrides_the_mount_writable(self) -> None:
+        for tier in ("amd-mi350p-datacenter", "amd-strix-halo-edge", "nvidia-datacenter", "nvidia-gb10-edge"):
+            commands = self.readme_commands(tier)
+            self.assertTrue(commands, f"{tier}: no documented callers generate command found")
+            for command in commands:
+                self.assertIn("/app/config:rw", command,
+                              f"{tier}: the mint command must override /app/config read-write, because compose mounts it read-only")
 
 
 class EdgeBundlePinTest(unittest.TestCase):

@@ -85,9 +85,10 @@ func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err 
 }
 
 // writeConfigBackup writes a timestamped copy of the current configuration, beside
-// the file by default and in ROUTER_CONFIG_BACKUP_DIR when that is set. When neither
-// location is writable it falls back to the system temp directory, so a read-only
-// configuration mount still yields a usable backup.
+// the file by default and in ROUTER_CONFIG_BACKUP_DIR when that is set. There is no
+// further fallback: a backup left in an ephemeral container's /tmp is useless, and
+// silently writing configuration copies to a shared temp directory is worse than the
+// warning the caller prints.
 func writeConfigBackup(path string, data []byte) (string, error) {
 	name := filepath.Base(path) + ".bak." + time.Now().UTC().Format("20060102T150405Z")
 	var tried []string
@@ -112,7 +113,7 @@ func configBackupDirs(path string) []string {
 	if configured := strings.TrimSpace(os.Getenv("ROUTER_CONFIG_BACKUP_DIR")); configured != "" {
 		dirs = append(dirs, configured)
 	}
-	dirs = append(dirs, filepath.Dir(path), os.TempDir())
+	dirs = append(dirs, filepath.Dir(path))
 	return dirs
 }
 

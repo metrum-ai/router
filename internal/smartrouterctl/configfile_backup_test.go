@@ -46,9 +46,10 @@ func TestWriteConfigAtomicBackupDirOverride(t *testing.T) {
 	}
 }
 
-// If no configured location can hold a backup, the write still completes and falls
-// back to the system temp directory instead of failing the caller mint.
-func TestWriteConfigAtomicFallsBackToTempWhenBackupFails(t *testing.T) {
+// With no writable backup location the write still completes and says so: a backup
+// is a convenience, and a configuration copy must never land in a shared temp
+// directory as a silent substitute.
+func TestWriteConfigAtomicWarnsWithoutBackup(t *testing.T) {
 	configDir := t.TempDir()
 	path := filepath.Join(configDir, "config.yaml")
 	if err := os.WriteFile(path, []byte("server: {}\n"), 0o600); err != nil {
@@ -61,11 +62,13 @@ func TestWriteConfigAtomicFallsBackToTempWhenBackupFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("write config must survive an unusable backup dir: %v", err)
 	}
-	if backupPath == "" {
-		t.Fatal("expected a fallback backup path, got none")
+	// A missing backup is acceptable; a backup anywhere other than the config's own
+	// directory (for example a shared temp directory) is not.
+	if backupPath != "" && filepath.Dir(backupPath) != configDir {
+		t.Fatalf("backup landed at %q; only the config directory is acceptable without ROUTER_CONFIG_BACKUP_DIR", backupPath)
 	}
-	if !strings.HasPrefix(backupPath, os.TempDir()) {
-		t.Fatalf("fallback backup at %q, want it under %q", backupPath, os.TempDir())
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("config was not written: %v", err)
 	}
 }
 

@@ -79,7 +79,13 @@ reading the old file (the request would fail with `401` until a restart). The
 token file goes to `state/`, which is mounted as a directory:
 
 ```sh
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
+# The config directory is mounted read-only for the router. Override it read-write
+# for this one run: the writer keeps a timestamped backup beside the file and then
+# renames its temp file onto it, so a read-only mount fails even with the backup
+# moved. A single-file mount could not be overridden this way, which is why
+# compose.yaml mounts the directory.
+docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" \
+  --entrypoint /app/bin/metrum-ai-routerctl \
   router callers generate \
   --owner-user reference-operator --project reference --env demo --key k1 \
   --allow local-tiny,local-chat,local-coder,escalate \
@@ -162,14 +168,23 @@ outstanding. No cost is claimed before it is known.
 
 ## Rootless Podman
 
-AMD development platforms often run Podman, rootless by default. The `chown -R
-65532:65532` above is correct for rootful Docker and wrong for rootless Podman,
-where container uid 65532 is a *mapped* host uid: use
-`podman unshare chown -R 65532:65532 config state logs` instead, or run the stack
-rootful. Mint the caller **before** the stack starts — the configuration is mounted
-as a single read-only file, so a later `--write` has nothing to write beside it; if
-you must mint afterwards, mount the configuration directory read-write for that step or
-point `ROUTER_CONFIG_BACKUP_DIR` at a writable directory.
+AMD development platforms often run Podman, rootless by default. A hardware run found
+that the `chown -R 65532:65532` above fails there: in a rootless container, uid 65532
+is a *mapped* host uid, so the host directories do not belong to the identity the
+container writes as. It also found that a caller mint after the stack is up fails on
+the read-only configuration mount.
+
+The remedies below are **not yet verified on hardware** (the same run stopped before
+it could apply them). Until a rerun proves them, treat them as the starting point:
+
+```sh
+podman unshare chown -R 65532:65532 config state logs   # the ownership fix, in the namespace
+```
+
+or run the documented commands with `sudo`, i.e. rootful Podman, where the plain
+`chown` above is correct. For a late caller mint, override the config mount
+read-write for that one run:
+`docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" ...`.
 
 ## Rerun
 
