@@ -70,16 +70,21 @@ def router_cost_usd(raw: dict) -> Decimal:
 
 
 DIRECT_CELL_CHARGE_LABEL = "usage rows + list-rate estimate for direct cells"
+ESTIMATE_SUFFIX = "invoice pending"
 
 
-def charged_cost_usd(raw: dict) -> tuple[Decimal, str]:
-    """Cost to charge for one run.
+def charged_cost_usd(raw: dict) -> tuple[Decimal, str, str]:
+    """Cost to charge for one run, with its cost source and note.
 
     Router usage rows cover the routed cells only; the direct cells are invoiced
     by the provider outside the router and are priced by the gate at list rates.
     The run is therefore charged the larger of the two, so the monthly guard
     cannot undercount. When any turn has unknown usage, or the gate halted, the
     reservation is charged instead: an unknown outcome must never be cheap.
+
+    The source follows the charge: `usage_rows` only when the recorded rows are
+    the whole charge, otherwise `estimate` with an `invoice pending` note, so a
+    consumer cannot read a list-rate figure as billed usage.
     """
     router_usage = router_cost_usd(raw)
     try:
@@ -95,12 +100,12 @@ def charged_cost_usd(raw: dict) -> tuple[Decimal, str]:
             reserved = Decimal(str(raw.get("reserved_usd") or 0))
         except InvalidOperation as exc:
             raise ReportError(f"unparseable reserved_usd: {raw.get('reserved_usd')!r}") from exc
-        reason = "reserved (unknown usage or halted run)"
-        return max(reserved, router_usage), reason
-    charged = max(router_usage, list_rate)
+        note = f"reserved budget for a run with unknown usage or a halt ({ESTIMATE_SUFFIX})"
+        return max(reserved, router_usage), "estimate", note
     if list_rate > router_usage:
-        return charged, DIRECT_CELL_CHARGE_LABEL
-    return charged, "router usage rows"
+        note = f"{DIRECT_CELL_CHARGE_LABEL} ({ESTIMATE_SUFFIX} for the direct cells)"
+        return list_rate, "estimate", note
+    return router_usage, "usage_rows", "router usage rows"
 
 
 def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-compat-live") -> dict:
@@ -108,7 +113,7 @@ def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-co
     if not isinstance(cells, list) or not cells:
         raise ReportError("gate report has no cells")
     usage = router_cost_usd(raw)
-    charged, charge_reason = charged_cost_usd(raw)
+    charged, charge_source, charge_note = charged_cost_usd(raw)
     out_cells = []
     seen = set()
     for cell in cells:
@@ -138,9 +143,9 @@ def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-co
         "runner": runner,
         "cost": {
             "usd": float(charged),
-            "source": "usage_rows",
+            "source": charge_source,
             "scope": "run",
-            "note": charge_reason,
+            "note": charge_note,
             "router_usage_rows_usd": float(usage),
         },
         "cells": out_cells,
@@ -160,27 +165,64 @@ def load_ledger(path: Path) -> dict:
     return data
 
 
-def charge_for_recorded_run(report_path: Path, gate_path: Path, run_cap: Decimal) -> tuple[Decimal, str]:
+def _fresh(path: Path, fresh_after: int | None) -> bool:
+    """A file produced by this run only.
+
+    The spend cache may carry a previous run's reports (a cache entry restores a
+    whole path), so a charge or a published result must be newer than the run.
+    """
+    if not path.exists():
+        return False
+    if fresh_after is None:
+        return True
+    try:
+        return int(path.stat().st_mtime) >= fresh_after
+    except OSError:
+        return False
+
+
+def charge_for_recorded_run(
+    report_path: Path, gate_path: Path, run_cap: Decimal, fresh_after: int | None = None
+) -> tuple[Decimal, str, str]:
     """Cost to put in the ledger, even when the run did not finish.
 
-    A run that produced a report charges its report cost; a run that only
-    produced a raw gate report charges that; a run that produced neither charges
-    the full per-run cap, so a crashed or killed job cannot spend unrecorded.
+    A run that produced a fresh report charges its report cost; a run that only
+    produced a fresh raw gate report charges that; anything else — no report, an
+    unreadable report, or a report restored from a previous run — charges the
+    full per-run cap, so a crashed or refunded job cannot spend unrecorded and a
+    stale file can never be billed as this run's cost.
     """
-    if report_path.exists():
+    stale_report = report_path.exists() and not _fresh(report_path, fresh_after)
+    stale_gate = gate_path.exists() and not _fresh(gate_path, fresh_after)
+    if _fresh(report_path, fresh_after):
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
-            return Decimal(str(data["cost"]["usd"])), str(data["cost"].get("note") or "report cost")
+            cost = data["cost"]
+            return Decimal(str(cost["usd"])), str(cost.get("source") or "usage_rows"), str(
+                cost.get("note") or "report cost"
+            )
         except (OSError, json.JSONDecodeError, KeyError, TypeError, InvalidOperation) as exc:
-            return run_cap, f"report unreadable ({type(exc).__name__}): charging the run cap"
-    if gate_path.exists():
+            return run_cap, "estimate", (
+                f"report unreadable ({type(exc).__name__}): charging the run cap ({ESTIMATE_SUFFIX})"
+            )
+    if _fresh(gate_path, fresh_after):
         try:
             raw = json.loads(gate_path.read_text(encoding="utf-8"))
-            charged, reason = charged_cost_usd(raw)
-            return charged, f"gate report only: {reason}"
+            charged, source, note = charged_cost_usd(raw)
+            return charged, source, f"gate report only: {note}"
         except (OSError, json.JSONDecodeError, ReportError) as exc:
-            return run_cap, f"gate report unreadable ({type(exc).__name__}): charging the run cap"
-    return run_cap, "no report produced after the gate started: charging the run cap"
+            return run_cap, "estimate", (
+                f"gate report unreadable ({type(exc).__name__}): charging the run cap ({ESTIMATE_SUFFIX})"
+            )
+    if stale_report or stale_gate:
+        return run_cap, "estimate", (
+            "a cached report from a previous run was ignored: charging the run cap"
+            f" ({ESTIMATE_SUFFIX})"
+        )
+    return run_cap, "estimate", (
+        "the gate ran but produced no report: charging the run cap "
+        f"({ESTIMATE_SUFFIX})"
+    )
 
 
 def ledger_miss_warning(ledger_path: Path, month: str) -> str:
@@ -204,10 +246,15 @@ def guard(ledger: dict, month: str, monthly_usd: Decimal, run_cap: Decimal) -> t
     return True, spent, f"monthly live budget allows ${run_cap} for {month} (spent ${spent} of ${monthly_usd})"
 
 
-def record(ledger: dict, month: str, cost_usd: Decimal, run_id: str) -> dict:
+def record(ledger: dict, month: str, cost_usd: Decimal, run_id: str, source: str = "", note: str = "") -> dict:
     spent = Decimal(str(ledger["monthly"].get(month, 0))) + cost_usd
     ledger["monthly"][month] = float(spent)
-    ledger["runs"] = (ledger["runs"] + [{"month": month, "run": run_id, "usd": float(cost_usd)}])[-200:]
+    entry = {"month": month, "run": run_id, "usd": float(cost_usd)}
+    if source:
+        entry["source"] = source
+    if note:
+        entry["note"] = note
+    ledger["runs"] = (ledger["runs"] + [entry])[-200:]
     return ledger
 
 
@@ -237,6 +284,10 @@ def main() -> int:
     record_run_parser.add_argument("--gate", type=Path, required=True)
     record_run_parser.add_argument("--cap", required=True)
     record_run_parser.add_argument("--run-id", default="local")
+    record_run_parser.add_argument(
+        "--fresh-after", type=int, default=None,
+        help="epoch seconds this run started; older reports are ignored and the cap is charged",
+    )
 
     record_parser = sub.add_parser("record", help="add a run's actual cost to the ledger")
     record_parser.add_argument("--ledger", type=Path, required=True)
@@ -253,7 +304,9 @@ def main() -> int:
             args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
             failed = [cell["id"] for cell in report["cells"] if cell["status"] == "fail"]
             print(json.dumps({"cells": len(report["cells"]), "failed": failed,
-                              "router_cost_usd": report["cost"]["usd"]}), file=sys.stderr)
+                              "charged_usd": report["cost"]["usd"],
+                              "source": report["cost"]["source"],
+                              "note": report["cost"]["note"]}), file=sys.stderr)
             return 0
         if args.command == "guard":
             warning = ledger_miss_warning(args.ledger, args.month)
@@ -266,13 +319,16 @@ def main() -> int:
                               "spent": float(spent), "monthly": args.monthly_usd}))
             return 0 if allowed else 1
         if args.command == "record-run":
-            charged, reason = charge_for_recorded_run(args.report, args.gate, Decimal(args.cap))
+            charged, source, reason = charge_for_recorded_run(
+                args.report, args.gate, Decimal(args.cap), args.fresh_after
+            )
             ledger = load_ledger(args.ledger)
-            ledger = record(ledger, args.month, charged, args.run_id)
+            ledger = record(ledger, args.month, charged, args.run_id, source, reason)
             args.ledger.parent.mkdir(parents=True, exist_ok=True)
             args.ledger.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
             print(json.dumps({"month": args.month, "charged_usd": float(charged),
-                              "reason": reason, "spent": ledger["monthly"][args.month]}))
+                              "source": source, "reason": reason,
+                              "spent": ledger["monthly"][args.month]}))
             return 0
         ledger = load_ledger(args.ledger)
         ledger = record(ledger, args.month, Decimal(args.cost_usd), args.run_id)

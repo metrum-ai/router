@@ -107,104 +107,213 @@ class ChargedCostTest(unittest.TestCase):
         # Direct cells are invoiced outside the router, so the gate's list-rate
         # figure is the only place they appear.
         raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}], list_rate_usage_usd=0.0031)
-        charged, reason = live.charged_cost_usd(raw)
+        charged, source, note = live.charged_cost_usd(raw)
         self.assertEqual(charged, Decimal("0.0031"))
-        self.assertEqual(reason, live.DIRECT_CELL_CHARGE_LABEL)
+        self.assertEqual(source, "estimate")
+        self.assertIn(live.DIRECT_CELL_CHARGE_LABEL, note)
+        self.assertIn("invoice pending", note)
         raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0041}], list_rate_usage_usd=0.0031)
-        charged, reason = live.charged_cost_usd(raw)
+        charged, source, note = live.charged_cost_usd(raw)
         self.assertEqual(charged, Decimal("0.0041"))
-        self.assertEqual(reason, "router usage rows")
+        self.assertEqual(source, "usage_rows")
+        self.assertEqual(note, "router usage rows")
 
     def test_unknown_usage_or_halted_charges_the_reservation(self):
         raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}],
                           list_rate_usage_usd=0.0002, reserved_usd=0.5, unknown_usage_turns=1)
-        charged, reason = live.charged_cost_usd(raw)
+        charged, source, note = live.charged_cost_usd(raw)
         self.assertEqual(charged, Decimal("0.5"))
-        self.assertIn("reserved", reason)
+        self.assertEqual(source, "estimate")
+        self.assertIn("reserved", note)
+        self.assertIn("invoice pending", note)
         raw = gate_report(router_usage_rows=[], list_rate_usage_usd=0, reserved_usd=0.25, halted=True)
-        charged, reason = live.charged_cost_usd(raw)
+        charged, source, note = live.charged_cost_usd(raw)
         self.assertEqual(charged, Decimal("0.25"))
-        self.assertIn("reserved", reason)
+        self.assertEqual(source, "estimate")
+        self.assertIn("reserved", note)
 
-    def test_report_cost_uses_the_charged_amount_and_label(self):
-        raw = gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}], list_rate_usage_usd=0.0031)
-        report = live.build_report(raw, "2026-11-03", "abcdef123")
-        self.assertAlmostEqual(report["cost"]["usd"], 0.0031, places=8)
-        self.assertEqual(report["cost"]["note"], live.DIRECT_CELL_CHARGE_LABEL)
-        self.assertAlmostEqual(report["cost"]["router_usage_rows_usd"], 0.0001, places=8)
+    def test_report_cost_source_follows_the_charge(self):
+        rows_only = live.build_report(gate_report(), "2026-11-03", "abcdef123")
+        self.assertEqual(rows_only["cost"]["source"], "usage_rows")
+        direct = live.build_report(
+            gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}], list_rate_usage_usd=0.0031),
+            "2026-11-03", "abcdef123",
+        )
+        self.assertEqual(direct["cost"]["source"], "estimate")
+        self.assertIn("invoice pending", direct["cost"]["note"])
+        reserved = live.build_report(
+            gate_report(router_usage_rows=[], reserved_usd=0.25, halted=True), "2026-11-03", "abcdef123",
+        )
+        self.assertEqual(reserved["cost"]["source"], "estimate")
+        self.assertAlmostEqual(reserved["cost"]["usd"], 0.25, places=8)
+
+    def test_every_estimate_is_valid_against_the_matrix_schema(self):
+        import tool_compat_matrix as matrix
+
+        for report in (
+            live.build_report(gate_report(router_usage_rows=[{"total_cost_usd": 0.0001}],
+                                          list_rate_usage_usd=0.0031), "2026-11-03", "abcdef123"),
+            live.build_report(gate_report(reserved_usd=0.25, halted=True), "2026-11-03", "abcdef123"),
+        ):
+            self.assertEqual(matrix.validate_cost("cell", True, report["cost"]), [])
 
     def test_invalid_usage_fields_fail_closed(self):
-        raw = gate_report(unknown_usage_turns=-1)
-        with self.assertRaises(live.ReportError):
-            live.charged_cost_usd(raw)
-        raw = gate_report(list_rate_usage_usd="not-a-number")
-        with self.assertRaises(live.ReportError):
-            live.charged_cost_usd(raw)
-        raw = gate_report(reserved_usd="not-a-number", halted=True)
-        with self.assertRaises(live.ReportError):
-            live.charged_cost_usd(raw)
+        for raw in (
+            gate_report(unknown_usage_turns=-1),
+            gate_report(list_rate_usage_usd="not-a-number"),
+            gate_report(reserved_usd="not-a-number", halted=True),
+        ):
+            with self.assertRaises(live.ReportError):
+                live.charged_cost_usd(raw)
 
 
 class RecordedRunChargeTest(unittest.TestCase):
-    def test_report_wins_when_present(self):
+    def test_fresh_report_wins_when_present(self):
         with tempfile.TemporaryDirectory() as temp:
             report = Path(temp) / "report.json"
             gate = Path(temp) / "gate.json"
-            report.write_text(json.dumps({"cost": {"usd": 0.002, "note": "router usage rows"}}), encoding="utf-8")
+            report.write_text(json.dumps({"cost": {"usd": 0.002, "source": "usage_rows", "note": "router usage rows"}}), encoding="utf-8")
             gate.write_text(json.dumps(gate_report()), encoding="utf-8")
-            charged, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
+            charged, source, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
             self.assertEqual(charged, Decimal("0.002"))
+            self.assertEqual(source, "usage_rows")
             self.assertEqual(reason, "router usage rows")
 
-    def test_gate_report_is_used_when_the_matrix_report_is_missing(self):
+    def test_fresh_gate_report_is_used_when_the_matrix_report_is_missing(self):
         with tempfile.TemporaryDirectory() as temp:
-            report = Path(temp) / "matrix-live.json"
             gate = Path(temp) / "gate.json"
             gate.write_text(json.dumps(gate_report(router_usage_rows=[{"total_cost_usd": 0.0004}],
                                                    list_rate_usage_usd=0.0009)), encoding="utf-8")
-            charged, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
+            charged, source, reason = live.charge_for_recorded_run(
+                Path(temp) / "matrix-live.json", gate, Decimal("1")
+            )
             self.assertEqual(charged, Decimal("0.0009"))
+            self.assertEqual(source, "estimate")
             self.assertIn("gate report only", reason)
+
+    def test_stale_restored_reports_are_never_charged(self):
+        # A cache entry restores a whole path, so the previous run's report can be
+        # present while this run's gate died. That file must not be billed.
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "report.json"
+            gate = Path(temp) / "gate.json"
+            report.write_text(json.dumps({"cost": {"usd": 0.002, "source": "usage_rows", "note": "old"}}), encoding="utf-8")
+            gate.write_text(json.dumps(gate_report()), encoding="utf-8")
+            old = 1_600_000_000
+            for path in (report, gate):
+                path.touch()
+                import os
+                os.utime(path, (old, old))
+            charged, source, reason = live.charge_for_recorded_run(
+                report, gate, Decimal("1"), fresh_after=old + 60
+            )
+            self.assertEqual(charged, Decimal("1"))
+            self.assertEqual(source, "estimate")
+            self.assertIn("cached report from a previous run was ignored", reason)
+            self.assertIn("invoice pending", reason)
+
+    def test_stale_report_with_a_fresh_gate_report_charges_the_gate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "report.json"
+            gate = Path(temp) / "gate.json"
+            report.write_text(json.dumps({"cost": {"usd": 0.002, "source": "usage_rows"}}), encoding="utf-8")
+            gate.write_text(json.dumps(gate_report(router_usage_rows=[{"total_cost_usd": 0.0003}],
+                                                   list_rate_usage_usd=0.0004)), encoding="utf-8")
+            import os
+            old = 1_600_000_000
+            os.utime(report, (old, old))
+            charged, source, reason = live.charge_for_recorded_run(
+                report, gate, Decimal("1"), fresh_after=old + 60
+            )
+            self.assertEqual(charged, Decimal("0.0004"))
+            self.assertIn("gate report only", reason)
+
+    def test_freshness_boundary(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / "report.json"
+            report.write_text("{}", encoding="utf-8")
+            import os
+            stamp = int(report.stat().st_mtime)
+            self.assertTrue(live._fresh(report, stamp))
+            self.assertFalse(live._fresh(report, stamp + 1))
+            self.assertFalse(live._fresh(Path(temp) / "missing.json", None))
+            self.assertTrue(live._fresh(report, None))
 
     def test_neither_report_charges_the_run_cap(self):
         with tempfile.TemporaryDirectory() as temp:
-            charged, reason = live.charge_for_recorded_run(
+            charged, source, reason = live.charge_for_recorded_run(
                 Path(temp) / "matrix-live.json", Path(temp) / "gate.json", Decimal("1")
             )
             self.assertEqual(charged, Decimal("1"))
-            self.assertIn("run cap", reason)
+            self.assertEqual(source, "estimate")
+            self.assertIn("no report", reason)
+            self.assertIn("invoice pending", reason)
 
     def test_unreadable_reports_charge_the_run_cap(self):
         with tempfile.TemporaryDirectory() as temp:
             report = Path(temp) / "matrix-live.json"
             report.write_text("{broken", encoding="utf-8")
-            charged, reason = live.charge_for_recorded_run(report, Path(temp) / "gate.json", Decimal("1"))
+            charged, source, reason = live.charge_for_recorded_run(report, Path(temp) / "gate.json", Decimal("1"))
             self.assertEqual(charged, Decimal("1"))
             self.assertIn("run cap", reason)
             gate = Path(temp) / "gate.json"
             report.unlink()
             gate.write_text("{broken", encoding="utf-8")
-            charged, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
+            charged, source, reason = live.charge_for_recorded_run(report, gate, Decimal("1"))
             self.assertEqual(charged, Decimal("1"))
             self.assertIn("run cap", reason)
 
-    def test_record_run_command_writes_the_ledger(self):
+    def test_record_run_command_writes_the_ledger_with_its_source(self):
         import sys
 
         with tempfile.TemporaryDirectory() as temp:
             ledger = Path(temp) / "spend.json"
             report = Path(temp) / "matrix-live.json"
-            report.write_text(json.dumps({"cost": {"usd": 0.0012, "note": "router usage rows"}}), encoding="utf-8")
+            report.write_text(json.dumps({"cost": {"usd": 0.0012, "source": "usage_rows", "note": "router usage rows"}}), encoding="utf-8")
             argv = sys.argv
             sys.argv = ["tool_compat_live_matrix.py", "record-run", "--ledger", str(ledger),
                         "--month", "2026-11", "--report", str(report),
-                        "--gate", str(Path(temp) / "gate.json"), "--cap", "1", "--run-id", "run-1"]
+                        "--gate", str(Path(temp) / "gate.json"), "--cap", "1", "--run-id", "run-1",
+                        "--fresh-after", str(int(report.stat().st_mtime))]
             try:
                 self.assertEqual(live.main(), 0)
             finally:
                 sys.argv = argv
             data = json.loads(ledger.read_text(encoding="utf-8"))
             self.assertAlmostEqual(data["monthly"]["2026-11"], 0.0012, places=8)
+            self.assertEqual(data["runs"][-1]["source"], "usage_rows")
+            self.assertEqual(data["runs"][-1]["run"], "run-1")
+
+
+class WorkflowTest(unittest.TestCase):
+    """Guard the workflow invariants the review asked for, without a YAML dep."""
+
+    def setUp(self):
+        self.text = (Path(__file__).resolve().parents[1] / ".github/workflows/agent-tool-compat-live.yml").read_text()
+        self.steps = [segment.split("\n")[0] for segment in self.text.split("      - name: ") if segment]
+
+    def test_the_cache_holds_only_the_ledger(self):
+        self.assertEqual(self.text.count("path: tmp/compat-matrix/spend.json"), 2)
+        self.assertNotIn("path: tmp/compat-matrix\n", self.text)
+
+    def test_the_gate_step_has_an_id_and_recording_depends_on_it(self):
+        self.assertIn("id: gate", self.text)
+        self.assertIn("if: always() && steps.gate.outcome != 'skipped'", self.text)
+
+    def test_recording_happens_before_the_summary(self):
+        record = self.text.index('--ledger "$LEDGER"')
+        summary = self.text.index("Publish the run summary")
+        self.assertLess(record, summary)
+
+    def test_summary_uses_the_current_month(self):
+        self.assertIn("monthly.get(month", self.text)
+        self.assertNotIn("max(monthly.values())", self.text)
+
+    def test_stale_reports_are_cleared_after_the_restore(self):
+        restore = self.text.index("Restore the monthly spend ledger")
+        clear = self.text.index("Clear non-ledger leftovers")
+        self.assertLess(restore, clear)
+        self.assertIn("gate.json", self.text[clear:clear + 600])
 
 
 class LedgerTest(unittest.TestCase):

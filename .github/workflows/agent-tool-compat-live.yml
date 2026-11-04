@@ -56,32 +56,45 @@ jobs:
         with:
           enable-cache: true
 
-      # The spend ledger is the only durable memory between runs. Cache entries
-      # are immutable, so each run writes its own key and restores the newest
-      # one by prefix. Limits: if the entry is evicted (cache retention or the
-      # 10 GB per-repository budget), the guard restarts the month from 0 and
-      # prints a warning; a cache miss on a month that already has runs is
-      # undercounted by definition, so treat that warning as "verify this month
-      # by hand" rather than "no spend".
+      # The spend ledger is the only durable memory between runs, and it is the
+      # only thing this cache stores: restoring a whole directory would hand the
+      # next run the previous run's gate and matrix reports. Cache entries are
+      # immutable, so each run writes its own key and restores the newest by
+      # prefix. Limits: if the entry is evicted (cache retention or the 10 GB
+      # per-repository budget), the guard restarts the month from 0 and prints a
+      # warning; a cache miss on a month that already has runs is undercounted by
+      # definition, so treat that warning as "verify this month by hand" rather
+      # than "no spend".
       - name: Restore the monthly spend ledger
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: tmp/compat-matrix
+          path: tmp/compat-matrix/spend.json
           key: compat-matrix-spend-${{ github.run_id }}
           restore-keys: |
             compat-matrix-spend-
+
+      # Belt and braces for the rule above: if an older cache entry ever carries
+      # more than the ledger, the stale reports are removed before anything can
+      # read, charge or publish them. FRESH_AFTER is this run's start time; the
+      # charging and summary steps refuse files older than it.
+      - name: Clear non-ledger leftovers and stamp this run
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/compat-matrix
+          rm -f tmp/compat-matrix/gate.json tmp/compat-matrix/matrix-live.json tmp/compat-matrix/baseline.json
+          echo "FRESH_AFTER=$(date -u +%s)" >> "$GITHUB_ENV"
 
       - name: Month and monthly budget guard
         run: |
           set -euo pipefail
           month="$(date -u +%Y-%m)"
           echo "MONTH=$month" >> "$GITHUB_ENV"
-          mkdir -p tmp/compat-matrix
           python3 scripts/tool_compat_live_matrix.py guard \
             --ledger "$LEDGER" --month "$month" \
             --monthly-usd "$COMPAT_MATRIX_MONTHLY_USD" --run-cap "$RUN_CAP_USD"
 
       - name: Live gate (reserve before every dispatch)
+        id: gate
         env:
           # Dedicated least-privilege project keys, rotated before expiry; they
           # are only ever read into the environment of this step.
@@ -111,30 +124,59 @@ jobs:
             --ingest tmp/compat-matrix/matrix-live.json --write
           python3 scripts/tool_compat_matrix.py --compare tmp/compat-matrix/baseline.json
 
+      # Charged before the summary so the reported ledger figure includes this
+      # run. A refused run never started the gate, so it records nothing.
+      - name: Record the run cost in the ledger
+        if: always() && steps.gate.outcome != 'skipped'
+        run: |
+          set -uo pipefail
+          python3 scripts/tool_compat_live_matrix.py record-run \
+            --ledger "$LEDGER" --month "$MONTH" \
+            --report tmp/compat-matrix/matrix-live.json \
+            --gate tmp/compat-matrix/gate.json \
+            --cap "$RUN_CAP_USD" --run-id "$GITHUB_RUN_ID" \
+            --fresh-after "$FRESH_AFTER"
+
+      - name: Save the monthly spend ledger
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tmp/compat-matrix/spend.json
+          key: compat-matrix-spend-${{ github.run_id }}
+
       - name: Publish the run summary
         if: always()
         run: |
           set -uo pipefail
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import os
           import json
+          from datetime import datetime, timezone
           from decimal import Decimal
           from pathlib import Path
 
           report = Path("tmp/compat-matrix/matrix-live.json")
           ledger = Path("tmp/compat-matrix/spend.json")
+          month = os.environ.get("MONTH") or datetime.now(timezone.utc).strftime("%Y-%m")
+          fresh_after = int(os.environ.get("FRESH_AFTER") or 0)
           print("## Nightly tool-call matrix\n")
-          if not report.exists():
-              print("No results: the live gate did not produce a report (see the job log).")
+
+          stale = report.exists() and int(report.stat().st_mtime) < fresh_after
+          if not report.exists() or stale:
+              print("No fresh results for this run: the live gate did not produce a report."
+                    + (" A cached report from a previous run was ignored." if stale else ""))
+              print("\nNothing from this run is published or charged beyond the per-run cap.")
               raise SystemExit(0)
+
           data = json.loads(report.read_text())
-          cost = Decimal(str(data.get("cost", {}).get("usd", 0)))
+          cost = Decimal(str(data["cost"]["usd"]))
+          source = data["cost"].get("source", "usage_rows")
+          note = data["cost"].get("note") or source
           spent = "unknown"
-          month = __import__("os").environ.get("MONTH") or __import__("datetime").datetime.now(
-              __import__("datetime").timezone.utc).strftime("%Y-%m")
           if ledger.exists():
               monthly = json.loads(ledger.read_text())["monthly"]
-              spent = f"${Decimal(str(monthly.get(month, 0))):.8f} for {month}"
-          print(f"Run cost (router usage rows): **${cost:.8f}** · ledger: {spent}\n")
+              spent = f"${Decimal(str(monthly.get(month, 0))):.8f} for {month}, including this run"
+          print(f"Run cost ({note}; source `{source}`): **${cost:.8f}** · ledger: {spent}\n")
           print("| Cell | Status | Detail |")
           print("| --- | --- | --- |")
           for cell in data["cells"]:
@@ -143,22 +185,6 @@ jobs:
           if failed:
               print(f"\nFailing cells need a triage issue before release: {', '.join(failed)}")
           PY
-
-      - name: Record the run cost in the ledger (report, else gate report, else the cap)
-        if: always()
-        run: |
-          set -uo pipefail
-          python3 scripts/tool_compat_live_matrix.py record-run             --ledger "$LEDGER" --month "$MONTH" \
-            --report tmp/compat-matrix/matrix-live.json \
-            --gate tmp/compat-matrix/gate.json \
-            --cap "$RUN_CAP_USD" --run-id "$GITHUB_RUN_ID"
-
-      - name: Save the monthly spend ledger
-        if: always()
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: tmp/compat-matrix
-          key: compat-matrix-spend-${{ github.run_id }}
 
       - name: Upload results
         if: always()
