@@ -479,6 +479,7 @@ ci-python: secret-contract capability-smoke-contracts
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
 	$(PYTHON) scripts/tool_compat_matrix_test.py
+	$(PYTHON) scripts/tool_compat_live_matrix_test.py
 	$(PYTHON) scripts/ci_changes_test.py
 
 .PHONY: ci-examples

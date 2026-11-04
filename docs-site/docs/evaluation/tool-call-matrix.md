@@ -151,7 +151,7 @@ make compat-mock        # pinned OpenAI and Anthropic SDK suites
 python3 scripts/tool_compat_matrix.py --check
 ```
 
-Live rows are recorded runs, not a schedule: every one names its date and commit. Recurring nightlies need repository Actions secrets that do not exist yet (tracked in issue #572, `NEEDS CHETAN`); until they exist, a live cell is updated by an authorized manual run whose report is ingested with `--ingest`.
+Live rows come from the nightly workflow `.github/workflows/agent-tool-compat-live.yml` (main only, protected `evaluation` environment, $1 per-run cap plus a monthly ceiling) or from an authorized manual run ingested with `--ingest`. Every live cell names its date and commit; a cell that regresses from the recorded baseline fails the nightly run, and a failing cell needs a triage issue before a release rather than blocking one by itself.
 
 ## Limits
 

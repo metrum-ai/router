@@ -1,0 +1,201 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Tool-call compatibility live matrix
+
+# Nightly live evidence for the client × surface × path matrix (#572). Never runs
+# on a pull request: it makes hosted provider calls and is limited to the
+# protected `evaluation` environment on main. A cell that regresses from the
+# recorded baseline fails this run; a failing cell does not block a release by
+# itself, but it needs a triage issue before release (posted rule on #572).
+#
+# Division of cost safety: dispatching and reserve-before-dispatch live in the
+# gate's `scripts/parallel_live_budget.py` (and in the CI lane's planned
+# `scripts/live_run.py`); this workflow only adds the monthly ledger, the
+# per-run cap, and the results path into `tool_compat_matrix.py`. When
+# `live_run.py` lands, only the "Live gate" step changes.
+
+on:
+  schedule:
+    # One nightly run; the monthly guard in the job refuses to start when the
+    # recorded spend is exhausted.
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-tool-compat-live
+  cancel-in-progress: false
+
+jobs:
+  live-matrix:
+    # Hosted provider calls and the dedicated matrix caller token live in this
+    # environment, whose deployment policy allows main only.
+    environment: evaluation
+    if: github.ref == 'refs/heads/main'
+    runs-on: router-arc
+    timeout-minutes: 45
+    env:
+      COMPAT_MATRIX_MONTHLY_USD: ${{ vars.COMPAT_MATRIX_MONTHLY_USD || '10' }}
+      RUN_CAP_USD: '1'
+      LEDGER: tmp/compat-matrix/spend.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+
+      # The spend ledger is the only durable memory between runs, and it is the
+      # only thing this cache stores: restoring a whole directory would hand the
+      # next run the previous run's gate and matrix reports. Cache entries are
+      # immutable, so each run writes its own key and restores the newest by
+      # prefix. Limits: if the entry is evicted (cache retention or the 10 GB
+      # per-repository budget), the guard restarts the month from 0 and prints a
+      # warning; a cache miss on a month that already has runs is undercounted by
+      # definition, so treat that warning as "verify this month by hand" rather
+      # than "no spend".
+      - name: Restore the monthly spend ledger
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tmp/compat-matrix/spend.json
+          key: compat-matrix-spend-${{ github.run_id }}
+          restore-keys: |
+            compat-matrix-spend-
+
+      # Belt and braces for the rule above: if an older cache entry ever carries
+      # more than the ledger, the stale reports are removed before anything can
+      # read, charge or publish them. FRESH_AFTER is this run's start time; the
+      # charging and summary steps refuse files older than it.
+      - name: Clear non-ledger leftovers and stamp this run
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/compat-matrix
+          rm -f tmp/compat-matrix/gate.json tmp/compat-matrix/matrix-live.json tmp/compat-matrix/baseline.json
+          echo "FRESH_AFTER=$(date -u +%s)" >> "$GITHUB_ENV"
+
+      - name: Month and monthly budget guard
+        run: |
+          set -euo pipefail
+          month="$(date -u +%Y-%m)"
+          echo "MONTH=$month" >> "$GITHUB_ENV"
+          python3 scripts/tool_compat_live_matrix.py guard \
+            --ledger "$LEDGER" --month "$month" \
+            --monthly-usd "$COMPAT_MATRIX_MONTHLY_USD" --run-cap "$RUN_CAP_USD"
+
+      - name: Live gate (reserve before every dispatch)
+        id: gate
+        env:
+          # Dedicated least-privilege project keys, rotated before expiry; they
+          # are only ever read into the environment of this step.
+          OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.COMPAT_MATRIX_ANTHROPIC_API_KEY }}
+          # The gate builds its own disposable router and mints the caller token
+          # hash at runtime, so no hash is committed anywhere.
+          PARALLEL_LIVE_TOKEN: ${{ secrets.COMPAT_MATRIX_CALLER_TOKEN }}
+        run: |
+          set -euo pipefail
+          uv run --with pyyaml python scripts/parallel_tool_live.py \
+            --cap "$RUN_CAP_USD" --out tmp/compat-matrix/gate.json
+
+      - name: Convert the gate run into matrix results
+        run: |
+          set -euo pipefail
+          python3 scripts/tool_compat_live_matrix.py report \
+            --gate-report tmp/compat-matrix/gate.json \
+            --out tmp/compat-matrix/matrix-live.json \
+            --date "$(date -u +%F)" --commit "$GITHUB_SHA"
+
+      - name: Ingest results and compare against the recorded baseline
+        run: |
+          set -euo pipefail
+          git show HEAD:tests/tool_compat/matrix.json > tmp/compat-matrix/baseline.json
+          python3 scripts/tool_compat_matrix.py \
+            --ingest tmp/compat-matrix/matrix-live.json --write
+          python3 scripts/tool_compat_matrix.py --compare tmp/compat-matrix/baseline.json
+
+      # Charged before the summary so the reported ledger figure includes this
+      # run. A refused run never started the gate, so it records nothing.
+      - name: Record the run cost in the ledger
+        if: always() && steps.gate.outcome != 'skipped'
+        run: |
+          set -uo pipefail
+          python3 scripts/tool_compat_live_matrix.py record-run \
+            --ledger "$LEDGER" --month "$MONTH" \
+            --report tmp/compat-matrix/matrix-live.json \
+            --gate tmp/compat-matrix/gate.json \
+            --cap "$RUN_CAP_USD" --run-id "$GITHUB_RUN_ID" \
+            --fresh-after "$FRESH_AFTER"
+
+      - name: Save the monthly spend ledger
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: tmp/compat-matrix/spend.json
+          key: compat-matrix-spend-${{ github.run_id }}
+
+      - name: Publish the run summary
+        if: always()
+        run: |
+          set -uo pipefail
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import os
+          import json
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+
+          report = Path("tmp/compat-matrix/matrix-live.json")
+          ledger = Path("tmp/compat-matrix/spend.json")
+          month = os.environ.get("MONTH") or datetime.now(timezone.utc).strftime("%Y-%m")
+          fresh_after = int(os.environ.get("FRESH_AFTER") or 0)
+          print("## Nightly tool-call matrix\n")
+
+          stale = report.exists() and int(report.stat().st_mtime) < fresh_after
+          if not report.exists() or stale:
+              print("No fresh results for this run: the live gate did not produce a report."
+                    + (" A cached report from a previous run was ignored." if stale else ""))
+              print("\nNothing from this run is published or charged beyond the per-run cap.")
+              raise SystemExit(0)
+
+          data = json.loads(report.read_text())
+          cost = Decimal(str(data["cost"]["usd"]))
+          source = data["cost"].get("source", "usage_rows")
+          note = data["cost"].get("note") or source
+          spent = "unknown"
+          if ledger.exists():
+              monthly = json.loads(ledger.read_text())["monthly"]
+              spent = f"${Decimal(str(monthly.get(month, 0))):.8f} for {month}, including this run"
+          print(f"Run cost ({note}; source `{source}`): **${cost:.8f}** · ledger: {spent}\n")
+          print("| Cell | Status | Detail |")
+          print("| --- | --- | --- |")
+          for cell in data["cells"]:
+              print(f"| `{cell['id']}` | {cell['status']} | {cell.get('detail') or '-'} |")
+          failed = [cell["id"] for cell in data["cells"] if cell["status"] == "fail"]
+          if failed:
+              print(f"\nFailing cells need a triage issue before release: {', '.join(failed)}")
+          PY
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tool-compat-matrix-live-${{ github.run_id }}
+          path: |
+            tmp/compat-matrix/matrix-live.json
+            tmp/compat-matrix/gate.json
+            tmp/compat-matrix/spend.json
+            tests/tool_compat/matrix.json
+            docs-site/docs/evaluation/tool-call-matrix.md
+          if-no-files-found: warn
+          retention-days: 90
