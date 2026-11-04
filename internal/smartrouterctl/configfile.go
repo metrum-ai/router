@@ -51,18 +51,25 @@ func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err 
 		return "", err
 	}
 	if _, err := os.Stat(path); err == nil {
-		backupPath = path + ".bak." + time.Now().UTC().Format("20060102T150405Z")
 		existing, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return "", readErr
 		}
-		if err := os.WriteFile(backupPath, existing, 0o600); err != nil {
-			return "", err
+		// The backup is best effort: a configuration bind-mounted as a single
+		// read-only file (the reference tiers and the edge bundle do exactly that)
+		// has no writable sibling, and that must not stop a caller from being added.
+		// ROUTER_CONFIG_BACKUP_DIR moves backups off the mount entirely.
+		written, backupErr := writeConfigBackup(path, existing)
+		if backupErr != nil {
+			fmt.Fprintf(os.Stderr, "write config: no backup could be written: %v\n", backupErr)
 		}
+		backupPath = written
 	}
 	tmp := path + ".tmp." + time.Now().UTC().Format("20060102T150405Z")
 	if err := os.WriteFile(tmp, body, 0o600); err != nil {
-		return backupPath, err
+		return backupPath, fmt.Errorf(
+			"config directory %s is not writable (%v): mount the configuration directory read-write for this step, "+
+				"or mint callers before the stack starts", filepath.Dir(path), err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
@@ -75,6 +82,39 @@ func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err 
 		return backupPath, fmt.Errorf("written config failed parse: %w", err)
 	}
 	return backupPath, nil
+}
+
+// writeConfigBackup writes a timestamped copy of the current configuration, beside
+// the file by default and in ROUTER_CONFIG_BACKUP_DIR when that is set. There is no
+// further fallback: a backup left in an ephemeral container's /tmp is useless, and
+// silently writing configuration copies to a shared temp directory is worse than the
+// warning the caller prints.
+func writeConfigBackup(path string, data []byte) (string, error) {
+	name := filepath.Base(path) + ".bak." + time.Now().UTC().Format("20060102T150405Z")
+	var tried []string
+	for _, dir := range configBackupDirs(path) {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			tried = append(tried, dir+": "+err.Error())
+			continue
+		}
+		candidate := filepath.Join(dir, name)
+		if err := os.WriteFile(candidate, data, 0o600); err == nil {
+			return candidate, nil
+		} else {
+			tried = append(tried, candidate+": "+err.Error())
+		}
+	}
+	return "", fmt.Errorf("no writable backup location (%s)", strings.Join(tried, "; "))
+}
+
+// configBackupDirs lists the directories to try, in order.
+func configBackupDirs(path string) []string {
+	dirs := make([]string, 0, 3)
+	if configured := strings.TrimSpace(os.Getenv("ROUTER_CONFIG_BACKUP_DIR")); configured != "" {
+		dirs = append(dirs, configured)
+	}
+	dirs = append(dirs, filepath.Dir(path))
+	return dirs
 }
 
 // UpsertProvider inserts or replaces a provider entry.

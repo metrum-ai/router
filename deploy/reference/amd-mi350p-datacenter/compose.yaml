@@ -139,7 +139,9 @@ services:
     ports:
       - 127.0.0.1:${ROUTER_HTTP_PORT:-8080}:8080
     volumes:
-      - ./config/config.yaml:/app/config/config.yaml:ro
+      # The directory, not the file: the caller-minting step overrides this
+      # mount read-write for one run, and a nested file mount would win over it.
+      - ./config:/app/config:ro
       - ./state:/app/state
       - ./logs:/app/logs
     depends_on:
