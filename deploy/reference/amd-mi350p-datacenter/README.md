@@ -73,13 +73,25 @@ export OPENAI_API_KEY=            # optional; leave empty until escalation is wa
 docker compose config >/dev/null  # interpolation check before anything starts
 ```
 
-Mint the caller before the stack starts. The router mounts `config.yaml` as a
-single file, so rewriting it under a running router would leave that container
-reading the old file (the request would fail with `401` until a restart). The
-token file goes to `state/`, which is mounted as a directory:
+Mint the caller before the stack starts; that is the step that needs the writable
+mount below. The router reads its configuration once at startup and does not watch
+the file — verified by renaming a group in `config.yaml` while a router was running:
+`/v1/models` kept the old set until the process restarted. Because the configuration
+*directory* is mounted, a rewrite is visible inside the container, so
+`docker compose up -d --force-recreate router` is enough to apply it (with a
+single-file mount the container stayed pinned to the original file and a rewrite
+could be missed even across a restart). A caller `allow` list that names a group you
+remove stops the router from starting. The token file goes to `state/`, which is
+mounted as a directory:
 
 ```sh
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl \
+# The config directory is mounted read-only for the router. Override it read-write
+# for this one run: the writer keeps a timestamped backup beside the file and then
+# renames its temp file onto it, so a read-only mount fails even with the backup
+# moved. A single-file mount could not be overridden this way, which is why
+# compose.yaml mounts the directory.
+docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" \
+  --entrypoint /app/bin/metrum-ai-routerctl \
   router callers generate \
   --owner-user reference-operator --project reference --env demo --key k1 \
   --allow local-tiny,local-chat,local-coder,escalate \
@@ -159,6 +171,26 @@ outstanding. No cost is claimed before it is known.
   this tier.
 - Digest pins were resolved on the date in `images.lock` and are not updated
   automatically.
+
+## Rootless Podman
+
+AMD development platforms often run Podman, rootless by default. A hardware run found
+that the `chown -R 65532:65532` above fails there: in a rootless container, uid 65532
+is a *mapped* host uid, so the host directories do not belong to the identity the
+container writes as. It also found that a caller mint after the stack is up fails on
+the read-only configuration mount.
+
+The remedies below are **not yet verified on hardware** (the same run stopped before
+it could apply them). Until a rerun proves them, treat them as the starting point:
+
+```sh
+podman unshare chown -R 65532:65532 config state logs   # the ownership fix, in the namespace
+```
+
+or run the documented commands with `sudo`, i.e. rootful Podman, where the plain
+`chown` above is correct. For a late caller mint, override the config mount
+read-write for that one run:
+`docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" ...`.
 
 ## Rerun
 

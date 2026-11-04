@@ -274,6 +274,43 @@ Two things to expect on a card this size: the tiny slot keeps only about one
 slot), and the primary is an 8B model rather than the default 30B-class one — the
 `local-chat` group name, its grants and every client stay exactly the same.
 
+## Rootless Podman
+
+Podman is the default container runtime on several AMD platforms and is **rootless** by
+default. A hardware run found two differences; the remedies are **not yet verified on
+hardware** — that run stopped before it could apply them — so treat them as the
+starting point rather than a tested path:
+
+1. **Ownership.** A rootless container sees container uid 65532 as a *mapped* host uid,
+   so the host `chown -R 65532:65532 config state logs` yields `permission denied`.
+   Chown inside the user namespace instead, or run everything with `sudo` (rootful
+   Podman), where the documented `chown` is correct:
+
+   ```sh
+   podman unshare chown -R 65532:65532 config state logs
+   ```
+2. **Minting a caller after the stack is up.** The configuration is mounted read-only,
+   so the writer has nothing writable to rename its temp file onto — minting before
+   `up` does not help either, because `compose run` uses the service's mounts. Override
+   the mount for that one run:
+
+   ```sh
+   . "$EDGE_DATA_DIR/install.env"
+   docker compose --env-file "$EDGE_ENV_FILE" \
+     -f "$EDGE_DATA_DIR/compose/compose.yaml" \
+     -f "$EDGE_DATA_DIR/compose/compose.${EDGE_ACCELERATOR}.yaml" \
+     run --rm --no-deps -v "$EDGE_DATA_DIR/config:/app/config:rw" \
+     --entrypoint /app/bin/metrum-ai-routerctl \
+     router callers generate --owner-user ops --project p --env demo --key k1 \
+     --allow local-tiny,local-chat --config /app/config/config.yaml --write \
+     --token-out /app/state/demo.token
+   ```
+
+Compose under Podman (`podman compose`, or `docker compose` where `docker` is Podman's
+emulation) reads the same files, so every overlay must survive the same merge;
+`docker compose config`/`podman compose config` is the check, and CI runs an
+equivalent structural check for each overlay.
+
 ## Troubleshooting
 
 | Symptom | What to check |
