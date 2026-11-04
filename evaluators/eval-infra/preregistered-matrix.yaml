@@ -64,6 +64,23 @@ cells:
     sample_size: 4
     allowed_score_delta: 0.0
     allowed_error_rate: 0.10
+  # AGENT-01 current-stable canary rows: the same canary re-run against the
+  # current stable model alias, reported next to the pinned baseline rows above
+  # (the report rule in #749 rejects a canary without its pinned baseline).
+  - id: canary-direct-current-stable
+    suite: canary-differential
+    mode: direct
+    environment: nightly-live
+    sample_size: 4
+    allowed_score_delta: 0.0
+    allowed_error_rate: 0.10
+  - id: canary-router-pinned-current-stable
+    suite: canary-differential
+    mode: fixed-router
+    environment: nightly-live
+    sample_size: 4
+    allowed_score_delta: 0.0
+    allowed_error_rate: 0.10
 
 # ARCH-06: pairwise coverage of the supported request-shape matrix plus
 # mandatory high-risk triples. Excluded combinations are enumerated

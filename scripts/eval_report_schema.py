@@ -44,7 +44,7 @@ def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def validate_report(report: dict, matrix_doc: dict | None = None) -> list[str]:
+def validate_report(report: dict, matrix_doc: dict | None = None, *, require_baseline_link: bool = True) -> list[str]:
     """Return the list of gate violations; raise ReportError on schema errors."""
     if not isinstance(report, dict):
         raise ReportError("report must be a JSON object")
@@ -111,10 +111,15 @@ def validate_report(report: dict, matrix_doc: dict | None = None) -> list[str]:
         if baseline_kind == "current-stable":
             baseline_of = provenance.get("baseline_of")
             if not isinstance(baseline_of, str) or not baseline_of:
-                raise ReportError(
-                    f"cell {cell_id!r}: a current-stable canary must set provenance.baseline_of to its pinned baseline cell"
-                )
-            baselines.append((cell_id, baseline_of))
+                # An intermediate current-stable run is merged with its pinned
+                # baseline before the pair is reported; the merged report is
+                # always validated with require_baseline_link.
+                if require_baseline_link:
+                    raise ReportError(
+                        f"cell {cell_id!r}: a current-stable canary must set provenance.baseline_of to its pinned baseline cell"
+                    )
+            else:
+                baselines.append((cell_id, baseline_of))
 
         # Preregistered sample size must be met (EVAL-03).
         pre = preregistered.get(cell_id)
