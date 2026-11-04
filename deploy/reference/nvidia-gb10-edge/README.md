@@ -68,10 +68,16 @@ export OPENAI_API_KEY=            # optional; leave empty until escalation is wa
 docker compose config >/dev/null  # interpolation check before anything starts
 ```
 
-Mint the caller before the stack starts. The router mounts `config.yaml` as a
-single file, so rewriting it under a running router would leave that container
-reading the old file (the request would fail with `401` until a restart). The
-token file goes to `state/`, which is mounted as a directory:
+Mint the caller before the stack starts; that is the step that needs the writable
+mount below. The router reads its configuration once at startup and does not watch
+the file — verified by renaming a group in `config.yaml` while a router was running:
+`/v1/models` kept the old set until the process restarted. Because the configuration
+*directory* is mounted, a rewrite is visible inside the container, so
+`docker compose up -d --force-recreate router` is enough to apply it (with a
+single-file mount the container stayed pinned to the original file and a rewrite
+could be missed even across a restart). A caller `allow` list that names a group you
+remove stops the router from starting. The token file goes to `state/`, which is
+mounted as a directory:
 
 ```sh
 # The config directory is mounted read-only for the router. Override it read-write

@@ -386,15 +386,19 @@ class EdgeBundleRuntimeDocsTest(unittest.TestCase):
 
 
 class ReferenceMintStepTest(unittest.TestCase):
-    """The documented caller-mint step must be able to write the configuration.
+    """The documented caller-mint step must write the configuration through the same
+    directory the compose file mounts.
 
-    A hardware run failed at exactly this step: the procedure ran
-    `compose run ... callers generate --write` while `config.yaml` was mounted as a
-    single read-only file, so the writer had nowhere to put its temp file and the
-    rename could not land. Both halves of the fix are asserted here: the compose file
-    mounts the config *directory* (so a one-run override is possible at all) and the
-    documented command overrides it read-write.
+    A hardware run failed at this step: the procedure ran `compose run ... callers
+    generate --write` while `config.yaml` was mounted as a single read-only file, so
+    the writer had nowhere to put its temp file and the rename could not land. A
+    later revision repeated the mistake in a subtler form - an override that mounted
+    a *different* source (`$PWD/config` for the edge bundle, whose compose mounts
+    `${EDGE_DATA_DIR}/config`) - so the check compares the override's source with the
+    compose mount's source instead of looking for a magic string.
     """
+
+    TIERS = ("amd-mi350p-datacenter", "amd-strix-halo-edge", "nvidia-datacenter", "nvidia-gb10-edge")
 
     def setUp(self) -> None:
         try:
@@ -403,33 +407,69 @@ class ReferenceMintStepTest(unittest.TestCase):
             self.skipTest("PyYAML is not installed")
         self.yaml = yaml
 
-    def readme_commands(self, tier: str) -> list[str]:
-        text = (ROOT / "deploy" / "reference" / tier / "README.md").read_text(encoding="utf-8")
-        marker = "callers generate"
-        commands: list[str] = []
+    @staticmethod
+    def compose_source(mount_source: str) -> str:
+        """Drop the `${VAR:?message}` guard so it compares with the documented path."""
+        if ":?" in mount_source:
+            head, _, tail = mount_source.partition(":?")
+            rest = tail.split("}", 1)[-1]
+            return head + "}" + rest
+        return mount_source
+
+    def router_config_mount(self, compose_path) -> str:
+        compose = self.yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+        router = compose["services"]["router"]
+        mounts = [m for m in router["volumes"] if m.rsplit(":", 2)[-2].startswith("/app/config")]
+        self.assertEqual(len(mounts), 1, f"{compose_path}: exactly one /app/config mount expected")
+        mount = mounts[0]
+        source, target, mode = mount.rsplit(":", 2)
+        self.assertEqual(target, "/app/config", f"{compose_path}: mount the directory, not a file ({mount})")
+        self.assertEqual(mode, "ro", f"{compose_path}: the router's own mount stays read-only ({mount})")
+        return source
+
+    def mint_command(self, readme_path) -> str:
+        text = readme_path.read_text(encoding="utf-8")
         for block in text.split("```"):
-            if marker in block and "callers" in block:
-                commands.append(block)
-        return commands
+            if "callers generate" in block and "--write" in block:
+                return block
+        self.fail(f"{readme_path}: no documented `callers generate ... --write` command found")
 
-    def test_compose_mounts_the_config_directory(self) -> None:
-        for tier in ("amd-mi350p-datacenter", "amd-strix-halo-edge", "nvidia-datacenter", "nvidia-gb10-edge"):
-            compose = self.yaml.safe_load((ROOT / "deploy" / "reference" / tier / "compose.yaml").read_text(encoding="utf-8"))
-            router = compose["services"]["router"]
-            mounts = [mount for mount in router["volumes"] if mount.rsplit(":", 2)[-2].startswith("/app/config")]
-            self.assertTrue(mounts, f"{tier}: router must mount the configuration")
-            for mount in mounts:
-                _, target, mode = mount.rsplit(":", 2)
-                self.assertEqual(target, "/app/config", f"{tier}: mount the config directory, not a file ({mount})")
-                self.assertEqual(mode, "ro", f"{tier}: the router's own mount should stay read-only ({mount})")
+    @staticmethod
+    def normalise(source: str) -> str:
+        """Strip shell quoting and spell the working directory the same way."""
+        source = source.strip().strip('"').strip("'")
+        source = source.replace("${", "$").replace("}", "")
+        return source.replace("./", "$PWD/", 1) if source.startswith("./") else source
 
-    def test_documented_mint_overrides_the_mount_writable(self) -> None:
-        for tier in ("amd-mi350p-datacenter", "amd-strix-halo-edge", "nvidia-datacenter", "nvidia-gb10-edge"):
-            commands = self.readme_commands(tier)
-            self.assertTrue(commands, f"{tier}: no documented callers generate command found")
-            for command in commands:
-                self.assertIn("/app/config:rw", command,
-                              f"{tier}: the mint command must override /app/config read-write, because compose mounts it read-only")
+    @classmethod
+    def override_source(cls, command: str) -> str:
+        for token in command.split():
+            if ":/app/config:" in token:
+                return cls.normalise(token.rsplit(":", 2)[0])
+        return ""
+
+    def test_reference_tiers_mint_through_the_mounted_directory(self) -> None:
+        for tier in self.TIERS:
+            base = ROOT / "deploy" / "reference" / tier
+            mount_source = self.router_config_mount(base / "compose.yaml")
+            command = self.mint_command(base / "README.md")
+            override = self.override_source(command)
+            self.assertEqual(override, self.normalise(mount_source),
+                             f"{tier}: the mint command must mount {mount_source} read-write "
+                             f"(it uses {override or 'no override'})")
+            self.assertIn("/app/config:rw", command, f"{tier}: the override must be read-write")
+
+    def test_edge_bundle_mints_through_the_mounted_directory(self) -> None:
+        mount_source = self.router_config_mount(EDGE / "compose.yaml")
+        self.assertIn("EDGE_DATA_DIR", mount_source, "edge compose should mount ${EDGE_DATA_DIR}/config")
+        command = self.mint_command(EDGE / "README.md")
+        override = self.override_source(command)
+        expected = self.normalise(self.compose_source(mount_source))
+        self.assertEqual(override, expected,
+                         f"edge: the mint command must mount {expected} read-write (it uses {override or 'no override'})")
+        self.assertIn("/app/config:rw", command, "edge: the override must be read-write")
+        self.assertIn("--env-file", command, "edge: the documented command must pass the env file like the other compose calls")
+        self.assertIn("install.env", command, "edge: the documented command must source install.env for EDGE_ACCELERATOR")
 
 
 class EdgeBundlePinTest(unittest.TestCase):

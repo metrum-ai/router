@@ -163,8 +163,15 @@ starting point rather than a tested path:
    the mount for that one run:
 
    ```sh
-   docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" \
-     --entrypoint /app/bin/metrum-ai-routerctl router callers generate ...
+   . "$EDGE_DATA_DIR/install.env"
+   docker compose --env-file "$EDGE_ENV_FILE" \
+     -f "$EDGE_DATA_DIR/compose/compose.yaml" \
+     -f "$EDGE_DATA_DIR/compose/compose.${EDGE_ACCELERATOR}.yaml" \
+     run --rm --no-deps -v "$EDGE_DATA_DIR/config:/app/config:rw" \
+     --entrypoint /app/bin/metrum-ai-routerctl \
+     router callers generate --owner-user ops --project p --env demo --key k1 \
+     --allow local-tiny,local-chat --config /app/config/config.yaml --write \
+     --token-out /app/state/demo.token
    ```
 
 Compose under Podman (`podman compose`, or `docker compose` where `docker` is Podman's
