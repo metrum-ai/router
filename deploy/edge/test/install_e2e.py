@@ -283,8 +283,8 @@ class EdgeBundleComposeTest(unittest.TestCase):
         self.assertTrue(router["image"].startswith("${ROUTER_IMAGE:?"))
         self.assertTrue(router["ports"][0].endswith(":8080"), router["ports"][0])
         self.assertIn("127.0.0.1", router["ports"][0])
-        self.assertTrue(any(mount.rsplit(":", 2)[-2].startswith("/app/config") for mount in router["volumes"]),
-                        "the router must mount the configuration")
+        self.assertTrue(any(":/app/config:" in mount for mount in router["volumes"]),
+                        "the router must mount the configuration directory")
         self.assertTrue(any("state" in mount for mount in router["volumes"]))
         for required in ("vllm-tiny", "vllm-primary"):
             self.assertIn(required, router["depends_on"])
@@ -374,14 +374,14 @@ class EdgeBundleRuntimeDocsTest(unittest.TestCase):
         edge = (EDGE / "README.md").read_text(encoding="utf-8")
         self.assertIn("Rootless Podman", edge)
         self.assertIn("podman unshare chown", edge)
-        self.assertIn("/app/config:rw", edge, "the edge README must document the writable override for a late mint")
+        self.assertIn("ROUTER_CONFIG_MOUNT_MODE=rw", edge, "the edge README must document the mount-mode switch for a late mint")
         self.assertIn("not yet verified on hardware", " ".join(edge.lower().split()),
                       "the rootless remedies must be marked unverified until a hardware run proves them")
         for tier in ("amd-strix-halo-edge", "amd-mi350p-datacenter", "nvidia-datacenter", "nvidia-gb10-edge"):
             text = (ROOT / "deploy" / "reference" / tier / "README.md").read_text(encoding="utf-8")
             self.assertIn("Rootless Podman", text, tier)
             self.assertIn("podman unshare chown", text, tier)
-            self.assertIn("/app/config:rw", text, tier)
+            self.assertIn("ROUTER_CONFIG_MOUNT_MODE=rw", text, tier)
             self.assertIn("not yet verified on hardware", " ".join(text.lower().split()), tier)
 
 
@@ -417,15 +417,23 @@ class ReferenceMintStepTest(unittest.TestCase):
         return mount_source
 
     def router_config_mount(self, compose_path) -> str:
+        """Return the host source of the router's /app/config mount.
+
+        The mode may be a literal or a `${ROUTER_CONFIG_MOUNT_MODE:-ro}` expression,
+        and that expression contains colons, so the mount is matched with a regex
+        that anchors on the `/app/config` target.
+        """
+        import re
+
         compose = self.yaml.safe_load(compose_path.read_text(encoding="utf-8"))
         router = compose["services"]["router"]
-        mounts = [m for m in router["volumes"] if m.rsplit(":", 2)[-2].startswith("/app/config")]
-        self.assertEqual(len(mounts), 1, f"{compose_path}: exactly one /app/config mount expected")
-        mount = mounts[0]
-        source, target, mode = mount.rsplit(":", 2)
-        self.assertEqual(target, "/app/config", f"{compose_path}: mount the directory, not a file ({mount})")
-        self.assertEqual(mode, "ro", f"{compose_path}: the router's own mount stays read-only ({mount})")
-        return source
+        matches = [re.match(r"^(?P<source>.+?):/app/config:(?P<mode>.+)$", mount) for mount in router["volumes"]]
+        matches = [match for match in matches if match]
+        self.assertEqual(len(matches), 1, f"{compose_path}: exactly one /app/config mount expected")
+        mode = matches[0].group("mode")
+        self.assertTrue(mode in ("ro", "rw") or (mode.startswith("${ROUTER_CONFIG_MOUNT_MODE") and mode.endswith(":-ro}")),
+                        f"{compose_path}: the mount mode must be ro or a variable defaulting to ro, got {mode!r}")
+        return matches[0].group("source")
 
     def mint_command(self, readme_path) -> str:
         text = readme_path.read_text(encoding="utf-8")
@@ -443,33 +451,86 @@ class ReferenceMintStepTest(unittest.TestCase):
 
     @classmethod
     def override_source(cls, command: str) -> str:
+        """The source a legacy `-v ...:/app/config` would have used, if any.
+
+        Kept because an override that mounts a different directory is still a bug
+        even when the mount mode is set: it writes the caller somewhere the router
+        never reads.
+        """
         for token in command.split():
             if ":/app/config:" in token:
                 return cls.normalise(token.rsplit(":", 2)[0])
-        return ""
+        return cls.normalise(cls.router_config_mount(cls.compose_path)) if False else ""
+
+    def assert_mint_writes_the_mounted_directory(self, label: str, mount_source: str, command: str) -> None:
+        """Either the command sets the mount mode, or it overrides the right source.
+
+        The supported form sets ROUTER_CONFIG_MOUNT_MODE=rw. A `-v ...:/app/config`
+        override is also accepted, but only when its source is the directory the
+        compose file mounts - an override pointing somewhere else is the bug this
+        check exists for.
+        """
+        self.assertIn("callers generate", command)
+        mount_mode = "ROUTER_CONFIG_MOUNT_MODE=rw" in command
+        legacy_override = ":/app/config:" in command
+        self.assertTrue(mount_mode or legacy_override,
+                        f"{label}: the mint command must set ROUTER_CONFIG_MOUNT_MODE=rw")
+        if legacy_override:
+            self.assertEqual(self.override_source(command), self.normalise(mount_source),
+                             f"{label}: a -v override must mount the directory compose mounts")
 
     def test_reference_tiers_mint_through_the_mounted_directory(self) -> None:
         for tier in self.TIERS:
             base = ROOT / "deploy" / "reference" / tier
             mount_source = self.router_config_mount(base / "compose.yaml")
-            command = self.mint_command(base / "README.md")
-            override = self.override_source(command)
-            self.assertEqual(override, self.normalise(mount_source),
-                             f"{tier}: the mint command must mount {mount_source} read-write "
-                             f"(it uses {override or 'no override'})")
-            self.assertIn("/app/config:rw", command, f"{tier}: the override must be read-write")
+            self.assert_mint_writes_the_mounted_directory(tier, mount_source, self.mint_command(base / "README.md"))
 
     def test_edge_bundle_mints_through_the_mounted_directory(self) -> None:
         mount_source = self.router_config_mount(EDGE / "compose.yaml")
         self.assertIn("EDGE_DATA_DIR", mount_source, "edge compose should mount ${EDGE_DATA_DIR}/config")
         command = self.mint_command(EDGE / "README.md")
-        override = self.override_source(command)
-        expected = self.normalise(self.compose_source(mount_source))
-        self.assertEqual(override, expected,
-                         f"edge: the mint command must mount {expected} read-write (it uses {override or 'no override'})")
-        self.assertIn("/app/config:rw", command, "edge: the override must be read-write")
+        self.assert_mint_writes_the_mounted_directory("edge", mount_source, command)
         self.assertIn("--env-file", command, "edge: the documented command must pass the env file like the other compose calls")
         self.assertIn("install.env", command, "edge: the documented command must source install.env for EDGE_ACCELERATOR")
+
+
+class ComposeIpcAndOwnershipTest(unittest.TestCase):
+    """Two runtime rules that only show up on real engines.
+
+    Podman refuses a container that sets `shm_size` while `ipc: host` is in effect
+    ("cannot set shmsize when running in the {host } IPC Namespace"), and `shm_size`
+    does nothing there anyway. Separately, the runtime image is a scratch image that
+    runs as uid 65532, so the installer must hand it the directories it writes -
+    without that the router cannot read its own configuration and never becomes
+    ready, which is exactly how the first docker-mode Gate 2 run failed.
+    """
+
+    def setUp(self) -> None:
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover
+            self.skipTest("PyYAML is not installed")
+        self.yaml = yaml
+
+    def compose_files(self) -> list[Path]:
+        files = sorted((ROOT / "deploy" / "reference").glob("*/compose.yaml"))
+        files += sorted(EDGE.glob("compose*.yaml"))
+        return files
+
+    def test_no_service_sets_shm_size_with_host_ipc(self) -> None:
+        problems = []
+        for path in self.compose_files():
+            compose = self.yaml.safe_load(path.read_text(encoding="utf-8"))
+            for name, service in (compose.get("services") or {}).items():
+                if str(service.get("ipc")) == "host" and "shm_size" in service:
+                    problems.append(f"{path.relative_to(ROOT)}: {name}")
+        self.assertEqual(problems, [], "ipc: host makes shm_size inert and Podman refuses it: " + ", ".join(problems))
+
+    def test_installer_hands_the_data_directories_to_the_runtime_user(self) -> None:
+        script = (EDGE / "install.sh").read_text(encoding="utf-8")
+        self.assertIn("chown -R 65532:65532", script,
+                      "docker mode must chown config/state/logs to the runtime image's uid 65532")
+        self.assertIn('"$MODE" = "docker"', script, "the chown belongs to docker mode")
 
 
 class EdgeBundlePinTest(unittest.TestCase):

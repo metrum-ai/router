@@ -10,7 +10,6 @@ name: metrum-router-reference-nvidia-datacenter
 x-vllm-service: &vllm-service
   restart: unless-stopped
   ipc: host
-  shm_size: 16gb
   security_opt:
     - no-new-privileges:true
   environment:
@@ -110,7 +109,7 @@ services:
     volumes:
       # The directory, not the file: the caller-minting step overrides this
       # mount read-write for one run, and a nested file mount would win over it.
-      - ./config:/app/config:ro
+      - ./config:/app/config:${ROUTER_CONFIG_MOUNT_MODE:-ro}
       - ./state:/app/state
       - ./logs:/app/logs
     depends_on:

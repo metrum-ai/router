@@ -264,6 +264,15 @@ create_directories() {
   mkdir -p "$CONFIG_DIR" "$SECRET_DIR" "$STATE_DIR" "$LOG_DIR" "$COMPOSE_DIR"
   chmod 0700 "$SECRET_DIR" "$CONFIG_DIR"
   chmod 0750 "$STATE_DIR" "$LOG_DIR"
+  # The runtime image is a scratch image that runs as uid/gid 65532, so files this
+  # installer creates as root are unreadable to the router: it refuses to start with
+  # "open /app/config/...: permission denied" and the gateway never becomes ready.
+  # Hand the directories over once, after everything has been written.
+  if [ "$MODE" = "docker" ] && [ "$(id -u)" = "0" ]; then
+    chown -R 65532:65532 "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR" "$SECRET_DIR"
+    chmod 0700 "$SECRET_DIR"
+    log "handed config, state, logs and secrets to uid 65532 (the runtime image's user)"
+  fi
 }
 
 write_environment() {

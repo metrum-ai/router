@@ -40,18 +40,20 @@ VERSION=v4.6.0                   # pin one; record it in your run notes
 curl -fLO "https://github.com/metrum-ai/router/releases/download/${VERSION}/metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"
 curl -fLO "https://github.com/metrum-ai/router/releases/download/${VERSION}/SHA256SUMS"
 sha256sum -c --ignore-missing SHA256SUMS
-tar -xzf "metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"   # yields bin/
+tar -xzf "metrum-ai-router-${VERSION}-linux-${ARCH}.tar.gz"   # yields metrum-ai-router-${VERSION}-linux-${ARCH}/bin/
 ```
 
-`--bin-dir` takes that extracted `bin/` directory; it must contain
-`metrum-ai-router`, `metrum-ai-routerctl` and `metrum-ai-router-migrate`.
+`--bin-dir` takes that extracted **`bin/`** directory — the archive unpacks to
+`metrum-ai-router-<version>-linux-<arch>/bin/`, not to a bare `bin/` — and it must
+contain `metrum-ai-router`, `metrum-ai-routerctl` and `metrum-ai-router-migrate`.
 
 ### The router image for docker mode
 
 **No container image is published**: releases ship binary archives only (checked
 anonymously against Docker Hub and GHCR, 2026-11-03). Docker mode therefore needs an
-image you build yourself from public inputs, and there are two ways to do it. Run the
-build inside the extracted package directory, whose `bin/` holds static binaries.
+image you build yourself from public inputs, and there are two ways to do it. Both
+build from the directory that *contains* the extracted package, because the COPY
+paths below start with the package directory name.
 
 *Wrap the release binaries* — seconds, no toolchain:
 
@@ -67,6 +69,7 @@ ENTRYPOINT ["/app/bin/metrum-ai-router"]
 ```
 
 ```sh
+# run from the directory that contains the extracted package, next to Dockerfile.router
 docker build -f Dockerfile.router -t metrum-ai-router:<version>-linux-<arch> .
 ```
 
@@ -87,6 +90,12 @@ docker build --build-arg VERSION=<tag> --build-arg COMMIT=<sha> \
 Either way, pass that tag to `--router-image` and record its image id in your run
 notes.
 
+Version notation in this directory: a **release tag** looks like `v4.6.0`, a
+**router image tag** looks like `<version>-linux-<arch>` (`4.7.0-linux-amd64`), and
+placeholder text in examples may show `<version>`, `<tag>` or a concrete example like
+`4.7.0`. In the commands below, `VERSION` is the release tag and the image tag is
+`<version-fragment>-linux-<arch>`; substitute consistently and record both.
+
 The bundle files and the release are separately versioned. What is known today: the
 bundle scripts in this directory were exercised end to end against **v4.6.0** (an
 unassisted install and demo by an outside agent, see the reference run notes) and the
@@ -94,6 +103,24 @@ unassisted install and demo by an outside agent, see the reference run notes) an
 claimed. Pin both sides in your run notes — the release tag and the commit you cloned
 — and if you download individual files with `curl` instead of cloning, pin the commit
 in the URL rather than using `main`.
+
+## Host prerequisites
+
+On a stock Ubuntu image, before the installer:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git jq python3 openssl bcrypt \
+  apache2-utils              # apache2-utils supplies htpasswd for the admin hash
+```
+
+`apache2-utils` matters for the admin UI: without `htpasswd` (or a local
+`python3 -c 'import bcrypt'`), the installer cannot make the bcrypt hash it needs and
+stops with instructions. Docker Engine 27+ with the Compose plugin is required for
+docker mode and is not installed by the bundle; `node` is not needed. Docker mode
+also needs the NVIDIA container toolkit on an NVIDIA host (or ROCm's `/dev/kfd` and
+`/dev/dri` device access on AMD), and the runtime image runs as uid 65532 — the
+installer hands it the data directories.
 
 ## Two modes
 
@@ -228,6 +255,26 @@ Model servers are not restarted unless `--restart-models` is given.
 Uninstall keeps the usage database by default: the spend history is evidence.
 `--purge` prints what it will delete and refuses without `--yes`.
 
+**If the install failed before it finished**, `install.env` does not exist yet, and
+`demo.sh`, `upgrade.sh` and `uninstall.sh` stop with "install.env not found" before
+doing anything — that is by design, not a second fault. Inspect the stack with the
+explicit files instead, then fix and re-run `install.sh` (it is idempotent and keeps
+existing secrets and tokens):
+
+```sh
+D="$HOME/metrum-edge"
+docker compose --env-file "$D/secrets/env" \
+  -f "$D/compose/compose.yaml" -f "$D/compose/compose.${ACCELERATOR:-nvidia}.yaml" \
+  ps
+docker compose --env-file "$D/secrets/env" \
+  -f "$D/compose/compose.yaml" -f "$D/compose/compose.${ACCELERATOR:-nvidia}.yaml" \
+  logs router | tail -40
+```
+
+A router that reports `open /app/config/...: permission denied` is the ownership case:
+the data directories belong to a user the image's uid 65532 cannot read. Re-run
+`install.sh` (it hands them over) rather than repairing by hand.
+
 ## Air-gapped install
 
 The bundle never calls out during install except to pull images and weights, so
@@ -290,16 +337,17 @@ starting point rather than a tested path:
    podman unshare chown -R 65532:65532 config state logs
    ```
 2. **Minting a caller after the stack is up.** The configuration is mounted read-only,
-   so the writer has nothing writable to rename its temp file onto — minting before
-   `up` does not help either, because `compose run` uses the service's mounts. Override
-   the mount for that one run:
+   so the writer has nothing writable to rename its temp file onto — and a `run -v`
+   with the same target does **not** replace a service mount (verified on Docker
+   Compose v5.0.1). The compose file therefore takes the mode from
+   `ROUTER_CONFIG_MOUNT_MODE`, and the mint step sets it:
 
    ```sh
    . "$EDGE_DATA_DIR/install.env"
-   docker compose --env-file "$EDGE_ENV_FILE" \
+   ROUTER_CONFIG_MOUNT_MODE=rw docker compose --env-file "$EDGE_ENV_FILE" \
      -f "$EDGE_DATA_DIR/compose/compose.yaml" \
      -f "$EDGE_DATA_DIR/compose/compose.${EDGE_ACCELERATOR}.yaml" \
-     run --rm --no-deps -v "$EDGE_DATA_DIR/config:/app/config:rw" \
+     run --rm --no-deps \
      --entrypoint /app/bin/metrum-ai-routerctl \
      router callers generate --owner-user ops --project p --env demo --key k1 \
      --allow local-tiny,local-chat --config /app/config/config.yaml --write \
