@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import stat
 import subprocess
@@ -41,6 +42,23 @@ DEMO = EDGE / "demo.sh"
 UNINSTALL = EDGE / "uninstall.sh"
 
 ROUTER_BINARIES = ("metrum-ai-router", "metrum-ai-routerctl", "metrum-ai-router-migrate")
+_BUILT_BINARIES: Path | None = None
+
+
+def built_binaries() -> Path:
+    """Build the three binaries once per test process and return their directory."""
+    global _BUILT_BINARIES
+    if _BUILT_BINARIES is not None:
+        return _BUILT_BINARIES
+    target = Path(tempfile.mkdtemp(prefix="edge-bins-"))
+    result = subprocess.run(
+        ["go", "build", "-buildvcs=false", "-o", str(target) + os.sep, *[f"./cmd/{name}" for name in ROUTER_BINARIES]],
+        cwd=ROOT, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        raise unittest.SkipTest(f"cannot build router binaries: {result.stderr[-400:]}")
+    _BUILT_BINARIES = target
+    return target
 
 
 def free_port() -> int:
@@ -386,16 +404,14 @@ class EdgeBundleRuntimeDocsTest(unittest.TestCase):
 
 
 class ReferenceMintStepTest(unittest.TestCase):
-    """The documented caller-mint step must write the configuration through the same
-    directory the compose file mounts.
+    """The documented caller-mint step must switch the mount mode, and nothing else.
 
-    A hardware run failed at this step: the procedure ran `compose run ... callers
-    generate --write` while `config.yaml` was mounted as a single read-only file, so
-    the writer had nowhere to put its temp file and the rename could not land. A
-    later revision repeated the mistake in a subtler form - an override that mounted
-    a *different* source (`$PWD/config` for the edge bundle, whose compose mounts
-    `${EDGE_DATA_DIR}/config`) - so the check compares the override's source with the
-    compose mount's source instead of looking for a magic string.
+    A hardware run failed at this step because the configuration is mounted
+    read-only. The first attempt at a fix used `compose run -v <dir>:/app/config:rw`,
+    which does *not* replace a service mount of the same target - verified on Docker
+    Compose v5.0.1 (read-only) as well as Compose 2.26.1. The supported form is the
+    `ROUTER_CONFIG_MOUNT_MODE` variable, so a `-v ...:/app/config` in the docs is a
+    defect rather than a legacy alternative.
     """
 
     TIERS = ("amd-mi350p-datacenter", "amd-strix-halo-edge", "nvidia-datacenter", "nvidia-gb10-edge")
@@ -407,22 +423,7 @@ class ReferenceMintStepTest(unittest.TestCase):
             self.skipTest("PyYAML is not installed")
         self.yaml = yaml
 
-    @staticmethod
-    def compose_source(mount_source: str) -> str:
-        """Drop the `${VAR:?message}` guard so it compares with the documented path."""
-        if ":?" in mount_source:
-            head, _, tail = mount_source.partition(":?")
-            rest = tail.split("}", 1)[-1]
-            return head + "}" + rest
-        return mount_source
-
     def router_config_mount(self, compose_path) -> str:
-        """Return the host source of the router's /app/config mount.
-
-        The mode may be a literal or a `${ROUTER_CONFIG_MOUNT_MODE:-ro}` expression,
-        and that expression contains colons, so the mount is matched with a regex
-        that anchors on the `/app/config` target.
-        """
         import re
 
         compose = self.yaml.safe_load(compose_path.read_text(encoding="utf-8"))
@@ -431,8 +432,8 @@ class ReferenceMintStepTest(unittest.TestCase):
         matches = [match for match in matches if match]
         self.assertEqual(len(matches), 1, f"{compose_path}: exactly one /app/config mount expected")
         mode = matches[0].group("mode")
-        self.assertTrue(mode in ("ro", "rw") or (mode.startswith("${ROUTER_CONFIG_MOUNT_MODE") and mode.endswith(":-ro}")),
-                        f"{compose_path}: the mount mode must be ro or a variable defaulting to ro, got {mode!r}")
+        self.assertTrue(mode.startswith("${ROUTER_CONFIG_MOUNT_MODE") and mode.endswith(":-ro}"),
+                        f"{compose_path}: the mount mode must be a variable defaulting to ro, got {mode!r}")
         return matches[0].group("source")
 
     def mint_command(self, readme_path) -> str:
@@ -442,68 +443,31 @@ class ReferenceMintStepTest(unittest.TestCase):
                 return block
         self.fail(f"{readme_path}: no documented `callers generate ... --write` command found")
 
-    @staticmethod
-    def normalise(source: str) -> str:
-        """Strip shell quoting and spell the working directory the same way."""
-        source = source.strip().strip('"').strip("'")
-        source = source.replace("${", "$").replace("}", "")
-        return source.replace("./", "$PWD/", 1) if source.startswith("./") else source
+    def assert_mint_uses_the_mode_variable(self, label: str, command: str) -> None:
+        self.assertIn("ROUTER_CONFIG_MOUNT_MODE=rw", command,
+                      f"{label}: the mint command must set ROUTER_CONFIG_MOUNT_MODE=rw")
+        self.assertNotIn(":/app/config:", command,
+                         f"{label}: a `-v ...:/app/config` override cannot replace a service mount (verified on Compose v5.0.1)")
 
-    @classmethod
-    def override_source(cls, command: str) -> str:
-        """The source a legacy `-v ...:/app/config` would have used, if any.
-
-        Kept because an override that mounts a different directory is still a bug
-        even when the mount mode is set: it writes the caller somewhere the router
-        never reads.
-        """
-        for token in command.split():
-            if ":/app/config:" in token:
-                return cls.normalise(token.rsplit(":", 2)[0])
-        return cls.normalise(cls.router_config_mount(cls.compose_path)) if False else ""
-
-    def assert_mint_writes_the_mounted_directory(self, label: str, mount_source: str, command: str) -> None:
-        """Either the command sets the mount mode, or it overrides the right source.
-
-        The supported form sets ROUTER_CONFIG_MOUNT_MODE=rw. A `-v ...:/app/config`
-        override is also accepted, but only when its source is the directory the
-        compose file mounts - an override pointing somewhere else is the bug this
-        check exists for.
-        """
-        self.assertIn("callers generate", command)
-        mount_mode = "ROUTER_CONFIG_MOUNT_MODE=rw" in command
-        legacy_override = ":/app/config:" in command
-        self.assertTrue(mount_mode or legacy_override,
-                        f"{label}: the mint command must set ROUTER_CONFIG_MOUNT_MODE=rw")
-        if legacy_override:
-            self.assertEqual(self.override_source(command), self.normalise(mount_source),
-                             f"{label}: a -v override must mount the directory compose mounts")
-
-    def test_reference_tiers_mint_through_the_mounted_directory(self) -> None:
+    def test_reference_tiers_mint_through_the_mount_mode(self) -> None:
         for tier in self.TIERS:
             base = ROOT / "deploy" / "reference" / tier
-            mount_source = self.router_config_mount(base / "compose.yaml")
-            self.assert_mint_writes_the_mounted_directory(tier, mount_source, self.mint_command(base / "README.md"))
+            self.router_config_mount(base / "compose.yaml")
+            self.assert_mint_uses_the_mode_variable(tier, self.mint_command(base / "README.md"))
 
-    def test_edge_bundle_mints_through_the_mounted_directory(self) -> None:
-        mount_source = self.router_config_mount(EDGE / "compose.yaml")
-        self.assertIn("EDGE_DATA_DIR", mount_source, "edge compose should mount ${EDGE_DATA_DIR}/config")
+    def test_edge_bundle_mints_through_the_mount_mode(self) -> None:
+        source = self.router_config_mount(EDGE / "compose.yaml")
+        self.assertIn("EDGE_DATA_DIR", source, "edge compose should mount ${EDGE_DATA_DIR}/config")
         command = self.mint_command(EDGE / "README.md")
-        self.assert_mint_writes_the_mounted_directory("edge", mount_source, command)
+        self.assert_mint_uses_the_mode_variable("edge", command)
         self.assertIn("--env-file", command, "edge: the documented command must pass the env file like the other compose calls")
         self.assertIn("install.env", command, "edge: the documented command must source install.env for EDGE_ACCELERATOR")
 
 
-class ComposeIpcAndOwnershipTest(unittest.TestCase):
-    """Two runtime rules that only show up on real engines.
-
-    Podman refuses a container that sets `shm_size` while `ipc: host` is in effect
-    ("cannot set shmsize when running in the {host } IPC Namespace"), and `shm_size`
-    does nothing there anyway. Separately, the runtime image is a scratch image that
-    runs as uid 65532, so the installer must hand it the directories it writes -
-    without that the router cannot read its own configuration and never becomes
-    ready, which is exactly how the first docker-mode Gate 2 run failed.
-    """
+class ComposeIpcTest(unittest.TestCase):
+    """Podman refuses a container that sets `shm_size` while `ipc: host` is in effect
+    ("cannot set shmsize when running in the {host } IPC Namespace"), and shm_size is
+    inert there anyway."""
 
     def setUp(self) -> None:
         try:
@@ -512,25 +476,121 @@ class ComposeIpcAndOwnershipTest(unittest.TestCase):
             self.skipTest("PyYAML is not installed")
         self.yaml = yaml
 
-    def compose_files(self) -> list[Path]:
-        files = sorted((ROOT / "deploy" / "reference").glob("*/compose.yaml"))
-        files += sorted(EDGE.glob("compose*.yaml"))
-        return files
-
     def test_no_service_sets_shm_size_with_host_ipc(self) -> None:
+        files = sorted((ROOT / "deploy" / "reference").glob("*/compose.yaml")) + sorted(EDGE.glob("compose*.yaml"))
         problems = []
-        for path in self.compose_files():
+        for path in files:
             compose = self.yaml.safe_load(path.read_text(encoding="utf-8"))
             for name, service in (compose.get("services") or {}).items():
                 if str(service.get("ipc")) == "host" and "shm_size" in service:
                     problems.append(f"{path.relative_to(ROOT)}: {name}")
         self.assertEqual(problems, [], "ipc: host makes shm_size inert and Podman refuses it: " + ", ".join(problems))
 
-    def test_installer_hands_the_data_directories_to_the_runtime_user(self) -> None:
-        script = (EDGE / "install.sh").read_text(encoding="utf-8")
-        self.assertIn("chown -R 65532:65532", script,
-                      "docker mode must chown config/state/logs to the runtime image's uid 65532")
-        self.assertIn('"$MODE" = "docker"', script, "the chown belongs to docker mode")
+
+class DockerModeHandoverTest(unittest.TestCase):
+    """Behavioural check of the ownership handover, with fake docker/chown/curl.
+
+    The installer must hand config, state and logs to the runtime image's uid 65532
+    (the router is a scratch image running as that user), must *not* touch secrets,
+    and must do it after every write - config, tokens, migrations - and immediately
+    before the stack starts. A grep of the script cannot see that ordering; running
+    it against instrumented fakes can.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="edge-handover-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bin = Path(tempfile.mkdtemp(prefix="edge-handover-bin-"))
+        self.addCleanup(shutil.rmtree, self.bin, ignore_errors=True)
+        for name in ROUTER_BINARIES:
+            source = built_binaries() / name
+            if not source.is_file():
+                self.skipTest(f"{name} was not built for this test run")
+            (self.bin / name).write_bytes(source.read_bytes())
+            (self.bin / name).chmod(0o755)
+        self.log = self.tmp / "calls.log"
+        self.data = self.tmp / "data"
+
+        self._fake("docker", """#!/usr/bin/env bash
+printf 'docker %s\\n' "$*" >> "$EDGE_TEST_LOG"
+exit 0
+""")
+        self._fake("chown", """#!/usr/bin/env bash
+printf 'chown %s\\n' "$*" >> "$EDGE_TEST_LOG"
+d="$EDGE_TEST_DATA"
+for f in config/config.yaml secrets/demo.token secrets/env state/usage.sqlite; do
+  if [ -e "$d/$f" ]; then printf 'present %s=yes\\n' "$f" >> "$EDGE_TEST_LOG"; else printf 'present %s=no\\n' "$f" >> "$EDGE_TEST_LOG"; fi
+done
+exit 0
+""")
+        self._fake("curl", """#!/usr/bin/env bash
+printf 'curl %s\\n' "$*" >> "$EDGE_TEST_LOG"
+printf '{"object":"list","data":[{"id":"local-chat"}]}'
+exit 0
+""")
+
+    def _fake(self, name: str, body: str) -> None:
+        path = self.bin / name
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o755)
+
+    def env(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment.update({
+            "PATH": f"{self.bin}:{environment.get('PATH', '')}",
+            "EDGE_TEST_LOG": str(self.log),
+            "EDGE_TEST_DATA": str(self.data),
+            "ROUTERCTL_OVERRIDE": str(self.bin / "metrum-ai-routerctl"),
+            "EDGE_TEST_HANDOVER": "1",
+        })
+        for key in ("LOCAL_VLLM_API_KEY", "ROUTER_ID_TRANSFORM_KEY", "METRUM_ADMIN_PASSWORD_HASH"):
+            environment.pop(key, None)
+        return environment
+
+    def lines(self) -> list[str]:
+        return self.log.read_text(encoding="utf-8").splitlines() if self.log.is_file() else []
+
+    def assert_handover(self, lines: list[str]) -> None:
+        chowns = [i for i, line in enumerate(lines) if line.startswith("chown ")]
+        self.assertTrue(chowns, "no chown was recorded; the installer never handed the data directories over")
+        for index in chowns:
+            args = lines[index].split()
+            self.assertTrue(any(arg.endswith("/config") for arg in args), f"chown must cover the config directory: {lines[index]}")
+            self.assertTrue(any(arg.endswith("/state") for arg in args), f"chown must cover state: {lines[index]}")
+            self.assertTrue(any(arg.endswith("/logs") for arg in args), f"chown must cover logs: {lines[index]}")
+            self.assertFalse(any(arg.endswith("/secrets") for arg in args),
+                             f"the router does not mount secrets; it must stay root-owned: {lines[index]}")
+            window = lines[index:index + 5]
+            self.assertIn("present config/config.yaml=yes", window, "the chown ran before the configuration was written")
+            self.assertIn("present secrets/demo.token=yes", window, "the chown ran before the caller tokens were written")
+            # ordering against the stack start
+            ups = [j for j, line in enumerate(lines) if line.startswith("docker ") and "compose" in line and " up" in line]
+            self.assertTrue(ups, "no `compose up` was recorded")
+            self.assertLess(index, min(ups), "the chown must happen before the stack starts")
+
+    def test_install_hands_over_after_writes_and_before_up(self) -> None:
+        result = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
+                      "--router-image", "fake/router:1", "--accelerator", "nvidia"],
+                     env=self.env(), timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = self.lines()
+        self.assert_handover(lines)
+        # migrations ran as root before the handover
+        runs = [i for i, line in enumerate(lines) if line.startswith("docker ") and " run " in line]
+        chowns = [i for i, line in enumerate(lines) if line.startswith("chown ")]
+        if runs:
+            self.assertLess(max(runs), min(chowns), "the chown must come after every docker run (migrations)")
+
+    def test_upgrade_hands_over_before_recreating_the_router(self) -> None:
+        install = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
+                       "--router-image", "fake/router:1", "--accelerator", "nvidia"],
+                      env=self.env(), timeout=300)
+        self.assertEqual(install.returncode, 0, install.stdout + install.stderr)
+        self.log.unlink()
+        upgrade = run(["bash", str(EDGE / "upgrade.sh"), "--data-dir", str(self.data), "--config-only"],
+                      env=self.env(), timeout=300)
+        self.assertEqual(upgrade.returncode, 0, upgrade.stdout + upgrade.stderr)
+        self.assert_handover(self.lines())
 
 
 class EdgeBundlePinTest(unittest.TestCase):

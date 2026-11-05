@@ -68,8 +68,8 @@ func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err 
 	tmp := path + ".tmp." + time.Now().UTC().Format("20060102T150405Z")
 	if err := os.WriteFile(tmp, body, 0o600); err != nil {
 		return backupPath, fmt.Errorf(
-			"config directory %s is not writable (%v): run this step with the configuration mounted read-write "+
-				"(for the bundled deployments: ROUTER_CONFIG_MOUNT_MODE=rw)", filepath.Dir(path), err)
+			"config directory %s is not writable (%v): mount the configuration directory read-write for this step, "+
+				"or mint callers before the stack starts", filepath.Dir(path), err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)

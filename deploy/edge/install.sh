@@ -28,7 +28,7 @@ LISTEN_ADDR="127.0.0.1"
 ROUTER_PORT="8080"
 ROUTER_IMAGE=""
 BIN_DIR=""
-ROUTERCTL_OVERRIDE=""
+ROUTERCTL_OVERRIDE="${ROUTERCTL_OVERRIDE:-}"
 ACCELERATOR="auto"
 ESCALATE_URL="https://api.openai.com/v1"
 ESCALATE_MODEL="gpt-5.4"
@@ -264,15 +264,6 @@ create_directories() {
   mkdir -p "$CONFIG_DIR" "$SECRET_DIR" "$STATE_DIR" "$LOG_DIR" "$COMPOSE_DIR"
   chmod 0700 "$SECRET_DIR" "$CONFIG_DIR"
   chmod 0750 "$STATE_DIR" "$LOG_DIR"
-  # The runtime image is a scratch image that runs as uid/gid 65532, so files this
-  # installer creates as root are unreadable to the router: it refuses to start with
-  # "open /app/config/...: permission denied" and the gateway never becomes ready.
-  # Hand the directories over once, after everything has been written.
-  if [ "$MODE" = "docker" ] && [ "$(id -u)" = "0" ]; then
-    chown -R 65532:65532 "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR" "$SECRET_DIR"
-    chmod 0700 "$SECRET_DIR"
-    log "handed config, state, logs and secrets to uid 65532 (the runtime image's user)"
-  fi
 }
 
 write_environment() {
@@ -431,7 +422,29 @@ wait_ready() {
   die "router did not become ready at ${BASE_URL}/readyz within $((limit * 2))s"
 }
 
+# hand_over_data_dirs makes the directories the router container mounts readable by
+# the runtime image's user (a scratch image runs as uid 65532). It must be the last
+# thing that touches the data directory before the stack starts: the config, the
+# tokens and the usage database are all written by earlier steps, many of them as
+# root (migrations run with --user), and a chown that happens before them leaves
+# root-owned files the router cannot read. secrets/ is deliberately NOT handed over:
+# the router container does not mount it.
+hand_over_data_dirs() {
+  if [ "$MODE" != "docker" ]; then
+    return 0
+  fi
+  # Root is the normal case (installs run with sudo). EDGE_TEST_HANDOVER=1 exists so
+  # the install test can exercise this ordering without running as root.
+  if [ "$(id -u)" != "0" ] && [ "${EDGE_TEST_HANDOVER:-}" != "1" ]; then
+    log "not running as root: leaving ownership of $CONFIG_DIR, $STATE_DIR and $LOG_DIR as is"
+    return 0
+  fi
+  chown -R 65532:65532 "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR"
+  log "handed config, state and logs to uid 65532 (the runtime image's user); secrets stay root-owned"
+}
+
 start_docker() {
+  hand_over_data_dirs
   log "starting the stack (first start downloads model weights)"
   compose up -d --remove-orphans
   wait_ready

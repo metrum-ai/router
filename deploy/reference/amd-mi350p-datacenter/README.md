@@ -85,10 +85,10 @@ remove stops the router from starting. The token file goes to `state/`, which is
 mounted as a directory:
 
 ```sh
-# The configuration is mounted read-only for the router. A `run -v` with the same
-# target does NOT replace that mount (verified on Docker Compose v5.0.1: the run
-# still saw the read-only service mount), so the compose file takes the mode from a
-# variable and this step sets it to rw.
+# The configuration is mounted read-only for the router, and a `compose run -v`
+# with the same target does NOT replace that mount (verified on Compose 2.26.1 and
+# v5.0.1), so compose.yaml takes the mode from ROUTER_CONFIG_MOUNT_MODE and this
+# step sets it to rw.
 ROUTER_CONFIG_MOUNT_MODE=rw docker compose run --rm --no-deps \
   --entrypoint /app/bin/metrum-ai-routerctl \
   router callers generate \

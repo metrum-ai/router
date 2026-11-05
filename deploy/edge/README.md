@@ -90,11 +90,10 @@ docker build --build-arg VERSION=<tag> --build-arg COMMIT=<sha> \
 Either way, pass that tag to `--router-image` and record its image id in your run
 notes.
 
-Version notation in this directory: a **release tag** looks like `v4.6.0`, a
-**router image tag** looks like `<version>-linux-<arch>` (`4.7.0-linux-amd64`), and
-placeholder text in examples may show `<version>`, `<tag>` or a concrete example like
-`4.7.0`. In the commands below, `VERSION` is the release tag and the image tag is
-`<version-fragment>-linux-<arch>`; substitute consistently and record both.
+Version notation here: a **release tag** looks like `v4.6.0`, a **router image tag**
+looks like `<version>-linux-<arch>` (`4.7.0-linux-amd64`), and examples may show
+`<version>`, `<tag>` or a concrete `4.7.0`. Substitute consistently and record the
+release tag and the commit you cloned.
 
 The bundle files and the release are separately versioned. What is known today: the
 bundle scripts in this directory were exercised end to end against **v4.6.0** (an
@@ -110,17 +109,15 @@ On a stock Ubuntu image, before the installer:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl git jq python3 openssl bcrypt \
-  apache2-utils              # apache2-utils supplies htpasswd for the admin hash
+sudo apt-get install -y ca-certificates curl git jq python3 openssl apache2-utils
 ```
 
-`apache2-utils` matters for the admin UI: without `htpasswd` (or a local
-`python3 -c 'import bcrypt'`), the installer cannot make the bcrypt hash it needs and
-stops with instructions. Docker Engine 27+ with the Compose plugin is required for
-docker mode and is not installed by the bundle; `node` is not needed. Docker mode
-also needs the NVIDIA container toolkit on an NVIDIA host (or ROCm's `/dev/kfd` and
-`/dev/dri` device access on AMD), and the runtime image runs as uid 65532 — the
-installer hands it the data directories.
+`apache2-utils` supplies `htpasswd` for the admin password hash; without it (or a
+local `python3 -c 'import bcrypt'`) the installer stops with instructions. Docker
+Engine 27+ with the Compose plugin is required for docker mode and is not installed by
+the bundle, and docker mode also needs the NVIDIA container toolkit on an NVIDIA host
+(or `/dev/kfd` and `/dev/dri` access on AMD). The runtime image runs as uid 65532 and
+the installer hands it the directories it mounts.
 
 ## Two modes
 
@@ -255,25 +252,21 @@ Model servers are not restarted unless `--restart-models` is given.
 Uninstall keeps the usage database by default: the spend history is evidence.
 `--purge` prints what it will delete and refuses without `--yes`.
 
-**If the install failed before it finished**, `install.env` does not exist yet, and
-`demo.sh`, `upgrade.sh` and `uninstall.sh` stop with "install.env not found" before
-doing anything — that is by design, not a second fault. Inspect the stack with the
-explicit files instead, then fix and re-run `install.sh` (it is idempotent and keeps
-existing secrets and tokens):
+**If the install failed before it finished**, `install.env` does not exist yet and
+`demo.sh`, `upgrade.sh` and `uninstall.sh` stop with "install.env not found" — by
+design, not a second fault. Inspect the stack with the explicit compose files, then
+re-run `install.sh` (it is idempotent and keeps existing secrets and tokens):
 
 ```sh
 D="$HOME/metrum-edge"
 docker compose --env-file "$D/secrets/env" \
-  -f "$D/compose/compose.yaml" -f "$D/compose/compose.${ACCELERATOR:-nvidia}.yaml" \
-  ps
+  -f "$D/compose/compose.yaml" -f "$D/compose/compose.${EDGE_ACCELERATOR:-nvidia}.yaml" ps
 docker compose --env-file "$D/secrets/env" \
-  -f "$D/compose/compose.yaml" -f "$D/compose/compose.${ACCELERATOR:-nvidia}.yaml" \
-  logs router | tail -40
+  -f "$D/compose/compose.yaml" -f "$D/compose/compose.${EDGE_ACCELERATOR:-nvidia}.yaml" logs router | tail -40
 ```
 
-A router that reports `open /app/config/...: permission denied` is the ownership case:
-the data directories belong to a user the image's uid 65532 cannot read. Re-run
-`install.sh` (it hands them over) rather than repairing by hand.
+A router reporting `open /app/config/...: permission denied` is the ownership case:
+re-run `install.sh`, which hands the data directories to the image's uid 65532.
 
 ## Air-gapped install
 
@@ -337,10 +330,9 @@ starting point rather than a tested path:
    podman unshare chown -R 65532:65532 config state logs
    ```
 2. **Minting a caller after the stack is up.** The configuration is mounted read-only,
-   so the writer has nothing writable to rename its temp file onto — and a `run -v`
-   with the same target does **not** replace a service mount (verified on Docker
-   Compose v5.0.1). The compose file therefore takes the mode from
-   `ROUTER_CONFIG_MOUNT_MODE`, and the mint step sets it:
+   so the writer has nothing writable to rename its temp file onto — minting before
+   `up` does not help either, because `compose run` uses the service's mounts. Override
+   the mount for that one run:
 
    ```sh
    . "$EDGE_DATA_DIR/install.env"

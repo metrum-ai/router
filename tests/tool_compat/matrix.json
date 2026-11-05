@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-04",
+  "updated": "2026-11-02",
   "clients": [
     {
       "id": "pi",
@@ -755,21 +755,19 @@
       "tier": "live",
       "status": "pass",
       "evidence": {
-        "kind": "run",
-        "ref": "https://github.com/metrum-ai/router/actions/runs/41924232175"
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
       },
       "live": {
-        "date": "2026-11-04",
-        "commit": "dbde5d598f72b11cf7eb53becd795b841e0c1a34",
-        "runner": "agent-tool-compat-live",
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "direct provider call, three tool calls in turn 1, out-of-order results in turn 2",
         "cost": {
-          "usd": 0.0048473,
-          "source": "estimate",
-          "scope": "run",
-          "note": "usage rows + list-rate estimate for direct cells (invoice pending for the direct cells)",
-          "router_usage_rows_usd": 0.00276805
-        },
-        "detail": "nightly live gate"
+          "usd": null,
+          "source": "provider_invoiced",
+          "scope": "cell"
+        }
       }
     },
     {
@@ -786,21 +784,19 @@
       "tier": "live",
       "status": "pass",
       "evidence": {
-        "kind": "run",
-        "ref": "https://github.com/metrum-ai/router/actions/runs/41924232175"
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
       },
       "live": {
-        "date": "2026-11-04",
-        "commit": "dbde5d598f72b11cf7eb53becd795b841e0c1a34",
-        "runner": "agent-tool-compat-live",
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "routed through the router, same shape as the direct cell",
         "cost": {
-          "usd": 0.0048473,
-          "source": "estimate",
-          "scope": "run",
-          "note": "usage rows + list-rate estimate for direct cells (invoice pending for the direct cells)",
-          "router_usage_rows_usd": 0.00276805
-        },
-        "detail": "nightly live gate"
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
       }
     },
     {
@@ -817,21 +813,19 @@
       "tier": "live",
       "status": "pass",
       "evidence": {
-        "kind": "run",
-        "ref": "https://github.com/metrum-ai/router/actions/runs/41924232175"
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
       },
       "live": {
-        "date": "2026-11-04",
-        "commit": "dbde5d598f72b11cf7eb53becd795b841e0c1a34",
-        "runner": "agent-tool-compat-live",
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "Chat caller to Messages target through the router",
         "cost": {
-          "usd": 0.0048473,
-          "source": "estimate",
-          "scope": "run",
-          "note": "usage rows + list-rate estimate for direct cells (invoice pending for the direct cells)",
-          "router_usage_rows_usd": 0.00276805
-        },
-        "detail": "nightly live gate"
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
       }
     },
     {
@@ -867,21 +861,19 @@
       "tier": "live",
       "status": "pass",
       "evidence": {
-        "kind": "run",
-        "ref": "https://github.com/metrum-ai/router/actions/runs/41924232175"
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
       },
       "live": {
-        "date": "2026-11-04",
-        "commit": "dbde5d598f72b11cf7eb53becd795b841e0c1a34",
-        "runner": "agent-tool-compat-live",
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "direct provider call, three tool_use blocks in turn 1",
         "cost": {
-          "usd": 0.0048473,
-          "source": "estimate",
-          "scope": "run",
-          "note": "usage rows + list-rate estimate for direct cells (invoice pending for the direct cells)",
-          "router_usage_rows_usd": 0.00276805
-        },
-        "detail": "nightly live gate"
+          "usd": null,
+          "source": "provider_invoiced",
+          "scope": "cell"
+        }
       }
     },
     {
@@ -898,21 +890,19 @@
       "tier": "live",
       "status": "pass",
       "evidence": {
-        "kind": "run",
-        "ref": "https://github.com/metrum-ai/router/actions/runs/41924232175"
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
       },
       "live": {
-        "date": "2026-11-04",
-        "commit": "dbde5d598f72b11cf7eb53becd795b841e0c1a34",
-        "runner": "agent-tool-compat-live",
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "routed through the router, same shape as the direct cell",
         "cost": {
-          "usd": 0.0048473,
-          "source": "estimate",
-          "scope": "run",
-          "note": "usage rows + list-rate estimate for direct cells (invoice pending for the direct cells)",
-          "router_usage_rows_usd": 0.00276805
-        },
-        "detail": "nightly live gate"
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
       }
     },
     {
@@ -929,21 +919,19 @@
       "tier": "live",
       "status": "pass",
       "evidence": {
-        "kind": "run",
-        "ref": "https://github.com/metrum-ai/router/actions/runs/41924232175"
+        "kind": "doc",
+        "ref": "docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02"
       },
       "live": {
-        "date": "2026-11-04",
-        "commit": "dbde5d598f72b11cf7eb53becd795b841e0c1a34",
-        "runner": "agent-tool-compat-live",
+        "date": "2026-11-02",
+        "commit": "1ca83567",
+        "runner": "parallel-tool-live",
+        "detail": "Messages caller to Chat target through the router",
         "cost": {
-          "usd": 0.0048473,
-          "source": "estimate",
-          "scope": "run",
-          "note": "usage rows + list-rate estimate for direct cells (invoice pending for the direct cells)",
-          "router_usage_rows_usd": 0.00276805
-        },
-        "detail": "nightly live gate"
+          "usd": 0.002815,
+          "source": "usage_rows",
+          "scope": "run"
+        }
       }
     }
   ],
