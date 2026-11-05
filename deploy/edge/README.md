@@ -352,9 +352,11 @@ remaining budget to the KV cache, so an unbounded queue on a small card is what
 produced `ValueError: No available memory for the cache blocks` on this profile. Eight
 concurrent sequences is ample for the smoke tests and classification traffic the tiny
 slot takes, and it makes the KV arithmetic above match what the slot can actually
-allocate. If a slot still fails to start, set `EDGE_TINY_MAX_NUM_SEQS=4` (or add
-`--enforce-eager` for the tiny slot, which trades latency for a fixed memory profile)
-before reaching for utilization.
+allocate. If a slot still fails to start, set `EDGE_TINY_MAX_NUM_SEQS=4` first; there
+is no environment knob for eager mode, so `--enforce-eager` means adding that argument
+to the `vllm-tiny` service's `command:` list in `deploy/edge/compose.yaml` (it trades
+latency for a fixed, smaller memory profile). Raising utilization is the last resort,
+not the first.
 
 Arithmetic from the sizing method above, with a 3 GiB per-slot overhead allowance;
 `deploy/reference/harness/kv_math.py` reproduces the rows. Disk: ~20 GB of

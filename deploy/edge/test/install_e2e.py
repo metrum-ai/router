@@ -844,6 +844,7 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
                       "--bin-dir", str(binary), "--data-dir", str(self.data),
                       "--listen", "127.0.0.1", "--dry-run"],
                      env=self.base_env({"EDGE_TEST_HANDOVER": "1"}), timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         config = (self.data / "config" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("listen: 127.0.0.1:8080", config,
                       "native mode listens where the operator asked, on the host itself")
