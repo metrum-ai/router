@@ -888,14 +888,20 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
         there, so the numbers may change as long as the rule holds.
         """
         import re
+        # Hard-coded on purpose: reading the bound out of the README it checks would let a
+        # README edit raise the rule to 0.99 and pass 0.70 + 0.26 again. 0.96 is the sum
+        # that put a real A6000 into a restart loop in Gate 2 run 4 (see the citation
+        # asserts below), so no more than 0.90 may be claimed.
+        HEADROOM_BOUND = 0.90
         readme = (EDGE / "README.md").read_text(encoding="utf-8")
         rule = re.search(r"sum\(EDGE_PRIMARY_UTILIZATION, EDGE_TINY_UTILIZATION\) <= (0\.\d+)", readme)
         self.assertIsNotNone(rule, "the README must state the utilization-sum rule")
-        bound = float(rule.group(1))
+        self.assertEqual(float(rule.group(1)), HEADROOM_BOUND,
+                         f"the README states {rule.group(1)}; this test enforces {HEADROOM_BOUND}")
         utils = [float(m) for m in re.findall(r"export EDGE_(?:PRIMARY|TINY)_UTILIZATION=(0\.\d+)", readme)]
         self.assertEqual(len(utils), 2, f"the 48 GB profile must set both utilizations: {utils}")
-        self.assertLessEqual(sum(utils), bound,
-                             f"utilizations {utils} sum to {sum(utils):.2f}, above the stated {bound}")
+        self.assertLessEqual(sum(utils), HEADROOM_BOUND,
+                             f"utilizations {utils} sum to {sum(utils):.2f}, above {HEADROOM_BOUND}")
         # The derivation has to stay traceable to the run-4 measurements.
         for evidence in ("47.40 GiB", "Available KV cache memory: 8.75 GiB", "352.31 MiB is free"):
             self.assertIn(evidence, readme, f"the README must cite the measured {evidence!r}")
