@@ -116,6 +116,11 @@ providers:
         pricing_updated_at: "2026-06-25"
         input_modalities: [text]
         output_modalities: [text]
+        # The output-cap field this provider expects. Current OpenAI models reject
+        # max_tokens ("Unsupported parameter: 'max_tokens' is not supported with this
+        # model. Use 'max_completion_tokens' instead."), so the escalation target keeps
+        # max_completion_tokens; set this to max_tokens for a legacy endpoint.
+        output_token_field: max_completion_tokens
         pricing_notes: escalate prices must match the operator's own contract; refresh before relying on report cost columns
 
 models:
