@@ -67,13 +67,32 @@ func (b *UsageTokenBreakdown) add(other UsageTokenBreakdown) {
 	b.CachedInputReportedRequests += other.CachedInputReportedRequests
 }
 
-func writeTokenBreakdownTable(b *strings.Builder, title string, rows map[string]*agg) {
+// dimensionLabel renders one rollup key for a table cell. The single-value
+// tables pass a key through unchanged; the composite provider/model rollup is
+// kept NUL-joined for map identity (see joinKey) and split for display, so the
+// two fields never run together (#777).
+func dimensionLabel(key string) string {
+	return esc(key)
+}
+
+// providerModelDimensionLabel renders a joinKey(provider, model) rollup key as
+// "provider / model". The separator matches the "Provider / Model" table title
+// and the separate provider and model columns used by the other summary tables.
+func providerModelDimensionLabel(key string) string {
+	parts := splitKey2(key)
+	if parts[1] == "" {
+		return esc(parts[0])
+	}
+	return esc(parts[0]) + " / " + esc(parts[1])
+}
+
+func writeTokenBreakdownTable(b *strings.Builder, title string, rows map[string]*agg, label func(string) string) {
 	fmt.Fprintf(b, "\n## %s\n\n", title)
 	fmt.Fprintln(b, "| Dimension | Reasoning Tokens | Reasoning Reported Requests | Cached Input Tokens | Cache Reported Requests | Cache Write Tokens | Cache Write Reported Requests | Reasoning Attempts | Successful Reasoning Attempts | Reported Reasoning Attempts |")
 	fmt.Fprintln(b, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, key := range sortedAggKeys(rows) {
 		a := rows[key]
-		fmt.Fprintf(b, "| %s | %d | %d | %d | %d | %d | %d | %d | %d | %d |\n", esc(key), a.ReasoningTokens, a.ReasoningReportedRequests, a.CachedInputTokens, a.CachedInputReportedRequests, a.CacheWriteInputTokens, a.CacheWriteReportedRequests, a.ReasoningAttemptCount, a.ReasoningSuccessfulAttemptCount, a.ReasoningReportedAttemptCount)
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %d | %d | %d | %d | %d | %d |\n", label(key), a.ReasoningTokens, a.ReasoningReportedRequests, a.CachedInputTokens, a.CachedInputReportedRequests, a.CacheWriteInputTokens, a.CacheWriteReportedRequests, a.ReasoningAttemptCount, a.ReasoningSuccessfulAttemptCount, a.ReasoningReportedAttemptCount)
 	}
 }
 

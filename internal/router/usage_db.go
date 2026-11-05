@@ -7984,8 +7984,8 @@ func renderUsageMarkdownWithTimeFormatter(from, to time.Time, rows []usageRow, d
 	fmt.Fprintf(&b, "- Cache occupancy: latest `%s`, avg `%s`, max `%s`\n\n",
 		fmtPct(total.CacheOccupancyLatest), fmtPct(avgFloat(total.CacheOccupancySum, total.CacheSnapshotCount)), fmtPct(total.CacheOccupancyMax))
 
-	writeTokenBreakdownTable(&b, "Reasoning and Cache Coverage by Model Group", byGroup)
-	writeTokenBreakdownTable(&b, "Reasoning and Cache Coverage by Provider / Model", byModel)
+	writeTokenBreakdownTable(&b, "Reasoning and Cache Coverage by Model Group", byGroup, dimensionLabel)
+	writeTokenBreakdownTable(&b, "Reasoning and Cache Coverage by Provider / Model", byModel, providerModelDimensionLabel)
 	writeCacheSummary(&b, total)
 	writeDecisionTelemetrySummary(&b, decisionSummary)
 	writeTrafficShapingSummary(&b, rows, upstreamShapeEvents)
