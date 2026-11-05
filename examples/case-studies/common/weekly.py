@@ -23,6 +23,8 @@ import yaml
 
 ROOT=Path(__file__).resolve().parents[3]
 COMMON=ROOT/'examples/case-studies/common'
+sys.path.insert(0, str(ROOT/'examples'))
+from router_readiness import wait_for_router_ready  # noqa: E402
 WORKLOAD=ROOT/'examples/case-studies/document-qa'
 MODELS={'deepseek-v4p1-flash-1017':'https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017',
         'gpt-6.1-sol':'https://developers.openai.com/api/docs/models/gpt-6.1-sol'}
@@ -117,14 +119,8 @@ def main():
             stage='router-start'
             with log.open('ab') as output:
                 process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],cwd=ROOT,env=env,stdout=output,stderr=output)
-            for _ in range(600 if a.mock else 150):
-                if process.poll() is not None:raise RuntimeError('router startup failed')
-                try:
-                    with urlopen(router_url+'/readyz',timeout=1) as r:
-                        if r.status==200:break
-                except (URLError,TimeoutError):pass
-                time.sleep(.1)
-            else:raise RuntimeError('router readiness timeout')
+            readiness_budget = 60.0 if a.mock else None  # mock runs keep their longer budget
+            wait_for_router_ready(process, router_url+'/readyz', log_path=log, timeout_s=readiness_budget)
             stage='requests';results=state/'results.jsonl'
             run_cmd([sys.executable,str(WORKLOAD/'run.py'),'--url',router_url,'--token-file',str(state/'caller'),'--output',str(results)],log,env)
             for _ in range(100):

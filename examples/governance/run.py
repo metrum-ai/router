@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Loopback governance demo using synthetic keys, PII and a mock upstream."""
 import argparse
+import sys
 import base64
 from contextlib import ExitStack, nullcontext
 import importlib.util
@@ -22,6 +23,9 @@ from urllib.request import Request,urlopen
 import yaml
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT/'examples'))
+from router_readiness import wait_for_router_ready  # noqa: E402
+
 SYNTHETIC_EMAIL='synthetic-person@example.invalid'
 
 
@@ -85,14 +89,7 @@ def main():
             env=dict(os.environ);env['LOCAL_PI_ADMIN_PASSWORD_HASH']=m.DEMO_ADMIN_PASSWORD_HASH
             with (state/'router.log').open('wb') as log,ExitStack() as cleanup:
                 process=subprocess.Popen([str(a.router.resolve()),'--config',str(path)],stdout=log,stderr=subprocess.STDOUT,env=env);cleanup.callback(demo.stop,process)
-                for _ in range(150):
-                    if process.poll() is not None:raise RuntimeError('router startup failed')
-                    try:
-                        with urlopen(base+'/readyz',timeout=1) as r:
-                            if r.status==200:break
-                    except (URLError,TimeoutError):pass
-                    time.sleep(.1)
-                else:raise RuntimeError('router readiness timeout')
+                wait_for_router_ready(process, base+'/readyz', log_path=state/'router.log')
                 def request(user,group,text='synthetic test'):
                     data=json.dumps({'model':group,'messages':[{'role':'user','content':text}],'max_tokens':20}).encode()
                     req=Request(base+'/v1/chat/completions',data=data,headers={'Authorization':'Bearer '+tokens[user],'Content-Type':'application/json'})
