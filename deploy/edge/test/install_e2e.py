@@ -850,6 +850,62 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
                       "native mode listens where the operator asked, on the host itself")
         self.assertNotIn("listen: 0.0.0.0", config, result.stdout + result.stderr)
 
+    def test_demo_reports_not_ready_as_a_failure_not_a_skip(self) -> None:
+        """Run 4's demo printed four HTTP 000 lines and said nothing about readiness.
+
+        The demo now waits for /readyz with a bounded timeout and then fails loudly, so a
+        router that is still starting can never look like a skipped or passing step.
+        """
+        installed = self.install()  # docker mode, fake docker: nothing answers /readyz
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        # This curl answers JSON for API calls but fails /readyz, which is the state run 4
+        # observed while the model servers were reloading.
+        curl = self.bin / "curl"
+        curl.write_text(
+            "#!/usr/bin/env bash\n"
+            "for arg in \"$@\"; do case \"$arg\" in */readyz) exit 7;; esac; done\n"
+            "printf '{\"data\":[{\"id\":\"local-chat\"}]}'\n",
+            encoding="utf-8")
+        curl.chmod(0o755)
+        demo = run(["bash", str(EDGE / "demo.sh"), "--data-dir", str(self.data)],
+                   env=self.base_env({"EDGE_TEST_HANDOVER": "1", "EDGE_DEMO_READY_TIMEOUT": "2",
+                                      "EDGE_BASE_URL": "http://127.0.0.1:9"}),
+                   timeout=120)
+        output = demo.stdout + demo.stderr
+        self.assertNotEqual(demo.returncode, 0, "an unready router must fail the demo: " + output[-300:])
+        self.assertIn("NOT READY", output)
+        self.assertNotIn("SKIP", output.upper().replace("SKIPPED", ""))
+        self.assertIn("1 step(s) failed", output)
+
+    def test_48gb_profile_satisfies_the_stated_headroom_rule(self) -> None:
+        """The documented profile must satisfy the rule the README states, not a literal.
+
+        A real A6000 run at 0.26 + 0.70 (0.96 of a 47.40 GiB card) put the pair in a
+        restart loop: "No available memory for the cache blocks" on the tiny slot and
+        "torch.OutOfMemoryError: CUDA out of memory ... 352.31 MiB is free" on the
+        primary, because each server grows into graphs and activations beyond its
+        fraction of total capacity. The rule is published in the README and read from
+        there, so the numbers may change as long as the rule holds.
+        """
+        import re
+        # Hard-coded on purpose: reading the bound out of the README it checks would let a
+        # README edit raise the rule to 0.99 and pass 0.70 + 0.26 again. 0.96 is the sum
+        # that put a real A6000 into a restart loop in Gate 2 run 4 (see the citation
+        # asserts below), so no more than 0.90 may be claimed.
+        HEADROOM_BOUND = 0.90
+        readme = (EDGE / "README.md").read_text(encoding="utf-8")
+        rule = re.search(r"sum\(EDGE_PRIMARY_UTILIZATION, EDGE_TINY_UTILIZATION\) <= (0\.\d+)", readme)
+        self.assertIsNotNone(rule, "the README must state the utilization-sum rule")
+        self.assertEqual(float(rule.group(1)), HEADROOM_BOUND,
+                         f"the README states {rule.group(1)}; this test enforces {HEADROOM_BOUND}")
+        utils = [float(m) for m in re.findall(r"export EDGE_(?:PRIMARY|TINY)_UTILIZATION=(0\.\d+)", readme)]
+        self.assertEqual(len(utils), 2, f"the 48 GB profile must set both utilizations: {utils}")
+        self.assertLessEqual(sum(utils), HEADROOM_BOUND,
+                             f"utilizations {utils} sum to {sum(utils):.2f}, above {HEADROOM_BOUND}")
+        # The derivation has to stay traceable to the run-4 measurements.
+        for evidence in ("47.40 GiB", "Available KV cache memory: 8.75 GiB", "352.31 MiB is free"):
+            self.assertIn(evidence, readme, f"the README must cite the measured {evidence!r}")
+
     def test_tiny_slot_caps_concurrency_and_context(self) -> None:
         """The 48 GB cold-start starvation is fixed at its cause, not by retrying.
 

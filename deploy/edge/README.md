@@ -257,7 +257,16 @@ docker compose --env-file "$EDGE_ENV_FILE" \
   -f "$EDGE_DATA_DIR/compose/compose.yaml" \
   -f "$EDGE_DATA_DIR/compose/compose.${EDGE_ACCELERATOR}.yaml" \
   up -d --no-deps --force-recreate router
+
+# the router answers nothing until it has re-read the config; demo.sh waits for you
+until curl -fsS "http://127.0.0.1:8080/readyz"; do sleep 2; done
 ```
+
+`--no-deps` matters: without it a recreate also bounces the model servers, which then
+need several minutes to reload and leave every request failing at the connection
+(HTTP `000`, not a server status). `demo.sh` waits for `/readyz` for up to
+`EDGE_DEMO_READY_TIMEOUT` seconds (default 300) before step 1 and says so, but a
+request made by hand during a reload still gets nothing.
 
 `--escalation-key-env NAME` changes which variable the *renderer* points the
 provider at, but **docker mode can only deliver two names into the router
@@ -331,8 +340,8 @@ primary; nothing else changes (group names, caller grants, demo, reports):
 ```sh
 export EDGE_PRIMARY_MODEL=Qwen/Qwen3-8B
 export EDGE_PRIMARY_REVISION=b968826d9c46dd6066d109eabc6255188de91218
-export EDGE_PRIMARY_UTILIZATION=0.70
-export EDGE_TINY_UTILIZATION=0.26
+export EDGE_PRIMARY_UTILIZATION=0.62
+export EDGE_TINY_UTILIZATION=0.24
 # Cap the tiny slot's concurrency and context: vLLM sizes CUDA graphs and
 # activation buffers per sequence, and the default 256 is what starved the KV
 # allocation on this card.
@@ -343,20 +352,38 @@ sudo -E bash install.sh --router-image metrum-ai-router:<version>-linux-amd64
 
 | Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests (computed, not measured) |
 |---|---|---|---|---|---|---|
-| `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.26 | 12.5 GB | 6.1 GiB | 13 at 4K |
-| `local-chat` | Qwen3-8B | 16.4 GB | 0.70 | 33.6 GB | 14.2 GiB | 12 at 8K |
+| `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.24 | 11.4 GB | 5.0 GiB | 11 at 4K |
+| `local-chat` | Qwen3-8B | 16.4 GB | 0.62 | 29.4 GB | 10.0 GiB | 8 at 8K |
 
-Why the cap rather than a bigger utilization: the model server captures CUDA graphs
-and allocates activation buffers for `--max-num-seqs` sequences *before* it hands the
-remaining budget to the KV cache, so an unbounded queue on a small card is what
-produced `ValueError: No available memory for the cache blocks` on this profile. Eight
-concurrent sequences is ample for the smoke tests and classification traffic the tiny
-slot takes, and it makes the KV arithmetic above match what the slot can actually
-allocate. If a slot still fails to start, set `EDGE_TINY_MAX_NUM_SEQS=4` first; there
-is no environment knob for eager mode, so `--enforce-eager` means adding that argument
-to the `vllm-tiny` service's `command:` list in `deploy/edge/compose.yaml` (it trades
-latency for a fixed, smaller memory profile). Raising utilization is the last resort,
-not the first.
+**Where the utilizations come from (measured inputs, arithmetic result).** Run 4 on an
+RTX A6000 measured four things: the card reports **47.40 GiB** total; the tiny slot at
+`0.26` (= 12.3 GiB) reported **`Available KV cache memory: 8.75 GiB`** and its CUDA-graph
+capture took 0.05 GiB, so its non-KV consumption was 12.3 − 8.75 ≈ **3.5 GiB** (3.2 GiB of
+weights plus graphs); at `0.26 + 0.70 = 0.96` the pair went into a restart loop and the
+OOM boundary is in the log: **`total capacity of 47.40 GiB ... 352.31 MiB is free`**, i.e.
+0.96 left only ~1.9 GiB for two CUDA contexts plus every allocation a model server makes
+outside its KV budget, and it was not enough. The values below are then arithmetic from
+those measurements: give the tiny slot 11 requests at 4K
+(3.4 weights + 3.0 overhead + 5.0 KV = 11.4 GiB = 0.24 × 47.4) and the primary 8 requests
+at 8K (16.4 + 3.0 + 10.0 = 29.4 GiB = 0.62 × 47.4), which claims 0.86 and leaves
+**6.6 GiB unclaimed** - 3.5× the margin that failed.
+
+**Rule:** `sum(EDGE_PRIMARY_UTILIZATION, EDGE_TINY_UTILIZATION) <= 0.90` - two model
+servers on one card, each growing into graphs and activations beyond its fraction, need
+at least a tenth of the device free. `deploy/edge/test/install_e2e.py` enforces the rule
+against the values this section documents, so raising one means lowering the other.
+Read `ValueError: No available memory for the cache blocks` and
+`torch.OutOfMemoryError: CUDA out of memory` as "lower the utilizations", never as
+"raise them".
+
+Why the concurrency cap: the model server captures CUDA graphs and allocates activation
+buffers for `--max-num-seqs` sequences *before* it hands the remaining budget to the KV
+cache, so an unbounded queue on a small card starves the allocation. Eight concurrent
+sequences is ample for the smoke tests and classification traffic the tiny slot takes.
+If a slot still fails to start, set `EDGE_TINY_MAX_NUM_SEQS=4` first; there is no
+environment knob for eager mode, so `--enforce-eager` means adding that argument to the
+`vllm-tiny` service's `command:` list in `deploy/edge/compose.yaml` (it trades latency for
+a fixed, smaller memory profile).
 
 Arithmetic from the sizing method above, with a 3 GiB per-slot overhead allowance;
 `deploy/reference/harness/kv_math.py` reproduces the rows. Disk: ~20 GB of

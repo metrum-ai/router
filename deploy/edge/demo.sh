@@ -80,6 +80,32 @@ ask() {
   ELAPSED="${result##* }"
 }
 
+# The router answers nothing until its model servers are healthy, and a restart (the
+# key-injection step recreates it, an upgrade, a model-server retry) leaves the published
+# port refusing connections for a while. Every later step would then report HTTP 000,
+# which is not a server status at all. Wait for readiness first and say what is happening
+# instead of printing four connection failures.
+wait_for_router() {
+  local limit="${EDGE_DEMO_READY_TIMEOUT:-300}" waited=0
+  until curl -fsS -o /dev/null --max-time 2 "${EDGE_BASE_URL}/readyz" 2>/dev/null; do
+    if [ "$waited" -ge "$limit" ]; then
+      # A failure, never a skip: an unready router means the demo proved nothing.
+      fail "NOT READY: router at ${EDGE_BASE_URL} did not answer /readyz within ${limit}s"
+      note "the model servers may still be loading: check \`docker compose ps\` and \`logs router\`; raise EDGE_DEMO_READY_TIMEOUT only if they are still loading"
+      return 1
+    fi
+    if [ "$waited" = 0 ]; then
+      note "router not ready yet at ${EDGE_BASE_URL}; waiting for /readyz (up to ${limit}s)"
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  if [ "$waited" -gt 0 ]; then
+    pass "router became ready after ${waited}s"
+  fi
+  return 0
+}
+
 DEMO_TOKEN="$(tr -d '\n' <"$EDGE_DEMO_TOKEN_FILE")"
 BUDGET_TOKEN="$(tr -d '\n' <"$EDGE_BUDGET_TOKEN_FILE")"
 
@@ -91,6 +117,12 @@ echo
 
 # 1. local-first -------------------------------------------------------------
 echo "1. local-first answer"
+if ! wait_for_router; then
+  echo
+  echo "demo: NOT READY - the router never answered /readyz, so no step was attempted"
+  echo "demo: 1 step(s) failed"
+  exit 1
+fi
 ask "$DEMO_TOKEN" local-chat "In one sentence, what is a model group?"
 if [ "$STATUS" = "200" ]; then
   model="$(grep -o '"model": *"[^"]*"' "$BODY_FILE" | head -1 | sed 's/.*: *"//; s/"$//')"
