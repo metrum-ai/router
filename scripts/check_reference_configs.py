@@ -288,6 +288,81 @@ def check_config(tier: Path, problems: Problems) -> set[str]:
     return set(groups)
 
 
+_INTERPOLATION = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+
+
+def resolve_defaults(value: str) -> str:
+    """Substitute ${VAR:-default} with its default; an unresolved ${VAR} becomes empty.
+
+    The check has to reason about what compose will actually bind, and on a stock host
+    the operator sets no port variables, so the default is the value that ships.
+    """
+    def repl(match: re.Match[str]) -> str:
+        return match.group(2) if match.group(2) is not None else ""
+
+    return _INTERPOLATION.sub(repl, value)
+
+
+def split_publish(entry: object) -> tuple[str, str, str] | None:
+    """Split one compose ports entry into (host_ip, host_port, container_port)."""
+    if isinstance(entry, dict):
+        target = resolve_defaults(str(entry.get("target", "")))
+        published = resolve_defaults(str(entry.get("published", target)))
+        host_ip = resolve_defaults(str(entry.get("host_ip", "")))
+        return (host_ip, published, target) if target else None
+    text = resolve_defaults(str(entry)).split("/", 1)[0]  # drop /tcp, /udp
+    parts = text.rsplit(":", 2)
+    if len(parts) == 1:
+        return "", parts[0], parts[0]  # container port only: docker picks the host port
+    if len(parts) == 2:
+        return "", parts[0], parts[1]
+    return parts[0], parts[1], parts[2]
+
+
+def check_container_listen(tier: Path) -> list[str]:
+    """Every tier runs the router in a container, so its listen address must be all
+    interfaces and the published port must be the one the router binds.
+
+    A config that carries 127.0.0.1 binds the container's own loopback, which no
+    published port can reach (the failure mode found in the edge bundle on a real
+    A6000 box); a publish that names a different container port exposes nothing; and a
+    publish without a host IP exposes the router on every interface. The ports are read
+    from the router service rather than grepped out of the file, so an unrelated
+    127.0.0.1 elsewhere in the compose file cannot satisfy the loopback requirement.
+    """
+    problems: list[str] = []
+    config = yaml.safe_load((tier / "config.yaml").read_text(encoding="utf-8")) or {}
+    listen = str((config.get("server") or config).get("listen", ""))
+    host, _, listen_port = listen.rpartition(":")
+    if not listen_port or host not in ("", "0.0.0.0", "::", "[::]"):
+        problems.append(
+            f"listen is {listen!r}; a router inside a container must bind all "
+            "interfaces (:8080 or 0.0.0.0:8080), otherwise the published port cannot "
+            "reach it")
+        return problems
+    compose = yaml.safe_load((tier / "compose.yaml").read_text(encoding="utf-8")) or {}
+    service = (compose.get("services") or {}).get("router")
+    if not isinstance(service, dict):
+        problems.append("compose has no router service to publish the API")
+        return problems
+    entries = [split_publish(item) for item in (service.get("ports") or [])]
+    publishes = [item for item in entries if item]
+    if not publishes:
+        problems.append(f"the router service publishes no port; the API listens on {listen_port}")
+        return problems
+    if not any(container == listen_port for _, _, container in publishes):
+        described = ", ".join(f"{ip + ':' if ip else ''}{host_port}:{container}" for ip, host_port, container in publishes)
+        problems.append(
+            f"the router listens on {listen_port} but publishes {described}; the "
+            "published container port must be the one the router binds")
+    for ip, host_port, container in publishes:
+        if ip != "127.0.0.1":
+            problems.append(
+                f"the router publishes {container} on {ip or 'every interface'}; it must "
+                "bind 127.0.0.1 by default so a stock install is not exposed")
+    return problems
+
+
 def check_tier(tier: Path) -> Problems:
     problems = Problems()
     check_tier_layout(tier, problems)
@@ -297,6 +372,8 @@ def check_tier(tier: Path) -> Problems:
     locked = check_images_lock(tier, problems)
     check_compose(tier, locked, problems)
     check_config(tier, problems)
+    for item in check_container_listen(tier):
+        problems.add(tier.name, item)
     return problems
 
 

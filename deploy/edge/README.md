@@ -21,7 +21,10 @@ sudo bash install.sh --router-image metrum-ai-router:<version>-linux-amd64
 bash demo.sh          # local-first, escalation, budget hit, spend report
 ```
 
-Everything lives under `--data-dir` (default `$HOME/metrum-edge`):
+Everything lives under `--data-dir` (default `/var/lib/metrum-edge` when the
+installer runs as root, otherwise `$HOME/metrum-edge`; `lib/common.sh` holds that rule
+and all four scripts use it, so `install.sh`, `demo.sh`, `upgrade.sh` and `uninstall.sh`
+find the same directory without being told again):
 `config/config.yaml` (groups), `secrets/` (tokens and environment, mode 0600),
 `state/` (usage database), `logs/`, `compose/`, `install.env`.
 
@@ -115,11 +118,26 @@ sudo apt-get install -y ca-certificates curl git jq python3 openssl apache2-util
 ```
 
 `apache2-utils` supplies `htpasswd` for the admin password hash; without it (or a
-local `python3 -c 'import bcrypt'`) the installer stops with instructions. Docker
-Engine 27+ with the Compose plugin is required for docker mode and is not installed by
-the bundle, and docker mode also needs the NVIDIA container toolkit on an NVIDIA host
-(or `/dev/kfd` and `/dev/dri` access on AMD). The runtime image runs as uid 65532 and
+local `python3 -c 'import bcrypt'`) the installer stops with instructions.
+
+Docker Engine 27+ with the Compose plugin is required for docker mode and is not
+installed by the bundle; on a stock Ubuntu host the upstream instructions are
+<https://docs.docker.com/engine/install/ubuntu/> (or the convenience script at
+<https://get.docker.com>), and the Compose plugin normally arrives with the `docker-ce`
+package. On an NVIDIA host the container toolkit is also required — follow
+<https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html>
+and run the `nvidia-ctk runtime configure --runtime=docker` step it describes, then
+`sudo systemctl restart docker`; `docker run --rm --gpus all <image> nvidia-smi` proves
+it. On AMD the container needs `/dev/kfd` and `/dev/dri` access, which the installer
+detects and writes into the secret environment as group ids (override with
+`EDGE_RENDER_GID` / `EDGE_VIDEO_GID`). The runtime image runs as uid 65532 and
 the installer hands it the directories it mounts.
+
+In docker mode the router listens on `0.0.0.0` **inside** its container while the host
+publishes that port on `--listen` (default `127.0.0.1`), so the API is not exposed
+beyond the host. The two addresses are different on purpose: a process bound to
+container loopback never answers the published port, and `install.sh` would then wait
+for `/readyz` until the 360 s timeout even though the logs show it listening.
 
 ## Two modes
 
@@ -230,7 +248,7 @@ to the router container. For a real provider, put the key in that file under
 `${OPENAI_API_KEY}` — and recreate the router so it re-reads it:
 
 ```sh
-DATA_DIR="${HOME}/metrum-edge"          # the --data-dir you installed with
+DATA_DIR="/var/lib/metrum-edge"         # the --data-dir you installed with (root default)
 sudoedit "$DATA_DIR/secrets/env"        # OPENAI_API_KEY='sk-...'
 
 # install.env records the accelerator and the paths, so this works on either vendor
@@ -276,7 +294,7 @@ design, not a second fault. Inspect the stack with the explicit compose files, t
 re-run `install.sh` (it is idempotent and keeps existing secrets and tokens):
 
 ```sh
-D="$HOME/metrum-edge"
+D="/var/lib/metrum-edge"              # or your --data-dir
 docker compose --env-file "$D/secrets/env" \
   -f "$D/compose/compose.yaml" -f "$D/compose/compose.${EDGE_ACCELERATOR:-nvidia}.yaml" ps
 docker compose --env-file "$D/secrets/env" \
@@ -313,15 +331,32 @@ primary; nothing else changes (group names, caller grants, demo, reports):
 ```sh
 export EDGE_PRIMARY_MODEL=Qwen/Qwen3-8B
 export EDGE_PRIMARY_REVISION=b968826d9c46dd6066d109eabc6255188de91218
-export EDGE_PRIMARY_UTILIZATION=0.76
-export EDGE_TINY_UTILIZATION=0.22
+export EDGE_PRIMARY_UTILIZATION=0.70
+export EDGE_TINY_UTILIZATION=0.26
+# Cap the tiny slot's concurrency and context: vLLM sizes CUDA graphs and
+# activation buffers per sequence, and the default 256 is what starved the KV
+# allocation on this card.
+export EDGE_TINY_MAX_NUM_SEQS=8
+export EDGE_TINY_MAX_MODEL_LEN=4096
 sudo -E bash install.sh --router-image metrum-ai-router:<version>-linux-amd64
 ```
 
-| Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests at 8K (computed, not measured) |
+| Slot | Model | Weights (BF16) | Utilization | Budget | KV pool | Requests (computed, not measured) |
 |---|---|---|---|---|---|---|
-| `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.22 | 10.6 GB | 4.2 GiB | 4 |
-| `local-chat` | Qwen3-8B | 16.4 GB | 0.76 | 36.5 GB | 17.1 GiB | 15 |
+| `local-tiny` | Qwen3-1.7B | 3.4 GB | 0.26 | 12.5 GB | 6.1 GiB | 13 at 4K |
+| `local-chat` | Qwen3-8B | 16.4 GB | 0.70 | 33.6 GB | 14.2 GiB | 12 at 8K |
+
+Why the cap rather than a bigger utilization: the model server captures CUDA graphs
+and allocates activation buffers for `--max-num-seqs` sequences *before* it hands the
+remaining budget to the KV cache, so an unbounded queue on a small card is what
+produced `ValueError: No available memory for the cache blocks` on this profile. Eight
+concurrent sequences is ample for the smoke tests and classification traffic the tiny
+slot takes, and it makes the KV arithmetic above match what the slot can actually
+allocate. If a slot still fails to start, set `EDGE_TINY_MAX_NUM_SEQS=4` first; there
+is no environment knob for eager mode, so `--enforce-eager` means adding that argument
+to the `vllm-tiny` service's `command:` list in `deploy/edge/compose.yaml` (it trades
+latency for a fixed, smaller memory profile). Raising utilization is the last resort,
+not the first.
 
 Arithmetic from the sizing method above, with a 3 GiB per-slot overhead allowance;
 `deploy/reference/harness/kv_math.py` reproduces the rows. Disk: ~20 GB of
@@ -382,6 +417,7 @@ equivalent structural check for each overlay.
 | Symptom | What to check |
 |---|---|
 | `install.sh` stops at "admin UI needs a bcrypt password hash" | Install `apache2-utils` (for `htpasswd`), or pass `--admin-password-hash <bcrypt>`. A password generated by the installer is at `secrets/admin-password`. |
+| Router logs `listening on 0.0.0.0:8080` but the installer still fails `router did not become ready at http://127.0.0.1:8080/readyz within 360s` | The host is not reaching the published port; check `docker compose ps` shows the port mapping and that nothing else holds 8080 on the host. On a build older than 4.7.x the rendered config could carry `127.0.0.1` into the container, which no published port can reach. |
 | Router never becomes ready (the installer waits 360 s, then exits) | First read `logs router`: a startup error is logged long before the wait expires. `initialize router: mkdir /path: permission denied` means the rendered configuration carried a host path the container cannot reach — docker mode renders `/app/state` and `/app/logs`, so a custom `--data-dir` under a directory the container's uid 65532 cannot traverse (for example `/root`, mode 0700) is the cause; use `/var/lib/metrum-edge` or another searchable path. |
 | Router never becomes ready | `docker compose --env-file secrets/env -f compose/compose.yaml -f compose/compose.amd.yaml ps`; the router starts only after both model servers are healthy, and first boot downloads ~64 GB of weights. `docker compose ... logs vllm-primary` shows progress. |
 | `vllm-primary` restart-loops with an out-of-memory error | The GTT window is smaller than the plan. Raise `amdgpu.gttsize` (MB) in the boot loader, reboot, re-check with `journalctl -k \| grep -i gtt`. Lower `EDGE_PRIMARY_UTILIZATION` only with the sizing table in front of you. |

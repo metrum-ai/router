@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE = ROOT / "deploy" / "reference"
 CHECKER = ROOT / "scripts" / "check_reference_configs.py"
+
+# Imported for the per-tier helpers; the module's own main() stays untouched.
+_spec = importlib.util.spec_from_file_location("check_reference_configs", CHECKER)
+check_reference_configs = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(check_reference_configs)
 
 
 def run(root: Path) -> subprocess.CompletedProcess[str]:
@@ -125,6 +131,60 @@ class ReferenceConfigTests(unittest.TestCase):
         result = run(self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("api_key must be a ${VAR} reference", result.stderr)
+
+class ContainerListenTest(unittest.TestCase):
+    """A tier's router runs in a container: listen all interfaces, publish loopback.
+
+    The ports are read from the router service, so neither a wrong container port nor
+    an unrelated 127.0.0.1 elsewhere in the file can satisfy the check.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.tier = self.tmp / "tier"
+        self.tier.mkdir()
+        for name in ("README.md", "SIZING.md", "config.yaml", "compose.yaml", "images.lock"):
+            (self.tier / name).write_text("", encoding="utf-8")
+
+    def write(self, listen: str, publish: str, extra: str = "") -> None:
+        (self.tier / "config.yaml").write_text(f"server:\n  listen: {listen}\n", encoding="utf-8")
+        (self.tier / "compose.yaml").write_text(
+            "services:\n  router:\n    image: router:1\n"
+            f"    ports:\n      - {publish}\n{extra}", encoding="utf-8")
+
+    def problems(self) -> list[str]:
+        return check_reference_configs.check_container_listen(self.tier)
+
+    def test_container_loopback_is_rejected(self) -> None:
+        self.write("127.0.0.1:8080", "127.0.0.1:8080:8080")
+        self.assertTrue(any("must bind all" in p for p in self.problems()), self.problems())
+
+    def test_all_interfaces_with_loopback_publish_passes(self) -> None:
+        for listen in (":8080", "0.0.0.0:8080"):
+            self.write(listen, "127.0.0.1:${ROUTER_HTTP_PORT:-8080}:8080")
+            self.assertEqual(self.problems(), [], listen)
+
+    def test_publish_of_a_different_container_port_is_rejected(self) -> None:
+        """127.0.0.1:8080:9000 forwards host 8080 to container 9000 - nothing answers."""
+        self.write(":8080", "127.0.0.1:8080:9000")
+        self.assertTrue(any("must be the one the router binds" in p for p in self.problems()), self.problems())
+
+    def test_loopback_elsewhere_in_the_file_does_not_count(self) -> None:
+        """A healthcheck URL is not a publish: 0.0.0.0:8080:8080 is still wide open."""
+        self.write(
+            ":8080",
+            "0.0.0.0:8080:8080",
+            extra="    healthcheck:\n      test: ['CMD', 'curl', 'http://127.0.0.1:8080/readyz']\n",
+        )
+        self.assertTrue(any("must\n" not in p and "bind 127.0.0.1" in p for p in self.problems()), self.problems())
+
+    def test_publish_without_a_host_ip_is_rejected(self) -> None:
+        self.write(":8080", "8080:8080")
+        self.assertTrue(any("bind 127.0.0.1" in p for p in self.problems()), self.problems())
+
+    def test_unpinned_port_variable_uses_its_default(self) -> None:
+        self.write(":8080", "${ROUTER_HTTP_PORT:-9090}:8080")
+        self.assertTrue(any("bind 127.0.0.1" in p for p in self.problems()), self.problems())
 
 
 if __name__ == "__main__":

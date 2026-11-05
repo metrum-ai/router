@@ -442,13 +442,19 @@ render_config() {
   # Docker mode mounts the data directory at /app (state, logs, config), so the
   # rendered configuration must carry those in-container paths: rendering the host
   # path made the router try to create /root/metrum-edge inside its own filesystem.
-  local runtime_root="$DATA_DIR"
+  # The same applies to the listen address: inside a container 127.0.0.1 is the
+  # container's own loopback, so a process bound there never answers the published
+  # port (docker-proxy connects to the container address). Docker mode therefore
+  # listens on all interfaces inside the container while the host publish stays on
+  # EDGE_BIND_ADDRESS, which defaults to loopback.
+  local runtime_root="$DATA_DIR" runtime_listen="$LISTEN_ADDR"
   if [ "$MODE" = "docker" ]; then
     runtime_root="/app"
+    runtime_listen="0.0.0.0"
   fi
   umask 077
   sed \
-    -e "s|@@LISTEN@@|${LISTEN_ADDR}:${ROUTER_PORT}|g" \
+    -e "s|@@LISTEN@@|${runtime_listen}:${ROUTER_PORT}|g" \
     -e "s|@@DATA_DIR@@|${runtime_root}|g" \
     -e "s|@@TINY_BASE_URL@@|${tiny_base}|g" \
     -e "s|@@PRIMARY_BASE_URL@@|${primary_base}|g" \
