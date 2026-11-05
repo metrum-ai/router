@@ -99,9 +99,11 @@ The bundle files and the release are separately versioned. What is known today: 
 bundle scripts in this directory were exercised end to end against **v4.6.0** (an
 unassisted install and demo by an outside agent, see the reference run notes) and the
 4.7.x tree is what the reference deployments use. Older or newer releases are not
-claimed. Pin both sides in your run notes — the release tag and the commit you cloned
-— and if you download individual files with `curl` instead of cloning, pin the commit
-in the URL rather than using `main`.
+claimed. Pin both sides in your run notes — the release tag and the commit you cloned.
+If you download individual files with `curl` instead of cloning, remember that the
+scripts also need `lib/common.sh` (the shared data-directory and path defaults), so
+fetch that too and keep it at `lib/common.sh` relative to them; pinning the commit in
+each URL rather than using `main` keeps the set consistent.
 
 ## Host prerequisites
 
