@@ -21,6 +21,7 @@ nothing about model quality, throughput or GPU behaviour.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -79,10 +80,13 @@ def run(args: list[str], env: dict[str, str] | None = None, timeout: int = 300,
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=full_env, cwd=cwd, check=False)
 
 
-def http(path: str, token: str | None = None, body: dict | None = None) -> tuple[int, str]:
+def http(path: str, token: str | None = None, body: dict | None = None,
+         headers: dict[str, str] | None = None) -> tuple[int, str]:
     url = path
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(url, data=data, method="POST" if data else "GET")
+    for name, value in (headers or {}).items():
+        request.add_header(name, value)
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     if data:
@@ -192,6 +196,18 @@ class EdgeBundleInstallTest(unittest.TestCase):
         self.assertEqual(status, 401, "the router must require a caller token")
         status, _ = http(f"{self.base_url}/admin/reports/")
         self.assertIn(status, (401, 403), "the admin surface must require credentials")
+
+    def test_05b_admin_reports_render_with_credentials(self) -> None:
+        """A run left /admin/reports/ unverified; the bundled UI must actually render.
+
+        The assets are embedded in the router binary, so the release-binary wrapper image
+        serves this page too. Basic auth is the documented admin login.
+        """
+        password = (self.data_dir / "secrets" / "admin-password").read_text(encoding="utf-8").strip()
+        credentials = base64.b64encode(f"admin:{password}".encode()).decode()
+        status, body = http(f"{self.base_url}/admin/reports/", headers={"Authorization": f"Basic {credentials}"})
+        self.assertEqual(status, 200, f"admin reports did not render: {status} {body[:200]}")
+        self.assertIn("<html", body.lower(), "the admin reports page did not return HTML")
 
     def test_06_demo_passes_every_step(self) -> None:
         demo = run(["bash", str(DEMO), "--data-dir", str(self.data_dir)], timeout=300)
@@ -1008,6 +1024,59 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
         # Both measurements the default has to cover, named in the docs.
         for measured in ("6 min 18 s", "516 s"):
             self.assertIn(measured, readme, f"the README must state the measured cold boot ({measured})")
+
+    def test_every_flag_the_docs_pass_to_install_sh_is_accepted(self) -> None:
+        """Run 6 lost time on a README flag that install.sh never accepts.
+
+        The README said `--escalation-base-url`; the parser takes `--escalation-url`. Only
+        flags that the docs actually pass to install.sh are checked, so this stays a test
+        of the documented invocation rather than of every token in the prose.
+        """
+        import re
+        install = (EDGE / "install.sh").read_text(encoding="utf-8")
+        accepted = set(re.findall(r"^\s+(--[a-z][a-z0-9-]+)\)", install, re.MULTILINE))
+        self.assertIn("--escalation-url", accepted, "the parser must define the documented flag")
+        checked = 0
+        for name in ("README.md", "demo.sh", "upgrade.sh", "uninstall.sh"):
+            text = (EDGE / name).read_text(encoding="utf-8")
+            for line in text.splitlines():
+                # (?<![a-z]) so that upgrade.sh/uninstall.sh lines do not count as install.sh
+                match = re.search(r"(?<![a-z])install\.sh", line)
+                if not match:
+                    continue
+                if not re.match(r"\s+--", line[match.end():]):
+                    continue  # prose, not an invocation
+                rest = line[match.end():]
+                # Stop at the next script name in the same line (a prose line can mention
+                # two invocations); flags after it belong to that script.
+                for other in ("upgrade.sh", "uninstall.sh", "demo.sh", "docker ", "podman "):
+                    cut = rest.find(other)
+                    if cut != -1:
+                        rest = rest[:cut]
+                for flag in re.findall(r"--[a-z][a-z0-9-]+", rest):
+                    checked += 1
+                    self.assertIn(flag, accepted,
+                                  f"{name} passes {flag} to install.sh, which does not accept it")
+        self.assertGreater(checked, 0, "no documented install.sh invocation was found to check")
+        # The escalation flags are named in prose as well as in commands, and one of them
+        # was wrong in a way the invocation check above cannot see.
+        for name in ("README.md", "demo.sh"):
+            text = (EDGE / name).read_text(encoding="utf-8")
+            for flag in set(re.findall(r"--escalation-[a-z-]+", text)):
+                self.assertIn(flag, accepted, f"{name} names {flag}; install.sh does not accept it")
+
+    def test_help_text_states_the_real_data_dir_default(self) -> None:
+        """Run 6 reported `install.sh --help` printing $HOME/metrum-edge for a root run.
+
+        The help has to agree with the rule in lib/common.sh, and with what a root
+        install actually uses.
+        """
+        help_text = run(["bash", str(EDGE / "install.sh"), "--help"], timeout=60)
+        self.assertEqual(help_text.returncode, 0, help_text.stderr)
+        output = help_text.stdout + help_text.stderr
+        self.assertIn("/var/lib/metrum-edge", output,
+                      "the help must name the root default: " + output[:400])
+        self.assertIn("lib/common.sh", output, "the help must point at the shared rule")
 
     def test_demo_never_sends_max_tokens(self) -> None:
         """Current OpenAI models reject max_tokens with a 400.

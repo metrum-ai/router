@@ -9,7 +9,8 @@
 #   bash install.sh --mode native --bin-dir ./bin          # no containers, CPU mock upstreams
 #   bash install.sh --dry-run                              # render and check, start nothing
 #
-# Everything it creates lives under --data-dir (default: $HOME/metrum-edge):
+# Everything it creates lives under --data-dir (default: /var/lib/metrum-edge as root,
+# otherwise $HOME/metrum-edge; lib/common.sh holds that rule for all four scripts):
 #   config/config.yaml      rendered router configuration (model groups)
 #   secrets/env             generated secrets and settings, mode 0600
 #   secrets/*.token         caller tokens, mode 0600
@@ -61,7 +62,8 @@ Options:
   --mode docker|native   docker (default) runs the model stack in containers;
                          native runs the router binary and CPU mock upstreams,
                          for evaluation, air-gapped trials and CI.
-  --data-dir DIR         state, config, secrets and logs (default $HOME/metrum-edge)
+  --data-dir DIR         state, config, secrets and logs (default: see lib/common.sh -
+                         /var/lib/metrum-edge as root, else $HOME/metrum-edge)
   --router-image IMAGE   required for docker mode, for example
                          metrum-ai-router:4.7.0-linux-amd64
   --bin-dir DIR          native mode: directory holding metrum-ai-router,
