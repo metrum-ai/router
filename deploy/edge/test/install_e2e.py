@@ -808,6 +808,57 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
                         "the usage report must read the in-container config path: " + "\n".join(exec_lines))
         self.assertIn(demo.returncode, (0, 1), demo.stdout + demo.stderr)
 
+    def test_docker_mounts_listen_on_all_interfaces_but_publish_loopback(self) -> None:
+        """A container process bound to 127.0.0.1 never answers the published port.
+
+        Gate 2 docker run 3 sat out the full 360 s readiness wait while the router
+        logged `listening on 127.0.0.1:8080` inside its container; the published
+        127.0.0.1:8080 answered nothing. Docker mode must render 0.0.0.0 into the
+        container while the compose publish stays on the operator's --listen address.
+        """
+        installed = self.install()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        config = (self.data / "config" / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("listen: 0.0.0.0:8080", config,
+                      "docker mode must bind all interfaces inside the container")
+        self.assertNotIn("listen: 127.0.0.1:8080", config)
+        env_text = (self.data / "secrets" / "env").read_text(encoding="utf-8")
+        self.assertIn("EDGE_BIND_ADDRESS='127.0.0.1'", env_text,
+                      "host exposure must stay loopback by default")
+        compose = (ROOT / "deploy" / "edge" / "compose.yaml").read_text(encoding="utf-8")
+        self.assertIn("${EDGE_BIND_ADDRESS:-127.0.0.1}:${EDGE_ROUTER_PORT:-8080}:8080", compose)
+
+    def test_native_mode_keeps_the_operator_listen_address(self) -> None:
+        binary = self.tmp / "bin"
+        binary.mkdir()
+        for name in ("metrum-ai-router", "metrum-ai-routerctl", "metrum-ai-router-migrate"):
+            stub = binary / name
+            stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            stub.chmod(0o755)
+        result = run(["bash", str(EDGE / "install.sh"), "--mode", "native", "--accelerator", "nvidia",
+                      "--bin-dir", str(binary), "--data-dir", str(self.data),
+                      "--listen", "127.0.0.1"],
+                     env=self.base_env({"EDGE_TEST_HANDOVER": "1"}), timeout=300)
+        config = (self.data / "config" / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("listen: 127.0.0.1:8080", config,
+                      "native mode listens where the operator asked, on the host itself")
+        self.assertNotIn("listen: 0.0.0.0", config, result.stdout + result.stderr)
+
+    def test_tiny_slot_caps_concurrency_and_context(self) -> None:
+        """The 48 GB cold-start starvation is fixed at its cause, not by retrying.
+
+        vLLM sizes CUDA graphs and activation buffers per concurrent sequence, so the
+        default 256 starved the KV allocation at 0.22 utilization on an A6000. The tiny
+        slot must expose both caps and the documented profile must set them.
+        """
+        compose = (EDGE / "compose.yaml").read_text(encoding="utf-8")
+        for knob in ("--max-num-seqs", "EDGE_TINY_MAX_NUM_SEQS", "EDGE_TINY_MAX_MODEL_LEN"):
+            self.assertIn(knob, compose, f"compose must expose {knob} for the tiny slot")
+        readme = (EDGE / "README.md").read_text(encoding="utf-8")
+        for line in ("export EDGE_TINY_MAX_NUM_SEQS=8", "export EDGE_TINY_MAX_MODEL_LEN=4096"):
+            self.assertIn(line, readme, f"the 48 GB profile must set {line!r}")
+        self.assertIn("computed, not measured", readme)
+
     def test_gpu_gid_detection_edge_cases(self) -> None:
         """A missing render node is fatal even when /dev/kfd exists, and the video id
         never comes from kfd (which belongs to the render group)."""

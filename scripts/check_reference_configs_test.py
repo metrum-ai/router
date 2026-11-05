@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REFERENCE = ROOT / "deploy" / "reference"
 CHECKER = ROOT / "scripts" / "check_reference_configs.py"
+
+# Imported for the per-tier helpers; the module's own main() stays untouched.
+_spec = importlib.util.spec_from_file_location("check_reference_configs", CHECKER)
+check_reference_configs = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(check_reference_configs)
 
 
 def run(root: Path) -> subprocess.CompletedProcess[str]:
@@ -129,3 +135,39 @@ class ReferenceConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContainerListenTest(unittest.TestCase):
+    """A tier's router runs in a container: listen all interfaces, publish loopback."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.tier = self.tmp / "tier"
+        self.tier.mkdir()
+        for name in ("README.md", "SIZING.md", "config.yaml", "compose.yaml", "images.lock"):
+            (self.tier / name).write_text("", encoding="utf-8")
+
+    def write(self, listen: str, publish: str) -> None:
+        (self.tier / "config.yaml").write_text(f"server:\n  listen: {listen}\n", encoding="utf-8")
+        (self.tier / "compose.yaml").write_text(
+            f"services:\n  router:\n    ports:\n      - {publish}\n", encoding="utf-8")
+
+    def test_container_loopback_is_rejected(self) -> None:
+        self.write("127.0.0.1:8080", "127.0.0.1:8080:8080")
+        problems = check_reference_configs.check_container_listen(self.tier)
+        self.assertTrue(any("must bind all interfaces" in p for p in problems), problems)
+
+    def test_all_interfaces_with_loopback_publish_passes(self) -> None:
+        for listen in (":8080", "0.0.0.0:8080"):
+            self.write(listen, "127.0.0.1:${ROUTER_HTTP_PORT:-8080}:8080")
+            self.assertEqual(check_reference_configs.check_container_listen(self.tier), [], listen)
+
+    def test_publish_of_a_different_port_is_rejected(self) -> None:
+        self.write(":8080", "127.0.0.1:9000:9000")
+        problems = check_reference_configs.check_container_listen(self.tier)
+        self.assertTrue(any("does not publish the container port 8080" in p for p in problems), problems)
+
+    def test_wide_publish_is_rejected(self) -> None:
+        self.write(":8080", "0.0.0.0:8080:8080")
+        problems = check_reference_configs.check_container_listen(self.tier)
+        self.assertTrue(any("stay loopback" in p for p in problems), problems)

@@ -42,7 +42,13 @@ services:
       - --served-model-name
       - local-tiny
       - --max-model-len
-      - ${EDGE_MAX_MODEL_LEN:-8192}
+      - ${EDGE_TINY_MAX_MODEL_LEN:-8192}
+      # The tiny slot caps concurrent sequences: vLLM captures CUDA graphs and sizes
+      # activation buffers per sequence, so the default (256) can exhaust a small
+      # budget before any KV blocks are allocated - the "No available memory for the
+      # cache blocks" cold-start failure on a 48 GB card.
+      - --max-num-seqs
+      - ${EDGE_TINY_MAX_NUM_SEQS:-16}
       - --gpu-memory-utilization
       - ${EDGE_TINY_UTILIZATION:-0.05}
       - --api-key

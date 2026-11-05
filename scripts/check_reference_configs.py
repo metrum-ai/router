@@ -288,6 +288,30 @@ def check_config(tier: Path, problems: Problems) -> set[str]:
     return set(groups)
 
 
+def check_container_listen(tier: Path) -> list[str]:
+    """Every tier runs the router in a container, so its listen address must be all
+    interfaces and the published port must be the one the router binds.
+
+    A config that carries 127.0.0.1 binds the container's own loopback, which no
+    published port can reach (the failure mode found in the edge bundle on a real
+    A6000 box); a publish that names a different container port would expose nothing.
+    """
+    problems: list[str] = []
+    config = yaml.safe_load((tier / "config.yaml").read_text(encoding="utf-8"))
+    listen = str((config.get("server") or config).get("listen", ""))
+    if listen not in (":8080", "0.0.0.0:8080"):
+        problems.append(
+            f"listen is {listen!r}; a router inside a container must bind all "
+            "interfaces (:8080), otherwise the published port cannot reach it")
+    port = listen.rsplit(":", 1)[-1] or "8080"
+    compose = (tier / "compose.yaml").read_text(encoding="utf-8")
+    if f":{port}:{port}" not in compose and f":{port}" not in compose:
+        problems.append(f"compose does not publish the container port {port}")
+    if "127.0.0.1:" not in compose:
+        problems.append("the published router port should stay loopback by default")
+    return problems
+
+
 def check_tier(tier: Path) -> Problems:
     problems = Problems()
     check_tier_layout(tier, problems)
@@ -297,6 +321,8 @@ def check_tier(tier: Path) -> Problems:
     locked = check_images_lock(tier, problems)
     check_compose(tier, locked, problems)
     check_config(tier, problems)
+    for item in check_container_listen(tier):
+        problems.add(tier.name, item)
     return problems
 
 
