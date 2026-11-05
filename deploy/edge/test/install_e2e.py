@@ -835,9 +835,14 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
             stub = binary / name
             stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             stub.chmod(0o755)
+        # --dry-run renders the whole configuration and starts nothing: a real native
+        # start would bind the fixed mock ports (18081-18083) and leave a router and
+        # three mocks behind with this install's keys, which then answer the *next*
+        # install's traffic with 401 (seen in CI, where the port collision made the
+        # later demo test fail).
         result = run(["bash", str(EDGE / "install.sh"), "--mode", "native", "--accelerator", "nvidia",
                       "--bin-dir", str(binary), "--data-dir", str(self.data),
-                      "--listen", "127.0.0.1"],
+                      "--listen", "127.0.0.1", "--dry-run"],
                      env=self.base_env({"EDGE_TEST_HANDOVER": "1"}), timeout=300)
         config = (self.data / "config" / "config.yaml").read_text(encoding="utf-8")
         self.assertIn("listen: 127.0.0.1:8080", config,
