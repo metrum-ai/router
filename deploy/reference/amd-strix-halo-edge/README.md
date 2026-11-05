@@ -143,7 +143,18 @@ direct-lane baseline; nothing but the router listens on a non-loopback address.
 
 ## Measured results
 
-**Pending.** No hardware run is committed for this tier yet. The run records the
+**One hardware run so far, at commit `dd1d5aad` (before the edge bundle's container-listen
+fix, which this tier does not use).** The functional suite passed 8/0/2 (8 pass, 0 fail,
+2 skipped) on the Strix Halo box. The concurrency sweep did **not** reach the 8 s target on
+this profile: the default `local-chat` sweep sustained **0 workers at the 8 s target**, and
+a single worker measured **p95 9 494 ms through the router against 9 492 ms direct** — a
+2 ms difference, so the miss is the model-server profile and the hardware, not routing
+overhead. The 8 s target in `SIZING.md` is unchanged: it is the bar this tier is meant to
+clear, and on this box the measured profile does not clear it at 1 worker. A profile that
+does, or a documented decision to ship the slower one, is still pending; this paragraph
+exists so nobody reads the target as a measurement.
+
+Raw output for the run is held with the run records, not in this directory. The run records the
 functional suite per group, the concurrency sweep (p95 latency and the
 zero-failure worker count for the routed and direct lanes), the exact board,
 BIOS/GTT setting, ROCm and kernel versions, image digest and model revisions, and
@@ -166,6 +177,9 @@ outstanding. No cost is claimed before it is known.
 - Unified memory is shared with the desktop and the CPU. A box also used for
   other work sustains fewer agents; the run must be measured on an idle box and
   say so.
+- The measured 1-worker p95 is ~9.5 s, above the 8 s target in `SIZING.md` (see
+  "Measured results"). Plan for agents that tolerate that latency, or size a
+  different profile, until a faster one is measured here.
 - The router binds to `127.0.0.1` with `allow_insecure_http: true` and
   `secure_cookies: false` for a loopback-only posture. Put a TLS proxy in front
   and flip both before other hosts reach it; use OIDC
