@@ -568,6 +568,22 @@ exit 0
             self.assertTrue(ups, "no `compose up` was recorded")
             self.assertLess(index, min(ups), "the chown must happen before the stack starts")
 
+    def test_non_root_docker_mode_is_refused(self) -> None:
+        """Not root means no handover is possible, so the installer must stop before
+        it builds a stack the router can never read (Gate 2 run 1 timed out 360 s on
+        exactly that). --dry-run is exempt: it starts nothing."""
+        env = self.env()
+        env.pop("EDGE_TEST_HANDOVER", None)
+        refused = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
+                       "--router-image", "fake/router:1", "--accelerator", "nvidia"], env=env, timeout=120)
+        self.assertNotEqual(refused.returncode, 0, "non-root docker mode must fail instead of carrying on")
+        self.assertIn("must run as root", refused.stderr + refused.stdout)
+
+        dry = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--dry-run", "--data-dir", str(self.data),
+                   "--router-image", "fake/router:1", "--accelerator", "nvidia",
+                   "--routerctl", str(self.bin / "metrum-ai-routerctl")], env=env, timeout=120)
+        self.assertEqual(dry.returncode, 0, "--dry-run must still work without root: " + dry.stdout + dry.stderr)
+
     def test_install_hands_over_after_writes_and_before_up(self) -> None:
         result = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
                       "--router-image", "fake/router:1", "--accelerator", "nvidia"],

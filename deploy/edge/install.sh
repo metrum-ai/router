@@ -212,6 +212,14 @@ ensure_binaries() {
   command -v curl >/dev/null 2>&1 || die "curl is required by the installer and the demo"
   [ -n "$ROUTER_IMAGE" ] || die "docker mode needs --router-image (for example metrum-ai-router:<version>-linux-amd64)"
   case "$ROUTER_IMAGE" in *:latest) die "--router-image must not be latest" ;; esac
+  # The runtime image runs as uid 65532 and the installer hands it config, state and
+  # logs; a non-root user cannot do that, and carrying on reproduces the failure this
+  # exists to prevent - files owned by the caller with mode 0600, a router that never
+  # becomes ready, and a 360 s wait before a misleading timeout. EDGE_TEST_HANDOVER is
+  # the seam the install test uses; --dry-run starts nothing and needs no handover.
+  if [ "$(id -u)" != "0" ] && [ "${EDGE_TEST_HANDOVER:-}" != "1" ] && [ "$DRY_RUN" != "1" ]; then
+    die "docker mode must run as root: the router image runs as uid 65532 and the installer must hand it config, state and logs, which a non-root user cannot do. Run it with sudo (as the README shows); on rootless Podman see the Rootless Podman section of the bundle README."
+  fi
   if [ "$DRY_RUN" = "1" ]; then
     log "dry run: not checking for docker; nothing will be started"
     command -v docker >/dev/null 2>&1 || [ -n "$ROUTERCTL_OVERRIDE" ] || \
