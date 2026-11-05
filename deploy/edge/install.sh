@@ -28,7 +28,7 @@ LISTEN_ADDR="127.0.0.1"
 ROUTER_PORT="8080"
 ROUTER_IMAGE=""
 BIN_DIR=""
-ROUTERCTL_OVERRIDE=""
+ROUTERCTL_OVERRIDE="${ROUTERCTL_OVERRIDE:-}"
 ACCELERATOR="auto"
 ESCALATE_URL="https://api.openai.com/v1"
 ESCALATE_MODEL="gpt-5.4"
@@ -212,6 +212,14 @@ ensure_binaries() {
   command -v curl >/dev/null 2>&1 || die "curl is required by the installer and the demo"
   [ -n "$ROUTER_IMAGE" ] || die "docker mode needs --router-image (for example metrum-ai-router:<version>-linux-amd64)"
   case "$ROUTER_IMAGE" in *:latest) die "--router-image must not be latest" ;; esac
+  # The runtime image runs as uid 65532 and the installer hands it config, state and
+  # logs; a non-root user cannot do that, and carrying on reproduces the failure this
+  # exists to prevent - files owned by the caller with mode 0600, a router that never
+  # becomes ready, and a 360 s wait before a misleading timeout. EDGE_TEST_HANDOVER is
+  # the seam the install test uses; --dry-run starts nothing and needs no handover.
+  if [ "$(id -u)" != "0" ] && [ "${EDGE_TEST_HANDOVER:-}" != "1" ] && [ "$DRY_RUN" != "1" ]; then
+    die "docker mode must run as root: the router image runs as uid 65532 and the installer must hand it config, state and logs, which a non-root user cannot do. Run it with sudo (as the README shows); on rootless Podman see the Rootless Podman section of the bundle README."
+  fi
   if [ "$DRY_RUN" = "1" ]; then
     log "dry run: not checking for docker; nothing will be started"
     command -v docker >/dev/null 2>&1 || [ -n "$ROUTERCTL_OVERRIDE" ] || \
@@ -422,7 +430,29 @@ wait_ready() {
   die "router did not become ready at ${BASE_URL}/readyz within $((limit * 2))s"
 }
 
+# hand_over_data_dirs makes the directories the router container mounts readable by
+# the runtime image's user (a scratch image runs as uid 65532). It must be the last
+# thing that touches the data directory before the stack starts: the config, the
+# tokens and the usage database are all written by earlier steps, many of them as
+# root (migrations run with --user), and a chown that happens before them leaves
+# root-owned files the router cannot read. secrets/ is deliberately NOT handed over:
+# the router container does not mount it.
+hand_over_data_dirs() {
+  if [ "$MODE" != "docker" ]; then
+    return 0
+  fi
+  # Root is the normal case (installs run with sudo). EDGE_TEST_HANDOVER=1 exists so
+  # the install test can exercise this ordering without running as root.
+  if [ "$(id -u)" != "0" ] && [ "${EDGE_TEST_HANDOVER:-}" != "1" ]; then
+    log "not running as root: leaving ownership of $CONFIG_DIR, $STATE_DIR and $LOG_DIR as is"
+    return 0
+  fi
+  chown -R 65532:65532 "$CONFIG_DIR" "$STATE_DIR" "$LOG_DIR"
+  log "handed config, state and logs to uid 65532 (the runtime image's user); secrets stay root-owned"
+}
+
 start_docker() {
+  hand_over_data_dirs
   log "starting the stack (first start downloads model weights)"
   compose up -d --remove-orphans
   wait_ready

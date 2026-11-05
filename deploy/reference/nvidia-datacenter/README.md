@@ -91,12 +91,11 @@ remove stops the router from starting. The token file goes to `state/`, which is
 mounted as a directory:
 
 ```sh
-# The config directory is mounted read-only for the router. Override it read-write
-# for this one run: the writer keeps a timestamped backup beside the file and then
-# renames its temp file onto it, so a read-only mount fails even with the backup
-# moved. A single-file mount could not be overridden this way, which is why
-# compose.yaml mounts the directory.
-docker compose run --rm --no-deps -v "$PWD/config:/app/config:rw" \
+# The configuration is mounted read-only for the router, and a `compose run -v`
+# with the same target does NOT replace that mount (verified on Compose 2.26.1 and
+# v5.0.1), so compose.yaml takes the mode from ROUTER_CONFIG_MOUNT_MODE and this
+# step sets it to rw.
+ROUTER_CONFIG_MOUNT_MODE=rw docker compose run --rm --no-deps \
   --entrypoint /app/bin/metrum-ai-routerctl \
   router callers generate \
   --owner-user reference-operator --project reference --env demo --key k1 \

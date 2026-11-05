@@ -51,6 +51,16 @@ esac
 [ "$CONFIG_ONLY" = "1" ] || [ -n "$ROUTER_IMAGE" ] || die "--router-image is required unless --config-only is given"
 case "$ROUTER_IMAGE" in *:latest) die "--router-image must not be latest" ;; esac
 
+# Same handover as install.sh: the re-render and the migrations above wrote files as
+# root, and the router container runs as uid 65532. secrets/ is not mounted into the
+# router, so it is left alone.
+hand_over_data_dirs() {
+  # Same seam as install.sh, for the install test.
+  { [ "$(id -u)" = "0" ] || [ "${EDGE_TEST_HANDOVER:-}" = "1" ]; } || { log "not running as root: leaving ownership as is"; return 0; }
+  chown -R 65532:65532 "$EDGE_DATA_DIR/config" "$EDGE_DATA_DIR/state" "$EDGE_DATA_DIR/logs"
+  log "handed config, state and logs to uid 65532 before recreating the router"
+}
+
 compose() {
   docker compose --env-file "$EDGE_ENV_FILE" \
     -f "$EDGE_DATA_DIR/compose/compose.yaml" \
@@ -80,8 +90,10 @@ fi
 snapshot
 
 log "re-rendering configuration from the current template"
+ROUTERCTL_ARG=()
+[ -n "${ROUTERCTL_OVERRIDE:-}" ] && ROUTERCTL_ARG=(--routerctl "$ROUTERCTL_OVERRIDE")
 bash "$SCRIPT_DIR/install.sh" --mode docker --data-dir "$DATA_DIR" --router-image "${ROUTER_IMAGE:-$EDGE_ROUTER_IMAGE}" \
-  --accelerator "$EDGE_ACCELERATOR" --dry-run >/dev/null
+  --accelerator "$EDGE_ACCELERATOR" ${ROUTERCTL_ARG[@]+"${ROUTERCTL_ARG[@]}"} --dry-run >/dev/null
 
 log "running the migration sequence against the existing database"
 for action in plan apply verify-serving status; do
@@ -91,6 +103,8 @@ for action in plan apply verify-serving status; do
     die "migration action $action failed; the router stays stopped and $EDGE_CONFIG holds the previous groups. Restore the snapshot in $EDGE_DATA_DIR/backups if needed."
   fi
 done
+
+hand_over_data_dirs
 
 if [ "$RESTART_MODELS" = "1" ]; then
   log "recreating the router and the model servers"

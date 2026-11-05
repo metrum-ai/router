@@ -91,7 +91,7 @@ func TestWriteConfigAtomicErrorNamesTheRemedy(t *testing.T) {
 	if _, err := WriteConfigAtomic(path, minimalConfig()); err == nil {
 		t.Fatal("expected an error for an unwritable config directory")
 	} else {
-		for _, want := range []string{"not writable", "mount the configuration directory read-write"} {
+		for _, want := range []string{"not writable", "mounted read-write", "ROUTER_CONFIG_MOUNT_MODE=rw"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("error %q does not mention %q", err, want)
 			}
