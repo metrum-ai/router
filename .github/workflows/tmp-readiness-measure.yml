@@ -1,0 +1,50 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# TEMPORARY measurement workflow for issue #787; removed before merge.
+name: TEMP readiness measurement
+on:
+  push:
+    branches: [v47-787-readiness-budget]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: temp-readiness-${{ github.ref }}
+jobs:
+  measure:
+    runs-on: router-arc-small
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned YAML parser
+        run: python3 -m pip install 'PyYAML==6.0.3'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build router
+        run: go build -o "$RUNNER_TEMP/ready-router" ./cmd/metrum-ai-router
+      - name: Measure router ready time (governance x20, tokenomics x20)
+        env:
+          METRUM_ROUTER_READY_TIMEOUT_S: '120'
+          ROUTER_TEST_BINARY: ${{ runner.temp }}/ready-router
+        run: |
+          set -uo pipefail
+          : > readiness.log
+          for i in $(seq 1 20); do
+            echo "== governance $i" >> readiness.log
+            python3 examples/governance/run.py --router "$ROUTER_TEST_BINARY" >/dev/null 2>>readiness.log || echo "GOVERNANCE_NONZERO $i" >> readiness.log
+          done
+          for i in $(seq 1 20); do
+            echo "== tokenomics $i" >> readiness.log
+            python3 examples/tokenomics/run.py --router "$ROUTER_TEST_BINARY" >/dev/null 2>>readiness.log || echo "TOKENOMICS_NONZERO $i" >> readiness.log
+          done
+          echo "=== ready lines ==="
+          grep -E "router ready in" readiness.log || echo "NO_READY_LINES"
+          echo "=== failures ==="
+          grep -E "NONZERO|readiness timeout|Traceback" readiness.log || echo "none"
