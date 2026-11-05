@@ -591,11 +591,12 @@ exit 0
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         lines = self.lines()
         self.assert_handover(lines)
-        # migrations ran as root before the handover
+        # migrations ran as root before the handover; a run that records none would
+        # otherwise pass this check silently.
         runs = [i for i, line in enumerate(lines) if line.startswith("docker ") and " run " in line]
         chowns = [i for i, line in enumerate(lines) if line.startswith("chown ")]
-        if runs:
-            self.assertLess(max(runs), min(chowns), "the chown must come after every docker run (migrations)")
+        self.assertTrue(runs, "no `docker run` (migration) was recorded, so the ordering check would be vacuous")
+        self.assertLess(max(runs), min(chowns), "the chown must come after every docker run (migrations)")
 
     def test_upgrade_hands_over_before_recreating_the_router(self) -> None:
         install = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
