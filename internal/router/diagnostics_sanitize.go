@@ -64,7 +64,7 @@ func sanitizePersistedTraceMessage(event, text string) string {
 
 func safeInternalTraceMessageEvent(event string) bool {
 	switch event {
-	case "routing_decision", "openai_compatibility_shape":
+	case "routing_decision", "openai_compatibility_shape", "output_token_field_retry":
 		return true
 	default:
 		return false

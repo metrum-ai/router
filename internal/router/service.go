@@ -3084,10 +3084,53 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}))
 	}
 	var httpResp *http.Response
-	if isBedrock(provider) {
-		httpResp, err = bedrockDo(attemptCtx, target.Region, upReqBody, s.httpClient)
-	} else {
-		httpResp, err = s.httpClient.Do(httpReq)
+	// A provider that rejects the output-cap field it was sent names the other
+	// field in its 400 (#778). Retry that exact case once with the other field;
+	// every other error path is unchanged.
+	var preReadErrBody []byte
+	readErrBody := func() []byte {
+		if preReadErrBody != nil {
+			raw := preReadErrBody
+			preReadErrBody = nil
+			return raw
+		}
+		raw, _ := io.ReadAll(io.LimitReader(httpResp.Body, int64(s.diagnosticMaxErrorBytes())))
+		_ = httpResp.Body.Close()
+		return raw
+	}
+	capFieldRetried := false
+	for {
+		if isBedrock(provider) {
+			httpResp, err = bedrockDo(attemptCtx, target.Region, upReqBody, s.httpClient)
+		} else {
+			httpResp, err = s.httpClient.Do(httpReq)
+		}
+		if err != nil || isBedrock(provider) || outDialect != "openai-chat" || httpResp == nil {
+			break
+		}
+		if capFieldRetried || httpResp.StatusCode != http.StatusBadRequest {
+			break
+		}
+		preReadErrBody, _ = io.ReadAll(io.LimitReader(httpResp.Body, int64(s.diagnosticMaxErrorBytes())))
+		_ = httpResp.Body.Close()
+		nextBody, nextField, ok := outputTokenFieldRetryBody(upReqBody, preReadErrBody)
+		if !ok {
+			break
+		}
+		// Reuse the prepared request (headers, auth, trace) with the swapped body.
+		retryReq := httpReq.Clone(httpReq.Context())
+		retryReq.Body = io.NopCloser(bytes.NewReader(nextBody))
+		retryReq.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(nextBody)), nil
+		}
+		retryReq.ContentLength = int64(len(nextBody))
+		if rc != nil {
+			rc.trace("output_token_field_retry", "provider rejected the output cap field; retried with "+nextField, target, attemptIndex, 0, "", false, 0)
+		}
+		httpReq = retryReq
+		upReqBody = nextBody
+		preReadErrBody = nil
+		capFieldRetried = true
 	}
 	if wroteRequestSeen {
 		errorClass := ""
@@ -3111,8 +3154,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	}
 	attempt.StatusCode = httpResp.StatusCode
 	if httpResp.StatusCode == http.StatusTooManyRequests || httpResp.StatusCode >= 500 {
-		raw, _ := io.ReadAll(io.LimitReader(httpResp.Body, int64(s.diagnosticMaxErrorBytes())))
-		_ = httpResp.Body.Close()
+		raw := readErrBody()
 		if cancel != nil {
 			cancel()
 		}
@@ -3137,8 +3179,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upErr
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(httpResp.Body, int64(s.diagnosticMaxErrorBytes())))
-		_ = httpResp.Body.Close()
+		raw := readErrBody()
 		if cancel != nil {
 			cancel()
 		}

@@ -1190,6 +1190,9 @@ providers:
             Messages text translation to this Responses skin is allowed only for
             non-tool requests; Claude Code tools require Anthropic Messages targets.
         force_store_false: true
+        # max_tokens is the legacy default; OpenAI's newer models require
+        # max_completion_tokens and reject max_tokens. Declaring the field here
+        # avoids the router's one bounded retry on the provider's refusal.
         output_token_field: max_completion_tokens
       gpt-5.5:
         model: gpt-5.5

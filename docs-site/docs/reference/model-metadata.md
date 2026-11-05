@@ -317,6 +317,10 @@ models:
 
 Use `output_token_field: max_completion_tokens` for models that reject Chat Completions `max_tokens`, including tool-bearing requests. This is independent of reasoning metadata: if reasoning compatibility also rewrites `max_tokens`, both rules converge on `max_completion_tokens` and the router avoids sending both cap fields.
 
+**Why `max_tokens` is the unset default.** OpenAI documents `max_tokens` as deprecated in favour of `max_completion_tokens` and not compatible with its o-series models, while OpenAI-compatible servers still accept `max_tokens` and vLLM's current schema keeps it as a deprecated alias for `max_completion_tokens`. Making the modern field the default would therefore break older compatible servers that only understand `max_tokens`, so the legacy field stays the default and modern-only models declare `max_completion_tokens`.
+
+**One bounded retry when the provider names the other field.** If a target rejects the cap field it was sent and the provider's `400` names the other field for that parameter (for example `Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.`), the router retries the same target once with the named field, keeps one attempt row, and records an `output_token_field_retry` trace event. Any other `400` is not retried. Declaring `output_token_field` for the target avoids the extra round trip entirely.
+
 `default_openai_chat_thinking` is a target-scoped OpenAI Chat passthrough default for an upstream-specific `thinking` object. The router adds it only when the caller did not supply `thinking`; it never rewrites an explicit caller value. Use it only after direct and router-level validation proves that the exact provider/model needs a default thinking mode for an otherwise supported request shape. A value of `type: disabled` is an encoding compatibility setting, not a claim that the target supports caller-requested reasoning; do not add reasoning metadata merely because this default is configured.
 
 ```yaml
