@@ -145,10 +145,12 @@ workload; it is not a semantic cache.
 Every router mints its own `X-Request-Id`, so a caller sees the edge's ID and the
 DC's row carries a different ID. Correlate by caller token, model group and
 timestamp window today; the edge's `X-Request-Id` is not forwarded as the DC's
-identifier. Whether to make hop correlation a product feature (a propagated,
-bounded request/trace identifier recorded in usage rows) or to keep layered
-deployment as a reference configuration is the open #434 decision. `verify.sh`
-prints both identifiers and does not pretend they match.
+identifier. [#434](https://github.com/metrum-ai/router/issues/434) decided
+**A, reference config only**: layered deployment ships as this reference
+configuration plus the release hierarchy matrix, and a propagated hop
+correlation identifier is not a v4.7.0 product feature. `verify.sh` prints both
+identifiers and does not pretend they match. Shared hierarchy governance is
+tracked for v5.0.0.
 
 **Timeouts.** Client timeout > edge budget > DC budget > longest frontier
 attempt. Both configs set a 600 s upstream timeout, which is a ceiling for
@@ -174,15 +176,17 @@ caller, so its usage rows are attributable to the edge hop.
 
 ## Validated tiers (2026-11-03)
 
-The reference config was run on rented dedicated nodes with real inference
-backends, one process per tier on its own node, plus the verification procedure
-above. Evidence: `router / v47-package / 587`, snapshot `bb4aed02`.
+The reference config has been run with real inference backends, both on
+dedicated nodes (one process per tier on its own node, plus the verification
+procedure above) and on an edge-class Strix Halo box. Dedicated-node evidence:
+`router / v47-package / 587`, snapshot `bb4aed02`; the Halo run's raw report is
+archived by the run operator.
 
 | Tier | Hardware | Serving stack | Result |
 |---|---|---|---|
 | Datacenter (AMD) | AMD Instinct MI325X (SKU M3250101, 274.5 GB VRAM), 20 vCPU | official `rocm/vllm@sha256:e0ea9a10b729573ea8598bdc073bda0ea382fe1037eec7c0761b6fa7f46baaf4`, vLLM 0.29.1, `Qwen/Qwen2.5-1.5B-Instruct` | two-hop chain 200; per-hop additions +2.33 ms TTFT p50 (one hop) and +3.12 ms (two hops); per-hop usage rows for every hop; loop protection 508 |
 | Datacenter (Intel CPU) | Intel Xeon Gold 6548N, 16 vCPU | official `vllm/vllm-openai-cpu@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5`, vLLM 0.33.0, `Qwen/Qwen2.5-0.5B-Instruct` | same topology; two-hop chain 200; TTFT p50 268.8 ms direct, 274.8 ms two hops |
-| Edge | not yet run on edge-class hardware | — | pending: the edge tier is a router with no local model in this deployment; hardware evidence for a GB10/Strix-Halo edge box is tracked separately |
+| Edge (Strix Halo) | Strix Halo edge-class box; edge and DC tiers both on that box | the bundle vLLM primary reached directly by the DC tier, edge and DC configs unchanged | 300/300 requests at 0, 1 and 2 router hops; TTFT p50 139.90 / 142.66 / 143.16 ms and p95 142.34 / 145.09 / 145.22 ms (details and caveats below) |
 
 `bash verify.sh --local` passed all checks on a dedicated node (hop-header
 hygiene, loop 508, edge cache hit, both hops' usage rows, env/config drift
@@ -190,6 +194,33 @@ check). The compose path uses the same configs and the same script; it was not
 exercised in the measurement window because the run used one process per tier
 directly.
 
+### Edge-tier run (Strix Halo)
+
+A separate run measured the same topology on an edge-class Strix Halo box, with
+router `main` at `006d0397` and the bundle's vLLM primary reached directly by the
+datacenter tier (edge and DC configs unchanged). Each lane sent 300 requests.
+
+| Router hops in front of the backend | TTFT p50 | TTFT p95 |
+|---|---:|---:|
+| direct (0 hops) | 139.90 ms | 142.34 ms |
+| one hop (edge) | 142.66 ms | 145.09 ms |
+| two hops (edge → DC) | 143.16 ms | 145.22 ms |
+
+One hop adds **2.76 ms** at p50 and 2.75 ms at p95; two hops add **3.26 ms** at
+p50 and 2.88 ms at p95 in this run. Every request succeeded (300/300 per lane).
+
+Read this row with its caveats:
+
+- **Both the edge and the datacenter tier ran on the same Strix Halo box.** The
+  hop cost is real router work on edge-class hardware, but it is not a
+  distributed deployment and it is **not** a real datacenter claim.
+- The full `verify.sh` procedure above was not run on that box; the hop-header,
+  loop-protection, cache and per-hop-usage checks come from the dedicated-node
+  run, not from this one.
+- A separate three-hop bundle-group result is part of the Halo run's own report;
+  it is not reproduced here.
+
 What this does **not** establish: the cross-hop request-ID correlation and folded
-cost total above are still absent, and none of these runs exercised a hosted
-frontier API, a real edge device, or more than one DC tier.
+cost total above are still absent, no run has exercised a hosted frontier API,
+and the datacenter tier has not been measured on its own separate hardware in
+this configuration.
