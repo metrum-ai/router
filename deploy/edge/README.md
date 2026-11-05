@@ -204,6 +204,22 @@ for each; a skip is not a pass, and the script exits non-zero if anything failed
 | 3. budget hit | the `demo-budget` caller is refused with `429 quota-exhausted` once its day request budget is spent |
 | 4. spend report | `routerctl usage summary` prints tokens and cost from the router's own usage rows, with the escalation spend separable from the on-box groups |
 
+## AMD hosts: GPU group ids
+
+The pinned ROCm image has no `render` entry in its `/etc/group`, so a compose
+`group_add: [video, render]` fails with "Unable to find group render: no matching
+entries in group file" — on Docker as well as Podman. The AMD overlay therefore takes
+numeric host GIDs, and `install.sh` reads them from the device nodes:
+
+```sh
+stat -c %g /dev/dri/renderD128     # render
+stat -c %g /dev/dri/card0          # video
+```
+
+On a typical Strix Halo host that is `992` and `44`. If the installer cannot see those
+nodes (a container or VM that maps the devices differently), pass them explicitly:
+`EDGE_RENDER_GID=992 EDGE_VIDEO_GID=44 sudo -E bash install.sh ...`.
+
 ## Supplying the escalation key (docker mode)
 
 The bundle writes its secret environment to `secrets/env` (mode 0600) and passes it

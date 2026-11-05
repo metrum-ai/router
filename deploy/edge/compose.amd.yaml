@@ -16,7 +16,10 @@ services:
       # fields, so repeating it here fails validation with
       # "security_opt array items[0,1] must be unique".
       - seccomp:unconfined
-    group_add: [video, render]
+    # Numeric host GIDs: the pinned rocm image has no `render` entry in
+    # /etc/group, so a group name cannot be resolved inside the container.
+    group_add: ["${VIDEO_GID:?set VIDEO_GID (stat -c %g /dev/dri/card0)}",
+                "${RENDER_GID:?set RENDER_GID (stat -c %g /dev/dri/renderD128)}"]
     devices: ["/dev/kfd", "/dev/dri"]
     # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
     # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
@@ -32,7 +35,10 @@ services:
       # fields, so repeating it here fails validation with
       # "security_opt array items[0,1] must be unique".
       - seccomp:unconfined
-    group_add: [video, render]
+    # Numeric host GIDs: the pinned rocm image has no `render` entry in
+    # /etc/group, so a group name cannot be resolved inside the container.
+    group_add: ["${VIDEO_GID:?set VIDEO_GID (stat -c %g /dev/dri/card0)}",
+                "${RENDER_GID:?set RENDER_GID (stat -c %g /dev/dri/renderD128)}"]
     devices: ["/dev/kfd", "/dev/dri"]
     # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
     # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.

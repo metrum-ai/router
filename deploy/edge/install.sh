@@ -274,6 +274,28 @@ create_directories() {
   chmod 0750 "$STATE_DIR" "$LOG_DIR"
 }
 
+# detect_gpu_group_ids fills RENDER_GID and VIDEO_GID for the AMD overlay. The pinned
+# ROCm image has no `render` group in its /etc/group, so passing group names cannot
+# work; the numeric host GIDs of the device nodes are what the container needs.
+# EDGE_RENDER_GID/EDGE_VIDEO_GID are an explicit override for hosts where the nodes
+# are not visible to the installer (containers, VMs) and for the install test.
+detect_gpu_group_ids() {
+  RENDER_GID="${EDGE_RENDER_GID:-}"
+  VIDEO_GID="${EDGE_VIDEO_GID:-}"
+  if [ -n "$RENDER_GID" ] && [ -n "$VIDEO_GID" ]; then
+    log "using supplied GPU group ids (render=$RENDER_GID video=$VIDEO_GID)"
+    return 0
+  fi
+  local render_node
+  render_node="$(ls /dev/dri/renderD* 2>/dev/null | head -1 || true)"
+  if [ -z "$render_node" ] || [ ! -e /dev/dri/card0 ] && [ ! -e /dev/kfd ]; then
+    die "AMD docker mode needs the GPU device nodes to read their group ids: expected /dev/kfd and /dev/dri/renderD*. On a host where they are not visible here, pass EDGE_RENDER_GID and EDGE_VIDEO_GID (stat -c %g /dev/dri/renderD128, stat -c %g /dev/dri/card0)."
+  fi
+  RENDER_GID="$(stat -c %g "$render_node")"
+  VIDEO_GID="$(stat -c %g /dev/dri/card0 2>/dev/null || stat -c %g /dev/kfd)"
+  log "detected GPU group ids: render=$RENDER_GID video=$VIDEO_GID"
+}
+
 write_environment() {
   if [ -f "$ENV_FILE" ] && [ "$FORCE" != "1" ]; then
     log "keeping existing $ENV_FILE"
@@ -300,6 +322,11 @@ write_environment() {
     printf "HF_HUB_OFFLINE='%s'\n" "$([ "$AIR_GAPPED" = "1" ] && echo 1 || echo 0)"
   } >"$ENV_FILE"
   chmod 0600 "$ENV_FILE"
+  if [ "$MODE" = "docker" ] && [ "$ACCELERATOR" = "amd" ]; then
+    detect_gpu_group_ids
+    set_env_value RENDER_GID "$RENDER_GID"
+    set_env_value VIDEO_GID "$VIDEO_GID"
+  fi
   log "wrote $ENV_FILE"
 }
 

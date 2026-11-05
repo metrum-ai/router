@@ -235,7 +235,8 @@ class EdgeBundleInstallTest(unittest.TestCase):
         amd = run(["bash", str(INSTALL), "--mode", "docker", "--dry-run",
                    "--router-image", "metrum-ai-router:4.7.0-linux-amd64",
                    "--routerctl", str(self.bin_dir / "metrum-ai-routerctl"),
-                   "--accelerator", "amd", "--data-dir", str(amd_dir)])
+                   "--accelerator", "amd", "--data-dir", str(amd_dir),
+            "--port", "8099"], env={"EDGE_RENDER_GID": "992", "EDGE_VIDEO_GID": "44", "EDGE_TEST_HANDOVER": "1"})
         self.assertEqual(amd.returncode, 0, amd.stdout + amd.stderr)
         amd_overlay = (amd_dir / "compose" / "compose.amd.yaml").read_text(encoding="utf-8")
         self.assertIn("rocm/vllm:", amd_overlay)
@@ -608,6 +609,78 @@ exit 0
                       env=self.env(), timeout=300)
         self.assertEqual(upgrade.returncode, 0, upgrade.stdout + upgrade.stderr)
         self.assert_handover(self.lines())
+
+
+class AmdGroupIdTest(unittest.TestCase):
+    """AMD compose files must name numeric host GIDs, and install.sh must produce them.
+
+    The pinned ROCm image has no `render` entry in its /etc/group, so
+    `group_add: [video, render]` fails with "Unable to find group render" - on Docker
+    as well as Podman, because both resolve group names inside the container.
+    """
+
+    AMD_COMPOSE = (
+        EDGE / "compose.amd.yaml",
+        ROOT / "deploy" / "reference" / "amd-mi350p-datacenter" / "compose.yaml",
+        ROOT / "deploy" / "reference" / "amd-strix-halo-edge" / "compose.yaml",
+    )
+
+    def setUp(self) -> None:
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover
+            self.skipTest("PyYAML is not installed")
+        self.yaml = yaml
+        self.tmp = Path(tempfile.mkdtemp(prefix="edge-gids-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bin = Path(tempfile.mkdtemp(prefix="edge-gids-bin-"))
+        self.addCleanup(shutil.rmtree, self.bin, ignore_errors=True)
+        for name in ROUTER_BINARIES:
+            source = built_binaries() / name
+            (self.bin / name).write_bytes(source.read_bytes())
+            (self.bin / name).chmod(0o755)
+        for name, body in {
+            "docker": "#!/usr/bin/env bash\nexit 0\n",
+            "chown": "#!/usr/bin/env bash\nexit 0\n",
+            "curl": "#!/usr/bin/env bash\nprintf '{\"data\":[{\"id\":\"local-chat\"}]}'\nexit 0\n",
+        }.items():
+            path = self.bin / name
+            path.write_text(body, encoding="utf-8")
+            path.chmod(0o755)
+
+    def test_no_amd_compose_uses_group_names(self) -> None:
+        for path in self.AMD_COMPOSE:
+            compose = self.yaml.safe_load(path.read_text(encoding="utf-8"))
+            for name, service in (compose.get("services") or {}).items():
+                for entry in service.get("group_add") or []:
+                    entry = str(entry)
+                    numeric = entry.isdigit() or entry.startswith("${")
+                    self.assertTrue(numeric, f"{path.relative_to(ROOT)}: {name} group_add uses a name ({entry!r}); "
+                                             "the ROCm image cannot resolve it, use a numeric host GID")
+
+    def run_install(self, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        base = os.environ.copy()
+        base.update(env)
+        base["PATH"] = f"{self.bin}:{base.get('PATH', '')}"
+        base["ROUTERCTL_OVERRIDE"] = str(self.bin / "metrum-ai-routerctl")
+        for key in ("LOCAL_VLLM_API_KEY", "ROUTER_ID_TRANSFORM_KEY", "METRUM_ADMIN_PASSWORD_HASH"):
+            base.pop(key, None)
+        return run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--accelerator", "amd",
+                    "--data-dir", str(self.tmp / "data"), "--router-image", "fake/router:1"], env=base, timeout=300)
+
+    def test_install_writes_numeric_gpu_group_ids(self) -> None:
+        result = self.run_install({"EDGE_TEST_HANDOVER": "1", "EDGE_RENDER_GID": "992", "EDGE_VIDEO_GID": "44"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        env_text = (self.tmp / "data" / "secrets" / "env").read_text(encoding="utf-8")
+        self.assertIn("RENDER_GID='992'", env_text)
+        self.assertIn("VIDEO_GID='44'", env_text)
+
+    def test_install_without_devices_or_override_fails_clearly(self) -> None:
+        if os.path.exists("/dev/dri/renderD128"):
+            self.skipTest("this host has real GPU device nodes, so detection succeeds")
+        result = self.run_install({"EDGE_TEST_HANDOVER": "1"})
+        self.assertNotEqual(result.returncode, 0, "AMD docker mode without device nodes must not continue")
+        self.assertIn("GPU device nodes", result.stderr + result.stdout)
 
 
 class EdgeBundlePinTest(unittest.TestCase):
