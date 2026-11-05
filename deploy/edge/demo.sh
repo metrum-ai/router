@@ -72,7 +72,7 @@ ask() {
   if ! result="$(curl -sS -o "$BODY_FILE" -w '%{http_code} %{time_total}' \
       -H "Authorization: Bearer ${token}" \
       -H 'Content-Type: application/json' \
-      -d "{\"model\":\"${group}\",\"messages\":[{\"role\":\"user\",\"content\":\"${prompt}\"}],\"max_tokens\":64}" \
+      -d "{\"model\":\"${group}\",\"messages\":[{\"role\":\"user\",\"content\":\"${prompt}\"}],\"max_completion_tokens\":64}" \
       "${EDGE_BASE_URL}/v1/chat/completions" 2>/dev/null)"; then
     result="000 0"
   fi

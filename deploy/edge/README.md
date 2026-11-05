@@ -280,6 +280,16 @@ need several minutes to reload and leave every request failing at the connection
 `EDGE_DEMO_READY_TIMEOUT` seconds (default 300) before step 1 and says so, but a
 request made by hand during a reload still gets nothing.
 
+**Which request fields reach your provider.** The demo sends `model`, `messages` and
+`max_completion_tokens` and nothing else. The router rewrites only the output-cap field,
+following the target's `output_token_field` (`max_completion_tokens` by default for the
+`escalate` provider here, because current OpenAI models reject `max_tokens` with
+`Unsupported parameter: 'max_tokens' is not supported with this model. Use
+'max_completion_tokens' instead.`); every other field a client sends is forwarded
+unchanged, so parameters your provider does not accept come back as its own error. Set
+`output_token_field: max_tokens` on that provider model for a legacy endpoint. vLLM
+accepts both spellings (pinned here at v0.33.0), so the local groups are unaffected.
+
 The default escalation target is `gpt-5.4` at `api.openai.com`. If your key cannot use
 that model the group fails closed with an upstream error (a Gate 2 run with a key that
 served `gpt-6.1-sol` got HTTP 400 `upstream_bad_request`), so set `--escalation-model`

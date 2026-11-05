@@ -954,6 +954,29 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
         for measured in ("6 min 18 s", "516 s"):
             self.assertIn(measured, readme, f"the README must state the measured cold boot ({measured})")
 
+    def test_demo_never_sends_max_tokens(self) -> None:
+        """Current OpenAI models reject max_tokens with a 400.
+
+        Gate 2 run 5's escalation step failed with
+        `Unsupported parameter: 'max_tokens' is not supported with this model. Use
+        'max_completion_tokens' instead.`, because the demo body carried max_tokens on
+        every step. vLLM accepts both spellings (verified against the bundle's mock
+        upstream and pinned at v0.33.0), so the demo sends the modern field only.
+        """
+        import re
+        demo = (EDGE / "demo.sh").read_text(encoding="utf-8")
+        bodies = re.findall(r'-d "\{.*?\}"', demo)
+        self.assertTrue(bodies, "the demo has no request body to check")
+        for body in bodies:
+            self.assertNotIn("max_tokens", body, "the demo must not send max_tokens: " + body)
+            self.assertIn("max_completion_tokens", body, "the demo must cap output explicitly: " + body)
+        # The escalation target must keep the field the provider expects, or the router
+        # rewrites max_completion_tokens back into max_tokens.
+        template = (EDGE / "config.template.yaml").read_text(encoding="utf-8")
+        self.assertIn("output_token_field: max_completion_tokens", template)
+        readme = (EDGE / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Unsupported parameter: 'max_tokens' is not supported with this model", readme)
+
     def test_demo_reports_not_ready_as_a_failure_not_a_skip(self) -> None:
         """Run 4's demo printed four HTTP 000 lines and said nothing about readiness.
 
