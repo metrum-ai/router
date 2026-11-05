@@ -572,6 +572,51 @@ exit 0
             self.assertTrue(ups, "no `compose up` was recorded")
             self.assertLess(index, min(ups), "the chown must happen before the stack starts")
 
+    def test_config_only_upgrade_keeps_the_installed_image(self) -> None:
+        """A --config-only upgrade must migrate with the image the install recorded.
+
+        Gate 2's Halo run hit `Error: parsing reference "": repository name must have at
+        least one component` because upgrade.sh passed its empty --router-image variable
+        to the migration helper, and the dry-run re-render rewrote install.env.
+        """
+        install = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
+                       "--router-image", "fake/router:1", "--accelerator", "nvidia"],
+                      env=self.env(), timeout=300)
+        self.assertEqual(install.returncode, 0, install.stdout + install.stderr)
+        install_env = self.data / "install.env"
+        self.assertIn("EDGE_ROUTER_IMAGE=fake/router:1", install_env.read_text(encoding="utf-8"))
+        self.log.unlink()
+        upgrade = run(["bash", str(EDGE / "upgrade.sh"), "--data-dir", str(self.data), "--config-only"],
+                      env=self.env(), timeout=300)
+        self.assertEqual(upgrade.returncode, 0, upgrade.stdout + upgrade.stderr)
+        migrate_calls = [line for line in self.lines() if "metrum-ai-router-migrate" in line and " run " in line]
+        self.assertTrue(migrate_calls, "the migration helper never ran")
+        for line in migrate_calls:
+            self.assertIn("fake/router:1", line, "the migration ran without the installed image: " + line)
+        self.assertIn("EDGE_ROUTER_IMAGE=fake/router:1", install_env.read_text(encoding="utf-8"),
+                      "the dry-run re-render must not clear the recorded image")
+
+    def test_config_only_upgrade_failure_text_matches_reality(self) -> None:
+        """--config-only never stops the router, so the failure must not say it is stopped."""
+        install = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
+                       "--router-image", "fake/router:1", "--accelerator", "nvidia"],
+                      env=self.env(), timeout=300)
+        self.assertEqual(install.returncode, 0, install.stdout + install.stderr)
+        docker = self.bin / "docker"
+        docker.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf 'docker %s\\n' \"$*\" >> \"$EDGE_TEST_LOG\"\n"
+            "case \"$*\" in *metrum-ai-router-migrate*) echo 'podman: boom' >&2; exit 125;; esac\n"
+            "exit 0\n", encoding="utf-8")
+        docker.chmod(0o755)
+        upgrade = run(["bash", str(EDGE / "upgrade.sh"), "--data-dir", str(self.data), "--config-only"],
+                      env=self.env(), timeout=300)
+        self.assertNotEqual(upgrade.returncode, 0, upgrade.stdout + upgrade.stderr)
+        message = upgrade.stderr + upgrade.stdout
+        self.assertIn("still serving", message, "the message must say the old router keeps serving: " + message[-400:])
+        self.assertNotIn("router stays stopped", message,
+                         "--config-only does not stop the router, so that message is false")
+
     def test_non_root_docker_mode_is_refused(self) -> None:
         """Not root means no handover is possible, so the installer must stop before
         it builds a stack the router can never read (Gate 2 run 1 timed out 360 s on
@@ -867,6 +912,11 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
         router_deps = services["router"].get("depends_on") or {}
         self.assertEqual(set(router_deps), {"vllm-tiny", "vllm-primary"},
                          "the router must wait for both model servers")
+        # The AMD path must be sequenced the same way, and say so where a reader looks.
+        amd = yaml.safe_load((EDGE / "compose.amd.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(amd["services"]["vllm-primary"].get("depends_on"),
+                         {"vllm-tiny": {"condition": "service_healthy"}},
+                         "the AMD overlay must sequence the ROCm servers too")
 
     def test_cold_start_wait_covers_a_first_pull(self) -> None:
         """360 s was shorter than a measured cold first boot (6 min 18 s on an A6000)."""
@@ -879,6 +929,9 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
         self.assertIn("waiting for ${BASE_URL}/readyz", install, "the wait must say it is waiting")
         readme = (EDGE / "README.md").read_text(encoding="utf-8")
         self.assertIn("EDGE_READY_TIMEOUT", readme)
+        # Both measurements the default has to cover, named in the docs.
+        for measured in ("6 min 18 s", "516 s"):
+            self.assertIn(measured, readme, f"the README must state the measured cold boot ({measured})")
 
     def test_demo_reports_not_ready_as_a_failure_not_a_skip(self) -> None:
         """Run 4's demo printed four HTTP 000 lines and said nothing about readiness.

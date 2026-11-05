@@ -162,7 +162,10 @@ elif printf '%s' "$(head -c 400 "$BODY_FILE")" | grep -qi 'upstream'; then
   # with the key already set is a provider/model mismatch, and telling them to set the
   # variable again sends them in circles.
   if grep -q "^${EDGE_ESCALATION_KEY_ENV}='\?[^']" "$EDGE_ENV_FILE" 2>/dev/null; then
-    note "${EDGE_ESCALATION_KEY_ENV} is already set in ${EDGE_ENV_FILE}: the provider refused this request, so check that ${EDGE_ESCALATION_MODEL} at ${EDGE_ESCALATION_BASE_URL} is available to that key (--escalation-model / --escalation-base-url at install time)"
+    # Name what the provider actually answered, with the model that was tried: a 400 on a
+    # model the key cannot use and a 401 on a bad key need different fixes.
+    note "${EDGE_ESCALATION_KEY_ENV} is set in ${EDGE_ENV_FILE}; the provider answered HTTP ${STATUS} for model ${EDGE_ESCALATION_MODEL} at ${EDGE_ESCALATION_BASE_URL}"
+    note "if that model is not available to this key, install with --escalation-model/--escalation-base-url or edit providers.escalate in the rendered config and recreate the router"
   else
     note "set ${EDGE_ESCALATION_KEY_ENV} in ${EDGE_ENV_FILE} and restart the router to demo a real escalation"
   fi
