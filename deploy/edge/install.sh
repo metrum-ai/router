@@ -22,8 +22,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
 MODE="docker"
-DATA_DIR="${HOME}/metrum-edge"
+DATA_DIR="$(metrum_default_data_dir)"
 LISTEN_ADDR="127.0.0.1"
 ROUTER_PORT="8080"
 ROUTER_IMAGE=""
@@ -112,13 +114,11 @@ while [ $# -gt 0 ]; do
 done
 
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
-# Docker mode runs the router as uid 65532, which must be able to traverse every
-# component of the data directory. The default "$HOME/metrum-edge" becomes
-# /root/metrum-edge under sudo, and /root is mode 0700 root, so the installer uses a
-# system path there instead.
-DATA_DIR_DEFAULTED=0
-if [ "$MODE" = "docker" ] && [ "$(id -u)" = "0" ] && [ "$DATA_DIR" = "${HOME}/metrum-edge" ]; then
-  DATA_DIR="/var/lib/metrum-edge"
+# The data directory default comes from lib/common.sh: root gets
+# /var/lib/metrum-edge because /root is 0700 and the router runs as uid 65532, and
+# every bundle script applies the same rule so `sudo bash demo.sh` finds what
+# install.sh created.
+if [ "$DATA_DIR" = "/var/lib/metrum-edge" ] && [ "$(id -u)" = "0" ]; then
   DATA_DIR_DEFAULTED=1
 fi
 case "$ACCELERATOR" in amd|nvidia|auto) ;; *) die "--accelerator must be amd, nvidia or auto" ;; esac
@@ -265,6 +265,9 @@ migrate() {
   if [ "$MODE" = "native" ]; then
     "$MIGRATE_BIN" "$@"
   else
+    # Host and container path are identical here on purpose: the data directory is
+    # bind-mounted at its own absolute path, so the host paths passed in the
+    # arguments resolve inside the helper container.
     docker run --rm --user "$(id -u):$(id -g)" --entrypoint /app/bin/metrum-ai-router-migrate \
       -v "$DATA_DIR:$DATA_DIR" "$ROUTER_IMAGE" "$@"
   fi
@@ -292,19 +295,32 @@ create_directories() {
 # EDGE_RENDER_GID/EDGE_VIDEO_GID are an explicit override for hosts where the nodes
 # are not visible to the installer (containers, VMs) and for the install test.
 detect_gpu_group_ids() {
+  local dev_root="${EDGE_DEV_ROOT:-/dev}" render_node card_node
   RENDER_GID="${EDGE_RENDER_GID:-}"
   VIDEO_GID="${EDGE_VIDEO_GID:-}"
   if [ -n "$RENDER_GID" ] && [ -n "$VIDEO_GID" ]; then
     log "using supplied GPU group ids (render=$RENDER_GID video=$VIDEO_GID)"
     return 0
   fi
-  local render_node
-  render_node="$(ls /dev/dri/renderD* 2>/dev/null | head -1 || true)"
-  if [ -z "$render_node" ] || [ ! -e /dev/dri/card0 ] && [ ! -e /dev/kfd ]; then
-    die "AMD docker mode needs the GPU device nodes to read their group ids: expected /dev/kfd and /dev/dri/renderD*. On a host where they are not visible here, pass EDGE_RENDER_GID and EDGE_VIDEO_GID (stat -c %g /dev/dri/renderD128, stat -c %g /dev/dri/card0)."
+  render_node="$(ls "$dev_root"/dri/renderD* 2>/dev/null | head -1 || true)"
+  card_node="$dev_root/dri/card0"
+  if [ -z "$render_node" ]; then
+    die "AMD docker mode needs a render node to read its group id: expected $dev_root/dri/renderD*. On a host where the devices are not visible here, pass EDGE_RENDER_GID and EDGE_VIDEO_GID (stat -c %g /dev/dri/renderD128, stat -c %g /dev/dri/card0)."
   fi
-  RENDER_GID="$(stat -c %g "$render_node")"
-  VIDEO_GID="$(stat -c %g /dev/dri/card0 2>/dev/null || stat -c %g /dev/kfd)"
+  if [ -z "$RENDER_GID" ]; then
+    RENDER_GID="$(stat -c %g "$render_node")"
+  fi
+  if [ -z "$VIDEO_GID" ]; then
+    if [ -e "$card_node" ]; then
+      VIDEO_GID="$(stat -c %g "$card_node")"
+    else
+      # /dev/kfd belongs to the render group, not video, so it is not a fallback.
+      VIDEO_GID="$(getent group video 2>/dev/null | cut -d: -f3 || true)"
+    fi
+  fi
+  if [ -z "$VIDEO_GID" ]; then
+    die "AMD docker mode could not determine the video group id: no $card_node and no 'video' group in the host group database. Set EDGE_VIDEO_GID explicitly (stat -c %g /dev/dri/card0)."
+  fi
   log "detected GPU group ids: render=$RENDER_GID video=$VIDEO_GID"
 }
 
