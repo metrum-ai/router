@@ -154,6 +154,16 @@ clear, and on this box the measured profile does not clear it at 1 worker. A pro
 does, or a documented decision to ship the slower one, is still pending; this paragraph
 exists so nobody reads the target as a measurement.
 
+**Diagnostic only, no claim: the `local-tiny` slot.** A separate sweep of the tiny slot on
+the same box produced partial numbers instead of a summary, so treat them as a diagnostic
+of that slot and not as a router or tier result. At 1 worker, p95 was about **6.8 s**
+(direct 6 771.7 ms, through the router 6 779.8 ms); at 8 workers about **10.3 s** (direct
+10 347.4 / routed 10 301.9); direct and routed agreed within **1%** in both cells, so the
+latency is the model server's, not the router's. At 32 workers - above that slot's
+configured `max-num-seqs` - the sweep aborted with a broken pipe on the direct lane and
+committed no samples, so nothing is claimed for that point. The slot is a smoke and
+classification slot: do not plan chat concurrency on these numbers.
+
 Raw output for the run is held with the run records, not in this directory. The run records the
 functional suite per group, the concurrency sweep (p95 latency and the
 zero-failure worker count for the routed and direct lanes), the exact board,
