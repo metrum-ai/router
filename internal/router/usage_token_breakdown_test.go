@@ -107,3 +107,68 @@ func TestTokenBreakdownCoverageAndRollups(t *testing.T) {
 		}
 	}
 }
+
+// Issue #777: the "by Provider / Model" reasoning-coverage table rendered the
+// NUL-joined rollup key, so provider and model ran together ("local-tinylocal-tiny").
+func TestReasoningCoverageRendersProviderAndModelSeparately(t *testing.T) {
+	from := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 11, 5, 1, 0, 0, 0, time.UTC)
+	rows := []usageRow{
+		{
+			TS:             from.Add(10 * time.Minute),
+			RequestID:      "req_provider_model",
+			RequestedModel: "local-chat",
+			ResolvedGroup:  "local-chat",
+			TargetProvider: "local-tiny",
+			TargetModel:    "local-tiny",
+			Status:         200,
+		},
+		{
+			TS:             from.Add(20 * time.Minute),
+			RequestID:      "req_provider_model_2",
+			RequestedModel: "local-chat",
+			ResolvedGroup:  "local-chat",
+			TargetProvider: "escalate",
+			TargetModel:    "gpt-5.4",
+			Status:         200,
+		},
+	}
+	md := renderUsageMarkdown(from, to, rows, decisionTelemetrySummary{}, nil)
+
+	for _, want := range []string{
+		"## Reasoning and Cache Coverage by Provider / Model",
+		"| local-tiny / local-tiny |",
+		"| escalate / gpt-5.4 |",
+		// The group table keeps its single-value dimension.
+		"## Reasoning and Cache Coverage by Model Group",
+		"| local-chat |",
+	} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("usage report missing %q:\n%s", want, md)
+		}
+	}
+	for _, notWant := range []string{"local-tinylocal-tiny", "escalategpt-5.4", "\x00"} {
+		if strings.Contains(md, notWant) {
+			t.Fatalf("usage report contains %q:\n%s", notWant, md)
+		}
+	}
+}
+
+func TestProviderModelDimensionLabel(t *testing.T) {
+	cases := []struct{ key, want string }{
+		{joinKey("local-tiny", "local-tiny"), "local-tiny / local-tiny"},
+		{joinKey("openai", "gpt-5.4-nano"), "openai / gpt-5.4-nano"},
+		{joinKey("local", ""), "local"},
+		{joinKey("", "model"), " / model"},
+		// Table cells stay escaped: a pipe in either field cannot break the row.
+		{joinKey("pro|vider", "mo|del"), `pro\|vider / mo\|del`},
+	}
+	for _, tc := range cases {
+		if got := providerModelDimensionLabel(tc.key); got != tc.want {
+			t.Fatalf("providerModelDimensionLabel(%q)=%q, want %q", tc.key, got, tc.want)
+		}
+	}
+	if got := dimensionLabel("local-chat"); got != "local-chat" {
+		t.Fatalf("dimensionLabel=%q", got)
+	}
+}
