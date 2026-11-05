@@ -91,7 +91,12 @@ docker build --build-arg VERSION=<tag> --build-arg COMMIT=<sha> \
 ```
 
 Either way, pass that tag to `--router-image` and record its image id in your run
-notes.
+notes. The admin UI and spend reports are served by the router binary itself (its assets
+are embedded), so the wrapper image serves `/admin/reports/` too; what the canonical image
+adds is the bundled documentation site. The install test renders `/admin/reports/` with the
+generated `admin` password and requires HTML, so the surface is verified rather than
+assumed — but check it on your own host as well, since a host-level proxy can still break
+it.
 
 Version notation here: a **release tag** looks like `v4.6.0`, a **router image tag**
 looks like `<version>-linux-<arch>` (`4.7.0-linux-amd64`), and examples may show
@@ -127,8 +132,9 @@ installed by the bundle; on a stock Ubuntu host the upstream instructions are
 package. On an NVIDIA host the container toolkit is also required — follow
 <https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html>
 and run the `nvidia-ctk runtime configure --runtime=docker` step it describes, then
-`sudo systemctl restart docker`; `docker run --rm --gpus all <image> nvidia-smi` proves
-it. On AMD the container needs `/dev/kfd` and `/dev/dri` access, which the installer
+`sudo systemctl restart docker`; `docker run --rm --gpus all ubuntu:22.04 nvidia-smi` proves it — pick an image that ships
+`nvidia-smi` or the container runtime's own; `alpine` does not, and fails with
+`exec /usr/bin/nvidia-smi: no such file or directory`. On AMD the container needs `/dev/kfd` and `/dev/dri` access, which the installer
 detects and writes into the secret environment as group ids (override with
 `EDGE_RENDER_GID` / `EDGE_VIDEO_GID`). The runtime image runs as uid 65532 and
 the installer hands it the directories it mounts.
@@ -231,7 +237,7 @@ for each; a skip is not a pass, and the script exits non-zero if anything failed
 
 | Step | What it shows |
 |---|---|
-| 1. local-first | `local-chat` and `local-tiny` answer from the box, with the upstream model named |
+| 1. local-first | `local-chat` and `local-tiny` answer from the box; the line names the **served slot** (`local-chat`), not the checkpoint behind it, which the sizing section records |
 | 2. escalation | `escalate` leaves the box through the operator's endpoint; without a usable key it fails closed with an upstream error (`upstream-access-denied` for a rejected key, `upstream-rejected` when no key is sent) instead of quietly answering locally |
 | 3. budget hit | the `demo-budget` caller is refused with `429 quota-exhausted` once its day request budget is spent |
 | 4. spend report | `routerctl usage summary` prints tokens and cost from the router's own usage rows, with the escalation spend separable from the on-box groups |
@@ -293,7 +299,7 @@ accepts both spellings (pinned here at v0.33.0), so the local groups are unaffec
 The default escalation target is `gpt-5.4` at `api.openai.com`. If your key cannot use
 that model the group fails closed with an upstream error (a Gate 2 run with a key that
 served `gpt-6.1-sol` got HTTP 400 `upstream_bad_request`), so set `--escalation-model`
-(and `--escalation-base-url` for a non-OpenAI endpoint) at install time, or edit the
+(and `--escalation-url` for a non-OpenAI endpoint) at install time, or edit the
 `escalate` provider in the rendered config and recreate the router.
 
 `--escalation-key-env NAME` changes which variable the *renderer* points the
