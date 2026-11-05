@@ -40,6 +40,13 @@ INSTALL_ENV="$DATA_DIR/install.env"
 [ -f "$INSTALL_ENV" ] || { echo "upgrade: $INSTALL_ENV not found; run install.sh first" >&2; exit 2; }
 # shellcheck disable=SC1090
 . "$INSTALL_ENV"
+# --config-only does not name an image, so it takes the installed one; a real upgrade must
+# name the image it is moving to. Without the fallback the migration helper ran with an
+# empty reference and the runtime answered
+# 'parsing reference "": repository name must have at least one component'.
+if [ "$CONFIG_ONLY" = "1" ] && [ -z "$ROUTER_IMAGE" ]; then
+  ROUTER_IMAGE="${EDGE_ROUTER_IMAGE:-}"
+fi
 log() { printf '%s upgrade: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 die() { printf 'upgrade: %s\n' "$*" >&2; exit 1; }
 
@@ -51,6 +58,9 @@ case "$EDGE_MODE" in
 esac
 
 [ "$CONFIG_ONLY" = "1" ] || [ -n "$ROUTER_IMAGE" ] || die "--router-image is required unless --config-only is given"
+if [ "$CONFIG_ONLY" = "1" ] && [ -z "$ROUTER_IMAGE" ]; then
+  die "no router image recorded in $INSTALL_ENV (EDGE_ROUTER_IMAGE is empty); pass --router-image"
+fi
 case "$ROUTER_IMAGE" in *:latest) die "--router-image must not be latest" ;; esac
 
 # Same handover as install.sh: the re-render and the migrations above wrote files as
@@ -81,9 +91,11 @@ snapshot() {
   log "for the usage database, stop the router and follow the offline copy rules in docs/DOCKER_COMPOSE_INSTALL.md"
 }
 
+STOPPED=0
 if [ "$CONFIG_ONLY" != "1" ]; then
   log "stopping the router"
   compose stop router >/dev/null
+  STOPPED=1
   sed -i "s|^ROUTER_IMAGE=.*|ROUTER_IMAGE=${ROUTER_IMAGE}|" "$EDGE_ENV_FILE"
   sed -i "s|^EDGE_ROUTER_IMAGE=.*|EDGE_ROUTER_IMAGE=${ROUTER_IMAGE}|" "$INSTALL_ENV" 2>/dev/null || true
   log "router image set to ${ROUTER_IMAGE} in $EDGE_ENV_FILE"
@@ -102,7 +114,12 @@ for action in plan apply verify-serving status; do
   if ! docker run --rm --user "$(id -u):$(id -g)" --entrypoint /app/bin/metrum-ai-router-migrate \
       -v "$EDGE_DATA_DIR:$EDGE_DATA_DIR" "$ROUTER_IMAGE" \
       --action="$action" --driver=sqlite --db="$EDGE_DATA_DIR/state/usage.sqlite" --json >/dev/null; then
-    die "migration action $action failed; the router stays stopped and $EDGE_CONFIG holds the previous groups. Restore the snapshot in $EDGE_DATA_DIR/backups if needed."
+    if [ "$STOPPED" = "1" ]; then
+      die "migration action $action failed; the router stays stopped and $EDGE_CONFIG holds the previous groups. Restore the snapshot in $EDGE_DATA_DIR/backups if needed."
+    fi
+    # --config-only never stops the router, so it is still serving the previous groups
+    # from the configuration it read at start; say that instead of claiming it stopped.
+    die "migration action $action failed; nothing was recreated, and the running router is still serving the groups it read at start from the configuration before this render (a copy is in $EDGE_DATA_DIR/backups). Re-run with --router-image once the database issue is resolved."
   fi
 done
 
@@ -116,10 +133,14 @@ else
   compose up -d --no-deps router
 fi
 
-attempts=0
+timeout="${EDGE_READY_TIMEOUT:-900}" elapsed=0 announced=0
 until curl -fsS "${EDGE_BASE_URL}/readyz" >/dev/null 2>&1; do
-  attempts=$((attempts + 1))
-  [ "$attempts" -lt 90 ] || die "router did not become ready after the upgrade"
+  [ "$elapsed" -lt "$timeout" ] || die "router did not become ready at ${EDGE_BASE_URL}/readyz within ${timeout}s (EDGE_READY_TIMEOUT to change)"
+  if [ "$announced" = "0" ] && [ "$elapsed" -ge 30 ]; then
+    announced=1
+    log "waiting for ${EDGE_BASE_URL}/readyz after the recreate (up to ${timeout}s)"
+  fi
   sleep 2
+  elapsed=$((elapsed + 2))
 done
 log "upgrade complete; router is ready at ${EDGE_BASE_URL}"

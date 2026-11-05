@@ -158,7 +158,17 @@ elif printf '%s' "$(head -c 400 "$BODY_FILE")" | grep -qi 'upstream'; then
   # unreachable endpoint) as an upstream error. That is the fail-closed path: the
   # request did not quietly turn into a local answer.
   skip "escalate failed closed with HTTP ${STATUS}: $(head -c 160 "$BODY_FILE")"
-  note "set ${EDGE_ESCALATION_KEY_ENV} in ${EDGE_ENV_FILE} and restart the router to demo a real escalation"
+  # Say which case this is: a missing key is the operator's next step, a rejected request
+  # with the key already set is a provider/model mismatch, and telling them to set the
+  # variable again sends them in circles.
+  if grep -q "^${EDGE_ESCALATION_KEY_ENV}='\?[^']" "$EDGE_ENV_FILE" 2>/dev/null; then
+    # Name what the provider actually answered, with the model that was tried: a 400 on a
+    # model the key cannot use and a 401 on a bad key need different fixes.
+    note "${EDGE_ESCALATION_KEY_ENV} is set in ${EDGE_ENV_FILE}; the provider answered HTTP ${STATUS} for model ${EDGE_ESCALATION_MODEL} at ${EDGE_ESCALATION_BASE_URL}"
+    note "if that model is not available to this key, install with --escalation-model/--escalation-base-url or edit providers.escalate in the rendered config and recreate the router"
+  else
+    note "set ${EDGE_ESCALATION_KEY_ENV} in ${EDGE_ENV_FILE} and restart the router to demo a real escalation"
+  fi
 else
   fail "escalate returned HTTP ${STATUS}: $(head -c 300 "$BODY_FILE")"
 fi

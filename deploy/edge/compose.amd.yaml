@@ -29,6 +29,14 @@ services:
       ROCR_VISIBLE_DEVICES: "0"
 
   vllm-primary:
+    # Restated here on purpose: the base file makes the primary wait for the tiny slot to
+    # be healthy (each server sizes its KV cache against the device's free memory), and a
+    # reader of this overlay should see that the ROCm path is sequenced the same way.
+    # Measured on Halo with both loading at once: tiny reported
+    # "Available KV cache memory: -112.64 GiB" and the primary -0.22 GiB.
+    depends_on:
+      vllm-tiny:
+        condition: service_healthy
     image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
     security_opt:
       # The base already declares no-new-privileges; Compose appends sequence

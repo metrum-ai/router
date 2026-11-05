@@ -507,17 +507,30 @@ run_migrations() {
   done
 }
 
+# A cold docker install pulls ~20 GB of weights and compiles two model servers before the
+# router can answer. Measured: 6 min 18 s to the first healthy model server on an A6000
+# 48 GB, and 516 s to load the 30B primary on the Strix Halo box - both longer than the
+# 360 s this used to wait, so a first install could fail while the stack was still coming
+# up. Native mode has no weights to pull.
 wait_ready() {
-  local attempts=0 limit=180
-  while [ "$attempts" -lt "$limit" ]; do
+  local timeout="${EDGE_READY_TIMEOUT:-1200}" interval=2 elapsed=0 announced=0
+  if [ "$MODE" = "native" ]; then
+    timeout="${EDGE_READY_TIMEOUT:-180}"
+  fi
+  while [ "$elapsed" -lt "$timeout" ]; do
     if curl -fsS "${BASE_URL}/readyz" >/dev/null 2>&1; then
-      log "router is ready at ${BASE_URL}"
+      log "router is ready at ${BASE_URL} after ${elapsed}s"
       return 0
     fi
-    attempts=$((attempts + 1))
-    sleep 2
+    if [ "$announced" = "0" ] && [ "$elapsed" -ge 30 ]; then
+      announced=1
+      # One line, then quiet: a 10-minute silence looks like a hang.
+      log "waiting for ${BASE_URL}/readyz (model servers still loading; up to ${timeout}s, EDGE_READY_TIMEOUT to change)"
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
   done
-  die "router did not become ready at ${BASE_URL}/readyz within $((limit * 2))s"
+  die "router did not become ready at ${BASE_URL}/readyz within ${timeout}s (raise EDGE_READY_TIMEOUT on a slow first pull)"
 }
 
 # hand_over_data_dirs makes the directories the router container mounts readable by
@@ -660,8 +673,16 @@ main() {
   render_config
   copy_compose
   if [ "$DRY_RUN" = "1" ]; then
-    write_install_env
-    log "dry run: rendered $CONFIG_FILE and wrote $INSTALL_ENV; nothing started"
+    # A dry run must not rewrite an existing installation's state: upgrade.sh re-renders
+    # through this path, and writing install.env here dropped the image an operator had
+    # installed with, which then broke the migration step ("repository name must have at
+    # least one component").
+    if [ -f "$INSTALL_ENV" ]; then
+      log "dry run: rendered $CONFIG_FILE; left the existing $INSTALL_ENV untouched"
+    else
+      write_install_env
+      log "dry run: rendered $CONFIG_FILE and wrote $INSTALL_ENV; nothing started"
+    fi
     return 0
   fi
   run_migrations
