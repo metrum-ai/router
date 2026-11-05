@@ -132,6 +132,22 @@ class ReferenceConfigTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("api_key must be a ${VAR} reference", result.stderr)
 
+class DeferredValidationTest(unittest.TestCase):
+    """A tier that claims to be unvalidated must say who validates it and where."""
+
+    DEFERRED = {
+        "amd-mi350p-datacenter": ("Not validated on MI350P hardware", "#785"),
+        "nvidia-gb10-edge": ("verified for the", "#763"),
+    }
+
+    def test_each_deferred_tier_links_its_follow_up(self) -> None:
+        for tier, (phrase, issue) in self.DEFERRED.items():
+            readme = (REFERENCE / tier / "README.md").read_text(encoding="utf-8")
+            self.assertIn(phrase, readme, f"{tier} must state its limit")
+            self.assertIn(issue, readme,
+                          f"{tier} must link the issue that owns the deferred validation ({issue})")
+
+
 class ContainerListenTest(unittest.TestCase):
     """A tier's router runs in a container: listen all interfaces, publish loopback.
 

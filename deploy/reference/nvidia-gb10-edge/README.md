@@ -158,7 +158,9 @@ Vast containers, all destroyed; windows and rates are in
 
 - Kernel support for this GPU compute capability is **verified for the
   `local-tiny` slot only** (see Measured results). The 30B `local-chat` slot did
-  not finish starting on the rented GB10 container, so it stays unverified.
+  not finish starting on the rented GB10 container, so it stays unverified. That
+  validation moved to v5.0.0 as
+  [#763](https://github.com/metrum-ai/router/issues/763).
 - Unified memory is shared with the CPU and the container runtime;
   `SIZING.md` assumes 85 % of the pool for the two slots.
 - One 30B-class model fits beside the tiny slot. Two do not, so this tier has no
