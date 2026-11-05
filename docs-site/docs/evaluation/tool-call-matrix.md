@@ -10,7 +10,7 @@ doc_type: explanation
 
 # Tool-call compatibility matrix
 
-Every cell states what is proven, for which client version, on which caller-to-upstream path, with the evidence that proves it. A combination that is not proven is listed as not covered with its reason, never omitted. Last matrix update: 2026-11-02.
+Every cell states what is proven, for which client version, on which caller-to-upstream path, with the evidence that proves it. A combination that is not proven is listed as not covered with its reason, never omitted. Last matrix update: 2026-11-04.
 
 A `mock` cell is a deterministic scripted upstream; a `unit` cell is a local conversion check with no endpoint call; a `live` cell ran against a real provider and carries its date, commit, cost and cost source. Mock and live evidence are never merged into one result. The underlying per-suite evidence lives in [bounded tool-call proof](tool-call-proof) and [live API compatibility](api-compatibility-live).
 
@@ -85,13 +85,13 @@ Clients with no cell yet, and why:
 | `anthropic-sdk-messages-same-dialect-thinking` | Anthropic SDK compatibility tester 799b0bc | anthropic-messages → anthropic-messages | streaming, thinking | — | pass (mock) | `scripts/compat_mock.py` |
 | `anthropic-sdk-messages-same-dialect-cache` | Anthropic SDK compatibility tester 799b0bc | anthropic-messages → anthropic-messages | cache_control | — | pass (mock) | `scripts/compat_mock.py` |
 | `anthropic-sdk-messages-to-chat-tools` | Anthropic SDK compatibility tester 799b0bc | anthropic-messages → openai-chat | streaming, tool_call, thinking | — | not covered | [cross dialect reasoning limits](https://github.com/metrum-ai/router/blob/main/docs-site/docs/reference/api-compatibility.md#cross-dialect-reasoning-limits) |
-| `parallel-gate-chat-direct` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
-| `parallel-gate-chat-through-router` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
-| `parallel-gate-chat-to-messages` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
+| `parallel-gate-chat-direct` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
+| `parallel-gate-chat-through-router` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
+| `parallel-gate-chat-to-messages` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
 | `parallel-gate-chat-to-responses` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | openai-chat → openai-responses | streaming, parallel_calls, tool_call | — | not covered | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
-| `parallel-gate-messages-direct` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
-| `parallel-gate-messages-through-router` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
-| `parallel-gate-messages-to-chat` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [results 2026 11 02](https://github.com/metrum-ai/router/blob/main/docs-site/docs/evaluation/parallel-tool-calls-live.md#results-2026-11-02) |
+| `parallel-gate-messages-direct` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
+| `parallel-gate-messages-through-router` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
+| `parallel-gate-messages-to-chat` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
 
 ## Router-level cells
 
@@ -111,12 +111,12 @@ Clients with no cell yet, and why:
 | Cell | Date | Commit | Result | Cost | Cost source |
 | --- | --- | --- | --- | --- | --- |
 | `pi-chat-to-messages-stream` | 2026-11-02 | `5be713f6d5c3` | fail | not recorded | not_recorded (run total) |
-| `parallel-gate-chat-direct` | 2026-11-02 | `1ca83567` | pass | not recorded | provider_invoiced |
-| `parallel-gate-chat-through-router` | 2026-11-02 | `1ca83567` | pass | $0.002815 | usage_rows (run total) |
-| `parallel-gate-chat-to-messages` | 2026-11-02 | `1ca83567` | pass | $0.002815 | usage_rows (run total) |
-| `parallel-gate-messages-direct` | 2026-11-02 | `1ca83567` | pass | not recorded | provider_invoiced |
-| `parallel-gate-messages-through-router` | 2026-11-02 | `1ca83567` | pass | $0.002815 | usage_rows (run total) |
-| `parallel-gate-messages-to-chat` | 2026-11-02 | `1ca83567` | pass | $0.002815 | usage_rows (run total) |
+| `parallel-gate-chat-direct` | 2026-11-04 | `dbde5d598f72` | pass | $0.0048473 | estimate (run total) |
+| `parallel-gate-chat-through-router` | 2026-11-04 | `dbde5d598f72` | pass | $0.0048473 | estimate (run total) |
+| `parallel-gate-chat-to-messages` | 2026-11-04 | `dbde5d598f72` | pass | $0.0048473 | estimate (run total) |
+| `parallel-gate-messages-direct` | 2026-11-04 | `dbde5d598f72` | pass | $0.0048473 | estimate (run total) |
+| `parallel-gate-messages-through-router` | 2026-11-04 | `dbde5d598f72` | pass | $0.0048473 | estimate (run total) |
+| `parallel-gate-messages-to-chat` | 2026-11-04 | `dbde5d598f72` | pass | $0.0048473 | estimate (run total) |
 
 Cost sources: `usage_rows` is the router's own `request_usage` for routed cells; `provider_invoiced` is billed by the provider outside the router and is not in those rows; `estimate` is list-rate arithmetic with the invoice pending; `not_recorded` means the evidence carries no cost and none is claimed.
 
