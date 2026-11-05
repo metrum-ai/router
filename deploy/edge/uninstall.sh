@@ -15,7 +15,11 @@
 
 set -euo pipefail
 
-DATA_DIR="${HOME}/metrum-edge"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+
+DATA_DIR="$(metrum_default_data_dir)"
 PURGE=0
 YES=0
 NATIVE_ONLY=0

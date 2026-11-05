@@ -22,8 +22,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
 MODE="docker"
-DATA_DIR="${HOME}/metrum-edge"
+DATA_DIR="$(metrum_default_data_dir)"
 LISTEN_ADDR="127.0.0.1"
 ROUTER_PORT="8080"
 ROUTER_IMAGE=""
@@ -112,6 +114,13 @@ while [ $# -gt 0 ]; do
 done
 
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
+# The data directory default comes from lib/common.sh: root gets
+# /var/lib/metrum-edge because /root is 0700 and the router runs as uid 65532, and
+# every bundle script applies the same rule so `sudo bash demo.sh` finds what
+# install.sh created.
+if [ "$DATA_DIR" = "/var/lib/metrum-edge" ] && [ "$(id -u)" = "0" ]; then
+  DATA_DIR_DEFAULTED=1
+fi
 case "$ACCELERATOR" in amd|nvidia|auto) ;; *) die "--accelerator must be amd, nvidia or auto" ;; esac
 mkdir -p "$DATA_DIR" || die "cannot create --data-dir $DATA_DIR"
 DATA_DIR="$(cd "$DATA_DIR" && pwd)"
@@ -220,6 +229,9 @@ ensure_binaries() {
   if [ "$(id -u)" != "0" ] && [ "${EDGE_TEST_HANDOVER:-}" != "1" ] && [ "$DRY_RUN" != "1" ]; then
     die "docker mode must run as root: the router image runs as uid 65532 and the installer must hand it config, state and logs, which a non-root user cannot do. Run it with sudo (as the README shows); on rootless Podman see the Rootless Podman section of the bundle README."
   fi
+  if [ "$DRY_RUN" != "1" ] && ! path_ancestors_searchable_by_others "$DATA_DIR"; then
+    die "the data directory $DATA_DIR is not traversable by the router container's user (uid 65532): a parent directory is not readable/searchable by others (for example /root is mode 0700). Pass --data-dir with a path the container user can reach, such as /var/lib/metrum-edge."
+  fi
   if [ "$DRY_RUN" = "1" ]; then
     log "dry run: not checking for docker; nothing will be started"
     command -v docker >/dev/null 2>&1 || [ -n "$ROUTERCTL_OVERRIDE" ] || \
@@ -253,6 +265,9 @@ migrate() {
   if [ "$MODE" = "native" ]; then
     "$MIGRATE_BIN" "$@"
   else
+    # Host and container path are identical here on purpose: the data directory is
+    # bind-mounted at its own absolute path, so the host paths passed in the
+    # arguments resolve inside the helper container.
     docker run --rm --user "$(id -u):$(id -g)" --entrypoint /app/bin/metrum-ai-router-migrate \
       -v "$DATA_DIR:$DATA_DIR" "$ROUTER_IMAGE" "$@"
   fi
@@ -272,6 +287,63 @@ create_directories() {
   mkdir -p "$CONFIG_DIR" "$SECRET_DIR" "$STATE_DIR" "$LOG_DIR" "$COMPOSE_DIR"
   chmod 0700 "$SECRET_DIR" "$CONFIG_DIR"
   chmod 0750 "$STATE_DIR" "$LOG_DIR"
+}
+
+# detect_gpu_group_ids fills RENDER_GID and VIDEO_GID for the AMD overlay. The pinned
+# ROCm image has no `render` group in its /etc/group, so passing group names cannot
+# work; the numeric host GIDs of the device nodes are what the container needs.
+# EDGE_RENDER_GID/EDGE_VIDEO_GID are an explicit override for hosts where the nodes
+# are not visible to the installer (containers, VMs) and for the install test.
+detect_gpu_group_ids() {
+  local dev_root="${EDGE_DEV_ROOT:-/dev}" render_node card_node
+  RENDER_GID="${EDGE_RENDER_GID:-}"
+  VIDEO_GID="${EDGE_VIDEO_GID:-}"
+  if [ -n "$RENDER_GID" ] && [ -n "$VIDEO_GID" ]; then
+    log "using supplied GPU group ids (render=$RENDER_GID video=$VIDEO_GID)"
+    return 0
+  fi
+  render_node="$(ls "$dev_root"/dri/renderD* 2>/dev/null | head -1 || true)"
+  card_node="$dev_root/dri/card0"
+  if [ -z "$render_node" ]; then
+    die "AMD docker mode needs a render node to read its group id: expected $dev_root/dri/renderD*. On a host where the devices are not visible here, pass EDGE_RENDER_GID and EDGE_VIDEO_GID (stat -c %g /dev/dri/renderD128, stat -c %g /dev/dri/card0)."
+  fi
+  if [ -z "$RENDER_GID" ]; then
+    RENDER_GID="$(stat -c %g "$render_node")"
+  fi
+  if [ -z "$VIDEO_GID" ]; then
+    if [ -e "$card_node" ]; then
+      VIDEO_GID="$(stat -c %g "$card_node")"
+    else
+      # /dev/kfd belongs to the render group, not video, so it is not a fallback.
+      VIDEO_GID="$(getent group video 2>/dev/null | cut -d: -f3 || true)"
+    fi
+  fi
+  if [ -z "$VIDEO_GID" ]; then
+    die "AMD docker mode could not determine the video group id: no $card_node and no 'video' group in the host group database. Set EDGE_VIDEO_GID explicitly (stat -c %g /dev/dri/card0)."
+  fi
+  log "detected GPU group ids: render=$RENDER_GID video=$VIDEO_GID"
+}
+
+# path_ancestors_searchable_by_others is true when every directory above $1 is
+# searchable by "others". A container's uid 65532 reaches a bind mount through those
+# components, so a 0700 parent (like /root) makes the mount unreachable no matter who
+# owns the files inside it.
+path_ancestors_searchable_by_others() {
+  local path last
+  path="$(dirname "$1")"
+  while :; do
+    if [ -e "$path" ]; then
+      last="$(stat -c %a "$path")"
+      last="${last: -1}"
+      case "$last" in
+        1|3|5|7) ;;
+        *) return 1 ;;
+      esac
+    fi
+    [ "$path" = "/" ] && break
+    path="$(dirname "$path")"
+  done
+  return 0
 }
 
 write_environment() {
@@ -300,6 +372,11 @@ write_environment() {
     printf "HF_HUB_OFFLINE='%s'\n" "$([ "$AIR_GAPPED" = "1" ] && echo 1 || echo 0)"
   } >"$ENV_FILE"
   chmod 0600 "$ENV_FILE"
+  if [ "$MODE" = "docker" ] && [ "$ACCELERATOR" = "amd" ]; then
+    detect_gpu_group_ids
+    set_env_value RENDER_GID "$RENDER_GID"
+    set_env_value VIDEO_GID "$VIDEO_GID"
+  fi
   log "wrote $ENV_FILE"
 }
 
@@ -362,10 +439,17 @@ render_config() {
     primary_base="http://vllm-primary:8000/v1"
   fi
 
+  # Docker mode mounts the data directory at /app (state, logs, config), so the
+  # rendered configuration must carry those in-container paths: rendering the host
+  # path made the router try to create /root/metrum-edge inside its own filesystem.
+  local runtime_root="$DATA_DIR"
+  if [ "$MODE" = "docker" ]; then
+    runtime_root="/app"
+  fi
   umask 077
   sed \
     -e "s|@@LISTEN@@|${LISTEN_ADDR}:${ROUTER_PORT}|g" \
-    -e "s|@@DATA_DIR@@|${DATA_DIR}|g" \
+    -e "s|@@DATA_DIR@@|${runtime_root}|g" \
     -e "s|@@TINY_BASE_URL@@|${tiny_base}|g" \
     -e "s|@@PRIMARY_BASE_URL@@|${primary_base}|g" \
     -e "s|@@ESCALATE_BASE_URL@@|${escalate_base}|g" \

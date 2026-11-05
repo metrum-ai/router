@@ -14,9 +14,11 @@ x-vllm-service: &vllm-service
     - no-new-privileges:true
     # ROCm initialisation needs syscalls the default profile blocks.
     - seccomp:unconfined
+  # Numeric host GIDs: the pinned ROCm image carries no `render` entry in its
+  # /etc/group, so a group name cannot be resolved inside the container.
   group_add:
-    - video
-    - render
+    - "${VIDEO_GID:?set VIDEO_GID (stat -c %g /dev/dri/card0)}"
+    - "${RENDER_GID:?set RENDER_GID (stat -c %g /dev/dri/renderD128)}"
   devices:
     - /dev/kfd
     - /dev/dri

@@ -16,7 +16,11 @@
 
 set -euo pipefail
 
-DATA_DIR="${HOME}/metrum-edge"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+
+DATA_DIR="$(metrum_default_data_dir)"
 while [ $# -gt 0 ]; do
   case "$1" in
     --data-dir) DATA_DIR="${2:?}"; shift 2 ;;
@@ -44,6 +48,12 @@ pass() { printf 'PASS  %s\n' "$*"; }
 skip() { printf 'SKIP  %s\n' "$*"; }
 fail() { printf 'FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
 note() { printf '      %s\n' "$*"; }
+
+# The config path the router process itself sees: docker mode mounts the data
+# directory at /app, so the host path from install.env is wrong there.
+router_config_path() {
+  metrum_config_path_for_runtime "$EDGE_CONFIG" "${EDGE_MODE:-docker}"
+}
 
 routerctl() {
   if [ "$EDGE_MODE" = "native" ]; then
@@ -159,7 +169,7 @@ attempt=0
 # window; if the group rows still have not appeared, say so instead of passing.
 while [ "$attempt" -lt 5 ]; do
   attempt=$((attempt + 1))
-  if ! routerctl usage summary --config "$EDGE_CONFIG" --since 1h >"$report_file" 2>"$usage_err"; then
+  if ! routerctl usage summary --config "$(router_config_path)" --since 1h >"$report_file" 2>"$usage_err"; then
     fail "usage summary failed: $(head -c 300 "$usage_err" 2>/dev/null)"
     report=""
     break

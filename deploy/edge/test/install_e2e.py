@@ -235,7 +235,8 @@ class EdgeBundleInstallTest(unittest.TestCase):
         amd = run(["bash", str(INSTALL), "--mode", "docker", "--dry-run",
                    "--router-image", "metrum-ai-router:4.7.0-linux-amd64",
                    "--routerctl", str(self.bin_dir / "metrum-ai-routerctl"),
-                   "--accelerator", "amd", "--data-dir", str(amd_dir)])
+                   "--accelerator", "amd", "--data-dir", str(amd_dir),
+            "--port", "8099"], env={"EDGE_RENDER_GID": "992", "EDGE_VIDEO_GID": "44", "EDGE_TEST_HANDOVER": "1"})
         self.assertEqual(amd.returncode, 0, amd.stdout + amd.stderr)
         amd_overlay = (amd_dir / "compose" / "compose.amd.yaml").read_text(encoding="utf-8")
         self.assertIn("rocm/vllm:", amd_overlay)
@@ -499,6 +500,9 @@ class DockerModeHandoverTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="edge-handover-"))
+        # A normal data-directory parent is searchable; mkdtemp creates 0700, which
+        # the traversal preflight correctly refuses.
+        self.tmp.chmod(0o755)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.bin = Path(tempfile.mkdtemp(prefix="edge-handover-bin-"))
         self.addCleanup(shutil.rmtree, self.bin, ignore_errors=True)
@@ -608,6 +612,225 @@ exit 0
                       env=self.env(), timeout=300)
         self.assertEqual(upgrade.returncode, 0, upgrade.stdout + upgrade.stderr)
         self.assert_handover(self.lines())
+
+
+class _FakeDockerHarness(unittest.TestCase):
+    """Shared fake docker/chown/curl harness for the behavioural installer tests."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="edge-harness-"))
+        self.tmp.chmod(0o755)  # a normal parent; mkdtemp's 0700 is correctly refused
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.bin = Path(tempfile.mkdtemp(prefix="edge-harness-bin-"))
+        self.addCleanup(shutil.rmtree, self.bin, ignore_errors=True)
+        for name in ROUTER_BINARIES:
+            source = built_binaries() / name
+            (self.bin / name).write_bytes(source.read_bytes())
+            (self.bin / name).chmod(0o755)
+        for name, body in {
+            "docker": "#!/usr/bin/env bash\nprintf 'docker %s\\n' \"$*\" >> \"$EDGE_TEST_LOG\"\nexit 0\n",
+            "chown": "#!/usr/bin/env bash\nexit 0\n",
+            "curl": "#!/usr/bin/env bash\nprintf '{\"data\":[{\"id\":\"local-chat\"}]}'\nexit 0\n",
+        }.items():
+            path = self.bin / name
+            path.write_text(body, encoding="utf-8")
+            path.chmod(0o755)
+
+    def installer_env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
+        env = os.environ.copy()
+        env.update({
+            "PATH": f"{self.bin}:{env.get('PATH', '')}",
+            "ROUTERCTL_OVERRIDE": str(self.bin / "metrum-ai-routerctl"),
+            "EDGE_TEST_LOG": str(self.tmp / "calls.log"),
+        })
+        if extra:
+            env.update(extra)
+        for key in ("LOCAL_VLLM_API_KEY", "ROUTER_ID_TRANSFORM_KEY", "METRUM_ADMIN_PASSWORD_HASH"):
+            env.pop(key, None)
+        return env
+
+
+class AmdGroupIdTest(_FakeDockerHarness):
+    """AMD compose files must name numeric host GIDs, and install.sh must produce them.
+
+    The pinned ROCm image has no `render` entry in its /etc/group, so
+    `group_add: [video, render]` fails with "Unable to find group render" - on Docker
+    as well as Podman, because both resolve group names inside the container.
+    """
+
+    AMD_COMPOSE = (
+        EDGE / "compose.amd.yaml",
+        ROOT / "deploy" / "reference" / "amd-mi350p-datacenter" / "compose.yaml",
+        ROOT / "deploy" / "reference" / "amd-strix-halo-edge" / "compose.yaml",
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        try:
+            import yaml
+        except ImportError:  # pragma: no cover
+            self.skipTest("PyYAML is not installed")
+        self.yaml = yaml
+
+    def run_install(self, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        return run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--accelerator", "amd",
+                    "--data-dir", str(self.tmp / "data"), "--router-image", "fake/router:1"],
+                   env=self.installer_env(env), timeout=300)
+
+    def test_no_amd_compose_uses_group_names(self) -> None:
+        for path in self.AMD_COMPOSE:
+            compose = self.yaml.safe_load(path.read_text(encoding="utf-8"))
+            for name, service in (compose.get("services") or {}).items():
+                for entry in service.get("group_add") or []:
+                    entry = str(entry)
+                    numeric = entry.isdigit() or entry.startswith("${")
+                    self.assertTrue(numeric, f"{path.relative_to(ROOT)}: {name} group_add uses a name ({entry!r}); "
+                                             "the ROCm image cannot resolve it, use a numeric host GID")
+
+    def test_install_writes_numeric_gpu_group_ids(self) -> None:
+        result = self.run_install({"EDGE_TEST_HANDOVER": "1", "EDGE_RENDER_GID": "992", "EDGE_VIDEO_GID": "44"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        env_text = (self.tmp / "data" / "secrets" / "env").read_text(encoding="utf-8")
+        self.assertIn("RENDER_GID='992'", env_text)
+        self.assertIn("VIDEO_GID='44'", env_text)
+
+    def test_install_without_devices_or_override_fails_clearly(self) -> None:
+        if os.path.exists("/dev/dri/renderD128"):
+            self.skipTest("this host has real GPU device nodes, so detection succeeds")
+        result = self.run_install({"EDGE_TEST_HANDOVER": "1"})
+        self.assertNotEqual(result.returncode, 0, "AMD docker mode without device nodes must not continue")
+        self.assertIn("render node", result.stderr + result.stdout)
+
+
+class DataDirTraversalTest(_FakeDockerHarness):
+    """Docker mode renders container paths, and the data directory must be reachable.
+
+    Gate 2 docker run 2 died with "initialize router: mkdir /root/metrum-edge:
+    permission denied" after the ownership handover had worked: the configuration
+    carried the host data directory while the container mounts it at /app, and the
+    default path under sudo is /root/metrum-edge, which uid 65532 cannot traverse.
+    """
+
+    def install(self, data_dir: Path, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--accelerator", "nvidia",
+                    "--data-dir", str(data_dir), "--router-image", "fake/router:1"],
+                   env=self.installer_env(extra_env), timeout=300)
+
+    def test_docker_config_renders_container_paths(self) -> None:
+        open_dir = self.tmp / "open"
+        open_dir.mkdir()
+        open_dir.chmod(0o755)
+        result = self.install(open_dir / "edge", {"EDGE_TEST_HANDOVER": "1"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        config = (open_dir / "edge" / "config" / "config.yaml").read_text(encoding="utf-8")
+        self.assertIn("/app/state/usage.sqlite", config)
+        self.assertIn("/app/logs/requests.jsonl", config)
+        self.assertIn("/app/state/router-state.json", config)
+        self.assertNotIn(str(open_dir), config, "the docker-mode config must not carry host paths")
+
+    def test_unsearchable_parent_is_refused(self) -> None:
+        locked = self.tmp / "locked"
+        locked.mkdir()
+        locked.chmod(0o700)
+        result = self.install(locked / "edge", {"EDGE_TEST_HANDOVER": "1"})
+        self.assertNotEqual(result.returncode, 0, "an unsearchable data-directory parent must be refused")
+        self.assertIn("not traversable", result.stderr + result.stdout)
+        self.assertIn("--data-dir", result.stderr + result.stdout)
+
+    def test_searchable_parent_is_accepted(self) -> None:
+        open_dir = self.tmp / "open2"
+        open_dir.mkdir()
+        open_dir.chmod(0o755)
+        result = self.install(open_dir / "edge", {"EDGE_TEST_HANDOVER": "1"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class BundleScriptAgreementTest(_FakeDockerHarness):
+    """The four bundle scripts must agree on the data directory and on paths.
+
+    install.sh defaults a root install to /var/lib/metrum-edge (because /root is 0700
+    and the router runs as uid 65532); demo.sh, upgrade.sh and uninstall.sh inherited
+    the old $HOME default, so `sudo bash demo.sh` looked in /root/metrum-edge and
+    exited with "install.env not found". The docker-mode demo also passed the host
+    config path to `exec router`, where only /app/config/config.yaml exists.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.home.chmod(0o755)
+        self.data = self.tmp / "data"
+        self.data.mkdir()
+        self.data.chmod(0o755)
+
+    def base_env(self, extra: dict[str, str] | None = None) -> dict[str, str]:
+        env = self.installer_env({"HOME": str(self.home)})
+        if extra:
+            env.update(extra)
+        return env
+
+    def install(self) -> subprocess.CompletedProcess[str]:
+        return run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--accelerator", "nvidia",
+                    "--data-dir", str(self.data), "--router-image", "fake/router:1"],
+                   env=self.base_env({"EDGE_TEST_HANDOVER": "1", "EDGE_RENDER_GID": "44", "EDGE_VIDEO_GID": "44"}),
+                   timeout=300)
+
+    def test_lifecycle_scripts_find_the_install_without_a_data_dir(self) -> None:
+        """demo/upgrade/uninstall must default to the same rule install.sh uses."""
+        installed = self.install()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        install_env = (self.data / "install.env").read_text(encoding="utf-8")
+        self.assertIn("EDGE_MODE=docker", install_env)
+        for script, extra in (("demo.sh", {"HOME": str(self.home)}),
+                              ("upgrade.sh", {"HOME": str(self.home)}),
+                              ("uninstall.sh", {"HOME": str(self.home)})):
+            result = run(["bash", str(EDGE / script), "--data-dir", str(self.data)],
+                         env=self.base_env(extra), timeout=300)
+            self.assertNotIn("install.env not found", result.stdout + result.stderr,
+                             f"{script} did not find the install: " + (result.stdout + result.stderr)[:200])
+
+    def test_docker_demo_passes_container_paths_to_exec(self) -> None:
+        installed = self.install()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        demo = run(["bash", str(EDGE / "demo.sh"), "--data-dir", str(self.data)],
+                   env=self.base_env({"EDGE_TEST_HANDOVER": "1"}), timeout=300)
+        calls = (self.tmp / "calls.log").read_text(encoding="utf-8")
+        exec_lines = [line for line in calls.splitlines() if " exec " in line and "router" in line]
+        self.assertTrue(exec_lines, "the demo never invoked the router container: " + calls[-400:])
+        for line in exec_lines:
+            # Only the command after `exec -T router` runs inside the container; the
+            # --env-file/-f arguments before it are host-side docker CLI paths.
+            container_command = line.split("exec -T router", 1)[1]
+            self.assertNotIn(str(self.data), container_command,
+                             "a host path reached the router container: " + line)
+        self.assertTrue(any("/app/config/config.yaml" in line for line in exec_lines),
+                        "the usage report must read the in-container config path: " + "\n".join(exec_lines))
+        self.assertIn(demo.returncode, (0, 1), demo.stdout + demo.stderr)
+
+    def test_gpu_gid_detection_edge_cases(self) -> None:
+        """A missing render node is fatal even when /dev/kfd exists, and the video id
+        never comes from kfd (which belongs to the render group)."""
+        dev = self.tmp / "dev"
+        (dev / "dri").mkdir(parents=True)
+        (dev / "kfd").write_text("", encoding="utf-8")
+        missing_render = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--accelerator", "amd",
+                              "--data-dir", str(self.tmp / "d1"), "--router-image", "fake/router:1"],
+                             env=self.base_env({"EDGE_TEST_HANDOVER": "1", "EDGE_DEV_ROOT": str(dev)}), timeout=120)
+        self.assertNotEqual(missing_render.returncode, 0, "no render node must be fatal")
+        self.assertIn("render node", missing_render.stderr + missing_render.stdout)
+
+        # renderD128 with no card0: the video id must come from the group database.
+        (dev / "dri" / "renderD128").write_text("", encoding="utf-8")
+        getent = self.bin / "getent"
+        getent.write_text("#!/usr/bin/env bash\nprintf 'video:x:44:\n'\n", encoding="utf-8")
+        getent.chmod(0o755)
+        falls_back = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--accelerator", "amd",
+                          "--data-dir", str(self.tmp / "d2"), "--router-image", "fake/router:1"],
+                         env=self.base_env({"EDGE_TEST_HANDOVER": "1", "EDGE_DEV_ROOT": str(dev)}), timeout=120)
+        self.assertEqual(falls_back.returncode, 0, falls_back.stdout + falls_back.stderr)
+        env_text = (self.tmp / "d2" / "secrets" / "env").read_text(encoding="utf-8")
+        self.assertIn("VIDEO_GID='44'", env_text, "the video group id must come from the group database, not kfd")
 
 
 class EdgeBundlePinTest(unittest.TestCase):

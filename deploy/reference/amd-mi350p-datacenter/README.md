@@ -63,6 +63,10 @@ cp config.yaml config/config.yaml
 # The runtime image runs as uid/gid 65532, so the directories it writes must
 # belong to that identity (see DOCKER_COMPOSE_INSTALL.md).
 sudo chown -R 65532:65532 config state logs
+# The pinned ROCm image has no `render` group in its /etc/group, so the container
+# needs the numeric host GIDs of the device nodes rather than group names.
+export RENDER_GID="$(stat -c %g /dev/dri/renderD128)"
+export VIDEO_GID="$(stat -c %g /dev/dri/card0)"
 
 export ROUTER_IMAGE=metrum-ai-router:<version>-linux-amd64   # required, never latest
 export LOCAL_VLLM_API_KEY="$(openssl rand -hex 24)"
