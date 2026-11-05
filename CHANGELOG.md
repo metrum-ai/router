@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An OpenAI Chat target that refuses the output-cap field it was sent and names
+  the other field in its `400` is retried once with the named field, so a model
+  that requires `max_completion_tokens` works for a caller that sent `max_tokens`
+  (and the reverse), instead of surfacing an opaque `upstream-rejected` error.
+  The retry is bounded to that exact refusal, keeps one attempt row and records
+  an `output_token_field_retry` trace event; `max_tokens` remains the unset
+  default so compatible servers that require it keep working (#778).
+
 ### Added
 
 - Configurable HTTP server deadlines: `server.read_timeout_ms`,
