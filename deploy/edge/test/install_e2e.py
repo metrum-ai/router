@@ -596,6 +596,27 @@ exit 0
         self.assertIn("EDGE_ROUTER_IMAGE=fake/router:1", install_env.read_text(encoding="utf-8"),
                       "the dry-run re-render must not clear the recorded image")
 
+    def test_plain_upgrade_without_an_image_refuses_before_stopping_anything(self) -> None:
+        """The installed image is a --config-only fallback, not an upgrade to nothing.
+
+        Falling back in every mode turned `upgrade.sh` with no arguments into "stop and
+        recreate the router on the same image", which is not the documented contract.
+        """
+        install = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),
+                       "--router-image", "fake/router:1", "--accelerator", "nvidia"],
+                      env=self.env(), timeout=300)
+        self.assertEqual(install.returncode, 0, install.stdout + install.stderr)
+        self.log.unlink()
+        upgrade = run(["bash", str(EDGE / "upgrade.sh"), "--data-dir", str(self.data)],
+                      env=self.env(), timeout=300)
+        self.assertNotEqual(upgrade.returncode, 0, "a plain upgrade without an image must fail")
+        self.assertIn("--router-image is required unless --config-only is given", upgrade.stderr + upgrade.stdout)
+        calls = self.lines()
+        self.assertFalse([line for line in calls if "compose" in line and " stop" in line],
+                         "the router must not be stopped before the argument check: " + str(calls))
+        self.assertFalse([line for line in calls if "metrum-ai-router-migrate" in line],
+                         "no migration may run without an upgrade target")
+
     def test_config_only_upgrade_failure_text_matches_reality(self) -> None:
         """--config-only never stops the router, so the failure must not say it is stopped."""
         install = run(["bash", str(EDGE / "install.sh"), "--mode", "docker", "--data-dir", str(self.data),

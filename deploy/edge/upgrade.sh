@@ -40,10 +40,13 @@ INSTALL_ENV="$DATA_DIR/install.env"
 [ -f "$INSTALL_ENV" ] || { echo "upgrade: $INSTALL_ENV not found; run install.sh first" >&2; exit 2; }
 # shellcheck disable=SC1090
 . "$INSTALL_ENV"
-# --config-only does not name an image, so take the installed one. Without this the
-# migration helper ran with an empty reference and the runtime answered
+# --config-only does not name an image, so it takes the installed one; a real upgrade must
+# name the image it is moving to. Without the fallback the migration helper ran with an
+# empty reference and the runtime answered
 # 'parsing reference "": repository name must have at least one component'.
-ROUTER_IMAGE="${ROUTER_IMAGE:-${EDGE_ROUTER_IMAGE:-}}"
+if [ "$CONFIG_ONLY" = "1" ] && [ -z "$ROUTER_IMAGE" ]; then
+  ROUTER_IMAGE="${EDGE_ROUTER_IMAGE:-}"
+fi
 log() { printf '%s upgrade: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 die() { printf 'upgrade: %s\n' "$*" >&2; exit 1; }
 
@@ -54,7 +57,10 @@ case "$EDGE_MODE" in
   *) die "unknown EDGE_MODE=$EDGE_MODE in $INSTALL_ENV" ;;
 esac
 
-[ -n "$ROUTER_IMAGE" ] || die "no router image: pass --router-image, or install once with --router-image so $INSTALL_ENV records it (EDGE_ROUTER_IMAGE is empty there)"
+[ "$CONFIG_ONLY" = "1" ] || [ -n "$ROUTER_IMAGE" ] || die "--router-image is required unless --config-only is given"
+if [ "$CONFIG_ONLY" = "1" ] && [ -z "$ROUTER_IMAGE" ]; then
+  die "no router image recorded in $INSTALL_ENV (EDGE_ROUTER_IMAGE is empty); pass --router-image"
+fi
 case "$ROUTER_IMAGE" in *:latest) die "--router-image must not be latest" ;; esac
 
 # Same handover as install.sh: the re-render and the migrations above wrote files as
