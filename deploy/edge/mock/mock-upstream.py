@@ -20,6 +20,10 @@ Environment:
   MOCK_SERVED_NAME  served model name (default local-tiny)
   MOCK_API_KEY      when set, require "Authorization: Bearer <key>"
   MOCK_LABEL        name returned in the reply text (default mock)
+  MOCK_RECORD_BODY  path to append one JSON line per /v1 request: {"label", "body"}
+  MOCK_REJECT_MAX_TOKENS_LABELS
+                    comma-separated labels that answer a body carrying "max_tokens"
+                    with the 400 current OpenAI models return (see the test bundle)
 
 Usage: mock-upstream.py [--port N] [--served-name NAME] [--api-key-env VAR]
 """
@@ -40,6 +44,13 @@ class State:
         self.served_name = served_name
         self.api_key = api_key
         self.label = label
+        self.record_path = os.environ.get("MOCK_RECORD_BODY", "")
+        rejecting = {
+            item.strip()
+            for item in os.environ.get("MOCK_REJECT_MAX_TOKENS_LABELS", "").split(",")
+            if item.strip()
+        }
+        self.rejects_max_tokens = label in rejecting
         self.requests = 0
         self.lock = threading.Lock()
 
@@ -47,6 +58,13 @@ class State:
         with self.lock:
             self.requests += 1
             return self.requests
+
+    def record(self, body: object) -> None:
+        if not self.record_path:
+            return
+        with self.lock:
+            with open(self.record_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"label": self.label, "body": body}) + "\n")
 
 
 def handler_factory(state: State):
@@ -98,6 +116,19 @@ def handler_factory(state: State):
             except (ValueError, TypeError):
                 self.error(400, "invalid_request", "unparseable body")
                 return
+            if state.rejects_max_tokens and "max_tokens" in body:
+                # What current OpenAI models answer. The edge bundle's own escalate
+                # provider must never reach this branch; the test asserts that a
+                # rendered deployment sends max_completion_tokens instead.
+                state.record(body)
+                self.error(
+                    400,
+                    "invalid_request_error",
+                    "Unsupported parameter: 'max_tokens' is not supported with this model. "
+                    "Use 'max_completion_tokens' instead.",
+                )
+                return
+            state.record(body)
             index = state.count()
             prompt_tokens = max(1, len(str(body.get("messages") or body.get("prompt") or "")) // 4)
             max_tokens = int(body.get("max_tokens") or body.get("max_completion_tokens") or 16)

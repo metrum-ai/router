@@ -268,6 +268,61 @@ class EdgeBundleInstallTest(unittest.TestCase):
         self.assertFalse(self.data_dir.exists(), "purge left files behind")
 
 
+class EscalationOutputFieldTest(unittest.TestCase):
+    """The rendered deployment must reach the provider with the field it accepts.
+
+    A real run's escalation step failed with `Unsupported parameter: 'max_tokens' is not
+    supported with this model. Use 'max_completion_tokens' instead.` Testing the demo
+    string alone would not catch a rendered config that lets the router rewrite the field
+    back, so this drives the real binaries end to end: the escalate mock answers that 400
+    to any body carrying max_tokens and records what it receives.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = Path(tempfile.mkdtemp(prefix="edge-escalate-field-"))
+        cls.addClassCleanup(shutil.rmtree, cls.tmp, ignore_errors=True)
+        cls.bin_dir = built_binaries()
+        cls.data_dir = cls.tmp / "data"
+        cls.port = free_port()
+        cls.bodies = cls.tmp / "upstream-bodies.jsonl"
+        env = os.environ.copy()
+        for key in ("LOCAL_VLLM_API_KEY", "ROUTER_ID_TRANSFORM_KEY", "METRUM_ADMIN_PASSWORD_HASH"):
+            env.pop(key, None)
+        env["MOCK_REJECT_MAX_TOKENS_LABELS"] = "escalation"
+        env["MOCK_RECORD_BODY"] = str(cls.bodies)
+        cls.install = run([
+            "bash", str(INSTALL), "--mode", "native", "--bin-dir", str(cls.bin_dir),
+            "--data-dir", str(cls.data_dir), "--port", str(cls.port),
+        ], env=env)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls.data_dir.exists():
+            run(["bash", str(UNINSTALL), "--data-dir", str(cls.data_dir), "--native-only"])
+
+    def recorded(self, label: str) -> list[dict]:
+        if not self.bodies.is_file():
+            return []
+        return [entry for entry in (json.loads(line) for line in self.bodies.read_text(encoding="utf-8").splitlines() if line.strip())
+                if entry.get("label") == label]
+
+    def test_escalation_reaches_the_provider_with_max_completion_tokens(self) -> None:
+        self.assertEqual(self.install.returncode, 0, self.install.stdout + self.install.stderr)
+        demo = run(["bash", str(DEMO), "--data-dir", str(self.data_dir)], timeout=600)
+        output = demo.stdout + demo.stderr
+        self.assertEqual(demo.returncode, 0, output[-1200:])
+        self.assertIn("escalate answered", output, "the escalation step must get a 200: " + output[-800:])
+        escalation = self.recorded("escalation")
+        self.assertTrue(escalation, "the escalation upstream recorded no request")
+        for entry in escalation:
+            body = entry["body"]
+            self.assertIn("max_completion_tokens", body,
+                          "the provider was called without the output field it accepts: " + str(body))
+            self.assertNotIn("max_tokens", body,
+                             "the provider received max_tokens, which it rejects: " + str(body))
+
+
 class EdgeBundleComposeTest(unittest.TestCase):
     """The compose files must be structurally sound before a GPU host sees them.
 
