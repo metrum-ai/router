@@ -25,13 +25,25 @@ sys.path.insert(0, str(ROOT/'examples'))
 import router_readiness as readiness  # noqa: E402
 
 
+# This evaluation harness has always allowed 60 s for startup; the shared
+# budget may be lower after measurement, but this harness never lowers its own.
+FT_READY_TIMEOUT_FLOOR_S = 60.0
+
+
+def ready_budget(timeout=None):
+    """Return the readiness budget: explicit, else the shared budget with a 60 s floor."""
+    if timeout is not None:
+        return timeout
+    return max(FT_READY_TIMEOUT_FLOOR_S, readiness.ready_timeout_s())
+
+
 def wait_ready(process, url, timeout=None, opener=None, log_path=None):
     """Bounded startup gate; never send test traffic after readiness exhaustion.
 
     The budget comes from the shared example-harness readiness module (#787):
     METRUM_ROUTER_READY_TIMEOUT_S when set, otherwise its data-derived default.
     """
-    budget = readiness.ready_timeout_s() if timeout is None else timeout
+    budget = ready_budget(timeout)
     opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
     started = time.monotonic()
     while time.monotonic() - started < budget:

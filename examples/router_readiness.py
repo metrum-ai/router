@@ -8,15 +8,16 @@ Every example that starts a local router and polls `/readyz` used to carry its
 own inline loop with a hard-coded 15 s budget, which flaked on shared-CPU CI
 runners. This module owns the budget, the polling and the diagnostics.
 
-Default budget rule (derived from data, not a guess): the largest observed CI
-wait is 15 s, but those samples are *censored* — the old loop gave up at 15 s, so
-a failure only proves "longer than 15 s". Uncensored measurements of the same
-config shape (20 starts each, router built from main) are p50 2.47 s / p95 2.89 s
-/ max 2.93 s unrestricted, and p50 2.75 s / p95 4.05 s / max 4.05 s pinned to one
-CPU as a contention proxy. Twice the largest observed CI wait is 30 s, rounded
-to the next 5 s, which leaves roughly 7x headroom over the slowest uncensored
-sample. Override with METRUM_ROUTER_READY_TIMEOUT_S when a deployment starts the
-router on slower storage or a busier host.
+Default budget rule (derived from measured data, not a guess): the shared-CPU
+runner class measured on 2026-11-05 with METRUM_ROUTER_READY_TIMEOUT_S=120, 40
+starts of the governance and tokenomics demo configs (n=40, no failures):
+p50 11.87 s, p95 13.31 s, max 24.65 s. Twice the maximum, rounded up to the next
+5 s, is 50 s. Earlier CI samples were censored at the old fixed 15 s loop (a
+failure only proved "longer than 15 s"); the uncensored local numbers for the
+same config shape are p50 2.47 s / max 2.93 s unrestricted and p50 2.75 s / max
+4.05 s pinned to one CPU, which is why the shared runners, not the startup work,
+set the budget. Override with METRUM_ROUTER_READY_TIMEOUT_S when a deployment
+starts the router on slower storage or a busier host.
 
 A timeout is still a failure: the elapsed time and the tail of the router log are
 printed first, so a real startup regression stays visible.
@@ -34,8 +35,8 @@ from urllib.request import urlopen
 # Environment override for the budget, in seconds.
 READY_TIMEOUT_ENV = "METRUM_ROUTER_READY_TIMEOUT_S"
 
-# See the module docstring for the rule that produced this value.
-DEFAULT_READY_TIMEOUT_S = 30.0
+# See the module docstring for the measured rule that produced this value.
+DEFAULT_READY_TIMEOUT_S = 50.0
 
 # Poll interval between readiness attempts, and the per-attempt request timeout.
 POLL_INTERVAL_S = 0.1

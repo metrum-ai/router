@@ -113,7 +113,9 @@ class ReadyTimeoutTests(unittest.TestCase):
         for bad in ("soon", "0", "-3"):
             with self.assertRaises(ValueError):
                 router_readiness.ready_timeout_s({router_readiness.READY_TIMEOUT_ENV: bad})
-        self.assertGreater(router_readiness.DEFAULT_READY_TIMEOUT_S, 15.0)
+        # Rule: twice the largest measured shared-CPU ready time (24.65 s),
+        # rounded up to the next 5 s.
+        self.assertEqual(router_readiness.DEFAULT_READY_TIMEOUT_S, 50.0)
 
     def test_env_override_reaches_the_wait(self):
         server, url = serve(ready_after=60)
