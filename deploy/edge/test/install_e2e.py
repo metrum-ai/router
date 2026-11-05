@@ -850,6 +850,36 @@ class BundleScriptAgreementTest(_FakeDockerHarness):
                       "native mode listens where the operator asked, on the host itself")
         self.assertNotIn("listen: 0.0.0.0", config, result.stdout + result.stderr)
 
+    def test_model_servers_start_in_sequence(self) -> None:
+        """Each server sizes its KV cache against the device's free memory.
+
+        Measured on an A6000 48 GB: with both servers loading in parallel the tiny slot
+        reported "Available KV cache memory: -6.75 GiB" and died, then came up healthy on
+        the retry once the primary had settled. vllm-primary must therefore wait for
+        vllm-tiny to be healthy, and the router must still wait for both.
+        """
+        import yaml
+        compose = yaml.safe_load((EDGE / "compose.yaml").read_text(encoding="utf-8"))
+        services = compose["services"]
+        self.assertEqual(services["vllm-primary"].get("depends_on"),
+                         {"vllm-tiny": {"condition": "service_healthy"}},
+                         "the primary must not start while the tiny slot is still loading")
+        router_deps = services["router"].get("depends_on") or {}
+        self.assertEqual(set(router_deps), {"vllm-tiny", "vllm-primary"},
+                         "the router must wait for both model servers")
+
+    def test_cold_start_wait_covers_a_first_pull(self) -> None:
+        """360 s was shorter than a measured cold first boot (6 min 18 s on an A6000)."""
+        import re
+        install = (EDGE / "install.sh").read_text(encoding="utf-8")
+        match = re.search(r'timeout="\$\{EDGE_READY_TIMEOUT:-(\d+)\}"', install)
+        self.assertIsNotNone(match, "the readiness wait must be configurable")
+        self.assertGreaterEqual(int(match.group(1)), 600,
+                                "a cold pull plus two model servers takes longer than 10 minutes")
+        self.assertIn("waiting for ${BASE_URL}/readyz", install, "the wait must say it is waiting")
+        readme = (EDGE / "README.md").read_text(encoding="utf-8")
+        self.assertIn("EDGE_READY_TIMEOUT", readme)
+
     def test_demo_reports_not_ready_as_a_failure_not_a_skip(self) -> None:
         """Run 4's demo printed four HTTP 000 lines and said nothing about readiness.
 

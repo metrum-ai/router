@@ -60,10 +60,20 @@ services:
     ports:
       - 127.0.0.1:${EDGE_TINY_VLLM_PORT:-8002}:8000
 
-  # Primary local model behind the local-chat group. The served name is stable;
+  # Primary local model behind the local-chat group.
+  #
+  # The model servers start in sequence, not together: each sizes its KV cache against the
+  # device's free memory, so a server that initializes while the other is still loading
+  # sees that memory as unavailable. Measured on an A6000 48 GB: starting both in parallel,
+  # the tiny slot reported "Available KV cache memory: -6.75 GiB" and died, then came up
+  # healthy on the retry once the primary had settled. The dependency removes that race
+  # without changing either slot's memory budget. The served name is stable;
   # EDGE_PRIMARY_MODEL and EDGE_PRIMARY_REVISION choose the weights.
   vllm-primary:
     <<: *vllm-service
+    depends_on:
+      vllm-tiny:
+        condition: service_healthy
     command:
       - --model
       - ${EDGE_PRIMARY_MODEL:-Qwen/Qwen3-30B-A3B-Instruct-2507}

@@ -133,6 +133,15 @@ detects and writes into the secret environment as group ids (override with
 `EDGE_RENDER_GID` / `EDGE_VIDEO_GID`). The runtime image runs as uid 65532 and
 the installer hands it the directories it mounts.
 
+The two model servers start in sequence: `vllm-primary` waits for `vllm-tiny` to be
+healthy. That is deliberate — each server sizes its KV cache against the device's *free*
+memory, so servers that initialize together see each other's allocations as unavailable
+and the smaller one dies with `Available KV cache memory: -6.75 GiB` (measured on an
+A6000 48 GB before the dependency existed). A cold docker install therefore moves about
+20 GB of weights and compiles both servers before the router answers: the installer waits
+`EDGE_READY_TIMEOUT` seconds for `/readyz` (default 900 in docker mode, 180 in native
+mode) and logs that it is waiting, so a slow first pull is not mistaken for a failure.
+
 In docker mode the router listens on `0.0.0.0` **inside** its container while the host
 publishes that port on `--listen` (default `127.0.0.1`), so the API is not exposed
 beyond the host. The two addresses are different on purpose: a process bound to
@@ -267,6 +276,12 @@ need several minutes to reload and leave every request failing at the connection
 (HTTP `000`, not a server status). `demo.sh` waits for `/readyz` for up to
 `EDGE_DEMO_READY_TIMEOUT` seconds (default 300) before step 1 and says so, but a
 request made by hand during a reload still gets nothing.
+
+The default escalation target is `gpt-5.4` at `api.openai.com`. If your key cannot use
+that model the group fails closed with an upstream error (a Gate 2 run with a key that
+served `gpt-6.1-sol` got HTTP 400 `upstream_bad_request`), so set `--escalation-model`
+(and `--escalation-base-url` for a non-OpenAI endpoint) at install time, or edit the
+`escalate` provider in the rendered config and recreate the router.
 
 `--escalation-key-env NAME` changes which variable the *renderer* points the
 provider at, but **docker mode can only deliver two names into the router
