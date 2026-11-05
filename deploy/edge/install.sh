@@ -112,6 +112,15 @@ while [ $# -gt 0 ]; do
 done
 
 case "$MODE" in docker|native) ;; *) die "--mode must be docker or native" ;; esac
+# Docker mode runs the router as uid 65532, which must be able to traverse every
+# component of the data directory. The default "$HOME/metrum-edge" becomes
+# /root/metrum-edge under sudo, and /root is mode 0700 root, so the installer uses a
+# system path there instead.
+DATA_DIR_DEFAULTED=0
+if [ "$MODE" = "docker" ] && [ "$(id -u)" = "0" ] && [ "$DATA_DIR" = "${HOME}/metrum-edge" ]; then
+  DATA_DIR="/var/lib/metrum-edge"
+  DATA_DIR_DEFAULTED=1
+fi
 case "$ACCELERATOR" in amd|nvidia|auto) ;; *) die "--accelerator must be amd, nvidia or auto" ;; esac
 mkdir -p "$DATA_DIR" || die "cannot create --data-dir $DATA_DIR"
 DATA_DIR="$(cd "$DATA_DIR" && pwd)"
@@ -220,6 +229,9 @@ ensure_binaries() {
   if [ "$(id -u)" != "0" ] && [ "${EDGE_TEST_HANDOVER:-}" != "1" ] && [ "$DRY_RUN" != "1" ]; then
     die "docker mode must run as root: the router image runs as uid 65532 and the installer must hand it config, state and logs, which a non-root user cannot do. Run it with sudo (as the README shows); on rootless Podman see the Rootless Podman section of the bundle README."
   fi
+  if [ "$DRY_RUN" != "1" ] && ! path_ancestors_searchable_by_others "$DATA_DIR"; then
+    die "the data directory $DATA_DIR is not traversable by the router container's user (uid 65532): a parent directory is not readable/searchable by others (for example /root is mode 0700). Pass --data-dir with a path the container user can reach, such as /var/lib/metrum-edge."
+  fi
   if [ "$DRY_RUN" = "1" ]; then
     log "dry run: not checking for docker; nothing will be started"
     command -v docker >/dev/null 2>&1 || [ -n "$ROUTERCTL_OVERRIDE" ] || \
@@ -294,6 +306,28 @@ detect_gpu_group_ids() {
   RENDER_GID="$(stat -c %g "$render_node")"
   VIDEO_GID="$(stat -c %g /dev/dri/card0 2>/dev/null || stat -c %g /dev/kfd)"
   log "detected GPU group ids: render=$RENDER_GID video=$VIDEO_GID"
+}
+
+# path_ancestors_searchable_by_others is true when every directory above $1 is
+# searchable by "others". A container's uid 65532 reaches a bind mount through those
+# components, so a 0700 parent (like /root) makes the mount unreachable no matter who
+# owns the files inside it.
+path_ancestors_searchable_by_others() {
+  local path last
+  path="$(dirname "$1")"
+  while :; do
+    if [ -e "$path" ]; then
+      last="$(stat -c %a "$path")"
+      last="${last: -1}"
+      case "$last" in
+        1|3|5|7) ;;
+        *) return 1 ;;
+      esac
+    fi
+    [ "$path" = "/" ] && break
+    path="$(dirname "$path")"
+  done
+  return 0
 }
 
 write_environment() {
@@ -389,10 +423,17 @@ render_config() {
     primary_base="http://vllm-primary:8000/v1"
   fi
 
+  # Docker mode mounts the data directory at /app (state, logs, config), so the
+  # rendered configuration must carry those in-container paths: rendering the host
+  # path made the router try to create /root/metrum-edge inside its own filesystem.
+  local runtime_root="$DATA_DIR"
+  if [ "$MODE" = "docker" ]; then
+    runtime_root="/app"
+  fi
   umask 077
   sed \
     -e "s|@@LISTEN@@|${LISTEN_ADDR}:${ROUTER_PORT}|g" \
-    -e "s|@@DATA_DIR@@|${DATA_DIR}|g" \
+    -e "s|@@DATA_DIR@@|${runtime_root}|g" \
     -e "s|@@TINY_BASE_URL@@|${tiny_base}|g" \
     -e "s|@@PRIMARY_BASE_URL@@|${primary_base}|g" \
     -e "s|@@ESCALATE_BASE_URL@@|${escalate_base}|g" \
