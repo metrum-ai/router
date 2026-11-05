@@ -156,6 +156,12 @@ outstanding. No cost is claimed before it is known.
 
 ## Limits
 
+- **Not validated on MI350P hardware.** The configuration, image pins and sizing
+  arithmetic are checked in CI; the container path has never run on this card, so no
+  concurrency, latency or memory-plan number in this tier is measured. That validation
+  moved to v5.0.0 as
+  [#785](https://github.com/metrum-ai/router/issues/785) and this line stays until it
+  lands.
 - The pinned ROCm image carries vLLM 0.19.1 while the NVIDIA tier pins 0.33.0.
   Feature differences between those versions apply here; this tier does not claim
   parity with the NVIDIA tier's vLLM features.
