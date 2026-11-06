@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
-	"github.com/metrum-ai/router/internal/tlsacme"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -83,7 +82,6 @@ type Service struct {
 	shaping            *upstreamShapeManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
-	tlsManager         *tlsacme.Manager
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
@@ -241,10 +239,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	tlsManager, err := newTLSManager(cfg.Server.TLS)
-	if err != nil {
-		return nil, err
-	}
 	if cfg.Eligibility.implicitEnabled() {
 		for group, model := range cfg.Models {
 			for _, target := range model.Targets {
@@ -333,7 +327,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		shadows:            newShadowRuntime(),
 		provenance:         provenance,
 		responsesAffinity:  responsesAffinity,
-		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -413,16 +406,6 @@ func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
 	return s.withStreamProgressDeadline(s.mux)
-}
-
-// TLSManager returns the serving listener's TLS manager, or nil when
-// server.tls is off (the v4.7 behaviour). The caller runs EnsureCertificate
-// before binding and Run for renewals, and sets srv.TLSConfig from TLSConfig.
-func (s *Service) TLSManager() *tlsacme.Manager {
-	if s == nil {
-		return nil
-	}
-	return s.tlsManager
 }
 
 func (s *Service) Close() {
@@ -1145,11 +1128,6 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
-	if s.tlsManager != nil {
-		// Empty unless the serving listener terminates TLS itself, so a v4.7
-		// configuration keeps byte-identical /metrics output.
-		_, _ = io.WriteString(w, s.tlsManager.Prometheus())
-	}
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
