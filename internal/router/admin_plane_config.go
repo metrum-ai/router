@@ -93,7 +93,8 @@ type AdminTLSConfig struct {
 	KeyFile  string `yaml:"key_file" json:"keyFile,omitempty"`
 	// ACME is owned by #810. It is declared as an opaque block so a
 	// configuration that sets it is never silently ignored; the TLS lane
-	// replaces the type with its issuer configuration.
+	// replaces the type with its ListenerTLSConfig.acme and this lane keeps
+	// only hasACMEBlock.
 	ACME map[string]any `yaml:"acme" json:"acme,omitempty"`
 	// MinVersion is the minimum negotiated TLS version: 1.2 (default) or 1.3.
 	MinVersion string `yaml:"min_version" json:"minVersion,omitempty"`
@@ -144,6 +145,12 @@ type AdminAuthenticationConfig struct {
 type AdminAuthenticationMTLSConfig struct {
 	CAFiles        []string `yaml:"ca_files" json:"caFiles,omitempty"`
 	ReloadInterval string   `yaml:"reload_interval" json:"reloadInterval,omitempty"`
+}
+
+// hasACMEBlock reports whether an acme sub-block is configured. #810 owns the
+// block's type; this seam keeps the listener's checks independent of it.
+func (c AdminTLSConfig) hasACMEBlock() bool {
+	return len(c.ACME) > 0
 }
 
 func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
@@ -308,7 +315,7 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 			if strings.TrimSpace(cfg.TLS.CertFile) == "" || strings.TrimSpace(cfg.TLS.KeyFile) == "" {
 				return fmt.Errorf("admin.tls.mode router requires admin.tls.cert_file and admin.tls.key_file")
 			}
-			if len(cfg.TLS.ACME) > 0 {
+			if cfg.TLS.hasACMEBlock() {
 				return fmt.Errorf("admin.tls.acme requires admin.tls.certificate_source acme")
 			}
 		case adminCertificateSourceACME:
@@ -331,7 +338,7 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
 			return fmt.Errorf("admin.tls.cert_file/key_file cannot be used with admin.tls.mode proxy")
 		}
-		if len(cfg.TLS.ACME) > 0 {
+		if cfg.TLS.hasACMEBlock() {
 			return fmt.Errorf("admin.tls.acme requires admin.tls.mode router")
 		}
 	default:

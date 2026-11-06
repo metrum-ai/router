@@ -334,11 +334,12 @@ func adminMachineOnlyGate(next http.Handler) http.Handler {
 	})
 }
 
-// AdminCertificateSource is the router-native certificate seam #810 supplies to
-// the listener. Its manager calls the listener's single handshake hook, so the
-// listener asks the source whether it serves the SNI and then fetches the
-// certificate before applying the #814 client-CA snapshot.
-type AdminCertificateSource interface {
+// AdminCertificateManager is the router-native certificate seam #810 supplies to
+// the listener. The TLS lane adapts its ACME manager to it (the adapter struct
+// is named AdminCertificateSource there). The listener asks the manager whether
+// it serves the SNI and then fetches the certificate, all inside its single
+// handshake hook, before applying the #814 client-CA snapshot.
+type AdminCertificateManager interface {
 	// GetCertificate returns the certificate for the hello, or an error when the
 	// router cannot serve it.
 	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
@@ -461,7 +462,7 @@ type AdminPlane struct {
 	handler  http.Handler
 	clientCA *AdminClientCASnapshot
 	certMu   sync.Mutex
-	certSrc  AdminCertificateSource
+	certSrc  AdminCertificateManager
 	tlsCfg   *tls.Config
 
 	mu  sync.Mutex
@@ -525,7 +526,7 @@ func (p *AdminPlane) ClientCASnapshot() *AdminClientCASnapshot {
 // SetCertificateSource installs #810's certificate manager. It must be called
 // before Start; the manager's GetCertificate/CheckSNI run inside the listener's
 // single GetConfigForClient, ahead of the client-CA snapshot and ClientAuth.
-func (p *AdminPlane) SetCertificateSource(src AdminCertificateSource) error {
+func (p *AdminPlane) SetCertificateSource(src AdminCertificateManager) error {
 	if p == nil || src == nil {
 		return fmt.Errorf("admin certificate source is required")
 	}
