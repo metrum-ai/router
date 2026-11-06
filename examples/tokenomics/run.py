@@ -4,6 +4,7 @@
 """Run a credential-free, local mock-upstream tokenomics demonstration."""
 from __future__ import annotations
 import argparse
+import sys
 from contextlib import ExitStack, nullcontext
 import importlib.util
 import json
@@ -24,6 +25,9 @@ from urllib.request import Request, urlopen
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT/'examples'))
+from router_readiness import wait_for_router_ready  # noqa: E402
+
 
 
 class Upstream(BaseHTTPRequestHandler):
@@ -113,14 +117,7 @@ def main():
             with (state/'router.log').open('wb') as log, ExitStack() as cleanup:
                 process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],stdout=log,stderr=subprocess.STDOUT)
                 cleanup.callback(stop, process)
-                for _ in range(150):
-                    if process.poll() is not None: raise RuntimeError('router failed to start; check config and binary')
-                    try:
-                        with urlopen(base+'/readyz',timeout=1) as r:
-                            if r.status==200: break
-                    except (URLError,TimeoutError): pass
-                    time.sleep(.1)
-                else: raise RuntimeError('router readiness timeout')
+                wait_for_router_ready(process, base+'/readyz', log_path=state/'router.log')
                 def call(user):
                     body=json.dumps({'model':'demo','messages':[{'role':'user','content':'synthetic test'}],'max_tokens':20}).encode()
                     request=Request(base+'/v1/chat/completions',data=body,headers={'Authorization':'Bearer '+tokens[user],'Content-Type':'application/json'})
