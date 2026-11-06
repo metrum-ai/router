@@ -48,7 +48,12 @@ done
 # so the report preview and the model extraction cannot regress unnoticed.
 if [ -n "$SELF_CHECK" ]; then
   case "$SELF_CHECK" in
-    report-preview) report_preview < "$SELF_CHECK_FILE" ;;
+    report-preview)
+      # Same shape as step 4: the report is a shell variable and goes through the
+      # pipeline, so the self-check exercises the real SIGPIPE hazard.
+      report="$(cat "$SELF_CHECK_FILE")"
+      printf '%s\n' "$report" | report_preview
+      ;;
     model) first_model < "$SELF_CHECK_FILE" ;;
     *) echo "demo: unknown self-check $SELF_CHECK" >&2; exit 2 ;;
   esac

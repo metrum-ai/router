@@ -351,9 +351,12 @@ class DemoReportPreviewTest(unittest.TestCase):
         return handle.name
 
     def test_long_report_preview_does_not_sigpipe(self):
-        path = self._write("".join(f"line {i}\n" for i in range(1, 61)))
-        demo = run(["bash", str(DEMO), "--self-check", "report-preview", path], timeout=60)
-        self.assertEqual(demo.returncode, 0, demo.stdout + demo.stderr)
+        # Large enough that `printf | head -40` blocks and then takes SIGPIPE
+        # (exit 141) under `set -o pipefail`; 60 lines fit the pipe buffer and
+        # would not reproduce the bug.
+        path = self._write("".join(f"line {i}\n" for i in range(1, 200001)))
+        demo = run(["bash", str(DEMO), "--self-check", "report-preview", path], timeout=120)
+        self.assertEqual(demo.returncode, 0, demo.stdout[-2000:] + demo.stderr[-2000:])
         self.assertEqual(len(demo.stdout.splitlines()), 40, demo.stdout)
 
     def test_two_model_keys_yield_one_model(self):
