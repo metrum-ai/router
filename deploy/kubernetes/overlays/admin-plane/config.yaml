@@ -1,0 +1,42 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reference configuration for the admin-plane overlay. It mirrors
+# deploy/kubernetes/base/configmap.yaml and turns the control plane on. Replace
+# providers, models and callers with the deployment's own configuration.
+server:
+  listen: ":8080"
+  env_file: /app/config/env.json
+  logging:
+    path: /app/logs/requests.jsonl
+  usage_db:
+    enabled: true
+    driver: sqlite
+    path: /app/state/usage.sqlite
+    migration_policy: deployment-job
+  admin_reports:
+    enabled: false
+  upstream:
+    timeout_ms: 120000
+    max_response_bytes: 52428800
+# Admin control plane: machine-to-machine only. The pod binds its own address
+# and the private Service is the only route in; no Ingress selects it.
+admin:
+  enabled: true
+  listen: "0.0.0.0:8081"
+  # Plaintext is acceptable only because the pod network is private and the
+  # default-deny NetworkPolicy admits selected pods only. Use
+  # admin.tls.mode: router with a mounted secret for TLS, or
+  # admin.tls.mode: proxy behind a trusted sidecar.
+  allow_plaintext_non_loopback: true
+  legacy_routes_on_serving_port: true
+  legacy_sunset: "2027-03-01T00:00:00Z"
+  metrics:
+    on_serving_port: false
+state_path: /app/state/router-state.json
+providers: {}
+models: {}
+users: []
+projects: []
+project_memberships: []
+callers: []

@@ -1,0 +1,25 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrum-ai-router
+spec:
+  template:
+    spec:
+      containers:
+        - name: router
+          args:
+            - "--config"
+            - "/app/config/config.yaml"
+            # Bind the pod IP explicitly; the private Service is the only route.
+            - "--admin-listen"
+            - "$(ROUTER_ADMIN_LISTEN)"
+          env:
+            - name: ROUTER_ADMIN_LISTEN
+              value: "0.0.0.0:8081"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
