@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Route tagged synthetic requests to four experts and a general fallback."""
 import argparse
+import sys
 import datetime
 from contextlib import ExitStack, nullcontext
 import importlib.util
@@ -24,6 +25,9 @@ import yaml
 from policy import DOMAINS, Handler
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT/'examples'))
+from router_readiness import wait_for_router_ready  # noqa: E402
+
 TIERS=(*DOMAINS,'general')
 
 
@@ -85,14 +89,7 @@ def main():
             config=state/'config.yaml'; config.write_text(yaml.safe_dump(cfg,sort_keys=False));config.chmod(0o600)
             with (state/'router.log').open('wb') as log, ExitStack() as cleanup:
                 process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],stdout=log,stderr=subprocess.STDOUT); cleanup.callback(demo.stop,process)
-                for _ in range(150):
-                    if process.poll() is not None: raise RuntimeError('router startup failed')
-                    try:
-                        with urlopen(base+'/readyz',timeout=1) as r:
-                            if r.status==200: break
-                    except (URLError,TimeoutError): pass
-                    time.sleep(.1)
-                else: raise RuntimeError('router readiness timeout')
+                wait_for_router_ready(process, base+'/readyz', log_path=state/'router.log')
                 requests=[]
                 for tier in TIERS:
                     text='[domain:'+tier+'] Synthetic task.' if tier!='general' else 'Unknown domain synthetic task.'
