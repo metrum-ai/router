@@ -23,7 +23,8 @@ name.
 ## 1. Build Caddy with a DNS provider module
 
 Caddy's DNS-01 support lives in provider modules that are compiled in. Build a
-Caddy binary with the module for your provider:
+Caddy binary with the module for your provider. The two helper scripts are run
+with `bash` below so a checkout without the executable bit still works:
 
 ```bash
 go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
@@ -44,7 +45,7 @@ Cloudflare API, idempotently, and only for records it owns:
 
 ```bash
 CF_API_TOKEN=... ZONE=example.com NAME=router.example.com TYPE=A \
-  VALUE=203.0.113.10 OWNER=router-prod-1 ./create-dns-record.sh
+  VALUE=203.0.113.10 OWNER=router-prod-1 bash ./create-dns-record.sh
 ```
 
 - The first run claims the ownership TXT record at `_metrum-router.<name>`,
@@ -125,7 +126,7 @@ ROUTER_HOSTNAME=router-test.example.com \
 ROUTER_ACME_EMAIL=ops@example.com \
 ROUTER_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory \
 CF_DNS_API_TOKEN=... \
-  ./smoke-test.sh ./caddy
+  bash ./smoke-test.sh ./caddy
 ```
 
 For a local ACME test CA, run Pebble plus `pebble-challtestsrv`, point
