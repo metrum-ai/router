@@ -13,6 +13,7 @@
 # The script exits non-zero if any step fails.
 #
 # Usage: bash demo.sh [--data-dir DIR]
+#        bash demo.sh --self-check report-preview|model FILE   (used by deploy/edge/test)
 
 set -euo pipefail
 
@@ -20,14 +21,44 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
 
+# Both helpers read their input to EOF: piping into `head` would close the pipe
+# early and kill the writer with SIGPIPE (exit 141) under `set -o pipefail`, and
+# `grep -o` prints every match on a line, so the first match is kept explicitly.
+report_preview() {
+  sed -n '1,40p' | sed 's/^/      /'
+}
+
+first_model() {
+  grep -o '"model": *"[^"]*"' | sed -n '1{s/.*: *"//; s/"$//; p;}'
+}
+
 DATA_DIR="$(metrum_default_data_dir)"
+SELF_CHECK=""
+SELF_CHECK_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --data-dir) DATA_DIR="${2:?}"; shift 2 ;;
-    -h|--help) sed -n '4,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --self-check) SELF_CHECK="${2:?--self-check needs report-preview or model}"; SELF_CHECK_FILE="${3:?--self-check needs a file}"; shift 3 ;;
+    -h|--help) sed -n '4,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "demo: unknown option $1" >&2; exit 2 ;;
   esac
 done
+
+# The edge-bundle tests drive the same two code paths through this entry point,
+# so the report preview and the model extraction cannot regress unnoticed.
+if [ -n "$SELF_CHECK" ]; then
+  case "$SELF_CHECK" in
+    report-preview)
+      # Same shape as step 4: the report is a shell variable and goes through the
+      # pipeline, so the self-check exercises the real SIGPIPE hazard.
+      report="$(cat "$SELF_CHECK_FILE")"
+      printf '%s\n' "$report" | report_preview
+      ;;
+    model) first_model < "$SELF_CHECK_FILE" ;;
+    *) echo "demo: unknown self-check $SELF_CHECK" >&2; exit 2 ;;
+  esac
+  exit 0
+fi
 
 INSTALL_ENV="$DATA_DIR/install.env"
 [ -f "$INSTALL_ENV" ] || { echo "demo: $INSTALL_ENV not found; run install.sh first" >&2; exit 2; }
@@ -125,7 +156,7 @@ if ! wait_for_router; then
 fi
 ask "$DEMO_TOKEN" local-chat "In one sentence, what is a model group?"
 if [ "$STATUS" = "200" ]; then
-  model="$(grep -o '"model": *"[^"]*"' "$BODY_FILE" | head -1 | sed 's/.*: *"//; s/"$//')"
+  model="$(first_model <"$BODY_FILE")"
   pass "local-chat answered in ${ELAPSED}s (upstream model: ${model:-unreported})"
   note "the answer came from the box; the usage row groups it under local-chat"
 else
@@ -223,7 +254,7 @@ while [ "$attempt" -lt 5 ]; do
   sleep 1
 done
 if [ -n "$report" ]; then
-  printf '%s\n' "$report" | head -40 | sed 's/^/      /'
+  printf '%s\n' "$report" | report_preview
   if printf '%s' "$report" | grep -qi 'local-chat'; then
     pass "report lists the local-chat group with token counts after ${attempt} attempt(s)"
   else
