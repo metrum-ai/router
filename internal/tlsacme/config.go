@@ -58,6 +58,9 @@ const (
 type Config struct {
 	// Listener labels the configuration for metrics and status: serving or admin.
 	Listener string
+	// ErrorPrefix overrides the prefix of validation errors, so the router can
+	// report a configuration key (server.tls) rather than a listener label.
+	ErrorPrefix string
 
 	Mode string
 	// CertificateFile and KeyFile are used by ModeFiles only.
@@ -437,6 +440,9 @@ func (c Credentials) validate(prefix, provider string) error {
 }
 
 func (c Config) prefix() string {
+	if prefix := strings.TrimSpace(c.ErrorPrefix); prefix != "" {
+		return prefix
+	}
 	listener := c.Listener
 	if listener == "" {
 		listener = ListenerServing
