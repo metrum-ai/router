@@ -241,10 +241,10 @@ every red cell reported as red:
 This change set contains release documentation only:
 
 ```
-CHANGELOG.md                          | 54 ++++++++++++++++++++-
+ CHANGELOG.md                          | 54 ++++++++++++++++++++-
  deploy/reference/README.md            |  8 ++--
- docs-site/docs/release-notes/index.md | 89 +++++++++++++++++++++++++++++++++++
- 3 files changed, 146 insertions(+), 5 deletions(-)
+ docs-site/docs/release-notes/index.md | 88 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 145 insertions(+), 5 deletions(-)
 ```
 
 `git diff --stat 5db5ac66a7e4 v4.7.0 -- internal cmd go.mod go.sum` is
