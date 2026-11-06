@@ -1,0 +1,82 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reference Caddy front end for the router's proxy-TLS mode (#810, ACP-N08d).
+#
+# Caddy terminates TLS for the public hostname and obtains the certificate over
+# ACME DNS-01 through a DNS provider module, so the router host needs no
+# inbound port on 80 or 443 for validation and can stay on a private network.
+#
+# Build Caddy with the provider module you use (see README.md):
+#   xcaddy build --with github.com/caddy-dns/cloudflare
+#   xcaddy build --with github.com/caddy-dns/route53
+#   xcaddy build --with github.com/caddy-dns/digitalocean
+#
+# Variables:
+#   ROUTER_HOSTNAME   public hostname, e.g. router.example.com
+#   ROUTER_ACME_EMAIL ACME account contact
+#   ROUTER_DNS_ZONE   zone that holds the challenge records
+#   ROUTER_ADMIN_ADDR admin listener address (loopback by default)
+#   ROUTER_SERVE_ADDR serving listener address
+
+{
+	email {$ROUTER_ACME_EMAIL}
+	# Point a staging run at https://acme-staging-v02.api.letsencrypt.org/directory
+	# (see smoke-test.sh); production uses the default.
+	acme_ca {$ROUTER_ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+	# Keep the proxy's own state (certificates, OCSP staples) off the router's
+	# disk so the two lifecycles never interfere.
+	storage file_system {$CADDY_DATA_DIR:/var/lib/caddy}
+}
+
+{$ROUTER_HOSTNAME} {
+	tls {
+		dns cloudflare {env.CF_DNS_API_TOKEN}
+		# Route 53 instead of Cloudflare:
+		#   dns route53 {
+		#       max_retries 3
+		#   }
+		# (credentials from the standard AWS environment or instance role)
+		# DigitalOcean instead of Cloudflare:
+		#   dns digitalocean {env.DO_AUTH_TOKEN}
+		resolvers 1.1.1.1 8.8.8.8
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# The admin control plane is machine-to-machine only. It lives on its own
+	# listener, bound to loopback, and is reachable from outside only through
+	# this proxy path.
+	@admin path /admin/v1/* /admin/v1
+	handle @admin {
+		reverse_proxy {$ROUTER_ADMIN_ADDR:127.0.0.1:8081} {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# Everything else is caller inference traffic plus /metrics if the
+	# compatibility flag keeps it on the serving port.
+	handle {
+		reverse_proxy {$ROUTER_SERVE_ADDR:127.0.0.1:8080} {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Request-Id {http.request.header.X-Request-Id}
+			flush_interval -1
+		}
+	}
+
+	log {
+		output stderr
+		format json
+	}
+}
