@@ -65,6 +65,10 @@ type Service struct {
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
 	adminSession       *adminSessionStore
+	// adminMux is the admin listener's route registry (#809). It is nil unless
+	// admin.enabled is true, so the serving surface is unchanged by default.
+	adminMux           *AdminMux
+	adminClientCA      *AdminClientCASnapshot
 	authorizer         *authorizer
 	quota              *quotaStore
 	cache              *responseCache
@@ -390,6 +394,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		}
 	}
 	s.routes()
+	s.initAdminPlane()
 	return s, nil
 }
 
@@ -529,6 +534,11 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
+	}
+	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
+		// The admin listener binds once; a reload cannot rebind it. Say so
+		// instead of leaving a half-applied control plane.
+		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
 	}
 	s.cfg = newCfg
 	s.adminAPIKeys = newAdminKeys

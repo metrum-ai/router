@@ -3,6 +3,53 @@
 eligibility:
   implicit_openai_to_anthropic: true
 
+# Admin control plane (v4.8.0). Machine-to-machine only: no Basic, no cookies,
+# no browser sessions, no HTML. Disabled by default so a v4.7 configuration
+# keeps exactly one listener; `enabled: true` adds the admin listener and moves
+# /metrics to it unless admin.metrics.on_serving_port keeps it on the serving
+# port. The human reports UI is not part of the control plane and always stays
+# on the serving port with its current login.
+admin:
+  enabled: false
+  listen: 127.0.0.1:8081
+  # Remote binding is an explicit opt-in and needs TLS, for example:
+  #   listen: 0.0.0.0:8443
+  #   tls: {mode: router, cert_file: /etc/router/admin.crt, key_file: /etc/router/admin.key}
+  allow_plaintext_non_loopback: false
+  # Legacy machine /admin/* routes stay on the serving port behind
+  # Deprecation/Sunset headers. Turning this off is the v5 preparation step.
+  legacy_routes_on_serving_port: true
+  legacy_sunset: "2027-03-01T00:00:00Z"
+  # Absolute base URL of the admin plane. It is the only source of absolute
+  # request-URL construction (never Host or X-Forwarded-* headers).
+  external_url: ""
+  tls:
+    mode: off                 # off (loopback plaintext) | router | proxy
+    cert_file: ""
+    key_file: ""
+    min_version: "1.2"
+    client_ca_file: ""        # mTLS client CA bundle
+    client_auth: none         # none | optional | require
+    trusted_proxy_cidrs: []   # mode: proxy only
+  limits:
+    max_body_bytes: 1048576
+    max_header_bytes: 65536
+    read_header_timeout_ms: 5000
+    read_timeout_ms: 30000
+    write_timeout_ms: 60000
+    idle_timeout_ms: 60000
+    shutdown_timeout_ms: 10000
+  metrics:
+    # Unset keeps v4.7: /metrics stays on the serving port while the plane is
+    # disabled and moves to the admin listener when it is enabled.
+    # on_serving_port: true   # compatibility flag: keep caller-token /metrics here
+  # Machine authentication (#814): mTLS client identities, OAuth 2.0
+  # client-credentials tokens, workload identity federation and admin API keys.
+  # authentication:
+  #   mtls:
+  #     ca_files: []
+  #     reload_interval: 30s
+
 server:
   streaming:
     translator: incremental # Or synthesized for unary upstream + caller SSE.
