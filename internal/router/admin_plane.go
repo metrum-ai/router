@@ -163,6 +163,10 @@ func adminHardening(cfg *AdminPlaneConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			setAdminPlaneSecurityHeaders(w)
+			// One server-generated correlation ID per admin request; a
+			// client-supplied X-Request-Id is never trusted or echoed.
+			r = r.WithContext(WithAdminRequestID(r.Context(), AdminRequestID(r)))
+			w.Header().Set(adminRequestIDHeader, AdminRequestID(r))
 			w = &adminErrorWriter{ResponseWriter: w, r: r}
 			if r.Method == http.MethodOptions {
 				if r.Header.Get("Origin") != "" && r.Header.Get("Access-Control-Request-Method") != "" {
@@ -329,6 +333,18 @@ func adminMachineOnlyGate(next http.Handler) http.Handler {
 	})
 }
 
+// AdminCertificateSource is the router-native certificate seam #810 supplies to
+// the listener. Its manager calls the listener's single handshake hook, so the
+// listener asks the source whether it serves the SNI and then fetches the
+// certificate before applying the #814 client-CA snapshot.
+type AdminCertificateSource interface {
+	// GetCertificate returns the certificate for the hello, or an error when the
+	// router cannot serve it.
+	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
+	// CheckSNI reports whether hello.ServerName is a name this source serves.
+	CheckSNI(string) bool
+}
+
 // AdminClientCASource is the client-CA snapshot seam #814 supplies to the
 // listener: the handshake verifies client certificates against the current
 // immutable snapshot, and every reload is delivered through OnReload. #814's
@@ -443,6 +459,8 @@ type AdminPlane struct {
 	cfg      AdminPlaneConfig
 	handler  http.Handler
 	clientCA *AdminClientCASnapshot
+	certMu   sync.Mutex
+	certSrc  AdminCertificateSource
 	tlsCfg   *tls.Config
 
 	mu  sync.Mutex
@@ -503,6 +521,22 @@ func (p *AdminPlane) ClientCASnapshot() *AdminClientCASnapshot {
 	return p.clientCA
 }
 
+// SetCertificateSource installs #810's certificate manager. It must be called
+// before Start; the manager's GetCertificate/CheckSNI run inside the listener's
+// single GetConfigForClient, ahead of the client-CA snapshot and ClientAuth.
+func (p *AdminPlane) SetCertificateSource(src AdminCertificateSource) error {
+	if p == nil || src == nil {
+		return fmt.Errorf("admin certificate source is required")
+	}
+	if p.tlsCfg == nil || !strings.EqualFold(strings.TrimSpace(p.cfg.TLS.CertificateSource), adminCertificateSourceACME) {
+		return fmt.Errorf("an admin certificate source requires admin.tls.mode router with certificate_source acme")
+	}
+	p.certMu.Lock()
+	p.certSrc = src
+	p.certMu.Unlock()
+	return nil
+}
+
 // SetClientCASource installs #814's client-CA source. It must be called before
 // Start; every source reload is folded into the same snapshot the handshake
 // reads, so handshake and per-request revalidation can never disagree.
@@ -516,9 +550,14 @@ func (p *AdminPlane) SetClientCASource(src AdminClientCASource) {
 }
 
 func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(p.cfg.TLS.CertFile, p.cfg.TLS.KeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("load admin TLS certificate: %w", err)
+	useACME := strings.EqualFold(strings.TrimSpace(p.cfg.TLS.CertificateSource), adminCertificateSourceACME)
+	var cert tls.Certificate
+	if !useACME {
+		loaded, err := tls.LoadX509KeyPair(p.cfg.TLS.CertFile, p.cfg.TLS.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load admin TLS certificate: %w", err)
+		}
+		cert = loaded
 	}
 	minVersion := uint16(tls.VersionTLS12)
 	if strings.TrimSpace(p.cfg.TLS.MinVersion) == adminTLSMinVersion13 {
@@ -532,17 +571,33 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 		clientAuth = tls.RequireAndVerifyClientCert
 	}
 	cfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   minVersion,
-		ClientAuth:   clientAuth,
-		ClientCAs:    p.clientCA.Snapshot(),
-		NextProtos:   []string{"http/1.1"},
+		MinVersion: minVersion,
+		ClientAuth: clientAuth,
+		ClientCAs:  p.clientCA.Snapshot(),
+		NextProtos: []string{"http/1.1"},
 	}
-	// Verify every handshake against the current immutable CA snapshot, so a
-	// reload applies to new connections without restarting the listener.
-	cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+	if !useACME {
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+	// One handshake hook for the listener: ask the certificate source (#810)
+	// first, then apply the current client-CA snapshot (#814) so a reload
+	// applies to new connections without restarting the listener.
+	cfg.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		current := cfg.Clone()
 		current.GetConfigForClient = nil
+		p.certMu.Lock()
+		source := p.certSrc
+		p.certMu.Unlock()
+		if source != nil {
+			if !source.CheckSNI(hello.ServerName) {
+				return nil, fmt.Errorf("admin listener does not serve the requested SNI")
+			}
+			if _, err := source.GetCertificate(hello); err != nil {
+				return nil, err
+			}
+			current.Certificates = nil
+			current.GetCertificate = source.GetCertificate
+		}
 		current.ClientCAs = p.clientCA.Snapshot()
 		return current, nil
 	}
@@ -560,6 +615,14 @@ func (p *AdminPlane) Start() error {
 	defer p.mu.Unlock()
 	if p.srv != nil {
 		return fmt.Errorf("admin plane already started")
+	}
+	if p.tlsCfg != nil && strings.EqualFold(strings.TrimSpace(p.cfg.TLS.CertificateSource), adminCertificateSourceACME) {
+		p.certMu.Lock()
+		source := p.certSrc
+		p.certMu.Unlock()
+		if source == nil {
+			return fmt.Errorf("admin.tls.certificate_source acme requires an installed certificate source before the listener starts")
+		}
 	}
 	ln, err := net.Listen("tcp", p.cfg.Listen)
 	if err != nil {

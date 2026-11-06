@@ -25,8 +25,11 @@ admin:
   external_url: ""
   tls:
     mode: off                 # off (loopback plaintext) | router | proxy
+    certificate_source: files # files (cert_file/key_file) | acme (automated issuance)
     cert_file: ""
     key_file: ""
+    # acme:
+    #   directory: https://acme-staging-v02.api.letsencrypt.org/directory
     min_version: "1.2"
     client_ca_file: ""        # mTLS client CA bundle
     client_auth: none         # none | optional | require

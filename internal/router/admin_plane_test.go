@@ -726,3 +726,163 @@ func writeTestKey(t *testing.T, dir, name string, raw []byte) string {
 	t.Helper()
 	return writeTestPEM(t, dir, name, raw)
 }
+
+// The listener assigns one server-generated correlation ID per request and
+// never echoes a client-supplied one.
+func TestAdminRequestIDIsServerGenerated(t *testing.T) {
+	fixture := newAdminTestFixture(t, nil)
+	req, err := http.NewRequest(http.MethodGet, fixture.adminURL+"/admin/missing", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Request-Id", "client-supplied-id")
+	resp, body := adminDo(t, req)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+	header := resp.Header.Get("X-Request-Id")
+	if header == "" || !strings.HasPrefix(header, "req_") {
+		t.Fatalf("X-Request-Id = %q, want a generated req_ id", header)
+	}
+	if strings.Contains(body, "client-supplied-id") {
+		t.Fatalf("problem echoed the client request id: %q", body)
+	}
+	var problem struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.RequestID != header {
+		t.Fatalf("body request_id %q != header %q", problem.RequestID, header)
+	}
+}
+
+// A fake #810 certificate manager proves the single handshake hook asks the
+// certificate source first, then still applies the #814 client-CA snapshot.
+type fakeAdminCertificateSource struct {
+	names map[string]*tls.Certificate
+}
+
+func (f *fakeAdminCertificateSource) CheckSNI(name string) bool {
+	_, ok := f.names[name]
+	return ok
+}
+
+func (f *fakeAdminCertificateSource) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cert, ok := f.names[hello.ServerName]
+	if !ok {
+		return nil, fmt.Errorf("unknown SNI")
+	}
+	return cert, nil
+}
+
+func TestAdminCertificateSourceWithMTLS(t *testing.T) {
+	serverCA := newAdminTestCA(t)
+	clientCA := newAdminTestCA(t)
+	serverCertPEM, serverKeyPEM := serverCA.issue(t, "router.test", []string{"localhost"}, nil, true)
+	clientCertPEM, clientKeyPEM := clientCA.issue(t, "client.test", nil, nil, false)
+
+	serverPair, err := tls.X509KeyPair(serverCertPEM, serverKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	clientCAPath := writeTestPEM(t, dir, "client-ca.crt", clientCA.certPEM)
+	// The config carries certificate_source: acme with an acme block; the
+	// listener has no static certificate and no files.
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Admin.Enabled = true
+	cfg.Admin.Listen = "127.0.0.1:0"
+	cfg.Admin.TLS = AdminTLSConfig{
+		Mode:              adminTLSModeRouter,
+		CertificateSource: adminCertificateSourceACME,
+		ACME:              map[string]any{"directory": "https://acme.test/directory"},
+		MinVersion:        adminTLSMinVersion12,
+		ClientCAFile:      clientCAPath,
+		ClientAuth:        adminClientAuthRequire,
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	handler := svc.AdminHandler()
+	if handler == nil {
+		t.Fatal("AdminHandler() = nil")
+	}
+	plane, err := NewAdminPlane(&cfg.Admin, handler)
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	// Starting without the manager fails closed.
+	if err := plane.Start(); err == nil || !strings.Contains(err.Error(), "certificate source") {
+		t.Fatalf("Start() without a certificate source = %v, want a refusal", err)
+	}
+	if err := plane.SetCertificateSource(&fakeAdminCertificateSource{names: map[string]*tls.Certificate{"localhost": &serverPair}}); err != nil {
+		t.Fatalf("SetCertificateSource: %v", err)
+	}
+	if err := plane.Start(); err != nil {
+		t.Fatalf("admin Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = plane.Shutdown(ctx)
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(serverCA.cert)
+	clientReq := func(t *testing.T) *http.Client {
+		t.Helper()
+		pair, err := tls.X509KeyPair(clientCertPEM, clientKeyPEM)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Client{
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{
+				RootCAs:      roots,
+				Certificates: []tls.Certificate{pair},
+				ServerName:   "localhost",
+				MinVersion:   tls.VersionTLS12,
+			}},
+			Timeout: 5 * time.Second,
+		}
+	}
+	url := "https://" + plane.Addr()
+	resp, err := clientReq(t).Get(url + "/healthz")
+	if err != nil {
+		t.Fatalf("handshake with the ACME-style certificate and a client certificate: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin /healthz = %d, want 200", resp.StatusCode)
+	}
+	// A name the source does not serve fails at the handshake.
+	other := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			ServerName: "unknown.test",
+			// The unknown SNI never gets a certificate, so skip verification of
+			// the server name here and expect the handshake to fail anyway.
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
+		}},
+		Timeout: 5 * time.Second,
+	}
+	if _, err := other.Get(url + "/healthz"); err == nil {
+		t.Fatal("handshake for an unserved SNI succeeded")
+	}
+	// Client certificates are still required: the source only supplies the
+	// server certificate.
+	noClient := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			ServerName: "localhost",
+			MinVersion: tls.VersionTLS12,
+		}},
+		Timeout: 5 * time.Second,
+	}
+	if _, err := noClient.Get(url + "/healthz"); err == nil {
+		t.Fatal("handshake without a client certificate succeeded with client_auth: require")
+	}
+}

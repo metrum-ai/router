@@ -25,6 +25,7 @@ admin:
   external_url: ""
   tls:
     mode: off
+    certificate_source: files
     cert_file: ""
     key_file: ""
     min_version: "1.2"
@@ -52,7 +53,9 @@ admin:
 | `legacy_sunset` | `2027-03-01T00:00:00Z` | `Sunset` header value. It must be at least 90 days after the v4.8.0 release. |
 | `external_url` | unset | Absolute base URL of the plane. The only source of absolute request URLs; the router never derives them from `Host` or `X-Forwarded-*`. |
 | `tls.mode` | `off` | `off`, `router` (the router serves its own certificate) or `proxy` (a reverse proxy terminates TLS). |
-| `tls.cert_file`, `tls.key_file` | unset | Required for `tls.mode: router`. Changing them requires a restart. |
+| `tls.certificate_source` | `files` | `files` (serve `cert_file`/`key_file`) or `acme` (automated issuance; requires `tls.mode: router` and an `tls.acme` block). |
+| `tls.cert_file`, `tls.key_file` | unset | Required for `tls.mode: router` with `certificate_source: files`. Changing them requires a restart. |
+| `tls.acme` | unset | ACME issuer settings for `certificate_source: acme`. Issuance and renewal are covered by the automated-certificate work; the listener only consumes the resulting certificate through its single handshake hook. |
 | `tls.min_version` | `1.2` | Minimum negotiated TLS version: `1.2` or `1.3`. |
 | `tls.client_ca_file` | unset | Client CA bundle for mTLS. |
 | `tls.client_auth` | `none` | `none`, `optional` or `require`. `optional` verifies a presented certificate and still lets API-key and token clients connect; `require` fails the handshake without one. A wrong or unknown CA always fails the handshake. |
@@ -64,9 +67,10 @@ admin:
 
 1. **Loopback only (default).** The listener binds `127.0.0.1:8081` and is reachable from the host,
    a sidecar or a local `kubectl port-forward`. No certificate is needed.
-2. **Router-native TLS.** Set `tls.mode: router` with `cert_file`, `key_file` and an optional
-   `client_ca_file`, and bind the address the machine clients reach. In Kubernetes bind the pod IP
-   behind a private Service, never behind a public Ingress.
+2. **Router-native TLS.** Set `tls.mode: router` with `certificate_source: files` and `cert_file`,
+   `key_file`, or with `certificate_source: acme` plus an `acme` block, and bind the address the
+   machine clients reach. In Kubernetes bind the pod IP behind a private Service, never behind a
+   public Ingress.
 3. **Reverse-proxy TLS.** Set `tls.mode: proxy` and list the proxy addresses in
    `tls.trusted_proxy_cidrs`. The listener then requires `X-Forwarded-Proto: https` from those
    proxies and rejects every other non-loopback peer. A reverse proxy cannot prove a client
@@ -114,6 +118,8 @@ enabled must not be missing silently.
 
 ## Limits
 
-- TLS certificate and key changes require a restart in v4.8.
+- TLS certificate and key changes require a restart in v4.8; only the client CA bundle reloads live.
+- ACME issuance runs outside the listener; the listener verifies the SNI and fetches the certificate
+  through one handshake hook.
 - A Unix-socket admin listener is not available.
 - The listener does not issue or renew certificates; supply them or terminate TLS at a proxy.
