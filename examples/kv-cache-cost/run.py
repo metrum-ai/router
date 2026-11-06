@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Compare repeated prefixes under pinned and deliberately spread routing."""
 import argparse
+import sys
 from contextlib import ExitStack, nullcontext
 import importlib.util
 import json
@@ -21,6 +22,9 @@ from urllib.request import Request, urlopen
 import yaml
 
 ROOT=Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT/'examples'))
+from router_readiness import wait_for_router_ready  # noqa: E402
+
 MODELS={'a':'accounts/fireworks/models/deepseek-v4p1-flash-1017', 'b':'accounts/fireworks/models/deepseek-v4p1-flash'}
 
 
@@ -82,14 +86,7 @@ def main():
             config=state/'config.yaml';config.write_text(yaml.safe_dump(cfg,sort_keys=False));config.chmod(0o600)
             with (state/'router.log').open('wb') as log,ExitStack() as cleanup:
                 process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],stdout=log,stderr=subprocess.STDOUT);cleanup.callback(demo.stop,process)
-                for _ in range(150):
-                    if process.poll() is not None:raise RuntimeError('router startup failed')
-                    try:
-                        with urlopen(base+'/readyz',timeout=1) as r:
-                            if r.status==200:break
-                    except (URLError,TimeoutError):pass
-                    time.sleep(.1)
-                else:raise RuntimeError('router readiness timeout')
+                wait_for_router_ready(process, base+'/readyz', log_path=state/'router.log')
                 run_id=secrets.token_hex(8); requests=[]
                 for arm,groups in [('pinned',['pinned']*4),('spread',['spread-a','spread-b','spread-a','spread-b'])]:
                     prefix=f'case-{arm}-{run_id}: ' + ('This synthetic document describes an imaginary product and contains no private data. '*s['prompt_repetitions'])

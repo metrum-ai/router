@@ -21,24 +21,50 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from preflight import preflight
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT/'examples'))
+import router_readiness as readiness  # noqa: E402
 
 
-def wait_ready(process, url, timeout=60, opener=None):
-    """Bounded startup gate; never send test traffic after readiness exhaustion."""
+# This evaluation harness has always allowed 60 s for startup; the shared
+# budget may be lower after measurement, but this harness never lowers its own.
+FT_READY_TIMEOUT_FLOOR_S = 60.0
+
+
+def ready_budget(timeout=None):
+    """Return the readiness budget: explicit, else the shared budget with a 60 s floor."""
+    if timeout is not None:
+        return timeout
+    return max(FT_READY_TIMEOUT_FLOOR_S, readiness.ready_timeout_s())
+
+
+def wait_ready(process, url, timeout=None, opener=None, log_path=None):
+    """Bounded startup gate; never send test traffic after readiness exhaustion.
+
+    The budget comes from the shared example-harness readiness module (#787):
+    METRUM_ROUTER_READY_TIMEOUT_S when set, otherwise its data-derived default.
+    """
+    budget = ready_budget(timeout)
     opener = opener or urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    started = time.monotonic()
+    while time.monotonic() - started < budget:
         code = process.poll()
         if code is not None:
             raise RuntimeError(f'router exited before readiness (exit={code})')
         try:
             with opener.open(url, timeout=1) as response:
                 if response.status == 200:
-                    return
+                    elapsed = time.monotonic() - started
+                    print(f'router ready in {elapsed:.2f}s ({url})', file=sys.stderr)
+                    return elapsed
         except (urllib.error.URLError, TimeoutError, OSError):
             pass
         time.sleep(.1)
-    raise RuntimeError(f'router readiness timed out after {timeout}s at {url}; no test traffic sent')
+    elapsed = time.monotonic() - started
+    print(f'router readiness timed out after {elapsed:.2f}s (budget {budget}s) at {url}', file=sys.stderr)
+    raise RuntimeError(
+        f'router readiness timed out after {elapsed:.2f}s (budget {budget}s) at {url}; no test traffic sent\n'
+        f'router log tail:\n{readiness._log_tail(log_path)}'
+    )
 
 
 def main():
@@ -141,7 +167,7 @@ def main():
             log = (run / 'process.log').open('w')
             process = subprocess.Popen([str(a.router_bin.resolve()), '--config', str(run/'config.yaml')], cwd=ROOT, stdout=log, stderr=log)
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            wait_ready(process, 'http://127.0.0.1:18530/readyz', opener=opener)
+            wait_ready(process, 'http://127.0.0.1:18530/readyz', opener=opener, log_path=run/'process.log')
             token = (run / 'router.token').read_text().strip()
             admission=[]
             if not a.test_rate_limiting:
