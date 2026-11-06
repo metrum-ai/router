@@ -50,7 +50,11 @@ func (s *Solver) Present(ctx context.Context, domain, value string) error {
 	s.active[name+"|"+value] = id
 	s.mu.Unlock()
 	if err := s.waitPropagation(ctx, name, value); err != nil {
-		// Leave the record for Cleanup; the ACME order will fail either way.
+		// Remove the record here: the ACME order stops at this error, so no
+		// caller would clean up a challenge that never became usable.
+		if cleanupErr := s.deleteCreated(context.WithoutCancel(ctx), name, value, id); cleanupErr != nil {
+			s.opts.logf("dns: could not remove the challenge record %s after a propagation failure: %v", name, cleanupErr)
+		}
 		return err
 	}
 	return nil
@@ -64,23 +68,15 @@ func (s *Solver) Cleanup(ctx context.Context, domain, value string) error {
 	delete(s.active, name+"|"+value)
 	s.mu.Unlock()
 	if !ok {
-		// Another process (or a previous run) may have created it; only remove
-		// an exact name+value match.
-		records, err := s.provider.Records(ctx, s.zone)
-		if err != nil {
-			return fmt.Errorf("dns: list %s for cleanup: %w", name, err)
-		}
-		for _, record := range records {
-			if record.Type == "TXT" && fqdn(record.Name) == name && record.Value == value {
-				id = record.ID
-				ok = true
-				break
-			}
-		}
-	}
-	if !ok {
+		// Only the solver that created the record removes it. Searching by name
+		// and value could delete an identical record that another deployment
+		// created, so a record left behind by a crashed process is left alone.
 		return nil
 	}
+	return s.deleteCreated(ctx, name, value, id)
+}
+
+func (s *Solver) deleteCreated(ctx context.Context, name, value, id string) error {
 	if err := s.provider.Delete(ctx, s.zone, id); err != nil {
 		return fmt.Errorf("dns: delete %s through %s: %w", name, s.provider.Name(), err)
 	}

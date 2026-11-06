@@ -97,7 +97,7 @@ func TestReconcileCreatesRecordAndMarkerOnce(t *testing.T) {
 		t.Fatalf("result = %+v, want one create", result)
 	}
 	if provider.creates != 2 {
-		t.Fatalf("creates = %d, want 2 (record + ownership marker)", provider.creates)
+		t.Fatalf("creates = %d, want 2 (ownership marker claimed first, then the record)", provider.creates)
 	}
 	var marker *Record
 	for i := range provider.records {
@@ -111,7 +111,9 @@ func TestReconcileCreatesRecordAndMarkerOnce(t *testing.T) {
 	if marker.Name != "_metrum-router.router.example.com" {
 		t.Fatalf("marker name = %q", marker.Name)
 	}
-	if want := "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A"; marker.Value != want {
+	// The marker also records the managed record's provider id, which is what
+	// stops a replacement record from being taken over.
+	if want := "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A;id=" + provider.records[1].ID; marker.Value != want {
 		t.Fatalf("marker value = %q, want %q", marker.Value, want)
 	}
 	if instruments.managed != 1 {
@@ -194,7 +196,7 @@ func TestReconcileUpdatesOwnedRecord(t *testing.T) {
 		records: []Record{
 			{ID: "rec", Type: "A", Name: "router.example.com", Value: "203.0.113.10", TTL: 300},
 			{ID: "marker", Type: "TXT", Name: "_metrum-router.router.example.com",
-				Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A", TTL: 300},
+				Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A;id=rec", TTL: 300},
 		},
 	}
 	result, err := Reconcile(context.Background(), provider, "example.com",
@@ -232,7 +234,7 @@ func TestDeleteManagedRequiresOwnership(t *testing.T) {
 
 	provider.records = append(provider.records, Record{
 		ID: "marker", Type: "TXT", Name: "_metrum-router.router.example.com",
-		Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A", TTL: 300,
+		Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A;id=rec", TTL: 300,
 	})
 	removed, err = DeleteManaged(context.Background(), provider, "example.com", want, "host-1", Options{})
 	if err != nil {
@@ -252,5 +254,85 @@ func TestReconcileRejectsOutOfZoneRecord(t *testing.T) {
 		Record{Type: "A", Name: "router.other.net", Value: "203.0.113.10"}, "host-1", Options{})
 	if err == nil || !strings.Contains(err.Error(), "outside zone") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestReconcileRefusesReplacedRecord(t *testing.T) {
+	provider := &memProvider{
+		name:  "fake",
+		zones: []string{"example.com"},
+		records: []Record{
+			// The marker still names the old record id; this record was
+			// recreated by somebody else.
+			{ID: "replacement", Type: "A", Name: "router.example.com", Value: "203.0.113.10", TTL: 300},
+			{ID: "marker", Type: "TXT", Name: "_metrum-router.router.example.com",
+				Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A;id=original", TTL: 300},
+		},
+	}
+	instruments := &countingInstruments{}
+	result, err := Reconcile(context.Background(), provider, "example.com",
+		Record{Type: "A", Name: "router.example.com", Value: "203.0.113.11", TTL: 300}, "host-1",
+		Options{Instruments: instruments})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.Conflicts != 1 || provider.writes != 0 {
+		t.Fatalf("result = %+v writes = %d, want a conflict and no writes", result, provider.writes)
+	}
+	if instruments.conflicts["replaced_record"] != 1 {
+		t.Fatalf("conflict counter = %v", instruments.conflicts)
+	}
+}
+
+func TestReconcileAdoptsClaimThatHasNoIDYet(t *testing.T) {
+	// A crash between claiming ownership and recording the id leaves a marker
+	// without an id: the next run adopts the record instead of conflicting.
+	provider := &memProvider{
+		name:  "fake",
+		zones: []string{"example.com"},
+		records: []Record{
+			{ID: "rec", Type: "A", Name: "router.example.com", Value: "203.0.113.10", TTL: 300},
+			{ID: "marker", Type: "TXT", Name: "_metrum-router.router.example.com",
+				Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A", TTL: 300},
+		},
+	}
+	result, err := Reconcile(context.Background(), provider, "example.com",
+		Record{Type: "A", Name: "router.example.com", Value: "203.0.113.10", TTL: 300}, "host-1", Options{})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.Unchanged != 1 || provider.creates != 0 {
+		t.Fatalf("result = %+v creates = %d, want unchanged and no create", result, provider.creates)
+	}
+	var marker *Record
+	for i := range provider.records {
+		if provider.records[i].Type == "TXT" {
+			marker = &provider.records[i]
+		}
+	}
+	if marker == nil || !strings.Contains(marker.Value, ";id=rec") {
+		t.Fatalf("marker was not adopted: %+v", marker)
+	}
+}
+
+func TestReconcileRecreatesRecordAfterClaim(t *testing.T) {
+	provider := &memProvider{
+		name:  "fake",
+		zones: []string{"example.com"},
+		records: []Record{
+			{ID: "marker", Type: "TXT", Name: "_metrum-router.router.example.com",
+				Value: "metrum-ai-router-managed=1;owner=host-1;name=router.example.com;type=A", TTL: 300},
+		},
+	}
+	result, err := Reconcile(context.Background(), provider, "example.com",
+		Record{Type: "A", Name: "router.example.com", Value: "203.0.113.10", TTL: 300}, "host-1", Options{})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("result = %+v, want one create", result)
+	}
+	if len(provider.records) != 2 {
+		t.Fatalf("records = %+v", provider.records)
 	}
 }

@@ -27,7 +27,7 @@ type ReconcileResult struct {
 	Conflicts int
 }
 
-// Managed reports whether any change was made.
+// Managed reports how many records the reconciliation changed.
 func (r ReconcileResult) Managed() int { return r.Created + r.Updated }
 
 // Reconcile makes the managed record match want, idempotently, and never
@@ -35,14 +35,19 @@ func (r ReconcileResult) Managed() int { return r.Created + r.Updated }
 //
 // Ownership is tracked by a TXT marker at _metrum-router.<want.Name>:
 //
-//	metrum-ai-router-managed=1;owner=<owner>;name=<record>;type=<type>
+//	metrum-ai-router-managed=1;owner=<owner>;name=<record>;type=<type>;id=<id>
+//
+// The marker also records the provider id of the record it owns, so a record
+// that somebody deleted and recreated with the same name is not silently taken
+// over: its id no longer matches the marker and the run reports a conflict.
 //
 // Rules:
-//   - an existing record of that name and type without our marker is a
-//     conflict: it is left untouched and the conflict counter rises;
-//   - an existing record with a marker for another owner is a conflict too;
+//   - a record of that name and type without our marker is a conflict: it is
+//     left untouched and the conflict counter rises;
+//   - a marker for another owner is a conflict too;
+//   - a marker whose id no longer matches the existing record is a conflict;
 //   - a record whose value already matches is not written again;
-//   - the record is only ever deleted when its marker is present and ours.
+//   - a record is only ever deleted with its marker, by the id in the marker.
 func Reconcile(ctx context.Context, provider Provider, zone string, want Record, owner string, opts Options) (ReconcileResult, error) {
 	var result ReconcileResult
 	want = Record{
@@ -64,42 +69,23 @@ func Reconcile(ctx context.Context, provider Provider, zone string, want Record,
 	if owner == "" {
 		owner = "unknown"
 	}
-	marker := markerFor(owner, want)
+	markerName := markerPrefix + "." + want.Name
 
 	records, err := provider.Records(ctx, zone)
 	if err != nil {
 		return result, fmt.Errorf("dns: list records in %s: %w", zone, err)
 	}
 	var existing []Record
-	var existingMarker *Record
-	for i, record := range records {
-		if record.Type == "TXT" && fqdn(record.Name) == marker.Name {
-			existingMarker = &records[i]
+	var marker *Record
+	for i := range records {
+		if records[i].Type == "TXT" && fqdn(records[i].Name) == markerName {
+			marker = &records[i]
 			continue
 		}
-		if record.Type == want.Type && fqdn(record.Name) == want.Name {
-			existing = append(existing, record)
+		if records[i].Type == want.Type && fqdn(records[i].Name) == want.Name {
+			existing = append(existing, records[i])
 		}
 	}
-
-	switch {
-	case existingMarker != nil:
-		markerOwner, markerName, markerType, ok := parseMarker(*existingMarker)
-		if !ok || markerOwner != owner || markerName != want.Name || markerType != want.Type {
-			result.Conflicts++
-			opts.instruments().DNSConflict(provider.Name(), "foreign_marker")
-			opts.logf("dns: %s %s: ownership marker belongs to %q (%s %s); leaving the record untouched",
-				want.Type, want.Name, markerOwner, markerType, markerName)
-			return result, nil
-		}
-	case len(existing) > 0:
-		// A record exists without our marker: somebody else's.
-		result.Conflicts++
-		opts.instruments().DNSConflict(provider.Name(), "unowned_record")
-		opts.logf("dns: %s %s already exists without an ownership marker; leaving it untouched", want.Type, want.Name)
-		return result, nil
-	}
-
 	if len(existing) > 1 {
 		result.Conflicts++
 		opts.instruments().DNSConflict(provider.Name(), "multiple_records")
@@ -107,104 +93,177 @@ func Reconcile(ctx context.Context, provider Provider, zone string, want Record,
 		return result, nil
 	}
 
-	switch {
-	case len(existing) == 1:
-		current := existing[0]
-		if current.Value == want.Value {
-			result.Unchanged++
-			if existingMarker == nil {
-				if _, err := provider.Create(ctx, zone, marker); err != nil {
-					return result, fmt.Errorf("dns: create ownership marker %s: %w", marker.Name, err)
+	if marker != nil {
+		markerOwner, markerNameValue, markerType, markerID, ok := parseMarker(*marker)
+		if !ok || markerOwner != owner || markerNameValue != want.Name || markerType != want.Type {
+			result.Conflicts++
+			opts.instruments().DNSConflict(provider.Name(), "foreign_marker")
+			opts.logf("dns: %s %s: ownership marker belongs to another owner (%s); leaving the record untouched",
+				want.Type, want.Name, markerOwner)
+			return result, nil
+		}
+		if len(existing) == 1 {
+			current := existing[0]
+			if markerID != "" && current.ID != "" && current.ID != markerID {
+				result.Conflicts++
+				opts.instruments().DNSConflict(provider.Name(), "replaced_record")
+				opts.logf("dns: %s %s was replaced outside the router (record id %s, marker id %s); leaving it untouched",
+					want.Type, want.Name, current.ID, markerID)
+				return result, nil
+			}
+			if current.Value == want.Value {
+				result.Unchanged++
+				if err := ensureMarkerIDAttached(ctx, provider, zone, *marker, current.ID); err != nil {
+					return result, err
 				}
+				opts.instruments().DNSRecordsManaged(provider.Name(), want.Type, 1)
+				return result, nil
+			}
+			id := current.ID
+			if id == "" {
+				id = defaultRecordID(current)
+			}
+			if err := provider.Update(ctx, zone, id, want); err != nil {
+				return result, fmt.Errorf("dns: update %s %s: %w", want.Type, want.Name, err)
+			}
+			result.Updated++
+			if err := ensureMarkerIDAttached(ctx, provider, zone, *marker, id); err != nil {
+				return result, err
 			}
 			opts.instruments().DNSRecordsManaged(provider.Name(), want.Type, 1)
 			return result, nil
 		}
-		id := current.ID
-		if id == "" {
-			id = defaultRecordID(current)
-		}
-		if err := provider.Update(ctx, zone, id, want); err != nil {
-			return result, fmt.Errorf("dns: update %s %s: %w", want.Type, want.Name, err)
-		}
-		result.Updated++
-	default:
-		if _, err := provider.Create(ctx, zone, want); err != nil {
+		// Our marker exists but the record does not (deleted by hand): recreate
+		// it and re-attach the id.
+		id, err := provider.Create(ctx, zone, want)
+		if err != nil {
 			return result, fmt.Errorf("dns: create %s %s: %w", want.Type, want.Name, err)
 		}
 		result.Created++
-	}
-	if existingMarker == nil {
-		if _, err := provider.Create(ctx, zone, marker); err != nil {
-			return result, fmt.Errorf("dns: create ownership marker %s: %w", marker.Name, err)
+		if err := ensureMarkerIDAttached(ctx, provider, zone, *marker, id); err != nil {
+			return result, err
 		}
+		opts.instruments().DNSRecordsManaged(provider.Name(), want.Type, 1)
+		return result, nil
+	}
+
+	if len(existing) == 1 {
+		// A record exists without our marker: somebody else's.
+		result.Conflicts++
+		opts.instruments().DNSConflict(provider.Name(), "unowned_record")
+		opts.logf("dns: %s %s already exists without an ownership marker; leaving it untouched", want.Type, want.Name)
+		return result, nil
+	}
+
+	// Nothing exists: claim ownership with the marker first, so a crash between
+	// the two writes leaves a recoverable state (marker without id) rather than
+	// an unowned record that the next run would refuse.
+	claim := markerFor(owner, want, "")
+	markerID, err := provider.Create(ctx, zone, claim)
+	if err != nil {
+		return result, fmt.Errorf("dns: create ownership marker %s: %w", claim.Name, err)
+	}
+	createdID, err := provider.Create(ctx, zone, want)
+	if err != nil {
+		// Keep the claim: the next run adopts it and retries the record.
+		return result, fmt.Errorf("dns: create %s %s: %w", want.Type, want.Name, err)
+	}
+	result.Created++
+	if err := ensureMarkerIDAttached(ctx, provider, zone, Record{ID: markerID, Name: claim.Name, Type: "TXT", Value: claim.Value, TTL: claim.TTL}, createdID); err != nil {
+		return result, err
 	}
 	opts.instruments().DNSRecordsManaged(provider.Name(), want.Type, 1)
 	return result, nil
 }
 
 // DeleteManaged removes a record only when its ownership marker is present for
-// this owner.
+// this owner and names that record's id.
 func DeleteManaged(ctx context.Context, provider Provider, zone string, want Record, owner string, opts Options) (bool, error) {
 	name := fqdn(want.Name)
 	typ := strings.ToUpper(strings.TrimSpace(want.Type))
-	marker := markerFor(owner, Record{Type: typ, Name: name})
+	markerName := markerPrefix + "." + name
 	records, err := provider.Records(ctx, zone)
 	if err != nil {
 		return false, fmt.Errorf("dns: list records in %s: %w", zone, err)
 	}
-	var owned bool
-	var targetIDs []string
-	var markerIDs []string
-	for _, record := range records {
-		if record.Type == "TXT" && fqdn(record.Name) == marker.Name {
-			markerOwner, markerName, markerType, ok := parseMarker(record)
-			if ok && markerOwner == owner && markerName == name && markerType == typ {
-				owned = true
-				markerIDs = append(markerIDs, record.ID)
-			}
+	var markerRecord *Record
+	var markerID string
+	for i := range records {
+		if records[i].Type != "TXT" || fqdn(records[i].Name) != markerName {
+			continue
 		}
-		if record.Type == typ && fqdn(record.Name) == name {
-			targetIDs = append(targetIDs, record.ID)
+		markerOwner, markerNameValue, markerType, ownedID, ok := parseMarker(records[i])
+		if ok && markerOwner == owner && markerNameValue == name && markerType == typ {
+			markerRecord = &records[i]
+			markerID = ownedID
 		}
 	}
-	if !owned {
+	if markerRecord == nil {
 		return false, nil
 	}
-	// The marker goes first so a partial failure can never leave an orphan that
-	// looks unowned.
-	for _, id := range markerIDs {
-		if err := provider.Delete(ctx, zone, id); err != nil {
+	if markerID == "" {
+		// Ownership was claimed before the record was created; nothing to do.
+		if err := provider.Delete(ctx, zone, markerRecord.ID); err != nil {
 			return false, fmt.Errorf("dns: delete ownership marker: %w", err)
 		}
+		return true, nil
 	}
-	for _, id := range targetIDs {
-		if err := provider.Delete(ctx, zone, id); err != nil {
-			return false, fmt.Errorf("dns: delete %s %s: %w", typ, name, err)
-		}
+	// The marker goes first so a partial failure never leaves an orphan that
+	// looks owned.
+	if err := provider.Delete(ctx, zone, markerRecord.ID); err != nil {
+		return false, fmt.Errorf("dns: delete ownership marker: %w", err)
+	}
+	if err := provider.Delete(ctx, zone, markerID); err != nil {
+		return false, fmt.Errorf("dns: delete %s %s: %w", typ, name, err)
 	}
 	opts.instruments().DNSRecordsManaged(provider.Name(), typ, -1)
 	return true, nil
 }
 
+// ensureMarkerIDAttached records the managed record's provider id in the marker
+// when it is missing or stale.
+func ensureMarkerIDAttached(ctx context.Context, provider Provider, zone string, marker Record, recordID string) error {
+	if recordID == "" || marker.ID == "" {
+		return nil
+	}
+	owner, name, typ, existingID, ok := parseMarker(marker)
+	if !ok || existingID == recordID {
+		return nil
+	}
+	updated := marker
+	updated.Value = markerValue + fmt.Sprintf(";owner=%s;name=%s;type=%s;id=%s",
+		sanitizeMarkerValue(owner), name, typ, sanitizeMarkerValue(recordID))
+	updated.TTL = marker.TTL
+	if err := provider.Update(ctx, zone, marker.ID, updated); err != nil {
+		return fmt.Errorf("dns: update ownership marker %s: %w", marker.Name, err)
+	}
+	return nil
+}
+
 // markerFor builds the ownership TXT record for a managed record.
-func markerFor(owner string, want Record) Record {
+func markerFor(owner string, want Record, recordID string) Record {
+	value := fmt.Sprintf("%s;owner=%s;name=%s;type=%s",
+		markerValue, sanitizeMarkerValue(owner), fqdn(want.Name), strings.ToUpper(want.Type))
+	if recordID != "" {
+		value += ";id=" + sanitizeMarkerValue(recordID)
+	}
 	return Record{
 		Type:  "TXT",
 		Name:  markerPrefix + "." + fqdn(want.Name),
-		Value: fmt.Sprintf("%s;owner=%s;name=%s;type=%s", markerValue, sanitizeMarkerValue(owner), fqdn(want.Name), strings.ToUpper(want.Type)),
+		Value: value,
 		TTL:   want.TTL,
 	}
 }
 
-// parseMarker decodes an ownership marker value.
-func parseMarker(record Record) (owner, name, recordType string, ok bool) {
+// parseMarker decodes an ownership marker value, including the record id that
+// binds the marker to one provider record.
+func parseMarker(record Record) (owner, name, recordType, recordID string, ok bool) {
 	if record.Type != "TXT" {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	fields := strings.Split(strings.Trim(record.Value, "\""), ";")
 	if len(fields) == 0 || strings.TrimSpace(fields[0]) != markerValue {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	values := map[string]string{}
 	for _, field := range fields[1:] {
@@ -217,10 +276,11 @@ func parseMarker(record Record) (owner, name, recordType string, ok bool) {
 	owner = values["owner"]
 	name = fqdn(values["name"])
 	recordType = strings.ToUpper(values["type"])
+	recordID = values["id"]
 	if owner == "" || name == "" || recordType == "" {
-		return "", "", "", false
+		return "", "", "", "", false
 	}
-	return owner, name, recordType, true
+	return owner, name, recordType, recordID, true
 }
 
 // sanitizeMarkerValue keeps a marker value free of the separators it uses.

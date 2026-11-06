@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -87,14 +88,64 @@ func (s *stubCertifier) Issue(context.Context, []string) (issuedCertificate, err
 	}, nil
 }
 
-// fakeProvider is a DNS provider that reports one zone.
-type fakeProvider struct{ zones []string }
-
-func (f fakeProvider) Name() string                            { return "fake" }
-func (f fakeProvider) Zones(context.Context) ([]string, error) { return f.zones, nil }
-func (f fakeProvider) Records(context.Context, string) ([]dns.Record, error) {
-	return nil, nil
+// fakeProvider is an in-memory DNS provider for the manager tests. It records
+// the calls it receives so the tests can assert what the manager asked for.
+type fakeProvider struct {
+	zones   []string
+	records []dns.Record
+	creates int
+	updates int
+	deletes int
+	nextID  int
 }
-func (f fakeProvider) Create(context.Context, string, dns.Record) (string, error) { return "id", nil }
-func (f fakeProvider) Update(context.Context, string, string, dns.Record) error   { return nil }
-func (f fakeProvider) Delete(context.Context, string, string) error               { return nil }
+
+func (f *fakeProvider) Name() string { return "fake" }
+
+func (f *fakeProvider) Zones(context.Context) ([]string, error) { return f.zones, nil }
+
+func (f *fakeProvider) Records(context.Context, string) ([]dns.Record, error) {
+	out := make([]dns.Record, len(f.records))
+	copy(out, f.records)
+	return out, nil
+}
+
+func (f *fakeProvider) Create(_ context.Context, _ string, record dns.Record) (string, error) {
+	f.creates++
+	f.nextID++
+	record.ID = fmt.Sprintf("id-%d", f.nextID)
+	f.records = append(f.records, record)
+	return record.ID, nil
+}
+
+func (f *fakeProvider) Update(_ context.Context, _ string, id string, record dns.Record) error {
+	f.updates++
+	for i := range f.records {
+		if f.records[i].ID == id {
+			record.ID = id
+			f.records[i] = record
+			return nil
+		}
+	}
+	return fmt.Errorf("record %s not found", id)
+}
+
+func (f *fakeProvider) Delete(_ context.Context, _ string, id string) error {
+	f.deletes++
+	for i := range f.records {
+		if f.records[i].ID == id {
+			f.records = append(f.records[:i], f.records[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+// value returns the value of the first record with the given name and type.
+func (f *fakeProvider) value(recordType, name string) string {
+	for _, record := range f.records {
+		if record.Type == recordType && record.Name == name {
+			return record.Value
+		}
+	}
+	return ""
+}

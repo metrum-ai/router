@@ -101,6 +101,13 @@ func (o *Options) redact(text string) string {
 	return o.Redact(text)
 }
 
+// errorf builds an error whose text is scrubbed of credentials. Every provider
+// error path goes through it, because provider responses can echo a token back
+// (for example in an "invalid token" message).
+func (o *Options) errorf(format string, args ...any) error {
+	return fmt.Errorf("%s", o.redact(fmt.Sprintf(format, args...)))
+}
+
 func (o *Options) logf(format string, args ...any) {
 	if o == nil || o.Logger == nil {
 		return

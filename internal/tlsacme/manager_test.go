@@ -22,6 +22,10 @@ func boolPtr(v bool) *bool { return &v }
 // newTestManager builds an ACME-mode manager with a stub certifier and a fake
 // DNS provider, rooted in a temporary store.
 func newTestManager(t *testing.T, now *time.Time, mutate func(*Config)) (*Manager, *stubCertifier, *Store) {
+	return newTestManagerWithProvider(t, now, mutate, nil)
+}
+
+func newTestManagerWithProvider(t *testing.T, now *time.Time, mutate func(*Config), provider *fakeProvider) (*Manager, *stubCertifier, *Store) {
 	t.Helper()
 	cfg := validACMEConfig()
 	cfg.CacheDir = filepath.Join(t.TempDir(), "tls")
@@ -37,9 +41,12 @@ func newTestManager(t *testing.T, now *time.Time, mutate func(*Config)) (*Manage
 	}
 	leaf := makeTestCertificate(t, cfg.Domains, now.Add(-time.Hour), now.Add(90*24*time.Hour))
 	certifier := &stubCertifier{cert: leaf}
+	if provider == nil {
+		provider = &fakeProvider{zones: []string{"example.com"}}
+	}
 	manager, err := New(cfg,
 		WithStore(store),
-		WithProvider(fakeProvider{zones: []string{"example.com"}}),
+		WithProvider(provider),
 		WithCertifier(certifier),
 		WithNow(func() time.Time { return *now }),
 		WithRandomInt63(func(int64) int64 { return 0 }),
@@ -111,14 +118,16 @@ func TestManagerIssuesAndReusesCertificate(t *testing.T) {
 		t.Fatalf("renewal due = %v, want about %v (two thirds of lifetime)", status[0].RenewalDue, wantDeadline)
 	}
 
-	// A second manager (or a restart) loads the stored certificate instead of
-	// issuing again.
+	// A second manager (a restart, or another replica) that shares the store
+	// loads the stored certificate and issues nothing.
 	second, secondCertifier, _ := newTestManager(t, &now, nil)
+	second.store = store
+	secondCertifier.calls = 0
 	if err := second.EnsureCertificate(context.Background()); err != nil {
 		t.Fatalf("second ensure: %v", err)
 	}
-	if secondCertifier.calls != 1 {
-		t.Fatalf("second manager issued a new certificate despite a valid cache")
+	if secondCertifier.calls != 0 {
+		t.Fatalf("second manager issued %d certificate(s) despite a valid cache", secondCertifier.calls)
 	}
 }
 
@@ -264,23 +273,9 @@ func TestManagerPicksUpCertificateRenewedByAnotherReplica(t *testing.T) {
 	}
 }
 
-func TestManagerRejectsExpiredOrMismatchedStoredCertificate(t *testing.T) {
+func TestManagerRejectsMismatchedStoredCertificate(t *testing.T) {
 	now := time.Now()
 	manager, _, store := newTestManager(t, &now, nil)
-	expired := makeTestCertificate(t, manager.cfg.Domains, now.Add(-48*time.Hour), now.Add(-time.Hour))
-	if err := store.SaveCertificate(CertificateRecord{
-		Domains:        manager.cfg.Domains,
-		CertificatePEM: expired.CertificatePEM,
-		PrivateKeyPEM:  expired.PrivateKeyPEM,
-		NotBefore:      expired.NotBefore,
-		NotAfter:       expired.NotAfter,
-	}); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	if err := manager.EnsureCertificate(context.Background()); err == nil || !strings.Contains(err.Error(), "expired") {
-		t.Fatalf("error = %v, want an expiry error", err)
-	}
-
 	other := makeTestCertificate(t, []string{"other.example.com"}, now.Add(-time.Hour), now.Add(24*time.Hour))
 	if err := store.SaveCertificate(CertificateRecord{
 		Domains:        manager.cfg.Domains,
@@ -364,5 +359,205 @@ func TestManagerPotentialJitterStaysInsideLifetime(t *testing.T) {
 	status := manager.Status()[0]
 	if status.RenewalDue.Before(status.NotBefore) || status.RenewalDue.After(status.NotAfter) {
 		t.Fatalf("renewal due %v outside the certificate lifetime %v..%v", status.RenewalDue, status.NotBefore, status.NotAfter)
+	}
+}
+
+func TestManagerReissuesExpiredCache(t *testing.T) {
+	now := time.Now()
+	manager, certifier, store := newTestManager(t, &now, nil)
+	expired := makeTestCertificate(t, manager.cfg.Domains, now.Add(-48*time.Hour), now.Add(-time.Hour))
+	if err := store.SaveCertificate(CertificateRecord{
+		Domains:        manager.cfg.Domains,
+		CertificatePEM: expired.CertificatePEM,
+		PrivateKeyPEM:  expired.PrivateKeyPEM,
+		NotBefore:      expired.NotBefore,
+		NotAfter:       expired.NotAfter,
+	}); err != nil {
+		t.Fatalf("save expired record: %v", err)
+	}
+	certifier.calls = 0
+	if err := manager.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if certifier.calls != 1 {
+		t.Fatalf("certifier calls = %d, want 1 (an expired cache must be reissued)", certifier.calls)
+	}
+	if got := manager.Status(); len(got) != 1 || !got[0].Valid {
+		t.Fatalf("status after reissue = %+v", got)
+	}
+}
+
+func TestManagerServesValidCacheWhenRenewalCannotRun(t *testing.T) {
+	now := time.Now()
+	manager, certifier, _ := newTestManager(t, &now, func(c *Config) {
+		// Renew almost immediately so the cached certificate is already due.
+		c.Renewal.WindowRatio = 0.1
+		c.Renewal.Jitter = time.Nanosecond
+	})
+	if err := manager.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	// A second manager with the same store and an unreachable CA must still
+	// start: the valid cache is served and renewal retries in the background.
+	certifier.calls = 0
+	second, secondCertifier, _ := newTestManager(t, &now, func(c *Config) {
+		c.Renewal.WindowRatio = 0.1
+		c.Renewal.Jitter = time.Nanosecond
+	})
+	second.store = manager.store
+	secondCertifier.err = errors.New("acme: CA unavailable")
+	if err := second.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("a valid cache must let the router start while the CA is down: %v", err)
+	}
+	if second.record == nil {
+		t.Fatal("the cached certificate was not installed")
+	}
+	// Move past the renewal deadline: the first tick retries and records the
+	// failure without touching the certificate in service.
+	now = second.record.NotBefore.Add(second.record.NotAfter.Sub(second.record.NotBefore) / 4)
+	second.tick(context.Background())
+	if got := second.metrics.value(metricRenewalFailures, mergeLabels(second.metrics.baseLabels(), [2]string{"reason", "acme"})); got != 1 {
+		t.Fatalf("renewal failure metric = %v, want 1", got)
+	}
+	if second.record == nil {
+		t.Fatal("a failed renewal must keep the certificate in service")
+	}
+}
+
+func TestManagerAdoptsCertificateRenewedUnderTheLock(t *testing.T) {
+	now := time.Now()
+	// Replica A holds the store and has already renewed.
+	a, aCertifier, store := newTestManager(t, &now, nil)
+	if err := a.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	// Replica B still believes the (older) certificate is due.
+	b, bCertifier, _ := newTestManager(t, &now, func(c *Config) {
+		c.Renewal.WindowRatio = 0.01
+		c.Renewal.Jitter = time.Nanosecond
+	})
+	b.store = store
+	bCertifier.calls = 0
+	aCertifier.calls = 0
+	if err := b.issue(context.Background()); err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if bCertifier.calls != 0 {
+		t.Fatalf("replica B ordered a duplicate renewal (%d calls); it must adopt the stored certificate", bCertifier.calls)
+	}
+	if b.record == nil {
+		t.Fatal("replica B did not install the stored certificate")
+	}
+}
+
+func TestManagerResolvesAndDecodesEABKey(t *testing.T) {
+	now := time.Now()
+	t.Setenv("TLS_TEST_EAB_KEY", "c2VjcmV0LWhtYWMta2V5") // base64url("secret-hmac-key")
+	cfg := validACMEConfig()
+	cfg.CacheDir = filepath.Join(t.TempDir(), "tls")
+	cfg.DNS.Zone = "example.com"
+	cfg.Renewal.UseARI = boolPtr(false)
+	cfg.EAB = EABConfig{KID: "kid-1", HMACKey: SecretRef{Env: "TLS_TEST_EAB_KEY"}}
+	store, err := OpenStore(cfg.CacheDir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	manager, err := New(cfg, WithStore(store), WithProvider(&fakeProvider{zones: []string{"example.com"}}), WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	certifier, ok := manager.certifier.(*acmeCertifier)
+	if !ok {
+		t.Fatalf("certifier = %T", manager.certifier)
+	}
+	if certifier.eabKID != "kid-1" || certifier.eabHMACKey != "secret-hmac-key" {
+		t.Fatalf("EAB not passed to the certifier: kid=%q key=%q", certifier.eabKID, certifier.eabHMACKey)
+	}
+
+	t.Setenv("TLS_TEST_EAB_KEY", "not base64!!")
+	if _, err := New(cfg, WithStore(store), WithProvider(&fakeProvider{zones: []string{"example.com"}})); err == nil || !strings.Contains(err.Error(), "not valid base64url") {
+		t.Fatalf("error = %v, want a base64url error", err)
+	}
+}
+
+func TestManagerFilesModeRejectsUnsafeInput(t *testing.T) {
+	dir := t.TempDir()
+	expired := makeTestCertificate(t, []string{"router.example.com"}, time.Now().Add(-48*time.Hour), time.Now().Add(-time.Hour))
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+	if err := os.WriteFile(certPath, expired.CertificatePEM, 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, expired.PrivateKeyPEM, 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	if _, err := New(Config{Mode: ModeFiles, Domains: []string{"router.example.com"}, CertificateFile: certPath, KeyFile: keyPath}); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("error = %v, want an expiry error", err)
+	}
+
+	valid := makeTestCertificate(t, []string{"router.example.com"}, time.Now().Add(-time.Hour), time.Now().Add(24*time.Hour))
+	if err := os.WriteFile(certPath, valid.CertificatePEM, 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, valid.PrivateKeyPEM, 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	if err := os.Chmod(keyPath, 0o644); err != nil {
+		t.Fatalf("chmod key: %v", err)
+	}
+	if _, err := New(Config{Mode: ModeFiles, Domains: []string{"router.example.com"}, CertificateFile: certPath, KeyFile: keyPath}); err == nil || !strings.Contains(err.Error(), "group- or world-accessible") {
+		t.Fatalf("error = %v, want a key permission error", err)
+	}
+}
+
+func TestManagerReconcilesManagedRecordAtStartupAndOnChange(t *testing.T) {
+	now := time.Now()
+	provider := &fakeProvider{zones: []string{"example.com"}}
+	manager, _, _ := newTestManagerWithProvider(t, &now, func(c *Config) {
+		c.DNS.Record = RecordConfig{Manage: true, Type: "A", Value: "203.0.113.10", TTL: 300, Owner: "host-1"}
+	}, provider)
+	if err := manager.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if got := provider.value("A", "router.example.com"); got != "203.0.113.10" {
+		t.Fatalf("managed record = %q, want the configured address", got)
+	}
+	if marker := provider.value("TXT", "_metrum-router.router.example.com"); marker == "" {
+		t.Fatal("no ownership marker was created")
+	}
+
+	// A changed address converges on the next reconciliation tick, without
+	// waiting for the certificate to renew.
+	for i := range provider.records {
+		if provider.records[i].Type == "A" {
+			provider.records[i].Value = "203.0.113.99"
+		}
+	}
+	manager.cfg.DNS.Record.Value = "203.0.113.11"
+	now = now.Add(reconcileInterval + time.Minute)
+	manager.tick(context.Background())
+	if got := provider.value("A", "router.example.com"); got != "203.0.113.11" {
+		t.Fatalf("managed record = %q, want the new address", got)
+	}
+}
+
+func TestManagerValidityGaugeTurnsInvalidAtExpiry(t *testing.T) {
+	now := time.Now()
+	manager, certifier, _ := newTestManager(t, &now, nil)
+	if err := manager.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	labels := manager.metrics.baseLabels()
+	if got := manager.metrics.value(metricCertValid, labels); got != 1 {
+		t.Fatalf("valid gauge = %v, want 1", got)
+	}
+	certifier.err = errors.New("acme: unavailable")
+	now = manager.record.NotAfter.Add(time.Minute)
+	manager.tick(context.Background())
+	if got := manager.metrics.value(metricCertValid, labels); got != 0 {
+		t.Fatalf("valid gauge = %v after expiry, want 0", got)
+	}
+	if !strings.Contains(manager.Prometheus(), metricCertValid) {
+		t.Fatal("validity metric missing from /metrics")
 	}
 }

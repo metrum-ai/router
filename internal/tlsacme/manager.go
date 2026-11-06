@@ -95,20 +95,24 @@ type Manager struct {
 	metrics   *metrics
 	secrets   *secretSet
 
-	mu        sync.RWMutex
-	cert      *tls.Certificate
-	record    *CertificateRecord
-	deadline  time.Time
-	loadedMod time.Time
-	source    string
-	lastError string
-	zone      string
+	mu           sync.RWMutex
+	solverMu     sync.Mutex
+	cachedSolver challengeSolver
+	cert         *tls.Certificate
+	record       *CertificateRecord
+	deadline     time.Time
+	loadedMod    time.Time
+	source       string
+	lastError    string
+	zone         string
 
 	attempts     int
 	nextAttempt  time.Time
 	ariRetryAt   time.Time
 	lockBroken   bool
 	reloadTicker time.Duration
+	// lastReconcile bounds how often the managed DNS record is re-checked.
+	lastReconcile time.Time
 }
 
 // New builds a Manager for one listener. It never performs network I/O: the
@@ -158,6 +162,12 @@ func New(cfg Config, opts ...Option) (*Manager, error) {
 		m.store = store
 	}
 	m.ari = &ariClient{httpClient: options.httpClient}
+	// Resolve the EAB key before the certifier is built: it is needed at
+	// account registration, not at provider construction.
+	eabHMACKey, err := m.resolveEABKey()
+	if err != nil {
+		return nil, err
+	}
 	m.provider = options.provider
 	if m.provider == nil {
 		provider, err := m.newProvider(context.Background())
@@ -178,11 +188,28 @@ func New(cfg Config, opts ...Option) (*Manager, error) {
 			store:        m.store,
 			solver:       &lazySolver{manager: m},
 			eabKID:       normalized.EAB.KID,
-			eabHMACKey:   "",
+			eabHMACKey:   eabHMACKey,
 			now:          options.now,
 		}
 	}
 	return m, nil
+}
+
+// resolveEABKey reads and decodes the optional external account binding key.
+// CAs hand it out base64url-encoded; ACME wants the raw bytes.
+func (m *Manager) resolveEABKey() (string, error) {
+	if m.cfg.EAB.KID == "" {
+		return "", nil
+	}
+	encoded, err := m.secrets.resolve(m.cfg.EAB.HMACKey, m.cfg.prefix()+".eab.hmac_key")
+	if err != nil {
+		return "", err
+	}
+	raw, err := decodeEABKey(encoded)
+	if err != nil {
+		return "", fmt.Errorf("%s: eab.hmac_key is not valid base64url: %v", m.cfg.prefix(), err)
+	}
+	return string(raw), nil
 }
 
 // newProvider resolves the DNS credentials and builds the configured provider.
@@ -208,13 +235,6 @@ func (m *Manager) newProvider(ctx context.Context) (dns.Provider, error) {
 	resolved.UseAmbientCredentials = creds.UseAmbientCredentials
 	if err != nil {
 		return nil, err
-	}
-	eabHMAC, err := m.secrets.resolve(m.cfg.EAB.HMACKey, m.cfg.prefix()+".eab.hmac_key")
-	if err != nil {
-		return nil, err
-	}
-	if certifier, ok := m.certifier.(*acmeCertifier); ok {
-		certifier.eabHMACKey = eabHMAC
 	}
 	return dns.New(ctx, m.cfg.DNS.Provider, resolved, dns.Options{
 		Zone:                   m.cfg.DNS.Zone,
@@ -331,20 +351,43 @@ func (m *Manager) EnsureCertificate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if record != nil {
+	now := m.opt.now()
+	if record != nil && now.Before(record.NotAfter) {
+		// A usable certificate is served immediately. A renewal that is already
+		// due happens in the background on the first tick, so an unavailable CA
+		// delays a renewal instead of stopping a restart.
 		if err := m.install(record, "store"); err != nil {
 			return err
 		}
-		if !m.due(m.opt.now()) {
-			return nil
+		if m.due(now) {
+			m.opt.logger.Printf("certificate for %s is due for renewal; renewing in the background", strings.Join(m.cfg.Domains, ","))
 		}
+		m.reconcileManagedRecord(ctx)
+		return nil
 	}
+	// Nothing usable is cached: issuance must succeed or the listener must not
+	// start. An expired cache is reissued rather than failing outright, so a
+	// long stop does not need manual cache surgery.
 	timeoutCtx, cancel := context.WithTimeout(ctx, m.cfg.StartupTimeout)
 	defer cancel()
 	if err := m.issue(timeoutCtx); err != nil {
+		return m.redactError(err)
+	}
+	m.reconcileManagedRecord(ctx)
+	return nil
+}
+
+// redactError scrubs resolved credentials from an error before it leaves the
+// package (startup logs and the caller's error text).
+func (m *Manager) redactError(err error) error {
+	if err == nil {
+		return nil
+	}
+	text := m.secrets.redact(err.Error())
+	if text == err.Error() {
 		return err
 	}
-	return nil
+	return errors.New(text)
 }
 
 // Run renews the certificate until ctx is cancelled.
@@ -371,6 +414,8 @@ func (m *Manager) Run(ctx context.Context) {
 func (m *Manager) tick(ctx context.Context) {
 	m.maybeReload()
 	now := m.opt.now()
+	m.reconcileManagedRecord(ctx)
+	m.refreshValidity()
 	if now.Before(m.nextAttempt) {
 		return
 	}
@@ -419,6 +464,26 @@ func (m *Manager) issue(ctx context.Context) error {
 	}
 	defer release()
 
+	// Another replica may have renewed between this replica's due check and the
+	// lock: adopt its certificate instead of ordering a duplicate.
+	if stored, err := m.store.LoadCertificate(m.cfg.Domains); err != nil {
+		return err
+	} else if stored != nil {
+		m.mu.RLock()
+		currentExpiry := time.Time{}
+		if m.record != nil {
+			currentExpiry = m.record.NotAfter
+		}
+		m.mu.RUnlock()
+		if stored.NotAfter.After(currentExpiry) && m.opt.now().Before(stored.NotAfter) {
+			if err := m.install(stored, "store"); err != nil {
+				return err
+			}
+		}
+		if !m.due(m.opt.now()) {
+			return nil
+		}
+	}
 	started := m.opt.now()
 	issued, err := m.certifier.Issue(ctx, m.cfg.Domains)
 	if err != nil {
@@ -452,6 +517,27 @@ func (m *Manager) issue(ctx context.Context) error {
 
 // errIssuerBusy marks normal lock contention, which is not a failure.
 var errIssuerBusy = errors.New("tls: another replica is issuing")
+
+// reconcileInterval bounds how often the managed DNS record is re-checked in a
+// running router, so a changed address converges without waiting for renewal.
+const reconcileInterval = 5 * time.Minute
+
+// reconcileManagedRecord reconciles the optional record when it is enabled and
+// the interval has passed. Failures are logged and retried later.
+func (m *Manager) reconcileManagedRecord(ctx context.Context) {
+	if m.cfg.Mode != ModeACME || !m.cfg.DNS.Record.Manage {
+		return
+	}
+	now := m.opt.now()
+	m.mu.Lock()
+	if !m.lastReconcile.IsZero() && now.Sub(m.lastReconcile) < reconcileInterval {
+		m.mu.Unlock()
+		return
+	}
+	m.lastReconcile = now
+	m.mu.Unlock()
+	m.reconcileRecord(ctx)
+}
 
 // reconcileRecord keeps the optional A/AAAA/CNAME record in sync with the
 // configured value.
@@ -510,13 +596,20 @@ func (m *Manager) resolveZone(ctx context.Context) (string, error) {
 	return resolved, nil
 }
 
-// solverFor resolves the zone and returns a challenge solver.
+// solverFor resolves the zone and returns the manager's one challenge solver.
+// The solver keeps the ids of the records it created, so cleanup removes
+// exactly those records.
 func (m *Manager) solverFor(ctx context.Context) (challengeSolver, error) {
+	m.solverMu.Lock()
+	defer m.solverMu.Unlock()
+	if m.cachedSolver != nil {
+		return m.cachedSolver, nil
+	}
 	zone, err := m.resolveZone(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return dns.NewSolver(m.provider, zone, dns.Options{
+	solver := dns.NewSolver(m.provider, zone, dns.Options{
 		TTL:                    m.cfg.DNS.TTL,
 		PropagationTimeout:     m.cfg.DNS.PropagationTimeout,
 		PropagationNameservers: m.cfg.DNS.PropagationNameservers,
@@ -524,7 +617,9 @@ func (m *Manager) solverFor(ctx context.Context) (challengeSolver, error) {
 		Instruments:            dnsInstruments{m},
 		Redact:                 m.secrets.redact,
 		Now:                    m.opt.now,
-	}), nil
+	})
+	m.cachedSolver = solver
+	return solver, nil
 }
 
 // lazySolver defers zone resolution until the first challenge, so building a
@@ -559,16 +654,10 @@ func (m *Manager) install(record *CertificateRecord, source string) error {
 		return fmt.Errorf("tls: parse certificate: %w", err)
 	}
 	cert.Leaf = leaf
-	if err := m.checkDomains(leaf); err != nil {
+	if err := m.validateLeaf(leaf); err != nil {
 		return err
 	}
 	now := m.opt.now()
-	if !now.Before(leaf.NotAfter) {
-		return fmt.Errorf("tls: stored certificate for %s expired at %s", strings.Join(record.Domains, ","), leaf.NotAfter.UTC().Format(time.RFC3339))
-	}
-	if leaf.NotBefore.After(now.Add(5 * time.Minute)) {
-		return fmt.Errorf("tls: stored certificate for %s is not valid before %s", strings.Join(record.Domains, ","), leaf.NotBefore.UTC().Format(time.RFC3339))
-	}
 	deadline := renewalDeadline(leaf.NotBefore, leaf.NotAfter, m.cfg.Renewal, m.opt.roll)
 	if m.cfg.Renewal.ariEnabled() {
 		deadline = m.applyARI(deadline, leaf)
@@ -612,8 +701,17 @@ func (m *Manager) applyARI(ratioDeadline time.Time, leaf *x509.Certificate) time
 	return start.Add(time.Duration(m.opt.roll(span)))
 }
 
-// checkDomains verifies that the certificate covers every configured domain.
-func (m *Manager) checkDomains(leaf *x509.Certificate) error {
+// validateLeaf rejects a certificate that is expired, not yet valid, or does
+// not cover every configured domain. Every path that installs a certificate
+// (store, ACME, files) uses it, so the three modes behave the same way.
+func (m *Manager) validateLeaf(leaf *x509.Certificate) error {
+	now := m.opt.now()
+	if !now.Before(leaf.NotAfter) {
+		return fmt.Errorf("tls: certificate for %s expired at %s", strings.Join(m.cfg.Domains, ","), leaf.NotAfter.UTC().Format(time.RFC3339))
+	}
+	if leaf.NotBefore.After(now.Add(5 * time.Minute)) {
+		return fmt.Errorf("tls: certificate for %s is not valid before %s", strings.Join(m.cfg.Domains, ","), leaf.NotBefore.UTC().Format(time.RFC3339))
+	}
 	for _, domain := range m.cfg.Domains {
 		if err := leaf.VerifyHostname(domain); err != nil {
 			return fmt.Errorf("tls: certificate does not cover %q: %w", domain, err)
@@ -691,8 +789,13 @@ func (m *Manager) loadFiles() error {
 		return fmt.Errorf("tls: parse certificate_file: %w", err)
 	}
 	cert.Leaf = leaf
-	if err := m.checkDomains(leaf); err != nil {
+	if err := m.validateLeaf(leaf); err != nil {
 		return err
+	}
+	if info, err := os.Stat(m.cfg.KeyFile); err != nil {
+		return fmt.Errorf("tls: stat key_file: %w", err)
+	} else if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Errorf("tls: key_file %s is group- or world-accessible (%04o); require 0600", m.cfg.KeyFile, perm)
 	}
 	deadline := renewalDeadline(leaf.NotBefore, leaf.NotAfter, m.cfg.Renewal, m.opt.roll)
 	m.mu.Lock()
@@ -740,7 +843,22 @@ func (m *Manager) Prometheus() string {
 	if m == nil || m.cfg.Mode == ModeOff {
 		return ""
 	}
+	m.refreshValidity()
 	return m.metrics.prometheus()
+}
+
+// refreshValidity recomputes the time-dependent validity gauge: a certificate
+// whose renewals keep failing turns invalid at its expiry, not at the next
+// installation.
+func (m *Manager) refreshValidity() {
+	m.mu.RLock()
+	record := m.record
+	deadline := m.deadline
+	m.mu.RUnlock()
+	if record == nil {
+		return
+	}
+	m.metrics.observeCertificate(record, deadline, m.opt.now())
 }
 
 // classifyError labels a renewal failure with a bounded reason value.

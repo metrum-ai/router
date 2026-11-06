@@ -141,7 +141,7 @@ func (d *DigitalOcean) Create(ctx context.Context, zone string, record Record) (
 		return "", err
 	}
 	if response.Record.ID == 0 {
-		return "", fmt.Errorf("dns: digitalocean create %s %s returned no record id", record.Type, record.Name)
+		return "", d.opts.errorf("dns: digitalocean create %s %s returned no record id", record.Type, record.Name)
 	}
 	return strconv.FormatInt(response.Record.ID, 10), nil
 }
@@ -172,13 +172,13 @@ func (d *DigitalOcean) do(ctx context.Context, method, path string, body any, ou
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("dns: digitalocean encode request: %w", err)
+			return d.opts.errorf("dns: digitalocean encode request: %v", err)
 		}
 		payload = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, d.baseURL+path, payload)
 	if err != nil {
-		return fmt.Errorf("dns: digitalocean build request: %w", err)
+		return d.opts.errorf("dns: digitalocean build request: %v", err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -186,12 +186,12 @@ func (d *DigitalOcean) do(ctx context.Context, method, path string, body any, ou
 	req.Header.Set("Authorization", "Bearer "+d.token)
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("dns: digitalocean %s %s: %w", method, path, err)
+		return d.opts.errorf("dns: digitalocean %s %s: %v", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("dns: digitalocean read response: %w", err)
+		return d.opts.errorf("dns: digitalocean read response: %v", err)
 	}
 	if resp.StatusCode >= 300 {
 		detail := truncateBody(raw)
@@ -199,11 +199,11 @@ func (d *DigitalOcean) do(ctx context.Context, method, path string, body any, ou
 		if json.Unmarshal(raw, &problem) == nil && problem.Message != "" {
 			detail = problem.Message
 		}
-		return fmt.Errorf("dns: digitalocean %s %s: status %d: %s", method, path, resp.StatusCode, detail)
+		return d.opts.errorf("dns: digitalocean %s %s: status %d: %s", method, path, resp.StatusCode, detail)
 	}
 	if out != nil && len(raw) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("dns: digitalocean %s %s: decode response: %w", method, path, err)
+			return d.opts.errorf("dns: digitalocean %s %s: decode response: %v", method, path, err)
 		}
 	}
 	return nil

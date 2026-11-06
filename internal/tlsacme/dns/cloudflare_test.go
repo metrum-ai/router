@@ -207,6 +207,37 @@ func TestCloudflareProviderErrorsAreRedactedAndTruncated(t *testing.T) {
 	}
 }
 
+func TestCloudflareErrorsNeverEchoTheToken(t *testing.T) {
+	const token = "cf-super-secret-token"
+	api := newFakeAPI(t, func(req requestLog, w http.ResponseWriter) {
+		// A provider that echoes the presented credential back in its error
+		// must not leak it into logs or startup errors.
+		writeJSON(t, w, 401, map[string]any{
+			"success": false,
+			"errors":  []map[string]any{{"code": 10000, "message": "Authentication failed: invalid token " + token}},
+		})
+	})
+	provider, err := NewCloudflare(CloudflareCredentials{APIToken: token}, Options{
+		Endpoint: api.server.URL,
+		Redact: func(text string) string {
+			return strings.ReplaceAll(text, token, "<redacted>")
+		},
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	_, err = provider.Zones(context.Background())
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("provider error echoes the token: %q", err)
+	}
+	if !strings.Contains(err.Error(), "<redacted>") {
+		t.Fatalf("provider error is not redacted: %q", err)
+	}
+}
+
 func TestCloudflareSuccessFalseIsAnError(t *testing.T) {
 	api := newFakeAPI(t, func(req requestLog, w http.ResponseWriter) {
 		writeJSON(t, w, 200, map[string]any{"success": false, "errors": []map[string]any{{"code": 1, "message": "bad request"}}})

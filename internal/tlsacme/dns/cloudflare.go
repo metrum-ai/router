@@ -154,7 +154,7 @@ func (c *Cloudflare) Create(ctx context.Context, zone string, record Record) (st
 		return "", err
 	}
 	if result.ID == "" {
-		return "", fmt.Errorf("dns: cloudflare create %s %s returned no record id", record.Type, record.Name)
+		return "", c.opts.errorf("dns: cloudflare create %s %s returned no record id", record.Type, record.Name)
 	}
 	return result.ID, nil
 }
@@ -203,7 +203,7 @@ func (c *Cloudflare) zoneID(ctx context.Context, zone string) (string, error) {
 			return candidate.ID, nil
 		}
 	}
-	return "", fmt.Errorf("dns: cloudflare zone %q not found for these credentials", zone)
+	return "", c.opts.errorf("dns: cloudflare zone %q not found for these credentials", zone)
 }
 
 func (c *Cloudflare) rememberZone(name, id string) {
@@ -222,13 +222,13 @@ func (c *Cloudflare) do(ctx context.Context, method, path string, body any, out 
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare encode request: %w", err)
+			return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare encode request: %v", err)
 		}
 		payload = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
-		return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare build request: %w", err)
+		return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare build request: %v", err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -241,12 +241,12 @@ func (c *Cloudflare) do(ctx context.Context, method, path string, body any, out 
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare %s %s: %w", method, path, err)
+		return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare %s %s: %v", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare read response: %w", err)
+		return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare read response: %v", err)
 	}
 	var envelope cloudflareEnvelope
 	decodeErr := json.Unmarshal(raw, &envelope)
@@ -262,14 +262,14 @@ func (c *Cloudflare) do(ctx context.Context, method, path string, body any, out 
 		if detail == "" {
 			detail = truncateBody(raw)
 		}
-		return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare %s %s: status %d: %s", method, path, resp.StatusCode, detail)
+		return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare %s %s: status %d: %s", method, path, resp.StatusCode, detail)
 	}
 	if decodeErr != nil {
-		return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare %s %s: decode response: %w", method, path, decodeErr)
+		return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare %s %s: decode response: %v", method, path, decodeErr)
 	}
 	if out != nil && len(envelope.Result) > 0 {
 		if err := json.Unmarshal(envelope.Result, out); err != nil {
-			return cloudflareResultInfo{}, fmt.Errorf("dns: cloudflare %s %s: decode result: %w", method, path, err)
+			return cloudflareResultInfo{}, c.opts.errorf("dns: cloudflare %s %s: decode result: %v", method, path, err)
 		}
 	}
 	return envelope.ResultInfo, nil

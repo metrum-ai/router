@@ -76,7 +76,7 @@ func (r *Route53) Zones(ctx context.Context) ([]string, error) {
 	for {
 		out, err := r.client.ListHostedZonesByName(ctx, input)
 		if err != nil {
-			return nil, fmt.Errorf("dns: route53 list hosted zones: %w", r.redactError(err))
+			return nil, r.opts.errorf("dns: route53 list hosted zones: %v", err)
 		}
 		for _, zone := range out.HostedZones {
 			zones = append(zones, fqdn(aws.ToString(zone.Name)))
@@ -106,19 +106,22 @@ func (r *Route53) Records(ctx context.Context, zone string) ([]Record, error) {
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("dns: route53 list records in %s: %w", zone, r.redactError(err))
+			return nil, r.opts.errorf("dns: route53 list records in %s: %v", zone, err)
 		}
 		for _, set := range page.ResourceRecordSets {
 			name := fqdn(aws.ToString(set.Name))
 			recordType := string(set.Type)
 			if recordType == "TXT" {
-				// A TXT record set may carry several values; each is one entry.
+				// A TXT record set may carry several values; each is one entry
+				// with an id that names the value, so a challenge cleanup can
+				// remove only its own value and leave the others alone.
 				for _, value := range set.ResourceRecords {
+					unquoted := unquoteTXT(aws.ToString(value.Value))
 					out = append(out, Record{
-						ID:    defaultRecordID(Record{Name: name, Type: recordType}),
+						ID:    txtRecordID(name, unquoted),
 						Type:  recordType,
 						Name:  name,
-						Value: unquoteTXT(aws.ToString(value.Value)),
+						Value: unquoted,
 						TTL:   int(aws.ToInt64(set.TTL)),
 					})
 				}
@@ -141,12 +144,35 @@ func (r *Route53) Records(ctx context.Context, zone string) ([]Record, error) {
 	return out, nil
 }
 
-// Create adds a record set and returns its composite id.
+// Create adds a record and returns its id. Route 53 stores all TXT values of a
+// name in one record set, so a TXT create merges with the values already there
+// (another deployment's challenge, or the wildcard and apex of one order that
+// share a challenge name) instead of failing with "already exists".
 func (r *Route53) Create(ctx context.Context, zone string, record Record) (string, error) {
-	if err := r.change(ctx, zone, types.ChangeActionCreate, record); err != nil {
+	if strings.ToUpper(record.Type) != "TXT" {
+		if err := r.change(ctx, zone, types.ChangeActionCreate, record); err != nil {
+			return "", err
+		}
+		return defaultRecordID(record), nil
+	}
+	values, ttl, err := r.txtValues(ctx, zone, record.Name)
+	if err != nil {
 		return "", err
 	}
-	return defaultRecordID(record), nil
+	merged := append(append([]string(nil), values...), record.Value)
+	mergedRecord := record
+	mergedRecord.Value = strings.Join(merged, "\n")
+	if ttl > 0 {
+		mergedRecord.TTL = ttl
+	}
+	action := types.ChangeActionCreate
+	if len(values) > 0 {
+		action = types.ChangeActionUpsert
+	}
+	if err := r.change(ctx, zone, action, mergedRecord); err != nil {
+		return "", err
+	}
+	return txtRecordID(record.Name, record.Value), nil
 }
 
 // Update replaces a single-value record set (UPSERT).
@@ -158,9 +184,36 @@ func (r *Route53) Update(ctx context.Context, zone string, id string, record Rec
 // Delete removes the record set, using its current values so Route 53 accepts
 // the DELETE.
 func (r *Route53) Delete(ctx context.Context, zone string, id string) error {
-	name, recordType, ok := splitRecordID(id)
+	name, recordType, value, ok := splitRecordID(id)
 	if !ok {
-		return fmt.Errorf("dns: route53 delete: malformed record id %q", id)
+		return r.opts.errorf("dns: route53 delete: malformed record id %q", id)
+	}
+	if recordType == "TXT" && value != "" {
+		values, ttl, err := r.txtValues(ctx, zone, name)
+		if err != nil {
+			return err
+		}
+		remaining := make([]string, 0, len(values))
+		removed := false
+		for _, current := range values {
+			if !removed && current == value {
+				removed = true
+				continue
+			}
+			remaining = append(remaining, current)
+		}
+		if !removed {
+			return nil
+		}
+		if len(remaining) == 0 {
+			// Delete needs the exact current values.
+			return r.change(ctx, zone, types.ChangeActionDelete, Record{
+				Type: "TXT", Name: name, Value: strings.Join(values, "\n"), TTL: ttl,
+			})
+		}
+		return r.change(ctx, zone, types.ChangeActionUpsert, Record{
+			Type: "TXT", Name: name, Value: strings.Join(remaining, "\n"), TTL: ttl,
+		})
 	}
 	records, err := r.Records(ctx, zone)
 	if err != nil {
@@ -177,6 +230,31 @@ func (r *Route53) Delete(ctx context.Context, zone string, id string) error {
 		return nil
 	}
 	return r.change(ctx, zone, types.ChangeActionDelete, *current)
+}
+
+// txtValues returns the TXT values and TTL currently stored for a name.
+func (r *Route53) txtValues(ctx context.Context, zone, name string) ([]string, int, error) {
+	records, err := r.Records(ctx, zone)
+	if err != nil {
+		return nil, 0, err
+	}
+	var values []string
+	ttl := 0
+	for _, record := range records {
+		if record.Type != "TXT" || record.Name != fqdn(name) {
+			continue
+		}
+		values = append(values, record.Value)
+		if ttl == 0 {
+			ttl = record.TTL
+		}
+	}
+	return values, ttl, nil
+}
+
+// txtRecordID names one TXT value inside a record set.
+func txtRecordID(name, value string) string {
+	return fqdn(name) + "|TXT|" + value
 }
 
 func (r *Route53) change(ctx context.Context, zone string, action types.ChangeAction, record Record) error {
@@ -215,7 +293,7 @@ func (r *Route53) change(ctx context.Context, zone string, action types.ChangeAc
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("dns: route53 %s %s %s: %w", action, record.Type, record.Name, r.redactError(err))
+		return r.opts.errorf("dns: route53 %s %s %s: %v", action, record.Type, record.Name, err)
 	}
 	if out.ChangeInfo == nil || out.ChangeInfo.Id == nil {
 		return nil
@@ -230,13 +308,13 @@ func (r *Route53) waitInsync(ctx context.Context, changeID string) error {
 	for {
 		out, err := r.client.GetChange(ctx, &route53.GetChangeInput{Id: aws.String(changeID)})
 		if err != nil {
-			return fmt.Errorf("dns: route53 get change: %w", r.redactError(err))
+			return r.opts.errorf("dns: route53 get change: %v", err)
 		}
 		if out.ChangeInfo != nil && out.ChangeInfo.Status == types.ChangeStatusInsync {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("dns: route53 change %s did not reach INSYNC within %s", changeID, r.changeTimeout)
+			return r.opts.errorf("dns: route53 change %s did not reach INSYNC within %s", changeID, r.changeTimeout)
 		}
 		select {
 		case <-ctx.Done():
@@ -253,7 +331,7 @@ func (r *Route53) zoneID(ctx context.Context, zone string) (string, error) {
 		MaxItems: aws.Int32(100),
 	})
 	if err != nil {
-		return "", fmt.Errorf("dns: route53 look up zone %s: %w", zone, r.redactError(err))
+		return "", r.opts.errorf("dns: route53 look up zone %s: %v", zone, err)
 	}
 	for _, hosted := range out.HostedZones {
 		if fqdn(aws.ToString(hosted.Name)) != zone {
@@ -261,28 +339,31 @@ func (r *Route53) zoneID(ctx context.Context, zone string) (string, error) {
 		}
 		id := strings.TrimPrefix(aws.ToString(hosted.Id), "/hostedzone/")
 		if id == "" {
-			return "", fmt.Errorf("dns: route53 zone %s has no id", zone)
+			return "", r.opts.errorf("dns: route53 zone %s has no id", zone)
 		}
 		return id, nil
 	}
-	return "", fmt.Errorf("dns: route53 zone %q not found for these credentials", zone)
+	return "", r.opts.errorf("dns: route53 zone %q not found for these credentials", zone)
 }
 
-// redactError keeps credentials out of SDK error text.
-func (r *Route53) redactError(err error) error {
-	if err == nil {
-		return nil
+// splitRecordID splits a composite record id into name, type and (for TXT) the
+// single value the id names.
+func splitRecordID(id string) (name, recordType, value string, ok bool) {
+	parts := strings.SplitN(strings.TrimSpace(id), "|", 3)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", "", false
 	}
-	return fmt.Errorf("%s", r.opts.redact(err.Error()))
-}
-
-// splitRecordID reverses defaultRecordID.
-func splitRecordID(id string) (string, string, bool) {
-	name, recordType, found := strings.Cut(strings.TrimSpace(id), "|")
-	if !found || name == "" || recordType == "" {
-		return "", "", false
+	name = fqdn(parts[0])
+	recordType = strings.ToUpper(parts[1])
+	if len(parts) == 3 {
+		value = parts[2]
 	}
-	return fqdn(name), strings.ToUpper(recordType), true
+	if recordType == "TXT" && len(parts) == 2 {
+		// An old two-part TXT id has no value; the caller then treats it as a
+		// whole record set.
+		return name, recordType, "", true
+	}
+	return name, recordType, value, true
 }
 
 // quoteTXT renders a TXT value the way Route 53 stores it, splitting values

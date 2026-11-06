@@ -4,6 +4,7 @@
 package tlsacme
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -49,6 +50,26 @@ func fieldName(field string) string {
 		return field[i+1:]
 	}
 	return field
+}
+
+// decodeEABKey accepts the base64url (unpadded or padded) and standard base64
+// encodings CAs use for external account binding keys.
+func decodeEABKey(encoded string) ([]byte, error) {
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return nil, fmt.Errorf("empty key")
+	}
+	for _, encoding := range []*base64.Encoding{
+		base64.RawURLEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.StdEncoding,
+	} {
+		if raw, err := encoding.DecodeString(encoded); err == nil {
+			return raw, nil
+		}
+	}
+	return nil, fmt.Errorf("unsupported encoding")
 }
 
 // resolve reads the secret. Errors name the field and the environment variable

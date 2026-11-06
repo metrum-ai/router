@@ -85,6 +85,45 @@ func TestSolverCleanupOnlyDeletesMatchingValue(t *testing.T) {
 	}
 }
 
+func TestSolverPropagationTimeoutRemovesItsRecord(t *testing.T) {
+	provider := &memProvider{name: "fake", zones: []string{"example.com"}}
+	instruments := &countingInstruments{}
+	solver := NewSolver(provider, "example.com", Options{
+		TTL:                60,
+		PropagationTimeout: time.Nanosecond,
+		Instruments:        instruments,
+		LookupTXT:          func(context.Context, string) ([]string, error) { return nil, nil },
+	})
+	if err := solver.Present(context.Background(), "example.com", "v"); err == nil {
+		t.Fatal("expected a propagation error")
+	}
+	if len(provider.records) != 0 {
+		t.Fatalf("the challenge record leaked after a propagation failure: %+v", provider.records)
+	}
+	if provider.deletes != 1 {
+		t.Fatalf("delete calls = %d, want 1", provider.deletes)
+	}
+}
+
+func TestSolverCleanupLeavesIdenticalForeignRecordAlone(t *testing.T) {
+	// A record with the same name and value that this solver did not create is
+	// never removed: only the ids the solver recorded are deleted.
+	provider := &memProvider{
+		name:  "fake",
+		zones: []string{"example.com"},
+		records: []Record{
+			{ID: "foreign", Type: "TXT", Name: "_acme-challenge.example.com", Value: "v", TTL: 60},
+		},
+	}
+	solver := NewSolver(provider, "example.com", Options{TTL: 60, PropagationTimeout: time.Second})
+	if err := solver.Cleanup(context.Background(), "example.com", "v"); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if provider.deletes != 0 || len(provider.records) != 1 {
+		t.Fatalf("an unowned record was removed: deletes=%d records=%+v", provider.deletes, provider.records)
+	}
+}
+
 func TestSolverPropagationTimeoutRaisesMetric(t *testing.T) {
 	provider := &memProvider{name: "fake", zones: []string{"example.com"}}
 	instruments := &countingInstruments{}
