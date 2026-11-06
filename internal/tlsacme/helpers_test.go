@@ -12,7 +12,9 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,4 +150,18 @@ func (f *fakeProvider) value(recordType, name string) string {
 		}
 	}
 	return ""
+}
+
+// testLogger is a logger for the opt-in live check (it is only compiled with
+// that build tag).
+func testLogger(t *testing.T) *log.Logger {
+	t.Helper()
+	return log.New(testWriter{t: t}, "", 0)
+}
+
+type testWriter struct{ t *testing.T }
+
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Log(strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
