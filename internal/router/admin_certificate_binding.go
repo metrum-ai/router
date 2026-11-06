@@ -19,7 +19,9 @@ import (
 //
 // Native TLS handshake verification is mandatory. The currentRoots callback is
 // invoked on every request (including old connections), and its immutable pool
-// is used for independent validity/chain/clientAuth revalidation. Forwarded
+// is used for independent validity/chain/clientAuth revalidation. The leaf must
+// explicitly contain clientAuth EKU and must not contain anyExtendedKeyUsage.
+// Forwarded
 // certificate headers are never read. Pass the same root source as the listener.
 func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, currentRoots func() *x509.CertPool, thumbprint string) bool {
 	if ctx.Err() != nil || r == nil || r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 || len(r.TLS.PeerCertificates) > 16 || currentRoots == nil {
@@ -49,5 +51,5 @@ func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, cu
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
 		return false
 	}
-	return ctx.Err() == nil
+	return adminLeafExplicitClientAuth(leaf) && ctx.Err() == nil
 }

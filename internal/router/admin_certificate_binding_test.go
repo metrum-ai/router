@@ -52,6 +52,14 @@ func certificateBindingLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.Pri
 		template.NotBefore = time.Now().Add(30 * time.Second)
 	case "server":
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	case "no-eku":
+		template.ExtKeyUsage = nil
+	case "any-eku":
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageAny}
+	case "client-and-any":
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageAny}
+	case "client-and-server":
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
 	if err != nil {
@@ -71,7 +79,7 @@ func certificateBindingThumb(cert *x509.Certificate) string {
 func TestAdminCertificateBoundToken(t *testing.T) {
 	ca, key, roots := certificateBindingCA(t)
 	_, _, wrongRoots := certificateBindingCA(t)
-	for _, mode := range []string{"valid", "missing", "unverified", "wrong-ca", "wrong-thumb", "padded-thumb", "expired", "future", "server", "nil-roots", "forwarded-only"} {
+	for _, mode := range []string{"valid", "client-and-server", "no-eku", "any-eku", "client-and-any", "missing", "unverified", "wrong-ca", "wrong-thumb", "padded-thumb", "expired", "future", "server", "nil-roots", "forwarded-only"} {
 		t.Run(mode, func(t *testing.T) {
 			cert := certificateBindingLeaf(t, ca, key, mode)
 			thumb := certificateBindingThumb(cert)
@@ -96,7 +104,7 @@ func TestAdminCertificateBoundToken(t *testing.T) {
 				r.Header.Set("X-Forwarded-Client-Cert", thumb)
 			}
 			got := validateAdminCertificateBoundToken(r.Context(), r, func() *x509.CertPool { return current }, thumb)
-			if got != (mode == "valid") {
+			if got != (mode == "valid" || mode == "client-and-server") {
 				t.Fatalf("certificate binding accepted=%v", got)
 			}
 		})
