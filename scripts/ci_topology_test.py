@@ -274,7 +274,7 @@ def assert_arc_runners() -> None:
         "admin-typecheck.yml": {"admin-typecheck"},
         "agent-tool-compat.yml": {"local-agent-mock"},
         "api-compat-live.yml": {"live-unit"},
-        "ci.yml": {"ci", "k8s-security", "parallel-tools"},
+        "ci.yml": {"ci", "k8s-security", "parallel-tools", "tls-acme"},
         "dco.yml": {"signed-off-commits"},
         "decision-models-smoke.yml": {"decision-models"},
         "docs-qa.yml": {"docs-qa"},
@@ -363,7 +363,7 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "tls-acme", "ci"}, "fanout lane inventory drifted")
     require("push:\n    branches: [main]" in text and "if: github.event_name == 'push'" in lanes["warm"],
             "main-only cache warmer missing")
     require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
@@ -379,6 +379,12 @@ def assert_consolidated_ci() -> None:
                 and "GOMODCACHE=$RUNNER_TEMP/router-go-mod" in lanes[name], f"{name} lost selection or isolated Go cache")
     require("ci-go ci-windows" in lanes["other-go"] and "ci-python compat-mock" in lanes["other"]
             and "ci-examples" in lanes["other"], "fanout dropped a consolidated lane")
+    acme = lanes["tls-acme"]
+    for marker in ("if: github.event_name != 'push'", "scripts/ci_changes.py", "actions/setup-go@",
+                   "cache: false", "actions/cache/restore@", "hashFiles('go.mod', 'go.sum')",
+                   "GOCACHE=$RUNNER_TEMP/router-go-build", "GOMODCACHE=$RUNNER_TEMP/router-go-mod",
+                   "cmd/pebble@", "cmd/pebble-challtestsrv@", "go test ./internal/tlsacme/..."):
+        require(marker in acme, f"tls-acme lane lost {marker}")
     for name in ("other", "warm"):
         require("${{ env.COMPAT_CACHE }}" in lanes[name] and "COMPAT_CACHE=$RUNNER_TEMP/router-compat" in lanes[name]
                 and "scripts/ci_tester_pins.py" in lanes[name] and "steps.pins.outputs.openai" in lanes[name]
@@ -438,7 +444,7 @@ def assert_consolidated_ci() -> None:
             "rendered-manifest security scan must gate every PR and merge group")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme]" in aggregate, "required ci aggregator drifted")
     parallel = lanes["parallel-tools"]
     require("if: github.event_name != 'push'" in parallel
             and "go test ./internal/stream -run '^TestParallelThreeStreamTranslations$'" in parallel
@@ -447,9 +453,9 @@ def assert_consolidated_ci() -> None:
             "parallel tool-call fixtures must run on every PR and merge group")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
     for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
-        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT")
+        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
                          and event != "push" or n == "WARM_RESULT" and event == "push"
                          or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
                          else "skipped") for n in names}
