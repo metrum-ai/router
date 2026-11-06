@@ -38,7 +38,8 @@ func TestAdminDPoPInvalidProofCannotPoisonReplayCache(t *testing.T) {
 	if err := validator.Validate(r.Context(), r, token, thumb); err != nil {
 		t.Fatal("invalid proof poisoned replay state", err)
 	}
-	now = now.Add(time.Minute + time.Second)
+	// The supervisor-approved five-second leeway extends the old expiry.
+	now = now.Add(time.Minute + 6*time.Second)
 	if validator.Validate(r.Context(), r, token, thumb) == nil {
 		t.Fatal("expired proof accepted")
 	}

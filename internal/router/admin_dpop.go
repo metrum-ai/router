@@ -27,10 +27,14 @@ import (
 // ErrSenderConstraintFailed never carries token, proof, or verifier material.
 var ErrSenderConstraintFailed = errors.New("sender_constraint_failed")
 
+const adminDPoPClockLeeway = 5 * time.Second
+
 // adminDPoPValidator implements the RFC 9449 protected-resource proof checks.
-// Replay state is node-local: across replicas, the same proof can be accepted
-// once per node during proofMaxAge. No nonce challenge is issued in this profile.
-// Future iat is rejected, bounding replay validity by proofMaxAge without skew.
+// A fixed five-second leeway tolerates host clock differences: iat may be at
+// most now+leeway, and proofs expire at iat+proofMaxAge+leeway. Replay records
+// cover that entire interval. State is node-local: a proof can succeed once per
+// node, for at most proofMaxAge+2*leeway after its earliest acceptance. No nonce
+// challenge is issued in this profile.
 type adminDPoPValidator struct {
 	externalBase string
 	proofMaxAge  time.Duration
@@ -183,8 +187,8 @@ func (v *adminDPoPValidator) Validate(ctx context.Context, r *http.Request, acce
 	}
 	now := v.now()
 	issuedAt := claims.IssuedAt.Time()
-	expires := issuedAt.Add(v.proofMaxAge)
-	if issuedAt.After(now) || !now.Before(expires) || ctx.Err() != nil {
+	expires := issuedAt.Add(v.proofMaxAge + adminDPoPClockLeeway)
+	if issuedAt.After(now.Add(adminDPoPClockLeeway)) || !now.Before(expires) || ctx.Err() != nil {
 		return ErrSenderConstraintFailed
 	}
 	// Claim only after every cryptographic and request-binding check succeeds.
@@ -193,7 +197,7 @@ func (v *adminDPoPValidator) Validate(ctx context.Context, r *http.Request, acce
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	now = v.now()
-	if issuedAt.After(now) || !now.Before(expires) || ctx.Err() != nil {
+	if issuedAt.After(now.Add(adminDPoPClockLeeway)) || !now.Before(expires) || ctx.Err() != nil {
 		return ErrSenderConstraintFailed
 	}
 	if previous, ok := v.seen[replayKey]; ok && now.Before(previous) {
