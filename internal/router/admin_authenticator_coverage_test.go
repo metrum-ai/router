@@ -13,6 +13,33 @@ import (
 	"testing"
 )
 
+func TestMachineAuthenticatorEmergencyCannotMaskBearer(t *testing.T) {
+	r := httptest.NewRequest("GET", "https://admin.example/admin/v1/config", nil)
+	r.Header.Set("Authorization", "Bearer invalid")
+	r.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{}}}
+	emergency := testMachineAuthenticator(func(context.Context, *http.Request) (Principal, error) {
+		return Principal{Subject: "emergency-cert", Kind: "emergency"}, nil
+	})
+	mtls := testMachineAuthenticator(func(context.Context, *http.Request) (Principal, error) {
+		return Principal{Subject: "cert", Kind: "mtls"}, nil
+	})
+	for _, validator := range []Authenticator{emergency, WithEmergencyCredentialType(emergency, EmergencyCertificate)} {
+		if p, err := NewAuthenticatorChain(validator, mtls).Authenticate(r.Context(), r); !errors.Is(err, ErrInvalidCredential) || p != (Principal{}) {
+			t.Fatalf("emergency certificate masked bearer: %+v %v", p, err)
+		}
+	}
+	// Each explicitly declared emergency class succeeds on its own.
+	r.Header.Del("Authorization")
+	if p, err := NewAuthenticatorChain(WithEmergencyCredentialType(emergency, EmergencyCertificate)).Authenticate(r.Context(), r); err != nil || p.Kind != "emergency" {
+		t.Fatalf("emergency cert rejected: %+v %v", p, err)
+	}
+	r.TLS = nil
+	r.Header.Set("Authorization", "Bearer valid-emergency")
+	if p, err := NewAuthenticatorChain(WithEmergencyCredentialType(emergency, EmergencyBearerKey)).Authenticate(r.Context(), r); err != nil || p.Kind != "emergency" {
+		t.Fatalf("emergency key rejected: %+v %v", p, err)
+	}
+}
+
 func TestMachineAuthenticatorCoveredCredentials(t *testing.T) {
 	for _, scheme := range []string{"Bearer", "DPoP"} {
 		t.Run(scheme, func(t *testing.T) {

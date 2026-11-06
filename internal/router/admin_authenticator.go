@@ -56,6 +56,48 @@ type Authenticator interface {
 	Authenticate(context.Context, *http.Request) (Principal, error)
 }
 
+// EmergencyCredentialType distinguishes emergency key and certificate
+// mechanisms without mixing credential transport metadata into Principal.
+type EmergencyCredentialType string
+
+const (
+	EmergencyCertificate EmergencyCredentialType = "certificate"
+	EmergencyBearerKey   EmergencyCredentialType = "bearer_key"
+)
+
+type emergencyCredentialAuthenticator struct {
+	Authenticator
+	credentialType EmergencyCredentialType
+}
+
+// WithEmergencyCredentialType declares the single credential class validated
+// by an emergency mechanism. The wrapped mechanism must return success only
+// after validating that class, including activation and expiry. Unknown types
+// fail closed. Emergency results without this wrapper also fail closed: Kind
+// alone cannot distinguish a certificate from a bearer key.
+func WithEmergencyCredentialType(a Authenticator, kind EmergencyCredentialType) Authenticator {
+	return &emergencyCredentialAuthenticator{Authenticator: a, credentialType: kind}
+}
+
+func (a *emergencyCredentialAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
+	if a.Authenticator == nil || (a.credentialType != EmergencyCertificate && a.credentialType != EmergencyBearerKey) {
+		return Principal{}, ErrInvalidCredential
+	}
+	// The declaration must correspond to a presented credential. It is static
+	// registration metadata, never inferred from some other request credential.
+	if a.credentialType == EmergencyCertificate && (r.TLS == nil || len(r.TLS.PeerCertificates) == 0) {
+		return Principal{}, ErrNoCredential
+	}
+	if a.credentialType == EmergencyBearerKey && bearerTokenFromRequest(r) == "" {
+		return Principal{}, ErrNoCredential
+	}
+	p, err := a.Authenticator.Authenticate(ctx, r)
+	if err == nil && p.Kind != "emergency" {
+		return Principal{}, ErrInvalidCredential
+	}
+	return p, err
+}
+
 type authenticatorChain struct{ mechanisms []Authenticator }
 
 // NewAuthenticatorChain creates a machine-only ordered authenticator chain.
@@ -114,11 +156,20 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 				authorizationValidated = true
 			}
 		case "emergency":
-			// Emergency credentials may be keys or certificates, not both.
-			if authorization == "" {
+			declared, ok := mechanism.(*emergencyCredentialAuthenticator)
+			if !ok {
+				return Principal{}, ErrInvalidCredential
+			}
+			switch declared.credentialType {
+			case EmergencyCertificate:
 				certificateValidated = true
-			} else if !dpopPresented {
+			case EmergencyBearerKey:
+				if dpopPresented {
+					return Principal{}, ErrInvalidCredential
+				}
 				authorizationValidated = true
+			default:
+				return Principal{}, ErrInvalidCredential
 			}
 		}
 		if !found {
