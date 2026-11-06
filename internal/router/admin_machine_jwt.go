@@ -38,6 +38,7 @@ type adminMachineJWTAuthenticator struct {
 	client                                   *http.Client
 	jwksURL                                  string
 	mu                                       sync.Mutex
+	refreshing                               chan struct{}
 	keys                                     jose.JSONWebKeySet
 	expires, lastUnknownRefresh, lastAttempt time.Time
 }
@@ -117,9 +118,13 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 		return nil, errors.New("admin JWT discovery invalid")
 	}
 	a.jwksURL = discovery.JWKSURI
-	if err := a.refresh(ctx); err != nil {
+	keys, err := a.fetchKeys(ctx)
+	if err != nil {
 		return nil, err
 	}
+	a.keys = keys
+	a.expires = time.Now().Add(machineJWKSTTL)
+	a.lastAttempt = time.Now()
 	return a, nil
 }
 
@@ -148,20 +153,16 @@ func (a *adminMachineJWTAuthenticator) fetchJSON(ctx context.Context, endpoint s
 	return nil
 }
 
-// refresh is called under mu after construction. Failed refreshes never extend
-// cached trust. Unknown-kid refreshes and expired-cache retries are rate limited.
-func (a *adminMachineJWTAuthenticator) refresh(ctx context.Context) error {
-	a.lastAttempt = time.Now()
+// fetchKeys performs bounded I/O without holding the cache lock.
+func (a *adminMachineJWTAuthenticator) fetchKeys(ctx context.Context) (jose.JSONWebKeySet, error) {
 	var keys jose.JSONWebKeySet
 	if err := a.fetchJSON(ctx, a.jwksURL, &keys); err != nil {
-		return err
+		return keys, err
 	}
 	if len(keys.Keys) == 0 || len(keys.Keys) > 128 {
-		return errors.New("admin JWKS key count invalid")
+		return jose.JSONWebKeySet{}, errors.New("admin JWKS key count invalid")
 	}
-	a.keys = keys
-	a.expires = time.Now().Add(machineJWKSTTL)
-	return nil
+	return keys, nil
 }
 
 func machineJWTKeyMatches(key jose.JSONWebKey, alg string) bool {
@@ -180,29 +181,56 @@ func machineJWTKeyMatches(key jose.JSONWebKey, alg string) bool {
 }
 
 func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string) (jose.JSONWebKey, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	now := time.Now()
-	if !now.Before(a.expires) {
-		if now.Sub(a.lastAttempt) < machineJWKSRefreshInterval {
+	for {
+		if ctx.Err() != nil {
 			return jose.JSONWebKey{}, ErrInvalidCredential
 		}
-		if a.refresh(ctx) != nil {
+		a.mu.Lock()
+		now := time.Now()
+		fresh := now.Before(a.expires)
+		matching := a.keys.Key(kid)
+		if fresh && len(matching) > 0 {
+			a.mu.Unlock()
+			if len(matching) != 1 || !machineJWTKeyMatches(matching[0], alg) {
+				return jose.JSONWebKey{}, ErrInvalidCredential
+			}
+			return matching[0], nil
+		}
+		// Known keys in a fresh cache never wait for unknown-key refresh I/O.
+		// Requests needing refreshed trust coalesce and can cancel independently.
+		if done := a.refreshing; done != nil {
+			a.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return jose.JSONWebKey{}, ErrInvalidCredential
+			case <-done:
+				continue
+			}
+		}
+		if !fresh && now.Sub(a.lastAttempt) < machineJWKSRefreshInterval || fresh && now.Sub(a.lastUnknownRefresh) < machineJWKSRefreshInterval {
+			a.mu.Unlock()
+			return jose.JSONWebKey{}, ErrInvalidCredential
+		}
+		done := make(chan struct{})
+		a.refreshing = done
+		a.lastAttempt = now
+		if len(matching) == 0 {
+			a.lastUnknownRefresh = now
+		}
+		a.mu.Unlock()
+		keys, err := a.fetchKeys(ctx)
+		a.mu.Lock()
+		if err == nil {
+			a.keys = keys
+			a.expires = time.Now().Add(machineJWKSTTL)
+		}
+		a.refreshing = nil
+		close(done)
+		a.mu.Unlock()
+		if err != nil {
 			return jose.JSONWebKey{}, ErrInvalidCredential
 		}
 	}
-	matching := a.keys.Key(kid)
-	if len(matching) == 0 && now.Sub(a.lastUnknownRefresh) >= machineJWKSRefreshInterval {
-		a.lastUnknownRefresh = now
-		if a.refresh(ctx) != nil {
-			return jose.JSONWebKey{}, ErrInvalidCredential
-		}
-		matching = a.keys.Key(kid)
-	}
-	if len(matching) != 1 || !machineJWTKeyMatches(matching[0], alg) {
-		return jose.JSONWebKey{}, ErrInvalidCredential
-	}
-	return matching[0], nil
 }
 
 func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
