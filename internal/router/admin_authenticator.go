@@ -61,8 +61,11 @@ type authenticatorChain struct{ mechanisms []Authenticator }
 // NewAuthenticatorChain creates a machine-only ordered authenticator chain.
 // The first matching identity wins, but every presented credential is checked:
 // a valid credential cannot mask another invalid one. Sender-constrained JWT
-// mechanisms must validate the certificate/proof themselves; possession
-// evidence must not be registered as an independent identity mechanism.
+// mechanisms must validate the certificate/proof themselves. A presented TLS
+// certificate also requires a successful mtls validator (or certificate-only
+// emergency validator). Register the token mechanism first when its identity
+// should win over the certificate identity. Validators must return their actual
+// credential kind; this is how the chain checks credential coverage.
 // The chain is opt-in for the new listener and never changes legacy handlers.
 func NewAuthenticatorChain(mechanisms ...Authenticator) Authenticator {
 	return &authenticatorChain{mechanisms: append([]Authenticator(nil), mechanisms...)}
@@ -77,6 +80,16 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 	}
 	var first Principal
 	found := false
+	var authorization string
+	for name, values := range r.Header {
+		if strings.EqualFold(name, "Authorization") && len(values) == 1 {
+			authorization = values[0]
+		}
+	}
+	authorizationFields := strings.Fields(authorization)
+	dpopPresented := len(authorizationFields) > 0 && strings.EqualFold(authorizationFields[0], "DPoP")
+	certificatePresented := r.TLS != nil && len(r.TLS.PeerCertificates) > 0
+	certificateValidated, authorizationValidated := false, false
 	for _, mechanism := range c.mechanisms {
 		if ctx.Err() != nil || mechanism == nil {
 			return Principal{}, ErrInvalidCredential
@@ -91,12 +104,32 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 		if !validMachinePrincipal(p) {
 			return Principal{}, ErrInvalidCredential
 		}
+		switch p.Kind {
+		case "mtls":
+			certificateValidated = true
+		case "oauth", "federated":
+			authorizationValidated = true
+		case "adminkey":
+			if !dpopPresented {
+				authorizationValidated = true
+			}
+		case "emergency":
+			// Emergency credentials may be keys or certificates, not both.
+			if authorization == "" {
+				certificateValidated = true
+			} else if !dpopPresented {
+				authorizationValidated = true
+			}
+		}
 		if !found {
 			first = p
 			found = true
 		}
 	}
 	if ctx.Err() != nil {
+		return Principal{}, ErrInvalidCredential
+	}
+	if authorization != "" && !authorizationValidated || certificatePresented && !certificateValidated {
 		return Principal{}, ErrInvalidCredential
 	}
 	if !found {
