@@ -11,6 +11,7 @@ package router
 //
 //	admin:
 //	  api:
+//	    cursor_key_env: ROUTER_ADMIN_CURSOR_KEY
 //	    pagination: { default_limit: 50, max_limit: 500 }
 //	    idempotency: { ttl: 24h, max_key_bytes: 128, max_response_bytes: 1048576 }
 //	    rate_limit: { enabled: true, read_rps: 20, read_burst: 40, write_rps: 5, write_burst: 10, max_identities: 4096 }
@@ -36,6 +37,12 @@ type AdminAPIIdempotencyConfig struct {
 
 // AdminAPIConfig is the YAML form of the admin.api block.
 type AdminAPIConfig struct {
+	// CursorKeyEnv names the environment variable holding the pagination cursor
+	// signing key. Cursors are HMAC-signed; with a configured key they verify across
+	// replicas and restarts. Without one the key is random per process, so a cursor
+	// from another replica or from before a restart is rejected as invalid (the client
+	// simply restarts the walk) — set this in multi-replica deployments.
+	CursorKeyEnv        string                         `yaml:"cursor_key_env" json:"cursorKeyEnv"`
 	Pagination          AdminPaginationConfig          `yaml:"pagination" json:"pagination"`
 	Idempotency         AdminAPIIdempotencyConfig      `yaml:"idempotency" json:"idempotency"`
 	RateLimit           AdminRateLimitConfig           `yaml:"rate_limit" json:"rateLimit"`
@@ -146,6 +153,27 @@ func (c AdminAPIConfig) validate() error {
 		}
 	}
 	return nil
+}
+
+// CursorKey resolves the pagination cursor signing key from the environment. An
+// unset or empty variable returns nil, which makes the codec use a random per-process
+// key.
+func (c AdminAPIConfig) CursorKey(lookup func(string) (string, bool)) ([]byte, error) {
+	name := strings.TrimSpace(c.CursorKeyEnv)
+	if name == "" {
+		return nil, nil
+	}
+	if lookup == nil {
+		return nil, fmt.Errorf("server.admin.api.cursor_key_env is set but no environment lookup is available")
+	}
+	value, ok := lookup(name)
+	if !ok || value == "" {
+		return nil, fmt.Errorf("server.admin.api.cursor_key_env %q is not set", name)
+	}
+	if len(value) < 32 {
+		return nil, fmt.Errorf("server.admin.api.cursor_key_env %q must hold at least 32 bytes of key material", name)
+	}
+	return []byte(value), nil
 }
 
 // resolve returns the typed settings the contract layer uses.

@@ -665,3 +665,82 @@ func TestAdminRequestIDContextRoundTrip(t *testing.T) {
 	}
 	_ = context.Background()
 }
+
+// TestAdminIdempotencySensitiveResponseIsNeverStored proves a credential-bearing
+// response is not persisted: the stored row carries no body, and a replay is refused
+// as in doubt instead of returning the credential a second time.
+func TestAdminIdempotencySensitiveResponseIsNeverStored(t *testing.T) {
+	db := adminTestIdempotencyDB(t)
+	store, err := NewSQLAdminIdempotencyStore(db, AdminIdempotencyConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	scope := adminIdempotencyScope{
+		PrincipalKind: "adminkey", PrincipalSubject: "adminkey:k1", Domain: "default",
+		Operation: "issueCaller", Key: "sensitive-key", RequestHash: "hash",
+	}
+	if _, outcome, err := store.Begin(scope, now); err != nil || outcome != adminIdempotencyProceed {
+		t.Fatalf("begin = %v/%v", outcome, err)
+	}
+	// Built from parts so no credential-shaped literal exists in the tree; the value
+	// only has to look like a caller token for the assertion below.
+	token := "rtr_" + "metrum_" + "2f8c1d4e6a9b0c3d5e7f"
+	if err := store.Complete(scope, adminIdempotencyRecord{
+		ResponseStatus: 201, ResponseContentType: "application/json",
+		ResponseBody: `{"token":"` + token + `"}`, Sensitive: true,
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	var stored []struct {
+		Body  string `gorm:"column:response_body"`
+		State string `gorm:"column:state"`
+	}
+	if err := db.Table(adminIdempotencyTable).Find(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("stored %d records, want 1", len(stored))
+	}
+	if strings.Contains(stored[0].Body, token) || stored[0].Body != "" {
+		t.Fatalf("the credential reached the store: %q", stored[0].Body)
+	}
+	if stored[0].State != "completed_unrecorded" {
+		t.Fatalf("state = %q, want completed_unrecorded", stored[0].State)
+	}
+
+	record, outcome, err := store.Begin(scope, now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome != adminIdempotencyInDoubt {
+		t.Fatalf("replay outcome = %v, want in-doubt", outcome)
+	}
+	if strings.Contains(record.ResponseBody, token) {
+		t.Fatalf("the replay returned the credential: %q", record.ResponseBody)
+	}
+}
+
+// TestAdminRegistryMarksCredentialBearingOperations proves the operations that return
+// a credential are marked, so the store can never persist one.
+func TestAdminRegistryMarksCredentialBearingOperations(t *testing.T) {
+	registry, err := AdminV1DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"issueCaller", "rotateCaller"} {
+		op, ok := registry.Lookup(id)
+		if !ok {
+			t.Fatalf("operation %s is not registered", id)
+		}
+		if !op.SensitiveResponse {
+			t.Fatalf("operation %s returns a credential but is not marked SensitiveResponse", id)
+		}
+	}
+	for _, op := range registry.Operations() {
+		if op.SensitiveResponse && op.Idempotency == AdminIdempotencyNone {
+			t.Fatalf("operation %s is sensitive but has no idempotency mode", op.ID)
+		}
+	}
+}

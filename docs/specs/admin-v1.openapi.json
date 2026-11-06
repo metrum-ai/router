@@ -1745,11 +1745,14 @@
         "x-admin-extra-checks": [
           {
             "action": "write",
-            "object": "admin:config"
+            "object": "admin:config",
+            "when": "always"
           },
           {
             "action": "force",
-            "object": "admin:config"
+            "description": "Required only when the request body sets force: true.",
+            "object": "admin:config",
+            "when": "body.force"
           }
         ],
         "x-admin-idempotency": "handler",
@@ -1854,7 +1857,9 @@
         "x-admin-extra-checks": [
           {
             "action": "force",
-            "object": "admin:config"
+            "description": "Required only when the request body sets force: true.",
+            "object": "admin:config",
+            "when": "body.force"
           }
         ],
         "x-admin-idempotency": "handler",
@@ -1957,7 +1962,9 @@
         "x-admin-extra-checks": [
           {
             "action": "force",
-            "object": "admin:config"
+            "description": "Required only when the request body sets force: true.",
+            "object": "admin:config",
+            "when": "body.force"
           }
         ],
         "x-admin-idempotency": "handler",
@@ -2060,7 +2067,9 @@
         "x-admin-extra-checks": [
           {
             "action": "force",
-            "object": "admin:config"
+            "description": "Required only when the request body sets force: true.",
+            "object": "admin:config",
+            "when": "body.force"
           }
         ],
         "x-admin-idempotency": "handler",
@@ -2755,7 +2764,7 @@
         ],
         "x-admin-action": "purge",
         "x-admin-concurrency": "none",
-        "x-admin-domain": "global-wildcard",
+        "x-admin-domain": "global",
         "x-admin-idempotency": "store",
         "x-admin-object": "content:capture"
       }
@@ -2901,7 +2910,7 @@
         ],
         "x-admin-action": "read",
         "x-admin-concurrency": "",
-        "x-admin-domain": "global-wildcard",
+        "x-admin-domain": "global",
         "x-admin-idempotency": "",
         "x-admin-object": "metrics"
       }
@@ -5239,7 +5248,7 @@
         ],
         "x-admin-action": "export",
         "x-admin-concurrency": "none",
-        "x-admin-domain": "global-wildcard",
+        "x-admin-domain": "global",
         "x-admin-idempotency": "store",
         "x-admin-object": "content:training"
       }
@@ -5323,7 +5332,7 @@
         ],
         "x-admin-action": "label",
         "x-admin-concurrency": "none",
-        "x-admin-domain": "global-wildcard",
+        "x-admin-domain": "global",
         "x-admin-idempotency": "store",
         "x-admin-object": "content:training"
       }

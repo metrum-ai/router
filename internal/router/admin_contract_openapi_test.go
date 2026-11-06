@@ -191,11 +191,11 @@ func TestAdminV1SpecIntegrity(t *testing.T) {
 	}
 }
 
-// TestAdminV1ObjectAndDomainFixes pins the domain/object decisions the
-// supervisor approved: training keeps content:training in the whole-plane
-// domain, content-capture delete resolves the captured row's domain, and
-// reports leave the domain decision to the handler so a domain-scoped reports
-// administrator keeps today's access.
+// TestAdminV1ObjectAndDomainFixes pins the object and domain rules of #811:
+// training keeps content:training in the plane-global domain, content-capture
+// deletion resolves the captured row's domain, and reports leave the domain
+// decision to the handler so a domain-scoped reports administrator keeps today's
+// access.
 func TestAdminV1ObjectAndDomainFixes(t *testing.T) {
 	registry, err := AdminV1DefaultRegistry()
 	if err != nil {
@@ -207,13 +207,11 @@ func TestAdminV1ObjectAndDomainFixes(t *testing.T) {
 		action string
 		domain AdminDomainSource
 	}{
-		{"exportTrainingData", "content:training", "export", AdminDomainGlobalWildcard},
-		{"labelTrainingOutcome", "content:training", "label", AdminDomainGlobalWildcard},
+		{"exportTrainingData", "content:training", "export", AdminDomainGlobal},
+		{"labelTrainingOutcome", "content:training", "label", AdminDomainGlobal},
 		{"deleteContentCapture", "content:capture", "delete", AdminDomainCapturedRow},
-		{"purgeExpiredContentCaptures", "content:capture", "purge", AdminDomainGlobalWildcard},
-		{"insertConfigSetPlaceholder", "", "", ""},
+		{"purgeExpiredContentCaptures", "content:capture", "purge", AdminDomainGlobal},
 	}
-	cases = cases[:len(cases)-1]
 	for _, testCase := range cases {
 		op, ok := registry.Lookup(testCase.id)
 		if !ok {
@@ -236,50 +234,104 @@ func TestAdminV1ObjectAndDomainFixes(t *testing.T) {
 	}
 }
 
-// TestAdminV1GuardsMatchToday asserts the guards the handlers enforce today are
-// the guards the registry declares.
+// TestAdminV1GuardsMatchToday asserts the guards the registry declares match what the
+// handlers enforce today. Every case names the handler source that decides it, so a
+// handler change that is not reflected in the registry fails here.
 func TestAdminV1GuardsMatchToday(t *testing.T) {
 	registry, err := AdminV1DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	expectations := []struct {
+	type guardCase struct {
 		id     string
+		source string
 		object string
 		action string
 		checks []AdminCheck
-	}{
-		{"importConfigSet", authzObjectAdminConfig, "activate", nil},
-		{"promoteConfigGroupShadow", authzObjectAdminShadow, "write", []AdminCheck{
-			{Object: authzObjectAdminConfig, Action: "write"},
-			{Object: authzObjectAdminConfig, Action: "force"},
-		}},
-		{"replaceConfigGroupTargets", authzObjectAdminConfig, "write", []AdminCheck{{Object: authzObjectAdminConfig, Action: "force"}}},
-		{"validateConfigGroupTargets", authzObjectAdminConfig, "write", nil},
-		{"startConfigGroupShadow", authzObjectAdminShadow, "write", nil},
-		{"getConfigGroupShadow", authzObjectAdminConfig, authzActionRead, nil},
-		{"stopConfigGroupShadow", authzObjectAdminShadow, "write", nil},
-		{"getAdminMetrics", authzObjectMetrics, authzActionRead, nil},
-		{"listAdminSecurityEvents", authzObjectSecurityReports, authzActionRead, nil},
-		{"exportAdminSecurityCSV", authzObjectSecurityReports, authzActionExport, nil},
-		{"getAdminReportRequest", authzObjectAdminReports, authzActionDrilldown, nil},
 	}
-	for _, expectation := range expectations {
-		op, ok := registry.Lookup(expectation.id)
+	cases := []guardCase{
+		// config_admin_api.go handleImportSet authorizes adminPermissionConfigActivate.
+		{"importConfigSet", "config_admin_api.go handleImportSet", authzObjectAdminConfig, "activate", nil},
+		// config_admin_api.go handleTargetsWrite: config write, plus force only when body.force.
+		{"replaceConfigGroupTargets", "config_admin_api.go handleTargetsWrite", authzObjectAdminConfig, "write",
+			[]AdminCheck{{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}}},
+		{"addConfigGroupTarget", "config_admin_api.go handleAddTarget", authzObjectAdminConfig, "write",
+			[]AdminCheck{{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}}},
+		{"removeConfigGroupTarget", "config_admin_api.go handleRemoveTarget", authzObjectAdminConfig, "write",
+			[]AdminCheck{{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}}},
+		// validate keeps today's config:write guard because it shares the write pipeline.
+		{"validateConfigGroupTargets", "config_admin_api.go handleValidateTargets", authzObjectAdminConfig, "write", nil},
+		// config_admin_shadow.go: promote needs the shadow action and the config write,
+		// and force only when the body asks for it.
+		{"promoteConfigGroupShadow", "config_admin_shadow.go handleShadowPromote", authzObjectAdminShadow, "write",
+			[]AdminCheck{
+				{Object: authzObjectAdminConfig, Action: "write"},
+				{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce},
+			}},
+		{"startConfigGroupShadow", "config_admin_shadow.go handleShadowStart", authzObjectAdminShadow, "write", nil},
+		{"stopConfigGroupShadow", "config_admin_shadow.go handleShadowStop", authzObjectAdminShadow, "write", nil},
+		{"getConfigGroupShadow", "config_admin_shadow.go handleShadowStatus", authzObjectAdminConfig, authzActionRead, nil},
+		// service.go handleMetrics uses the metrics object; training_export.go uses
+		// content:training in the plane-global domain.
+		{"getAdminMetrics", "service.go handleMetrics", authzObjectMetrics, authzActionRead, nil},
+		{"exportTrainingData", "training_export.go trainingAdmin", "content:training", "export", nil},
+		{"labelTrainingOutcome", "training_export.go trainingAdmin", "content:training", "label", nil},
+		// reports: object depends on the reports surface, action on the request shape.
+		{"listAdminSecurityEvents", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionRead, nil},
+		{"exportAdminSecurityCSV", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
+		{"getAdminReportRequest", "admin_reports.go handleAdminReports", authzObjectAdminReports, authzActionDrilldown, nil},
+	}
+	for _, want := range cases {
+		op, ok := registry.Lookup(want.id)
 		if !ok {
-			t.Fatalf("operation %s is not registered", expectation.id)
+			t.Fatalf("operation %s is not registered", want.id)
 		}
-		if op.Object != expectation.object || op.Action != expectation.action {
-			t.Fatalf("operation %s guard = %s/%s, want %s/%s", expectation.id, op.Object, op.Action, expectation.object, expectation.action)
+		if op.Object != want.object || op.Action != want.action {
+			t.Fatalf("operation %s guard = %s/%s, want %s/%s (%s)", want.id, op.Object, op.Action, want.object, want.action, want.source)
 		}
-		if len(op.ExtraChecks) != len(expectation.checks) {
-			t.Fatalf("operation %s has %d extra checks, want %d", expectation.id, len(op.ExtraChecks), len(expectation.checks))
+		if len(op.ExtraChecks) != len(want.checks) {
+			t.Fatalf("operation %s has %d extra checks, want %d (%s)", want.id, len(op.ExtraChecks), len(want.checks), want.source)
 		}
-		for i, check := range expectation.checks {
+		for i, check := range want.checks {
 			if op.ExtraChecks[i] != check {
-				t.Fatalf("operation %s extra check %d = %+v, want %+v", expectation.id, i, op.ExtraChecks[i], check)
+				t.Fatalf("operation %s extra check %d = %+v, want %+v (%s)", want.id, i, op.ExtraChecks[i], check, want.source)
 			}
 		}
+	}
+}
+
+// TestAdminV1ForceCheckIsConditional proves a write without force does not need the
+// force grant, while a force request does: today's handler asks for the permission
+// only after decoding the body.
+func TestAdminV1ForceCheckIsConditional(t *testing.T) {
+	registry, err := AdminV1DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, ok := registry.Lookup("replaceConfigGroupTargets")
+	if !ok {
+		t.Fatal("replaceConfigGroupTargets is not registered")
+	}
+	if checks := op.ChecksFor(map[string]any{"targets": []any{}}); len(checks) != 0 {
+		t.Fatalf("a plain write required %+v", checks)
+	}
+	if checks := op.ChecksFor(map[string]any{"targets": []any{}, "force": true}); len(checks) != 1 ||
+		checks[0].Object != authzObjectAdminConfig || checks[0].Action != "force" {
+		t.Fatalf("a forced write required %+v", checks)
+	}
+	// A string "true" is not a JSON boolean: it must not silently grant or require force.
+	if checks := op.ChecksFor(map[string]any{"force": "true"}); len(checks) != 0 {
+		t.Fatalf("a non-boolean force required %+v", checks)
+	}
+	promote, ok := registry.Lookup("promoteConfigGroupShadow")
+	if !ok {
+		t.Fatal("promoteConfigGroupShadow is not registered")
+	}
+	if checks := promote.ChecksFor(nil); len(checks) != 1 || checks[0].Action != "write" {
+		t.Fatalf("an unforced promotion required %+v", checks)
+	}
+	if checks := promote.ChecksFor(map[string]any{"force": true}); len(checks) != 2 {
+		t.Fatalf("a forced promotion required %+v", checks)
 	}
 }
 
@@ -345,5 +397,41 @@ func TestAdminProblemCatalogue(t *testing.T) {
 		if _, ok := codes[code]; !ok {
 			t.Fatalf("approved problem code %q is not registered", code)
 		}
+	}
+}
+
+// TestAdminV1ExtraChecksDocumentedCondition proves the generated document states when
+// a conditional check applies, so a client can tell a plain write from a forced one.
+func TestAdminV1ExtraChecksDocumentedCondition(t *testing.T) {
+	var document struct {
+		Paths map[string]map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(adminOpenAPIForTest(t), &document); err != nil {
+		t.Fatal(err)
+	}
+	item, ok := document.Paths["/admin/v1/config/groups/{group}/targets"]["put"].(map[string]any)
+	if !ok {
+		t.Fatal("the targets PUT operation is missing")
+	}
+	checks, ok := item["x-admin-extra-checks"].([]any)
+	if !ok || len(checks) != 1 {
+		t.Fatalf("x-admin-extra-checks = %v", item["x-admin-extra-checks"])
+	}
+	check, _ := checks[0].(map[string]any)
+	if check["when"] != string(AdminCheckBodyForce) || check["action"] != "force" {
+		t.Fatalf("conditional check documented as %v", check)
+	}
+	promote, ok := document.Paths["/admin/v1/config/groups/{group}/shadow/promote"]["post"].(map[string]any)
+	if !ok {
+		t.Fatal("the shadow promote operation is missing")
+	}
+	promoteChecks, _ := promote["x-admin-extra-checks"].([]any)
+	if len(promoteChecks) != 2 {
+		t.Fatalf("promote x-admin-extra-checks = %v", promote["x-admin-extra-checks"])
+	}
+	first, _ := promoteChecks[0].(map[string]any)
+	second, _ := promoteChecks[1].(map[string]any)
+	if first["when"] != "always" || second["when"] != string(AdminCheckBodyForce) {
+		t.Fatalf("promote checks = %v / %v", first, second)
 	}
 }

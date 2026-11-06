@@ -82,6 +82,55 @@ const (
 type AdminCheck struct {
 	Object string
 	Action string
+	// When restricts the check to a request condition. Empty means the check is
+	// unconditional. Today's handlers ask for force only when the request sets
+	// force, so a write without it must not require the grant.
+	When AdminCheckWhen
+}
+
+// AdminCheckWhen is the request condition that triggers a check.
+type AdminCheckWhen string
+
+const (
+	// AdminCheckAlways is the zero value: the check always applies.
+	AdminCheckAlways AdminCheckWhen = ""
+	// AdminCheckBodyForce applies the check only when the request body sets
+	// force: true.
+	AdminCheckBodyForce AdminCheckWhen = "body.force"
+)
+
+// adminBodyFlag reports whether a decoded request body sets a boolean flag.
+func adminBodyFlag(body map[string]any, name string) bool {
+	if body == nil {
+		return false
+	}
+	value, ok := body[name]
+	if !ok {
+		return false
+	}
+	flag, ok := value.(bool)
+	return ok && flag
+}
+
+// ChecksFor returns the additional checks that apply to one request body. The
+// mount uses it after decoding nothing itself: the flag is read from the same
+// documented body field the handler uses.
+func (op Operation) ChecksFor(body map[string]any) []AdminCheck {
+	if len(op.ExtraChecks) == 0 {
+		return nil
+	}
+	out := make([]AdminCheck, 0, len(op.ExtraChecks))
+	for _, check := range op.ExtraChecks {
+		switch check.When {
+		case AdminCheckAlways:
+			out = append(out, check)
+		case AdminCheckBodyForce:
+			if adminBodyFlag(body, "force") {
+				out = append(out, check)
+			}
+		}
+	}
+	return out
 }
 
 // AdminPaginationSpec declares the collection contract of a list operation.
@@ -127,6 +176,12 @@ type Operation struct {
 	// handler itself (the reports surface already returns typed 400s). The
 	// contract layer then skips its unknown-parameter and limit validation.
 	OpaqueQuery bool
+	// SensitiveResponse marks an operation whose success body carries a credential
+	// (a caller token). Such a response is NEVER recorded for replay: a token is
+	// shown exactly once, so a retry answers "in doubt" instead of returning it
+	// again. This is the only way a credential could otherwise reach the
+	// Idempotency-Key store.
+	SensitiveResponse bool
 	// NoSideEffect marks read-shaped POSTs (validation/dry-run) that must not
 	// require a precondition.
 	NoSideEffect bool
@@ -185,12 +240,19 @@ func (op Operation) validate() error {
 		return fmt.Errorf("operation %s has invalid Casbin action %q (must be one anchored literal action)", op.ID, op.Action)
 	}
 	for _, check := range op.ExtraChecks {
+		switch check.When {
+		case AdminCheckAlways, AdminCheckBodyForce:
+		default:
+			return fmt.Errorf("operation %s has invalid check condition %q", op.ID, check.When)
+		}
+	}
+	for _, check := range op.ExtraChecks {
 		if !adminOperationObjectPattern.MatchString(check.Object) || !adminOperationActionPattern.MatchString(check.Action) {
 			return fmt.Errorf("operation %s has invalid extra check %s/%s", op.ID, check.Object, check.Action)
 		}
 	}
 	switch op.Domain {
-	case AdminDomainGlobal, AdminDomainGlobalWildcard, AdminDomainCallerTarget, AdminDomainCapturedRow, AdminDomainHandler:
+	case AdminDomainGlobal, AdminDomainCallerTarget, AdminDomainCapturedRow, AdminDomainHandler:
 	default:
 		return fmt.Errorf("operation %s has invalid domain source %q", op.ID, op.Domain)
 	}

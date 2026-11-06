@@ -25,9 +25,11 @@ package router
 // later replay answers 409 "in doubt" rather than executing again; a record
 // left in_progress past the in-doubt window is never re-executed automatically.
 //
-// No secret is stored: keys are opaque client strings (bounded), the request
-// hash is a digest, and recorded bodies are the API responses, which contain no
-// credential material.
+// No secret is stored. Keys are opaque client strings (bounded) and the request
+// hash is a digest. A recorded body is an API response, and an operation whose
+// response carries a credential (a caller token) is never recorded at all: the
+// SensitiveResponse flag turns its record into "completed, unrecorded", so a retry
+// answers 409 in doubt instead of replaying the token a second time.
 
 import (
 	"errors"
@@ -98,9 +100,13 @@ type adminIdempotencyRecord struct {
 	ResponseContentType string
 	ResponseETag        string
 	ResponseBody        string
-	RequestHash         string
-	CreatedAt           time.Time
-	ExpiresAt           time.Time
+	// Sensitive marks a response that must never be persisted (it carries a
+	// credential). A sensitive record keeps its claim but stores no body, so a replay
+	// is refused as in doubt rather than returning the credential again.
+	Sensitive   bool
+	RequestHash string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
 }
 
 // adminIdempotencyOutcome is the decision for one request.
@@ -269,7 +275,10 @@ func (s *sqlAdminIdempotencyStore) delete(scope adminIdempotencyScope) error {
 
 func (s *sqlAdminIdempotencyStore) Complete(scope adminIdempotencyScope, record adminIdempotencyRecord, now time.Time) error {
 	body := record.ResponseBody
-	if len(body) > s.cfg.MaxResponseBytes {
+	if record.Sensitive {
+		body = ""
+		record.State = "completed_unrecorded"
+	} else if len(body) > s.cfg.MaxResponseBytes {
 		// Too large to record: keep the claim so a replay is refused as in
 		// doubt instead of re-executing the operation.
 		body = ""
@@ -403,7 +412,10 @@ func (s *memoryAdminIdempotencyStore) Complete(scope adminIdempotencyScope, reco
 	if !ok {
 		return errors.New("idempotency record disappeared before completion")
 	}
-	if len(record.ResponseBody) > s.cfg.MaxResponseBytes {
+	if record.Sensitive {
+		record.ResponseBody = ""
+		record.State = "completed_unrecorded"
+	} else if len(record.ResponseBody) > s.cfg.MaxResponseBytes {
 		record.ResponseBody = ""
 		record.State = "completed_unrecorded"
 	} else if record.State == "" || record.State == "in_progress" {

@@ -9,6 +9,18 @@ package router
 // entry here. The entries carry the guard the handler already enforces, so
 // re-mounting cannot weaken or duplicate a decision:
 //
+// Domain resolution per source is documented in docs/ADMIN_API_V1.md:
+//
+//	AdminDomainGlobal        plane-global domain (the shared AdminGlobalDomain value)
+//	AdminDomainCallerTarget  the stored caller row's "<project>/<environment>"; a
+//	                         list is filtered per row by each row's stored domain and
+//	                         never by a client query parameter; issueCaller takes the
+//	                         requested project/environment from the body and is
+//	                         authorized against that domain
+//	AdminDomainCapturedRow   the captured row's originating caller domain, failing
+//	                         closed when it cannot be resolved
+//	AdminDomainHandler       the reports handler's own per-domain decision
+//
 //	config-set import        admin:config / activate
 //	shadow promotion         admin:shadow / write AND admin:config / write
 //	force override           admin:config / force (ExtraChecks)
@@ -66,7 +78,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "replaceConfigGroupTargets", Method: "PUT", Path: "/admin/v1/config/groups/{group}/targets", LegacyPath: "/admin/config/groups/{group}/targets",
 		Summary: "Replace a model group's target list",
 		Object:  authzObjectAdminConfig, Action: "write", Domain: AdminDomainGlobal,
-		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "force"}},
+		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}},
 		Request:     configAdminTargetsRequest{},
 		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "dry_run", "forced", "replayed", "strategy", "diff", "targets", "propagation"}},
 		Errors:      []int{404, 409, 412, 422, 428},
@@ -77,7 +89,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "addConfigGroupTarget", Method: "POST", Path: "/admin/v1/config/groups/{group}/targets", LegacyPath: "/admin/config/groups/{group}/targets",
 		Summary: "Add one target to a model group",
 		Object:  authzObjectAdminConfig, Action: "write", Domain: AdminDomainGlobal,
-		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "force"}},
+		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}},
 		Request:     configAdminAddTargetRequest{},
 		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "dry_run", "forced", "replayed", "strategy", "diff", "targets", "propagation"}},
 		Errors:      []int{404, 409, 412, 422, 428},
@@ -88,7 +100,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "removeConfigGroupTarget", Method: "DELETE", Path: "/admin/v1/config/groups/{group}/targets/{target_id...}", LegacyPath: "/admin/config/groups/{group}/targets/{target_id...}",
 		Summary: "Remove one target from a model group",
 		Object:  authzObjectAdminConfig, Action: "write", Domain: AdminDomainGlobal,
-		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "force"}},
+		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}},
 		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "dry_run", "forced", "replayed", "diff", "targets", "propagation"}},
 		Errors:      []int{404, 409, 412, 422, 428},
 		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
@@ -147,7 +159,7 @@ var adminV1OperationSpecs = []Operation{
 		Description: "Requires both admin:shadow/write and admin:config/write, matching today's two-decision handler; " +
 			"a forced promotion additionally requires admin:config/force.",
 		Object: authzObjectAdminShadow, Action: "write", Domain: AdminDomainGlobal,
-		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "write"}, {Object: authzObjectAdminConfig, Action: "force"}},
+		ExtraChecks: []AdminCheck{{Object: authzObjectAdminConfig, Action: "write"}, {Object: authzObjectAdminConfig, Action: "force", When: AdminCheckBodyForce}},
 		Request:     configAdminReasonForceRequest{},
 		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "replayed", "diff", "shadow_run_id"}},
 		Errors:      []int{404, 409, 412, 422, 428},
@@ -254,7 +266,7 @@ var adminV1OperationSpecs = []Operation{
 		SuccessStatus: 201,
 		Response:      callerAdminIssueResponse{},
 		Errors:        []int{409, 422},
-		Concurrency:   AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
+		Concurrency:   AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore, SensitiveResponse: true,
 		RateClass: AdminRateClassWrite, HandlerKey: "callers.issue",
 	},
 	{
@@ -263,7 +275,7 @@ var adminV1OperationSpecs = []Operation{
 		Object:  authzObjectAdminCallers, Action: authzActionRotate, Domain: AdminDomainCallerTarget,
 		Response:    adminOpenObject{Members: []string{"caller_id", "status", "token_id", "token"}},
 		Errors:      []int{404, 409, 412, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore, SensitiveResponse: true,
 		RateClass: AdminRateClassWrite, HandlerKey: "callers.rotate",
 	},
 	{
@@ -284,7 +296,7 @@ var adminV1OperationSpecs = []Operation{
 		Summary: "Export a consented training archive",
 		Description: "Keeps today's content:training/export decision in the whole-plane domain and the durable " +
 			"security-event precondition: the export fails closed unless its audit event commits first.",
-		Object: trainingObject, Action: authzActionExport, Domain: AdminDomainGlobalWildcard,
+		Object: trainingObject, Action: authzActionExport, Domain: AdminDomainGlobal,
 		Request:     trainingFilters{},
 		Response:    adminBinaryBody{MediaType: "application/zip"},
 		Errors:      []int{409, 422, 503},
@@ -294,7 +306,7 @@ var adminV1OperationSpecs = []Operation{
 	{
 		ID: "labelTrainingOutcome", Method: "POST", Path: "/admin/v1/training/outcomes/{request_id}", LegacyPath: "/admin/training/outcomes/{request_id}",
 		Summary: "Label a captured request outcome",
-		Object:  trainingObject, Action: "label", Domain: AdminDomainGlobalWildcard,
+		Object:  trainingObject, Action: "label", Domain: AdminDomainGlobal,
 		Request:     trainingOutcome{},
 		Response:    adminOpenObject{Members: []string{"request_id", "label"}},
 		Errors:      []int{404, 409, 422, 503},
@@ -310,7 +322,7 @@ var adminV1OperationSpecs = []Operation{
 		Summary: "Scrape admin-plane and serving metrics",
 		Description: "The versioned spelling of the admin listener's /metrics. Both use the same renderer and the " +
 			"same metrics/read decision in the whole-plane domain; no caller token is involved.",
-		Object: authzObjectMetrics, Action: authzActionRead, Domain: AdminDomainGlobalWildcard,
+		Object: authzObjectMetrics, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminTextBody{MediaType: "text/plain; version=0.0.4; charset=utf-8"},
 		RateClass: AdminRateClassRead, HandlerKey: "metrics.scrape",
 	},
@@ -333,7 +345,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "purgeExpiredContentCaptures", Method: "POST", Path: "/admin/v1/content-captures/purge-expired", LegacyPath: "/v1/content-captures/purge-expired",
 		Summary:     "Purge expired content captures",
 		Description: "Keeps today's whole-plane content:capture/purge decision and the retention-driven purge body.",
-		Object:      authzObjectContentCapture, Action: authzActionPurge, Domain: AdminDomainGlobalWildcard,
+		Object:      authzObjectContentCapture, Action: authzActionPurge, Domain: AdminDomainGlobal,
 		Response:    adminOpenObject{Members: []string{"purged", "cutoff"}},
 		Errors:      []int{503},
 		Concurrency: AdminConcurrencyNone, Idempotency: AdminIdempotencyStore,

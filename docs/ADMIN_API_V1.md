@@ -34,8 +34,33 @@ Every operation is authorized by one Casbin decision
 (`Authorize(principal, domain, object, action)`). Each operation documents its
 object and action in the spec (`x-admin-object`, `x-admin-action`), and an
 operation that needs two decisions declares both (shadow promotion requires
-`admin:shadow/write` **and** `admin:config/write`; a forced write additionally
-requires `admin:config/force`).
+`admin:shadow/write` **and** `admin:config/write`).
+
+### Domains
+
+The authorization domain is always an explicit target, never a request header.
+
+| Domain source | How it resolves | Operations |
+| --- | --- | --- |
+| plane-global | the shared `AdminGlobalDomain` value — the domain the existing global admin checks use, which is where v4.7 admin-key grants for plane-global objects are compiled | configuration (config sets, groups, shadow, status, diff), training, metrics, expired-capture purge |
+| caller target | the **stored** caller row's `<project>/<environment>`; `issueCaller` takes the requested project/environment from the request body and is authorized against that domain | `listCallers`, `issueCaller`, `rotateCaller`, `revokeCaller` |
+| captured row | the domain of the captured row's originating caller; an unresolvable domain fails closed | `deleteContentCapture` |
+| handler | the reports handler's own per-domain decision (an administrator scoped to `example/prod` keeps that scope, and a whole-plane grant still works) | every `reports` operation |
+
+A caller-directory collection is filtered **per row** by each row's stored domain.
+No client query parameter selects or widens a domain.
+
+### Conditional checks
+
+An operation's additional decisions are declared in the spec
+(`x-admin-extra-checks`) with a `when` value:
+
+- `always` applies to every request;
+- `body.force` applies only when the request body sets `force: true`.
+
+So a plain configuration write needs `admin:config`/`write` only, while a forced
+write additionally needs `admin:config`/`force` — exactly what the handler
+enforces today.
 
 ## Errors
 
@@ -110,6 +135,11 @@ spec.
   never a silently wrong page.
 - Every collection has a unique tie-break sort key, so a full walk returns each
   row exactly once.
+- Cursors are HMAC-signed. Set `server.admin.api.cursor_key_env` (an environment
+  variable holding at least 32 bytes of key material) so cursors verify across
+  replicas and restarts; without it the key is random per process and a cursor from
+  another replica or from before a restart is rejected as `400 invalid-cursor`, so
+  the client simply restarts the walk.
 
 ## Concurrency: `ETag` and `If-Match`
 
@@ -146,6 +176,10 @@ replayed across operations or domains.
   `409 idempotent-request-in-doubt` instead of executing a second time.
 - Records are retained for 24 hours and persisted, so a retry across a restart
   still replays.
+- An operation whose response carries a credential (caller issue and rotate) is
+  **never recorded**: a token is shown once, so the record keeps its claim but
+  stores no body, and a retry answers `409 idempotent-request-in-doubt` instead of
+  returning the token again.
 - Configuration writes record the key inside the change transaction itself, so
   the record and the change commit or roll back together.
 

@@ -162,7 +162,16 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 	if len(op.ExtraChecks) > 0 {
 		checks := make([]any, 0, len(op.ExtraChecks))
 		for _, check := range op.ExtraChecks {
-			checks = append(checks, map[string]any{"object": check.Object, "action": check.Action})
+			entry := map[string]any{"object": check.Object, "action": check.Action}
+			if check.When == AdminCheckBodyForce {
+				// Conditional: today's handlers ask for force only when the request
+				// body sets force: true, so a plain write does not need the grant.
+				entry["when"] = string(AdminCheckBodyForce)
+				entry["description"] = "Required only when the request body sets force: true."
+			} else {
+				entry["when"] = "always"
+			}
+			checks = append(checks, entry)
 		}
 		item["x-admin-extra-checks"] = checks
 	}

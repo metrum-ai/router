@@ -119,3 +119,49 @@ func TestAdminIdempotencyMigration(t *testing.T) {
 		t.Fatal("phase 10 is not in the migration ledger")
 	}
 }
+
+// TestAdminAPICursorKey proves the pagination cursor key comes from the configured
+// environment variable, so cursors verify across replicas and restarts, and that a
+// short or missing key is rejected rather than silently falling back.
+func TestAdminAPICursorKey(t *testing.T) {
+	var block AdminAPIConfig
+	block.setDefaults()
+	if key, err := block.CursorKey(nil); err != nil || key != nil {
+		t.Fatalf("an unconfigured cursor key = %v/%v, want nil", key, err)
+	}
+
+	block.CursorKeyEnv = "ROUTER_ADMIN_CURSOR_KEY"
+	lookup := func(name string) (string, bool) {
+		if name != "ROUTER_ADMIN_CURSOR_KEY" {
+			return "", false
+		}
+		return "0123456789abcdef0123456789abcdef", true
+	}
+	key, err := block.CursorKey(lookup)
+	if err != nil || len(key) != 32 {
+		t.Fatalf("cursor key = %v/%v", key, err)
+	}
+	// Two processes using the same configured key accept each other's cursors.
+	first := NewAdminCursorCodec(key)
+	payload := adminCursorPayload{Endpoint: "listConfigSets", Sort: "created_at", Direction: "asc", Values: []string{"2026-11-06T00:00:00Z", "set-1"}}
+	encoded, err := first.Encode(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewAdminCursorCodec(key).Decode(encoded); err != nil {
+		t.Fatalf("a cursor from a peer replica was rejected: %v", err)
+	}
+	// A different key must not verify it.
+	if _, err := NewAdminCursorCodec([]byte("ffffffffffffffffffffffffffffffff")).Decode(encoded); err == nil {
+		t.Fatal("a cursor verified under the wrong key")
+	}
+
+	block.CursorKeyEnv = "MISSING_KEY"
+	if _, err := block.CursorKey(func(string) (string, bool) { return "", false }); err == nil {
+		t.Fatal("a missing cursor key was accepted")
+	}
+	block.CursorKeyEnv = "SHORT_KEY"
+	if _, err := block.CursorKey(func(string) (string, bool) { return "short", true }); err == nil {
+		t.Fatal("a short cursor key was accepted")
+	}
+}
