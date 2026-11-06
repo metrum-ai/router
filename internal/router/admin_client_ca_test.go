@@ -79,7 +79,7 @@ func TestAdminClientCAReload(t *testing.T) {
 		t.Fatal("old immutable snapshot mutated", err)
 	}
 	good := source.Snapshot()
-	for _, bad := range [][]byte{nil, []byte("bad PEM"), append(newPEM, []byte("trailing garbage")...)} {
+	for _, bad := range [][]byte{nil, []byte("bad PEM"), append(newPEM, []byte("trailing garbage")...), append([]byte("-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n"), newPEM...), append([]byte("-----BEGIN CERTIFICATE-----\n!!!!\n"), newPEM...)} {
 		if err := os.WriteFile(path, bad, 0600); err != nil {
 			t.Fatal(err)
 		}

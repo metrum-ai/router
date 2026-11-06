@@ -86,8 +86,22 @@ func (s *AdminClientCAStore) Reload() error {
 			if !bytes.HasPrefix(data, []byte("-----BEGIN CERTIFICATE-----")) {
 				return errors.New("admin client CA bundle malformed")
 			}
-			block, rest := pem.Decode(data)
-			if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			// Decode only the first textual block. pem.Decode searches past
+			// malformed input, so feeding it the entire bundle could silently
+			// discard a corrupt anchor and publish partial trust.
+			const begin = "-----BEGIN CERTIFICATE-----"
+			const end = "-----END CERTIFICATE-----"
+			endIndex := bytes.Index(data, []byte(end))
+			if endIndex < 0 {
+				return errors.New("admin client CA PEM malformed")
+			}
+			blockEnd := endIndex + len(end)
+			firstBlock := data[:blockEnd]
+			if bytes.Contains(firstBlock[len(begin):], []byte("-----BEGIN")) {
+				return errors.New("admin client CA PEM nested block")
+			}
+			block, trailing := pem.Decode(firstBlock)
+			if block == nil || len(bytes.TrimSpace(trailing)) != 0 || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
 				return errors.New("admin client CA PEM malformed")
 			}
 			cert, err := x509.ParseCertificate(block.Bytes)
@@ -99,7 +113,7 @@ func (s *AdminClientCAStore) Reload() error {
 				return errors.New("admin client CA certificate limit exceeded")
 			}
 			pool.AddCert(cert)
-			data = bytes.TrimSpace(rest)
+			data = bytes.TrimSpace(data[blockEnd:])
 		}
 	}
 	s.current.Store(pool)
