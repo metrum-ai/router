@@ -29,6 +29,11 @@ func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride str
 	if err != nil {
 		return nil, err
 	}
+	// #814's client-CA source owns rotation; the listener folds every reload
+	// into the snapshot its handshake verifies against.
+	if source := svc.AdminClientCASource(); source != nil {
+		plane.SetClientCASource(source)
+	}
 	if err := plane.Start(); err != nil {
 		return nil, err
 	}

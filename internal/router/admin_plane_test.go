@@ -570,6 +570,56 @@ func TestAdminMTLSHandshake(t *testing.T) {
 			t.Fatal("optional mode accepted a foreign CA certificate")
 		}
 	})
+	t.Run("installed CA source drives the handshake", func(t *testing.T) {
+		cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+		cfg.Admin.Enabled = true
+		cfg.Admin.Listen = "127.0.0.1:0"
+		cfg.Admin.TLS = AdminTLSConfig{
+			Mode:         adminTLSModeRouter,
+			CertFile:     serverCertPath,
+			KeyFile:      serverKeyPath,
+			ClientCAFile: clientCAPath,
+			ClientAuth:   adminClientAuthRequire,
+			MinVersion:   adminTLSMinVersion12,
+		}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		t.Cleanup(svc.Close)
+		// #814 installs its source on the service; the binary hands it to the
+		// plane before Start (this is the same wiring startAdminPlane does).
+		store := &AdminClientCASnapshot{}
+		if err := store.LoadPEMFiles([]string{clientCAPath}); err != nil {
+			t.Fatal(err)
+		}
+		svc.SetAdminClientCASource(store)
+		plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler())
+		if err != nil {
+			t.Fatalf("NewAdminPlane: %v", err)
+		}
+		if source := svc.AdminClientCASource(); source != nil {
+			plane.SetClientCASource(source)
+		}
+		if err := plane.Start(); err != nil {
+			t.Fatalf("admin Start: %v", err)
+		}
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = plane.Shutdown(ctx)
+		})
+		roots := x509.NewCertPool()
+		roots.AddCert(serverCA.cert)
+		url := "https://" + plane.Addr()
+		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/healthz"); err != nil {
+			t.Fatalf("handshake with the installed source: %v", err)
+		}
+		store.Store(x509.NewCertPool()) // no trust anchors left
+		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/healthz"); err == nil {
+			t.Fatal("handshake succeeded after the installed source dropped all roots")
+		}
+	})
 	t.Run("CA snapshot reload applies to new handshakes", func(t *testing.T) {
 		plane, url, roots := start(t, adminClientAuthRequire)
 		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/admin/test/peer"); err != nil {

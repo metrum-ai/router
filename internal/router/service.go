@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -67,8 +68,12 @@ type Service struct {
 	adminSession       *adminSessionStore
 	// adminMux is the admin listener's route registry (#809). It is nil unless
 	// admin.enabled is true, so the serving surface is unchanged by default.
-	adminMux           *AdminMux
-	adminClientCA      *AdminClientCASnapshot
+	adminMux      *AdminMux
+	adminClientCA *AdminClientCASnapshot
+	// adminCASource is #814's client-CA source, installed before the plane
+	// starts so the handshake verifies against the current trust snapshot.
+	adminCASourceMu    sync.Mutex
+	adminCASource      AdminClientCASource
 	authorizer         *authorizer
 	quota              *quotaStore
 	cache              *responseCache

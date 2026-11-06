@@ -329,28 +329,61 @@ func adminMachineOnlyGate(next http.Handler) http.Handler {
 	})
 }
 
-// AdminClientCASnapshot holds the immutable client-CA pool the admin TLS
-// handshake verifies against. Load returns a pool that is never mutated after
-// publication, so the handshake always sees a consistent snapshot; #814
-// installs reloads with Store.
-type AdminClientCASnapshot struct {
-	pool atomic.Pointer[x509.CertPool]
+// AdminClientCASource is the client-CA snapshot seam #814 supplies to the
+// listener: the handshake verifies client certificates against the current
+// immutable snapshot, and every reload is delivered through OnReload. #814's
+// AdminClientCAStore satisfies it.
+type AdminClientCASource interface {
+	// Snapshot returns the current immutable client trust pool.
+	Snapshot() *x509.CertPool
+	// OnReload registers a callback and immediately delivers the current
+	// snapshot.
+	OnReload(func(*x509.CertPool))
 }
 
-// Load returns the current immutable CA pool, or nil when no CA is configured.
-func (s *AdminClientCASnapshot) Load() *x509.CertPool {
+// AdminClientCASnapshot is the listener's built-in AdminClientCASource. It
+// holds the immutable client-CA pool the admin TLS handshake verifies against;
+// Snapshot returns a pool that is never mutated after publication, so the
+// handshake always sees a consistent snapshot, and Store publishes a reload.
+type AdminClientCASnapshot struct {
+	pool  atomic.Pointer[x509.CertPool]
+	mu    sync.Mutex
+	hooks []func(*x509.CertPool)
+}
+
+// Snapshot returns the current immutable CA pool, or nil when no CA is
+// configured.
+func (s *AdminClientCASnapshot) Snapshot() *x509.CertPool {
 	if s == nil {
 		return nil
 	}
 	return s.pool.Load()
 }
 
-// Store publishes a new immutable CA pool (the #814 reload callback).
+// OnReload registers a callback and immediately delivers the current snapshot.
+func (s *AdminClientCASnapshot) OnReload(hook func(*x509.CertPool)) {
+	if s == nil || hook == nil {
+		return
+	}
+	s.mu.Lock()
+	s.hooks = append(s.hooks, hook)
+	current := s.pool.Load()
+	s.mu.Unlock()
+	hook(current)
+}
+
+// Store publishes a new immutable CA pool and notifies reload hooks.
 func (s *AdminClientCASnapshot) Store(pool *x509.CertPool) {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.pool.Store(pool)
+	hooks := append([]func(*x509.CertPool){}, s.hooks...)
+	s.mu.Unlock()
+	for _, hook := range hooks {
+		hook(pool)
+	}
 }
 
 // LoadPEMFiles builds a fresh pool from PEM bundles and publishes it. An
@@ -470,6 +503,18 @@ func (p *AdminPlane) ClientCASnapshot() *AdminClientCASnapshot {
 	return p.clientCA
 }
 
+// SetClientCASource installs #814's client-CA source. It must be called before
+// Start; every source reload is folded into the same snapshot the handshake
+// reads, so handshake and per-request revalidation can never disagree.
+func (p *AdminPlane) SetClientCASource(src AdminClientCASource) {
+	if p == nil || src == nil {
+		return
+	}
+	src.OnReload(func(pool *x509.CertPool) {
+		p.clientCA.Store(pool)
+	})
+}
+
 func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(p.cfg.TLS.CertFile, p.cfg.TLS.KeyFile)
 	if err != nil {
@@ -490,7 +535,7 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   minVersion,
 		ClientAuth:   clientAuth,
-		ClientCAs:    p.clientCA.Load(),
+		ClientCAs:    p.clientCA.Snapshot(),
 		NextProtos:   []string{"http/1.1"},
 	}
 	// Verify every handshake against the current immutable CA snapshot, so a
@@ -498,7 +543,7 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 	cfg.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
 		current := cfg.Clone()
 		current.GetConfigForClient = nil
-		current.ClientCAs = p.clientCA.Load()
+		current.ClientCAs = p.clientCA.Snapshot()
 		return current, nil
 	}
 	return cfg, nil
@@ -658,6 +703,27 @@ func (s *Service) AdminClientCASnapshot() *AdminClientCASnapshot {
 		return nil
 	}
 	return s.adminClientCA
+}
+
+// SetAdminClientCASource installs #814's client-CA source for the admin
+// listener. The binary applies it when it starts the plane.
+func (s *Service) SetAdminClientCASource(src AdminClientCASource) {
+	if s == nil || src == nil {
+		return
+	}
+	s.adminCASourceMu.Lock()
+	s.adminCASource = src
+	s.adminCASourceMu.Unlock()
+}
+
+// AdminClientCASource returns the installed client-CA source, or nil.
+func (s *Service) AdminClientCASource() AdminClientCASource {
+	if s == nil {
+		return nil
+	}
+	s.adminCASourceMu.Lock()
+	defer s.adminCASourceMu.Unlock()
+	return s.adminCASource
 }
 
 func (s *Service) adminPlaneEnabled() bool {
