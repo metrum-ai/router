@@ -5,10 +5,16 @@ package tlsacme
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -303,10 +309,11 @@ func TestManagerFilesMode(t *testing.T) {
 		t.Fatalf("write key: %v", err)
 	}
 	manager, err := New(Config{
-		Mode:            ModeFiles,
-		Domains:         []string{"router.example.com"},
-		CertificateFile: certPath,
-		KeyFile:         keyPath,
+		Mode:              ModeRouter,
+		CertificateSource: SourceFiles,
+		Domains:           []string{"router.example.com"},
+		CertFile:          certPath,
+		KeyFile:           keyPath,
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -321,7 +328,7 @@ func TestManagerFilesMode(t *testing.T) {
 		t.Fatal("files mode should export certificate metrics")
 	}
 
-	if _, err := New(Config{Mode: ModeFiles, Domains: []string{"router.example.com"}, CertificateFile: filepath.Join(dir, "missing"), KeyFile: keyPath}); err == nil {
+	if _, err := New(Config{Mode: ModeRouter, CertificateSource: SourceFiles, Domains: []string{"router.example.com"}, CertFile: filepath.Join(dir, "missing"), KeyFile: keyPath}); err == nil {
 		t.Fatal("a missing certificate file must fail")
 	}
 }
@@ -491,7 +498,7 @@ func TestManagerFilesModeRejectsUnsafeInput(t *testing.T) {
 	if err := os.WriteFile(keyPath, expired.PrivateKeyPEM, 0o600); err != nil {
 		t.Fatalf("write key: %v", err)
 	}
-	if _, err := New(Config{Mode: ModeFiles, Domains: []string{"router.example.com"}, CertificateFile: certPath, KeyFile: keyPath}); err == nil || !strings.Contains(err.Error(), "expired") {
+	if _, err := New(Config{Mode: ModeRouter, CertificateSource: SourceFiles, Domains: []string{"router.example.com"}, CertFile: certPath, KeyFile: keyPath}); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("error = %v, want an expiry error", err)
 	}
 
@@ -505,7 +512,7 @@ func TestManagerFilesModeRejectsUnsafeInput(t *testing.T) {
 	if err := os.Chmod(keyPath, 0o644); err != nil {
 		t.Fatalf("chmod key: %v", err)
 	}
-	if _, err := New(Config{Mode: ModeFiles, Domains: []string{"router.example.com"}, CertificateFile: certPath, KeyFile: keyPath}); err == nil || !strings.Contains(err.Error(), "group- or world-accessible") {
+	if _, err := New(Config{Mode: ModeRouter, CertificateSource: SourceFiles, Domains: []string{"router.example.com"}, CertFile: certPath, KeyFile: keyPath}); err == nil || !strings.Contains(err.Error(), "group- or world-accessible") {
 		t.Fatalf("error = %v, want a key permission error", err)
 	}
 }
@@ -560,4 +567,137 @@ func TestManagerValidityGaugeTurnsInvalidAtExpiry(t *testing.T) {
 	if !strings.Contains(manager.Prometheus(), metricCertValid) {
 		t.Fatal("validity metric missing from /metrics")
 	}
+}
+
+// TestManagerSeamComposesWithMTLS proves the listener seam the admin plane
+// needs: one GetConfigForClient that asks this manager for the certificate and
+// the SNI decision, then applies its own client-authentication policy.
+func TestManagerSeamComposesWithMTLS(t *testing.T) {
+	now := time.Now()
+	manager, _, _ := newTestManager(t, &now, nil)
+	if err := manager.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+
+	// A private client CA for the mTLS half.
+	clientCA, clientCAKey, _ := makeTestCA(t, "router-client-ca")
+	clientCAPool := x509.NewCertPool()
+	clientCAPool.AddCert(clientCA)
+
+	serverRoots := x509.NewCertPool()
+	serverRoots.AppendCertsFromPEM(manager.record.CertificatePEM)
+
+	listenerConfig := &tls.Config{
+		MinVersion: manager.minVersion(),
+		// The listener owns the single GetConfigForClient: it composes this
+		// package's certificate selection with its own mTLS snapshot.
+		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			cert, err := manager.GetCertificate(hello)
+			if err != nil {
+				return nil, err
+			}
+			if err := manager.CheckSNI(hello); err != nil {
+				return nil, err
+			}
+			return &tls.Config{
+				MinVersion:   manager.minVersion(),
+				Certificates: []tls.Certificate{*cert},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientCAs:    clientCAPool,
+			}, nil
+		},
+	}
+
+	handshake := func(clientCert tls.Certificate, withCert bool) error {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		defer func() { _ = listener.Close() }()
+		serverErr := make(chan error, 1)
+		go func() {
+			conn, err := listener.Accept()
+			if err != nil {
+				serverErr <- err
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			serverErr <- tls.Server(conn, listenerConfig).Handshake()
+		}()
+		clientConfig := &tls.Config{RootCAs: serverRoots, ServerName: "router.example.com"}
+		if withCert {
+			clientConfig.Certificates = []tls.Certificate{clientCert}
+		}
+		dialer := &net.Dialer{Timeout: 5 * time.Second}
+		conn, err := tls.DialWithDialer(dialer, "tcp", listener.Addr().String(), clientConfig)
+		if err == nil {
+			_ = conn.Close()
+			return <-serverErr
+		}
+		<-serverErr
+		return err
+	}
+
+	goodClient := issueTestClientCertificate(t, clientCA, clientCAKey, "client-1")
+	if err := handshake(goodClient, true); err != nil {
+		t.Fatalf("ACME certificate + mTLS handshake failed: %v", err)
+	}
+	if err := handshake(tls.Certificate{}, false); err == nil {
+		t.Fatal("a client without a certificate must fail when the listener requires one")
+	}
+	otherCA, otherCAKey, _ := makeTestCA(t, "other-ca")
+	wrongCA := issueTestClientCertificate(t, otherCA, otherCAKey, "client-2")
+	if err := handshake(wrongCA, true); err == nil {
+		t.Fatal("a client certificate from an unknown CA must fail the handshake")
+	}
+}
+
+// makeTestCA returns a self-signed CA certificate, its signer and its PEM.
+func makeTestCA(t *testing.T, name string) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create CA: %v", err)
+	}
+	parsed, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse CA: %v", err)
+	}
+	return parsed, key, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+// issueTestClientCertificate signs a client certificate with the test CA.
+func issueTestClientCertificate(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, commonName string) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate client key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create client certificate: %v", err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 }

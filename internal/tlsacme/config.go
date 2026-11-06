@@ -21,11 +21,17 @@ import (
 	"time"
 )
 
-// Modes for a listener's tls block.
+// Modes for a listener's tls block. The listener lane owns the block; the
+// certificate source inside router mode is what this package serves.
 const (
-	ModeOff   = "off"
-	ModeFiles = "files"
-	ModeACME  = "acme"
+	ModeOff    = "off"
+	ModeRouter = "router"
+)
+
+// Certificate sources inside router mode.
+const (
+	SourceFiles = "files"
+	SourceACME  = "acme"
 )
 
 // Supported DNS providers.
@@ -62,10 +68,13 @@ type Config struct {
 	// report a configuration key (server.tls) rather than a listener label.
 	ErrorPrefix string
 
+	// Mode is off or router.
 	Mode string
-	// CertificateFile and KeyFile are used by ModeFiles only.
-	CertificateFile string
-	KeyFile         string
+	// CertificateSource is files or acme; it only applies in router mode.
+	CertificateSource string
+	// CertFile and KeyFile are used by the files source.
+	CertFile string
+	KeyFile  string
 
 	// Domains are the DNS names in the single SAN order issued by the ACME CA.
 	Domains []string
@@ -185,6 +194,10 @@ func (c Config) cloneNormalized() Config {
 	if out.Mode == "" {
 		out.Mode = ModeOff
 	}
+	out.CertificateSource = strings.ToLower(strings.TrimSpace(out.CertificateSource))
+	if out.Mode == ModeRouter && out.CertificateSource == "" {
+		out.CertificateSource = SourceFiles
+	}
 	out.DirectoryURL = strings.TrimSpace(out.DirectoryURL)
 	if out.DirectoryURL == "" {
 		out.DirectoryURL = DefaultDirectoryURL
@@ -256,14 +269,19 @@ func (c Config) Validate() error {
 	switch c.Mode {
 	case ModeOff:
 		return nil
-	case ModeFiles:
-		if strings.TrimSpace(c.CertificateFile) == "" || strings.TrimSpace(c.KeyFile) == "" {
-			return fmt.Errorf("%s: certificate_file and key_file are required when mode is files", c.prefix())
+	case ModeRouter:
+	default:
+		return fmt.Errorf("%s: mode must be off or router", c.prefix())
+	}
+	switch c.CertificateSource {
+	case SourceFiles:
+		if strings.TrimSpace(c.CertFile) == "" || strings.TrimSpace(c.KeyFile) == "" {
+			return fmt.Errorf("%s: cert_file and key_file are required when certificate_source is files", c.prefix())
 		}
 		return nil
-	case ModeACME:
+	case SourceACME:
 	default:
-		return fmt.Errorf("%s: mode must be one of off, files, acme", c.prefix())
+		return fmt.Errorf("%s: certificate_source must be files or acme", c.prefix())
 	}
 
 	if len(c.Domains) == 0 {

@@ -92,6 +92,7 @@ const sidebars = {
         "configuration/cache-usage-store",
         "configuration/admin-authentication",
         "configuration/admin-authorization",
+        "configuration/tls",
         "privacy",
         "legal/software-licenses",
         "concepts/glossary",

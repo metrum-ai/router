@@ -148,7 +148,7 @@ func New(cfg Config, opts ...Option) (*Manager, error) {
 	if normalized.Mode == ModeOff {
 		return m, nil
 	}
-	if normalized.Mode == ModeFiles {
+	if normalized.CertificateSource == SourceFiles {
 		if err := m.loadFiles(); err != nil {
 			return nil, err
 		}
@@ -269,6 +269,11 @@ func (d dnsInstruments) DNSRecordsManaged(provider, recordType string, delta flo
 // Mode returns the configured mode.
 func (m *Manager) Mode() string { return m.cfg.Mode }
 
+// acmeEnabled reports whether this manager issues through ACME.
+func (m *Manager) acmeEnabled() bool {
+	return m.cfg.Mode == ModeRouter && m.cfg.CertificateSource == SourceACME
+}
+
 // Source reports how the served certificate was obtained: issued, store or
 // files. It is metadata only.
 func (m *Manager) Source() string {
@@ -277,32 +282,43 @@ func (m *Manager) Source() string {
 	return m.source
 }
 
-// TLSConfig returns the tls.Config for the listener. It is nil in off mode.
-// The caller may clone the result and add client authentication (mTLS).
+// TLSConfig returns a complete tls.Config for a listener that terminates TLS
+// and has no other handshake policy. It is nil in off mode.
+//
+// A listener that composes TLS with something else (the admin listener adds
+// mTLS client verification through its own GetConfigForClient) uses
+// GetCertificate and CheckSNI instead and builds its own tls.Config, so exactly
+// one GetConfigForClient exists.
 func (m *Manager) TLSConfig() *tls.Config {
 	if m == nil || m.cfg.Mode == ModeOff {
 		return nil
 	}
-	minVersion := uint16(tls.VersionTLS12)
-	if m.cfg.MinVersion == "1.3" {
-		minVersion = tls.VersionTLS13
-	}
 	return &tls.Config{
-		MinVersion:         minVersion,
+		MinVersion:         m.minVersion(),
 		NextProtos:         []string{"h2", "http/1.1"},
-		GetCertificate:     m.getCertificate,
+		GetCertificate:     m.GetCertificate,
 		GetConfigForClient: m.configForClient,
 	}
 }
 
-// getCertificate serves the current certificate and reloads it from the store
-// when another replica renewed it.
-func (m *Manager) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+// minVersion is the configured TLS floor.
+func (m *Manager) minVersion() uint16 {
+	if m.cfg.MinVersion == "1.3" {
+		return tls.VersionTLS13
+	}
+	return tls.VersionTLS12
+}
+
+// GetCertificate is the certificate-selection half of the listener seam. It
+// serves the current certificate, reloads it from the shared store when another
+// replica renewed it, and rejects a name the certificate does not cover.
+func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	m.maybeReload()
 	m.mu.RLock()
 	cert := m.cert
 	m.mu.RUnlock()
 	if cert == nil {
-		if hello != nil && m.cfg.Mode == ModeACME {
+		if hello != nil && m.acmeEnabled() {
 			// A listener that has not obtained its certificate yet fails the
 			// handshake instead of serving plaintext.
 			return nil, fmt.Errorf("tls: no certificate available for %s", hello.ServerName)
@@ -315,6 +331,24 @@ func (m *Manager) getCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 		}
 	}
 	return cert, nil
+}
+
+// CheckSNI reports whether the configured certificate covers hello's server
+// name. It is the second half of the listener seam: a listener that owns
+// GetConfigForClient calls it before applying its own client-auth policy. An
+// empty server name (a client that connected by address) is accepted.
+func (m *Manager) CheckSNI(hello *tls.ClientHelloInfo) error {
+	if m == nil || hello == nil {
+		return nil
+	}
+	name := strings.TrimSpace(hello.ServerName)
+	if name == "" {
+		return nil
+	}
+	if !m.coversName(name) {
+		return fmt.Errorf("tls: no certificate for name %q", name)
+	}
+	return nil
 }
 
 // configForClient lets a replica notice a renewal between handshakes.
@@ -343,10 +377,10 @@ func (m *Manager) coversName(name string) bool {
 // EnsureCertificate loads the stored certificate or obtains the first one. A
 // failure is fatal for TLS mode: there is no plaintext fallback.
 func (m *Manager) EnsureCertificate(ctx context.Context) error {
-	switch m.cfg.Mode {
-	case ModeOff:
+	switch {
+	case m.cfg.Mode == ModeOff:
 		return nil
-	case ModeFiles:
+	case m.cfg.CertificateSource == SourceFiles:
 		return m.loadFiles()
 	}
 	record, err := m.store.LoadCertificate(m.cfg.Domains)
@@ -362,7 +396,7 @@ func (m *Manager) EnsureCertificate(ctx context.Context) error {
 			return err
 		}
 		if m.due(now) {
-			m.opt.logger.Printf("certificate for %s is due for renewal; renewing in the background", strings.Join(m.cfg.Domains, ","))
+			m.logf("certificate for %s is due for renewal; renewing in the background", strings.Join(m.cfg.Domains, ","))
 		}
 		m.reconcileManagedRecord(ctx)
 		return nil
@@ -379,13 +413,23 @@ func (m *Manager) EnsureCertificate(ctx context.Context) error {
 	return nil
 }
 
+// logf formats a message, scrubs every resolved credential from it and logs it.
+// Formatting first matters: a credential passed as an argument must never reach
+// the log in clear.
+func (m *Manager) logf(format string, args ...any) {
+	if m.opt.logger == nil {
+		return
+	}
+	m.opt.logger.Print(m.secrets.redact(fmt.Sprintf(format, args...)))
+}
+
 // redactError scrubs resolved credentials from an error before it leaves the
 // package (startup logs and the caller's error text).
 func (m *Manager) redactError(err error) error {
 	if err == nil {
 		return nil
 	}
-	text := m.secrets.redact(err.Error())
+	text := err.Error()
 	if text == err.Error() {
 		return err
 	}
@@ -394,7 +438,7 @@ func (m *Manager) redactError(err error) error {
 
 // Run renews the certificate until ctx is cancelled.
 func (m *Manager) Run(ctx context.Context) {
-	if m.cfg.Mode != ModeACME {
+	if !m.acmeEnabled() {
 		return
 	}
 	interval := m.opt.renewTicker
@@ -433,9 +477,9 @@ func (m *Manager) tick(ctx context.Context) {
 		m.nextAttempt = now.Add(retryDelay(m.attempts, m.cfg.Renewal, m.opt.roll))
 		m.metrics.add(metricRenewalFailures, mergeLabels(m.metrics.baseLabels(), [2]string{"reason", classifyError(err)}), 1)
 		m.mu.Lock()
-		m.lastError = m.secrets.redact(err.Error())
+		m.lastError = err.Error()
 		m.mu.Unlock()
-		m.opt.logger.Printf("certificate renewal for %s failed: %s (retry in %s)", strings.Join(m.cfg.Domains, ","), m.secrets.redact(err.Error()), time.Until(m.nextAttempt).Round(time.Second))
+		m.logf("certificate renewal for %s failed: %s (retry in %s)", strings.Join(m.cfg.Domains, ","), err.Error(), time.Until(m.nextAttempt).Round(time.Second))
 		return
 	}
 	m.attempts = 0
@@ -459,7 +503,7 @@ func (m *Manager) issue(ctx context.Context) error {
 	case errors.Is(err, ErrLockUnsupported):
 		m.lockBroken = true
 		m.metrics.add(metricIssuerLockFailures, m.metrics.baseLabels(), 1)
-		m.opt.logger.Printf("cache_dir %s cannot provide a POSIX lock; this replica will not issue certificates", m.store.Dir())
+		m.logf("cache_dir %s cannot provide a POSIX lock; this replica will not issue certificates", m.store.Dir())
 		return err
 	case err != nil:
 		return err
@@ -510,7 +554,7 @@ func (m *Manager) issue(ctx context.Context) error {
 	if err := m.install(record, "issued"); err != nil {
 		return err
 	}
-	m.opt.logger.Printf("certificate for %s issued, valid until %s", strings.Join(m.cfg.Domains, ","), record.NotAfter.UTC().Format(time.RFC3339))
+	m.logf("certificate for %s issued, valid until %s", strings.Join(m.cfg.Domains, ","), record.NotAfter.UTC().Format(time.RFC3339))
 	if m.cfg.DNS.Record.Manage {
 		m.reconcileRecord(ctx)
 	}
@@ -527,7 +571,7 @@ const reconcileInterval = 5 * time.Minute
 // reconcileManagedRecord reconciles the optional record when it is enabled and
 // the interval has passed. Failures are logged and retried later.
 func (m *Manager) reconcileManagedRecord(ctx context.Context) {
-	if m.cfg.Mode != ModeACME || !m.cfg.DNS.Record.Manage {
+	if !m.acmeEnabled() || !m.cfg.DNS.Record.Manage {
 		return
 	}
 	now := m.opt.now()
@@ -546,7 +590,7 @@ func (m *Manager) reconcileManagedRecord(ctx context.Context) {
 func (m *Manager) reconcileRecord(ctx context.Context) {
 	zone, err := m.resolveZone(ctx)
 	if err != nil {
-		m.opt.logger.Printf("managed DNS record: %s", m.secrets.redact(err.Error()))
+		m.logf("managed DNS record: %s", err.Error())
 		return
 	}
 	want := dns.Record{
@@ -561,11 +605,11 @@ func (m *Manager) reconcileRecord(ctx context.Context) {
 		Redact:      m.secrets.redact,
 	})
 	if err != nil {
-		m.opt.logger.Printf("managed DNS record: %s", m.secrets.redact(err.Error()))
+		m.logf("managed DNS record: %s", err.Error())
 		return
 	}
 	if result.Conflicts > 0 {
-		m.opt.logger.Printf("managed DNS record %s %s conflicts with an existing record; left untouched", want.Type, want.Name)
+		m.logf("managed DNS record %s %s conflicts with an existing record; left untouched", want.Type, want.Name)
 	}
 }
 
@@ -692,7 +736,7 @@ func (m *Manager) applyARI(ratioDeadline time.Time, leaf *x509.Certificate) time
 		m.ariRetryAt = now.Add(time.Hour)
 		m.mu.Unlock()
 		if !errors.Is(err, errARIUnsupported) {
-			m.opt.logger.Printf("renewal information unavailable, using the configured renewal ratio: %s", m.secrets.redact(err.Error()))
+			m.logf("renewal information unavailable, using the configured renewal ratio: %s", err.Error())
 		}
 		return ratioDeadline
 	}
@@ -737,7 +781,7 @@ func (m *Manager) due(now time.Time) bool {
 
 // maybeReload picks up a certificate another replica wrote.
 func (m *Manager) maybeReload() {
-	if m.store == nil || m.cfg.Mode != ModeACME {
+	if m.store == nil || !m.acmeEnabled() {
 		return
 	}
 	now := m.opt.now()
@@ -761,7 +805,7 @@ func (m *Manager) maybeReload() {
 	}
 	record, err := m.store.LoadCertificate(m.cfg.Domains)
 	if err != nil {
-		m.opt.logger.Printf("reload certificate: %s", m.secrets.redact(err.Error()))
+		m.logf("reload certificate: %s", err.Error())
 		return
 	}
 	if record == nil || !record.NotAfter.After(currentNotAfter) {
@@ -771,20 +815,20 @@ func (m *Manager) maybeReload() {
 		return
 	}
 	if err := m.install(record, "store"); err != nil {
-		m.opt.logger.Printf("reload certificate: %s", m.secrets.redact(err.Error()))
+		m.logf("reload certificate: %s", err.Error())
 		return
 	}
 	m.mu.Lock()
 	m.loadedMod = modified
 	m.mu.Unlock()
-	m.opt.logger.Printf("picked up renewed certificate for %s from the shared store", strings.Join(m.cfg.Domains, ","))
+	m.logf("picked up renewed certificate for %s from the shared store", strings.Join(m.cfg.Domains, ","))
 }
 
 // loadFiles loads a static certificate and key (mode files).
 func (m *Manager) loadFiles() error {
-	certPEM, err := os.ReadFile(m.cfg.CertificateFile)
+	certPEM, err := os.ReadFile(m.cfg.CertFile)
 	if err != nil {
-		return fmt.Errorf("tls: read certificate_file: %w", err)
+		return fmt.Errorf("tls: read cert_file: %w", err)
 	}
 	keyPEM, err := os.ReadFile(m.cfg.KeyFile)
 	if err != nil {
@@ -792,11 +836,11 @@ func (m *Manager) loadFiles() error {
 	}
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		return fmt.Errorf("tls: load certificate_file/key_file: %w", err)
+		return fmt.Errorf("tls: load cert_file/key_file: %w", err)
 	}
 	leaf, err := x509.ParseCertificate(cert.Certificate[0])
 	if err != nil {
-		return fmt.Errorf("tls: parse certificate_file: %w", err)
+		return fmt.Errorf("tls: parse cert_file: %w", err)
 	}
 	cert.Leaf = leaf
 	if err := m.validateLeaf(leaf); err != nil {

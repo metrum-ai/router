@@ -396,6 +396,10 @@ jobs:
           echo "$RUNNER_TEMP/pebble-bin" >> "$GITHUB_PATH"
       - name: ACME issuance and renewal against Pebble
         if: env.CI_RUN_GO == '1'
+        env:
+          # A missing binary must fail this job, not skip the only test that
+          # exercises a real ACME exchange.
+          TLSACME_REQUIRE_PEBBLE: '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK GOMAXPROCS=2 go test ./internal/tlsacme/... -count=1 -run 'TestPebble' -v
 
   ci:

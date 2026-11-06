@@ -12,13 +12,14 @@ import (
 // validACMEConfig is the smallest configuration that passes validation.
 func validACMEConfig() Config {
 	return Config{
-		Listener:     ListenerServing,
-		Mode:         ModeACME,
-		Domains:      []string{"router.example.com"},
-		Email:        "ops@example.com",
-		DirectoryURL: "https://acme.example.com/directory",
-		AcceptTOS:    true,
-		CacheDir:     "/tmp/tls-test",
+		Listener:          ListenerServing,
+		Mode:              ModeRouter,
+		CertificateSource: SourceACME,
+		Domains:           []string{"router.example.com"},
+		Email:             "ops@example.com",
+		DirectoryURL:      "https://acme.example.com/directory",
+		AcceptTOS:         true,
+		CacheDir:          "/tmp/tls-test",
 		DNS: DNSConfig{
 			Provider: ProviderCloudflare,
 			Credentials: Credentials{
@@ -84,7 +85,7 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name:    "unknown mode",
 			mutate:  func(c *Config) { c.Mode = "auto" },
-			wantErr: "mode must be one of off, files, acme",
+			wantErr: "mode must be off or router",
 		},
 		{
 			name:    "acme without domains",
@@ -231,8 +232,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name:    "files mode needs files",
-			mutate:  func(c *Config) { c.Mode = ModeFiles },
-			wantErr: "certificate_file and key_file are required",
+			mutate:  func(c *Config) { c.CertificateSource = SourceFiles },
+			wantErr: "cert_file and key_file are required",
 		},
 	}
 	for _, tc := range cases {

@@ -13,6 +13,7 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -103,16 +104,22 @@ func (o *Options) redact(text string) string {
 
 // errorf builds an error whose text is scrubbed of credentials. Every provider
 // error path goes through it, because provider responses can echo a token back
-// (for example in an "invalid token" message).
+// (for example in an "invalid token" message). The message is formatted first:
+// redacting the format string alone would leave a credential that is passed as
+// an argument in clear.
 func (o *Options) errorf(format string, args ...any) error {
-	return fmt.Errorf("%s", o.redact(fmt.Sprintf(format, args...)))
+	message := fmt.Sprintf(format, args...)
+	if o == nil {
+		return errors.New(message)
+	}
+	return errors.New(o.redact(message))
 }
 
 func (o *Options) logf(format string, args ...any) {
 	if o == nil || o.Logger == nil {
 		return
 	}
-	o.Logger.Printf(o.redact(format), args...)
+	o.Logger.Print(o.redact(fmt.Sprintf(format, args...)))
 }
 
 func (o *Options) now() time.Time {

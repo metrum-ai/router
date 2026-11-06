@@ -82,18 +82,21 @@ type ServerConfig struct {
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
 	OpenAICompatibility OpenAICompatibilityConfig `yaml:"openai_compatibility" json:"openai_compatibility"`
 	AdminAuth           AdminAuthConfig           `yaml:"admin_auth"`
-	AdminReports        AdminReportsConfig        `yaml:"admin_reports"`
-	ClientIP            ClientIPConfig            `yaml:"client_ip" json:"client_ip"`
-	Cache               CacheConfig               `yaml:"cache"`
-	Logging             LoggingConfig             `yaml:"logging"`
-	UsageDB             UsageDBConfig             `yaml:"usage_db"`
-	ConfigSource        ConfigSourceConfig        `yaml:"config_source" json:"config_source"`
-	Upstream            UpstreamConfig            `yaml:"upstream"`
-	Diagnostics         DiagnosticsConfig         `yaml:"diagnostics"`
-	ContentCapture      ContentCaptureConfig      `yaml:"content_capture"`
-	Retention           RetentionConfig           `yaml:"retention"`
-	DecisionTelemetry   DecisionTelemetryConfig   `yaml:"decision_telemetry"`
-	TrafficShape        ServerTrafficShapeConfig  `yaml:"traffic_shape" json:"traffic_shape"`
+	// TLS configures the serving listener's own certificate (#810). The zero
+	// value keeps the v4.7 plaintext listener.
+	TLS               TLSServerConfig          `yaml:"tls,omitempty"`
+	AdminReports      AdminReportsConfig       `yaml:"admin_reports"`
+	ClientIP          ClientIPConfig           `yaml:"client_ip" json:"client_ip"`
+	Cache             CacheConfig              `yaml:"cache"`
+	Logging           LoggingConfig            `yaml:"logging"`
+	UsageDB           UsageDBConfig            `yaml:"usage_db"`
+	ConfigSource      ConfigSourceConfig       `yaml:"config_source" json:"config_source"`
+	Upstream          UpstreamConfig           `yaml:"upstream"`
+	Diagnostics       DiagnosticsConfig        `yaml:"diagnostics"`
+	ContentCapture    ContentCaptureConfig     `yaml:"content_capture"`
+	Retention         RetentionConfig          `yaml:"retention"`
+	DecisionTelemetry DecisionTelemetryConfig  `yaml:"decision_telemetry"`
+	TrafficShape      ServerTrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -1633,6 +1636,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return fmt.Errorf("server usage_db migration_policy must be one of %q, %q, or %q", usageDBMigrationPolicyValidate, usageDBMigrationPolicyAutoSafe, usageDBMigrationPolicyDeploymentJob)
 	}
 	if err := validateConfigSource(c.Server.ConfigSource); err != nil {
+		return err
+	}
+	if err := validateTLSServerConfig(c.Server.TLS); err != nil {
 		return err
 	}
 	if err := validateAdminAuthMode(c.Server.AdminAuth, c.Server.UsageDB, requireAdminKeyEnv); err != nil {

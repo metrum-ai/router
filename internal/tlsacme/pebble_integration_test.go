@@ -223,7 +223,7 @@ func TestPebbleDNS01IssuanceAndRenewal(t *testing.T) {
 	if manager.record != before {
 		t.Fatal("a failed renewal must keep serving the previous certificate")
 	}
-	if cert, err := manager.getCertificate(nil); err != nil || cert == nil {
+	if cert, err := manager.GetCertificate(nil); err != nil || cert == nil {
 		t.Fatalf("serving after a failed renewal: %v", err)
 	}
 	if !strings.Contains(manager.Prometheus(), metricRenewalFailures) {
@@ -348,11 +348,17 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+// lookPathOrSkip skips when the test CA binaries are absent, unless
+// TLSACME_REQUIRE_PEBBLE is set: CI sets it so a broken PATH or a failed install
+// fails the job instead of turning the suite into a vacuous pass.
 func lookPathOrSkip(t *testing.T, name string) string {
 	t.Helper()
 	path, err := exec.LookPath(name)
 	if err != nil {
-		t.Skipf("%s is not on PATH; install it with go install github.com/letsencrypt/pebble/v2/cmd/%s@latest", name, name)
+		if os.Getenv("TLSACME_REQUIRE_PEBBLE") != "" {
+			t.Fatalf("%s is not on PATH and TLSACME_REQUIRE_PEBBLE is set; install it with go install github.com/letsencrypt/pebble/v2/cmd/%s@v2.10.1", name, name)
+		}
+		t.Skipf("%s is not on PATH; install it with go install github.com/letsencrypt/pebble/v2/cmd/%s@v2.10.1", name, name)
 	}
 	return path
 }
