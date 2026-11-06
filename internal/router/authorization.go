@@ -15,6 +15,10 @@ import (
 	"github.com/casbin/casbin/v2/model"
 )
 
+// AdminGlobalDomain is the single plane-global target domain. It preserves
+// the domain used by legacy global reports and training authorization.
+const AdminGlobalDomain = "*"
+
 const authzCasbinModel = `
 [request_definition]
 r = sub, dom, obj, act
@@ -29,7 +33,7 @@ g = _, _, _
 e = some(where (p.eft == allow))
 
 [matchers]
-m = (g(r.sub, p.sub, r.dom) || g(r.sub, p.sub, "*") || r.sub == p.sub) && (r.dom == p.dom || p.dom == "*") && (r.obj == p.obj || p.obj == "*") && actionMatch(r.act, p.act)
+m = (g(policySubject(r.sub), p.sub, r.dom) || g(policySubject(r.sub), p.sub, "*") || policySubject(r.sub) == p.sub || r.sub == p.sub) && grantMatch(r.dom, p.dom, r.obj, p.obj, r.act, p.act, p.sub) && managementRoleMatch(r.sub, p.sub, p.obj)
 `
 
 const (
@@ -77,25 +81,31 @@ func actionMatch(args ...any) (any, error) {
 // newAuthzEnforcer builds an enforcer with the router's custom matcher
 // functions registered. Every enforcer using authzCasbinModel must be created
 // through this helper.
-func newAuthzEnforcer() (*casbin.Enforcer, error) {
+func newAuthzEnforcer() (*casbin.SyncedEnforcer, error) {
 	m, err := model.NewModelFromString(authzCasbinModel)
 	if err != nil {
 		return nil, err
 	}
-	enforcer, err := casbin.NewEnforcer(m)
+	enforcer, err := casbin.NewSyncedEnforcer(m)
 	if err != nil {
 		return nil, err
 	}
 	enforcer.AddFunction("actionMatch", actionMatch)
+	enforcer.AddFunction("grantMatch", grantMatch)
+	enforcer.AddFunction("policySubject", compatibilityPolicySubject)
+	enforcer.AddFunction("managementRoleMatch", managementRoleMatch)
 	return enforcer, nil
 }
 
 type authorizer struct {
-	enforcer        *casbin.Enforcer
+	enforcer        *casbin.SyncedEnforcer
 	activePolicySet string
+	// Authored records exclude immutable builtins and synthesized flags/maps.
+	// Retain them so online guards validate even duplicate/unchanged records.
+	authoredPolicy [][]string
 }
 
-func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore) (*authorizer, error) {
+func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore, legacy ...AdminAuthConfig) (*authorizer, error) {
 	enforcer, err := newAuthzEnforcer()
 	if err != nil {
 		return nil, err
@@ -122,7 +132,11 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			}
 		}
 	}
+	if err := addEmergencyAuthorizationGrants(enforcer); err != nil {
+		return nil, err
+	}
 	activePolicySet := ""
+	var authoredPolicy [][]string
 	if cfg.Enabled {
 		policyLines, policySetID, err := authzPolicyLines(cfg, usage)
 		if err != nil {
@@ -155,9 +169,19 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			default:
 				return nil, fmt.Errorf("unsupported policy line %q", fields[0])
 			}
+			authoredPolicy = append(authoredPolicy, fields)
 		}
 	}
-	return &authorizer{enforcer: enforcer, activePolicySet: activePolicySet}, nil
+	for _, auth := range legacy {
+		if err := addCompatibilityGrants(enforcer, auth); err != nil {
+			return nil, err
+		}
+	}
+	snapshot := &authorizer{enforcer: enforcer, activePolicySet: activePolicySet, authoredPolicy: authoredPolicy}
+	if err := addGlobalCompatibilityGrants(snapshot, callers, legacy...); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func authzPolicyLines(cfg AdminAuthorizationConfig, usage *usageStore) ([]string, string, error) {
@@ -229,6 +253,9 @@ func validateCasbinPolicyFields(fields []string, label string) error {
 		return fmt.Errorf("%s must start with p or g", label)
 	}
 	for _, field := range fields {
+		if strings.HasPrefix(field, internalAuthorizationSubjectPrefix) {
+			return fmt.Errorf("%s uses a reserved identity", label)
+		}
 		if strings.TrimSpace(field) == "" {
 			return fmt.Errorf("%s contains an empty field", label)
 		}
@@ -238,6 +265,23 @@ func validateCasbinPolicyFields(fields []string, label string) error {
 		if authzPolicyFieldLooksSensitive(field) {
 			return fmt.Errorf("%s contains unsafe field", label)
 		}
+	}
+	return nil
+}
+
+// Online mutation validation is stricter than legacy loading: v4.7 treated
+// partial domain wildcards as literal domain names, so existing configuration
+// must still load without acquiring wildcard semantics.
+func validateCasbinPolicyMutationFields(fields []string, label string) error {
+	if err := validateCasbinPolicyFields(fields, label); err != nil {
+		return err
+	}
+	domain := fields[2]
+	if fields[0] == "g" {
+		domain = fields[3]
+	}
+	if strings.Contains(domain, "*") && domain != "*" {
+		return fmt.Errorf("%s domain uses a partial wildcard", label)
 	}
 	return nil
 }
@@ -295,17 +339,24 @@ func formatCasbinPolicyLine(fields ...string) (string, error) {
 	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
+// currentAuthorizer loads one immutable revision per decision. Reload never
+// overwrites the bootstrap pointer, so concurrent readers cannot race with it.
+func (s *Service) currentAuthorizer() *authorizer {
+	if s == nil {
+		return nil
+	}
+	if snapshot := s.authorizerSnapshot.Load(); snapshot != nil {
+		return snapshot
+	}
+	return s.authorizer
+}
+
 func (a *authorizer) enforce(subject authorizationSubject, object, action string) bool {
 	if a == nil || a.enforcer == nil {
 		return false
 	}
 	ok, err := a.enforcer.Enforce(subject.subject, subject.domain, object, action)
 	return err == nil && ok
-}
-
-func (a *authorizer) enforceInDomain(subject authorizationSubject, domain, object, action string) bool {
-	subject.domain = strings.TrimSpace(domain)
-	return a.enforce(subject, object, action)
 }
 
 func authzSubjectForBasic(subject adminBasicRuntime) authorizationSubject {
