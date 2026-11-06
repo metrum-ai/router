@@ -531,9 +531,11 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
-	s.cfg = newCfg
-	s.adminAPIKeys = newAdminKeys
+	// Publish grants before exposing replacement credentials. This ordering
+	// does not jointly bind authentication and authorization generations.
 	s.authorizerSnapshot.Store(newAuthorizer)
+	s.adminAPIKeys = newAdminKeys
+	s.cfg = newCfg
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
