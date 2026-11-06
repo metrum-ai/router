@@ -277,10 +277,11 @@ func (s *Service) authenticateAdminAPIKey(token string) (adminAuthSubject, bool)
 
 func adminAuthSubjectForAPIKey(runtime *adminAPIKeyRuntime) adminAuthSubject {
 	return adminAuthSubject{
-		subject:     runtime.subject,
-		domain:      runtime.domain,
-		source:      "admin_key",
-		permissions: runtime.permissions,
+		subject:      runtime.subject,
+		domain:       runtime.domain,
+		source:       "admin_key",
+		credentialID: runtime.keyID,
+		permissions:  runtime.permissions,
 	}
 }
 
@@ -300,34 +301,19 @@ func (s *Service) adminKeyDigestMatches(runtime *adminAPIKeyRuntime, token strin
 	return hmac.Equal(cached[:], digest[:])
 }
 
-// authorizeAdminPermission enforces one fine-grained admin permission. A
-// direct grant on the authenticated subject (basic users and admin keys
-// carry explicit permission sets) is honored first; otherwise the mapped
-// Casbin object/action is enforced so OIDC users receive the same
-// permissions through policy. Admin key permissions are deliberately NOT
-// projected into Casbin policy lines: exact permission-map checks keep the
-// key surface independent of matcher semantics.
+// authorizeAdminPermission evaluates compiled compatibility grants and public
+// subject policy together through Casbin. Permission maps are metadata only.
 func (s *Service) authorizeAdminPermission(subject adminAuthSubject, permission string) bool {
-	if subject.permissions[permission] {
-		return true
-	}
 	object, action, ok := adminPermissionObjectAction(permission)
 	if !ok {
 		return false
 	}
-	return s.authorizeAdmin(subject, object, action)
+	return s.authorizeCompatibility(subject, object, action, "permission")
 }
 
-// authorizeAdminObjectAction enforces an existing Casbin object/action pair
-// (for example admin:callers/list), additionally honoring a matching direct
-// permission grant ("object:action") on basic users and admin API keys so
-// the dedicated admin key can operate the pre-existing admin endpoints
-// without requiring parallel Casbin policy.
+// authorizeAdminObjectAction uses the same compiled compatibility adapter.
 func (s *Service) authorizeAdminObjectAction(subject adminAuthSubject, object, action string) bool {
-	if subject.permissions[object+":"+action] {
-		return true
-	}
-	return s.authorizeAdmin(subject, object, action)
+	return s.authorizeCompatibility(subject, object, action, "object")
 }
 
 // hasAdminAuthMechanism reports whether any admin authentication mechanism is
