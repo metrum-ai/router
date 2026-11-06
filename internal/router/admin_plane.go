@@ -184,7 +184,7 @@ func adminHardening(cfg *AdminPlaneConfig) func(http.Handler) http.Handler {
 				}
 				limiter := &adminBodyLimiter{body: http.MaxBytesReader(w, r.Body, maxBody)}
 				r.Body = limiter
-				w = &adminLimitWriter{ResponseWriter: w, limiter: limiter}
+				w = &adminLimitWriter{ResponseWriter: w, r: r, limiter: limiter}
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -229,6 +229,7 @@ func (l *adminBodyLimiter) Close() error { return l.body.Close() }
 // limit was crossed.
 type adminLimitWriter struct {
 	http.ResponseWriter
+	r           *http.Request
 	limiter     *adminBodyLimiter
 	wroteHeader bool
 	substituted bool
@@ -243,7 +244,7 @@ func (w *adminLimitWriter) WriteHeader(status int) {
 	w.wroteHeader = true
 	if w.limiter.oversize.Load() && status < http.StatusBadRequest {
 		w.substituted = true
-		writeAdminPlaneProblem(w.ResponseWriter, nil, http.StatusRequestEntityTooLarge, "admin-payload-too-large")
+		writeAdminPlaneProblem(w.ResponseWriter, w.r, http.StatusRequestEntityTooLarge, "admin-payload-too-large")
 		return
 	}
 	w.ResponseWriter.WriteHeader(status)

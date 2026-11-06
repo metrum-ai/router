@@ -130,6 +130,9 @@ func WriteAdminProblem(w http.ResponseWriter, r *http.Request, problem AdminProb
 	if problem.RequestID == "" {
 		problem.RequestID = AdminRequestID(r)
 	}
+	if problem.RequestID == "" {
+		problem.RequestID = newAdminRequestID()
+	}
 	header := w.Header()
 	header.Set("Content-Type", "application/problem+json")
 	header.Set("Cache-Control", "no-store")
