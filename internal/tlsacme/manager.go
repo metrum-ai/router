@@ -113,6 +113,8 @@ type Manager struct {
 	reloadTicker time.Duration
 	// lastReconcile bounds how often the managed DNS record is re-checked.
 	lastReconcile time.Time
+	// lastReloadCheck bounds how often the shared store is stat()ed.
+	lastReloadCheck time.Time
 }
 
 // New builds a Manager for one listener. It never performs network I/O: the
@@ -738,6 +740,14 @@ func (m *Manager) maybeReload() {
 	if m.store == nil || m.cfg.Mode != ModeACME {
 		return
 	}
+	now := m.opt.now()
+	m.mu.Lock()
+	if !m.lastReloadCheck.IsZero() && now.Sub(m.lastReloadCheck) < m.reloadTicker {
+		m.mu.Unlock()
+		return
+	}
+	m.lastReloadCheck = now
+	m.mu.Unlock()
 	modified := m.store.CertificatesModified()
 	m.mu.RLock()
 	loaded := m.loadedMod
