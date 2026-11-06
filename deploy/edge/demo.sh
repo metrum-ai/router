@@ -125,7 +125,7 @@ if ! wait_for_router; then
 fi
 ask "$DEMO_TOKEN" local-chat "In one sentence, what is a model group?"
 if [ "$STATUS" = "200" ]; then
-  model="$(grep -o '"model": *"[^"]*"' "$BODY_FILE" | head -1 | sed 's/.*: *"//; s/"$//')"
+  model="$(grep -m1 -o '"model": *"[^"]*"' "$BODY_FILE" | sed 's/.*: *"//; s/"$//')"
   pass "local-chat answered in ${ELAPSED}s (upstream model: ${model:-unreported})"
   note "the answer came from the box; the usage row groups it under local-chat"
 else
@@ -223,7 +223,10 @@ while [ "$attempt" -lt 5 ]; do
   sleep 1
 done
 if [ -n "$report" ]; then
-  printf '%s\n' "$report" | head -40 | sed 's/^/      /'
+  # sed reads the report to EOF; piping into head would close the pipe early and
+  # kill the printf with SIGPIPE (exit 141) under `set -o pipefail` once the
+  # report grows past a few dozen lines.
+  printf '%s\n' "$report" | sed -n '1,40p' | sed 's/^/      /'
   if printf '%s' "$report" | grep -qi 'local-chat'; then
     pass "report lists the local-chat group with token counts after ${attempt} attempt(s)"
   else
