@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -47,6 +48,12 @@ func newAdminMTLSAuthenticator(issuer string, roots interface{ Snapshot() *x509.
 		default:
 			return nil, errors.New("admin mTLS mapping requires URI or DNS SAN")
 		}
+		if strings.HasPrefix(san, "dns:") {
+			san = "dns:" + strings.ToLower(strings.TrimPrefix(san, "dns:"))
+		}
+		if existing := a.subjects[san]; existing != "" && existing != subject {
+			return nil, errors.New("admin mTLS conflicting normalized SAN mapping")
+		}
 		a.subjects[san] = subject
 	}
 	return a, nil
@@ -82,6 +89,11 @@ func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
 		return Principal{}, ErrInvalidCredential
 	}
+	if !adminLeafExplicitClientAuth(leaf) {
+		return Principal{}, ErrInvalidCredential
+	}
+	// Unmapped extra SANs are ignored. All mapped SANs must agree on exactly
+	// one subject; no preference ordering can mask conflicting mapped SANs.
 	subject := ""
 	match := func(san string) bool {
 		mapped := a.subjects[san]
@@ -94,13 +106,17 @@ func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 		subject = mapped
 		return true
 	}
-	for _, uri := range leaf.URIs {
-		if uri != nil && !match("uri:"+uri.String()) {
+	uris, err := adminRawCertificateURISANs(leaf)
+	if err != nil {
+		return Principal{}, ErrInvalidCredential
+	}
+	for _, uri := range uris {
+		if !match("uri:" + uri) {
 			return Principal{}, ErrInvalidCredential
 		}
 	}
 	for _, dns := range leaf.DNSNames {
-		if !match("dns:" + dns) {
+		if !match("dns:" + strings.ToLower(dns)) {
 			return Principal{}, ErrInvalidCredential
 		}
 	}
@@ -109,4 +125,30 @@ func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 	}
 	fingerprint := sha256.Sum256(leaf.Raw)
 	return Principal{Subject: subject, Kind: "mtls", Issuer: a.issuer, CredentialID: hex.EncodeToString(fingerprint[:])}, nil
+}
+
+// Read URI GeneralNames from the signed SAN extension bytes, not url.URL's
+// reserialization (which can normalize scheme/escape spelling). URI mapping is
+// byte-exact; DNS mapping alone is case-insensitive.
+func adminRawCertificateURISANs(cert *x509.Certificate) ([]string, error) {
+	var uris []string
+	for _, ext := range cert.Extensions {
+		if !ext.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 17}) {
+			continue
+		}
+		var names []asn1.RawValue
+		rest, err := asn1.Unmarshal(ext.Value, &names)
+		if err != nil || len(rest) != 0 {
+			return nil, ErrInvalidCredential
+		}
+		for _, name := range names {
+			if name.Class == 2 && name.Tag == 6 {
+				if name.IsCompound {
+					return nil, ErrInvalidCredential
+				}
+				uris = append(uris, string(name.Bytes))
+			}
+		}
+	}
+	return uris, nil
 }

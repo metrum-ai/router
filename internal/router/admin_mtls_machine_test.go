@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -67,6 +68,27 @@ func (ca machineTestCA) clientKeyPair(t *testing.T, mode string) tls.Certificate
 		template.NotBefore = time.Now().Add(time.Minute)
 	case "server":
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	case "no-eku":
+		template.ExtKeyUsage = nil
+	case "any-eku":
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageAny}
+	case "client-and-any":
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageAny}
+	case "client-and-server":
+		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	case "extra-sans":
+		extra, _ := url.Parse("spiffe://test.example/unmapped")
+		template.URIs = append(template.URIs, extra)
+		template.DNSNames = []string{"unmapped.example"}
+	case "raw-uri-case":
+		rawSAN, err := asn1.Marshal([]asn1.RawValue{{Class: 2, Tag: 6, Bytes: []byte("SPIFFE://test.example/workload")}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		template.ExtraExtensions = []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 17}, Value: rawSAN}}
+	case "dns-mixed":
+		template.URIs = nil
+		template.DNSNames = []string{"WoRkLoAd.ExAmPlE"}
 	case "unmapped":
 		template.URIs[0], _ = url.Parse("spiffe://test.example/other")
 	case "cn":
@@ -209,7 +231,7 @@ func TestAdminMachineMTLSValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"valid", "dns", "expired", "future", "server", "unmapped", "cn", "email", "conflict", "wrong-ca", "unverified"} {
+	for _, mode := range []string{"valid", "dns", "dns-mixed", "extra-sans", "client-and-server", "no-eku", "any-eku", "client-and-any", "raw-uri-case", "expired", "future", "server", "unmapped", "cn", "email", "conflict", "wrong-ca", "unverified"} {
 		t.Run(mode, func(t *testing.T) {
 			cert := ca.client(t, mode)
 			if mode == "wrong-ca" {
@@ -221,11 +243,11 @@ func TestAdminMachineMTLSValidation(t *testing.T) {
 				r.TLS.VerifiedChains = nil
 			}
 			p, err := auth.Authenticate(context.Background(), r)
-			if mode == "valid" || mode == "dns" {
+			if mode == "valid" || mode == "dns" || mode == "dns-mixed" || mode == "extra-sans" || mode == "client-and-server" {
 				if err != nil || p.Subject != "workload" || p.Kind != "mtls" || p.Issuer != "configured-trust-domain" || p.CredentialID == "" {
 					t.Fatalf("valid client: %+v %v", p, err)
 				}
-			} else if err == nil || p != (Principal{}) {
+			} else if !errors.Is(err, ErrInvalidCredential) || p != (Principal{}) {
 				t.Fatalf("invalid client accepted: %+v %v", p, err)
 			}
 		})
@@ -240,7 +262,37 @@ func TestAdminMachineMTLSValidation(t *testing.T) {
 	if err := roots.Reload(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := auth.Authenticate(r.Context(), r); err == nil {
-		t.Fatal("open connection retained removed root")
+	if _, err := auth.Authenticate(r.Context(), r); !errors.Is(err, ErrInvalidCredential) {
+		t.Fatalf("removed root did not return terminal invalid credential: %v", err)
+	}
+}
+
+func TestAdminMachineMTLSRawURIAndDNSCaseMappings(t *testing.T) {
+	ca := newMachineTestCA(t)
+	path := filepath.Join(t.TempDir(), "root.pem")
+	if err := os.WriteFile(path, ca.pem, 0600); err != nil {
+		t.Fatal(err)
+	}
+	roots, err := NewAdminClientCAStore([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newAdminMTLSAuthenticator("domain", roots, map[string]string{"dns:WORKLOAD.example": "one", "dns:workload.example": "two"}); err == nil {
+		t.Fatal("conflicting case-folded DNS mappings accepted")
+	}
+	for _, tc := range []struct{ mapping, mode string }{
+		{"dns:WORKLOAD.EXAMPLE", "dns"},
+		{"uri:SPIFFE://test.example/workload", "raw-uri-case"},
+	} {
+		a, err := newAdminMTLSAuthenticator("domain", roots, map[string]string{tc.mapping: "workload"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cert := ca.client(t, tc.mode)
+		r := httptest.NewRequest("GET", "https://admin.example/admin/v1/config", nil)
+		r.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert, ca.cert}}}
+		if p, err := a.Authenticate(r.Context(), r); err != nil || p.Subject != "workload" {
+			t.Fatalf("explicit mapping rejected: %v", err)
+		}
 	}
 }
