@@ -23,6 +23,8 @@ import zipfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
+sys.path.insert(0, str(ROOT / 'examples'))
+from router_readiness import wait_for_router_ready  # noqa: E402
 sys.path.insert(0, str(HERE.parents[0] / 'router-loop'))
 import full
 import local
@@ -176,11 +178,7 @@ def main():
     with (args.out/'router.log').open('w') as log:
         try:
             router = subprocess.Popen([str(args.binary.resolve()), '-config', str(args.out/'config.json')], env=env, stdout=log, stderr=log)
-            for _ in range(120):
-                if router.poll() is not None: raise RuntimeError('router startup failed')
-                try: urllib.request.urlopen('http://127.0.0.1:18410/healthz', timeout=1).close(); break
-                except OSError: time.sleep(.25)
-            else: raise RuntimeError('router readiness timeout')
+            wait_for_router_ready(router, 'http://127.0.0.1:18410/healthz', log_path=args.out/'router.log')
             collect(args, env, selected)
         finally:
             if router:
