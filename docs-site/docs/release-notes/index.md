@@ -38,9 +38,13 @@ infer the running version from a date written in documentation.
   served by Anthropic and Bedrock targets are filtered at their instruction
   boundaries instead of being replayed raw, and response-cache identity for
   translated targets includes the exact filter state.
-- **Reference deployments.** Escalation-continuum configurations for AMD
-  Instinct, NVIDIA L40S and B200/H200, and Intel Xeon CPU tiers, plus an edge
-  bundle, each published with measured limits rather than marketing claims.
+- **Reference deployments.** An escalation-continuum set of reference
+  configurations. Validated on hardware: `nvidia-datacenter` (1× H100 80 GB) and
+  `amd-strix-halo-edge` (its measured 1-worker p95 is above the 8 s target, which
+  its Limits state). Functional check only: `nvidia-gb10-edge`. Committed without
+  a hardware run: `amd-mi350p-datacenter` (#785). The edge bundle ships alongside
+  them, and the layered hierarchy reference carries measured per-hop results on
+  AMD Instinct MI325X, Intel Xeon CPU and Strix Halo tiers.
 - **Release discipline.** The router hierarchy compatibility matrix is a required
   step of the release workflow, and the layered edge → datacenter → frontier
   deployment ships as a reference configuration with per-hop usage rows and
@@ -68,6 +72,10 @@ infer the running version from a date written in documentation.
 - Layered deployment and shared hierarchy governance are reference
   configurations in this release; cross-hop request identifiers and a folded
   cross-tier cost total are not product features.
+- `amd-mi350p-datacenter` ships its structure, pins and configuration without a
+  hardware run (#785), and `nvidia-gb10-edge` has a functional check on hardware
+  but no measured concurrency or latency. `amd-strix-halo-edge` has one measured
+  run whose 1-worker p95 is above its own 8 s target.
 
 ### Release verification
 
@@ -86,10 +94,13 @@ refusals, with no router defect in the classification.
 This change set contains release documentation only:
 
 ```
-<diff stat>
+CHANGELOG.md                          | 54 ++++++++++++++++++++-
+ deploy/reference/README.md            |  8 ++--
+ docs-site/docs/release-notes/index.md | 89 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 146 insertions(+), 5 deletions(-)
 ```
 
-`git diff --stat 5db5ac66a7e4 <release commit> -- internal cmd go.mod go.sum` is
+`git diff --stat 5db5ac66a7e4 v4.7.0 -- internal cmd go.mod go.sum` is
 empty, so the router code is identical to the gated commit.
 
 ## v4.6.0 - 2026-11-02

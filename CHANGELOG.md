@@ -8,13 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.7.0] - 2026-11-06
 
 Package release. Adds opt-in tool-aware routing, configurable HTTP deadlines with
-a stream progress deadline, stored Responses affinity, PII filtering on
-translated instruction histories, and an escalation-continuum set of reference
-deployments for AMD Instinct, NVIDIA and Intel CPU tiers plus an edge bundle.
-The router hierarchy compatibility matrix is now a required step of the release
-workflow, and layered edge → datacenter → frontier deployment ships as a
-reference configuration with per-hop usage rows and a measured per-hop cost.
-Shared hierarchy governance is planned for v5.0.0.
+a stream progress deadline, stored Responses affinity, and PII filtering on
+translated instruction histories. The router hierarchy compatibility matrix is
+now a required step of the release workflow, and layered edge → datacenter →
+frontier deployment ships as a reference configuration with per-hop usage rows
+and measured per-hop results on AMD Instinct MI325X, Intel Xeon CPU and Strix
+Halo. Reference tiers validated on hardware are `nvidia-datacenter` (H100 80 GB)
+and `amd-strix-halo-edge` (its measured 1-worker p95 is above the 8 s target, as
+its Limits state); `nvidia-gb10-edge` is a functional check only;
+`amd-mi350p-datacenter` is committed without a hardware run (#785); and the edge
+bundle ships alongside them. Shared hierarchy governance is planned for v5.0.0.
 
 **Usage schema moves from 11 to 12.** A v4.6.0 database is upgraded in place:
 with the default `migration_policy: auto-safe` the router applies the shipped
@@ -225,8 +228,9 @@ every red cell reported as red:
   non-quota reason are the three `openai-chat → gpt` cells, where the provider
   rejects the `reasoning_effort` plus tools request shape; the same failure
   appears on the previous release with the same configuration, and a replicated
-  four-pair A/B on the same configuration and harness shows the candidate's
-  failure set equal to or smaller than the previous release's.
+  four-pair A/B on the same configuration and harness, with the decision rule
+  fixed before the replicate runs, shows the candidate's failure set equal to or
+  smaller than the previous release's.
 - **Stage B (Harbor matrix):** routed equals direct at 5/5 in both API styles,
   plus the offline replay.
 - **Stage C (live SDK suites):** reported as a red stage with a full
@@ -237,10 +241,13 @@ every red cell reported as red:
 This change set contains release documentation only:
 
 ```
-<diff stat>
+CHANGELOG.md                          | 54 ++++++++++++++++++++-
+ deploy/reference/README.md            |  8 ++--
+ docs-site/docs/release-notes/index.md | 89 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 146 insertions(+), 5 deletions(-)
 ```
 
-`git diff --stat 5db5ac66a7e4 <release commit> -- internal cmd go.mod go.sum` is
+`git diff --stat 5db5ac66a7e4 v4.7.0 -- internal cmd go.mod go.sum` is
 empty, so the router code is identical to the gated commit.
 
 ## [4.6.0] - 2026-11-02
