@@ -30,7 +30,11 @@ func grantMatch(args ...any) (any, error) {
 		fields[i] = value
 	}
 	if strings.HasPrefix(fields[6], compatibilitySubjectPrefix+"object:") {
-		return fields[0] == fields[1] && fields[2]+":"+fields[4] == fields[3], nil
+		// An explicitly global credential retains caller-row maintenance in
+		// every stored domain. This is not a projected global identity: those
+		// grants below still match '*' literally and cannot widen row scope.
+		domainMatches := fields[0] == fields[1] || (fields[1] == AdminGlobalDomain && fields[2] == authzObjectAdminCallers)
+		return domainMatches && fields[2]+":"+fields[4] == fields[3], nil
 	}
 	if strings.HasPrefix(fields[6], compatibilitySubjectPrefix) {
 		return fields[0] == fields[1] && fields[2] == fields[3] && fields[4] == fields[5], nil
