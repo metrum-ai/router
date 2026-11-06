@@ -14,6 +14,84 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.7.0 - 2026-11-06
+
+### Highlights
+
+- **Tool-aware routing, opt-in.** A model group can declare
+  `strategy: tool_aware` with a `tool_routing` block. In `observe` mode the
+  router validates the upstream's tool calls against the caller's arguments and
+  records a failure class without changing behaviour; `enforce` adds one
+  same-target retry and bounded escalation inside the request deadline and the
+  effective spend ceiling. Groups without the block never run the code. See
+  [Tool-aware routing](/docs/routing/tool-aware-routing).
+- **Configurable HTTP deadlines.** `server.read_timeout_ms`,
+  `write_timeout_ms`, `idle_timeout_ms` and `stream_idle_timeout_ms`, with a
+  stream progress deadline that every successful write extends, so a stall after
+  the first chunk ends the stream with a clear `upstream_timeout` record while a
+  slow first token stays bounded by the attempt and upstream timeouts.
+- **Stored Responses affinity.** Opt-in, with an authenticated-encryption
+  envelope for upstream ids, retention-aware metadata and the stored-response
+  operation set for enabled groups. The envelope is new in this release, so
+  there is no earlier stored-response metadata format to migrate.
+- **PII filtering on translated histories.** Responses system-message histories
+  served by Anthropic and Bedrock targets are filtered at their instruction
+  boundaries instead of being replayed raw, and response-cache identity for
+  translated targets includes the exact filter state.
+- **Reference deployments.** Escalation-continuum configurations for AMD
+  Instinct, NVIDIA L40S and B200/H200, and Intel Xeon CPU tiers, plus an edge
+  bundle, each published with measured limits rather than marketing claims.
+- **Release discipline.** The router hierarchy compatibility matrix is a required
+  step of the release workflow, and the layered edge → datacenter → frontier
+  deployment ships as a reference configuration with per-hop usage rows and
+  measured hop cost. Shared hierarchy governance is planned for v5.0.0.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Database | Usage schema moves from 11 to 12; with the default `migration_policy: auto-safe` the migration is applied at startup, existing rows stay readable and writes continue. `migration_policy: deployment-job` deployments keep the reviewed `router-migrate apply` / `verify-serving` gate |
+| HTTP deadlines | Four new `server.*_timeout_ms` settings, zero selects the default; the write default follows the worst-case attempt chain and the stream idle window starts at the first data byte |
+| Tool-aware groups | New opt-in `strategy: tool_aware`; `observe` records only, `enforce` adds one same-target retry and bounded escalation, both bounded by the request deadline and spend ceiling |
+| Stored Responses affinity | Opt-in per model group; enabling it requires `server.retention` on, and affinity rows follow the `responses_affinity` retention class and legal holds |
+| Reference deployments | New reference configurations and an edge bundle; installed artifacts and their measured limits are documented with each tier |
+
+### Known limitations
+
+- An OpenAI Chat target still rejects a request that pairs `reasoning_effort`
+  with tools, and a Chat-dialect agent lane against such a target reports the
+  provider's typed refusal. The release gate records those cells as red on this
+  and on the previous release.
+- The live SDK stage is a scoped subset: provider-hosted tools and
+  resource-creating endpoints are excluded by design and reported as such, not
+  as unsupported passes.
+- Layered deployment and shared hierarchy governance are reference
+  configurations in this release; cross-hop request identifiers and a folded
+  cross-tier cost total are not product features.
+
+### Release verification
+
+The live release gate ran on the release candidate `5db5ac66a7e4` with the
+v4.6.0 gate configuration unchanged, recorded as issue #805. Stage B passed the
+bounded Harbor matrix (routed equals direct at 5/5 in both API styles plus the
+offline replay) and stage D passed 6/6. Stage A's only non-quota red cells are
+the three `openai-chat → gpt` cells described above, which fail identically on
+the previous release with the same configuration; a replicated four-pair A/B on
+the same configuration and harness shows the candidate's failure set equal to or
+smaller than the previous release's, with mean tokens per request within 0.2%
+and admission rejections inside the stated bound. Stage C is reported as a red
+stage with a full classification of documented `501` surfaces and typed `400`
+refusals, with no router defect in the classification.
+
+This change set contains release documentation only:
+
+```
+<diff stat>
+```
+
+`git diff --stat 5db5ac66a7e4 <release commit> -- internal cmd go.mod go.sum` is
+empty, so the router code is identical to the gated commit.
+
 ## v4.6.0 - 2026-11-02
 
 ### Highlights
