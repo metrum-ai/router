@@ -484,6 +484,7 @@ ci-python: secret-contract capability-smoke-contracts
 
 .PHONY: ci-examples
 ci-examples:
+	python3 -m unittest discover -s examples/tests -p 'test_*.py' -q
 	uv run --with pyyaml python -m unittest discover -s examples/case-studies/common -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/support-agent -p 'test_*.py' -q
 	$(PYTHON) -m unittest discover -s examples/case-studies/document-qa -p 'test_*.py' -q
