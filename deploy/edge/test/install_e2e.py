@@ -339,6 +339,30 @@ class EscalationOutputFieldTest(unittest.TestCase):
                              "the provider received max_tokens, which it rejects: " + str(body))
 
 
+class DemoReportPreviewTest(unittest.TestCase):
+    """The demo's report preview and model extraction must not die on SIGPIPE or
+    report more than the first model (deploy/edge/demo.sh runs under pipefail)."""
+
+    def _write(self, text: str) -> str:
+        handle = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+        handle.write(text)
+        handle.close()
+        self.addCleanup(os.unlink, handle.name)
+        return handle.name
+
+    def test_long_report_preview_does_not_sigpipe(self):
+        path = self._write("".join(f"line {i}\n" for i in range(1, 61)))
+        demo = run(["bash", str(DEMO), "--self-check", "report-preview", path], timeout=60)
+        self.assertEqual(demo.returncode, 0, demo.stdout + demo.stderr)
+        self.assertEqual(len(demo.stdout.splitlines()), 40, demo.stdout)
+
+    def test_two_model_keys_yield_one_model(self):
+        path = self._write('{"model": "first-model", "choices": [{"message": {"model": "nested-model"}}]}\n')
+        demo = run(["bash", str(DEMO), "--self-check", "model", path], timeout=60)
+        self.assertEqual(demo.returncode, 0, demo.stdout + demo.stderr)
+        self.assertEqual(demo.stdout.splitlines(), ["first-model"])
+
+
 class EdgeBundleComposeTest(unittest.TestCase):
     """The compose files must be structurally sound before a GPU host sees them.
 
