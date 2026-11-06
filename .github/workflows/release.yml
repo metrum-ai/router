@@ -28,7 +28,7 @@ jobs:
 
   package:
     needs: hierarchy-matrix
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 90
     permissions:
       # This job creates the release and its OIDC-backed attestations.

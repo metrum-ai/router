@@ -35,7 +35,7 @@ jobs:
     # environment, whose deployment policy allows main only.
     environment: evaluation
     if: github.ref == 'refs/heads/main'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     env:
       COMPAT_MATRIX_MONTHLY_USD: ${{ vars.COMPAT_MATRIX_MONTHLY_USD || '10' }}
