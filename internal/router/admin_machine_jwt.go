@@ -6,7 +6,6 @@ package router
 import (
 	"context"
 	"crypto/ecdsa"
-	"crypto/ed25519"
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
@@ -30,6 +29,14 @@ type adminMachineJWTConfig struct {
 	Algorithms             []string
 	MaxLifetime, ClockSkew time.Duration
 	Subjects               []adminMachineJWTSubject
+	// Exact additional host[:port] authorities; HTTPS port 443 is implicit.
+	// No wildcard/URL entries. The issuer's own authority is always allowed.
+	AllowedJWKSHosts []string
+	// Per-issuer opt-in for private/special-use egress; HTTPS remains required.
+	AllowPrivateNetwork bool
+	// Provider compatibility opt-out for absent or generic JWT typ only.
+	// Requires a dedicated admin audience; explicit id+jwt remains forbidden.
+	AllowLegacyTokenType bool
 }
 
 type adminMachineJWTAuthenticator struct {
@@ -59,8 +66,22 @@ func machineIssuerEndpoint(raw string, testLoopback bool) bool {
 }
 
 func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTConfig, client *http.Client) (*adminMachineJWTAuthenticator, error) {
-	if cfg.Issuer == "" || cfg.Audience == "" || len(cfg.Subjects) == 0 || !machineIssuerEndpoint(cfg.Issuer, cfg.allowInsecureLoopback && client != nil) {
+	cfg.allowInsecureLoopback = cfg.allowInsecureLoopback && client != nil
+	if cfg.Issuer == "" || cfg.Audience == "" || len(cfg.Subjects) == 0 || !machineIssuerEndpoint(cfg.Issuer, cfg.allowInsecureLoopback) {
 		return nil, errors.New("admin JWT issuer, audience or subjects invalid")
+	}
+	issuerURL, _ := url.Parse(cfg.Issuer) // parsed by machineIssuerEndpoint above
+	if issuerURL.RawQuery != "" {
+		return nil, errors.New("admin JWT issuer query forbidden")
+	}
+	cfg.AllowedJWKSHosts = append([]string(nil), cfg.AllowedJWKSHosts...)
+	if len(cfg.AllowedJWKSHosts) > 16 {
+		return nil, errors.New("admin JWT JWKS host allowlist too large")
+	}
+	for _, host := range cfg.AllowedJWKSHosts {
+		if _, ok := machineJWTAllowedHost(host); !ok {
+			return nil, errors.New("admin JWT JWKS host allowlist invalid")
+		}
 	}
 	if cfg.MaxLifetime == 0 {
 		cfg.MaxLifetime = time.Hour
@@ -95,18 +116,17 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 	a := &adminMachineJWTAuthenticator{cfg: cfg}
 	for _, alg := range cfg.Algorithms {
 		switch alg {
-		case "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512", "EdDSA":
+		case "RS256", "ES256":
 		default:
 			return nil, errors.New("admin JWT asymmetric algorithm required")
 		}
 		a.algorithms = append(a.algorithms, jose.SignatureAlgorithm(alg))
 	}
-	a.client = &http.Client{}
-	if client != nil {
-		*a.client = *client
+	boundedClient, err := newMachineJWTHTTPClient(cfg, client)
+	if err != nil {
+		return nil, err
 	}
-	a.client.Timeout = 5 * time.Second
-	a.client.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("admin JWT redirects forbidden") }
+	a.client = boundedClient
 	var discovery struct {
 		Issuer  string `json:"issuer"`
 		JWKSURI string `json:"jwks_uri"`
@@ -114,7 +134,7 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 	if err := a.fetchJSON(ctx, strings.TrimRight(cfg.Issuer, "/")+"/.well-known/openid-configuration", &discovery); err != nil {
 		return nil, err
 	}
-	if discovery.Issuer != cfg.Issuer || !machineIssuerEndpoint(discovery.JWKSURI, cfg.allowInsecureLoopback && client != nil) {
+	if discovery.Issuer != cfg.Issuer || !machineJWTEndpointAllowed(cfg, discovery.JWKSURI) {
 		return nil, errors.New("admin JWT discovery invalid")
 	}
 	a.jwksURL = discovery.JWKSURI
@@ -129,6 +149,9 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 }
 
 func (a *adminMachineJWTAuthenticator) fetchJSON(ctx context.Context, endpoint string, dest any) error {
+	if !machineJWTEndpointAllowed(a.cfg, endpoint) {
+		return errors.New("admin JWT endpoint forbidden")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -171,11 +194,9 @@ func machineJWTKeyMatches(key jose.JSONWebKey, alg string) bool {
 	}
 	switch k := key.Key.(type) {
 	case *rsa.PublicKey:
-		return k.N.BitLen() >= 2048 && k.N.BitLen() <= 8192 && (strings.HasPrefix(alg, "RS") || strings.HasPrefix(alg, "PS"))
+		return k.N.BitLen() >= 2048 && k.N.BitLen() <= 8192 && alg == "RS256"
 	case *ecdsa.PublicKey:
-		return alg == "ES256" && k.Curve.Params().Name == "P-256" || alg == "ES384" && k.Curve.Params().Name == "P-384" || alg == "ES512" && k.Curve.Params().Name == "P-521"
-	case ed25519.PublicKey:
-		return alg == "EdDSA" && len(k) == ed25519.PublicKeySize
+		return alg == "ES256" && k.Curve.Params().Name == "P-256"
 	}
 	return false
 }
@@ -218,17 +239,27 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 			a.lastUnknownRefresh = now
 		}
 		a.mu.Unlock()
-		keys, err := a.fetchKeys(ctx)
-		a.mu.Lock()
-		if err == nil {
-			a.keys = keys
-			a.expires = time.Now().Add(machineJWKSTTL)
-		}
-		a.refreshing = nil
-		close(done)
-		a.mu.Unlock()
-		if err != nil {
+		// The initiating request does not own this shared refresh lifetime.
+		// A disconnect must not consume the refresh slot while cancelling I/O
+		// needed by other requests. All waiters, including the initiator, can
+		// independently cancel; the shared work has its own bounded timeout.
+		go func() {
+			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			keys, err := a.fetchKeys(refreshCtx)
+			a.mu.Lock()
+			if err == nil {
+				a.keys = keys
+				a.expires = time.Now().Add(machineJWKSTTL)
+			}
+			a.refreshing = nil
+			close(done)
+			a.mu.Unlock()
+		}()
+		select {
+		case <-ctx.Done():
 			return jose.JSONWebKey{}, ErrInvalidCredential
+		case <-done:
 		}
 	}
 }
@@ -249,6 +280,20 @@ func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http
 		return Principal{}, ErrInvalidCredential
 	}
 	header := token.Headers[0]
+	typeValue, present := header.ExtraHeaders[jose.HeaderKey("typ")]
+	tokenType, stringType := typeValue.(string)
+	if present && !stringType {
+		return Principal{}, ErrInvalidCredential
+	}
+	switch strings.ToLower(tokenType) {
+	case "at+jwt", "application/at+jwt":
+	case "", "jwt":
+		if !a.cfg.AllowLegacyTokenType {
+			return Principal{}, ErrInvalidCredential
+		}
+	default:
+		return Principal{}, ErrInvalidCredential
+	}
 	key, err := a.key(ctx, header.KeyID, header.Algorithm)
 	if err != nil {
 		return Principal{}, ErrInvalidCredential

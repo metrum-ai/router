@@ -51,7 +51,7 @@ func TestAdminMachineJWTDiscoveryFailsClosed(t *testing.T) {
 			}))
 			defer server.Close()
 			issuer = server.URL
-			cfg := adminMachineJWTConfig{allowInsecureLoopback: true, Issuer: issuer, Audience: "admin", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "automation", Subject: "automation"}}}
+			cfg := adminMachineJWTConfig{allowInsecureLoopback: true, AllowPrivateNetwork: true, Issuer: issuer, Audience: "admin", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "automation", Subject: "automation"}}}
 			if _, err := newAdminMachineJWTAuthenticator(context.Background(), cfg, server.Client()); err == nil {
 				t.Fatal("invalid discovery/JWKS accepted")
 			}

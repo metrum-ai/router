@@ -9,6 +9,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -70,7 +71,7 @@ func TestAdminMachineJWTNegativeValidation(t *testing.T) {
 	}))
 	defer server.Close()
 	issuer = server.URL
-	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, Issuer: issuer, Audience: "router-admin", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "automation", Subject: "mapped-client"}}}
+	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, AllowPrivateNetwork: true, Issuer: issuer, Audience: "router-admin", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "automation", Subject: "mapped-client"}}}
 	auth, err := newAdminMachineJWTAuthenticator(context.Background(), cfg, server.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +112,7 @@ func TestAdminMachineJWTNegativeValidation(t *testing.T) {
 				if err != nil || p.Subject != "mapped-client" || p.Kind != "oauth" || p.Issuer != issuer {
 					t.Fatalf("valid token: %+v %v", p, err)
 				}
-			} else if err == nil || p != (Principal{}) {
+			} else if !errors.Is(err, ErrInvalidCredential) || p != (Principal{}) {
 				t.Fatalf("invalid token accepted: %+v %v", p, err)
 			}
 		})

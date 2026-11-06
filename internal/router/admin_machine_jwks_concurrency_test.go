@@ -34,7 +34,7 @@ func TestAdminMachineJWKSUnknownRefreshDoesNotBlockCachedKey(t *testing.T) {
 	defer server.Close()
 	defer close(release)
 	issuer = server.URL
-	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, Issuer: issuer, Audience: "admin", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "automation", Subject: "automation"}}}
+	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, AllowPrivateNetwork: true, Issuer: issuer, Audience: "admin", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "automation", Subject: "automation"}}}
 	auth, err := newAdminMachineJWTAuthenticator(context.Background(), cfg, server.Client())
 	if err != nil {
 		t.Fatal(err)

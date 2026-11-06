@@ -39,7 +39,7 @@ func TestAdminMachineJWKSRotationAndFederation(t *testing.T) {
 	}))
 	defer server.Close()
 	issuer = server.URL
-	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, Issuer: issuer, Audience: "router-admin", Kind: "federated", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "system:serviceaccount:ops:deploy", Subject: "deployer"}}}
+	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, AllowPrivateNetwork: true, Issuer: issuer, Audience: "router-admin", Kind: "federated", Subjects: []adminMachineJWTSubject{{Claim: "sub", Value: "system:serviceaccount:ops:deploy", Subject: "deployer"}}}
 	auth, err := newAdminMachineJWTAuthenticator(context.Background(), cfg, server.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestAdminMachineJWTAlgorithmAndMapping(t *testing.T) {
 	}))
 	defer server.Close()
 	issuer = server.URL
-	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, Issuer: issuer, Audience: "router-admin", Subjects: []adminMachineJWTSubject{{Claim: "client_id", Value: "ci-client", Subject: "ci"}}}
+	cfg := adminMachineJWTConfig{allowInsecureLoopback: true, AllowPrivateNetwork: true, Issuer: issuer, Audience: "router-admin", Subjects: []adminMachineJWTSubject{{Claim: "client_id", Value: "ci-client", Subject: "ci"}}}
 	auth, err := newAdminMachineJWTAuthenticator(context.Background(), cfg, server.Client())
 	if err != nil {
 		t.Fatal(err)
