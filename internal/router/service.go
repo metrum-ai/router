@@ -65,7 +65,9 @@ type Service struct {
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
 	adminSession       *adminSessionStore
-	authorizer         *authorizer
+	authorizer         *authorizer // immutable bootstrap fallback
+	authorizerSnapshot atomic.Pointer[authorizer]
+	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
 	logger             *requestLogger
@@ -344,7 +346,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
 	}
 	s.adminAPIKeys = buildAdminAPIKeyRuntimes(cfg, os.LookupEnv)
-	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage)
+	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage, cfg.Server.AdminAuth)
 	if err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
@@ -526,13 +528,13 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	// directory. The authorizer is recreated with the latest callers map and
 	// the same admin authorization config.
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage)
+	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage, newCfg.Server.AdminAuth)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
 	s.cfg = newCfg
 	s.adminAPIKeys = newAdminKeys
-	s.authorizer = newAuthorizer
+	s.authorizerSnapshot.Store(newAuthorizer)
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
@@ -1107,7 +1109,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead) {
+	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead, s.PinAuthorization(r.Context())) {
 		code := "metrics-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -1157,7 +1159,8 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject := adminAuthSubjectForBasic(basic)
-	if !subject.permissions["admin:auth:read"] {
+	subject.authContext = s.PinAuthorization(r.Context())
+	if !s.authorizeCompatibility(subject, "admin:auth", authzActionRead, "direct") {
 		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "admin-forbidden", "admin:auth", authzActionRead)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "admin-forbidden", "message": "admin-forbidden"}})
 		return
@@ -1180,13 +1183,14 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, rc, http.StatusServiceUnavailable, "content-store-disabled")
 		return
 	}
+	authorizationContext := s.PinAuthorization(r.Context())
 	targetDomains, err := s.contentCaptureTargetDomains(requestID)
 	if err != nil {
 		s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
 		return
 	}
 	if len(targetDomains) == 0 {
-		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
+		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete, authorizationContext) {
 			s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 			return
 		}
@@ -1196,7 +1200,7 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
-			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
+			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete, authorizationContext) {
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
@@ -1223,7 +1227,7 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
+	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge, s.PinAuthorization(r.Context())) {
 		code := "content-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
