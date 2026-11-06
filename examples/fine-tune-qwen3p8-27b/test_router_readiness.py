@@ -12,6 +12,34 @@ router = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(router)
 
 
+class BudgetTests(unittest.TestCase):
+    def test_floor_is_never_lower_than_the_harness_budget(self):
+        import os
+        self.assertEqual(router.ready_budget(), 60.0)
+        self.assertEqual(router.ready_budget(timeout=7), 7)
+        previous = os.environ.get(router.readiness.READY_TIMEOUT_ENV)
+        os.environ[router.readiness.READY_TIMEOUT_ENV] = '5'
+        try:
+            self.assertEqual(router.ready_budget(), 60.0)
+        finally:
+            if previous is None:
+                os.environ.pop(router.readiness.READY_TIMEOUT_ENV, None)
+            else:
+                os.environ[router.readiness.READY_TIMEOUT_ENV] = previous
+
+    def test_a_larger_shared_budget_is_used(self):
+        import os
+        previous = os.environ.get(router.readiness.READY_TIMEOUT_ENV)
+        os.environ[router.readiness.READY_TIMEOUT_ENV] = '90'
+        try:
+            self.assertEqual(router.ready_budget(), 90.0)
+        finally:
+            if previous is None:
+                os.environ.pop(router.readiness.READY_TIMEOUT_ENV, None)
+            else:
+                os.environ[router.readiness.READY_TIMEOUT_ENV] = previous
+
+
 class ReadinessTests(unittest.TestCase):
     def test_slow_start_beyond_old_ten_second_window(self):
         process, opener = MagicMock(), MagicMock()
