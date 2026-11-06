@@ -29,10 +29,10 @@ experiment, a matrix, a scratch area — is outside the contract and is left alo
 
 | Directory | Hardware class | Serving images | Router model groups | Validation state |
 |---|---|---|---|---|
-| [`nvidia-datacenter/`](nvidia-datacenter/) | 1× NVIDIA 80 GB datacenter GPU (H100 80 GB class) | `vllm/vllm-openai` | `local-tiny`, `local-chat`, `escalate` | structure and pins committed; hardware run pending |
-| [`nvidia-gb10-edge/`](nvidia-gb10-edge/) | 1× NVIDIA GB10 system, 128 GB unified memory (aarch64) | `vllm/vllm-openai` (arm64) | `local-tiny`, `local-chat`, `escalate` | structure and pins committed; hardware run pending |
-| [`amd-mi350p-datacenter/`](amd-mi350p-datacenter/) | 1× AMD Instinct MI350P 144 GB (gfx950) | `rocm/vllm` (`gfx950`) | `local-tiny`, `local-chat`, `local-coder`, `escalate` | structure and pins committed; hardware run pending |
-| [`amd-strix-halo-edge/`](amd-strix-halo-edge/) | 1× AMD Ryzen AI MAX+ 395, 128 GB unified memory (gfx1151) | `rocm/vllm` (`gfx1151`) | `local-tiny`, `local-chat`, `escalate` | structure and pins committed; hardware run pending |
+| [`nvidia-datacenter/`](nvidia-datacenter/) | 1× NVIDIA 80 GB datacenter GPU (H100 80 GB class) | `vllm/vllm-openai` | `local-tiny`, `local-chat`, `escalate` | validated on hardware (H100 80 GB): functional suite 8 passed / 0 failed / 2 skipped, concurrency sweep committed |
+| [`nvidia-gb10-edge/`](nvidia-gb10-edge/) | 1× NVIDIA GB10 system, 128 GB unified memory (aarch64) | `vllm/vllm-openai` (arm64) | `local-tiny`, `local-chat`, `escalate` | functional check on hardware only (6 passed / 0 failed / 3 skipped); concurrency and latency not measured |
+| [`amd-mi350p-datacenter/`](amd-mi350p-datacenter/) | 1× AMD Instinct MI350P 144 GB (gfx950) | `rocm/vllm` (`gfx950`) | `local-tiny`, `local-chat`, `local-coder`, `escalate` | structure and pins committed; no hardware run yet (#785) |
+| [`amd-strix-halo-edge/`](amd-strix-halo-edge/) | 1× AMD Ryzen AI MAX+ 395, 128 GB unified memory (gfx1151) | `rocm/vllm` (`gfx1151`) | `local-tiny`, `local-chat`, `escalate` | validated on hardware: functional suite 8 passed / 0 failed / 2 skipped; measured 1-worker p95 ~9.5 s, above the 8 s target (see its Limits) |
 
 A tier README says `hardware run pending` until `results/` holds a measured run
 from a named commit. Pending is not a pass, and no tier claims a measured
