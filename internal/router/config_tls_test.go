@@ -358,7 +358,7 @@ func TestServerWithoutTLSKeepsMetricsAndBehaviour(t *testing.T) {
 	}
 }
 
-// TestAdminCertificateSourceAdapter proves the manager satisfies the admin
+// TestAdminTLSProviderAdapter proves the manager satisfies the admin
 // listener's handshake seam (#809) through the adapter: yes/no SNI plus the
 // certificate for the hello.
 func TestAdminCertificateSourceAdapter(t *testing.T) {
@@ -374,7 +374,7 @@ func TestAdminCertificateSourceAdapter(t *testing.T) {
 	if err != nil || manager == nil {
 		t.Fatalf("manager: %v", err)
 	}
-	source := AdminCertificateSource{Manager: manager}
+	source := AdminTLSProvider{Manager: manager}
 	if !source.CheckSNI("admin.example.com") {
 		t.Fatal("the configured name must be served")
 	}
