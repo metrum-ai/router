@@ -24,13 +24,6 @@ server:
       #   valid_until: "2026-09-20T00:00:00Z" # Future, at most 30 days.
   listen: :8080
   default_model_group: default
-  # Automated TLS for the serving listener. Off by default: without a mode the
-  # router serves plaintext exactly as in v4.7. In router mode the certificate
-  # comes from `certificate_source: files` (cert_file/key_file), or is obtained
-  # and renewed over ACME DNS-01, which needs no inbound port and works for
-  # private hosts. See docs-site/docs/configuration/tls.md for the full block.
-  tls:
-    mode: off
   # Optional OpenAI endpoint compatibility gates. Disabled by default so
   # `/v1/chat/completions` accepts Chat Completions bodies and rejects
   # Responses-shaped bodies clearly. Enable only for deployments that have
