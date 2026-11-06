@@ -113,6 +113,10 @@ func TestAdminCertificateBoundToken(t *testing.T) {
 	if validateAdminCertificateBoundToken(r.Context(), r, source, certificateBindingThumb(cert)) {
 		t.Fatal("existing connection retained removed CA")
 	}
+	current = roots
+	if !validateAdminCertificateBoundToken(r.Context(), r, source, certificateBindingThumb(cert)) {
+		t.Fatal("cancellation test precondition is not valid")
+	}
 	ctx, cancel := context.WithCancel(r.Context())
 	cancel()
 	if validateAdminCertificateBoundToken(ctx, r, source, certificateBindingThumb(cert)) {
