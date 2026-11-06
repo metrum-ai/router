@@ -29,6 +29,9 @@ func grantMatch(args ...any) (any, error) {
 		}
 		fields[i] = value
 	}
+	if strings.HasPrefix(fields[6], compatibilitySubjectPrefix+"object:") {
+		return fields[0] == fields[1] && fields[2]+":"+fields[4] == fields[3], nil
+	}
 	if strings.HasPrefix(fields[6], compatibilitySubjectPrefix) {
 		return fields[0] == fields[1] && fields[2] == fields[3] && fields[4] == fields[5], nil
 	}
@@ -43,6 +46,9 @@ func grantMatch(args ...any) (any, error) {
 // identity preserves the legacy Basic /admin/auth behavior.
 func compatibilityIdentity(subject adminAuthSubject, mode string) string {
 	if subject.credentialID == "" || (subject.source != "admin_key" && subject.source != "basic") {
+		if mode == "direct" || mode == "permission-raw" {
+			return compatibilitySubjectPrefix + "unavailable"
+		}
 		return subject.subject
 	}
 	encode := base64.RawURLEncoding.EncodeToString
@@ -86,15 +92,18 @@ func addCompatibilityGrants(e *casbin.SyncedEnforcer, cfg AdminAuthConfig) error
 		objectIdentity := compatibilityIdentity(subject, "object")
 		direct := compatibilityIdentity(subject, "direct")
 		for _, permission := range permissions {
+			permission = strings.TrimSpace(permission)
+			// Raw helper semantics concatenate object and action rather than
+			// splitting a map key: alternative colon partitions stay equivalent.
+			if _, err := e.AddPolicy(objectIdentity, subject.domain, permission, ""); err != nil {
+				return err
+			}
+			if _, err := e.AddPolicy(compatibilityIdentity(subject, "permission-raw"), subject.domain, permission, ""); err != nil {
+				return err
+			}
 			object, action, ok := adminPermissionObjectAction(permission)
 			if !ok {
 				continue
-			}
-			idx := strings.LastIndex(permission, ":")
-			if idx > 0 {
-				if _, err := e.AddPolicy(objectIdentity, subject.domain, permission[:idx], permission[idx+1:]); err != nil {
-					return err
-				}
 			}
 			for _, identity := range []string{combined, direct} {
 				if _, err := e.AddPolicy(identity, subject.domain, object, action); err != nil {

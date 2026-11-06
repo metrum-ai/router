@@ -1273,7 +1273,7 @@ func (s *Service) authorizeAdmin(subject adminAuthSubject, object, action string
 
 func (s *Service) authorizeGlobalAdmin(subject adminAuthSubject, object, action string) bool {
 	global := subject
-	global.domain = "*"
+	global.domain = AdminGlobalDomain
 	return s.authorizeAdmin(global, object, action)
 }
 

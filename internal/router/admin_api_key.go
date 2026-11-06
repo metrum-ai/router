@@ -306,7 +306,12 @@ func (s *Service) adminKeyDigestMatches(runtime *adminAPIKeyRuntime, token strin
 func (s *Service) authorizeAdminPermission(subject adminAuthSubject, permission string) bool {
 	object, action, ok := adminPermissionObjectAction(permission)
 	if !ok {
-		return false
+		return s.authorizeCompatibility(subject, permission, "", "permission-raw")
+	}
+	if permission != strings.TrimSpace(permission) {
+		// v4.7 looked up the original map key, then normalized only the
+		// explicit-policy fallback. A padded query has no direct grant.
+		return s.authorizeAdmin(subject, object, action)
 	}
 	return s.authorizeCompatibility(subject, object, action, "permission")
 }

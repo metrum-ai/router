@@ -15,6 +15,10 @@ import (
 	"github.com/casbin/casbin/v2/model"
 )
 
+// AdminGlobalDomain is the single plane-global target domain. It preserves
+// the domain used by legacy global reports and training authorization.
+const AdminGlobalDomain = "*"
+
 const authzCasbinModel = `
 [request_definition]
 r = sub, dom, obj, act
