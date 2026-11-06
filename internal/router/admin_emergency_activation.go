@@ -126,6 +126,9 @@ func (s *adminEmergencyActivationStore) Activate(ctx context.Context, c adminEme
 		return zero, errAdminEmergencyInvalid
 	}
 	now := s.now().UTC()
+	// Validate the deadline we can actually persist, not a later fractional
+	// instant. This also makes the final pre-commit check use identical precision.
+	until = until.UTC().Truncate(time.Millisecond)
 	if !validAdminEmergencyCredential(c, now) || len(reason) > 512 || strings.TrimSpace(reason) == "" || !until.After(now) || until.After(c.ExpiresAt) || until.Sub(now) > time.Hour {
 		return zero, errAdminEmergencyInvalid
 	}

@@ -128,8 +128,17 @@ func TestAdminEmergencyActivationDurableAtomicAndBounded(t *testing.T) {
 	if _, err := s.Use(cancelled, cred, emergencyTestRecorder); err == nil {
 		t.Fatal("cancelled use accepted")
 	}
-	// A new DB handle/store must recover durable state, not process-local state.
-	reopened, _ := emergencyActivationFixture(t, path, clock)
+	// Close the original pool before reopening committed state. This tests
+	// closed-handle recovery, not a separate process or crash-recovery scenario.
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, reopenedDB := emergencyActivationFixture(t, path, clock)
+	db = reopenedDB
 	if got, err := reopened.Use(ctx, cred, emergencyTestRecorder); err != nil || got.ActivationID != active.ActivationID {
 		t.Fatalf("durable activation not recovered: %v", err)
 	}
@@ -190,5 +199,81 @@ func TestAdminEmergencyActivationRejectsUnsafeWindowsAndReplicas(t *testing.T) {
 	}
 	if strings.Contains(active.Reason, "rtr_admin_fixture_sensitive") {
 		t.Fatal("credential-shaped reason was retained")
+	}
+}
+
+func TestAdminEmergencyActivationDeadlinePrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		deadline  time.Duration
+		advance   bool
+		wantError bool
+	}{
+		{"unrepresentable-window", 900 * time.Microsecond, false, true},
+		{"deadline-passed-during-event", 2900 * time.Microsecond, true, true},
+		{"normalized-future-window", 3900 * time.Microsecond, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := time.Now().UTC().Truncate(time.Millisecond)
+			now := base.Add(100 * time.Microsecond)
+			s, db := emergencyActivationFixture(t, filepath.Join(t.TempDir(), "config.sqlite"), func() time.Time { return now })
+			cred := adminEmergencyCredential{ID: "rescue-precision", Subject: "emergency:rescue", Issuer: "local", Fingerprint: strings.Repeat("a", 64), ExpiresAt: now.Add(30 * time.Minute)}
+			deadline := base.Add(tc.deadline)
+			active, err := s.Activate(context.Background(), cred, "incident-precision", deadline, func(tx *gorm.DB, a adminEmergencyActivation) error {
+				if err := emergencyTestRecorder(tx, a); err != nil {
+					return err
+				}
+				if tc.advance {
+					now = base.Add(2100 * time.Microsecond)
+				}
+				return nil
+			})
+			if (err != nil) != tc.wantError {
+				t.Fatalf("activation error=%v; want error=%t", err, tc.wantError)
+			}
+			var count int64
+			if err := db.Table("emergency_test_events").Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tc.wantError {
+				if count != 0 {
+					t.Fatal("unusable activation committed an event")
+				}
+				return
+			}
+			if count != 1 || !active.Until.Equal(deadline.Truncate(time.Millisecond)) || !active.Until.After(now) {
+				t.Fatal("successful activation lacks a usable persisted deadline")
+			}
+			if _, err := s.Use(context.Background(), cred, emergencyTestRecorder); err != nil {
+				t.Fatalf("normalized activation unusable: %v", err)
+			}
+		})
+	}
+}
+
+func TestAdminEmergencyActivationExpiredCredentialUse(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	s, db := emergencyActivationFixture(t, filepath.Join(t.TempDir(), "config.sqlite"), func() time.Time { return now })
+	cred := adminEmergencyCredential{ID: "rescue-expired", Subject: "emergency:rescue", Issuer: "local", Fingerprint: strings.Repeat("a", 64), ExpiresAt: now}
+	// Isolate credential expiry validation without an activation deadline.
+	if validAdminEmergencyCredential(cred, now) {
+		t.Fatal("expired credential passed isolated validation")
+	}
+	// Deliberately seed inconsistent metadata so activation expiry cannot hide
+	// missing credential-expiry enforcement in Use. Production Activate cannot
+	// create this row; the check must still fail closed if persisted data is bad.
+	row := adminEmergencyActivationRow{ActivationID: "inconsistent-fixture", CredentialID: cred.ID, BindingDigest: cred.Fingerprint, Subject: cred.Subject, Issuer: cred.Issuer, Reason: "incident", ActivatedAtMS: now.Add(-time.Minute).UnixMilli(), UntilMS: now.Add(time.Minute).UnixMilli(), CredentialExpiresMS: cred.ExpiresAt.UnixMilli()}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Use(context.Background(), cred, emergencyTestRecorder); err == nil {
+		t.Fatal("expired credential accepted with future activation deadline")
+	}
+	var count int64
+	if err := db.Table("emergency_test_events").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("expired credential produced successful use event")
 	}
 }
