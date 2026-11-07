@@ -4,6 +4,7 @@
 package router
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -233,6 +234,24 @@ func TestValidateListenerTLS(t *testing.T) {
 				t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestListenerTLSDefaultsCertificateSourceToFiles proves an omitted
+// certificate_source behaves as the documented files default.
+func TestListenerTLSDefaultsCertificateSourceToFiles(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := writeTestCertificate(t, dir, []string{"router.example.com"})
+	cfg := ListenerTLSConfig{Mode: "router", CertFile: certPath, KeyFile: keyPath, ACME: TLSACMEServerConfig{Domains: []string{"router.example.com"}}}
+	if err := ValidateListenerTLS(cfg, "serving", "server.tls"); err != nil {
+		t.Fatalf("omitted certificate_source must default to files: %v", err)
+	}
+	manager, err := NewListenerTLSManager(cfg, "serving", "server.tls")
+	if err != nil || manager == nil {
+		t.Fatalf("manager: %v", err)
+	}
+	if _, err := manager.GetCertificate(&tls.ClientHelloInfo{ServerName: "router.example.com"}); err != nil {
+		t.Fatalf("the files certificate was not served: %v", err)
 	}
 }
 
@@ -575,7 +594,7 @@ func TestTLSCredentialSentinelNeverLeavesTheConfig(t *testing.T) {
 		ACME: TLSACMEServerConfig{
 			Domains:      []string{"router.example.com"},
 			AcceptTOS:    true,
-			DirectoryURL: "https://acme.example.com/directory",
+			DirectoryURL: "https://127.0.0.1:1/directory",
 			CacheDir:     filepath.Join(dir, "tls"),
 			DNS: TLSDNSConfig{
 				Provider:    "digitalocean",
@@ -622,5 +641,22 @@ func TestTLSCredentialSentinelNeverLeavesTheConfig(t *testing.T) {
 	}
 	if strings.Contains(string(status), secret) {
 		t.Fatal("the manager status contains the resolved credential")
+	}
+
+	// Startup failure: the CA is unreachable, so EnsureCertificate fails. The
+	// error main turns into log.Fatalf must not carry the credential, and no
+	// certificate may be installed.
+	startupErr := manager.EnsureCertificate(context.Background())
+	if startupErr == nil {
+		t.Fatal("expected the unreachable directory to fail startup")
+	}
+	if strings.Contains(startupErr.Error(), secret) {
+		t.Fatalf("startup error leaks the credential: %q", startupErr.Error())
+	}
+	if got := manager.Status(); len(got) != 0 {
+		t.Fatalf("status after a failed startup = %+v, want empty", got)
+	}
+	if _, err := manager.GetCertificate(&tls.ClientHelloInfo{ServerName: "router.example.com"}); err == nil {
+		t.Fatal("GetCertificate must fail after a failed startup")
 	}
 }

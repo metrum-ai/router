@@ -204,7 +204,12 @@ func validateListenerTLS(cfg ListenerTLSConfig, listener, errorPrefix string, al
 	if err := cfg.validateDurations(errorPrefix); err != nil {
 		return err
 	}
-	switch strings.ToLower(strings.TrimSpace(cfg.CertificateSource)) {
+	// certificate_source defaults to files, as documented.
+	source := strings.ToLower(strings.TrimSpace(cfg.CertificateSource))
+	if source == "" {
+		source = tlsacme.SourceFiles
+	}
+	switch source {
 	case tlsacme.SourceFiles:
 		if strings.TrimSpace(cfg.CertFile) == "" || strings.TrimSpace(cfg.KeyFile) == "" {
 			return fmt.Errorf("%s: cert_file and key_file are required when certificate_source is files", errorPrefix)

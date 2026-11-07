@@ -170,9 +170,15 @@ func New(cfg Config, opts ...Option) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Resolve the DNS credentials even when a provider is injected, so provider
+	// errors are scrubbed in both cases.
+	resolvedCredentials, err := m.resolveDNSCredentials()
+	if err != nil {
+		return nil, err
+	}
 	m.provider = options.provider
 	if m.provider == nil {
-		provider, err := m.newProvider(context.Background())
+		provider, err := m.newProvider(context.Background(), resolvedCredentials)
 		if err != nil {
 			return nil, err
 		}
@@ -214,9 +220,10 @@ func (m *Manager) resolveEABKey() (string, error) {
 	return string(raw), nil
 }
 
-// newProvider resolves the DNS credentials and builds the configured provider.
-// Credential values live only in the provider and are registered for redaction.
-func (m *Manager) newProvider(ctx context.Context) (dns.Provider, error) {
+// resolveDNSCredentials resolves the DNS secret references and registers every
+// value for redaction. It runs for an injected provider too: the manager must
+// scrub provider errors whether or not it built the provider itself.
+func (m *Manager) resolveDNSCredentials() (dns.Credentials, error) {
 	prefix := m.cfg.prefix() + ".dns.credentials"
 	creds := m.cfg.DNS.Credentials
 	var resolved dns.Credentials
@@ -235,9 +242,11 @@ func (m *Manager) newProvider(ctx context.Context) (dns.Provider, error) {
 	resolve(creds.SecretAccessKey, prefix+".secret_access_key", &resolved.SecretAccessKey)
 	resolve(creds.SessionToken, prefix+".session_token", &resolved.SessionToken)
 	resolved.UseAmbientCredentials = creds.UseAmbientCredentials
-	if err != nil {
-		return nil, err
-	}
+	return resolved, err
+}
+
+// newProvider builds the configured provider from the resolved credentials.
+func (m *Manager) newProvider(ctx context.Context, resolved dns.Credentials) (dns.Provider, error) {
 	return dns.New(ctx, m.cfg.DNS.Provider, resolved, dns.Options{
 		Zone:                   m.cfg.DNS.Zone,
 		TTL:                    m.cfg.DNS.TTL,
@@ -313,7 +322,9 @@ func (m *Manager) minVersion() uint16 {
 // serves the current certificate, reloads it from the shared store when another
 // replica renewed it, and rejects a name the certificate does not cover.
 func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	m.maybeReload()
+	// A handshake may notice a certificate another replica renewed, but it must
+	// not wait on the CA: the ARI refinement happens on the renewal loop only.
+	m.maybeReload(false)
 	m.mu.RLock()
 	cert := m.cert
 	m.mu.RUnlock()
@@ -353,7 +364,7 @@ func (m *Manager) CheckSNI(hello *tls.ClientHelloInfo) error {
 
 // configForClient lets a replica notice a renewal between handshakes.
 func (m *Manager) configForClient(*tls.ClientHelloInfo) (*tls.Config, error) {
-	m.maybeReload()
+	m.maybeReload(false)
 	return nil, nil
 }
 
@@ -371,10 +382,14 @@ func (m *Manager) ServesName(name string) bool {
 	return m.coversName(name)
 }
 
-// coversName reports whether the configured domains cover a server name.
+// coversName reports whether the served certificate covers a server name: the
+// configured domain list first, then, when no list is configured (a files
+// certificate without acme.domains), the certificate's own SANs.
 func (m *Manager) coversName(name string) bool {
 	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	configured := false
 	for _, domain := range m.cfg.Domains {
+		configured = true
 		if domain == name {
 			return true
 		}
@@ -385,7 +400,16 @@ func (m *Manager) coversName(name string) bool {
 			}
 		}
 	}
-	return false
+	if configured {
+		return false
+	}
+	m.mu.RLock()
+	cert := m.cert
+	m.mu.RUnlock()
+	if cert == nil || cert.Leaf == nil {
+		return false
+	}
+	return cert.Leaf.VerifyHostname(name) == nil
 }
 
 // EnsureCertificate loads the stored certificate or obtains the first one. A
@@ -406,7 +430,7 @@ func (m *Manager) EnsureCertificate(ctx context.Context) error {
 		// A usable certificate is served immediately. A renewal that is already
 		// due happens in the background on the first tick, so an unavailable CA
 		// delays a renewal instead of stopping a restart.
-		if err := m.install(record, "store"); err != nil {
+		if err := m.install(record, "store", true); err != nil {
 			return err
 		}
 		if m.due(now) {
@@ -438,12 +462,14 @@ func (m *Manager) logf(format string, args ...any) {
 }
 
 // redactError scrubs resolved credentials from an error before it leaves the
-// package (startup logs and the caller's error text).
+// package (startup logs and the caller's error text). The comparison is against
+// the redacted text, never against the original twice, so a credential that a
+// provider echoed back is always replaced.
 func (m *Manager) redactError(err error) error {
 	if err == nil {
 		return nil
 	}
-	text := err.Error()
+	text := m.secrets.redact(err.Error())
 	if text == err.Error() {
 		return err
 	}
@@ -472,7 +498,7 @@ func (m *Manager) Run(ctx context.Context) {
 }
 
 func (m *Manager) tick(ctx context.Context) {
-	m.maybeReload()
+	m.maybeReload(true)
 	now := m.opt.now()
 	m.reconcileManagedRecord(ctx)
 	m.refreshValidity()
@@ -536,7 +562,7 @@ func (m *Manager) issue(ctx context.Context) error {
 		}
 		m.mu.RUnlock()
 		if stored.NotAfter.After(currentExpiry) && m.opt.now().Before(stored.NotAfter) {
-			if err := m.install(stored, "store"); err != nil {
+			if err := m.install(stored, "store", true); err != nil {
 				return err
 			}
 		}
@@ -565,7 +591,7 @@ func (m *Manager) issue(ctx context.Context) error {
 	if err := m.store.SaveCertificate(*record); err != nil {
 		return err
 	}
-	if err := m.install(record, "issued"); err != nil {
+	if err := m.install(record, "issued", true); err != nil {
 		return err
 	}
 	m.logf("certificate for %s issued, valid until %s", strings.Join(m.cfg.Domains, ","), record.NotAfter.UTC().Format(time.RFC3339))
@@ -703,8 +729,9 @@ func (l *lazySolver) Cleanup(ctx context.Context, domain, value string) error {
 }
 
 // install parses a record, makes it the served certificate and schedules its
-// renewal.
-func (m *Manager) install(record *CertificateRecord, source string) error {
+// renewal. refineDeadline enables the CA renewal-information lookup; it is off
+// on the handshake path, which must never wait on the CA.
+func (m *Manager) install(record *CertificateRecord, source string, refineDeadline bool) error {
 	cert, err := tls.X509KeyPair(record.CertificatePEM, record.PrivateKeyPEM)
 	if err != nil {
 		return fmt.Errorf("tls: load certificate for %s: %w", strings.Join(record.Domains, ","), err)
@@ -719,8 +746,8 @@ func (m *Manager) install(record *CertificateRecord, source string) error {
 	}
 	now := m.opt.now()
 	deadline := renewalDeadline(leaf.NotBefore, leaf.NotAfter, m.cfg.Renewal, m.opt.roll)
-	if m.cfg.Renewal.ariEnabled() {
-		deadline = m.applyARI(deadline, leaf)
+	if refineDeadline && m.cfg.Renewal.ariEnabled() {
+		deadline = m.applyARIRefined(deadline, leaf)
 	}
 	m.mu.Lock()
 	m.cert = &cert
@@ -733,9 +760,17 @@ func (m *Manager) install(record *CertificateRecord, source string) error {
 	return nil
 }
 
+// applyARIRefined fetches the CA renewal information under a short bounded
+// context. It only runs from the startup/renewal paths, never a handshake.
+func (m *Manager) applyARIRefined(ratioDeadline time.Time, leaf *x509.Certificate) time.Time {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return m.applyARI(ctx, ratioDeadline, leaf)
+}
+
 // applyARI replaces the ratio deadline with a random point of the CA's
 // suggested renewal window. Every failure keeps the ratio deadline.
-func (m *Manager) applyARI(ratioDeadline time.Time, leaf *x509.Certificate) time.Time {
+func (m *Manager) applyARI(ctx context.Context, ratioDeadline time.Time, leaf *x509.Certificate) time.Time {
 	now := m.opt.now()
 	m.mu.RLock()
 	retryAt := m.ariRetryAt
@@ -743,7 +778,7 @@ func (m *Manager) applyARI(ratioDeadline time.Time, leaf *x509.Certificate) time
 	if !retryAt.IsZero() && now.Before(retryAt) {
 		return ratioDeadline
 	}
-	start, end, err := m.ari.window(context.Background(), normalizeDirectoryURL(m.cfg.DirectoryURL), leaf)
+	start, end, err := m.ari.window(ctx, normalizeDirectoryURL(m.cfg.DirectoryURL), leaf)
 	if err != nil {
 		m.metrics.add(metricARIFailures, m.metrics.baseLabels(), 1)
 		m.mu.Lock()
@@ -793,8 +828,9 @@ func (m *Manager) due(now time.Time) bool {
 	return renewalDueOrExpired(m.deadline, now)
 }
 
-// maybeReload picks up a certificate another replica wrote.
-func (m *Manager) maybeReload() {
+// maybeReload picks up a certificate another replica wrote. refineDeadline
+// enables the CA renewal-information lookup and is false on the handshake path.
+func (m *Manager) maybeReload(refineDeadline bool) {
 	if m.store == nil || !m.acmeEnabled() {
 		return
 	}
@@ -828,7 +864,7 @@ func (m *Manager) maybeReload() {
 		m.mu.Unlock()
 		return
 	}
-	if err := m.install(record, "store"); err != nil {
+	if err := m.install(record, "store", refineDeadline); err != nil {
 		m.logf("reload certificate: %s", err.Error())
 		return
 	}
