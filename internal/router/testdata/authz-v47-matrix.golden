@@ -1,0 +1,2266 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+{
+  "Permissions": [
+    "admin:auth:read",
+    "admin:callers:issue",
+    "admin:callers:list",
+    "admin:callers:revoke",
+    "admin:callers:rotate",
+    "admin:reports:drilldown",
+    "admin:reports:export",
+    "admin:reports:read",
+    "admin:security_reports:export",
+    "admin:security_reports:read",
+    "admin:training:export",
+    "admin:training:label",
+    "config:activate",
+    "config:force",
+    "config:read",
+    "config:write",
+    "metrics:read",
+    "shadow:write"
+  ],
+  "Rows": [
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/bedrock.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/usage-postgres.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001100000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "permission",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "object",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "public",
+      "Decisions": "000001110000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "basic-only",
+      "Decisions": "100000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "example-project/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "example-project/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "example-project/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "example-project/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "example-project/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:standard-dev",
+      "Domain": "example-project/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "example-project/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "example-project/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "example-project/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "example-project/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "example-project/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:coding-dev",
+      "Domain": "example-project/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "observability/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "observability/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000010"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "observability/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000010"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "observability/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000010"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "observability/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:metrics-admin-dev",
+      "Domain": "observability/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "compliance/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "compliance/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "compliance/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "compliance/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "compliance/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.example.yaml",
+      "Credential": "caller_token::caller:content-admin-dev",
+      "Domain": "compliance/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config.minimal.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "edge/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001100000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "edge/prod",
+      "Mode": "permission",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "edge/prod",
+      "Mode": "object",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "edge/prod",
+      "Mode": "public",
+      "Decisions": "000001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "edge/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "edge/prod",
+      "Mode": "basic-only",
+      "Decisions": "100000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "edge/demo",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "edge/demo",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "edge/demo",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "edge/demo",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "edge/demo",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo",
+      "Domain": "edge/demo",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "edge/demo",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "edge/demo",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "edge/demo",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "edge/demo",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "edge/demo",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/edge/config.template.yaml",
+      "Credential": "caller_token::caller:demo-budget",
+      "Domain": "edge/demo",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/base/configmap.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "local/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "local/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "local/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "local/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "local/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "Credential": "caller_token::caller:local-operator-local-dev",
+      "Domain": "local/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001100000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "permission",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "object",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "public",
+      "Decisions": "000001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "basic-only",
+      "Decisions": "100000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001100000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "permission",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "object",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "public",
+      "Decisions": "000001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "basic-only",
+      "Decisions": "100000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/amd-strix-halo-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "fixture-dc-project/fixture-dc-environment",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "fixture-dc-project/fixture-dc-environment",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "fixture-dc-project/fixture-dc-environment",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "fixture-dc-project/fixture-dc-environment",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "fixture-dc-project/fixture-dc-environment",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/dc.yaml",
+      "Credential": "caller_token::caller:fixture-dc-caller-id",
+      "Domain": "fixture-dc-project/fixture-dc-environment",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/hierarchy/config/edge.yaml",
+      "Credential": "caller_token::caller:fixture-edge-loopback-caller-id",
+      "Domain": "fixture-edge-project/fixture-edge-environment",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001100000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "permission",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "object",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "public",
+      "Decisions": "000001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "basic-only",
+      "Decisions": "100000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-datacenter/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000001100000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "permission",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "object",
+      "Decisions": "100001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "public",
+      "Decisions": "000001110000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "basic:admin:basic:admin",
+      "Domain": "example/prod",
+      "Mode": "basic-only",
+      "Decisions": "100000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../deploy/reference/nvidia-gb10-edge/config.yaml",
+      "Credential": "caller_token::caller:reference-demo",
+      "Domain": "reference/demo",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../docs/evaluation-reports/inspect/2026-10-27-issue-330/eval-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/case-studies/common/evidence/router-config-sanitized.yaml",
+      "Credential": "caller_token::caller:local-dev-example-project-dev",
+      "Domain": "example-project/dev",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/commerce-customer-runtime/config.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/external-routing-policy/config.openjev.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    }
+  ]
+}
