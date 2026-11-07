@@ -13,7 +13,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -69,7 +68,7 @@ func (m *AdminMux) Use(mw func(http.Handler) http.Handler) {
 // handler builds the admin listener handler: hardening → machine-only gate →
 // Use middleware → routes. Every response is JSON; the fallback is a JSON 404
 // so the plane never serves HTML (ACP-N06).
-func (m *AdminMux) handler(cfg *AdminPlaneConfig) http.Handler {
+func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) http.Handler {
 	if m == nil {
 		return http.NotFoundHandler()
 	}
@@ -80,10 +79,50 @@ func (m *AdminMux) handler(cfg *AdminPlaneConfig) http.Handler {
 	for i := len(middleware) - 1; i >= 0; i-- {
 		h = middleware[i](h)
 	}
+	if authenticate != nil {
+		h = adminAuthentication(authenticate)(h)
+	}
 	h = adminMachineOnlyGate(h)
 	h = adminProxyGate(cfg)(h)
 	h = adminHardening(cfg)(h)
 	return h
+}
+
+// adminAuthentication runs the #814 machine authentication chain and publishes
+// the authenticated principal with WithPrincipal, the only identity source the
+// admin port has. The health probes stay unauthenticated because they carry
+// state only (ACP-006); every other admin route requires an identity.
+func adminAuthentication(authenticate Authenticator) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && (r.URL.Path == "/healthz" || r.URL.Path == "/readyz") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			principal, err := authenticate.Authenticate(r.Context(), r)
+			if err != nil {
+				writeAdminAuthenticationProblem(w, r, err)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), principal)))
+		})
+	}
+}
+
+// writeAdminAuthenticationProblem renders #814's typed failures with their
+// stable problem codes and a generic challenge. No credential detail is echoed.
+func writeAdminAuthenticationProblem(w http.ResponseWriter, r *http.Request, err error) {
+	code := "invalid_credential"
+	switch {
+	case errors.Is(err, ErrNoCredential):
+		code = "authentication_required"
+	case errors.Is(err, ErrUnsupportedAuthentication):
+		code = "unsupported_authentication"
+	case errors.Is(err, ErrInvalidCredential):
+		code = "invalid_credential"
+	}
+	w.Header().Set("WWW-Authenticate", `Bearer realm="router-admin", error="invalid_token"`)
+	writeAdminPlaneProblem(w, r, http.StatusUnauthorized, code)
 }
 
 // writeAdminPlaneProblem renders a listener-level problem document. Codes are
@@ -359,87 +398,23 @@ type AdminClientCASource interface {
 	OnReload(func(*x509.CertPool))
 }
 
-// AdminClientCASnapshot is the listener's built-in AdminClientCASource. It
-// holds the immutable client-CA pool the admin TLS handshake verifies against;
-// Snapshot returns a pool that is never mutated after publication, so the
-// handshake always sees a consistent snapshot, and Store publishes a reload.
-type AdminClientCASnapshot struct {
-	pool  atomic.Pointer[x509.CertPool]
-	mu    sync.Mutex
-	hooks []func(*x509.CertPool)
-}
-
-// Snapshot returns the current immutable CA pool, or nil when no CA is
-// configured.
-func (s *AdminClientCASnapshot) Snapshot() *x509.CertPool {
-	if s == nil {
+func adminCASnapshot(source AdminClientCASource) *x509.CertPool {
+	if source == nil {
 		return nil
 	}
-	return s.pool.Load()
+	return source.Snapshot()
 }
 
-// OnReload registers a callback and immediately delivers the current snapshot.
-func (s *AdminClientCASnapshot) OnReload(hook func(*x509.CertPool)) {
-	if s == nil || hook == nil {
-		return
-	}
-	s.mu.Lock()
-	s.hooks = append(s.hooks, hook)
-	current := s.pool.Load()
-	s.mu.Unlock()
-	hook(current)
-}
+// adminFixedCASource is the handshake-side view of the installed source: it
+// holds the pool the source last published.
+type adminFixedCASource struct{ pool *x509.CertPool }
 
-// Store publishes a new immutable CA pool and notifies reload hooks.
-func (s *AdminClientCASnapshot) Store(pool *x509.CertPool) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.pool.Store(pool)
-	hooks := append([]func(*x509.CertPool){}, s.hooks...)
-	s.mu.Unlock()
-	for _, hook := range hooks {
-		hook(pool)
-	}
-}
+func (s *adminFixedCASource) Snapshot() *x509.CertPool { return s.pool }
 
-// LoadPEMFiles builds a fresh pool from PEM bundles and publishes it. An
-// unreadable or empty bundle is an error and leaves the previous snapshot in
-// place (last known good), matching the #814 reload contract.
-func (s *AdminClientCASnapshot) LoadPEMFiles(paths []string) error {
-	if s == nil {
-		return nil
+func (s *adminFixedCASource) OnReload(hook func(*x509.CertPool)) {
+	if hook != nil {
+		hook(s.pool)
 	}
-	pool, err := loadAdminCAPool(paths)
-	if err != nil {
-		return err
-	}
-	s.Store(pool)
-	return nil
-}
-
-func loadAdminCAPool(paths []string) (*x509.CertPool, error) {
-	pool := x509.NewCertPool()
-	added := 0
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read admin client CA bundle: %w", err)
-		}
-		if !pool.AppendCertsFromPEM(raw) {
-			return nil, fmt.Errorf("admin client CA bundle %q contains no valid certificates", path)
-		}
-		added++
-	}
-	if added == 0 {
-		return nil, fmt.Errorf("no admin client CA bundle configured")
-	}
-	return pool, nil
 }
 
 // AdminPeerCertificates returns the client certificate chain the admin TLS
@@ -458,12 +433,12 @@ func AdminPeerCertificates(r *http.Request) []*x509.Certificate {
 // serves and drains independently of the serving server; an accept-loop failure
 // is reported on Err and never stops inference.
 type AdminPlane struct {
-	cfg      AdminPlaneConfig
-	handler  http.Handler
-	clientCA *AdminClientCASnapshot
-	certMu   sync.Mutex
-	certSrc  AdminCertificateManager
-	tlsCfg   *tls.Config
+	cfg       AdminPlaneConfig
+	handler   http.Handler
+	clientCAS AdminClientCASource
+	certMu    sync.Mutex
+	certSrc   AdminCertificateManager
+	tlsCfg    *tls.Config
 
 	mu  sync.Mutex
 	srv *http.Server
@@ -483,10 +458,9 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 	}
 	local := AdminPlaneConfig(*cfg)
 	p := &AdminPlane{
-		cfg:      local,
-		handler:  handler,
-		clientCA: &AdminClientCASnapshot{},
-		err:      make(chan error, 1),
+		cfg:     local,
+		handler: handler,
+		err:     make(chan error, 1),
 	}
 	caPaths := make([]string, 0, 1+len(local.Authentication.MTLS.CAFiles))
 	if path := strings.TrimSpace(local.TLS.ClientCAFile); path != "" {
@@ -495,9 +469,13 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 	caPaths = append(caPaths, local.Authentication.MTLS.CAFiles...)
 	switch strings.ToLower(strings.TrimSpace(local.TLS.ClientAuth)) {
 	case adminClientAuthOptional, adminClientAuthRequire:
-		if err := p.clientCA.LoadPEMFiles(caPaths); err != nil {
+		// #828's store owns the trust anchors and reloads them; an unreadable
+		// or empty bundle fails startup instead of trusting nothing silently.
+		store, err := NewAdminClientCAStore(caPaths)
+		if err != nil {
 			return nil, err
 		}
+		p.clientCAS = store
 	}
 	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeRouter) {
 		tlsCfg, err := p.routerTLSConfig()
@@ -514,13 +492,13 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 	return p, nil
 }
 
-// ClientCASnapshot returns the shared CA snapshot so #814 can reload client
-// trust without restarting the listener.
-func (p *AdminPlane) ClientCASnapshot() *AdminClientCASnapshot {
+// ClientCASource returns the #828 client-CA source the handshake verifies
+// against, so #814 can reload client trust without restarting the listener.
+func (p *AdminPlane) ClientCASource() AdminClientCASource {
 	if p == nil {
 		return nil
 	}
-	return p.clientCA
+	return p.clientCAS
 }
 
 // SetCertificateSource installs #810's certificate manager. It must be called
@@ -547,7 +525,7 @@ func (p *AdminPlane) SetClientCASource(src AdminClientCASource) {
 		return
 	}
 	src.OnReload(func(pool *x509.CertPool) {
-		p.clientCA.Store(pool)
+		p.clientCAS = &adminFixedCASource{pool: pool}
 	})
 }
 
@@ -575,7 +553,7 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: minVersion,
 		ClientAuth: clientAuth,
-		ClientCAs:  p.clientCA.Snapshot(),
+		ClientCAs:  adminCASnapshot(p.clientCAS),
 		NextProtos: []string{"http/1.1"},
 	}
 	if !useACME {
@@ -600,7 +578,7 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 			current.Certificates = nil
 			current.GetCertificate = source.GetCertificate
 		}
-		current.ClientCAs = p.clientCA.Snapshot()
+		current.ClientCAs = adminCASnapshot(p.clientCAS)
 		return current, nil
 	}
 	return cfg, nil
@@ -713,7 +691,6 @@ func (s *Service) initAdminPlane() {
 		return
 	}
 	s.adminMux = newAdminMux()
-	s.adminClientCA = &AdminClientCASnapshot{}
 	s.adminMux.HandleFunc("GET /healthz", s.handleAdminPlaneHealth)
 	s.adminMux.HandleFunc("GET /readyz", s.handleAdminPlaneHealth)
 	// Nothing else is registered here yet: /admin/v1 mounts through
@@ -740,7 +717,7 @@ func (s *Service) AdminHandler() http.Handler {
 	if s == nil || !s.adminPlaneEnabled() {
 		return nil
 	}
-	return s.adminMux.handler(&s.cfg.Admin)
+	return s.adminMux.handler(&s.cfg.Admin, s.AdminAuthenticator())
 }
 
 // RegisterAdminRoutes mounts routes on the admin listener. It is the hook
@@ -753,6 +730,29 @@ func (s *Service) RegisterAdminRoutes(register func(*AdminMux)) {
 	register(s.adminMux)
 }
 
+// SetAdminAuthenticator installs #814's machine authentication chain. The
+// listener runs it before dispatch and publishes the resulting principal with
+// WithPrincipal; no other identity source exists on the admin port. Install it
+// before the plane builds its handler (the binary does this at startup).
+func (s *Service) SetAdminAuthenticator(authenticate Authenticator) {
+	if s == nil || authenticate == nil {
+		return
+	}
+	s.adminAuthMu.Lock()
+	s.adminAuthenticate = authenticate
+	s.adminAuthMu.Unlock()
+}
+
+// AdminAuthenticator returns the installed chain, or nil.
+func (s *Service) AdminAuthenticator() Authenticator {
+	if s == nil {
+		return nil
+	}
+	s.adminAuthMu.Lock()
+	defer s.adminAuthMu.Unlock()
+	return s.adminAuthenticate
+}
+
 // AdminListenAddr returns the configured admin listen address, or "" when the
 // plane is disabled.
 func (s *Service) AdminListenAddr() string {
@@ -760,14 +760,6 @@ func (s *Service) AdminListenAddr() string {
 		return ""
 	}
 	return strings.TrimSpace(s.cfg.Admin.Listen)
-}
-
-// AdminClientCASnapshot returns the shared client-CA snapshot #814 reloads.
-func (s *Service) AdminClientCASnapshot() *AdminClientCASnapshot {
-	if s == nil {
-		return nil
-	}
-	return s.adminClientCA
 }
 
 // SetAdminClientCASource installs #814's client-CA source for the admin

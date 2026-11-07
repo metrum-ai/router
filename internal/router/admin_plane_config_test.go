@@ -50,7 +50,7 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			},
 		},
 		{
-			name:    "acme without an acme block",
+			name: "acme without an acme block",
 			mutate: func(cfg *AdminPlaneConfig) {
 				cfg.TLS.Mode = adminTLSModeRouter
 				cfg.TLS.CertificateSource = adminCertificateSourceACME
@@ -79,7 +79,7 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "requires admin.tls.certificate_source acme",
 		},
 		{
-			name:    "unknown certificate source",
+			name: "unknown certificate source",
 			mutate: func(cfg *AdminPlaneConfig) {
 				cfg.TLS.Mode = adminTLSModeRouter
 				cfg.TLS.CertFile = "server.crt"
@@ -89,7 +89,7 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "must be files or acme",
 		},
 		{
-			name:    "acme without router TLS mode",
+			name: "acme without router TLS mode",
 			mutate: func(cfg *AdminPlaneConfig) {
 				cfg.TLS.CertificateSource = adminCertificateSourceACME
 				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
