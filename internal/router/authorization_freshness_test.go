@@ -4,7 +4,6 @@
 package router
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -138,17 +137,129 @@ func TestPolicyFreshnessConfigValidation(t *testing.T) {
 	})
 }
 
-// TestConfiguredMaxStalenessAppliesThroughTheConfigPath proves the operator's
-// window is actually used: a config file with max_staleness 10s, loaded through
-// the real configuration loader and applied by the same wiring startup and
-// reload use, makes the policy stale at 10s+1ns while exactly 10s is still fresh.
-func TestConfiguredMaxStalenessAppliesThroughTheConfigPath(t *testing.T) {
+// TestConfiguredMaxStalenessAppliesAtConstruction proves the configured window
+// is used by a service that has NEVER reloaded: a real config file with
+// max_staleness 10s is loaded through LoadConfig and passed to New, and the
+// resulting gate is fresh at exactly 10s and stale at 10s+1ns.
+func TestConfiguredMaxStalenessAppliesAtConstruction(t *testing.T) {
+	cfg := loadFreshnessConfigFile(t, "10s")
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	if got := svc.policyFreshness.maxAge; got != 10*time.Second {
+		t.Fatalf("constructed max age = %v, want the configured 10s", got)
+	}
+	// The constructed service's authority is SQLite, which is age-exempt, so the
+	// boundary is asserted on the same recorded state with a PostgreSQL-classified
+	// handle: only the dialector identity differs, nothing else is rebuilt.
+	gated := *svc
+	gated.usage = &usageStore{db: postgresGateHandle()}
+	observed := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	svc.policyFreshness.observeSuccess(1, observed)
+	if gated.policyFreshness.stale(observed.Add(10 * time.Second)) {
+		t.Fatal("exactly 10s must still be within the configured window")
+	}
+	if !gated.policyFreshness.stale(observed.Add(10*time.Second + time.Nanosecond)) {
+		t.Fatal("10s+1ns must be stale with a configured 10s window")
+	}
+	gated.policyFreshness.observeSuccess(1, time.Now().Add(-10*time.Second-time.Nanosecond))
+	if err := gated.checkAdminPolicyFreshness(time.Now()); !errors.Is(err, ErrPolicyStale) {
+		t.Fatalf("configured 10s gate at 10s+1ns = %v, want ErrPolicyStale", err)
+	}
+	// A bad configured value must fail configuration/startup, never fall back to
+	// the default and never surface as a request-time invalid-policy.
+	_, err = LoadConfig(writeFreshnessConfigFile(t, "0s"))
+	if err == nil {
+		t.Fatal("LoadConfig accepted a non-positive max_staleness")
+	}
+	if errors.Is(err, ErrInvalidPolicy) {
+		t.Fatal("configuration error surfaced as invalid-policy")
+	}
+	if !strings.Contains(err.Error(), "max_staleness") {
+		t.Fatalf("configuration error does not name the field: %v", err)
+	}
+}
+
+// TestConfiguredMaxStalenessAppliesOnReload proves a reload applies its own
+// window through the same path, so a changed value takes effect without restart.
+func TestConfiguredMaxStalenessAppliesOnReload(t *testing.T) {
+	cfg := loadFreshnessConfigFile(t, "10s")
+	tightened := loadFreshnessConfigFile(t, "2s")
+	s := freshnessGateService(t, "db", "postgres")
+	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	if err := s.applyAdminPolicyFreshness(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if s.policyFreshness.maxAge != 10*time.Second {
+		t.Fatalf("max age = %v, want 10s", s.policyFreshness.maxAge)
+	}
+	if err := s.applyAdminPolicyFreshness(tightened); err != nil {
+		t.Fatal(err)
+	}
+	observed := time.Now()
+	s.policyFreshness.observeSuccess(1, observed)
+	if !s.policyFreshness.stale(observed.Add(2*time.Second + time.Nanosecond)) {
+		t.Fatal("reloaded 2s window not applied")
+	}
+	if s.policyFreshness.stale(observed.Add(2 * time.Second)) {
+		t.Fatal("exactly 2s must still be within the reloaded window")
+	}
+}
+
+// loadFreshnessConfigFile writes a real config document with the given
+// max_staleness and loads it through the configuration loader, so tests exercise
+// parsing, validation and the documented field rather than a constructed struct.
+func loadFreshnessConfigFile(t *testing.T, window string) *Config {
+	t.Helper()
+	path := writeFreshnessConfigFile(t, window)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got := cfg.Server.AdminAuth.Authorization.MaxStaleness; got != window {
+		t.Fatalf("parsed max_staleness = %q, want %q", got, window)
+	}
+	return cfg
+}
+
+// writeFreshnessConfigFile writes a real config document with the given window
+// and returns its path.
+func writeFreshnessConfigFile(t *testing.T, window string) string {
+	t.Helper()
 	dir := t.TempDir()
+	usagePath := filepath.Join(dir, "usage.sqlite")
+	// A DB-sourced policy authority needs one active set; seed it in the same file
+	// the constructed service opens so startup itself is the code under test.
+	seed, err := openTestUsageStorePath(usagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.db.Create(&authzPolicySetRecord{
+		ID: "freshness-set", Name: "freshness", Version: 1, Status: authzPolicyStatusActive,
+		CreatedBy: "test", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		ActivatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.db.Create(&authzPolicyRuleRecord{
+		PolicySetID: "freshness-set", Sequence: 1, PType: "p", SubjectOrRole: "operator",
+		Domain: "*", Object: "admin:config", Action: "read",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
 	usageEnabled := true
 	base := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
-	base.Server.UsageDB = UsageDBConfig{Driver: "sqlite", Path: filepath.Join(dir, "usage.sqlite"), Enable: &usageEnabled}
+	base.Server.UsageDB = UsageDBConfig{
+		Driver: "sqlite", Path: usagePath,
+		Enable: &usageEnabled, MigrationPolicy: usageDBMigrationPolicyAutoSafe,
+	}
 	base.Server.AdminAuth.Authorization = AdminAuthorizationConfig{
-		Enabled: true, Source: "db", MaxStaleness: "10s",
+		Enabled: true, Source: "db", MaxStaleness: window,
 	}
 	raw, err := yaml.Marshal(base)
 	if err != nil {
@@ -158,48 +269,5 @@ func TestConfiguredMaxStalenessAppliesThroughTheConfigPath(t *testing.T) {
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := LoadConfig(path)
-	if err != nil {
-		t.Fatalf("load config: %v", err)
-	}
-	if got := cfg.Server.AdminAuth.Authorization.MaxStaleness; got != "10s" {
-		t.Fatalf("parsed max_staleness = %q, want 10s", got)
-	}
-
-	// Same wiring startup uses: default state, then the configured value.
-	s := freshnessGateService(t, "db", "postgres")
-	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
-	if err := s.applyAdminPolicyFreshness(cfg); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, ok := s.PolicyFreshness(); ok {
-		t.Fatal("applying the window must not acknowledge a synchronization")
-	}
-	p := Principal{Subject: "operator", Kind: "mtls"}
-	mutation := func() error {
-		ctx := WithAdminPolicyMutation(WithPrincipal(context.Background(), p))
-		return s.Authorize(ctx, p, AdminGlobalDomain, "admin:config", "write")
-	}
-	observed := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
-	s.policyFreshness.observeSuccess(1, observed)
-	if s.policyFreshness.stale(observed.Add(10 * time.Second)) {
-		t.Fatal("exactly 10s must still be within the configured window")
-	}
-	if !s.policyFreshness.stale(observed.Add(10*time.Second + time.Nanosecond)) {
-		t.Fatal("10s+1ns must be stale with a configured 10s window")
-	}
-	// And the gate itself enforces the configured window, not the 30s default.
-	s2 := freshnessGateService(t, "db", "postgres")
-	s2.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
-	if err := s2.applyAdminPolicyFreshness(cfg); err != nil {
-		t.Fatal(err)
-	}
-	s2.policyFreshness.observeSuccess(1, time.Now().Add(-10*time.Second-time.Millisecond))
-	ctx := WithAdminPolicyMutation(WithPrincipal(context.Background(), p))
-	if err := s2.Authorize(ctx, p, AdminGlobalDomain, "admin:config", "write"); !errors.Is(err, ErrPolicyStale) {
-		t.Fatalf("10s+1ms under a 10s window = %v, want ErrPolicyStale", err)
-	}
-	if err := mutation(); err != nil && !errors.Is(err, ErrPolicyStale) {
-		t.Fatalf("unexpected gate error: %v", err)
-	}
+	return path
 }

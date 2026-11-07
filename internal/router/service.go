@@ -368,6 +368,16 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	s.configSnapshot.Store(cfg)
 	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	// The operator's configured window applies at CONSTRUCTION, before the first
+	// control-plane reload: a file-config deployment, or any process that has not
+	// reloaded yet, must not silently run with the default.
+	if err := s.applyAdminPolicyFreshness(cfg); err != nil {
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		bridgeSessions.Close()
+		return nil, fmt.Errorf("admin policy freshness: %w", err)
+	}
 	if err := s.initConfigControlPlane(); err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
