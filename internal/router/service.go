@@ -100,8 +100,10 @@ type Service struct {
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
-	// adminAuditJanitorStop stops the retention purge jobs at shutdown.
+	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
+	// adminAuditJanitorDone reports when each janitor goroutine has exited.
 	adminAuditJanitorStop chan struct{}
+	adminAuditJanitorDone []<-chan struct{}
 	configReloadStop      func()
 	configNotifyStop      func()
 	configInstanceID      string

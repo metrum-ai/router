@@ -290,10 +290,10 @@ func (s *Service) StartAdminAuditJanitors() chan struct{} {
 	}
 	retentionDays := s.adminAPISettings().auditRetentionDays
 	if s.configControlPlane != nil {
-		StartAdminAuditJanitor(s.configControlPlane, time.Hour, retentionDays, stop)
+		s.adminAuditJanitorDone = append(s.adminAuditJanitorDone, StartAdminAuditJanitor(s.configControlPlane, time.Hour, retentionDays, stop))
 	}
 	if s.usage != nil && s.usage.db != nil {
-		StartAdminAuditJanitor(s.usage.db, time.Hour, retentionDays, stop)
+		s.adminAuditJanitorDone = append(s.adminAuditJanitorDone, StartAdminAuditJanitor(s.usage.db, time.Hour, retentionDays, stop))
 	}
 	s.adminAuditJanitorStop = stop
 	return stop
@@ -302,9 +302,11 @@ func (s *Service) StartAdminAuditJanitors() chan struct{} {
 // StartAdminAuditJanitor starts the retention purge for the admin audit tables in db. It runs
 // once immediately and then on the given interval, deleting in bounded batches so it never
 // issues one unbounded delete. The job stops when stop is closed.
-func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}) {
+func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}) <-chan struct{} {
+	done := make(chan struct{})
 	if db == nil {
-		return
+		close(done)
+		return done
 	}
 	if interval <= 0 {
 		interval = time.Hour
@@ -322,6 +324,7 @@ func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays i
 		}
 	}
 	go func() {
+		defer close(done)
 		purge()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -334,4 +337,5 @@ func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays i
 			}
 		}
 	}()
+	return done
 }
