@@ -218,10 +218,20 @@ func (c *AdminPlaneConfig) legacyRoutesEnabled() bool {
 	return *c.LegacyRoutesOnServingPort
 }
 
+// adminMetricsServed reports whether the admin listener serves /metrics. The
+// admin-side handler (admin identity with metrics read) is not part of this
+// release yet, so /metrics must stay on the serving port until it lands: moving
+// it earlier would silently break monitoring.
+const adminMetricsHandlerAvailable = false
+
 // metricsOnServingPort reports whether /metrics stays on the serving port with
-// v4.7 caller-token authorization (ACP-007).
+// v4.7 caller-token authorization (ACP-007). It stays until the admin listener
+// can serve it.
 func (c *AdminPlaneConfig) metricsOnServingPort() bool {
 	if c == nil {
+		return true
+	}
+	if !adminMetricsHandlerAvailable {
 		return true
 	}
 	if c.Metrics.OnServingPort != nil {
@@ -285,10 +295,12 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 	if cfg == nil {
 		return nil
 	}
+	if cfg.Metrics.OnServingPort != nil && !*cfg.Metrics.OnServingPort {
+		// Never accept "moved" while the admin listener cannot serve /metrics:
+		// that combination would leave monitoring with no exposition at all.
+		return fmt.Errorf("admin.metrics.on_serving_port: false is not available yet; the admin listener does not serve /metrics in this release, so /metrics must stay on the serving port")
+	}
 	if !cfg.Enabled {
-		if cfg.Metrics.OnServingPort != nil && !*cfg.Metrics.OnServingPort {
-			return fmt.Errorf("admin.metrics.on_serving_port: false requires admin.enabled: true (metrics would otherwise be served nowhere)")
-		}
 		if adminPlaneBlockLooksConfigured(cfg) {
 			log.Printf("WARNING: admin block is configured but admin.enabled is false; the admin listener is not started and /metrics stays on the serving port")
 		}
@@ -345,8 +357,8 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		return fmt.Errorf("admin.tls.mode must be off, router or proxy")
 	}
 	for _, cidr := range cfg.TLS.TrustedProxyCIDRs {
-		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
-			return fmt.Errorf("admin.tls.trusted_proxy_cidrs contains an invalid CIDR")
+		if err := validateAdminTrustedProxyCIDR(cidr); err != nil {
+			return err
 		}
 	}
 	switch strings.TrimSpace(cfg.TLS.MinVersion) {
@@ -429,6 +441,27 @@ func validateAdminLimits(limits AdminLimitsConfig) error {
 		if limit.value > 24*60*60*1000 {
 			return fmt.Errorf("admin.limits.%s cannot exceed 24 hours", limit.name)
 		}
+	}
+	return nil
+}
+
+// validateAdminTrustedProxyCIDR rejects a proxy allowlist entry that trusts too
+// much: a default route or a prefix broader than a site allocation would let
+// almost any peer claim to be the TLS-terminating proxy.
+func validateAdminTrustedProxyCIDR(raw string) error {
+	_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs contains an invalid CIDR")
+	}
+	ones, bits := network.Mask.Size()
+	if strings.TrimSpace(raw) == "0.0.0.0/0" || strings.TrimSpace(raw) == "::/0" {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs must not trust every peer (0.0.0.0/0 or ::/0)")
+	}
+	if bits == 32 && ones < 8 {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /8; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
+	}
+	if bits == 128 && ones < 32 {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /32; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
 	}
 	return nil
 }

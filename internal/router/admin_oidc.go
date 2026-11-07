@@ -29,6 +29,7 @@ const (
 )
 
 type adminAuthSubject struct {
+	authContext  context.Context
 	credentialID string
 	subject      string
 	domain       string
@@ -225,7 +226,12 @@ func (s *Service) handleAdminAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, safeAdminSubjectResponse(subject))
 }
 
-func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
+func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (result adminAuthSubject, authenticated bool) {
+	defer func() {
+		if authenticated {
+			result.authContext = s.PinAuthorization(r.Context())
+		}
+	}()
 	s.setAdminAuthHeaders(w)
 	if s == nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"type": "unauthorized", "message": "unauthorized"}})

@@ -98,6 +98,11 @@ Every admin response carries `Cache-Control: no-store`, `X-Content-Type-Options:
 `limits.max_body_bytes` are refused with `413`. Requests carrying a cookie, HTTP Basic or any
 non-Bearer authorization scheme are refused with `401` before any handler runs.
 
+Two refusals happen below the router, in the HTTP server itself, and therefore carry a plain-text
+body rather than a problem document: `431` when the request header block exceeds
+`limits.max_header_bytes`, and `400` for a malformed request line or header block. Treat both as
+transport-level rejections; no handler, credential check or authorization decision runs for them.
+
 ## Lifecycle
 
 The admin listener starts after the serving listener and drains independently:
