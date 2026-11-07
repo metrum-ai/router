@@ -194,8 +194,64 @@ func validateListenerTLS(cfg ListenerTLSConfig, listener, errorPrefix string, al
 		}
 		return nil
 	}
-	converted := cfg.managerConfig(listener, errorPrefix).Normalize()
-	return converted.Validate()
+	// The TLS floor applies to every certificate source, so it is checked here
+	// rather than inside the ACME sub-block's validation.
+	switch strings.TrimSpace(cfg.MinVersion) {
+	case "", "1.2", "1.3":
+	default:
+		return fmt.Errorf("%s.min_version must be 1.2 or 1.3", errorPrefix)
+	}
+	if err := cfg.validateDurations(errorPrefix); err != nil {
+		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.CertificateSource)) {
+	case tlsacme.SourceFiles:
+		if strings.TrimSpace(cfg.CertFile) == "" || strings.TrimSpace(cfg.KeyFile) == "" {
+			return fmt.Errorf("%s: cert_file and key_file are required when certificate_source is files", errorPrefix)
+		}
+		// acme.domains is the only acme key a files certificate uses: it lists
+		// the names the certificate must cover. Everything else belongs to the
+		// ACME source.
+		if cfg.ACME.configuredBeyondDomains() {
+			return fmt.Errorf("%s: only acme.domains may be set when certificate_source is files", errorPrefix)
+		}
+		return nil
+	case tlsacme.SourceACME:
+		// The ACME sub-block names its own keys: errors say server.tls.acme...
+		// rather than server.tls..., because that is where the key lives.
+		converted := cfg.managerConfig(listener, errorPrefix+".acme").Normalize()
+		return converted.Validate()
+	default:
+		return fmt.Errorf("%s: certificate_source must be files or acme", errorPrefix)
+	}
+}
+
+// validateDurations rejects negative or absurd duration values before they are
+// converted to time.Duration, where a non-positive value would silently become
+// the default and a very large one could overflow.
+func (c ListenerTLSConfig) validateDurations(errorPrefix string) error {
+	const maxSeconds = 366 * 24 * 60 * 60
+	fields := []struct {
+		key   string
+		value int
+	}{
+		{"acme.startup_timeout_seconds", c.ACME.StartupTimeoutSeconds},
+		{"acme.reload_interval_seconds", c.ACME.ReloadIntervalSeconds},
+		{"acme.renewal.jitter_seconds", c.ACME.Renewal.JitterSeconds},
+		{"acme.renewal.retry_max_seconds", c.ACME.Renewal.RetryMaxSeconds},
+		{"acme.dns.ttl_seconds", c.ACME.DNS.TTLSeconds},
+		{"acme.dns.propagation_timeout_seconds", c.ACME.DNS.PropagationTimeoutSecs},
+		{"acme.dns.record.ttl_seconds", c.ACME.DNS.Record.TTLSeconds},
+	}
+	for _, field := range fields {
+		if field.value < 0 {
+			return fmt.Errorf("%s.%s cannot be negative", errorPrefix, field.key)
+		}
+		if field.value > maxSeconds {
+			return fmt.Errorf("%s.%s must be at most %d seconds", errorPrefix, field.key, maxSeconds)
+		}
+	}
+	return nil
 }
 
 // NewListenerTLSManager builds a listener's TLS manager, or nil when the
@@ -267,6 +323,13 @@ func (c ListenerTLSConfig) managerConfig(listener, errorPrefix string) tlsacme.C
 			},
 		},
 	}
+}
+
+// configuredBeyondDomains reports whether an acme key other than domains is set.
+func (c TLSACMEServerConfig) configuredBeyondDomains() bool {
+	withoutDomains := c
+	withoutDomains.Domains = nil
+	return withoutDomains.configured()
 }
 
 // configured reports whether any acme key is set, so a stray acme block with
