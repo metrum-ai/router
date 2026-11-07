@@ -22,7 +22,8 @@ import (
 // is used for independent validity/chain/clientAuth revalidation. The leaf must
 // explicitly contain clientAuth EKU and must not contain anyExtendedKeyUsage.
 // Forwarded
-// certificate headers are never read. Pass the same root source as the listener.
+// certificate headers are never read. Pass the same root source as the listener:
+// immutable pool snapshots must be stable until a new reload publication.
 func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, currentRoots func() *x509.CertPool, thumbprint string) bool {
 	// Clear any earlier attempt within the same mechanism; failed possession
 	// must never leave a successful factor behind.
@@ -57,7 +58,9 @@ func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, cu
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
 		return false
 	}
-	if !adminLeafExplicitClientAuth(leaf) || ctx.Err() != nil {
+	// Reject a publication during verification before recording possession.
+	// A native connection's old VerifiedChains cannot pin removed trust roots.
+	if !adminLeafExplicitClientAuth(leaf) || currentRoots() != roots || ctx.Err() != nil {
 		return false
 	}
 	// This is proof of possession, not certificate-to-subject mapping. Evidence

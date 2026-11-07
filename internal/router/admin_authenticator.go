@@ -106,7 +106,10 @@ type authenticatorChain struct{ mechanisms []Authenticator }
 // mechanisms must validate the certificate/proof themselves. A presented TLS
 // certificate also requires a successful mtls/certificate-only emergency
 // validator OR typed RFC 8705 possession evidence from the successful token
-// mechanism. Possession evidence never requires an additional SAN identity.
+// mechanism. After typed token-bound possession succeeds, only the concrete
+// pure mTLS identity mappers are redundant and skipped. Other validators,
+// especially emergency activation/Use acknowledgements, are never skipped.
+// Possession evidence never requires an additional SAN identity.
 // Register the token mechanism first when its identity
 // should win over the certificate identity. Validators must return their actual
 // credential kind; this is how the chain checks credential coverage.
@@ -134,9 +137,13 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 	dpopPresented := len(authorizationFields) > 0 && strings.EqualFold(authorizationFields[0], "DPoP")
 	certificatePresented := r.TLS != nil && len(r.TLS.PeerCertificates) > 0
 	certificateValidated, authorizationValidated := false, false
+	certificateBoundToToken := false
 	for _, mechanism := range c.mechanisms {
 		if ctx.Err() != nil || mechanism == nil {
 			return Principal{}, ErrInvalidCredential
+		}
+		if certificateBoundToToken && adminPureCertificateIdentity(mechanism) {
+			continue
 		}
 		stepCtx, certificateCoverage := newAdminCertificateCoverageContext(ctx)
 		p, err := mechanism.Authenticate(stepCtx, r)
@@ -153,6 +160,7 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 		}
 		if certificateCoverage.consume(p, r) {
 			certificateValidated = true
+			certificateBoundToToken = true
 		}
 		switch p.Kind {
 		case "mtls":
