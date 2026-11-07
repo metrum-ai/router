@@ -205,6 +205,18 @@ func StartConfigRevisionPoller(ctx context.Context, db *gorm.DB, runtimeScope st
 	return cancel, nil
 }
 
+type revisionNotificationConnectionCleanup interface {
+	Close(context.Context) error
+	CleanupDone() chan struct{}
+}
+
+func finishRevisionNotificationConnection(conn revisionNotificationConnectionCleanup) {
+	_ = conn.Close(context.Background())
+	// A receive failure may have marked PgConn closed while asynchronous
+	// cancellation/socket cleanup is still running. Close then returns early.
+	<-conn.CleanupDone()
+}
+
 // StartConfigRevisionNotifier attempts to LISTEN on the router_config channel
 // on a dedicated PostgreSQL connection. On SQLite the call returns a no-op
 // stop function and nil error so callers can use one startup path regardless
@@ -218,6 +230,10 @@ func StartConfigRevisionPoller(ctx context.Context, db *gorm.DB, runtimeScope st
 // after LISTEN succeeded, the goroutine logs and exits: replicas then
 // converge through the revision poller, which remains the documented
 // fallback (#411).
+//
+// Stop cancels notification I/O and waits for the listener, any active reload
+// callback, and connection cleanup. Reload callbacks must terminate during
+// shutdown and must not call Stop themselves.
 func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope string, reload func()) (func(), error) {
 	if db == nil {
 		return nil, errors.New("config control-plane database is required")
@@ -272,7 +288,12 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 		return nil, fmt.Errorf("postgres config notifier connect: %w", err)
 	}
 
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
+		// PgConn is single-owner: cancellation wakes the blocking receive;
+		// only this goroutine closes it after all reads/callbacks return.
+		defer finishRevisionNotificationConnection(conn)
 		if _, err := conn.Exec(listenCtx, "LISTEN "+configControlPlaneNotifyChannel).ReadAll(); err != nil {
 			if listenCtx.Err() == nil {
 				log.Printf("config control-plane notifier LISTEN failed for scope %q; poller remains the fallback", runtimeScope)
@@ -295,6 +316,6 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 
 	return func() {
 		cancel()
-		_ = conn.Close(context.Background())
+		<-done
 	}, nil
 }
