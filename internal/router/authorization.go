@@ -128,6 +128,9 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			}
 		}
 	}
+	if err := addEmergencyAuthorizationGrants(enforcer); err != nil {
+		return nil, err
+	}
 	activePolicySet := ""
 	if cfg.Enabled {
 		policyLines, policySetID, err := authzPolicyLines(cfg, usage)
@@ -166,7 +169,11 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 	if err := addCompatibilityGrants(enforcer, legacy); err != nil {
 		return nil, err
 	}
-	return &authorizer{enforcer: enforcer, activePolicySet: activePolicySet}, nil
+	snapshot := &authorizer{enforcer: enforcer, activePolicySet: activePolicySet}
+	if err := addGlobalCompatibilityGrants(snapshot, callers, legacy); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func authzPolicyLines(cfg AdminAuthorizationConfig, usage *usageStore) ([]string, string, error) {
@@ -238,7 +245,7 @@ func validateCasbinPolicyFields(fields []string, label string) error {
 		return fmt.Errorf("%s must start with p or g", label)
 	}
 	for _, field := range fields {
-		if strings.HasPrefix(field, compatibilitySubjectPrefix) {
+		if strings.HasPrefix(field, internalAuthorizationSubjectPrefix) {
 			return fmt.Errorf("%s uses a reserved identity", label)
 		}
 		if strings.TrimSpace(field) == "" {
@@ -342,11 +349,6 @@ func (a *authorizer) enforce(subject authorizationSubject, object, action string
 	}
 	ok, err := a.enforcer.Enforce(subject.subject, subject.domain, object, action)
 	return err == nil && ok
-}
-
-func (a *authorizer) enforceInDomain(subject authorizationSubject, domain, object, action string) bool {
-	subject.domain = strings.TrimSpace(domain)
-	return a.enforce(subject, object, action)
 }
 
 func authzSubjectForBasic(subject adminBasicRuntime) authorizationSubject {
