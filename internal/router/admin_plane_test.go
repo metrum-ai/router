@@ -41,9 +41,29 @@ type adminTestFixture struct {
 	adminURL string
 }
 
+// testAdminPrincipal is the identity the default test chain returns.
+var testAdminPrincipal = Principal{Subject: "adminkey:test", Kind: "adminkey", CredentialID: "test", Issuer: "test"}
+
+// allowAllAdminAuthenticator authenticates every request as the test principal.
+// Listener tests that are not about authentication install it so routes are
+// reachable; the fail-closed path has its own test with no chain.
+type allowAllAdminAuthenticator struct{ principal Principal }
+
+func (a allowAllAdminAuthenticator) Authenticate(context.Context, *http.Request) (Principal, error) {
+	return a.principal, nil
+}
+
 // newAdminTestFixture builds a router with the admin plane enabled on an
-// ephemeral loopback port and starts both listeners.
+// ephemeral loopback port and starts both listeners with the default test
+// chain installed.
 func newAdminTestFixture(t *testing.T, mutate func(*Config)) *adminTestFixture {
+	t.Helper()
+	return newAdminTestFixtureWithAuth(t, allowAllAdminAuthenticator{principal: testAdminPrincipal}, mutate)
+}
+
+// newAdminTestFixtureWithAuth builds the fixture with an explicit chain; a nil
+// chain exercises the fail-closed path.
+func newAdminTestFixtureWithAuth(t *testing.T, authenticate Authenticator, mutate func(*Config)) *adminTestFixture {
 	t.Helper()
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Admin.Enabled = true
@@ -56,6 +76,8 @@ func newAdminTestFixture(t *testing.T, mutate func(*Config)) *adminTestFixture {
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(svc.Close)
+	// The chain is installed before the plane builds its handler.
+	svc.SetAdminAuthenticator(authenticate)
 	fixture := &adminTestFixture{cfg: cfg, svc: svc}
 	fixture.serving = httptest.NewServer(svc.Handler())
 	t.Cleanup(fixture.serving.Close)
@@ -397,6 +419,7 @@ func TestAdminPlaintextNonLoopbackRefusedAtStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() with the plaintext override: %v", err)
 	}
+	svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
 	t.Cleanup(svc.Close)
 	plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler())
 	if err != nil {
@@ -421,6 +444,7 @@ func TestAdminProxyGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
 	t.Cleanup(svc.Close)
 	handler := svc.AdminHandler()
 	cases := []struct {
@@ -488,6 +512,7 @@ func TestAdminMTLSHandshake(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
+		svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
 		t.Cleanup(svc.Close)
 		svc.RegisterAdminRoutes(func(mux *AdminMux) {
 			mux.HandleFunc("GET /admin/test/peer", func(w http.ResponseWriter, r *http.Request) {
@@ -587,6 +612,7 @@ func TestAdminMTLSHandshake(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
+		svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
 		t.Cleanup(svc.Close)
 		// #828's store is the source; the binary hands it to the plane before
 		// Start (this is the same wiring startAdminPlane does).
@@ -847,6 +873,7 @@ func TestAdminCertificateSourceWithMTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
 	t.Cleanup(svc.Close)
 	handler := svc.AdminHandler()
 	if handler == nil {
@@ -961,45 +988,9 @@ func (f *fakeAdminAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 // The admin listener takes identity only from the installed #814 chain and
 // publishes it with WithPrincipal; unauthenticated requests get #814's typed
 // problem codes.
-func newAdminAuthTestFixture(t *testing.T, authenticate Authenticator) *adminTestFixture {
-	t.Helper()
-	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
-	cfg.Admin.Enabled = true
-	cfg.Admin.Listen = "127.0.0.1:0"
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	t.Cleanup(svc.Close)
-	// The chain must be installed before the plane builds its handler.
-	svc.SetAdminAuthenticator(authenticate)
-	fixture := &adminTestFixture{cfg: cfg, svc: svc}
-	fixture.serving = httptest.NewServer(svc.Handler())
-	t.Cleanup(fixture.serving.Close)
-	handler := svc.AdminHandler()
-	if handler == nil {
-		t.Fatal("AdminHandler() = nil")
-	}
-	plane, err := NewAdminPlane(&cfg.Admin, handler)
-	if err != nil {
-		t.Fatalf("NewAdminPlane: %v", err)
-	}
-	if err := plane.Start(); err != nil {
-		t.Fatalf("admin Start: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = plane.Shutdown(ctx)
-	})
-	fixture.admin = plane
-	fixture.adminURL = "http://" + plane.Addr()
-	return fixture
-}
-
 func TestAdminAuthenticatorChainWiring(t *testing.T) {
 	want := Principal{Subject: "spiffe://example.test/ops", Kind: "mtls", CredentialID: "cert-1", Issuer: "example-ca"}
-	fixture := newAdminAuthTestFixture(t, &fakeAdminAuthenticator{token: "machine-token", principal: want})
+	fixture := newAdminTestFixtureWithAuth(t, &fakeAdminAuthenticator{token: "machine-token", principal: want}, nil)
 	fixture.svc.RegisterAdminRoutes(func(mux *AdminMux) {
 		mux.HandleFunc("GET /admin/test/whoami", func(w http.ResponseWriter, r *http.Request) {
 			principal, ok := PrincipalFrom(r.Context())
@@ -1068,9 +1059,9 @@ func TestAdminAuthenticatorChainWiring(t *testing.T) {
 
 // The chain errors map onto #814's published codes.
 func TestAdminAuthenticatorChainUnsupportedCredential(t *testing.T) {
-	fixture := newAdminAuthTestFixture(t, AuthenticatorFunc(func(context.Context, *http.Request) (Principal, error) {
+	fixture := newAdminTestFixtureWithAuth(t, AuthenticatorFunc(func(context.Context, *http.Request) (Principal, error) {
 		return Principal{}, ErrUnsupportedAuthentication
-	}))
+	}), nil)
 	fixture.svc.RegisterAdminRoutes(func(mux *AdminMux) {
 		mux.HandleFunc("GET /admin/test/anything", func(w http.ResponseWriter, r *http.Request) {})
 	})
@@ -1084,5 +1075,130 @@ func TestAdminAuthenticatorChainUnsupportedCredential(t *testing.T) {
 	}
 	if code := adminProblemResponseCode(t, body); code != "unsupported_authentication" {
 		t.Fatalf("code = %q, want unsupported_authentication", code)
+	}
+}
+
+// Fail closed: with no authentication chain installed, every non-probe admin
+// route answers 401 even though it is mounted, and the probes stay usable.
+func TestAdminNoChainFailsClosed(t *testing.T) {
+	fixture := newAdminTestFixtureWithAuth(t, nil, nil)
+	fixture.svc.RegisterAdminRoutes(func(mux *AdminMux) {
+		mux.HandleFunc("GET /admin/v1/mounted", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"reachable":true}`))
+		})
+		mux.HandleFunc("POST /admin/v1/mounted", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+	})
+	cases := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/admin/v1/mounted"},
+		{http.MethodPost, "/admin/v1/mounted"},
+		{http.MethodGet, "/metrics"},
+		{http.MethodGet, "/"},
+		{http.MethodGet, "/v1/models"},
+	}
+	for _, testCase := range cases {
+		req, err := http.NewRequest(testCase.method, fixture.adminURL+testCase.path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Even a well-formed bearer credential cannot pass without a chain.
+		req.Header.Set("Authorization", "Bearer machine-token")
+		resp, body := adminDo(t, req)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s %s = %d, want 401 without an installed chain (body %q)", testCase.method, testCase.path, resp.StatusCode, body)
+		}
+		if code := adminProblemResponseCode(t, body); code != "authentication_required" {
+			t.Fatalf("%s %s code = %q, want authentication_required", testCase.method, testCase.path, code)
+		}
+		if challenge := resp.Header.Get("WWW-Authenticate"); challenge != `Bearer realm="router-admin"` {
+			t.Fatalf("%s %s WWW-Authenticate = %q, want a challenge without error= when no credential was sent", testCase.method, testCase.path, challenge)
+		}
+	}
+	for _, path := range []string{"/healthz", "/readyz"} {
+		resp, body := adminGet(t, fixture.adminURL+path)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d, want the unauthenticated state-only probe (body %q)", path, resp.StatusCode, body)
+		}
+	}
+}
+
+// A configured reload interval re-reads the client CA bundle without a restart,
+// and the plane stops reloading when it drains.
+func TestAdminClientCAReloadInterval(t *testing.T) {
+	clientCA := newAdminTestCA(t)
+	rotationCA := newAdminTestCA(t)
+	serverCA := newAdminTestCA(t)
+	serverCert, serverKey := serverCA.issue(t, "admin.test", nil, nil, true)
+	dir := t.TempDir()
+	serverCertPath := writeTestPEM(t, dir, "server.crt", serverCert)
+	serverKeyPath := writeTestKey(t, dir, "server.key", serverKey)
+	caPath := writeTestPEM(t, dir, "client-ca.crt", clientCA.certPEM)
+
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Admin.Enabled = true
+	cfg.Admin.Listen = "127.0.0.1:0"
+	cfg.Admin.TLS = AdminTLSConfig{
+		Mode:         adminTLSModeRouter,
+		CertFile:     serverCertPath,
+		KeyFile:      serverKeyPath,
+		ClientCAFile: caPath,
+		ClientAuth:   adminClientAuthRequire,
+		MinVersion:   adminTLSMinVersion12,
+	}
+	cfg.Admin.Authentication.MTLS.ReloadInterval = "1s"
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
+	t.Cleanup(svc.Close)
+	plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler())
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if err := plane.Start(); err != nil {
+		t.Fatalf("admin Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = plane.Shutdown(ctx)
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(serverCA.cert)
+	client := func(certPEM, keyPEM []byte) *http.Client {
+		pair, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs: roots, Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12,
+		}}, Timeout: 5 * time.Second}
+	}
+	// A certificate from the rotation CA is rejected before the bundle changes.
+	rotationClientPEM, rotationKeyPEM := rotationCA.issue(t, "rotated.test", nil, nil, false)
+	if _, err := client(rotationClientPEM, rotationKeyPEM).Get("https://" + plane.Addr() + "/healthz"); err == nil {
+		t.Fatal("a not-yet-trusted client CA verified before the reload")
+	}
+	// Rotate the bundle on disk; the scheduled reload must pick it up.
+	if err := os.WriteFile(caPath, rotationCA.certPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, err := client(rotationClientPEM, rotationKeyPEM).Get("https://" + plane.Addr() + "/healthz")
+		if err == nil {
+			resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("rotation bundle was not reloaded: %v", err)
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
 }

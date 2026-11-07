@@ -79,9 +79,7 @@ func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) ht
 	for i := len(middleware) - 1; i >= 0; i-- {
 		h = middleware[i](h)
 	}
-	if authenticate != nil {
-		h = adminAuthentication(authenticate)(h)
-	}
+	h = adminAuthentication(authenticate)(h)
 	h = adminMachineOnlyGate(h)
 	h = adminProxyGate(cfg)(h)
 	h = adminHardening(cfg)(h)
@@ -92,11 +90,19 @@ func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) ht
 // the authenticated principal with WithPrincipal, the only identity source the
 // admin port has. The health probes stay unauthenticated because they carry
 // state only (ACP-006); every other admin route requires an identity.
+//
+// No installed chain means no authenticated identity, so every non-probe route
+// fails closed with 401. A route mounted by another lane can therefore never be
+// reachable without authentication.
 func adminAuthentication(authenticate Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodGet && (r.URL.Path == "/healthz" || r.URL.Path == "/readyz") {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if authenticate == nil {
+				writeAdminAuthenticationProblem(w, r, ErrNoCredential)
 				return
 			}
 			principal, err := authenticate.Authenticate(r.Context(), r)
@@ -121,7 +127,12 @@ func writeAdminAuthenticationProblem(w http.ResponseWriter, r *http.Request, err
 	case errors.Is(err, ErrInvalidCredential):
 		code = "invalid_credential"
 	}
-	w.Header().Set("WWW-Authenticate", `Bearer realm="router-admin", error="invalid_token"`)
+	if errors.Is(err, ErrNoCredential) {
+		// RFC 6750: error="invalid_token" is only for a presented credential.
+		w.Header().Set("WWW-Authenticate", `Bearer realm="router-admin"`)
+	} else {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="router-admin", error="invalid_token"`)
+	}
 	writeAdminPlaneProblem(w, r, http.StatusUnauthorized, code)
 }
 
@@ -194,6 +205,12 @@ func setAdminPlaneSecurityHeaders(w http.ResponseWriter) {
 // adminHardening applies the listener-wide security headers, rejects CORS
 // preflights, enforces the independent body limit (ACP-N02) and normalises
 // unmatched-path bodies to problem+json.
+//
+// Two statuses do not come from this middleware: net/http itself answers 431
+// when a request header set exceeds AdminPlane's MaxHeaderBytes, and a malformed
+// request line or oversized header block can produce a 400, both with a plain
+// text body written before any handler runs. They are transport-level refusals,
+// documented as such in the admin-listener reference.
 func adminHardening(cfg *AdminPlaneConfig) func(http.Handler) http.Handler {
 	maxBody := int64(defaultAdminMaxBodyBytes)
 	if cfg != nil && cfg.Limits.MaxBodyBytes > 0 {
@@ -405,8 +422,19 @@ func adminCASnapshot(source AdminClientCASource) *x509.CertPool {
 	return source.Snapshot()
 }
 
+func (p *AdminPlane) clientCASnapshot() *x509.CertPool {
+	if p == nil {
+		return nil
+	}
+	return adminCASnapshot(p.ClientCASource())
+}
+
 // adminFixedCASource is the handshake-side view of the installed source: it
 // holds the pool the source last published.
+// adminCASourceHolder wraps the interface so the atomic pointer has one
+// concrete type for every store (atomic.Value rejects varying types).
+type adminCASourceHolder struct{ source AdminClientCASource }
+
 type adminFixedCASource struct{ pool *x509.CertPool }
 
 func (s *adminFixedCASource) Snapshot() *x509.CertPool { return s.pool }
@@ -433,17 +461,30 @@ func AdminPeerCertificates(r *http.Request) []*x509.Certificate {
 // serves and drains independently of the serving server; an accept-loop failure
 // is reported on Err and never stops inference.
 type AdminPlane struct {
-	cfg       AdminPlaneConfig
-	handler   http.Handler
-	clientCAS AdminClientCASource
+	cfg     AdminPlaneConfig
+	handler http.Handler
+	// clientCAS holds the AdminClientCASource under an atomic so the reload
+	// callback and every handshake see one consistent source (no data race).
+	clientCAS atomic.Pointer[adminCASourceHolder]
 	certMu    sync.Mutex
 	certSrc   AdminCertificateManager
 	tlsCfg    *tls.Config
 
-	mu  sync.Mutex
-	srv *http.Server
-	ln  net.Listener
-	err chan error
+	mu       sync.Mutex
+	srv      *http.Server
+	ln       net.Listener
+	err      chan error
+	reloadMu sync.Mutex
+	reload   context.CancelFunc
+	reloadWG sync.WaitGroup
+}
+
+// adminCAReloader is the optional reload capability of an AdminClientCASource
+// (#828's client CA store has it). When admin.authentication.mtls.reload_interval
+// is set, the plane re-reads the bundles on that interval so a rotated bundle
+// applies without a restart.
+type adminCAReloader interface {
+	Reload() error
 }
 
 // NewAdminPlane validates the listener policy and builds the server. TLS files
@@ -476,7 +517,7 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 		if err != nil {
 			return nil, err
 		}
-		p.clientCAS = store
+		p.clientCAS.Store(&adminCASourceHolder{source: store})
 	}
 	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeRouter) {
 		tlsCfg, err := p.routerTLSConfig()
@@ -485,9 +526,17 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 		}
 		p.tlsCfg = tlsCfg
 	}
-	if !local.AllowPlaintextNonLoopback && strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
-		if loopback, err := adminListenIsLoopback(local.Listen); err == nil && !loopback {
-			return nil, fmt.Errorf("admin.listen %q is not loopback and TLS is off", local.Listen)
+	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
+		loopback, err := adminListenIsLoopback(local.Listen)
+		if err != nil {
+			return nil, err
+		}
+		if !loopback {
+			if !local.AllowPlaintextNonLoopback {
+				return nil, fmt.Errorf("admin.listen %q is not loopback and TLS is off", local.Listen)
+			}
+			// The override is deliberate, so say so once at startup.
+			log.Printf("WARNING: admin.allow_plaintext_non_loopback is set; the admin listener on %s carries plaintext credentials across the network. Terminate TLS in front of it and remove the override.", local.Listen)
 		}
 	}
 	return p, nil
@@ -499,7 +548,11 @@ func (p *AdminPlane) ClientCASource() AdminClientCASource {
 	if p == nil {
 		return nil
 	}
-	return p.clientCAS
+	holder := p.clientCAS.Load()
+	if holder == nil {
+		return nil
+	}
+	return holder.source
 }
 
 // SetCertificateSource installs #810's certificate manager. It must be called
@@ -526,7 +579,7 @@ func (p *AdminPlane) SetClientCASource(src AdminClientCASource) {
 		return
 	}
 	src.OnReload(func(pool *x509.CertPool) {
-		p.clientCAS = &adminFixedCASource{pool: pool}
+		p.clientCAS.Store(&adminCASourceHolder{source: &adminFixedCASource{pool: pool}})
 	})
 }
 
@@ -554,7 +607,7 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 	cfg := &tls.Config{
 		MinVersion: minVersion,
 		ClientAuth: clientAuth,
-		ClientCAs:  adminCASnapshot(p.clientCAS),
+		ClientCAs:  p.clientCASnapshot(),
 		NextProtos: []string{"http/1.1"},
 	}
 	if !useACME {
@@ -579,7 +632,7 @@ func (p *AdminPlane) routerTLSConfig() (*tls.Config, error) {
 			current.Certificates = nil
 			current.GetCertificate = source.GetCertificate
 		}
-		current.ClientCAs = adminCASnapshot(p.clientCAS)
+		current.ClientCAs = p.clientCASnapshot()
 		return current, nil
 	}
 	return cfg, nil
@@ -622,6 +675,7 @@ func (p *AdminPlane) Start() error {
 	}
 	p.srv = srv
 	p.ln = ln
+	p.startClientCAReload()
 	go func() {
 		if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			select {
@@ -638,6 +692,51 @@ func adminLimitDuration(ms, fallback int) time.Duration {
 		return time.Duration(ms) * time.Millisecond
 	}
 	return time.Duration(fallback) * time.Millisecond
+}
+
+// startClientCAReload schedules the client-CA bundle reload when the operator
+// configured an interval and the source can reload. A reload failure keeps the
+// last known good trust (the #828 store's contract) and logs without secrets.
+func (p *AdminPlane) startClientCAReload() {
+	interval := adminReloadInterval(p.cfg.Authentication.MTLS.ReloadInterval)
+	if interval <= 0 {
+		return
+	}
+	source, _ := p.ClientCASource().(adminCAReloader)
+	if source == nil {
+		log.Printf("admin client CA reload_interval is set but the installed source cannot reload; rotation needs a restart")
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.reloadMu.Lock()
+	p.reload = cancel
+	p.reloadMu.Unlock()
+	p.reloadWG.Add(1)
+	go func() {
+		defer p.reloadWG.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := source.Reload(); err != nil {
+					// Never log the bundle path or the underlying parse error
+					// text; trust stays on the last known good snapshot.
+					log.Printf("admin client CA reload failed; keeping the last known good trust")
+				}
+			}
+		}
+	}()
+}
+
+func adminReloadInterval(raw string) time.Duration {
+	parsed, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil || parsed < time.Second {
+		return 0
+	}
+	return parsed
 }
 
 // Addr returns the resolved listen address after Start (useful with ":0").
@@ -667,9 +766,17 @@ func (p *AdminPlane) Shutdown(ctx context.Context) error {
 	if p == nil {
 		return nil
 	}
+	p.reloadMu.Lock()
+	cancelReload := p.reload
+	p.reload = nil
+	p.reloadMu.Unlock()
 	p.mu.Lock()
 	srv := p.srv
 	p.mu.Unlock()
+	if cancelReload != nil {
+		cancelReload()
+		p.reloadWG.Wait()
+	}
 	if srv == nil {
 		return nil
 	}

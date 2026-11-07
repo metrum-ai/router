@@ -148,8 +148,8 @@ func TestLegacyAdminFlagOffRemovesMachineRoutes(t *testing.T) {
 			t.Fatalf("%s %s Deprecation = %q, want none", request.method, request.path, got)
 		}
 	}
-	// The browser reports UI and its login keep working (RULES: the UI is not
-	// part of the control plane and stays on the serving port).
+	// The browser reports UI and its login keep working: the UI is not part of
+	// the control plane and stays on the serving port.
 	reports := servingRequest(t, svc, http.MethodGet, "/admin/reports/", token)
 	if reports.Code != http.StatusOK {
 		t.Fatalf("GET /admin/reports/ with the flag off = %d, want 200", reports.Code)
