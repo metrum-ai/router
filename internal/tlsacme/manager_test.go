@@ -4,6 +4,7 @@
 package tlsacme
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -14,8 +15,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +36,9 @@ func newTestManager(t *testing.T, now *time.Time, mutate func(*Config)) (*Manage
 
 func newTestManagerWithProvider(t *testing.T, now *time.Time, mutate func(*Config), provider *fakeProvider) (*Manager, *stubCertifier, *Store) {
 	t.Helper()
+	// The manager resolves the DNS credential for redaction even when the test
+	// injects the provider, so the reference must resolve.
+	t.Setenv("CF_DNS_API_TOKEN", "test-token")
 	cfg := validACMEConfig()
 	cfg.CacheDir = filepath.Join(t.TempDir(), "tls")
 	cfg.DNS.Zone = "example.com"
@@ -270,7 +276,7 @@ func TestManagerPicksUpCertificateRenewedByAnotherReplica(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save renewed record: %v", err)
 	}
-	manager.maybeReload()
+	manager.maybeReload(true)
 	if !manager.record.NotAfter.After(old) {
 		t.Fatalf("replica did not reload the renewed certificate: %v", manager.record.NotAfter)
 	}
@@ -460,6 +466,9 @@ func TestManagerAdoptsCertificateRenewedUnderTheLock(t *testing.T) {
 func TestManagerResolvesAndDecodesEABKey(t *testing.T) {
 	now := time.Now()
 	t.Setenv("TLS_TEST_EAB_KEY", "c2VjcmV0LWhtYWMta2V5") // base64url("secret-hmac-key")
+	// The manager resolves the DNS credential for redaction even when the test
+	// injects the provider, so the reference must resolve.
+	t.Setenv("CF_DNS_API_TOKEN", "test-token")
 	cfg := validACMEConfig()
 	cfg.CacheDir = filepath.Join(t.TempDir(), "tls")
 	cfg.DNS.Zone = "example.com"
@@ -700,4 +709,209 @@ func issueTestClientCertificate(t *testing.T, ca *x509.Certificate, caKey *ecdsa
 		t.Fatalf("create client certificate: %v", err)
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// failingCertifier returns a fixed error, to exercise the startup and renewal
+// error paths.
+type failingCertifier struct {
+	err   error
+	calls int
+}
+
+func (f *failingCertifier) Issue(context.Context, []string) (issuedCertificate, error) {
+	f.calls++
+	return issuedCertificate{}, f.err
+}
+
+// TestManagerRedactsSecretsInStartupAndRenewalErrors is the regression test for
+// the redaction bug: an error text that quotes a resolved credential must never
+// reach the caller (main logs it with log.Fatalf) or the renewal log.
+func TestManagerRedactsSecretsInStartupAndRenewalErrors(t *testing.T) {
+	const (
+		envName = "TLS_MANAGER_SENTINEL_TOKEN"
+		secret  = "sentinel-provider-token-abcdef"
+	)
+	t.Setenv(envName, secret)
+	now := time.Now()
+
+	newManager := func(certifier Certifier, logs *bytes.Buffer) *Manager {
+		cfg := validACMEConfig()
+		cfg.CacheDir = filepath.Join(t.TempDir(), "tls")
+		cfg.DNS.Zone = "example.com"
+		cfg.DNS.Provider = ProviderDigitalOcean
+		cfg.DNS.Credentials = Credentials{Token: SecretRef{Env: envName}}
+		cfg.Renewal.UseARI = boolPtr(false)
+		store, err := OpenStore(cfg.CacheDir)
+		if err != nil {
+			t.Fatalf("open store: %v", err)
+		}
+		manager, err := New(cfg,
+			WithStore(store),
+			WithProvider(&fakeProvider{zones: []string{"example.com"}}),
+			WithCertifier(certifier),
+			WithNow(func() time.Time { return now }),
+			WithLogger(log.New(logs, "", 0)),
+		)
+		if err != nil {
+			t.Fatalf("new manager: %v", err)
+		}
+		return manager
+	}
+
+	// Startup: the provider error quotes the credential; main turns this error
+	// into log.Fatalf, so it must already be scrubbed.
+	var startupLogs bytes.Buffer
+	startup := newManager(&failingCertifier{err: fmt.Errorf("acme: provider rejected token %s", secret)}, &startupLogs)
+	err := startup.EnsureCertificate(context.Background())
+	if err == nil {
+		t.Fatal("expected a startup error")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("startup error leaks the credential: %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "<redacted:") {
+		t.Fatalf("startup error is not redacted: %q", err.Error())
+	}
+
+	// Renewal: install a valid certificate, then fail the next order with the
+	// same credential in the message; the log must be scrubbed too.
+	var renewalLogs bytes.Buffer
+	certifier := &stubCertifier{cert: makeTestCertificate(t, []string{"router.example.com"}, now.Add(-time.Hour), now.Add(90*24*time.Hour))}
+	renewing := newManager(certifier, &renewalLogs)
+	if err := renewing.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	renewalLogs.Reset()
+	certifier.err = fmt.Errorf("acme: rejected token %s", secret)
+	now = renewing.record.NotBefore.Add(renewing.record.NotAfter.Sub(renewing.record.NotBefore) * 3 / 4)
+	renewing.tick(context.Background())
+	output := renewalLogs.String()
+	if output == "" {
+		t.Fatal("the failed renewal was not logged")
+	}
+	if strings.Contains(output, secret) {
+		t.Fatalf("renewal log leaks the credential: %q", output)
+	}
+	if !strings.Contains(output, "<redacted:") {
+		t.Fatalf("renewal log is not redacted: %q", output)
+	}
+}
+
+// TestManagerFilesModeValidityGaugeFollowsExpiry proves the validity gauge is
+// re-evaluated for a files certificate, which has no renewal loop of its own.
+func TestManagerFilesModeValidityGaugeFollowsExpiry(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	cert := makeTestCertificate(t, []string{"router.example.com"}, now.Add(-2*time.Hour), now.Add(time.Hour))
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+	if err := os.WriteFile(certPath, cert.CertificatePEM, 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, cert.PrivateKeyPEM, 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	manager, err := New(Config{
+		Mode:              ModeRouter,
+		CertificateSource: SourceFiles,
+		Domains:           []string{"router.example.com"},
+		CertFile:          certPath,
+		KeyFile:           keyPath,
+	}, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	labels := manager.metrics.baseLabels()
+	if got := manager.metrics.value(metricCertValid, labels); got != 1 {
+		t.Fatalf("valid gauge = %v, want 1", got)
+	}
+	now = now.Add(2 * time.Hour) // past expiry
+	_ = manager.Prometheus()
+	if got := manager.metrics.value(metricCertValid, labels); got != 0 {
+		t.Fatalf("valid gauge = %v after expiry, want 0", got)
+	}
+	if got := manager.Status(); len(got) != 1 || got[0].Valid {
+		t.Fatalf("status = %+v, want an invalid certificate", got)
+	}
+}
+
+// TestManagerFilesModeWithoutDomainsUsesCertificateSANs proves a files
+// certificate with no configured domain list serves the names in its SANs
+// instead of rejecting every SNI.
+func TestManagerFilesModeWithoutDomainsUsesCertificateSANs(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	cert := makeTestCertificate(t, []string{"files.example.com"}, now.Add(-time.Hour), now.Add(24*time.Hour))
+	certPath := filepath.Join(dir, "tls.crt")
+	keyPath := filepath.Join(dir, "tls.key")
+	if err := os.WriteFile(certPath, cert.CertificatePEM, 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, cert.PrivateKeyPEM, 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	manager, err := New(Config{
+		Mode:              ModeRouter,
+		CertificateSource: SourceFiles,
+		CertFile:          certPath,
+		KeyFile:           keyPath,
+	}, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := manager.CheckSNI(&tls.ClientHelloInfo{ServerName: "files.example.com"}); err != nil {
+		t.Fatalf("the certificate's own SAN must be served: %v", err)
+	}
+	if _, err := manager.GetCertificate(&tls.ClientHelloInfo{ServerName: "files.example.com"}); err != nil {
+		t.Fatalf("GetCertificate for the SAN: %v", err)
+	}
+	if err := manager.CheckSNI(&tls.ClientHelloInfo{ServerName: "other.example.com"}); err == nil {
+		t.Fatal("a name outside the certificate SANs must be refused")
+	}
+}
+
+// roundTripFunc lets a test observe HTTP calls without a network.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+// TestManagerHandshakeNeverWaitsOnARI proves the handshake path does not fetch
+// renewal information: only the renewal loop does.
+func TestManagerHandshakeNeverWaitsOnARI(t *testing.T) {
+	now := time.Now()
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return nil, fmt.Errorf("no network in this test")
+	})}
+	cfg := validACMEConfig()
+	cfg.CacheDir = filepath.Join(t.TempDir(), "tls")
+	cfg.DNS.Zone = "example.com"
+	cfg.Renewal.UseARI = boolPtr(true) // ARI on, but the handshake must not use it
+	t.Setenv("CF_DNS_API_TOKEN", "test-token")
+	store, err := OpenStore(cfg.CacheDir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	cert := makeTestCertificate(t, cfg.Domains, now.Add(-time.Hour), now.Add(24*time.Hour))
+	manager, err := New(cfg,
+		WithStore(store),
+		WithProvider(&fakeProvider{zones: []string{"example.com"}}),
+		WithCertifier(&stubCertifier{cert: cert}),
+		WithHTTPClient(client),
+		WithNow(func() time.Time { return now }),
+	)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := manager.EnsureCertificate(context.Background()); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	calls = 0
+	if _, err := manager.GetCertificate(&tls.ClientHelloInfo{ServerName: cfg.Domains[0]}); err != nil {
+		t.Fatalf("GetCertificate: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("the handshake path made %d HTTP call(s); the ARI lookup belongs to the renewal loop", calls)
+	}
 }

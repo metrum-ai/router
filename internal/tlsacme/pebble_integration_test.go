@@ -108,6 +108,7 @@ func TestPebbleDNS01IssuanceAndRenewal(t *testing.T) {
 	}
 	waitForDirectory(t, httpClient, directoryURL, 30*time.Second, pebble)
 
+	t.Setenv("CF_DNS_API_TOKEN", "unused-test-value")
 	provider := newChallengeSrvProvider(fmt.Sprintf("http://127.0.0.1:%d", mgmtPort), httpClient)
 	now := time.Now()
 	clock := func() time.Time { return now }
