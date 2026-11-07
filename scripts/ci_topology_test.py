@@ -274,7 +274,7 @@ def assert_arc_runners() -> None:
         "admin-typecheck.yml": {"admin-typecheck"},
         "agent-tool-compat.yml": {"local-agent-mock"},
         "api-compat-live.yml": {"live-unit"},
-        "ci.yml": {"ci", "k8s-security", "parallel-tools", "tls-acme"},
+        "ci.yml": {"ci", "k8s-security", "parallel-tools", "admin-authz-advisories", "tls-acme"},
         "dco.yml": {"signed-off-commits"},
         "decision-models-smoke.yml": {"decision-models"},
         "docs-qa.yml": {"docs-qa"},
@@ -312,6 +312,10 @@ def assert_arc_runners() -> None:
                 # A reusable-workflow call job has no runner of its own; the
                 # called workflow's jobs are checked when that file is read.
                 require(name != "package", f"{path.name}/{name} must not be a reusable-workflow call")
+                continue
+            if path.name == "ci.yml" and name == "admin-authz-advisories":
+                require("runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}" in body,
+                        "advisory job must use the configurable light runner pool")
                 continue
             runner = "router-arc-small" if name in small_jobs.get(path.name, set()) else "router-arc"
             require(re.search(rf"(?m)^    runs-on: {re.escape(runner)}$", body) is not None,
@@ -363,7 +367,7 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "tls-acme", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "admin-authz-advisories", "tls-acme", "ci"}, "fanout lane inventory drifted")
     require("push:\n    branches: [main]" in text and "if: github.event_name == 'push'" in lanes["warm"],
             "main-only cache warmer missing")
     require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
@@ -444,7 +448,7 @@ def assert_consolidated_ci() -> None:
             "rendered-manifest security scan must gate every PR and merge group")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, admin-authz-advisories, tls-acme]" in aggregate, "required ci aggregator drifted")
     parallel = lanes["parallel-tools"]
     require("if: github.event_name != 'push'" in parallel
             and "go test ./internal/stream -run '^TestParallelThreeStreamTranslations$'" in parallel
@@ -453,11 +457,12 @@ def assert_consolidated_ci() -> None:
             "parallel tool-call fixtures must run on every PR and merge group")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "ADVISORY_RESULT", "TLS_ACME_RESULT")
     for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
         expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
                          and event != "push" or n == "WARM_RESULT" and event == "push"
                          or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
+                         or n == "ADVISORY_RESULT"
                          else "skipped") for n in names}
         for name in names:
             for result in ("success", "failure", "cancelled", "skipped"):
