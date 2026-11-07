@@ -753,6 +753,15 @@ docs-diag-schema:
 docs-diag-schema-check:
 	go run ./cmd/docs-diag-schema --check
 
+# /admin/v1 OpenAPI contract (#811). The document is generated from the typed
+# route registry; CI fails when it drifts (TestAdminOpenAPIUpToDate).
+.PHONY: admin-openapi admin-openapi-check
+admin-openapi:
+	go test ./internal/router -run '^TestAdminOpenAPIUpToDate$' -count=1 -update-admin-openapi
+
+admin-openapi-check:
+	go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$' -count=1
+
 .PHONY: docs-brand-policy-test
 docs-brand-policy-test:
 	python3 scripts/check_docs_public_face_test.py
