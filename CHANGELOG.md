@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Admin machine authentication on the dedicated admin listener: configured
+  admin API keys, OAuth 2.0 client-credentials and workload identity federation
+  tokens with DPoP or certificate sender constraints, mTLS trust domains, and
+  offline-enrolled emergency keys and certificates. Every request captures one
+  immutable authentication/authorization generation and every operation still
+  goes through the single authorization decision point.
+- Admin API key lifecycle endpoints (`/admin/v1/admin-keys`): issue, list, read,
+  rotate with overlap and revoke, with one-time secrets and metadata-only
+  idempotency.
+
 ### Security fixes
 
 
