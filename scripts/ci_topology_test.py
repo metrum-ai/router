@@ -314,8 +314,15 @@ def assert_arc_runners() -> None:
                 require(name != "package", f"{path.name}/{name} must not be a reusable-workflow call")
                 continue
             runner = "router-arc-small" if name in small_jobs.get(path.name, set()) else "router-arc"
-            require(re.search(rf"(?m)^    runs-on: {re.escape(runner)}$", body) is not None,
-                    f"{path.name}/{name} must use {runner}")
+            # A job may pin the label or route it through the deployment
+            # variable that defaults to that same label; nothing else is
+            # accepted, so a job cannot silently move to a different runner.
+            variable = "ROUTER_LIGHT_RUNNER" if runner == "router-arc-small" else "ROUTER_HEAVY_RUNNER"
+            pinned = re.search(rf"(?m)^    runs-on: {re.escape(runner)}$", body) is not None
+            configurable = re.search(
+                rf"(?m)^    runs-on: \$\{{\{{ vars\.{variable} \|\| '{re.escape(runner)}' \}}\}}$", body) is not None
+            require(pinned or configurable,
+                    f"{path.name}/{name} must use {runner} or the {variable} variable")
         if "cache: false" in text:
             require(path.name == "ci.yml" and "actions/cache/restore@" in text
                     and "actions/cache/save@" in text,
