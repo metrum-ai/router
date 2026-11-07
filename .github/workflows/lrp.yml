@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   synthetic:
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 25
     env:
       OMP_NUM_THREADS: '1'

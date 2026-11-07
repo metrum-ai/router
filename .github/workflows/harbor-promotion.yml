@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   harbor:
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     environment: evaluation
     timeout-minutes: 90
     steps:

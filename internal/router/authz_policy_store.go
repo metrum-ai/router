@@ -254,7 +254,7 @@ func insertAuthzPolicyLines(tx *gorm.DB, policySetID string, lines []string) err
 		if err != nil {
 			return err
 		}
-		if err := validateCasbinPolicyFields(fields, fmt.Sprintf("policy line %d", i+1)); err != nil {
+		if err := validateCasbinPolicyMutationFields(fields, fmt.Sprintf("policy line %d", i+1)); err != nil {
 			return err
 		}
 		switch fields[0] {
