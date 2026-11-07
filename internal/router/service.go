@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	"github.com/metrum-ai/router/internal/tlsacme"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -65,7 +66,9 @@ type Service struct {
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
 	adminSession       *adminSessionStore
-	authorizer         *authorizer
+	authorizer         *authorizer // immutable bootstrap fallback
+	authorizerSnapshot atomic.Pointer[authorizer]
+	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
 	logger             *requestLogger
@@ -82,6 +85,7 @@ type Service struct {
 	shaping            *upstreamShapeManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
+	tlsManager         *tlsacme.Manager
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
@@ -239,6 +243,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS, tlsacme.ListenerServing, "server.tls")
+	if err != nil {
+		return nil, err
+	}
 	if cfg.Eligibility.implicitEnabled() {
 		for group, model := range cfg.Models {
 			for _, target := range model.Targets {
@@ -327,6 +335,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		shadows:            newShadowRuntime(),
 		provenance:         provenance,
 		responsesAffinity:  responsesAffinity,
+		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -344,7 +353,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
 	}
 	s.adminAPIKeys = buildAdminAPIKeyRuntimes(cfg, os.LookupEnv)
-	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage)
+	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage, cfg.Server.AdminAuth)
 	if err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
@@ -406,6 +415,16 @@ func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
 	return s.withStreamProgressDeadline(s.mux)
+}
+
+// TLSManager returns the serving listener's TLS manager, or nil when
+// server.tls is off (the v4.7 behaviour). The caller runs EnsureCertificate
+// before binding and Run for renewals, and sets srv.TLSConfig from TLSConfig.
+func (s *Service) TLSManager() *tlsacme.Manager {
+	if s == nil {
+		return nil
+	}
+	return s.tlsManager
 }
 
 func (s *Service) Close() {
@@ -526,13 +545,15 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	// directory. The authorizer is recreated with the latest callers map and
 	// the same admin authorization config.
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage)
+	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage, newCfg.Server.AdminAuth)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
-	s.cfg = newCfg
+	// Publish grants before exposing replacement credentials. This ordering
+	// does not jointly bind authentication and authorization generations.
+	s.authorizerSnapshot.Store(newAuthorizer)
 	s.adminAPIKeys = newAdminKeys
-	s.authorizer = newAuthorizer
+	s.cfg = newCfg
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
@@ -1107,7 +1128,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead) {
+	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead, s.PinAuthorization(r.Context())) {
 		code := "metrics-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -1128,6 +1149,11 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
+	if s.tlsManager != nil {
+		// Empty unless the serving listener terminates TLS itself, so a v4.7
+		// configuration keeps byte-identical /metrics output.
+		_, _ = io.WriteString(w, s.tlsManager.Prometheus())
+	}
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
@@ -1157,7 +1183,8 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject := adminAuthSubjectForBasic(basic)
-	if !subject.permissions["admin:auth:read"] {
+	subject.authContext = s.PinAuthorization(r.Context())
+	if !s.authorizeCompatibility(subject, "admin:auth", authzActionRead, "direct") {
 		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "admin-forbidden", "admin:auth", authzActionRead)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "admin-forbidden", "message": "admin-forbidden"}})
 		return
@@ -1180,13 +1207,14 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, rc, http.StatusServiceUnavailable, "content-store-disabled")
 		return
 	}
+	authorizationContext := s.PinAuthorization(r.Context())
 	targetDomains, err := s.contentCaptureTargetDomains(requestID)
 	if err != nil {
 		s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
 		return
 	}
 	if len(targetDomains) == 0 {
-		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
+		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete, authorizationContext) {
 			s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 			return
 		}
@@ -1196,7 +1224,7 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
-			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
+			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete, authorizationContext) {
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
@@ -1223,7 +1251,7 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
+	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge, s.PinAuthorization(r.Context())) {
 		code := "content-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return

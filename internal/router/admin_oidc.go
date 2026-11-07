@@ -29,13 +29,15 @@ const (
 )
 
 type adminAuthSubject struct {
-	subject     string
-	domain      string
-	source      string
-	email       string
-	issuer      string
-	groups      []string
-	permissions map[string]bool
+	authContext  context.Context
+	credentialID string
+	subject      string
+	domain       string
+	source       string
+	email        string
+	issuer       string
+	groups       []string
+	permissions  map[string]bool
 }
 
 type adminOIDCRuntime struct {
@@ -224,7 +226,12 @@ func (s *Service) handleAdminAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, safeAdminSubjectResponse(subject))
 }
 
-func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
+func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (result adminAuthSubject, authenticated bool) {
+	defer func() {
+		if authenticated {
+			result.authContext = s.PinAuthorization(r.Context())
+		}
+	}()
 	s.setAdminAuthHeaders(w)
 	if s == nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"type": "unauthorized", "message": "unauthorized"}})
@@ -266,10 +273,11 @@ func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Reques
 
 func adminAuthSubjectForBasic(subject adminBasicRuntime) adminAuthSubject {
 	return adminAuthSubject{
-		subject:     subject.subject,
-		domain:      subject.domain,
-		source:      "basic",
-		permissions: subject.permissions,
+		subject:      subject.subject,
+		domain:       subject.domain,
+		source:       "basic",
+		credentialID: subject.username,
+		permissions:  subject.permissions,
 	}
 }
 

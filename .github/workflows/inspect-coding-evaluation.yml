@@ -28,7 +28,7 @@ permissions: { contents: read }
 jobs:
   contract:
     if: github.event_name == 'pull_request'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +36,7 @@ jobs:
 
   smoke:
     if: github.event_name == 'workflow_dispatch' && inputs.tier == 'smoke'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     environment: evaluation
     timeout-minutes: 15
     env:
@@ -61,7 +61,7 @@ jobs:
 
   full-or-promotion:
     if: github.event_name == 'workflow_dispatch' && inputs.tier != 'smoke'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     environment: evaluation
     permissions: { contents: read }
     timeout-minutes: 90
