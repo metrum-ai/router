@@ -33,6 +33,21 @@ func (s *Service) ConfigureAdminPolicyFreshness(maxAge time.Duration) error {
 	return nil
 }
 
+// applyAdminPolicyFreshness resolves the configured freshness window and applies
+// it to the running gate. Startup and every successful reload use this single
+// path, so an operator's max_staleness is never silently replaced by the
+// default. An invalid value is a configuration error, not a request problem.
+func (s *Service) applyAdminPolicyFreshness(cfg *Config) error {
+	if cfg == nil {
+		return ErrAuthorizationUnavailable
+	}
+	maxAge, err := adminPolicyMaxStaleness(cfg.Server.AdminAuth.Authorization)
+	if err != nil {
+		return err
+	}
+	return s.ConfigureAdminPolicyFreshness(maxAge)
+}
+
 func (s *Service) startPolicySynchronization(ctx context.Context, interval time.Duration) (func(), error) {
 	if ctx == nil || interval <= 0 || s == nil || s.policyFreshness == nil {
 		return nil, ErrInvalidPolicyFreshness

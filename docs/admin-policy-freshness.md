@@ -14,17 +14,19 @@ The machine authorizer has exactly one publisher: the synchronized path that rea
 
 ## Revision rollback (database restore) recovery
 
-Revisions are monotonic in normal operation: the synchronization path refuses a revision lower than the last one it observed, so a restored database cannot silently lower the policy generation and have it accepted. Recovering from a restore therefore needs an explicit operator action rather than a quiet downgrade:
+Revisions are monotonic in normal operation: the synchronization path refuses a revision lower than the last one it observed, so a restored database cannot silently lower the policy generation and have it accepted. Recovering from a restore therefore needs an explicit operator action rather than a quiet downgrade. **Today the only supported recovery is a restart**; there is no operator reseed command in this change.
 
 1. Restore the usage database (the `authz_policy_runtime` singleton and the policy tables together) as one consistent snapshot.
 2. Restart the routers. A restart rebuilds the freshness state from scratch: the first successful complete synchronization after startup seeds the observation, so the restored revision is accepted once and monotonic checking resumes from it.
-3. If a restart is not possible for the fleet, use the operator command that reseeds the runtime singleton revision (the guarded policy CLI surface) so every replica observes a revision at or above its last applied value. Until such a reseed or restart, replicas whose last applied revision is higher than the restored one keep the previous authorizer and refuse mutations (fail closed) — they do not roll back silently.
+3. Until that restart, replicas whose last applied revision is higher than the restored one keep the previous authorizer and refuse mutations (fail closed) — they do not roll back silently. A guarded statement that reseeds the singleton revision without a restart is planned with the policy CLI surface in the guarded policy-resource change (#866); it is not available here and must not be assumed by an operator runbook.
 
 ## Integration boundaries
 
 These primitives do not independently complete the policy API or the control-plane release:
 
 - The explicit policy runtime schema migration and singleton seed must run before PostgreSQL synchronization can succeed. Serving startup never creates the table. An absent table leaves PostgreSQL mutations stale while reads continue.
+
+  **Deployment consequence:** with PostgreSQL authority and DB-sourced policy, every `/admin/v1` mutation answers `503 policy-stale` until the runtime table exists, because no successful synchronization can be observed yet. The table and its ledger migration are delivered by the guarded policy-resource change (#866), which ships in the same release as this freshness gate. Reads, and static/SQLite authority, are unaffected.
 - The guarded policy-resource slice reuses this transactional synchronization and marks its own read-only validation as no-side-effect.
 - All policy writers must use the singleton locking protocol, complete published-configuration credential inventory, and same-transaction audit/replay integration.
 - Configuration and credential changes need a reverse last-admin guard before persistence and live publication. A post-commit reload callback or a local mutex alone is insufficient.

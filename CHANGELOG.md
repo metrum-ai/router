@@ -20,11 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrapped typed errors are mapped with `errors.As`. Failed reads or builds
   preserve the previous authorizer and successful-sync time, and the observation
   time is sampled before the shared-locked read. `admin_auth.authorization.
-  max_staleness` is validated as configuration (never a request-time 422), and
-  the machine authorizer now has one publisher: a configuration reload asks the
-  synchronized path to publish instead of storing its own authorizer. The policy
-  runtime migration, audit/replay and reverse configuration guards remain
+  max_staleness` is validated and applied at startup and on reload (never a
+  request-time 422; a configured 10s window makes the policy stale at 10s+1ns),
+  and the machine authorizer now has one publisher: a configuration reload asks
+  the synchronized path to publish instead of storing its own authorizer. The
+  policy runtime migration, audit/replay and reverse configuration guards remain
   separate control-plane integration requirements.
+
+  Release note: with PostgreSQL authority and DB-sourced policy, `/admin/v1`
+  mutations answer `503 policy-stale` until the policy runtime table exists. That
+  table and its ledger migration ship in the guarded policy-resource change
+  (#866) in the same release; reads and static/SQLite authority are unaffected,
+  and restore recovery today is a restart (an operator reseed ships with #866).
 - v4.8.0 release binaries are built with Go 1.26.10 for standard-library
   security fixes. Source builds require at least Go 1.26.10; CI, release and
   container build producers use the patched toolchain.
