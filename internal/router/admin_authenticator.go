@@ -143,6 +143,8 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 		switch {
 		case err == ErrNoCredential:
 			continue
+		case errors.Is(err, ErrSenderConstraintFailed):
+			return Principal{}, ErrSenderConstraintFailed
 		case err != nil:
 			return Principal{}, ErrInvalidCredential
 		}

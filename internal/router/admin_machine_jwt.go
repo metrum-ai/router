@@ -264,39 +264,60 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 	}
 }
 
+// Private verified token result is not yet an authenticated Principal: a cnf
+// claim still requires its sender proof before it may leave the dispatcher.
+type adminVerifiedMachineJWT struct {
+	principal    Principal
+	confirmation json.RawMessage
+}
+
 func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
-	if ctx.Err() != nil || r == nil {
+	if ctx == nil || ctx.Err() != nil || r == nil {
 		return Principal{}, ErrInvalidCredential
 	}
 	raw := bearerTokenFromRequest(r)
 	if raw == "" || strings.HasPrefix(raw, adminAPIKeyPrefix) {
 		return Principal{}, ErrNoCredential
 	}
-	if len(raw) > maxMachineCredentialBytes {
+	verified, err := a.verifyToken(ctx, raw)
+	if err != nil {
+		return Principal{}, err
+	}
+	// Standalone use continues to reject every bound token. Only the runtime
+	// dispatcher can complete proof verification and return its identity.
+	if len(verified.confirmation) != 0 {
 		return Principal{}, ErrInvalidCredential
+	}
+	return verified.principal, nil
+}
+
+func (a *adminMachineJWTAuthenticator) verifyToken(ctx context.Context, raw string) (adminVerifiedMachineJWT, error) {
+	var zero adminVerifiedMachineJWT
+	if ctx == nil || ctx.Err() != nil || raw == "" || len(raw) > maxMachineCredentialBytes {
+		return zero, ErrInvalidCredential
 	}
 	token, err := jwt.ParseSigned(raw, a.algorithms)
 	if err != nil || len(token.Headers) != 1 || token.Headers[0].KeyID == "" {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	header := token.Headers[0]
 	typeValue, present := header.ExtraHeaders[jose.HeaderKey("typ")]
 	tokenType, stringType := typeValue.(string)
 	if present && !stringType {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	switch strings.ToLower(tokenType) {
 	case "at+jwt", "application/at+jwt":
 	case "", "jwt":
 		if !a.cfg.AllowLegacyTokenType {
-			return Principal{}, ErrInvalidCredential
+			return zero, ErrInvalidCredential
 		}
 	default:
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	key, err := a.key(ctx, header.KeyID, header.Algorithm)
 	if err != nil {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	var claims struct {
 		jwt.Claims
@@ -304,16 +325,16 @@ func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http
 		Confirmation json.RawMessage `json:"cnf"`
 	}
 	if token.Claims(key.Key, &claims) != nil {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	now := time.Now()
 	skew := a.cfg.ClockSkew
-	if claims.Issuer != a.cfg.Issuer || !claims.Audience.Contains(a.cfg.Audience) || claims.Expiry == nil || claims.IssuedAt == nil || len(claims.Confirmation) > 0 {
-		return Principal{}, ErrInvalidCredential
+	if claims.Issuer != a.cfg.Issuer || !claims.Audience.Contains(a.cfg.Audience) || claims.Expiry == nil || claims.IssuedAt == nil {
+		return zero, ErrInvalidCredential
 	}
 	exp, iat := claims.Expiry.Time(), claims.IssuedAt.Time()
 	if !exp.After(iat) || exp.Sub(iat) > a.cfg.MaxLifetime || !now.Before(exp.Add(skew)) || iat.After(now.Add(skew)) || claims.NotBefore != nil && claims.NotBefore.Time().After(now.Add(skew)) {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	subject, credentialID := "", ""
 	for _, mapping := range a.cfg.Subjects {
@@ -325,13 +346,13 @@ func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http
 			continue
 		}
 		if subject != "" && subject != mapping.Subject {
-			return Principal{}, ErrInvalidCredential
+			return zero, ErrInvalidCredential
 		}
 		subject = mapping.Subject
 		credentialID = mapping.Claim + ":" + mapping.Value
 	}
 	if subject == "" || ctx.Err() != nil {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
-	return Principal{Subject: subject, Kind: a.cfg.Kind, Issuer: a.cfg.Issuer, CredentialID: credentialID}, nil
+	return adminVerifiedMachineJWT{principal: Principal{Subject: subject, Kind: a.cfg.Kind, Issuer: a.cfg.Issuer, CredentialID: credentialID}, confirmation: claims.Confirmation}, nil
 }
