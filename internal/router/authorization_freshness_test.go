@@ -152,17 +152,21 @@ func TestConfiguredMaxStalenessAppliesAtConstruction(t *testing.T) {
 		t.Fatalf("constructed max age = %v, want the configured 10s", got)
 	}
 	// The constructed service's authority is SQLite, which is age-exempt, so the
-	// boundary is asserted on the same recorded state with a PostgreSQL-classified
-	// handle: only the dialector identity differs, nothing else is rebuilt.
-	gated := *svc
-	gated.usage = &usageStore{db: postgresGateHandle()}
+	// boundary is asserted on its configured state (pure math over the maxAge that
+	// construction applied) and on the gate itself through a PostgreSQL authority
+	// that receives the same parsed configuration.
 	observed := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
 	svc.policyFreshness.observeSuccess(1, observed)
-	if gated.policyFreshness.stale(observed.Add(10 * time.Second)) {
+	if svc.policyFreshness.stale(observed.Add(10 * time.Second)) {
 		t.Fatal("exactly 10s must still be within the configured window")
 	}
-	if !gated.policyFreshness.stale(observed.Add(10*time.Second + time.Nanosecond)) {
+	if !svc.policyFreshness.stale(observed.Add(10*time.Second + time.Nanosecond)) {
 		t.Fatal("10s+1ns must be stale with a configured 10s window")
+	}
+	gated := freshnessGateService(t, "db", "postgres")
+	gated.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	if err := gated.applyAdminPolicyFreshness(cfg); err != nil {
+		t.Fatal(err)
 	}
 	gated.policyFreshness.observeSuccess(1, time.Now().Add(-10*time.Second-time.Nanosecond))
 	if err := gated.checkAdminPolicyFreshness(time.Now()); !errors.Is(err, ErrPolicyStale) {
