@@ -5,8 +5,8 @@ package router
 
 import (
 	"context"
-	"errors"
 	"strings"
+	"time"
 )
 
 // Authorizer is the sole administrative decision seam. Authentication supplies
@@ -17,8 +17,8 @@ type Authorizer interface {
 }
 
 var (
-	ErrAdminForbidden           = errors.New("admin-forbidden")
-	ErrAuthorizationUnavailable = errors.New("authorization-unavailable")
+	ErrAdminForbidden           = &AdminAuthorizationError{status: 403, code: "admin-forbidden"}
+	ErrAuthorizationUnavailable = &AdminAuthorizationError{status: 503, code: "authorization-unavailable"}
 )
 
 const (
@@ -168,6 +168,9 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 	}
 	if !snapshot.enforce(subject, object, action) {
 		return ErrAdminForbidden
+	}
+	if !isLegacy && ctx.Value(adminPolicyMutationKey{}) == true {
+		return s.checkAdminPolicyFreshness(time.Now())
 	}
 	return nil
 }

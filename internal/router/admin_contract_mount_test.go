@@ -122,6 +122,16 @@ type adminV1Harness struct {
 	codec        *AdminCursorCodec
 	now          time.Time
 	currentETag  func(*http.Request) (string, int64, error)
+	// authorizeOverride replaces the fake authorization seam, used by tests that
+	// drive the real Service.Authorize (freshness gate) through the mount.
+	authorizeOverride func(context.Context, Principal, string, string, string) error
+}
+
+func (h *adminV1Harness) authorizeRequest(ctx context.Context, principal Principal, domain, object, action string) error {
+	if h.authorizeOverride != nil {
+		return h.authorizeOverride(ctx, principal, domain, object, action)
+	}
+	return h.authorize.Authorize(ctx, principal, domain, object, action)
 }
 
 func newAdminV1Harness(t *testing.T) *adminV1Harness {
@@ -178,7 +188,7 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 		return principal, AdminGlobalDomain, true
 	}
 	authorize := func(ctx context.Context, principal Principal, domain, object, action string) error {
-		return harness.authorize.Authorize(ctx, principal, domain, object, action)
+		return harness.authorizeRequest(ctx, principal, domain, object, action)
 	}
 	extra = addReportPlaceholderHandlers(registry, extra)
 	handlers := AdminV1Handlers(
@@ -190,7 +200,7 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 		Registry:     registry,
 		Authenticate: harness.authenticate,
 		Authorize: func(ctx context.Context, principal Principal, domain, object, action string) error {
-			return harness.authorize.Authorize(ctx, principal, domain, object, action)
+			return harness.authorizeRequest(ctx, principal, domain, object, action)
 		},
 		Handlers: handlers,
 		ResolveDomain: func(Principal) string {
@@ -1319,6 +1329,10 @@ type adminV1DBHarness struct {
 	authorize *fakeAuthorizer
 }
 
+func (h *adminV1DBHarness) authorizeRequest(ctx context.Context, principal Principal, domain, object, action string) error {
+	return h.authorize.Authorize(ctx, principal, domain, object, action)
+}
+
 func newAdminV1DBHarness(t *testing.T) *adminV1DBHarness {
 	t.Helper()
 	return newAdminV1DBHarnessWith(t, nil)
@@ -1341,7 +1355,7 @@ func newAdminV1DBHarnessWith(t *testing.T, extraHandlers map[string]http.Handler
 		return principal, AdminGlobalDomain, true
 	}
 	authorize := func(ctx context.Context, principal Principal, domain, object, action string) error {
-		return harness.authorize.Authorize(ctx, principal, domain, object, action)
+		return harness.authorizeRequest(ctx, principal, domain, object, action)
 	}
 	configDeps := AdminV1ConfigAdminDeps(ConfigAdminDeps{
 		DB: db, RuntimeScope: "prod", Driver: "sqlite", InstanceID: "replica-test",
@@ -1369,7 +1383,7 @@ func newAdminV1DBHarnessWith(t *testing.T, extraHandlers map[string]http.Handler
 		Registry:     registry,
 		Authenticate: headerPrincipalAuthenticator{},
 		Authorize: func(ctx context.Context, principal Principal, domain, object, action string) error {
-			return harness.authorize.Authorize(ctx, principal, domain, object, action)
+			return harness.authorizeRequest(ctx, principal, domain, object, action)
 		},
 		Handlers: handlers,
 		ResolveDomain: func(Principal) string {
@@ -1606,7 +1620,7 @@ func TestAdminV1UnrecordedHandlerGateCallsAuthorizer(t *testing.T) {
 		if action == "force" {
 			forceCalls++
 		}
-		return harness.authorize.Authorize(ctx, principal, domain, object, action)
+		return harness.authorizeRequest(ctx, principal, domain, object, action)
 	}
 	// The real handler dependencies; the force requirement is the production one
 	// (RequireValidationStatus empty, so a forced write needs the force grant).
@@ -1633,7 +1647,7 @@ func TestAdminV1UnrecordedHandlerGateCallsAuthorizer(t *testing.T) {
 		Registry:     registry,
 		Authenticate: headerPrincipalAuthenticator{},
 		Authorize: func(ctx context.Context, principal Principal, domain, object, action string) error {
-			return harness.authorize.Authorize(ctx, principal, domain, object, action)
+			return harness.authorizeRequest(ctx, principal, domain, object, action)
 		},
 		Handlers: handlers,
 		ResolveDomain: func(Principal) string {

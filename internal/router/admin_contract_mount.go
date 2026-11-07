@@ -297,6 +297,15 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		}
 		ctx = WithPrincipal(ctx, principal)
 		r = r.WithContext(ctx)
+		// The trusted registry entry, never a header, the request URL or the
+		// authentication result, decides whether this operation mutates. Mark it
+		// before any decision so the freshness gate covers every mutating
+		// operation and all of its always-checks, including emergency ones.
+		if adminOperationMutates(op) {
+			ctx = WithAdminPolicyMutation(ctx)
+			r = r.WithContext(ctx)
+		}
+
 		audit.Principal = principal
 		audit.Domain = m.deps.domainFor(principal)
 
@@ -915,7 +924,9 @@ func adminAuthProblem(err error) (int, string) {
 	case errors.Is(err, ErrInvalidCredential):
 		return http.StatusUnauthorized, "invalid_credential"
 	}
-	if coder, ok := err.(interface{ AdminProblemCode() (int, string) }); ok {
+	// errors.As so an authenticator that wraps its typed error keeps its code.
+	var coder interface{ AdminProblemCode() (int, string) }
+	if errors.As(err, &coder) {
 		if status, code := coder.AdminProblemCode(); status != 0 && code != "" {
 			return status, code
 		}
@@ -929,7 +940,11 @@ func adminAuthorizationProblem(err error) (int, string) {
 	if err == nil {
 		return 0, ""
 	}
-	if coder, ok := err.(interface{ AdminProblemCode() (int, string) }); ok {
+	// errors.As, not a type assertion: the authorization seam wraps its typed
+	// errors (for example %w around ErrPolicyStale), and a wrapped refusal must
+	// keep its documented status and code instead of degrading to 403.
+	var coder interface{ AdminProblemCode() (int, string) }
+	if errors.As(err, &coder) {
 		if status, code := coder.AdminProblemCode(); status != 0 && code != "" {
 			return status, code
 		}
