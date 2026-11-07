@@ -59,7 +59,7 @@ var adminV1OperationSpecs = []Operation{
 	// Configuration (admin:config, admin:shadow)
 	// ---------------------------------------------------------------------
 	{
-		ID: "listConfigGroups", Method: "GET", Path: "/admin/v1/config/groups", LegacyPath: "/admin/config/groups",
+		ID: "listConfigGroups", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/groups", LegacyPath: "/admin/config/groups",
 		Summary: "List model groups in the active configuration",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response: adminOpenObject{Members: []string{"mode", "runtime_scope", "set_id", "revision", "groups"}},
@@ -67,7 +67,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassRead, HandlerKey: "config.groups.list",
 	},
 	{
-		ID: "getConfigGroup", Method: "GET", Path: "/admin/v1/config/groups/{group}", LegacyPath: "/admin/config/groups/{group}",
+		ID: "getConfigGroup", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/groups/{group}", LegacyPath: "/admin/config/groups/{group}",
 		Summary: "Read one model group",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminOpenObject{Members: []string{"group", "strategy", "targets", "contract", "set_id", "revision"}},
@@ -129,7 +129,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.rollback",
 	},
 	{
-		ID: "listConfigGroupHistory", Method: "GET", Path: "/admin/v1/config/groups/{group}/history", LegacyPath: "/admin/config/groups/{group}/history",
+		ID: "listConfigGroupHistory", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/groups/{group}/history", LegacyPath: "/admin/config/groups/{group}/history",
 		Summary: "List the change history of a model group",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminOpenObject{Members: []string{"group", "mode", "events"}},
@@ -147,7 +147,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.shadow.start",
 	},
 	{
-		ID: "getConfigGroupShadow", Method: "GET", Path: "/admin/v1/config/groups/{group}/shadow", LegacyPath: "/admin/config/groups/{group}/shadow",
+		ID: "getConfigGroupShadow", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/groups/{group}/shadow", LegacyPath: "/admin/config/groups/{group}/shadow",
 		Summary: "Read the active shadow run of a model group",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminOpenObject{Members: []string{"shadow"}},
@@ -177,7 +177,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.shadow.stop",
 	},
 	{
-		ID: "getConfigStatus", Method: "GET", Path: "/admin/v1/config/status", LegacyPath: "/admin/config/status",
+		ID: "getConfigStatus", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/status", LegacyPath: "/admin/config/status",
 		Summary: "Read control-plane and replica revision status",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminOpenObject{Members: []string{"mode", "runtime_scope", "driver", "revision", "active_set_id", "replica"}},
@@ -195,7 +195,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassWrite, HandlerKey: "config.sets.import",
 	},
 	{
-		ID: "listConfigSets", Method: "GET", Path: "/admin/v1/config/sets", LegacyPath: "/admin/config/sets",
+		ID: "listConfigSets", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/sets", LegacyPath: "/admin/config/sets",
 		Summary: "List configuration sets",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response: adminOpenObject{Members: []string{"mode", "runtime_scope", "sets"}},
@@ -206,7 +206,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassRead, HandlerKey: "config.sets.list",
 	},
 	{
-		ID: "getConfigSet", Method: "GET", Path: "/admin/v1/config/sets/{set_id}", LegacyPath: "/admin/config/sets/{set_id}",
+		ID: "getConfigSet", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/sets/{set_id}", LegacyPath: "/admin/config/sets/{set_id}",
 		Summary: "Export one configuration set",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminOpenObject{Members: []string{"set_id", "runtime_scope", "name", "status", "validation_status", "document"}},
@@ -234,7 +234,7 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassWrite, HandlerKey: "config.sets.rollback",
 	},
 	{
-		ID: "diffConfig", Method: "GET", Path: "/admin/v1/config/diff", LegacyPath: "/admin/config/diff",
+		ID: "diffConfig", Method: "GET", NoSideEffect: true, Path: "/admin/v1/config/diff", LegacyPath: "/admin/config/diff",
 		Summary: "Diff two configuration sets",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
 		Response:  adminOpenObject{Members: []string{"from_set_id", "to_set_id", "groups", "providers"}},
@@ -247,7 +247,7 @@ var adminV1OperationSpecs = []Operation{
 	// Caller directory (admin:callers)
 	// ---------------------------------------------------------------------
 	{
-		ID: "listCallers", Method: "GET", Path: "/admin/v1/callers", LegacyPath: "/admin/callers",
+		ID: "listCallers", Method: "GET", NoSideEffect: true, Path: "/admin/v1/callers", LegacyPath: "/admin/callers",
 		Summary: "List registered callers of the active configuration",
 		Object:  authzObjectAdminCallers, Action: authzActionList, Domain: AdminDomainCallerTarget,
 		Response: adminOpenObject{Members: []string{"generated_utc", "config_set_id", "callers"}},
@@ -318,7 +318,7 @@ var adminV1OperationSpecs = []Operation{
 	// Admin-plane metrics (metrics/read)
 	// ---------------------------------------------------------------------
 	{
-		ID: "getAdminMetrics", Method: "GET", Path: "/admin/v1/metrics", LegacyPath: "/metrics",
+		ID: "getAdminMetrics", Method: "GET", NoSideEffect: true, Path: "/admin/v1/metrics", LegacyPath: "/metrics",
 		Summary: "Scrape admin-plane and serving metrics",
 		Description: "The versioned spelling of the admin listener's /metrics. Both use the same renderer and the " +
 			"same metrics/read decision in the whole-plane domain; no caller token is involved.",
@@ -356,105 +356,105 @@ var adminV1OperationSpecs = []Operation{
 	// Reports (admin:reports, admin:security_reports; handler-scoped domains)
 	// ---------------------------------------------------------------------
 	{
-		ID: "getAdminReportVersion", Method: "GET", Path: "/admin/v1/reports/version", LegacyPath: "/admin/reports/api/version",
+		ID: "getAdminReportVersion", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/version", LegacyPath: "/admin/reports/api/version",
 		Summary: "Report the router build version",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"version", "commit", "build_date", "go_version", "goos", "goarch"}},
 		Adapter:  "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.version",
 	},
 	{
-		ID: "getAdminQuotaStatus", Method: "GET", Path: "/admin/v1/reports/quota-status", LegacyPath: "/admin/reports/api/quota-status",
+		ID: "getAdminQuotaStatus", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/quota-status", LegacyPath: "/admin/reports/api/quota-status",
 		Summary: "Report caller quota status",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "callers"}},
 		Errors:   []int{503}, Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.quota_status",
 	},
 	{
-		ID: "getAdminReportSummary", Method: "GET", Path: "/admin/v1/reports/summary", LegacyPath: "/admin/reports/api/summary",
+		ID: "getAdminReportSummary", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/summary", LegacyPath: "/admin/reports/api/summary",
 		Summary: "Report usage summary",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "totals", "pagination"}},
 		Errors:   []int{400, 503}, Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.summary",
 	},
 	{
-		ID: "getAdminReportOverview", Method: "GET", Path: "/admin/v1/reports/overview", LegacyPath: "/admin/reports/api/overview",
+		ID: "getAdminReportOverview", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/overview", LegacyPath: "/admin/reports/api/overview",
 		Summary: "Report usage and savings overview",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "totals", "sections"}},
 		Errors:   []int{400, 503}, Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.overview",
 	},
 	{
-		ID: "getAdminReportSavings", Method: "GET", Path: "/admin/v1/reports/savings", LegacyPath: "/admin/reports/api/savings",
+		ID: "getAdminReportSavings", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/savings", LegacyPath: "/admin/reports/api/savings",
 		Summary: "Report routing savings against a baseline",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "baseline", "sections"}},
 		Errors:   []int{400, 503}, Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.savings",
 	},
 	{
-		ID: "getCFOReport", Method: "GET", Path: "/admin/v1/reports/cfo", LegacyPath: "/admin/reports/api/cfo",
+		ID: "getCFOReport", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/cfo", LegacyPath: "/admin/reports/api/cfo",
 		Summary: "Report CFO cost and savings view",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "teams", "totals"}},
 		Errors:   []int{400, 503}, Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.cfo",
 	},
 	{
-		ID: "exportCFOReportCSV", Method: "GET", Path: "/admin/v1/reports/cfo/export.csv", LegacyPath: "/admin/reports/cfo/export.csv",
+		ID: "exportCFOReportCSV", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/cfo/export.csv", LegacyPath: "/admin/reports/cfo/export.csv",
 		Summary: "Export the CFO report as CSV",
 		Object:  authzObjectAdminReports, Action: authzActionExport, Domain: AdminDomainHandler,
 		Response: adminTextBody{MediaType: "text/csv"}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.cfo.csv",
 	},
 	{
-		ID: "exportCFOReportMarkdown", Method: "GET", Path: "/admin/v1/reports/cfo/export.md", LegacyPath: "/admin/reports/cfo/export.md",
+		ID: "exportCFOReportMarkdown", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/cfo/export.md", LegacyPath: "/admin/reports/cfo/export.md",
 		Summary: "Export the CFO report as Markdown",
 		Object:  authzObjectAdminReports, Action: authzActionExport, Domain: AdminDomainHandler,
 		Response: adminTextBody{MediaType: "text/markdown"}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.cfo.md",
 	},
 	{
-		ID: "exportAdminReportMarkdown", Method: "GET", Path: "/admin/v1/reports/export.md", LegacyPath: "/admin/reports/export.md",
+		ID: "exportAdminReportMarkdown", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/export.md", LegacyPath: "/admin/reports/export.md",
 		Summary: "Export the usage report as Markdown",
 		Object:  authzObjectAdminReports, Action: authzActionExport, Domain: AdminDomainHandler,
 		Response: adminTextBody{MediaType: "text/markdown"}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.export.md",
 	},
 	{
-		ID: "getAdminRetentionStatus", Method: "GET", Path: "/admin/v1/reports/retention-status", LegacyPath: "/admin/reports/api/retention-status",
+		ID: "getAdminRetentionStatus", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/retention-status", LegacyPath: "/admin/reports/api/retention-status",
 		Summary: "Report retention job status",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "tables"}}, Errors: []int{503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.retention_status",
 	},
 	{
-		ID: "getAdminProviderCatalogStatus", Method: "GET", Path: "/admin/v1/reports/provider-catalog-status", LegacyPath: "/admin/reports/api/provider-catalog-status",
+		ID: "getAdminProviderCatalogStatus", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/provider-catalog-status", LegacyPath: "/admin/reports/api/provider-catalog-status",
 		Summary: "Report provider catalog status",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"providers", "catalog_models", "active_targets", "validated_targets"}},
 		Adapter:  "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.provider_catalog_status",
 	},
 	{
-		ID: "getAdminMigrationStatus", Method: "GET", Path: "/admin/v1/reports/migrations", LegacyPath: "/admin/reports/api/migrations",
+		ID: "getAdminMigrationStatus", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/migrations", LegacyPath: "/admin/reports/api/migrations",
 		Summary: "Report database migration status",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"scope", "state", "entries", "jobs"}}, Errors: []int{503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.migrations",
 	},
 	{
-		ID: "listAdminReportRequests", Method: "GET", Path: "/admin/v1/reports/requests", LegacyPath: "/admin/reports/api/requests",
+		ID: "listAdminReportRequests", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/requests", LegacyPath: "/admin/reports/api/requests",
 		Summary: "List request rows with cursor pagination",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "rows", "pagination"}}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.requests",
 	},
 	{
-		ID: "getAdminReportRequest", Method: "GET", Path: "/admin/v1/reports/requests/{request_id}", LegacyPath: "/admin/reports/api/request/{request_id}",
+		ID: "getAdminReportRequest", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/requests/{request_id}", LegacyPath: "/admin/reports/api/request/{request_id}",
 		Summary: "Read one request row",
 		Object:  authzObjectAdminReports, Action: authzActionDrilldown, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"request", "attempts", "usage"}}, Errors: []int{400, 404, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.request",
 	},
 	{
-		ID: "getAdminReportRequestEvidence", Method: "GET", Path: "/admin/v1/reports/request-evidence", LegacyPath: "/admin/reports/api/request-evidence",
+		ID: "getAdminReportRequestEvidence", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/request-evidence", LegacyPath: "/admin/reports/api/request-evidence",
 		Summary: "Read the evidence for one request",
 		Object:  authzObjectAdminReports, Action: authzActionDrilldown, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"request", "captures", "usage"}}, Errors: []int{400, 404, 503},
@@ -462,21 +462,21 @@ var adminV1OperationSpecs = []Operation{
 		Adapter: "reports", RateClass: AdminRateClassRead, HandlerKey: "reports.request_evidence",
 	},
 	{
-		ID: "listAdminSecurityEvents", Method: "GET", Path: "/admin/v1/reports/security/events", LegacyPath: "/admin/reports/api/security/events",
+		ID: "listAdminSecurityEvents", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/security/events", LegacyPath: "/admin/reports/api/security/events",
 		Summary: "List security access events with cursor pagination",
 		Object:  authzObjectSecurityReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "events", "pagination"}}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.security.events",
 	},
 	{
-		ID: "getAdminSecurityOverview", Method: "GET", Path: "/admin/v1/reports/security/overview", LegacyPath: "/admin/reports/api/security/overview",
+		ID: "getAdminSecurityOverview", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/security/overview", LegacyPath: "/admin/reports/api/security/overview",
 		Summary: "Report security access overview",
 		Object:  authzObjectSecurityReports, Action: authzActionRead, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"generated_utc", "window", "totals", "sections"}}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.security.overview",
 	},
 	{
-		ID: "exportAdminSecurityCSV", Method: "GET", Path: "/admin/v1/reports/security/export.csv", LegacyPath: "/admin/reports/security/export.csv",
+		ID: "exportAdminSecurityCSV", Method: "GET", NoSideEffect: true, Path: "/admin/v1/reports/security/export.csv", LegacyPath: "/admin/reports/security/export.csv",
 		Summary: "Export security access events as CSV",
 		Object:  authzObjectSecurityReports, Action: authzActionExport, Domain: AdminDomainHandler,
 		Response: adminTextBody{MediaType: "text/csv"}, Errors: []int{400, 503},
@@ -508,7 +508,7 @@ var adminV1ScalarReportSpecs = []struct {
 func init() {
 	for _, spec := range adminV1ScalarReportSpecs {
 		adminV1OperationSpecs = append(adminV1OperationSpecs, Operation{
-			ID: spec.PrimaryKey, Method: "GET",
+			ID: spec.PrimaryKey, Method: "GET", NoSideEffect: true,
 			Path:       "/admin/v1/reports/" + spec.Slug,
 			LegacyPath: "/admin/reports/api/" + spec.Slug,
 			Summary:    spec.Summary,

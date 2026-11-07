@@ -704,7 +704,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "caller-target",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:callers"
+        "x-admin-object": "admin:callers",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/callers/issue": {
@@ -1059,7 +1060,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/config/groups": {
@@ -1108,7 +1110,8 @@
         "x-admin-concurrency": "none",
         "x-admin-domain": "global",
         "x-admin-idempotency": "none",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/config/groups/{group}": {
@@ -1194,7 +1197,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/config/groups/{group}/history": {
@@ -1277,7 +1281,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/config/groups/{group}/rollback": {
@@ -1548,7 +1553,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       },
       "post": {
         "operationId": "startConfigGroupShadow",
@@ -2358,7 +2364,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       },
       "post": {
         "operationId": "importConfigSet",
@@ -2530,7 +2537,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/config/sets/{set_id}/activate": {
@@ -2705,7 +2713,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:config",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/content-captures/purge-expired": {
@@ -2912,7 +2921,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "metrics"
+        "x-admin-object": "metrics",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/cfo": {
@@ -2987,7 +2997,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/cfo/export.csv": {
@@ -3060,7 +3071,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/cfo/export.md": {
@@ -3133,7 +3145,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/errors-fallbacks": {
@@ -3208,7 +3221,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/export.md": {
@@ -3281,7 +3295,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/latency-throughput": {
@@ -3356,7 +3371,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/migrations": {
@@ -3431,7 +3447,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/model-groups-by-user": {
@@ -3506,7 +3523,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/overview": {
@@ -3581,7 +3599,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/provider-catalog-status": {
@@ -3656,7 +3675,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/provider-model-mix": {
@@ -3731,7 +3751,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/quota-status": {
@@ -3806,7 +3827,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/request-evidence": {
@@ -3893,7 +3915,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/requested-models": {
@@ -3968,7 +3991,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/requests": {
@@ -4043,7 +4067,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/requests/{request_id}": {
@@ -4129,7 +4154,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/retention-status": {
@@ -4204,7 +4230,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/savings": {
@@ -4279,7 +4306,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/savings-by-group": {
@@ -4354,7 +4382,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/savings-by-key": {
@@ -4429,7 +4458,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/savings-by-project": {
@@ -4504,7 +4534,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/savings-by-provider-model": {
@@ -4579,7 +4610,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/savings-by-user": {
@@ -4654,7 +4686,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/security/events": {
@@ -4729,7 +4762,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:security_reports"
+        "x-admin-object": "admin:security_reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/security/export.csv": {
@@ -4802,7 +4836,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:security_reports"
+        "x-admin-object": "admin:security_reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/security/overview": {
@@ -4877,7 +4912,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:security_reports"
+        "x-admin-object": "admin:security_reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/summary": {
@@ -4952,7 +4988,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/usage-by-caller": {
@@ -5027,7 +5064,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/usage-by-key": {
@@ -5102,7 +5140,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/reports/version": {
@@ -5177,7 +5216,8 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:reports"
+        "x-admin-object": "admin:reports",
+        "x-admin-side-effects": "none"
       }
     },
     "/admin/v1/training/export": {

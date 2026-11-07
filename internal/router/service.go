@@ -69,6 +69,7 @@ type Service struct {
 	adminSession       *adminSessionStore
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
+	policyFreshness    *policyFreshnessState
 	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
@@ -100,12 +101,12 @@ type Service struct {
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
-	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
-	// adminAuditJanitorDone reports when each janitor goroutine has exited.
+	// adminAuditJanitorStop stops the retention purge jobs at shutdown.
 	adminAuditJanitorStop chan struct{}
-	adminAuditJanitorDone []<-chan struct{}
 	configReloadStop      func()
 	configNotifyStop      func()
+	policySyncStop        func()
+	policyNotifyStop      func()
 	configInstanceID      string
 	configLoaded          atomic.Value // configLoadedState
 	shadows               *shadowRuntime
@@ -364,6 +365,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
+	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
 	if err := s.initConfigControlPlane(); err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
@@ -424,6 +426,24 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 			permissions: perms,
 		}
 	}
+	if s.usage != nil && s.usage.db != nil {
+		stop, err := s.startPolicySynchronization(context.Background(), defaultPolicyPollInterval)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		s.policySyncStop = stop
+		if cfg.Server.AdminAuth.Authorization.Enabled && strings.EqualFold(strings.TrimSpace(cfg.Server.AdminAuth.Authorization.Source), "db") {
+			notifyCtx, cancelNotify := context.WithCancel(context.Background())
+			stopNotify, err := StartConfigRevisionNotifier(notifyCtx, s.usage.db, policyNotificationScope, func() { _ = s.syncPolicyAuthorization(notifyCtx) })
+			if err != nil {
+				cancelNotify()
+				log.Printf("admin policy notifier unavailable; authoritative polling remains enabled")
+			} else {
+				s.policyNotifyStop = func() { cancelNotify(); stopNotify() }
+			}
+		}
+	}
 	s.routes()
 	s.initAdminPlane()
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
@@ -475,6 +495,14 @@ func (s *Service) Close() {
 	if s.configReloadStop != nil {
 		s.configReloadStop()
 		s.configReloadStop = nil
+	}
+	if s.policyNotifyStop != nil {
+		s.policyNotifyStop()
+		s.policyNotifyStop = nil
+	}
+	if s.policySyncStop != nil {
+		s.policySyncStop()
+		s.policySyncStop = nil
 	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
@@ -555,6 +583,10 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	if s.configControlPlane == nil {
 		return nil
+	}
+	if s.usage != nil {
+		s.usage.policyMutationMu.Lock()
+		defer s.usage.policyMutationMu.Unlock()
 	}
 	if s.cfg == nil {
 		return fmt.Errorf("reload active config: service has no current configuration")

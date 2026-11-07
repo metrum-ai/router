@@ -182,8 +182,10 @@ type Operation struct {
 	// again. This is the only way a credential could otherwise reach the
 	// Idempotency-Key store.
 	SensitiveResponse bool
-	// NoSideEffect marks read-shaped POSTs (validation/dry-run) that must not
-	// require a precondition.
+	// NoSideEffect explicitly classifies read-only operations, including reads
+	// and read-shaped POSTs (validation/dry-run). They require no precondition
+	// and do not enter the admin policy mutation freshness gate. The zero value
+	// is deliberately mutating; HTTP verbs/headers never select freshness.
 	NoSideEffect bool
 	Deprecated   *AdminDeprecation
 	// HandlerKey names the handler the mount layer binds to this operation.

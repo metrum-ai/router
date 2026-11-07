@@ -296,6 +296,11 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			m.deps.Throttle.RecordSuccess(adminClaimedCredential(r), adminSourceAddress(r))
 		}
 		ctx = WithPrincipal(ctx, principal)
+		// Effect classification comes only from the frozen trusted registry.
+		// Unknown/non-read-only operations fail closed, regardless of HTTP verb.
+		if !op.NoSideEffect {
+			ctx = WithAdminPolicyMutation(ctx)
+		}
 		r = r.WithContext(ctx)
 		audit.Principal = principal
 		audit.Domain = m.deps.domainFor(principal)

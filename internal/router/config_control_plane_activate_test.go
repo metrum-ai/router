@@ -7,6 +7,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -188,9 +189,9 @@ func TestConfigRevisionPollerCallsReloadOnRevisionChange(t *testing.T) {
 
 	configControlPlaneSeedSet(t, r.db, "set-A", "staging", "alpha", "active", "valid")
 
-	reloads := 0
+	var reloads atomic.Int64
 	stop, err := StartConfigRevisionPoller(context.Background(), r.db, "staging", 10*time.Millisecond, func() {
-		reloads++
+		reloads.Add(1)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -206,12 +207,12 @@ func TestConfigRevisionPollerCallsReloadOnRevisionChange(t *testing.T) {
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		if reloads > 0 {
+		if reloads.Load() > 0 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if reloads == 0 {
+	if reloads.Load() == 0 {
 		t.Fatal("poller did not call reload after revision changed")
 	}
 }

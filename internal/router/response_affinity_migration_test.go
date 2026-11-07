@@ -111,7 +111,9 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 14 {
+	// 15 is the current usage head after the admin audit and policy-runtime
+	// migrations (2026110702/0703/0704); this test pins the whole tail.
+	if err != nil || status.SchemaVersion != 15 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -183,7 +185,9 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 14 || !status.Compatible {
+	// Fresh installs reach the current usage head (15) including the admin audit
+	// and policy-runtime migrations.
+	if err != nil || status.SchemaVersion != 15 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -271,7 +275,9 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	if err != nil || after.SchemaVersion != 12 {
+	// 15 is the current usage head after the admin audit and policy-runtime
+	// migrations (2026110702/0703/0704).
+	if err != nil || after.SchemaVersion != 15 {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {

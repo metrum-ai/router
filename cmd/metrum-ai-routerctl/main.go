@@ -32,7 +32,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|groups|providers|models|status|usage|reports|blueprint> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -43,6 +43,8 @@ func main() {
 		callersCommand(os.Args[2:])
 	case "adminkeys":
 		adminkeysCommand(os.Args[2:])
+	case "policies":
+		policiesCommand(os.Args[2:])
 	case "groups":
 		groupsCommand(os.Args[2:])
 	case "providers":

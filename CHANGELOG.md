@@ -9,9 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Serialize PostgreSQL revision-notifier shutdown with its listener goroutine
-  and await pgx asynchronous connection cleanup, avoiding concurrent connection
-  reads and closure during service shutdown.
+- Add guarded policy resource, immutable clone-rollback, synchronization and
+  typed HTTP operation primitives, now bound to the real same-transaction admin
+  audit (#869): one usage audit row per mutation carrying the authenticated
+  actor, operation, revision and immutable hashes; a rejected audit insert
+  aborts the change, and a request without audit metadata fails closed. The
+  policy runtime singleton is registered in the usage migration ledger as
+  `2026110704` (schema 15) and preserves revisions on reapplication. Production
+  global registration, published credential inventory and reverse
+  credential/configuration guards remain required integration work.
 - v4.8.0 release binaries are built with Go 1.26.10 for standard-library
   security fixes. Source builds require at least Go 1.26.10; CI, release and
   container build producers use the patched toolchain.
