@@ -20,6 +20,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net"
 	"net/http"
@@ -30,6 +31,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/metrum-ai/router/internal/tlsacme"
+	"github.com/metrum-ai/router/internal/tlsacme/dns"
 	"time"
 )
 
@@ -1213,3 +1217,228 @@ func TestAdminClientCAReloadInterval(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}
 }
+
+// The admin listener drives the #810 managed-certificate lifecycle: it serves
+// the certificate from the shared store before binding and picks up a renewed
+// certificate while running. Uses a real tlsacme.Manager with a pre-filled
+// cache (no network, no live CA).
+func parseAdminTestCert(t *testing.T, raw []byte) *x509.Certificate {
+	t.Helper()
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		t.Fatal("certificate PEM did not decode")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+func TestAdminManagedCertificateServedAndRenewed(t *testing.T) {
+	t.Setenv("ADMIN_TEST_CLOUDFLARE_TOKEN", "test-token-not-a-secret")
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "acme")
+	store, err := tlsacme.OpenStore(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := newAdminTestCA(t)
+	firstCertPEM, firstKeyPEM := ca.issue(t, "admin.test", []string{"admin.test"}, nil, true)
+	now := time.Now()
+	writeRecord := func(certPEM, keyPEM []byte, issuedAt time.Time, serial int64) {
+		record := tlsacme.CertificateRecord{
+			Domains:        []string{"admin.test"},
+			CertificatePEM: certPEM,
+			PrivateKeyPEM:  keyPEM,
+			Issuer:         "test-ca",
+			NotBefore:      issuedAt.Add(-time.Minute),
+			NotAfter:       issuedAt.Add(24 * time.Hour),
+			IssuedAt:       issuedAt,
+			KeyType:        "ecdsa_p256",
+		}
+		if err := store.SaveCertificate(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeRecord(firstCertPEM, firstKeyPEM, now, 1)
+
+	manager, err := tlsacme.New(tlsacme.Config{
+		Listener:               tlsacme.ListenerAdmin,
+		ErrorPrefix:            "admin.tls.acme",
+		Mode:                   "router",
+		CertificateSource:      "acme",
+		Domains:                []string{"admin.test"},
+		DirectoryURL:           "http://127.0.0.1:1/directory",
+		AcceptTOS:              true,
+		AllowInsecureDirectory: true,
+		CacheDir:               cacheDir,
+		StartupTimeout:         10 * time.Second,
+		ReloadInterval:         time.Second,
+		DNS: tlsacme.DNSConfig{
+			Provider: tlsacme.ProviderCloudflare,
+			Credentials: tlsacme.Credentials{
+				APIToken: tlsacme.SecretRef{Env: "ADMIN_TEST_CLOUDFLARE_TOKEN"},
+			},
+		},
+	}, tlsacme.WithStore(store), tlsacme.WithRenewTicker(50*time.Millisecond),
+		tlsacme.WithProvider(unusedAdminDNSProvider{}),
+		tlsacme.WithLogger(log.New(io.Discard, "", 0)))
+	if err != nil {
+		t.Fatalf("tlsacme.New: %v", err)
+	}
+
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Admin.Enabled = true
+	cfg.Admin.Listen = "127.0.0.1:0"
+	cfg.Admin.TLS = AdminTLSConfig{
+		ListenerTLSConfig: ListenerTLSConfig{
+			Mode:              adminTLSModeRouter,
+			CertificateSource: adminCertificateSourceACME,
+			ACME: TLSACMEServerConfig{
+				Domains:                []string{"admin.test"},
+				DirectoryURL:           "http://127.0.0.1:1/directory",
+				AcceptTOS:              true,
+				AllowInsecureDirectory: true,
+				CacheDir:               cacheDir,
+				DNS: TLSDNSConfig{
+					Provider:    "cloudflare",
+					Credentials: TLSDNSCredentialsConfig{APITokenEnv: "ADMIN_TEST_CLOUDFLARE_TOKEN"},
+				},
+			},
+		},
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	svc.SetAdminAuthenticator(allowAllAdminAuthenticator{principal: testAdminPrincipal})
+	t.Cleanup(svc.Close)
+	plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler(), WithAdminTLSManager(manager))
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if err := plane.Start(); err != nil {
+		t.Fatalf("admin Start with a managed certificate: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = plane.Shutdown(ctx)
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(ca.cert)
+	probe := func() *x509.Certificate {
+		t.Helper()
+		conn, err := tls.Dial("tcp", plane.Addr(), &tls.Config{RootCAs: roots, ServerName: "admin.test", MinVersion: tls.VersionTLS12})
+		if err != nil {
+			t.Fatalf("handshake: %v", err)
+		}
+		defer conn.Close()
+		return conn.ConnectionState().PeerCertificates[0]
+	}
+	// The served certificate must be the one in the store.
+	wantFirst := parseAdminTestCert(t, firstCertPEM)
+	if got := probe(); !bytes.Equal(got.Raw, wantFirst.Raw) {
+		t.Fatalf("served certificate is not the cached one")
+	}
+
+	// Renew: publish a replacement into the shared store; the running manager
+	// reloads it and the listener serves it without a restart.
+	later := now.Add(time.Hour)
+	secondCertPEM, secondKeyPEM := ca.issue(t, "admin.test", []string{"admin.test"}, nil, true)
+	writeRecord(secondCertPEM, secondKeyPEM, later, 2)
+	wantSecond := parseAdminTestCert(t, secondCertPEM)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if bytes.Equal(probe().Raw, wantSecond.Raw) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("renewed certificate was not served")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// A managed certificate that cannot be obtained stops startup, so the admin
+// listener never comes up without one.
+func TestAdminManagedCertificateStartupFailsClosed(t *testing.T) {
+	t.Setenv("ADMIN_TEST_CLOUDFLARE_TOKEN", "test-token-not-a-secret")
+	cacheDir := filepath.Join(t.TempDir(), "empty-cache")
+	store, err := tlsacme.OpenStore(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := tlsacme.New(tlsacme.Config{
+		Listener:               tlsacme.ListenerAdmin,
+		ErrorPrefix:            "admin.tls.acme",
+		Mode:                   "router",
+		CertificateSource:      "acme",
+		Domains:                []string{"admin.test"},
+		DirectoryURL:           "http://127.0.0.1:1/directory",
+		AcceptTOS:              true,
+		AllowInsecureDirectory: true,
+		CacheDir:               cacheDir,
+		StartupTimeout:         2 * time.Second,
+		DNS: tlsacme.DNSConfig{
+			Provider: tlsacme.ProviderCloudflare,
+			Credentials: tlsacme.Credentials{
+				APIToken: tlsacme.SecretRef{Env: "ADMIN_TEST_CLOUDFLARE_TOKEN"},
+			},
+		},
+	}, tlsacme.WithStore(store), tlsacme.WithProvider(unusedAdminDNSProvider{}),
+		tlsacme.WithLogger(log.New(io.Discard, "", 0)))
+	if err != nil {
+		t.Fatalf("tlsacme.New: %v", err)
+	}
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Admin.Enabled = true
+	cfg.Admin.Listen = "127.0.0.1:0"
+	cfg.Admin.TLS = AdminTLSConfig{
+		ListenerTLSConfig: ListenerTLSConfig{
+			Mode:              adminTLSModeRouter,
+			CertificateSource: adminCertificateSourceACME,
+			ACME: TLSACMEServerConfig{
+				Domains:                []string{"admin.test"},
+				DirectoryURL:           "http://127.0.0.1:1/directory",
+				AcceptTOS:              true,
+				AllowInsecureDirectory: true,
+				CacheDir:               cacheDir,
+				DNS: TLSDNSConfig{
+					Provider:    "cloudflare",
+					Credentials: TLSDNSCredentialsConfig{APITokenEnv: "ADMIN_TEST_CLOUDFLARE_TOKEN"},
+				},
+			},
+		},
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler(), WithAdminTLSManager(manager))
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if err := plane.Start(); err == nil || !strings.Contains(err.Error(), "managed certificate unavailable") {
+		t.Fatalf("Start() = %v, want a startup refusal for the missing managed certificate", err)
+	}
+}
+
+// unusedAdminDNSProvider satisfies the DNS provider interface for tests that
+// never reach DNS: the certificate comes from a pre-filled cache.
+type unusedAdminDNSProvider struct{}
+
+func (unusedAdminDNSProvider) Name() string                            { return "cloudflare" }
+func (unusedAdminDNSProvider) Zones(context.Context) ([]string, error) { return nil, nil }
+func (unusedAdminDNSProvider) Records(context.Context, string) ([]dns.Record, error) {
+	return nil, nil
+}
+func (unusedAdminDNSProvider) Create(context.Context, string, dns.Record) (string, error) {
+	return "", nil
+}
+func (unusedAdminDNSProvider) Update(context.Context, string, string, dns.Record) error {
+	return nil
+}
+func (unusedAdminDNSProvider) Delete(context.Context, string, string) error { return nil }

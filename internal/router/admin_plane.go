@@ -479,6 +479,14 @@ type AdminPlane struct {
 	reloadMu sync.Mutex
 	reload   context.CancelFunc
 	reloadWG sync.WaitGroup
+
+	// acme is the #810 manager for admin.tls.certificate_source: acme. The
+	// listener obtains the certificate before it binds and renews it in the
+	// background for as long as it serves.
+	acme     *tlsacme.Manager
+	acmeMu   sync.Mutex
+	acmeStop context.CancelFunc
+	acmeWG   sync.WaitGroup
 }
 
 // adminCAReloader is the optional reload capability of an AdminClientCASource
@@ -489,10 +497,20 @@ type adminCAReloader interface {
 	Reload() error
 }
 
+// AdminPlaneOption customizes NewAdminPlane. The binary uses none; tests inject
+// a managed-certificate manager that is already built.
+type AdminPlaneOption func(*AdminPlane)
+
+// WithAdminTLSManager installs an already-built #810 manager. It is how tests
+// exercise the managed-certificate lifecycle without live issuance.
+func WithAdminTLSManager(manager *tlsacme.Manager) AdminPlaneOption {
+	return func(p *AdminPlane) { p.acme = manager }
+}
+
 // NewAdminPlane validates the listener policy and builds the server. TLS files
 // are loaded here, so a router-native misconfiguration fails before serving
 // starts; the plaintext/loopback policy is already enforced by Validate.
-func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, error) {
+func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler, opts ...AdminPlaneOption) (*AdminPlane, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, fmt.Errorf("admin plane is not enabled")
 	}
@@ -504,6 +522,11 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 		cfg:     local,
 		handler: handler,
 		err:     make(chan error, 1),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(p)
+		}
 	}
 	// A fixed capacity avoids deriving an allocation size from configuration.
 	caPaths := make([]string, 0, 2)
@@ -527,9 +550,9 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 			return nil, err
 		}
 		p.tlsCfg = tlsCfg
-		if strings.EqualFold(strings.TrimSpace(local.TLS.CertificateSource), adminCertificateSourceACME) {
-			// #810 owns issuance and renewal; the listener consumes the manager
-			// through its single handshake hook.
+		if strings.EqualFold(strings.TrimSpace(local.TLS.CertificateSource), adminCertificateSourceACME) && p.acme == nil {
+			// #810 owns issuance and renewal; the listener obtains the
+			// certificate before it binds and renews it while it serves.
 			manager, err := NewListenerTLSManager(local.TLS.ListenerTLSConfig, tlsacme.ListenerAdmin, "admin.tls")
 			if err != nil {
 				return nil, err
@@ -537,9 +560,14 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 			if manager == nil {
 				return nil, fmt.Errorf("admin.tls.certificate_source acme requires an ACME manager")
 			}
-			if err := p.SetCertificateSource(AdminTLSProvider{Manager: manager}); err != nil {
-				return nil, err
-			}
+			p.acme = manager
+		}
+	}
+	if p.acme != nil {
+		// The handshake serves the managed certificate through the same single
+		// hook the client-CA snapshot uses.
+		if err := p.SetCertificateSource(AdminTLSProvider{Manager: p.acme}); err != nil {
+			return nil, err
 		}
 	}
 	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
@@ -674,6 +702,16 @@ func (p *AdminPlane) Start() error {
 			return fmt.Errorf("admin.tls.certificate_source acme requires an installed certificate source before the listener starts")
 		}
 	}
+	if p.acme != nil {
+		// Obtain (or load) the certificate before binding, so the listener never
+		// comes up without one. The manager redacts credentials from the error.
+		startCtx, cancelStart := context.WithTimeout(context.Background(), adminACMEStartupTimeout)
+		err := p.acme.EnsureCertificate(startCtx)
+		cancelStart()
+		if err != nil {
+			return fmt.Errorf("admin listener: managed certificate unavailable: %s", adminSafeErrorText(err))
+		}
+	}
 	ln, err := net.Listen("tcp", p.cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("admin listener: %w", err)
@@ -691,6 +729,7 @@ func (p *AdminPlane) Start() error {
 	}
 	p.srv = srv
 	p.ln = ln
+	p.startManagedCertificateRenewal()
 	p.startClientCAReload()
 	go func() {
 		if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
@@ -776,6 +815,35 @@ func (p *AdminPlane) Err() <-chan error {
 	return p.err
 }
 
+// adminACMEStartupTimeout bounds the first issuance or cache load at startup.
+const adminACMEStartupTimeout = 2 * time.Minute
+
+// adminSafeErrorText bounds and scrubs text before it reaches a startup error
+// or a log line.
+func adminSafeErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return truncateSafeDetail(redactDiagnosticSecrets(err.Error()))
+}
+
+// startManagedCertificateRenewal renews the managed certificate for as long as
+// the listener serves and stops with it.
+func (p *AdminPlane) startManagedCertificateRenewal() {
+	if p.acme == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.acmeMu.Lock()
+	p.acmeStop = cancel
+	p.acmeMu.Unlock()
+	p.acmeWG.Add(1)
+	go func() {
+		defer p.acmeWG.Done()
+		p.acme.Run(ctx)
+	}()
+}
+
 // Shutdown drains the admin listener with its own budget. Serving shutdown is
 // a separate call with its own deadline.
 func (p *AdminPlane) Shutdown(ctx context.Context) error {
@@ -786,6 +854,14 @@ func (p *AdminPlane) Shutdown(ctx context.Context) error {
 	cancelReload := p.reload
 	p.reload = nil
 	p.reloadMu.Unlock()
+	p.acmeMu.Lock()
+	cancelACME := p.acmeStop
+	p.acmeStop = nil
+	p.acmeMu.Unlock()
+	if cancelACME != nil {
+		cancelACME()
+		p.acmeWG.Wait()
+	}
 	p.mu.Lock()
 	srv := p.srv
 	p.mu.Unlock()
