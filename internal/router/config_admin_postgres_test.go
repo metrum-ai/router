@@ -44,7 +44,7 @@ func TestConfigAdminPostgresStore(t *testing.T) {
 		Targets:        []GroupTargetSpec{{Provider: "beta", ModelRef: "b-one"}},
 		Reason:         "pg store test",
 		IdempotencyKey: "pg-idem-1",
-	}, "adminkey:pg", GroupWritePolicy{}, now)
+	}, "adminkey:pg", GroupWritePolicy{}, testAdminAuditMeta(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestConfigAdminPostgresStore(t *testing.T) {
 		Targets:        []GroupTargetSpec{{Provider: "beta", ModelRef: "b-one"}},
 		Reason:         "pg store test",
 		IdempotencyKey: "pg-idem-1",
-	}, "adminkey:pg", GroupWritePolicy{}, now)
+	}, "adminkey:pg", GroupWritePolicy{}, testAdminAuditMeta(), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestConfigAdminPostgresStore(t *testing.T) {
 	if _, err := WriteGroupTargets(db, "pg-prod", GroupTargetsWriteRequest{
 		Group: "agent-default", Targets: []GroupTargetSpec{{Provider: "alpha", ModelRef: "a-one"}},
 		ExpectedRevision: &stale,
-	}, "adminkey:pg", GroupWritePolicy{}, now); err == nil {
+	}, "adminkey:pg", GroupWritePolicy{}, testAdminAuditMeta(), now); err == nil {
 		t.Fatal("stale If-Match must conflict")
 	} else {
 		adminErr, ok := err.(*ConfigAdminError)

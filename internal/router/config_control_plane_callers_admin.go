@@ -346,7 +346,11 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 			return err
 		}
 		// Bump revision and append change event.
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r)); err != nil {
+		meta, metaErr := adminAuditMetaForWrite(r, adminAuthSubject{subject: h.actor(r)}, authzObjectAdminCallers, authzActionIssue)
+		if metaErr != nil {
+			return metaErr
+		}
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r), meta, "issue", caller.ID); err != nil {
 			return err
 		}
 		return nil
@@ -452,7 +456,11 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 		}); err != nil {
 			return err
 		}
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_rotate", h.actor(r)); err != nil {
+		meta, metaErr := adminAuditMetaForWrite(r, adminAuthSubject{subject: h.actor(r)}, authzObjectAdminCallers, authzActionRotate)
+		if metaErr != nil {
+			return metaErr
+		}
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_rotate", h.actor(r), meta, "rotate", callerID); err != nil {
 			return err
 		}
 		return nil
@@ -512,7 +520,11 @@ func (h *callerAdminHandler) handleRevoke(w http.ResponseWriter, r *http.Request
 		}); err != nil {
 			return err
 		}
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_revoke", h.actor(r)); err != nil {
+		meta, metaErr := adminAuditMetaForWrite(r, adminAuthSubject{subject: h.actor(r)}, authzObjectAdminCallers, authzActionRevoke)
+		if metaErr != nil {
+			return metaErr
+		}
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_revoke", h.actor(r), meta, "revoke", callerID); err != nil {
 			return err
 		}
 		return nil
@@ -600,6 +612,11 @@ func (h *callerAdminHandler) syncCanonicalDocument(tx *gorm.DB, configSetID stri
 func (h *callerAdminHandler) actor(r *http.Request) string {
 	if r == nil {
 		return "anonymous"
+	}
+	// On /admin/v1 the actor is the authenticated principal and nothing else: the
+	// client-supplied X-Actor/X-Admin-Subject headers and RemoteAddr are ignored.
+	if principal, ok := PrincipalFrom(r.Context()); ok && strings.TrimSpace(principal.Subject) != "" {
+		return principal.Subject
 	}
 	if actor := strings.TrimSpace(r.Header.Get("X-Actor")); actor != "" {
 		return actor

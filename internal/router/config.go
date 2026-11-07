@@ -90,8 +90,11 @@ type ServerConfig struct {
 	AdminAuth           AdminAuthConfig           `yaml:"admin_auth"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS               ListenerTLSConfig        `yaml:"tls,omitempty"`
-	AdminReports      AdminReportsConfig       `yaml:"admin_reports"`
+	TLS          ListenerTLSConfig  `yaml:"tls,omitempty"`
+	AdminReports AdminReportsConfig `yaml:"admin_reports"`
+	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
+	// apply when it is absent.
+	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
 	ClientIP          ClientIPConfig           `yaml:"client_ip" json:"client_ip"`
 	Cache             CacheConfig              `yaml:"cache"`
 	Logging           LoggingConfig            `yaml:"logging"`

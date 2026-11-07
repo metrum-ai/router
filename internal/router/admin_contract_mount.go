@@ -90,7 +90,17 @@ type AdminV1Deps struct {
 	IdempotencyOn bool
 	Limiter       AdminRateLimiter
 	Throttle      AdminAuthThrottle
-	Clock         func() time.Time
+	// Denials records authorization and rate-limit refusals durably. A refusal that cannot
+	// be recorded answers 5xx instead of a silent 403.
+	Denials AdminDenialSink
+	// CredentialEvents records authentication outcomes. A successful authentication that
+	// cannot be recorded is refused; a failure is best effort so a guessing flood cannot
+	// stop the plane.
+	CredentialEvents AdminCredentialEventSink
+	// Audit and Observe are the observation hooks the audit and metric sinks consume.
+	Audit   func(AdminAuditEvent)
+	Observe func(AdminObservation)
+	Clock   func() time.Time
 }
 
 // AdminAuditEvent is one audit observation the contract layer emits (#816 fills
@@ -159,6 +169,16 @@ func RegisterAdminV1(r adminRouter, deps AdminV1Deps) error {
 			return err
 		}
 	}
+	// A mutating surface must be able to audit: refusing to mount without the sinks makes
+	// "no unaudited admin write" structural.
+	for _, op := range registry.Operations() {
+		if op.Method != "GET" && deps.Denials == nil {
+			return fmt.Errorf("operation %s mutates but no denial/audit sink is installed", op.ID)
+		}
+	}
+	if deps.CredentialEvents == nil {
+		return errors.New("the admin mount requires a credential event sink")
+	}
 	mount := &adminV1Mount{deps: deps, registry: registry, codec: deps.CursorCodec}
 	for _, op := range registry.Operations() {
 		handler, ok := deps.Handlers[op.HandlerKey]
@@ -226,6 +246,12 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			audit.Outcome = outcome
 			audit.ReasonCode = reason
 			audit.Duration = observation.Duration
+			if m.deps.Observe != nil {
+				m.deps.Observe(observation)
+			}
+			if m.deps.Audit != nil {
+				m.deps.Audit(audit)
+			}
 		}
 
 		// Admission control for credential guessing: the claim and the source
@@ -256,6 +282,16 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			return
 		}
 		observation.PrincipalKind = principal.Kind
+		// Fail closed: a successful admin authentication must always leave a record.
+		if !m.recordCredentialEvent(ctx, AdminCredentialEvent{
+			Kind: principal.Kind, CredentialID: principal.CredentialID, Subject: principal.Subject,
+			Issuer: principal.Issuer, Outcome: "success", RequestID: requestIDValue,
+			ClientIPHash: adminClientIPHash(adminSourceAddress(r)), Lifecycle: "auth",
+		}) {
+			writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", "the authentication audit store is unavailable")
+			finish(http.StatusServiceUnavailable, "denied", "unavailable")
+			return
+		}
 		if m.deps.Throttle != nil {
 			m.deps.Throttle.RecordSuccess(adminClaimedCredential(r), adminSourceAddress(r))
 		}
@@ -295,6 +331,15 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			for _, domain := range domains {
 				if decisionErr := m.deps.Authorize(ctx, principal, domain, op.Object, op.Action); decisionErr != nil {
 					status, code := adminAuthorizationProblem(decisionErr)
+					if !m.recordDenial(ctx, AdminDenialRecord{
+						At: started, PrincipalKind: principal.Kind, PrincipalSubject: principal.Subject,
+						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: domain,
+						Object: op.Object, Action: op.Action, OperationID: op.ID, RequestID: requestIDValue,
+						ReasonCode: code, Path: op.Path, Status: status, Method: r.Method,
+						ClientIPHash: adminClientIPHash(adminSourceAddress(r)),
+					}) {
+						status, code = http.StatusServiceUnavailable, "unavailable"
+					}
 					writeAdminProblemCode(w, r, status, code, "")
 					finish(status, "denied", code)
 					return
@@ -321,6 +366,15 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			for _, check := range op.ChecksFor(bodyFlags) {
 				if decisionErr := m.deps.Authorize(ctx, principal, checkDomain, check.Object, check.Action); decisionErr != nil {
 					status, code := adminAuthorizationProblem(decisionErr)
+					if !m.recordDenial(ctx, AdminDenialRecord{
+						At: started, PrincipalKind: principal.Kind, PrincipalSubject: principal.Subject,
+						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: checkDomain,
+						Object: check.Object, Action: check.Action, OperationID: op.ID, RequestID: requestIDValue,
+						ReasonCode: code, Path: op.Path, Status: status, Method: r.Method,
+						ClientIPHash: adminClientIPHash(adminSourceAddress(r)),
+					}) {
+						status, code = http.StatusServiceUnavailable, "unavailable"
+					}
 					writeAdminProblemCode(w, r, status, code, "")
 					finish(status, "denied", code)
 					return
@@ -488,6 +542,14 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			ctx = WithAdminV1Decision(ctx, adminV1Decision{})
 			r = r.WithContext(ctx)
 		}
+
+		// Publish the audit context so the write path stores it in the change's transaction.
+		ctx = WithAdminAuditMeta(ctx, AdminAuditMeta{
+			Subject: principal.Subject, Kind: principal.Kind, CredentialID: principal.CredentialID,
+			Issuer: principal.Issuer, Domain: audit.Domain, Object: op.Object, Action: op.Action,
+			OperationID: op.ID, RequestID: requestIDValue, Ticket: adminTicketFrom(r),
+		})
+		r = r.WithContext(ctx)
 
 		// The handler keeps today's bare-revision precondition parser, so translate
 		// the strong validator the contract layer accepted into that form. The
@@ -1048,4 +1110,40 @@ func adminProblemBytes(_ http.ResponseWriter, r *http.Request, status int, code,
 	var buffer bytes.Buffer
 	_ = json.NewEncoder(&buffer).Encode(problem)
 	return buffer.Bytes()
+}
+
+// recordDenial writes one durable denial record, reporting whether the sink accepted it.
+func (m *adminV1Mount) recordDenial(ctx context.Context, record AdminDenialRecord) bool {
+	if m.deps.Denials == nil {
+		return true
+	}
+	return m.deps.Denials.RecordDenial(ctx, record) == nil
+}
+
+// recordCredentialEvent writes one credential event, reporting whether the sink accepted it.
+func (m *adminV1Mount) recordCredentialEvent(ctx context.Context, event AdminCredentialEvent) bool {
+	if m.deps.CredentialEvents == nil {
+		return true
+	}
+	event.At = m.deps.now()
+	return m.deps.CredentialEvents.RecordCredentialEvent(ctx, event) == nil
+}
+
+// adminAuthProblemCode returns the problem code of an authentication error.
+func adminAuthProblemCode(err error) string {
+	_, code := adminAuthProblem(err)
+	return code
+}
+
+// adminTicketFrom reads the operator-supplied incident reference, bounded and redacted.
+func adminTicketFrom(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	for _, header := range []string{"X-Admin-Ticket", "X-Ticket-Id"} {
+		if value := strings.TrimSpace(r.Header.Get(header)); value != "" {
+			return safeAdminTicket(value)
+		}
+	}
+	return ""
 }

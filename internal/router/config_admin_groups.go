@@ -190,6 +190,12 @@ type configChangeEventMeta struct {
 	Detail         string
 	BeforeTargets  []GroupTargetSpec
 	AfterTargets   []GroupTargetSpec
+	// Audit is the admin-plane audit context. It is REQUIRED: a change without it cannot be
+	// recorded, so every mutation passes one explicitly and cannot silently drop it.
+	Audit AdminAuditMeta
+	// BeforeHash/AfterHash are digests of the previous and new canonical documents.
+	BeforeHash string
+	AfterHash  string
 }
 
 // insertConfigChangeEventTx appends one change event with phase-8 metadata
@@ -205,10 +211,14 @@ func insertConfigChangeEventTx(tx *gorm.DB, runtimeScope, configSetID, action, a
 		reason = reason[:maxAdminReasonBytes]
 	}
 	if err := tx.Exec(
-		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, group_name, prev_config_set_id, reason, forced, idempotency_key, request_hash, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, group_name, prev_config_set_id, reason, forced, idempotency_key, request_hash, detail, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome, before_hash, after_hash, ticket) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		eventID, runtimeScope, configSetID, action, actor, now.UTC().Format(time.RFC3339Nano), revision,
-		strings.TrimSpace(meta.GroupName), strings.TrimSpace(meta.PrevSetID), reason, forced,
-		strings.TrimSpace(meta.IdempotencyKey), strings.TrimSpace(meta.RequestHash), strings.TrimSpace(meta.Detail),
+		strings.TrimSpace(meta.GroupName), strings.TrimSpace(meta.PrevSetID), adminAuditFieldValue(reason), forced,
+		strings.TrimSpace(meta.IdempotencyKey), strings.TrimSpace(meta.RequestHash), adminAuditFieldValue(meta.Detail),
+		adminAuditFieldValue(meta.Audit.Kind), adminAuditFieldValue(meta.Audit.CredentialID), adminAuditFieldValue(meta.Audit.Issuer),
+		adminAuditFieldValue(meta.Audit.Domain), adminAuditFieldValue(meta.Audit.Object), adminAuditFieldValue(meta.Audit.Action),
+		adminAuditFieldValue(meta.Audit.OperationID), adminAuditFieldValue(meta.Audit.RequestID), "committed",
+		adminAuditFieldValue(meta.BeforeHash), adminAuditFieldValue(meta.AfterHash), adminAuditFieldValue(meta.Audit.Ticket),
 	).Error; err != nil {
 		return "", fmt.Errorf("append change event: %w", err)
 	}
@@ -575,7 +585,7 @@ func groupWriteEligibilityError(reports []GroupTargetReport, force bool, policy 
 // operation — revision precondition, idempotency check, validation, import,
 // activation, and the audit event — commits or rolls back as one
 // transaction.
-func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRequest, actor string, policy GroupWritePolicy, now time.Time) (*GroupTargetsWriteResult, error) {
+func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRequest, actor string, policy GroupWritePolicy, audit AdminAuditMeta, now time.Time) (*GroupTargetsWriteResult, error) {
 	if db == nil {
 		return nil, configAdminError(409, "config_source_mode_file", "the router serves configuration from a YAML file; enable server.config_source.mode: database and import the current YAML to use Admin API writes")
 	}
@@ -677,6 +687,9 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 				return err
 			}
 			if _, err := insertConfigChangeEventTx(tx, runtimeScope, newSetID, action, actor, revision, configChangeEventMeta{
+				Audit:          audit,
+				BeforeHash:     adminAuditHash(raw),
+				AfterHash:      adminAuditHash(patched),
 				GroupName:      group,
 				PrevSetID:      state.ActiveSetID,
 				Reason:         req.Reason,
@@ -950,7 +963,7 @@ func lookupIdempotentGroupWrite(tx *gorm.DB, runtimeScope, key, requestHash, gro
 // RollbackGroup restores one group to its state in a prior configuration set
 // (default: the set active before the last change to this group), as a new
 // copy-on-write set. One call, fully audited.
-func RollbackGroup(db *gorm.DB, runtimeScope, group, fromSetID, reason, actor string, now time.Time) (*GroupTargetsWriteResult, error) {
+func RollbackGroup(db *gorm.DB, runtimeScope, group, fromSetID, reason, actor string, audit AdminAuditMeta, now time.Time) (*GroupTargetsWriteResult, error) {
 	if db == nil {
 		return nil, configAdminError(409, "config_source_mode_file", "the router serves configuration from a YAML file; enable server.config_source.mode: database and import the current YAML to use Admin API writes")
 	}
@@ -1040,6 +1053,7 @@ func RollbackGroup(db *gorm.DB, runtimeScope, group, fromSetID, reason, actor st
 		}
 		after := groupTargetSpecsFromGroup(restored)
 		if _, err := insertConfigChangeEventTx(tx, runtimeScope, newSetID, configActionGroupRollback, actor, revision, configChangeEventMeta{
+			Audit:         audit,
 			GroupName:     group,
 			PrevSetID:     state.ActiveSetID,
 			Reason:        reason,

@@ -67,7 +67,7 @@ func TestAdminKeyHandlersAuthorizeThroughContract(t *testing.T) {
 	svc := &Service{adminKeys: store, configControlPlane: db}
 	expires := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
 	principal := Principal{Subject: "adminkey:root"}
-	var decisions, handlerRuns atomic.Int64
+	var decisions atomic.Int64
 	allowed := false
 	keyRegistry, err := NewAdminV1Registry(adminKeyOperations())
 	if err != nil {
@@ -90,6 +90,9 @@ func TestAdminKeyHandlersAuthorizeThroughContract(t *testing.T) {
 		Idempotency:   newAdminV1DBHarnessIdempotency(t, db),
 		IdempotencyOn: true,
 		CurrentETag:   func(*http.Request) (string, int64, error) { return `"1"`, 1, nil },
+		// #869 requires the durable denial/credential sinks for mutations.
+		Denials:          adminDenialSinkFunc(func(context.Context, AdminDenialRecord) error { return nil }),
+		CredentialEvents: adminCredentialEventSinkFunc(func(context.Context, AdminCredentialEvent) error { return nil }),
 	}
 	mux := newAdminMux()
 	if err := RegisterAdminV1(mux, *deps); err != nil {
@@ -128,5 +131,4 @@ func TestAdminKeyHandlersAuthorizeThroughContract(t *testing.T) {
 	if decisions.Load() < 3 {
 		t.Fatalf("every request must take an authorization decision: %d", decisions.Load())
 	}
-	_ = handlerRuns
 }

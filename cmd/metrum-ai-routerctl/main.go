@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -32,7 +33,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|groups|providers|models|status|usage|reports|blueprint> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -57,8 +58,42 @@ func main() {
 		reportsCommand(os.Args[2:])
 	case "blueprint":
 		blueprintCommand(os.Args[2:])
+	case "emergency":
+		emergencyCommand(os.Args[2:])
 	default:
 		die("unsupported command %q", os.Args[1])
+	}
+}
+
+// emergencyCommand runs the OFFLINE emergency activate/deactivate controller
+// against the control-plane database. It is a local command: no URL, token or
+// admin HTTP route is involved, and events commit with the lifecycle row.
+func emergencyCommand(args []string) {
+	if len(args) == 0 {
+		die("usage: metrum-ai-routerctl emergency <activate|deactivate> --config <file> [flags]")
+	}
+	fs := flag.NewFlagSet("emergency", flag.ExitOnError)
+	configPath := fs.String("config", "", "router configuration file with emergency enrollments")
+	opts := addConfigDBFlags(fs)
+	fs.Parse(args[1:])
+	if strings.TrimSpace(*configPath) == "" {
+		die("emergency requires --config")
+	}
+	cfg, err := router.LoadConfig(*configPath)
+	if err != nil {
+		die("%v", err)
+	}
+	db, closer, err := openConfigDB(*opts)
+	if err != nil {
+		die("%v", err)
+	}
+	defer closer()
+	run, err := router.RouterctlEmergencyCommand(db, cfg, 1)
+	if err != nil {
+		die("%v", err)
+	}
+	if err := run(context.Background(), args, os.Stdout); err != nil {
+		die("%v", err)
 	}
 }
 

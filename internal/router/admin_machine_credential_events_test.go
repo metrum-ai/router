@@ -15,13 +15,13 @@ import (
 	"testing"
 )
 
-type recordingCredentialSink struct {
+type machineEventRecordingSink struct {
 	mu     sync.Mutex
 	events []AdminCredentialEvent
 	fail   error
 }
 
-func (r *recordingCredentialSink) RecordCredentialEvent(_ context.Context, event AdminCredentialEvent) error {
+func (r *machineEventRecordingSink) RecordCredentialEvent(_ context.Context, event AdminCredentialEvent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.fail != nil {
@@ -31,8 +31,8 @@ func (r *recordingCredentialSink) RecordCredentialEvent(_ context.Context, event
 	return nil
 }
 
-func TestPendingMachineCredentialEvents(t *testing.T) {
-	recorder := &recordingCredentialSink{}
+func TestRuntimeMachineCredentialEventsDurable(t *testing.T) {
+	recorder := &machineEventRecordingSink{}
 	sink, err := newAdminMachineCredentialEventSink(recorder)
 	if err != nil {
 		t.Fatal(err)

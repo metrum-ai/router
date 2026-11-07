@@ -26,11 +26,11 @@ import (
 type adminMachineEventKind string
 
 const (
-	machineEventMTLS       adminMachineEventKind = "mtls"
-	machineEventOAuth      adminMachineEventKind = "oauth"
-	machineEventFederated  adminMachineEventKind = "federated"
-	machineEventAdminKey   adminMachineEventKind = "adminkey"
-	machineEventEmergency  adminMachineEventKind = "emergency"
+	machineEventMTLS      adminMachineEventKind = "mtls"
+	machineEventOAuth     adminMachineEventKind = "oauth"
+	machineEventFederated adminMachineEventKind = "federated"
+	machineEventAdminKey  adminMachineEventKind = "adminkey"
+	machineEventEmergency adminMachineEventKind = "emergency"
 )
 
 // adminMachineEventLifecycle is the closed set of lifecycle actions.
@@ -48,13 +48,13 @@ const (
 type adminMachineReasonCode string
 
 const (
-	machineReasonNone             adminMachineReasonCode = ""
-	machineReasonRequired         adminMachineReasonCode = "authentication_required"
-	machineReasonInvalid          adminMachineReasonCode = "invalid_credential"
-	machineReasonUnsupported      adminMachineReasonCode = "unsupported_authentication"
-	machineReasonSenderConstraint adminMachineReasonCode = "sender_constraint_failed"
+	machineReasonNone              adminMachineReasonCode = ""
+	machineReasonRequired          adminMachineReasonCode = "authentication_required"
+	machineReasonInvalid           adminMachineReasonCode = "invalid_credential"
+	machineReasonUnsupported       adminMachineReasonCode = "unsupported_authentication"
+	machineReasonSenderConstraint  adminMachineReasonCode = "sender_constraint_failed"
 	machineReasonEmergencyInactive adminMachineReasonCode = "emergency_inactive"
-	machineReasonAuditUnavailable adminMachineReasonCode = "audit_unavailable"
+	machineReasonAuditUnavailable  adminMachineReasonCode = "audit_unavailable"
 )
 
 type adminMachineCredentialEvent struct {

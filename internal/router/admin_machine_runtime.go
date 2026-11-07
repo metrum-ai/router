@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // One service-owned resource lifetime; immutable generations may overlap.
@@ -21,13 +23,31 @@ type adminMachineRuntime struct {
 	emergencySlots chan struct{}
 	lookup         func(string) (string, bool)
 	httpClient     *http.Client // private test dependency; production uses system trust
+	// Durable credential lifecycle events (#869). Nil on planes without a
+	// control-plane database; emergency enrollment then fails closed.
+	events     *adminMachineCredentialEventSink
+	activation *adminEmergencyActivationStore
+	replicas   int
 }
 
 func (s *Service) initAdminMachineRuntime() error {
 	if !s.cfg.Admin.Enabled {
 		return nil
 	}
-	runtime := &adminMachineRuntime{replay: newAdminDPoPReplayState(), emergencySlots: make(chan struct{}, 1), lookup: os.LookupEnv}
+	runtime := &adminMachineRuntime{replay: newAdminDPoPReplayState(), emergencySlots: make(chan struct{}, 1), lookup: os.LookupEnv, replicas: 1}
+	if s.configControlPlane != nil && s.cfg.Admin.Enabled {
+		sink, err := newAdminMachineCredentialEventSink(s.adminCredentialEventSink())
+		if err != nil {
+			return err
+		}
+		activation, err := newAdminEmergencyActivationStore(s.configControlPlane, runtime.replicas, time.Now, func(reason string) string {
+			return adminRedactThenTrim(reason, 512)
+		})
+		if err != nil {
+			return err
+		}
+		runtime.events, runtime.activation = sink, activation
+	}
 	s.machineGenerationBuilder = runtime.prepare
 	c := s.cfg.Admin.Authentication
 	// Preserve the empty listener's existing trusted bootstrap setter seam. No
@@ -55,9 +75,9 @@ func (rt *adminMachineRuntime) prepare(cfg *Config, compatible *authorizer) (*ad
 	if err != nil {
 		return nil, err
 	}
-	if len(cfg.Admin.Authentication.Emergency.Credentials) != 0 {
-		// Never substitute test tables/no-op events for authoritative production Use.
-		return nil, errors.New("machine emergency production transaction/event adapters unavailable")
+	if len(cfg.Admin.Authentication.Emergency.Credentials) != 0 && (rt.events == nil || rt.activation == nil) {
+		// Never substitute test tables/no-op events for authoritative Use.
+		return nil, errors.New("machine emergency durable event/activation adapters unavailable")
 	}
 	if err := validateAdminAPIKeys(cfg.Server.AdminAuth.APIKeys, false); err != nil {
 		return nil, err
@@ -74,7 +94,23 @@ func (rt *adminMachineRuntime) prepare(cfg *Config, compatible *authorizer) (*ad
 	if err != nil {
 		return nil, err
 	}
-	g.emergencyKeys, err = newAdminEmergencyKeyCatalog(nil, ordinaryIDs, rt.emergencySlots, time.Now)
+	if err := rt.prepareEmergencyCatalogs(cfg, ordinaryIDs, g); err != nil {
+		return nil, err
+	}
+	var emergencyKeyAuth, emergencyCertificateAuth Authenticator
+	if len(g.emergencyKeys.keys) != 0 {
+		emergencyKeyAuth, err = newAdminEmergencyKeyMachineAuthenticator(func() *adminEmergencyKeyCatalog { return g.emergencyKeys }, rt.activation, rt.recordEmergencyUse)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(g.emergencyCertificates.byID) != 0 {
+		emergencyCertificateAuth, err = newAdminEmergencyCertificateMachineAuthenticator(func() *adminEmergencyCertificateCatalog { return g.emergencyCertificates },
+			func() *x509.CertPool { return adminMachineGenerationPool(g) }, rt.activation, rt.recordEmergencyUse)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +119,12 @@ func (rt *adminMachineRuntime) prepare(cfg *Config, compatible *authorizer) (*ad
 		return nil, err
 	}
 	chain := []Authenticator{keyAuth}
+	if emergencyKeyAuth != nil {
+		chain = append(chain, emergencyKeyAuth)
+	}
+	if emergencyCertificateAuth != nil {
+		chain = append(chain, emergencyCertificateAuth)
+	}
 	var mtls Authenticator
 	if adminMTLSTrustConfigured(cfg.Admin.Authentication.MTLS) {
 		g.trust, err = NewAdminMTLSTrustStore(cfg.Admin.Authentication.MTLS)
@@ -127,3 +169,68 @@ func (rt *adminMachineRuntime) prepare(cfg *Config, compatible *authorizer) (*ad
 	g.auth = NewAuthenticatorChain(chain...)
 	return g, nil
 }
+
+// prepareEmergencyCatalogs builds the immutable emergency namespaces from the
+// trusted offline descriptors, with the authoritative activation store and a
+// transaction-bound credential-event write for every accepted Use.
+func (rt *adminMachineRuntime) prepareEmergencyCatalogs(cfg *Config, ordinaryIDs map[string]bool, g *adminMachineGeneration) error {
+	var keyCfgs []adminEmergencyKeyVerifierConfig
+	var certCfgs []adminEmergencyCertificateConfig
+	reserved := map[string]bool{}
+	for id := range ordinaryIDs {
+		reserved[id] = true
+	}
+	for _, credential := range cfg.Admin.Authentication.Emergency.Credentials {
+		issuedAt, err := time.Parse(time.RFC3339Nano, credential.IssuedAt)
+		if err != nil {
+			return errAdminEmergencyInvalid
+		}
+		expiresAt, err := time.Parse(time.RFC3339Nano, credential.ExpiresAt)
+		if err != nil {
+			return errAdminEmergencyInvalid
+		}
+		switch credential.Kind {
+		case "api_key":
+			hash, ok := rt.lookup(credential.KeyHashEnv)
+			if !ok || strings.TrimSpace(hash) == "" {
+				return errors.New("emergency verifier reference unavailable")
+			}
+			keyCfgs = append(keyCfgs, adminEmergencyKeyVerifierConfig{id: credential.ID, subject: credential.Subject,
+				issuer: credential.Issuer, tokenHash: hash, issuedAt: issuedAt, expiresAt: expiresAt})
+		case "certificate":
+			certCfgs = append(certCfgs, adminEmergencyCertificateConfig{id: credential.ID, subject: credential.Subject,
+				issuer: credential.Issuer, thumbprint: credential.CertificateSHA256, issuedAt: issuedAt, expiresAt: expiresAt})
+		default:
+			return errAdminEmergencyInvalid
+		}
+		reserved[credential.ID] = true
+	}
+	catalog, err := newAdminEmergencyKeyCatalog(keyCfgs, ordinaryIDs, rt.emergencySlots, time.Now)
+	if err != nil {
+		return err
+	}
+	g.emergencyKeys = catalog
+	if g.emergencyCertificates, err = newAdminEmergencyCertificateCatalog(certCfgs, reserved, time.Now); err != nil {
+		return err
+	}
+	return nil
+}
+
+// recordEmergencyUse writes the mandatory durable event inside the caller's
+// activation transaction; an error rolls the Use back so no identity escapes
+// without an audited activation record.
+func (rt *adminMachineRuntime) recordEmergencyUse(tx *gorm.DB, principal Principal, activation adminEmergencyActivation) error {
+	event := AdminCredentialEvent{
+		At:           rt.nowUTC(),
+		Kind:         "emergency",
+		Lifecycle:    "use",
+		CredentialID: principal.CredentialID,
+		Subject:      adminRedactThenTrim(principal.Subject, 1024),
+		Issuer:       adminRedactThenTrim(principal.Issuer, 2048),
+		Outcome:      "success",
+		ReasonCode:   "",
+	}
+	return insertAdminCredentialEventTx(tx, event)
+}
+
+func (rt *adminMachineRuntime) nowUTC() time.Time { return time.Now().UTC() }

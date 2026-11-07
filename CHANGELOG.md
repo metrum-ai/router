@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - configured admin keys with a non-lowercase disabled status were still accepted on the serving port
 
+- Serialize PostgreSQL revision-notifier shutdown with its listener goroutine
+  and await pgx asynchronous connection cleanup, avoiding concurrent connection
+  reads and closure during service shutdown.
 - v4.8.0 release binaries are built with Go 1.26.10 for standard-library
   security fixes. Source builds require at least Go 1.26.10; CI, release and
   container build producers use the patched toolchain.

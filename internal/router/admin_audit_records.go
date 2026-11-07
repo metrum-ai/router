@@ -1,0 +1,312 @@
+// Copyright 2026 Metrum AI
+// SPDX-License-Identifier: Apache-2.0
+
+package router
+
+// Admin-plane audit records (ACP-022/023, metrum-ai/router#816).
+//
+// Every mutating /admin/v1 operation writes exactly one audit row in the SAME
+// transaction as its change, in the database where the change lives:
+//
+//	control-plane changes (config sets, groups, shadow, callers)
+//	  → router_config_change_events, extended with the audit columns by
+//	    config control-plane schema phase 11
+//	usage-database changes (content-capture delete/purge, training labels)
+//	  → router_admin_audit_events (usage scope, additive)
+//
+// A failed audit insert fails the change: the insert shares the transaction and
+// its error aborts it, so there is no path that commits a change without its
+// record.
+//
+// Records carry identifiers only. No header, token, verifier, claim, request body
+// or upstream text is ever stored, and free text (reason, ticket, detail) is run
+// through the same redactor the diagnostics surface uses.
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// AdminAuditMeta is the audit context of one admin request. The contract layer
+// resolves it from the authenticated principal and the request, and the write path
+// stores it with the change.
+type AdminAuditMeta struct {
+	Subject      string
+	Kind         string
+	CredentialID string
+	Issuer       string
+	Domain       string
+	Object       string
+	Action       string
+	OperationID  string
+	RequestID    string
+	Ticket       string
+	RequestHash  string
+}
+
+type adminAuditMetaContextKey struct{}
+
+// WithAdminAuditMeta records the audit context for a request.
+func WithAdminAuditMeta(ctx context.Context, meta AdminAuditMeta) context.Context {
+	return context.WithValue(ctx, adminAuditMetaContextKey{}, meta)
+}
+
+// AdminAuditMetaFrom returns the audit context recorded for a request.
+func AdminAuditMetaFrom(ctx context.Context) (AdminAuditMeta, bool) {
+	meta, ok := ctx.Value(adminAuditMetaContextKey{}).(AdminAuditMeta)
+	return meta, ok
+}
+
+// adminAuditMetaFor builds the audit context of an operation from its principal
+// and request. The ticket is the operator-supplied incident reference, bounded
+// and redacted.
+func adminAuditMetaFor(principal Principal, domain string, op Operation, r *requestAuditSource) AdminAuditMeta {
+	meta := AdminAuditMeta{
+		Subject:      principal.Subject,
+		Kind:         principal.Kind,
+		CredentialID: principal.CredentialID,
+		Issuer:       principal.Issuer,
+		Domain:       domain,
+		Object:       op.Object,
+		Action:       op.Action,
+		OperationID:  op.ID,
+	}
+	if r != nil {
+		meta.RequestID = r.RequestID
+		meta.Ticket = safeAdminTicket(r.Ticket)
+	}
+	return meta
+}
+
+// requestAuditSource is the request-level part of the audit context.
+type requestAuditSource struct {
+	RequestID string
+	Ticket    string
+}
+
+const (
+	maxAdminTicketBytes = 200
+	maxAdminAuditField  = 300
+)
+
+// safeAdminTicket redacts an operator-supplied ticket or reason FIRST and only then bounds
+// it on a rune boundary, so a secret straddling the cut is removed rather than half-kept.
+func safeAdminTicket(raw string) string {
+	return adminRedactThenTrim(raw, maxAdminTicketBytes)
+}
+
+// adminRedactThenTrim redacts text and then truncates it to maxRunes runes. Order matters: a
+// truncated secret is still a leak, and cutting bytes can split a multi-byte character.
+func adminRedactThenTrim(raw string, maxRunes int) string {
+	// Deliberately not routed through the diagnostics byte-truncator: that cuts bytes and can
+	// split a multi-byte character, and it would also cut before redaction.
+	redacted := redactDiagnosticSecrets(strings.TrimSpace(raw))
+	runes := []rune(redacted)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return string(runes)
+}
+
+// adminAuditHash returns a short stable digest of a representation, used for the
+// before/after hashes of a change. It is a digest only: the content is never
+// stored in the audit row.
+func adminAuditHash(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:16])
+}
+
+// AdminAuditRecord is one durable admin audit row. The same shape is stored in the
+// control-plane change-event row and in the usage-side audit table.
+type AdminAuditRecord struct {
+	EventID          string
+	At               time.Time
+	RuntimeScope     string
+	PrincipalSubject string
+	PrincipalKind    string
+	CredentialID     string
+	Issuer           string
+	Domain           string
+	Object           string
+	Action           string
+	OperationID      string
+	RequestID        string
+	Outcome          string
+	ReasonCode       string
+	Ticket           string
+	ConfigSetID      string
+	PrevConfigSetID  string
+	ConfigRevision   int64
+	BeforeHash       string
+	AfterHash        string
+	IdempotencyKey   string
+	RequestHash      string
+	Detail           string
+}
+
+// AdminAuditSink is the durable sink the write paths call. #816 supplies it; the
+// admin mount's Audit hook is a separate, non-durable observation.
+type AdminAuditSink interface {
+	// RecordChange writes one audit row inside the caller's transaction. A
+	// non-nil error must abort the change.
+	RecordChange(ctx context.Context, record AdminAuditRecord) error
+}
+
+// AdminDenialRecord is one durable denial record: an authorization refusal or a
+// rate-limit refusal.
+type AdminDenialRecord struct {
+	At               time.Time
+	PrincipalKind    string
+	PrincipalSubject string
+	CredentialID     string
+	Issuer           string
+	Domain           string
+	Object           string
+	Action           string
+	OperationID      string
+	RequestID        string
+	ReasonCode       string
+	Path             string
+	Status           int
+	// Method is the real HTTP method of the refused request.
+	Method string
+	// ClientIPHash is a salted digest of the source address.
+	ClientIPHash string
+}
+
+// AdminDenialSink records denials durably. The mount fails closed (5xx) when a
+// denial cannot be recorded, so a refusal is never silent.
+type AdminDenialSink interface {
+	RecordDenial(ctx context.Context, record AdminDenialRecord) error
+}
+
+// AdminCredentialEvent is one authentication or credential-lifecycle record
+// (ACP-066).
+type AdminCredentialEvent struct {
+	EventID      string
+	At           time.Time
+	Kind         string
+	CredentialID string
+	Subject      string
+	Issuer       string
+	Outcome      string
+	ReasonCode   string
+	RequestID    string
+	// ClientIPHash is a salted digest of the source address, never the address itself.
+	ClientIPHash string
+	Lifecycle    string
+}
+
+// adminClientIPHash returns a KEYED digest (HMAC-SHA256) of a source address for an audit
+// row. The address itself is never stored, and the key makes the digest non-reversible by
+// enumerating addresses. The key comes from admin.api.audit.client_ip_hash_env when set and
+// is otherwise random per process, which is stated in the guide.
+func adminClientIPHash(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, adminClientIPHashKey())
+	_, _ = mac.Write([]byte(addr))
+	return hex.EncodeToString(mac.Sum(nil)[:8])
+}
+
+var adminClientIPHashKeyOnce sync.Once
+
+// adminClientIPHashKey returns the process-wide client-IP digest key.
+func adminClientIPHashKey() []byte {
+	adminClientIPHashKeyOnce.Do(func() {
+		if value := strings.TrimSpace(os.Getenv("ROUTER_ADMIN_CLIENT_IP_HASH_KEY")); len(value) >= 16 {
+			adminClientIPHashKeyValue = []byte(value)
+			return
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			key = []byte(strconv.FormatInt(time.Now().UnixNano(), 10))
+		}
+		adminClientIPHashKeyValue = key
+	})
+	return adminClientIPHashKeyValue
+}
+
+var adminClientIPHashKeyValue []byte
+
+// AdminCredentialEventSink records authentication and lifecycle events. A
+// successful authentication must be recorded (fail closed); a failed one is
+// best effort so an attacker cannot make the plane unavailable by forcing audit
+// writes to fail.
+type AdminCredentialEventSink interface {
+	RecordCredentialEvent(ctx context.Context, event AdminCredentialEvent) error
+}
+
+// AdminFreshnessSource supplies the policy and configuration revision gauges
+// (#813). The zero value and ok=false omit the series rather than publish a
+// misleading zero.
+type AdminFreshnessSource interface {
+	PolicyFreshness() (desired, applied int64, observedAt time.Time, ok bool)
+	ConfigFreshness() (desired, applied int64, observedAt time.Time, ok bool)
+}
+
+// adminAuditFieldValue redacts one audit field and then bounds it on a rune boundary.
+func adminAuditFieldValue(raw string) string {
+	return adminRedactThenTrim(raw, maxAdminAuditField)
+}
+
+// adminAuditMetaForWrite returns the audit context for one write. On /admin/v1
+// the contract layer already recorded the full context (principal kind, credential
+// ID, issuer, domain, operation, request ID, ticket); on the legacy surface the
+// same fields are derived from the authenticated admin subject so a v4.7 write is
+// audited too. Either way the row is written in the change's transaction.
+func adminAuditMetaForWrite(r *http.Request, subject adminAuthSubject, object, action string) (AdminAuditMeta, error) {
+	if r != nil {
+		if meta, ok := AdminAuditMetaFrom(r.Context()); ok {
+			return meta, nil
+		}
+	}
+	meta := AdminAuditMeta{
+		Subject: subject.subject,
+		Kind:    defaultString(strings.TrimSpace(subject.source), "unknown"),
+		Domain:  defaultString(strings.TrimSpace(subject.domain), AdminGlobalDomain),
+		Object:  object,
+		Action:  action,
+	}
+	if subject.principal != nil {
+		meta.Kind = subject.principal.Kind
+		meta.CredentialID = subject.principal.CredentialID
+		meta.Issuer = subject.principal.Issuer
+	}
+	if r != nil {
+		meta.RequestID = r.Header.Get(adminRequestIDHeader)
+	}
+	// Fail closed: a write whose actor cannot be identified is never recorded, because an
+	// unattributed audit row is not evidence.
+	if strings.TrimSpace(meta.Subject) == "" {
+		return AdminAuditMeta{}, errAdminAuditMetaMissing
+	}
+	return meta, nil
+}
+
+// errAdminAuditMetaMissing reports a write whose audit actor could not be resolved.
+var errAdminAuditMetaMissing = errors.New("admin audit context is missing")
+
+// testAdminAuditMeta is the audit context tests use for store-level writes.
+func testAdminAuditMeta() AdminAuditMeta {
+	return AdminAuditMeta{
+		Subject: "adminkey:test", Kind: "adminkey", CredentialID: "cred-test", Issuer: "test",
+		Domain: AdminGlobalDomain, Object: "admin:config", Action: "write",
+		OperationID: "testWrite", RequestID: "req-test",
+	}
+}
