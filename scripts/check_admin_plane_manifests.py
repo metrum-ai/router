@@ -34,6 +34,13 @@ OVERLAY = ROOT / "deploy" / "kubernetes" / "overlays" / "admin-plane"
 ADMIN_CLIENT_LABEL = "access.metrum.ai/admin-client"
 ROUTER_APP_LABEL = "app.kubernetes.io/name"
 
+# A deployment that must reach the admin port from a network range instead of a
+# labelled pod (for example a bastion subnet) records it here as cidr -> reason.
+# Every entry is printed by the check so the justification stays visible in CI;
+# a range wider than /16 (IPv4) or /48 (IPv6) needs this entry *and* is reported
+# on every run. The default is empty: the reference overlay uses labelled pods.
+BROAD_IPBLOCK_OVERRIDES: dict[str, str] = {}
+
 
 class Problems:
     def __init__(self) -> None:
@@ -118,34 +125,71 @@ def rule_has_no_ports(rule: dict) -> bool:
     return not rule.get("ports")
 
 
-def broad_source(source: dict) -> str:
+def ipblock_network(source: dict) -> ipaddress._BaseNetwork | None:
+    cidr = str((source.get("ipBlock") or {}).get("cidr") or "")
+    try:
+        return ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        return None
+
+
+def broad_source(source: dict, overrides: dict[str, str]) -> str:
     """Return a reason when a NetworkPolicy source is too broad, else ""."""
     if "ipBlock" in source:
         cidr = str((source.get("ipBlock") or {}).get("cidr") or "")
-        try:
-            network = ipaddress.ip_network(cidr, strict=False)
-        except ValueError:
+        network = ipblock_network(source)
+        if network is None:
             return f"invalid ipBlock {cidr!r}"
         if network.prefixlen == 0:
-            return f"ipBlock {cidr} trusts every peer"
-        if network.version == 4 and network.prefixlen < 8:
-            return f"ipBlock {cidr} is wider than /8"
-        if network.version == 6 and network.prefixlen < 32:
-            return f"ipBlock {cidr} is wider than /32"
+            return f"ipBlock {cidr} trusts every peer and can never be allowed"
+        override = overrides.get(cidr, "")
+        if network.version == 4 and network.prefixlen < 16:
+            if not override:
+                return f"ipBlock {cidr} is wider than /16 and needs a documented override"
+            print(f"admin-plane overlay: using documented override for {cidr}: {override}")
+        if network.version == 6 and network.prefixlen < 48:
+            if not override:
+                return f"ipBlock {cidr} is wider than /48 and needs a documented override"
+            print(f"admin-plane overlay: using documented override for {cidr}: {override}")
+        if not override and network.prefixlen < network.max_prefixlen:
+            # A narrower-than-/16 range is still an explicit network exception
+            # rather than a labelled pod, so it needs its own documented reason.
+            return f"ipBlock {cidr} allows a network instead of an admin-client pod and needs a documented override"
         return ""
-    if source.get("podSelector") or source.get("namespaceSelector"):
-        if not source:
-            return "empty source allows every peer"
+    if not source:
+        return "empty source allows every peer"
+    namespace = source.get("namespaceSelector")
+    if namespace is not None and not (namespace.get("matchLabels") or namespace.get("matchExpressions")):
+        return "namespaceSelector with no labels allows every namespace"
+    if source.get("podSelector") or namespace:
         return ""
     return "source with no selector allows every peer"
 
 
 def source_is_admin_client(source: dict) -> bool:
     labels = (source.get("podSelector") or {}).get("matchLabels") or {}
-    return labels.get(ADMIN_CLIENT_LABEL) == "true"
+    if labels.get(ADMIN_CLIENT_LABEL) != "true":
+        return False
+    # The selector must also name the namespace: an admin-client label alone in
+    # every namespace would let any tenant opt in.
+    namespace = source.get("namespaceSelector") or {}
+    return bool(namespace.get("matchLabels") or namespace.get("matchExpressions"))
 
 
-def check_documents(documents: list[dict], problems: Problems) -> None:
+def source_is_admin_client(source: dict) -> bool:
+    labels = (source.get("podSelector") or {}).get("matchLabels") or {}
+    if labels.get(ADMIN_CLIENT_LABEL) != "true":
+        return False
+    # The selector must also name the namespace: an admin-client label alone in
+    # every namespace would let any tenant opt in.
+    namespace = source.get("namespaceSelector") or {}
+    return bool(namespace.get("matchLabels") or namespace.get("matchExpressions"))
+
+
+def check_documents(
+    documents: list[dict], problems: Problems, overrides: dict[str, str] | None = None
+) -> None:
+    overrides = BROAD_IPBLOCK_OVERRIDES if overrides is None else overrides
     admin = admin_config(documents)
     problems.check(bool(admin), "the rendered ConfigMap must carry the admin block")
     problems.check(admin.get("enabled") is True, "admin.enabled must be true in the rendered config")
@@ -212,11 +256,19 @@ def check_documents(documents: list[dict], problems: Problems) -> None:
             if not sources:
                 problems.check(False, "no NetworkPolicy may allow the admin port from every source (missing or empty `from`)")
                 continue
-            for source in sources:
-                reason = broad_source(source)
+            admin_sources = [source for source in sources if source_is_admin_client(source)]
+            other_sources = [source for source in sources if source not in admin_sources]
+            if admin_sources and other_sources:
+                # A rule that mixes the admin-client selector with anything else
+                # widens access for every source it lists.
+                problems.check(False, "an admin-port rule must not mix the admin-client selector with another source")
+            for source in admin_sources:
+                reason = broad_source(source, overrides)
                 problems.check(not reason, f"admin port source refused: {reason}")
-                if source_is_admin_client(source):
-                    admin_allowed_from_selected = True
+                admin_allowed_from_selected = True
+            for source in other_sources:
+                reason = broad_source(source, overrides)
+                problems.check(not reason, f"admin port source refused: {reason}")
     problems.check(admin_allowed_from_selected, "the admin port must be allowed from selected admin-client pods")
     _ = names
 
