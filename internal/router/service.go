@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	"github.com/metrum-ai/router/internal/tlsacme"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -85,6 +86,7 @@ type Service struct {
 	shaping            *upstreamShapeManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
+	tlsManager         *tlsacme.Manager
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
@@ -99,9 +101,9 @@ type Service struct {
 
 	// Admin listener state (#809). adminMux is the admin listener's route
 	// registry; it is nil unless admin.enabled is true, so the serving surface
-	// is unchanged by default. adminCASource is #828's client-CA source,
+	// is unchanged by default. adminCASource is the client-CA source from #814,
 	// installed before the plane starts so the handshake verifies against the
-	// current trust snapshot, and adminAuthenticate is #814's machine chain.
+	// current trust snapshot, and adminAuthenticate is the machine auth chain.
 	adminMux          *AdminMux
 	adminCASourceMu   sync.Mutex
 	adminCASource     AdminClientCASource
@@ -253,6 +255,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS, tlsacme.ListenerServing, "server.tls")
+	if err != nil {
+		return nil, err
+	}
 	if cfg.Eligibility.implicitEnabled() {
 		for group, model := range cfg.Models {
 			for _, target := range model.Targets {
@@ -341,6 +347,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		shadows:            newShadowRuntime(),
 		provenance:         provenance,
 		responsesAffinity:  responsesAffinity,
+		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
 	if err := s.initConfigControlPlane(); err != nil {
@@ -427,6 +434,16 @@ func (s *Service) Handler() http.Handler {
 		h = s.withLegacyAdminDeprecation(h)
 	}
 	return h
+}
+
+// TLSManager returns the serving listener's TLS manager, or nil when
+// server.tls is off (the v4.7 behaviour). The caller runs EnsureCertificate
+// before binding and Run for renewals, and sets srv.TLSConfig from TLSConfig.
+func (s *Service) TLSManager() *tlsacme.Manager {
+	if s == nil {
+		return nil
+	}
+	return s.tlsManager
 }
 
 func (s *Service) Close() {
@@ -1127,6 +1144,11 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
+	if s.tlsManager != nil {
+		// Empty unless the serving listener terminates TLS itself, so a v4.7
+		// configuration keeps byte-identical /metrics output.
+		_, _ = io.WriteString(w, s.tlsManager.Prometheus())
+	}
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
@@ -2056,27 +2078,28 @@ func usageEndpoint(r *http.Request) string {
 	return "unsupported"
 }
 
-func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
-	if dialect == "models" && isAnthropicModelRequest(r) {
-		dialect = "anthropic"
+// adminPlaneAuthorized reports whether the /admin/v1 contract layer authenticated the
+// request AND recorded an authorization decision for it. Handler code must never treat "a
+// principal is present" as authorized.
+func adminPlaneAuthorized(r *http.Request) bool {
+	if r == nil {
+		return false
 	}
-	// Receive clock for router-added latency (issue #159). Captured before auth
-	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
-	// receive through httptrace.WroteRequest.
-	receiveAt := time.Now()
-	id := requestID()
-	w.Header().Set("X-Request-Id", id)
-	if dialect == "anthropic" {
-		w.Header().Set("Request-Id", id)
+	if _, ok := PrincipalFrom(r.Context()); !ok {
+		return false
 	}
-	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
-	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
-	rc := &requestContext{
+	_, ok := AdminV1DecisionFrom(r.Context())
+	return ok
+}
+
+// newRequestContext builds the per-request record without any authentication decision.
+// begin() adds the caller; beginAdminPlane() adds the machine admin principal.
+func (s *Service) newRequestContext(r *http.Request, dialect, id string, receiveAt time.Time, ipInfo clientIPInfo) *requestContext {
+	return &requestContext{
 		id:                   id,
 		start:                receiveAt,
 		receiveAt:            receiveAt,
 		ctx:                  r.Context(),
-		caller:               caller,
 		dialect:              dialect,
 		client:               inferClient(r),
 		clientIP:             ipInfo,
@@ -2098,6 +2121,46 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Warnings:             []string{},
 		},
 	}
+}
+
+// beginAdminPlane builds a request context for an admin-plane request the contract layer
+// already authenticated and authorized. It performs no caller authentication: the admin
+// plane is machine-to-machine and never accepts a caller token.
+func (s *Service) beginAdminPlane(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	principal, ok := PrincipalFrom(r.Context())
+	if !ok || !adminPlaneAuthorized(r) {
+		writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
+		return nil, false
+	}
+	receiveAt := time.Now()
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.rec.CallerID = principal.Subject
+	rc.rec.UsageSource = "none"
+	rc.trace("router_receive", "admin plane request receive", Target{}, 0, 0, "", false, 0)
+	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
+	return rc, true
+}
+
+func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	if dialect == "models" && isAnthropicModelRequest(r) {
+		dialect = "anthropic"
+	}
+	// Receive clock for router-added latency (issue #159). Captured before auth
+	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
+	// receive through httptrace.WroteRequest.
+	receiveAt := time.Now()
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		w.Header().Set("Request-Id", id)
+	}
+	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.caller = caller
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":

@@ -88,11 +88,65 @@ func (s *Service) withLegacyAdminDeprecation(next http.Handler) http.Handler {
 	})
 }
 
-// legacyAdminReplacementLink maps a legacy path to its /admin/v1 equivalent.
+// legacyAdminReplacementLink maps a legacy path to its /admin/v1 equivalent
+// using the versioned registry (#811) as the source of truth, so a Link can
+// never drift from the published contract. A path the registry does not list
+// gets no Link at all.
 func legacyAdminReplacementLink(path string) string {
-	trimmed := strings.TrimSpace(path)
-	if !strings.HasPrefix(trimmed, "/admin/") {
+	segments := splitAdminPath(path)
+	// Compare the part after the shared "admin" prefix: the versioned form has
+	// an extra "v1" marker that the legacy form does not.
+	request := trimAdminPrefix(segments, "admin")
+	if request == nil {
 		return ""
 	}
-	return "/admin/v1/" + strings.TrimPrefix(trimmed, "/admin/")
+	for _, op := range AdminV1Operations() {
+		legacy := trimAdminPrefix(splitAdminPath(op.LegacyPath), "admin")
+		versioned := trimAdminPrefix(splitAdminPath(op.Path), "admin", "v1")
+		if legacy == nil || versioned == nil || len(legacy) != len(request) || len(versioned) != len(request) {
+			continue
+		}
+		matched := true
+		for i := range legacy {
+			if strings.HasPrefix(legacy[i], "{") {
+				continue
+			}
+			if legacy[i] != request[i] {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		for i := range versioned {
+			if strings.HasPrefix(versioned[i], "{") {
+				versioned[i] = request[i]
+			}
+		}
+		return "/admin/v1/" + strings.Join(versioned, "/")
+	}
+	return ""
+}
+
+// trimAdminPrefix removes the leading segments from path and returns the rest,
+// or nil when the prefix does not match.
+func trimAdminPrefix(path []string, prefix ...string) []string {
+	if len(path) < len(prefix) {
+		return nil
+	}
+	for i, want := range prefix {
+		if path[i] != want {
+			return nil
+		}
+	}
+	return path[len(prefix):]
+}
+
+func splitAdminPath(path string) []string {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
 }

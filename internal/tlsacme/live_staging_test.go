@@ -20,6 +20,8 @@ package tlsacme
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"strings"
@@ -93,8 +95,19 @@ func TestLiveStaging(t *testing.T) {
 		owner = "acme-test"
 	}
 
+	// The token is registered with a redactor here too: this check injects its
+	// provider, so the manager's own secret set never sees the value, and a
+	// provider response that echoes it must still never reach a log.
+	token := os.Getenv("DO_DNS_TOKEN")
+	redact := func(text string) string {
+		if token == "" {
+			return text
+		}
+		return strings.ReplaceAll(text, token, "<redacted>")
+	}
+	providerOptions := dns.Options{Logger: testLogger(t), Redact: redact}
 	provider, err := dns.New(context.Background(), dns.ProviderNameDigitalOcean,
-		dns.Credentials{Token: os.Getenv("DO_DNS_TOKEN")}, dns.Options{Logger: testLogger(t)})
+		dns.Credentials{Token: token}, providerOptions)
 	if err != nil {
 		t.Fatalf("build provider: %v", err)
 	}
@@ -135,7 +148,7 @@ func TestLiveStaging(t *testing.T) {
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cleanupCancel()
 			removed, err := dns.DeleteManaged(cleanupCtx, provider, zone,
-				dns.Record{Type: "A", Name: domain}, owner, dns.Options{Logger: testLogger(t)})
+				dns.Record{Type: "A", Name: domain}, owner, providerOptions)
 			if err != nil {
 				t.Logf("cleanup of the managed record: %v", err)
 			}
@@ -161,9 +174,29 @@ func TestLiveStaging(t *testing.T) {
 	t.Logf("issued for %s: valid %s .. %s (lifetime %s), renewal due %s",
 		domain, status[0].NotBefore.Format(time.RFC3339), status[0].NotAfter.Format(time.RFC3339),
 		lifetime, status[0].RenewalDue.Format(time.RFC3339))
-	wantDeadline := status[0].NotBefore.Add(time.Duration(float64(lifetime) * (2.0 / 3.0)))
-	if delta := status[0].RenewalDue.Sub(wantDeadline); delta > time.Hour || delta < -time.Hour {
-		t.Fatalf("renewal due %s is not about two thirds of the lifetime (%s)", status[0].RenewalDue, wantDeadline)
+	due := status[0].RenewalDue
+	if !due.After(status[0].NotBefore) || !due.Before(status[0].NotAfter) {
+		t.Fatalf("renewal due %s is outside the certificate lifetime", due)
+	}
+	// The CA advertises renewal information: the deadline must sit in its
+	// suggested window. Without ARI the two-thirds ratio applies.
+	leafBlock, _ := pem.Decode(manager.record.CertificatePEM)
+	leafCert, parseErr := x509.ParseCertificate(leafBlock.Bytes)
+	if parseErr != nil {
+		t.Fatalf("parse issued certificate: %v", parseErr)
+	}
+	windowStart, windowEnd, ariErr := manager.ari.window(ctx, stagingDirectory, leafCert)
+	if ariErr == nil {
+		t.Logf("CA suggested renewal window %s .. %s", windowStart.Format(time.RFC3339), windowEnd.Format(time.RFC3339))
+		if due.Before(windowStart.Add(-time.Minute)) || due.After(windowEnd.Add(time.Minute)) {
+			t.Fatalf("renewal due %s is outside the CA's suggested window %s..%s", due, windowStart, windowEnd)
+		}
+	} else {
+		t.Logf("CA renewal information unavailable (%v); checking the two-thirds ratio", ariErr)
+		wantDeadline := status[0].NotBefore.Add(time.Duration(float64(lifetime) * (2.0 / 3.0)))
+		if delta := due.Sub(wantDeadline); delta > time.Hour || delta < -time.Hour {
+			t.Fatalf("renewal due %s is not about two thirds of the lifetime (%s)", due, wantDeadline)
+		}
 	}
 
 	// A restart reuses the cached certificate: no second order, no CA spend.
@@ -182,7 +215,7 @@ func TestLiveStaging(t *testing.T) {
 		before := counted.writes()
 		result, err := dns.Reconcile(ctx, counted, zone,
 			dns.Record{Type: "A", Name: domain, Value: recordValue, TTL: 300}, owner,
-			dns.Options{Logger: testLogger(t), Instruments: dnsInstruments{manager}})
+			dns.Options{Logger: testLogger(t), Instruments: dnsInstruments{manager}, Redact: redact})
 		if err != nil {
 			t.Fatalf("reconcile managed record: %v", err)
 		}
@@ -191,7 +224,7 @@ func TestLiveStaging(t *testing.T) {
 		before = counted.writes()
 		again, err := dns.Reconcile(ctx, counted, zone,
 			dns.Record{Type: "A", Name: domain, Value: recordValue, TTL: 300}, owner,
-			dns.Options{Logger: testLogger(t), Instruments: dnsInstruments{manager}})
+			dns.Options{Logger: testLogger(t), Instruments: dnsInstruments{manager}, Redact: redact})
 		if err != nil {
 			t.Fatalf("second reconcile: %v", err)
 		}
@@ -203,7 +236,7 @@ func TestLiveStaging(t *testing.T) {
 		}
 
 		removed, err := dns.DeleteManaged(ctx, provider, zone,
-			dns.Record{Type: "A", Name: domain}, owner, dns.Options{Logger: testLogger(t)})
+			dns.Record{Type: "A", Name: domain}, owner, providerOptions)
 		if err != nil || !removed {
 			t.Fatalf("delete managed record: removed=%v err=%v", removed, err)
 		}

@@ -17,11 +17,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/metrum-ai/router/internal/tlsacme"
 )
 
-// AdminMux is the route registry for the admin listener (ACP-001). Other lanes
+// AdminMux is the route registry for the admin listener (ACP-001). Other components
 // mount their routes here: #811 mounts the /admin/v1 router, #814 installs its
-// authenticator chain with Use and #816 installs audit the same way, so no lane
+// authenticator chain with Use and #816 installs audit the same way, so no component
 // has to touch the server lifecycle.
 //
 // Patterns are Go 1.22 mux patterns ("GET /admin/v1/clients"), so method and
@@ -92,7 +94,7 @@ func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) ht
 // state only (ACP-006); every other admin route requires an identity.
 //
 // No installed chain means no authenticated identity, so every non-probe route
-// fails closed with 401. A route mounted by another lane can therefore never be
+// fails closed with 401. A route mounted by another component can therefore never be
 // reachable without authentication.
 func adminAuthentication(authenticate Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -391,7 +393,7 @@ func adminMachineOnlyGate(next http.Handler) http.Handler {
 }
 
 // AdminCertificateManager is the router-native certificate seam #810 supplies to
-// the listener. The TLS lane adapts its ACME manager to it (the adapter struct
+// the listener. The automated-TLS work (#810) adapts its ACME manager to it (the adapter struct
 // is named AdminCertificateSource there). The listener asks the manager whether
 // it serves the SNI and then fetches the certificate, all inside its single
 // handshake hook, before applying the #814 client-CA snapshot.
@@ -477,6 +479,14 @@ type AdminPlane struct {
 	reloadMu sync.Mutex
 	reload   context.CancelFunc
 	reloadWG sync.WaitGroup
+
+	// acme is the #810 manager for admin.tls.certificate_source: acme. The
+	// listener obtains the certificate before it binds and renews it in the
+	// background for as long as it serves.
+	acme     *tlsacme.Manager
+	acmeMu   sync.Mutex
+	acmeStop context.CancelFunc
+	acmeWG   sync.WaitGroup
 }
 
 // adminCAReloader is the optional reload capability of an AdminClientCASource
@@ -487,10 +497,20 @@ type adminCAReloader interface {
 	Reload() error
 }
 
+// AdminPlaneOption customizes NewAdminPlane. The binary uses none; tests inject
+// a managed-certificate manager that is already built.
+type AdminPlaneOption func(*AdminPlane)
+
+// WithAdminTLSManager installs an already-built #810 manager. It is how tests
+// exercise the managed-certificate lifecycle without live issuance.
+func WithAdminTLSManager(manager *tlsacme.Manager) AdminPlaneOption {
+	return func(p *AdminPlane) { p.acme = manager }
+}
+
 // NewAdminPlane validates the listener policy and builds the server. TLS files
 // are loaded here, so a router-native misconfiguration fails before serving
 // starts; the plaintext/loopback policy is already enforced by Validate.
-func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, error) {
+func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler, opts ...AdminPlaneOption) (*AdminPlane, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, fmt.Errorf("admin plane is not enabled")
 	}
@@ -502,6 +522,11 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 		cfg:     local,
 		handler: handler,
 		err:     make(chan error, 1),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(p)
+		}
 	}
 	// A fixed capacity avoids deriving an allocation size from configuration.
 	caPaths := make([]string, 0, 2)
@@ -525,6 +550,25 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 			return nil, err
 		}
 		p.tlsCfg = tlsCfg
+		if strings.EqualFold(strings.TrimSpace(local.TLS.CertificateSource), adminCertificateSourceACME) && p.acme == nil {
+			// #810 owns issuance and renewal; the listener obtains the
+			// certificate before it binds and renews it while it serves.
+			manager, err := NewListenerTLSManager(local.TLS.ListenerTLSConfig, tlsacme.ListenerAdmin, "admin.tls")
+			if err != nil {
+				return nil, err
+			}
+			if manager == nil {
+				return nil, fmt.Errorf("admin.tls.certificate_source acme requires an ACME manager")
+			}
+			p.acme = manager
+		}
+	}
+	if p.acme != nil {
+		// The handshake serves the managed certificate through the same single
+		// hook the client-CA snapshot uses.
+		if err := p.SetCertificateSource(AdminTLSProvider{Manager: p.acme}); err != nil {
+			return nil, err
+		}
 	}
 	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
 		loopback, err := adminListenIsLoopback(local.Listen)
@@ -562,8 +606,8 @@ func (p *AdminPlane) SetCertificateSource(src AdminCertificateManager) error {
 	if p == nil || src == nil {
 		return fmt.Errorf("admin certificate source is required")
 	}
-	if p.tlsCfg == nil || !strings.EqualFold(strings.TrimSpace(p.cfg.TLS.CertificateSource), adminCertificateSourceACME) {
-		return fmt.Errorf("an admin certificate source requires admin.tls.mode router with certificate_source acme")
+	if p.tlsCfg == nil || !strings.EqualFold(strings.TrimSpace(p.cfg.TLS.Mode), adminTLSModeRouter) {
+		return fmt.Errorf("an admin certificate source requires admin.tls.mode router")
 	}
 	p.certMu.Lock()
 	p.certSrc = src
@@ -658,6 +702,16 @@ func (p *AdminPlane) Start() error {
 			return fmt.Errorf("admin.tls.certificate_source acme requires an installed certificate source before the listener starts")
 		}
 	}
+	if p.acme != nil {
+		// Obtain (or load) the certificate before binding, so the listener never
+		// comes up without one. The manager redacts credentials from the error.
+		startCtx, cancelStart := context.WithTimeout(context.Background(), adminACMEStartupTimeout)
+		err := p.acme.EnsureCertificate(startCtx)
+		cancelStart()
+		if err != nil {
+			return fmt.Errorf("admin listener: managed certificate unavailable: %s", adminSafeErrorText(err))
+		}
+	}
 	ln, err := net.Listen("tcp", p.cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("admin listener: %w", err)
@@ -675,6 +729,7 @@ func (p *AdminPlane) Start() error {
 	}
 	p.srv = srv
 	p.ln = ln
+	p.startManagedCertificateRenewal()
 	p.startClientCAReload()
 	go func() {
 		if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
@@ -760,6 +815,35 @@ func (p *AdminPlane) Err() <-chan error {
 	return p.err
 }
 
+// adminACMEStartupTimeout bounds the first issuance or cache load at startup.
+const adminACMEStartupTimeout = 2 * time.Minute
+
+// adminSafeErrorText bounds and scrubs text before it reaches a startup error
+// or a log line.
+func adminSafeErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return truncateSafeDetail(redactDiagnosticSecrets(err.Error()))
+}
+
+// startManagedCertificateRenewal renews the managed certificate for as long as
+// the listener serves and stops with it.
+func (p *AdminPlane) startManagedCertificateRenewal() {
+	if p.acme == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.acmeMu.Lock()
+	p.acmeStop = cancel
+	p.acmeMu.Unlock()
+	p.acmeWG.Add(1)
+	go func() {
+		defer p.acmeWG.Done()
+		p.acme.Run(ctx)
+	}()
+}
+
 // Shutdown drains the admin listener with its own budget. Serving shutdown is
 // a separate call with its own deadline.
 func (p *AdminPlane) Shutdown(ctx context.Context) error {
@@ -770,6 +854,14 @@ func (p *AdminPlane) Shutdown(ctx context.Context) error {
 	cancelReload := p.reload
 	p.reload = nil
 	p.reloadMu.Unlock()
+	p.acmeMu.Lock()
+	cancelACME := p.acmeStop
+	p.acmeStop = nil
+	p.acmeMu.Unlock()
+	if cancelACME != nil {
+		cancelACME()
+		p.acmeWG.Wait()
+	}
 	p.mu.Lock()
 	srv := p.srv
 	p.mu.Unlock()
@@ -804,7 +896,7 @@ func (s *Service) initAdminPlane() {
 	// Nothing else is registered here yet: /admin/v1 mounts through
 	// RegisterAdminRoutes (#811) and /metrics lands with its slice. The
 	// catch-all keeps every other path a problem+json 404 so the plane never
-	// serves HTML or another lane's routes (ACP-N06).
+	// serves HTML or another component's routes (ACP-N06).
 	s.adminMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeAdminPlaneProblem(w, r, http.StatusNotFound, "admin-not-found")
 	})
@@ -829,7 +921,7 @@ func (s *Service) AdminHandler() http.Handler {
 }
 
 // RegisterAdminRoutes mounts routes on the admin listener. It is the hook
-// #811/#813/#815 register through and the only supported way for another lane
+// #811/#813/#815 register through and the only supported way for another component
 // to add an admin-port route.
 func (s *Service) RegisterAdminRoutes(register func(*AdminMux)) {
 	if s == nil || register == nil || !s.adminPlaneEnabled() || s.adminMux == nil {

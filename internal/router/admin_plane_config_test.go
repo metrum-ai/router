@@ -45,41 +45,22 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "host:port",
 		},
 		{
-			name: "acme certificate source",
-			mutate: func(cfg *AdminPlaneConfig) {
-				cfg.TLS.Mode = adminTLSModeRouter
-				cfg.TLS.CertificateSource = adminCertificateSourceACME
-				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
-			},
-		},
-		{
 			name: "acme without an acme block",
 			mutate: func(cfg *AdminPlaneConfig) {
 				cfg.TLS.Mode = adminTLSModeRouter
 				cfg.TLS.CertificateSource = adminCertificateSourceACME
 			},
-			wantErr: "requires an admin.tls.acme block",
+			wantErr: "admin.tls.acme",
 		},
 		{
-			name: "acme with static files",
-			mutate: func(cfg *AdminPlaneConfig) {
-				cfg.TLS.Mode = adminTLSModeRouter
-				cfg.TLS.CertificateSource = adminCertificateSourceACME
-				cfg.TLS.CertFile = "server.crt"
-				cfg.TLS.KeyFile = "server.key"
-				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
-			},
-			wantErr: "cannot be combined",
-		},
-		{
-			name: "files source with an acme block",
+			name: "files source with an acme block beyond domains",
 			mutate: func(cfg *AdminPlaneConfig) {
 				cfg.TLS.Mode = adminTLSModeRouter
 				cfg.TLS.CertFile = "server.crt"
 				cfg.TLS.KeyFile = "server.key"
-				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
+				cfg.TLS.ACME = TLSACMEServerConfig{DirectoryURL: "https://acme.test/directory"}
 			},
-			wantErr: "requires admin.tls.certificate_source acme",
+			wantErr: "only acme.domains may be set",
 		},
 		{
 			name: "unknown certificate source",
@@ -95,14 +76,14 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			name: "acme without router TLS mode",
 			mutate: func(cfg *AdminPlaneConfig) {
 				cfg.TLS.CertificateSource = adminCertificateSourceACME
-				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
+				cfg.TLS.ACME = TLSACMEServerConfig{DirectoryURL: "https://acme.test/directory"}
 			},
-			wantErr: "requires admin.tls.mode router",
+			wantErr: "certificate_source",
 		},
 		{
 			name:    "router TLS without certificate",
 			mutate:  func(cfg *AdminPlaneConfig) { cfg.TLS.Mode = adminTLSModeRouter },
-			wantErr: "requires admin.tls.cert_file",
+			wantErr: "cert_file and key_file are required",
 		},
 		{
 			name: "router TLS without a client CA",
@@ -140,8 +121,13 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "client_auth must be",
 		},
 		{
-			name:    "invalid TLS minimum version",
-			mutate:  func(cfg *AdminPlaneConfig) { cfg.TLS.MinVersion = "1.0" },
+			name: "invalid TLS minimum version",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.Mode = adminTLSModeRouter
+				cfg.TLS.CertFile = "server.crt"
+				cfg.TLS.KeyFile = "server.key"
+				cfg.TLS.MinVersion = "1.0"
+			},
 			wantErr: "min_version",
 		},
 		{
@@ -314,6 +300,10 @@ func TestAdminTrustedProxyCIDRWidening(t *testing.T) {
 		{"::/0", "must not trust every peer"},
 		{"10.0.0.0/7", "wider than /8"},
 		{"2001:db8::/16", "wider than /32"},
+		{"::ffff:0.0.0.0/96", "IPv4-mapped prefix"},
+		{"::ffff:10.0.0.0/103", "IPv4-mapped prefix"},
+		{"::ffff:10.0.0.0/104", ""},
+		{"::ffff:192.0.2.0/120", ""},
 		{"10.0.0.0/8", ""},
 		{"2001:db8:1:2::/64", ""},
 		{"192.0.2.7/32", ""},
@@ -346,7 +336,7 @@ func TestAdminPlaintextOverrideWarns(t *testing.T) {
 		Listen:                    "0.0.0.0:0",
 		AllowPlaintextNonLoopback: true,
 		LegacyRoutesOnServingPort: &enabled,
-		TLS:                       AdminTLSConfig{Mode: adminTLSModeOff},
+		TLS:                       AdminTLSConfig{ListenerTLSConfig: ListenerTLSConfig{Mode: adminTLSModeOff}},
 	}
 	plane, err := NewAdminPlane(&cfg, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	if err != nil {

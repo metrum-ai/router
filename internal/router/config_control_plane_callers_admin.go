@@ -44,19 +44,61 @@ type CallerAdminDeps struct {
 	DB           *gorm.DB
 	RuntimeScope string
 	Authorize    func(r *http.Request, object, action string) bool
-	AfterMutate  func(r *http.Request, callerID string) error
-	Now          func() time.Time
+	// AuthorizeDomain takes a decision in an explicit domain, used to filter a
+	// caller-directory row by the domain stored on that row.
+	AuthorizeDomain func(r *http.Request, domain, object, action string) bool
+	AfterMutate     func(r *http.Request, callerID string) error
+	Now             func() time.Time
 }
 
-// RegisterCallerDirectoryAdmin registers the admin caller directory mutation
-// endpoints on mux. It is exported so the service route map stays untouched
-// while the control-plane wiring composes it.
+// RegisterCallerDirectoryAdmin registers the admin caller directory endpoints on the
+// serving port (the legacy surface, unchanged).
 func RegisterCallerDirectoryAdmin(mux *http.ServeMux, deps CallerAdminDeps) {
-	h := &callerAdminHandler{deps: deps}
-	mux.HandleFunc("GET /admin/callers", h.handleList)
-	mux.HandleFunc("POST /admin/callers/issue", h.handleIssue)
-	mux.HandleFunc("POST /admin/callers/{id}/rotate", h.handleRotate)
-	mux.HandleFunc("POST /admin/callers/{id}/revoke", h.handleRevoke)
+	newCallerAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, handler)
+	}, "/admin")
+}
+
+// newCallerAdminHandler builds the handler object without registering it, so the same
+// handler also serves /admin/v1.
+func newCallerAdminHandler(deps CallerAdminDeps) *callerAdminHandler {
+	return &callerAdminHandler{deps: deps}
+}
+
+// callerAdminPatterns is the caller directory pattern table.
+func (h *callerAdminHandler) callerAdminPatterns() []struct {
+	pattern string
+	key     string
+	handler http.HandlerFunc
+} {
+	return []struct {
+		pattern string
+		key     string
+		handler http.HandlerFunc
+	}{
+		{"GET /callers", "callers.list", h.handleList},
+		{"POST /callers/issue", "callers.issue", h.handleIssue},
+		{"POST /callers/{id}/rotate", "callers.rotate", h.handleRotate},
+		{"POST /callers/{id}/revoke", "callers.revoke", h.handleRevoke},
+	}
+}
+
+// handlerKeys maps each caller handler to the registry's HandlerKey.
+func (h *callerAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	out := map[string]http.HandlerFunc{}
+	for _, entry := range h.callerAdminPatterns() {
+		out[entry.key] = entry.handler
+	}
+	return out
+}
+
+// register installs the caller directory patterns under prefix with the legacy wildcard
+// names, so r.PathValue("id") keeps working on both surfaces.
+func (h *callerAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
+	for _, entry := range h.callerAdminPatterns() {
+		method, path, _ := strings.Cut(entry.pattern, " ")
+		handle(method+" "+prefix+path, entry.handler)
+	}
 }
 
 type callerAdminHandler struct {
@@ -81,6 +123,17 @@ func (h *callerAdminHandler) authorize(w http.ResponseWriter, r *http.Request, a
 		return false
 	}
 	return true
+}
+
+// allowInDomain takes a caller-directory decision in one row's stored domain.
+func (h *callerAdminHandler) allowInDomain(r *http.Request, domain, object, action string) bool {
+	if h.deps.Authorize == nil || !h.deps.Authorize(r, object, action) {
+		return false
+	}
+	if h.deps.AuthorizeDomain == nil {
+		return true
+	}
+	return h.deps.AuthorizeDomain(r, domain, object, action)
 }
 
 func (h *callerAdminHandler) now() time.Time {
@@ -151,6 +204,7 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 		ConfigSetID:  set.ID,
 		Callers:      []callerAdminCallerView{},
 	}
+	adminPlane := adminPlaneAuthorized(r)
 	for _, row := range rows {
 		var allowed []callerAllowedGroupRow
 		if err := h.deps.DB.Where("config_set_id = ? AND caller_id = ?", set.ID, row.CallerID).Order("group_name ASC").Find(&allowed).Error; err != nil {
@@ -161,7 +215,15 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 		for _, a := range allowed {
 			allow = append(allow, a.GroupName)
 		}
+		if adminPlane && !h.allowInDomain(r, authzDomainForProjectEnvironment(row.Project, row.Environment), authzObjectAdminCallers, authzActionList) {
+			// A row is listed only in its own stored domain.
+			continue
+		}
 		tokenHash, legacySHA256 := splitStoredCallerTokenVerifier(row.TokenSHA256)
+		if adminPlane {
+			// Verification material never leaves the router on the versioned surface.
+			tokenHash, legacySHA256 = "", ""
+		}
 		resp.Callers = append(resp.Callers, callerAdminCallerView{
 			ID:           row.CallerID,
 			OwnerUser:    row.OwnerUser,

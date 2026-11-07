@@ -28,6 +28,12 @@ admin:
     certificate_source: files
     cert_file: ""
     key_file: ""
+    # acme:
+    #   domains: [admin.example.com]
+    #   email: ops@example.com
+    #   directory_url: https://acme-staging-v02.api.letsencrypt.org/directory
+    #   accept_tos: true
+    #   cache_dir: /var/lib/router/acme
     min_version: "1.2"
     client_ca_file: ""
     client_auth: none
@@ -55,13 +61,13 @@ admin:
 | `tls.mode` | `off` | `off`, `router` (the router serves its own certificate) or `proxy` (a reverse proxy terminates TLS). |
 | `tls.certificate_source` | `files` | `files` (serve `cert_file`/`key_file`) or `acme` (automated issuance; requires `tls.mode: router` and an `tls.acme` block). |
 | `tls.cert_file`, `tls.key_file` | unset | Required for `tls.mode: router` with `certificate_source: files`. Changing them requires a restart. |
-| `tls.acme` | unset | ACME issuer settings for `certificate_source: acme`. Issuance and renewal are covered by the automated-certificate work; the listener only consumes the resulting certificate through its single handshake hook. |
+| `tls.acme` | unset | Automated issuance settings for `certificate_source: acme` (`domains`, `email`, `directory_url`, `accept_tos`, `cache_dir`, DNS provider and renewal keys). Issuance and renewal are covered by the automated-certificate work (#810); the listener only consumes the resulting certificate through its single handshake hook. |
 | `tls.min_version` | `1.2` | Minimum negotiated TLS version: `1.2` or `1.3`. |
 | `tls.client_ca_file` | unset | Client CA bundle for mTLS. |
 | `tls.client_auth` | `none` | `none`, `optional` or `require`. `optional` verifies a presented certificate and still lets API-key and token clients connect; `require` fails the handshake without one. A wrong or unknown CA always fails the handshake. |
 | `tls.trusted_proxy_cidrs` | `[]` | Required for `tls.mode: proxy`. Non-loopback peers outside the list are rejected. |
 | `limits.*` | see above | Admin-only body, header and connection deadlines, independent of the serving listener and its streaming settings. |
-| `metrics.on_serving_port` | unset | Unset keeps v4.7: `/metrics` stays on the serving port while the plane is disabled and moves to the admin listener when it is enabled. Set `true` to keep caller-token `/metrics` on the serving port. |
+| `metrics.on_serving_port` | unset | Keeps the v4.7 serving-port `/metrics` scrape with caller-token authorization. `/metrics` stays there until the admin listener serves it (admin identity with `metrics` read); moving it earlier is refused at startup. |
 
 ## Exposure options
 
@@ -82,7 +88,7 @@ A non-loopback bind with `tls.mode: off` refuses to start unless
 ## What the listener serves
 
 - its own `GET /healthz` and `GET /readyz`, which report plane state only;
-- `/metrics` when the admin plane owns it (see `metrics.on_serving_port`);
+- `/metrics` once the admin-side handler lands (until then the serving port keeps the v4.7 scrape);
 - the versioned `/admin/v1` operations (the control-plane contract).
 
 The listener returns `404` for inference paths (`/v1/*`, `/anthropic/v1/*`), the docs site, the

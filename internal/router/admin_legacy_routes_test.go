@@ -190,3 +190,23 @@ func TestLegacyAdminFlagDefaultsOn(t *testing.T) {
 		t.Fatalf("Deprecation = %q, want true", got)
 	}
 }
+
+// The replacement Link comes from the versioned registry (#811), so it cannot
+// drift from the published contract, and an unlisted path gets no Link.
+func TestLegacyAdminReplacementLinksMatchRegistry(t *testing.T) {
+	cases := map[string]string{
+		"/admin/config/status":                  "/admin/v1/config/status",
+		"/admin/config/groups/eu/targets":       "/admin/v1/config/groups/eu/targets",
+		"/admin/config/groups/eu/targets/abc-1": "/admin/v1/config/groups/eu/targets/abc-1",
+		"/admin/config/sets/set-1/activate":     "/admin/v1/config/sets/set-1/activate",
+		"/admin/callers/team-a/rotate":          "/admin/v1/callers/team-a/rotate",
+		"/admin/training/outcomes/req-1":        "/admin/v1/training/outcomes/req-1",
+		"/admin/unlisted/path":                  "",
+		"/v1/content-captures/req-1":            "",
+	}
+	for path, want := range cases {
+		if got := legacyAdminReplacementLink(path); got != want {
+			t.Fatalf("link(%s) = %q, want %q", path, got, want)
+		}
+	}
+}

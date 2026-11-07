@@ -905,6 +905,59 @@ type adminScalarEndpointSpec struct {
 	Diagnostic   string
 }
 
+// reportsAdminSubject resolves the reports identity. On /admin/v1 the principal the contract
+// layer authenticated is used as-is, so no legacy credential check runs on that surface. On
+// the serving port the current browser/Basic/OIDC path is unchanged.
+func (s *Service) reportsAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
+	if principal, ok := PrincipalFrom(r.Context()); ok {
+		domain := AdminGlobalDomain
+		if s != nil && s.cfg != nil {
+			domain = s.adminCredentialDomain(principal)
+		}
+		return adminAuthSubject{
+			subject: principal.Subject, domain: domain, source: principal.Kind,
+			principal: &principal, authContext: s.PinAuthorization(r.Context()),
+		}, true
+	}
+	return s.authenticateAdminSubject(w, r)
+}
+
+// reportsAuthorize takes a reports decision. On /admin/v1 it is the sole Authorizer with the
+// request context, so a refusal is 403 and an unavailable or stale policy is 503; on the
+// serving port the existing decision path is unchanged. The global variant asks for the
+// plane-global domain, which is what the existing global reports check did.
+func (s *Service) reportsAuthorize(r *http.Request, subject adminAuthSubject, object, action string, global bool) (status int, code string, denied bool) {
+	if subject.principal == nil {
+		if global {
+			return http.StatusForbidden, "reports-forbidden", !s.authorizeGlobalAdmin(subject, object, action)
+		}
+		return http.StatusForbidden, "reports-forbidden", !s.authorizeAdmin(subject, object, action)
+	}
+	domain := subject.domain
+	if global {
+		domain = AdminGlobalDomain
+	}
+	ctx := r.Context()
+	if principal, ok := PrincipalFrom(ctx); ok {
+		ctx = WithPrincipal(ctx, principal)
+	}
+	if err := s.Authorize(ctx, *subject.principal, domain, object, action); err != nil {
+		status, code = adminAuthorizationProblem(err)
+		return status, code, true
+	}
+	return 0, "", false
+}
+
+// writeAdminSurfaceError renders an error on the admin surface: a problem document on
+// /admin/v1 and the existing envelope on the serving port.
+func writeAdminSurfaceError(w http.ResponseWriter, r *http.Request, status int, code, legacyType string) {
+	if _, ok := PrincipalFrom(r.Context()); ok {
+		writeAdminProblemCode(w, r, status, code, "")
+		return
+	}
+	writeJSON(w, status, map[string]any{"error": map[string]any{"type": legacyType, "message": legacyType}})
+}
+
 func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Server.AdminReports.Enabled {
 		http.NotFound(w, r)
@@ -920,7 +973,7 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	}
 	relPath := strings.TrimPrefix(r.URL.Path, prefix)
 	securityReport := strings.HasPrefix(relPath, "/api/security/") || strings.HasPrefix(relPath, "/security/")
-	subject, ok := s.authenticateAdminSubject(w, r)
+	subject, ok := s.reportsAdminSubject(w, r)
 	if !ok {
 		s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "unauthorized", authzObjectAdminReports, authzActionRead)
 		return
@@ -936,12 +989,13 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	if securityReport {
 		object = authzObjectSecurityReports
 	}
-	if !s.authorizeAdmin(subject, object, action) {
-		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "reports-forbidden", object, action)
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "reports-forbidden", "message": "reports-forbidden"}})
+	if status, code, denied := s.reportsAuthorize(r, subject, object, action, false); denied {
+		s.recordAdminSecurityAccess(r, subject, status, code, object, action)
+		writeAdminSurfaceError(w, r, status, code, "reports-forbidden")
 		return
 	}
-	globalReports := s.authorizeGlobalAdmin(subject, object, action)
+	_, _, deniedGlobal := s.reportsAuthorize(r, subject, object, action, true)
+	globalReports := !deniedGlobal
 	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
 	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, prefix+"/static/"))
 	scalarSpec, scalarOK := adminScalarEndpointSpecs(strings.TrimPrefix(r.URL.Path, prefix))

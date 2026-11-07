@@ -210,7 +210,7 @@ func buildAdminAPIKeyRuntimes(cfg *Config, lookupEnv func(string) (string, bool)
 }
 
 func buildAdminAPIKeyRuntime(key AdminAPIKeyConfig, lookupEnv func(string) (string, bool)) *adminAPIKeyRuntime {
-	if strings.TrimSpace(key.Status) == "disabled" {
+	if strings.ToLower(strings.TrimSpace(key.Status)) == "disabled" {
 		return nil
 	}
 	keyID := strings.TrimSpace(key.KeyID)
