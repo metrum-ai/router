@@ -1,0 +1,31 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Admin control-plane overlay (v4.8.0, #817).
+#
+# Requires the v4.8.0 image that ships the admin listener and its --admin-listen
+# override flag (#809); apply this overlay on top of that release, not an earlier
+# image.
+#
+# Starts the admin listener on the pod IP, exposes it only through a private
+# ClusterIP Service with no Ingress, and adds default-deny ingress with
+# explicit allows: the serving port stays reachable, the admin port accepts
+# only pods labelled access.metrum.ai/admin-client: "true". Plaintext inside the
+# pod network is the reference default; the operator guide explains how to mount
+# router-native TLS instead.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: metrum-ai-router
+resources:
+  - ../../base
+  - service-admin.yaml
+  - networkpolicy-admin.yaml
+patches:
+  - path: patch-deployment.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: metrum-ai-router-config
+    behavior: replace
+    files:
+      - config.yaml

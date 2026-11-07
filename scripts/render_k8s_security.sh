@@ -45,4 +45,6 @@ cp "$root/deploy/kubernetes/bootstrap/tenant-router-linkerd-injection-patch.exam
 printf '%s\n' 'apiVersion: kustomize.config.k8s.io/v1beta1' 'kind: Kustomization' 'resources:' '  - base' 'patches:' '  - path: linkerd-patch.yaml' > "$linkerd/kustomization.yaml"
 kustomize build "$linkerd" > "$out/linkerd-example.yaml"
 cp "$root/deploy/github-runners-router/Dockerfile" "$out/Dockerfile"
+# The admin overlay's isolation invariants are checked on its rendered output.
+uv run --with pyyaml python "$root/scripts/check_admin_plane_manifests.py"
 echo "Rendered $count overlays, the composed Linkerd example, and runner Dockerfile into $out"
