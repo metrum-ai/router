@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -94,6 +95,17 @@ type Service struct {
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
+
+	// Admin listener state (#809). adminMux is the admin listener's route
+	// registry; it is nil unless admin.enabled is true, so the serving surface
+	// is unchanged by default. adminCASource is #828's client-CA source,
+	// installed before the plane starts so the handshake verifies against the
+	// current trust snapshot, and adminAuthenticate is #814's machine chain.
+	adminMux          *AdminMux
+	adminCASourceMu   sync.Mutex
+	adminCASource     AdminClientCASource
+	adminAuthMu       sync.Mutex
+	adminAuthenticate Authenticator
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -391,6 +403,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		}
 	}
 	s.routes()
+	s.initAdminPlane()
 	return s, nil
 }
 
@@ -406,7 +419,13 @@ func newUpstreamHTTPClient(cfg UpstreamConfig) *http.Client {
 func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
-	return s.withStreamProgressDeadline(s.mux)
+	var h http.Handler = s.withStreamProgressDeadline(s.mux)
+	if s.cfg != nil && s.cfg.Admin.legacyRoutesEnabled() {
+		// The legacy machine admin routes keep their v4.7 handlers and decisions
+		// and only gain Deprecation/Sunset headers (ACP-009).
+		h = s.withLegacyAdminDeprecation(h)
+	}
+	return h
 }
 
 func (s *Service) Close() {
@@ -542,6 +561,11 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
+		// The admin listener binds once; a reload cannot rebind it. Say so
+		// instead of leaving a half-applied control plane.
+		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
+	}
 	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
 }
@@ -622,42 +646,13 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
-	if s.configControlPlane != nil {
-		RegisterCallerDirectoryAdmin(s.mux, CallerAdminDeps{
-			DB:           s.configControlPlane,
-			RuntimeScope: s.cfg.Server.ConfigSource.RuntimeScope,
-			Authorize: func(r *http.Request, object, action string) bool {
-				w := &discardAdminAuthWriter{header: make(http.Header)}
-				subject, ok := s.authenticateAdminSubject(w, r)
-				if !ok {
-					return false
-				}
-				return s.authorizeAdminObjectAction(subject, object, action)
-			},
-			AfterMutate: func(r *http.Request, callerID string) error {
-				_ = r
-				_ = callerID
-				return s.reloadActiveConfigFromDB()
-			},
-		})
+	// The legacy machine admin routes stay on the serving port behind
+	// admin.legacy_routes_on_serving_port (ACP-009). The browser reports UI and
+	// the /admin/auth/* session routes are registered above and are not part of
+	// the control plane, so the flag never removes them.
+	if s.cfg.Admin.legacyRoutesEnabled() {
+		s.registerLegacyMachineAdminRoutes()
 	}
-	RegisterConfigAdminAPI(s.mux, ConfigAdminDeps{
-		DB:                      s.configControlPlane,
-		RuntimeScope:            s.cfg.Server.ConfigSource.RuntimeScope,
-		FileMode:                s.configControlPlane == nil,
-		RequireValidationStatus: s.cfg.Server.ConfigSource.RequireValidationStatus,
-		InstanceID:              s.configInstanceID,
-		Authenticate:            s.authenticateAdminSubject,
-		Authorize:               s.authorizeAdminPermission,
-		CurrentConfig:           func() *Config { return s.configSnapshot.Load() },
-		LoadedRevision:          s.loadedConfigRevision,
-		Reload:                  s.reloadActiveConfigFromDB,
-		ReloadShadows:           s.loadShadowRunsFromDB,
-		UsageDB:                 s.usageDBHandle,
-		RecordAccess:            s.recordAdminSecurityAccess,
-	})
-	s.mux.HandleFunc("POST /admin/training/export", s.handleTrainingExport)
-	s.mux.HandleFunc("POST /admin/training/outcomes/{request_id}", s.handleTrainingOutcome)
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
 	s.mux.HandleFunc("POST /v1/content-captures/purge-expired", s.handleContentCapturePurgeExpired)
 	s.mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)

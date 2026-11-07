@@ -18,6 +18,7 @@ For admin authentication, admin authorization, and PII filtering, see the canoni
 The top-level config shape is:
 
 - `server`: listener, default model group, cache, logging, usage persistence, license enforcement, decision telemetry, upstream timeouts, diagnostics, traffic shaping, admin auth, content capture, retention, and admin reports.
+- `admin`: the opt-in admin control-plane listener (`/admin/v1`), its TLS and client-certificate material, hardening limits, the legacy-route flag and the `/metrics` placement. See [Admin Listener](./admin-listener).
 - `state_path`: local router state path.
 - `providers`: upstream provider skins, credentials, model catalog metadata, capability metadata, pricing metadata, and shared provider traffic shaping.
 - `models`: deployment-defined caller-facing model groups and target selection strategy.
@@ -39,6 +40,7 @@ Use these pages as the canonical homes for each configuration area:
 | Caller tokens, users, projects, memberships, allow lists, `/v1/models` visibility | [Caller Tokens](./caller-tokens) |
 | Caller burst smoothing and bounded queueing | [Caller Traffic Shaping](./caller-traffic-shaping) |
 | Cache, usage DB, decision telemetry, diagnostics, content capture, retention | [Cache And Usage Store](./cache-usage-store) |
+| Admin control-plane listener, admin TLS and mTLS, hardening, legacy-route flag, `/metrics` placement | [Admin Listener](./admin-listener) |
 | Model-group quality contracts | [Model Group Contracts](./model-group-contracts) |
 | Reasoning eligibility | [Reasoning Routing](./reasoning-routing) |
 | Dynamic-score routing | [Dynamic Score Routing](./dynamic-score-routing) |
