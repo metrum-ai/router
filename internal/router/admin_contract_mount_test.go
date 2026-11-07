@@ -181,6 +181,14 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 		return harness.authorize.Authorize(ctx, principal, domain, object, action)
 	}
 	extra = addReportPlaceholderHandlers(registry, extra)
+	// #815 admin-key operations are mounted with the built-in registry; this
+	// harness exercises other surfaces, so they get a placeholder that still
+	// takes the contract's authorization decision.
+	for _, key := range []string{"admin.keys.issue", "admin.keys.list", "admin.keys.get", "admin.keys.rotate", "admin.keys.revoke"} {
+		if _, ok := extra[key]; !ok {
+			extra[key] = func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }
+		}
+	}
 	handlers := AdminV1Handlers(
 		AdminV1ConfigAdminDeps(configDeps, principalOf, authorize),
 		AdminV1CallerAdminDeps(callerDeps, principalOf, authorize),
@@ -241,7 +249,20 @@ func adminV1TestCountHandler(w http.ResponseWriter, r *http.Request) {
 // the mount and its conformance test cover every registered operation. The real
 // reports adapter (which re-dispatches to the existing reports handler) lands with
 // that slice; binding is by HandlerKey, so replacing these is additive.
+// addAdminKeyPlaceholderHandlers keeps every harness that mounts the built-in
+// registry satisfiable now that #815 registers its operations; the admin-key
+// suites use the real handlers.
+func addAdminKeyPlaceholderHandlers(handlers map[string]http.HandlerFunc) map[string]http.HandlerFunc {
+	for _, key := range []string{"admin.keys.issue", "admin.keys.list", "admin.keys.get", "admin.keys.rotate", "admin.keys.revoke"} {
+		if _, ok := handlers[key]; !ok {
+			handlers[key] = func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) }
+		}
+	}
+	return handlers
+}
+
 func addReportPlaceholderHandlers(registry *AdminV1Registry, handlers map[string]http.HandlerFunc) map[string]http.HandlerFunc {
+	handlers = addAdminKeyPlaceholderHandlers(handlers)
 	out := make(map[string]http.HandlerFunc, len(handlers)+32)
 	for key, handler := range handlers {
 		out[key] = handler
@@ -883,6 +904,11 @@ func TestAdminV1ServiceHandlerComposition(t *testing.T) {
 			"metrics.scrape":          noop,
 			"content.captures.delete": noop,
 			"content.captures.purge":  noop,
+			"admin.keys.issue":        noop,
+			"admin.keys.list":         noop,
+			"admin.keys.get":          noop,
+			"admin.keys.rotate":       noop,
+			"admin.keys.revoke":       noop,
 		},
 	)
 	for _, op := range registry.Operations() {

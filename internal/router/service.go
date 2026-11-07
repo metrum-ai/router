@@ -70,6 +70,12 @@ type Service struct {
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
 	machineGeneration  atomic.Pointer[adminMachineGeneration]
+	// #815 API-issued admin keys live in the authoritative control-plane DB.
+	adminKeys                    *adminKeyStore
+	adminKeyCfgMaxLifetime       time.Duration
+	adminKeyCfgDefaultOverlap    time.Duration
+	adminKeyCfgDefaultOverlapSet bool
+	adminKeyCfgMaxOverlap        time.Duration
 	// Producer-side only: requests never acquire either mutex. Serialize
 	// off-path builders against config reload and preserve hook delivery order.
 	machineReloadMu      sync.Mutex

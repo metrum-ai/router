@@ -46,6 +46,10 @@ type AdminMachineDPoPConfig struct {
 type AdminMachineAPIKeysConfig struct {
 	// Nil means the approved default true; an explicit false remains distinct.
 	Enabled *bool `yaml:"enabled" json:"enabled,omitempty"`
+	// API-issued key lifetimes (#815). Configured keys keep v4.7 behavior.
+	MaxLifetime            string `yaml:"max_lifetime" json:"maxLifetime,omitempty"`
+	DefaultRotationOverlap string `yaml:"default_rotation_overlap" json:"defaultRotationOverlap,omitempty"`
+	MaxRotationOverlap     string `yaml:"max_rotation_overlap" json:"maxRotationOverlap,omitempty"`
 }
 type AdminMachineEmergencyConfig struct {
 	Credentials []AdminMachineEmergencyCredentialConfig `yaml:"credentials" json:"credentials,omitempty"`
