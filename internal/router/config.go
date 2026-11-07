@@ -34,8 +34,12 @@ func (c EligibilityConfig) implicitEnabled() bool {
 }
 
 type Config struct {
-	Eligibility        EligibilityConfig         `yaml:"eligibility"`
-	Server             ServerConfig              `yaml:"server"`
+	Eligibility EligibilityConfig `yaml:"eligibility"`
+	Server      ServerConfig      `yaml:"server"`
+	// Admin is the control plane's own listener (#809). An absent or disabled
+	// block keeps the v4.7 surface: no second listener, legacy /admin/* and
+	// /metrics on the serving port.
+	Admin              AdminPlaneConfig          `yaml:"admin" json:"admin"`
 	Users              []UserConfig              `yaml:"users"`
 	Projects           []ProjectConfig           `yaml:"projects"`
 	ProjectMemberships []ProjectMembershipConfig `yaml:"project_memberships"`
@@ -1339,6 +1343,7 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
+	defaultAdminPlaneConfig(&c.Admin)
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
 	}
@@ -1657,6 +1662,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return fmt.Errorf("server retention requires usage_db enabled")
 	}
 	if err := validateServerTrafficShape(c.Server.TrafficShape); err != nil {
+		return err
+	}
+	if err := validateAdminPlane(&c.Admin); err != nil {
 		return err
 	}
 	if err := validateExperimentProfiles(c.Server.ExperimentProfiles); err != nil {

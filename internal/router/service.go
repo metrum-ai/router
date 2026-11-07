@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -94,6 +95,17 @@ type Service struct {
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
+
+	// Admin listener state (#809). adminMux is the admin listener's route
+	// registry; it is nil unless admin.enabled is true, so the serving surface
+	// is unchanged by default. adminCASource is #828's client-CA source,
+	// installed before the plane starts so the handshake verifies against the
+	// current trust snapshot, and adminAuthenticate is #814's machine chain.
+	adminMux          *AdminMux
+	adminCASourceMu   sync.Mutex
+	adminCASource     AdminClientCASource
+	adminAuthMu       sync.Mutex
+	adminAuthenticate Authenticator
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -391,6 +403,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		}
 	}
 	s.routes()
+	s.initAdminPlane()
 	return s, nil
 }
 
@@ -542,6 +555,11 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
+		// The admin listener binds once; a reload cannot rebind it. Say so
+		// instead of leaving a half-applied control plane.
+		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
+	}
 	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
 }
