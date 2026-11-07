@@ -665,21 +665,22 @@ func AdminV1DecisionFrom(ctx context.Context) (adminV1Decision, bool) {
 	return decision, ok
 }
 
-// adminV1DecisionCoversPrimary reports whether (object, action) was decided in any
-// domain for this request. It is only for a handler guard that repeats the operation's own
-// primary decision, where the mount resolved the domain; every per-resource or secondary
-// gate uses the domain-strict check.
-func adminV1DecisionCoversPrimary(ctx context.Context, object, action string) bool {
+// adminV1DecisionCoversPrimary answers a handler guard that repeats the operation's own
+// primary decision. It is domain-strict like every other check: the domain is the one the
+// mount resolved for the request (published to the handler through the subject).
+func adminV1DecisionCoversPrimary(ctx context.Context, domain, object, action string) bool {
+	return adminV1DecisionCovers(ctx, domain, object, action)
+}
+
+// adminV1RecordedDomain returns the domain the mount resolved for this request, so a
+// handler's own guard can ask about the same domain.
+func adminV1RecordedDomain(ctx context.Context) (string, bool) {
 	decision, ok := AdminV1DecisionFrom(ctx)
-	if !ok {
-		return false
+	if !ok || len(decision.Taken) == 0 {
+		return "", false
 	}
-	for _, taken := range decision.Taken {
-		if taken.Object == object && taken.Action == action {
-			return true
-		}
-	}
-	return false
+	domain := decision.Taken[0].Domain
+	return domain, strings.TrimSpace(domain) != ""
 }
 
 // adminV1DecisionCovers reports whether (object, action) in the given domain was actually
@@ -689,8 +690,12 @@ func adminV1DecisionCovers(ctx context.Context, domain, object, action string) b
 	if !ok {
 		return false
 	}
+	if strings.TrimSpace(domain) == "" {
+		// Fail closed: a decision can never be reused for an unknown target domain.
+		return false
+	}
 	for _, taken := range decision.Taken {
-		if taken.Object == object && taken.Action == action && (domain == "" || taken.Domain == domain) {
+		if taken.Object == object && taken.Action == action && taken.Domain == domain {
 			return true
 		}
 	}

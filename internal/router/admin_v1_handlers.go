@@ -91,6 +91,11 @@ func AdminV1ConfigAdminDeps(base ConfigAdminDeps, principalOf func(*http.Request
 			writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
 			return adminAuthSubject{}, false
 		}
+		if recorded, ok := adminV1RecordedDomain(r.Context()); ok {
+			// The mount resolved the operation's target domain; the handler's own guard must
+			// ask about the same one.
+			domain = recorded
+		}
 		if domain == "" {
 			domain = AdminGlobalDomain
 		}
@@ -128,10 +133,13 @@ func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request
 		if !ok {
 			return false
 		}
+		if recorded, ok := adminV1RecordedDomain(r.Context()); ok {
+			domain = recorded
+		}
 		if domain == "" {
 			domain = AdminGlobalDomain
 		}
-		if adminV1DecisionCoversPrimary(r.Context(), object, action) {
+		if adminV1DecisionCoversPrimary(r.Context(), domain, object, action) {
 			// The mount already took the operation's primary decision, in the domain it
 			// resolved; the handler's guard repeats it.
 			return true

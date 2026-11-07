@@ -314,9 +314,9 @@ func TestAdminV1RouteConformance(t *testing.T) {
 	}
 }
 
-// TestAdminV1SingleDecisionPoint proves every operation takes exactly one primary
-// authorization decision, plus its declared always-checks, and that the decision
-// carries the registry's object/action and the resolved domain.
+// TestAdminV1SingleDecisionPoint proves every operation takes exactly the decisions it
+// declares, that each decision was taken in the operation's resolved domain, and that the
+// handler-decided surfaces (reports, the caller listing) take no contract-layer gate.
 func TestAdminV1SingleDecisionPoint(t *testing.T) {
 	harness := newAdminV1Harness(t)
 	for _, op := range harness.registry.Operations() {
@@ -327,38 +327,54 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 		target = strings.ReplaceAll(target, "{request_id}", "req-1")
 		target = strings.ReplaceAll(target, "{id}", "caller-1")
 		target = strings.ReplaceAll(target, "{target_id...}", "prov/model")
-		recorder := harness.do(t, op.Method, target, map[string]any{}, map[string]string{"If-Match": `"rev-7"`})
-		_ = recorder
+		if op.ID == "getAdminReportRequestEvidence" {
+			target += "?request_id=req-1"
+		}
+		harness.do(t, op.Method, target, map[string]any{}, map[string]string{"If-Match": `"rev-7"`})
 		calls := harness.authorize.snapshot()
-		if op.Domain == AdminDomainHandler || (op.Domain == AdminDomainCallerTarget && op.Method == "GET") {
-			// Reports and the caller-directory listing keep the handler's own per-domain
-			// decisions; the contract layer must not add a domain-wide gate that would deny
-			// a domain-scoped administrator.
-			continue
-		}
-		// One primary decision plus the checks that apply to the request body. A
-		// conditional check (force) applies only when the body asks for it.
-		want := 1 + len(op.ChecksFor(map[string]any{}))
-		if len(calls) != want {
-			t.Fatalf("operation %s took %d decisions, want %d: %+v", op.ID, len(calls), want, calls)
-		}
-		if calls[0].Object != op.Object || calls[0].Action != op.Action {
-			t.Fatalf("operation %s primary decision = %s/%s, want %s/%s", op.ID, calls[0].Object, calls[0].Action, op.Object, op.Action)
-		}
-		for i, check := range op.ChecksFor(map[string]any{}) {
-			if calls[i+1].Object != check.Object || calls[i+1].Action != check.Action {
-				t.Fatalf("operation %s extra check %d = %s/%s, want %s/%s", op.ID, i, calls[i+1].Object, calls[i+1].Action, check.Object, check.Action)
+
+		// The expected decision set per operation: the primary guard plus the checks that
+		// apply to this request's body, or none for the handler-decided surfaces.
+		var want []fakeAuthorizerCall
+		if op.Domain == AdminDomainHandler {
+			// Reports decide per request inside the handler (asserted by the reports test);
+			// the contract layer takes no gate of its own.
+			want = nil
+		} else if op.Domain == AdminDomainCallerTarget && op.Method == "GET" {
+			// The caller listing takes its operation guard in the handler and then filters
+			// each row in that row's own stored domain (asserted by the DB-backed test).
+			want = []fakeAuthorizerCall{{Domain: AdminGlobalDomain, Object: authzObjectAdminCallers, Action: authzActionList}}
+		} else {
+			domain := AdminGlobalDomain
+			switch op.Domain {
+			case AdminDomainCallerTarget, AdminDomainCapturedRow:
+				// These operations resolve a concrete stored domain.
+				switch op.ID {
+				case "issueCaller", "rotateCaller", "revokeCaller", "listConfigSets":
+					domain = "example/prod"
+				case "deleteContentCapture":
+					domain = "example/prod"
+				}
+			}
+			want = append(want, fakeAuthorizerCall{Domain: domain, Object: op.Object, Action: op.Action})
+			for _, check := range op.ChecksFor(map[string]any{}) {
+				want = append(want, fakeAuthorizerCall{Domain: domain, Object: check.Object, Action: check.Action})
 			}
 		}
-		for _, call := range calls {
-			if call.Principal.Subject != "adminkey:test" {
-				t.Fatalf("operation %s decided for %q", op.ID, call.Principal.Subject)
+		if len(calls) != len(want) {
+			t.Fatalf("operation %s took %d decisions, want %d: got %+v want %+v", op.ID, len(calls), len(want), calls, want)
+		}
+		for i, expected := range want {
+			if calls[i].Object != expected.Object || calls[i].Action != expected.Action {
+				t.Fatalf("operation %s decision %d = %s/%s, want %s/%s", op.ID, i, calls[i].Object, calls[i].Action, expected.Object, expected.Action)
 			}
-			if strings.TrimSpace(call.Domain) == "" {
-				t.Fatalf("operation %s took a decision with an empty domain", op.ID)
+			// Every decision's domain is asserted, including the caller-target and
+			// captured-row ones, which must be the concrete stored domain.
+			if calls[i].Domain != expected.Domain {
+				t.Fatalf("operation %s decision %d domain = %q, want %q", op.ID, i, calls[i].Domain, expected.Domain)
 			}
-			if op.Domain == AdminDomainGlobal && call.Domain != AdminGlobalDomain {
-				t.Fatalf("operation %s decided in domain %q, want the plane-global %q", op.ID, call.Domain, AdminGlobalDomain)
+			if calls[i].Principal.Subject != "adminkey:test" {
+				t.Fatalf("operation %s decided for %q", op.ID, calls[i].Principal.Subject)
 			}
 		}
 	}
@@ -1520,58 +1536,100 @@ func (h *adminV1DBHarness) etag(t *testing.T) string {
 	return AdminETagForRevision(revision)
 }
 
-// TestAdminV1UnrecordedHandlerGateCallsAuthorizer proves a handler gate cannot reuse a
-// decision that was not taken: on a non-forced write the force check was never evaluated,
-// so the handler's force gate must reach the Authorizer (and be refused when it denies).
+// TestAdminV1UnrecordedHandlerGateCallsAuthorizer proves, over HTTP, that a handler gate
+// cannot reuse a decision that was not taken: a NON-forced write never evaluates force, so
+// a handler force gate on that same request must reach the counting Authorizer.
 func TestAdminV1UnrecordedHandlerGateCallsAuthorizer(t *testing.T) {
-	harness := newAdminV1DBHarness(t)
-	harness.authorize.deny[AdminGlobalDomain+"|admin:config|force"] = true
-	// A config write whose body does NOT set force, so the mount never evaluates force.
+	var forceCalls int
+	var harness *adminV1DBHarness
+	harness = newAdminV1DBHarnessWith(t, map[string]http.HandlerFunc{
+		"config.group.targets.replace": func(w http.ResponseWriter, r *http.Request) {
+			h := newConfigAdminHandler(ConfigAdminDeps{
+				Decide: func(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool {
+					object, action, _ := adminPermissionObjectAction(permission)
+					if action == "force" {
+						forceCalls++
+					}
+					principal, ok := PrincipalFrom(r.Context())
+					if !ok {
+						writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
+						return false
+					}
+					if adminV1DecisionCovers(r.Context(), subject.domain, object, action) {
+						return true
+					}
+					if err := harness.authorize.Authorize(r.Context(), principal, subject.domain, object, action); err != nil {
+						status, code := adminAuthorizationProblem(err)
+						writeAdminProblemCode(w, r, status, code, "")
+						return false
+					}
+					return true
+				},
+			})
+			principal, ok := PrincipalFrom(r.Context())
+			if !ok {
+				writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
+				return
+			}
+			domain := AdminGlobalDomain
+			if recorded, ok := adminV1RecordedDomain(r.Context()); ok {
+				domain = recorded
+			}
+			subject := adminAuthSubject{subject: principal.Subject, domain: domain, source: principal.Kind, principal: &principal, authContext: r.Context()}
+			// The handler gates force itself, exactly as the real write handlers do.
+			if !h.authorize(w, r, subject, "config:force") {
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		},
+	})
+
+	// A write whose body does NOT set force: the mount never evaluates force.
 	recorder := harness.do(t, http.MethodPut, "/admin/v1/config/groups/agent-default/targets", map[string]any{
 		"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}},
-		"force":   true, // the handler must still gate this itself
 	}, map[string]string{"If-Match": harness.etag(t)})
-	// The mount evaluates force because the body asks for it, so this request is refused
-	// by the mount; assert the denial came from a decision, not from a silent allow.
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("forced write without the force grant returned %d (%s)", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("plain write status = %d (%s)", recorder.Code, recorder.Body.String())
 	}
-	var sawForce bool
+	if forceCalls != 1 {
+		t.Fatalf("the handler force gate reached the Authorizer %d times, want 1", forceCalls)
+	}
+	sawForce := false
 	for _, call := range harness.authorize.snapshot() {
-		if call.Object == "admin:config" && call.Action == "force" {
+		if call.Action == "force" {
 			sawForce = true
+			if call.Domain != AdminGlobalDomain {
+				t.Fatalf("force decision domain = %q, want %q", call.Domain, AdminGlobalDomain)
+			}
 		}
 	}
 	if !sawForce {
-		t.Fatal("the force decision never reached the Authorizer")
+		t.Fatal("the unrecorded force decision did not reach the Authorizer")
 	}
+}
 
-	// And a plain write never records a force decision, so a handler gate for force would
-	// still consult the Authorizer.
-	harness.authorize.reset()
-	plain := harness.do(t, http.MethodPut, "/admin/v1/config/groups/agent-default/targets", map[string]any{
-		"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}},
-	}, map[string]string{"If-Match": harness.etag(t)})
-	if plain.Code != http.StatusOK {
-		t.Fatalf("plain write status = %d (%s)", plain.Code, plain.Body.String())
-	}
-	for _, call := range harness.authorize.snapshot() {
-		if call.Action == "force" {
-			t.Fatalf("a plain write recorded a force decision: %+v", call)
-		}
-	}
-
-	// The recorded set for a plain write covers only the primary decision, so an explicit
-	// force gate on that context is not covered.
-	ctx := WithPrincipal(context.Background(), Principal{Subject: "adminkey:test", Kind: "adminkey"})
-	ctx = WithAdminV1Decision(ctx, adminV1Decision{Taken: []adminV1Taken{{Object: "admin:config", Action: "write", Domain: AdminGlobalDomain}}})
-	if adminV1DecisionCovers(ctx, AdminGlobalDomain, "admin:config", "force") {
-		t.Fatal("an unrecorded force decision was reported as covered")
-	}
+// TestAdminV1DecisionCoversFailsClosed proves the decision record is domain-strict and that
+// an empty target domain never reuses a decision.
+func TestAdminV1DecisionCoversFailsClosed(t *testing.T) {
+	ctx := WithAdminV1Decision(context.Background(), adminV1Decision{Taken: []adminV1Taken{
+		{Object: "admin:config", Action: "write", Domain: AdminGlobalDomain},
+	}})
 	if !adminV1DecisionCovers(ctx, AdminGlobalDomain, "admin:config", "write") {
 		t.Fatal("a recorded decision was not reported as covered")
 	}
+	if adminV1DecisionCovers(ctx, "", "admin:config", "write") {
+		t.Fatal("an empty target domain reused a decision")
+	}
 	if adminV1DecisionCovers(ctx, "example/prod", "admin:config", "write") {
 		t.Fatal("a decision was reused in a domain it was not taken in")
+	}
+	if adminV1DecisionCovers(ctx, AdminGlobalDomain, "admin:config", "force") {
+		t.Fatal("an unrecorded decision was reported as covered")
+	}
+	if adminV1DecisionCoversPrimary(ctx, "", "admin:config", "write") {
+		t.Fatal("the primary check reused a decision for an empty domain")
+	}
+	if !adminV1DecisionCoversPrimary(ctx, AdminGlobalDomain, "admin:config", "write") {
+		t.Fatal("the primary check rejected a recorded decision in its domain")
 	}
 }
