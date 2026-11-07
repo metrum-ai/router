@@ -129,13 +129,15 @@ CF_DNS_API_TOKEN=... \
   bash ./smoke-test.sh ./caddy
 ```
 
+The Caddyfile was checked locally with `caddy validate` against a Caddy built
+with the Cloudflare DNS module.
+
 For a local ACME test CA, run Pebble plus `pebble-challtestsrv`, point
-`ROUTER_ACME_CA` at `https://127.0.0.1:14000/dir`, set
-`ROUTER_ACME_CA_ROOT` to Pebble's root certificate and add
-`--config Caddyfile.pebble`. Pebble must resolve DNS through
-`pebble-challtestsrv`; the DNS provider module still writes to the real provider
-API, so the Pebble path needs a provider you can point at a test zone (or a
-provider module built against a local API endpoint).
+`ROUTER_ACME_CA` at `https://127.0.0.1:14000/dir` and `ROUTER_ACME_CA_ROOT` at
+Pebble's root certificate; no separate Caddyfile is needed. Pebble must resolve
+DNS through `pebble-challtestsrv`; the DNS provider module still writes to the
+real provider API, so the Pebble path needs a provider you can point at a test
+zone (or a provider module built against a local API endpoint).
 
 ## Limits
 

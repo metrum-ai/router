@@ -18,12 +18,15 @@
 #   ROUTER_DNS_ZONE   zone that holds the challenge records
 #   ROUTER_ADMIN_ADDR admin listener address (loopback by default)
 #   ROUTER_SERVE_ADDR serving listener address
-
 {
 	email {$ROUTER_ACME_EMAIL}
 	# Point a staging run at https://acme-staging-v02.api.letsencrypt.org/directory
-	# (see smoke-test.sh); production uses the default.
+	# (see smoke-test.sh); production uses the default. A local test CA (Pebble)
+	# sets ROUTER_ACME_CA to its directory and ROUTER_ACME_CA_ROOT to its root
+	# certificate; the default is the system trust bundle, which is a no-op for
+	# a public CA.
 	acme_ca {$ROUTER_ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+	acme_ca_root {$ROUTER_ACME_CA_ROOT:/etc/ssl/certs/ca-certificates.crt}
 	# Keep the proxy's own state (certificates, OCSP staples) off the router's
 	# disk so the two lifecycles never interfere.
 	storage file_system {$CADDY_DATA_DIR:/var/lib/caddy}

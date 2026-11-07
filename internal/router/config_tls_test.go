@@ -357,3 +357,35 @@ func TestServerWithoutTLSKeepsMetricsAndBehaviour(t *testing.T) {
 		t.Fatal("a v4.7 configuration must not emit TLS metrics")
 	}
 }
+
+// TestAdminTLSProviderAdapter proves the manager satisfies the admin
+// listener's handshake seam (#809) through the adapter: yes/no SNI plus the
+// certificate for the hello.
+func TestAdminCertificateSourceAdapter(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := writeTestCertificate(t, dir, []string{"admin.example.com"})
+	manager, err := NewListenerTLSManager(ListenerTLSConfig{
+		Mode:              "router",
+		CertificateSource: "files",
+		CertFile:          certPath,
+		KeyFile:           keyPath,
+		ACME:              TLSACMEServerConfig{Domains: []string{"admin.example.com"}},
+	}, "admin", "admin.tls")
+	if err != nil || manager == nil {
+		t.Fatalf("manager: %v", err)
+	}
+	source := AdminTLSProvider{Manager: manager}
+	if !source.CheckSNI("admin.example.com") {
+		t.Fatal("the configured name must be served")
+	}
+	if source.CheckSNI("other.example.com") {
+		t.Fatal("an unknown name must not be served")
+	}
+	cert, err := source.GetCertificate(&tls.ClientHelloInfo{ServerName: "admin.example.com"})
+	if err != nil || cert == nil {
+		t.Fatalf("GetCertificate: %v", err)
+	}
+	if _, err := source.GetCertificate(&tls.ClientHelloInfo{ServerName: "other.example.com"}); err == nil {
+		t.Fatal("GetCertificate must refuse an unknown name")
+	}
+}

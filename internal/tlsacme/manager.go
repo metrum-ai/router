@@ -357,6 +357,20 @@ func (m *Manager) configForClient(*tls.ClientHelloInfo) (*tls.Config, error) {
 	return nil, nil
 }
 
+// ServesName reports whether the configured certificate covers name. It is the
+// boolean form of CheckSNI, for a listener whose handshake hook asks for a
+// yes/no answer and then fetches the certificate.
+func (m *Manager) ServesName(name string) bool {
+	if m == nil {
+		return false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	return m.coversName(name)
+}
+
 // coversName reports whether the configured domains cover a server name.
 func (m *Manager) coversName(name string) bool {
 	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))

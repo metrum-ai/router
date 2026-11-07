@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 )
 
 // markerPrefix is the label prefix of the ownership TXT record that proves this
@@ -307,7 +306,3 @@ func sortRecords(records []Record) {
 		return records[i].Value < records[j].Value
 	})
 }
-
-// configUploadDelay is the wait Route 53 asks clients to observe between a
-// change and the records being readable. Tests shorten it to zero.
-var configUploadDelay = time.Second

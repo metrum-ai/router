@@ -23,6 +23,9 @@
 #   CF_DNS_API_TOKEN      Cloudflare token for the DNS-01 module (required)
 #   ROUTER_ACME_CA        ACME directory; use the Let's Encrypt staging directory
 #                         for a non-production run
+#   ROUTER_ACME_CA_ROOT   PEM bundle that signs the ACME directory certificate
+#                         (default: the system trust bundle; a local Pebble run
+#                         sets this to Pebble's root)
 #   CADDY_DATA_DIR        Caddy state directory (default: a temporary directory)
 #   ROUTER_SERVE_ADDR     serving listener (default 127.0.0.1:8080)
 #   ROUTER_ADMIN_ADDR     admin listener (default 127.0.0.1:8081)

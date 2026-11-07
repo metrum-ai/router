@@ -17,6 +17,7 @@ package router
 // and its client keys around it.
 
 import (
+	"crypto/tls"
 	"fmt"
 	"strings"
 	"time"
@@ -313,4 +314,25 @@ func seconds(value int) time.Duration {
 		return 0
 	}
 	return time.Duration(value) * time.Second
+}
+
+// AdminTLSProvider adapts a TLS manager to the admin listener's handshake seam
+// (#809, its AdminCertificateSource interface): the listener asks CheckSNI for a
+// yes/no answer and then fetches the certificate, keeping its single
+// GetConfigForClient for the client-CA snapshot.
+//
+//	manager, _ := router.NewListenerTLSManager(adminTLS, "admin", "admin.tls")
+//	plane.SetCertificateSource(router.AdminTLSProvider{Manager: manager})
+type AdminTLSProvider struct {
+	Manager *tlsacme.Manager
+}
+
+// GetCertificate serves the certificate for the handshake.
+func (s AdminTLSProvider) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return s.Manager.GetCertificate(hello)
+}
+
+// CheckSNI reports whether the manager serves name.
+func (s AdminTLSProvider) CheckSNI(name string) bool {
+	return s.Manager.ServesName(name)
 }

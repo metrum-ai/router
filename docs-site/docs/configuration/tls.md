@@ -238,5 +238,7 @@ the router-native path is what the automated Pebble suite exercises.
 - No zone or NS creation: record management only creates, updates and removes
   records it owns.
 - A `files` certificate is reloaded by restart only.
-- The live check against a production CA needs a real DNS zone and hostname and
-  is an operator step; the automated tests run against the Pebble test CA.
+- Validated against Let's Encrypt staging with DigitalOcean DNS on an approved
+  test hostname (issuance, renewal information, record management and teardown);
+  a production CA run is an operator step. The automated tests use the Pebble
+  test CA.
