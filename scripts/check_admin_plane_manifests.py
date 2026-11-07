@@ -2,21 +2,28 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Check the admin control-plane Kubernetes overlay for exposure mistakes (#817).
+"""Check the rendered admin control-plane overlay for exposure mistakes (#817).
 
-The overlay is opt-in, so these invariants are checked on its source files (CI
-renders the same directory with kustomize and scans it with trivy):
+The overlay is rendered with `kustomize build` first, so the base resources it
+composes are checked too (a base Service or Ingress cannot hide behind the
+overlay). Invariants:
 
-- the admin listener is enabled and binds a port that the Deployment exposes;
+- the admin listener is enabled, binds a port, and the Deployment exposes it;
 - the admin Service is ClusterIP only and targets that port;
-- no Ingress selects the admin Service;
+- no Ingress in the rendered output selects the admin Service;
 - ingress is default-deny for the router pods;
-- the admin port is allowed only from selected pods, never from every source;
-- a non-loopback plaintext bind is explicitly acknowledged.
+- the admin port is reachable only from selected pods: a rule without `ports`
+  allows every port, a rule without `from` allows every source, a named port is
+  resolved through the Deployment, and a broad `ipBlock` is refused even when a
+  narrow selector is also present;
+- a non-loopback plaintext bind is explicitly acknowledged in the config.
 """
 
 from __future__ import annotations
 
+import ipaddress
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,6 +31,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 OVERLAY = ROOT / "deploy" / "kubernetes" / "overlays" / "admin-plane"
+ADMIN_CLIENT_LABEL = "access.metrum.ai/admin-client"
+ROUTER_APP_LABEL = "app.kubernetes.io/name"
 
 
 class Problems:
@@ -35,24 +44,40 @@ class Problems:
             self.items.append(message)
 
 
-def load_yaml(path: Path):
-    with path.open("r", encoding="utf-8") as handle:
-        return [doc for doc in yaml.safe_load_all(handle) if doc]
+def render_overlay(directory: Path) -> list[dict]:
+    """Render the overlay with kustomize and return the resulting documents."""
+    binary = shutil.which("kustomize")
+    if binary is None:
+        raise SystemExit(
+            "kustomize is required to check the admin overlay (the check inspects rendered output, "
+            "not source fragments). Install sigs.k8s.io/kustomize/kustomize/v5@v5.6.0."
+        )
+    result = subprocess.run([binary, "build", str(directory)], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(f"kustomize build {directory} failed: {result.stderr.strip()[:400]}")
+    return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
 
-def load_documents(directory: Path) -> list[dict]:
-    documents: list[dict] = []
-    for path in sorted(directory.glob("*.y*ml")):
-        documents.extend(load_yaml(path))
-    return documents
+def router_selector_matches(selector: dict | None) -> bool:
+    if not selector:
+        return False
+    return (selector.get("matchLabels") or {}).get(ROUTER_APP_LABEL) == "metrum-ai-router"
 
 
-def admin_config() -> dict:
-    raw = yaml.safe_load((OVERLAY / "config.yaml").read_text(encoding="utf-8"))
-    return raw.get("admin") or {}
+def admin_config(documents: list[dict]) -> dict:
+    for document in documents:
+        if document.get("kind") != "ConfigMap":
+            continue
+        embedded = (document.get("data") or {}).get("config.yaml")
+        if not embedded:
+            continue
+        parsed = yaml.safe_load(embedded) or {}
+        if "admin" in parsed:
+            return parsed["admin"] or {}
+    return {}
 
 
-def admin_listen_port(admin: dict) -> int | None:
+def listen_port(admin: dict) -> int | None:
     listen = str(admin.get("listen") or "")
     if ":" not in listen:
         return None
@@ -63,98 +88,147 @@ def admin_listen_port(admin: dict) -> int | None:
         return None
 
 
-def router_selector_matches(selector: dict | None) -> bool:
-    if not selector:
-        return False
-    match_labels = selector.get("matchLabels") or {}
-    return match_labels.get("app.kubernetes.io/name") == "metrum-ai-router"
+def deployment_admin_ports(documents: list[dict]) -> tuple[set[int], set[str]]:
+    numbers: set[int] = set()
+    names: set[str] = set()
+    for document in documents:
+        if document.get("kind") != "Deployment":
+            continue
+        containers = (((document.get("spec") or {}).get("template") or {}).get("spec") or {}).get("containers") or []
+        for container in containers:
+            for entry in container.get("ports") or []:
+                if entry.get("name") == "admin":
+                    if entry.get("containerPort") is not None:
+                        numbers.add(int(entry["containerPort"]))
+                    names.add("admin")
+    return numbers, names
 
 
-def check(problems: Problems) -> None:
-    admin = admin_config()
-    problems.check(admin.get("enabled") is True, "admin.enabled must be true in the overlay config")
-    port = admin_listen_port(admin)
-    problems.check(port is not None, "admin.listen must be host:port")
+def rule_allows_admin_port(rule: dict, admin_port: int) -> bool:
+    """True when the rule names the admin port (by number or container name)."""
+    for entry in rule.get("ports") or []:
+        port = entry.get("port")
+        if port == admin_port or str(port) == "admin":
+            return True
+    return False
+
+
+def rule_has_no_ports(rule: dict) -> bool:
+    """A rule without `ports` silently allows every port on the pod."""
+    return not rule.get("ports")
+
+
+def broad_source(source: dict) -> str:
+    """Return a reason when a NetworkPolicy source is too broad, else ""."""
+    if "ipBlock" in source:
+        cidr = str((source.get("ipBlock") or {}).get("cidr") or "")
+        try:
+            network = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            return f"invalid ipBlock {cidr!r}"
+        if network.prefixlen == 0:
+            return f"ipBlock {cidr} trusts every peer"
+        if network.version == 4 and network.prefixlen < 8:
+            return f"ipBlock {cidr} is wider than /8"
+        if network.version == 6 and network.prefixlen < 32:
+            return f"ipBlock {cidr} is wider than /32"
+        return ""
+    if source.get("podSelector") or source.get("namespaceSelector"):
+        if not source:
+            return "empty source allows every peer"
+        return ""
+    return "source with no selector allows every peer"
+
+
+def source_is_admin_client(source: dict) -> bool:
+    labels = (source.get("podSelector") or {}).get("matchLabels") or {}
+    return labels.get(ADMIN_CLIENT_LABEL) == "true"
+
+
+def check_documents(documents: list[dict], problems: Problems) -> None:
+    admin = admin_config(documents)
+    problems.check(bool(admin), "the rendered ConfigMap must carry the admin block")
+    problems.check(admin.get("enabled") is True, "admin.enabled must be true in the rendered config")
+    port = listen_port(admin)
+    problems.check(port is not None, "admin.listen must be a host:port")
+    if port is None:
+        return
 
     tls_mode = str((admin.get("tls") or {}).get("mode") or "off").lower()
-    loopback = str(admin.get("listen") or "").startswith(("127.", "[::1]", "localhost"))
+    listen = str(admin.get("listen") or "")
+    loopback = listen.startswith(("127.", "[::1]", "localhost"))
     if not loopback and tls_mode == "off":
         problems.check(
             admin.get("allow_plaintext_non_loopback") is True,
             "a non-loopback plaintext admin listener needs allow_plaintext_non_loopback: true",
         )
 
-    documents = load_documents(OVERLAY)
+    ports, names = deployment_admin_ports(documents)
+    problems.check(port in ports, f"the Deployment must expose containerPort {port} named admin")
 
-    deployment_ports = set()
-    for document in documents:
-        if document.get("kind") != "Deployment":
-            continue
-        for container in ((document.get("spec") or {}).get("template") or {}).get("spec", {}).get("containers", []):
-            for entry in container.get("ports") or []:
-                if entry.get("name") == "admin":
-                    deployment_ports.add(entry.get("containerPort"))
-    problems.check(port in deployment_ports, f"the Deployment must expose containerPort {port} named admin")
-
-    services = [doc for doc in documents if doc.get("kind") == "Service" and "admin" in str(doc.get("metadata", {}).get("name", ""))]
+    services = [doc for doc in documents if doc.get("kind") == "Service" and "admin" in str((doc.get("metadata") or {}).get("name", ""))]
     problems.check(len(services) == 1, "exactly one admin Service is expected")
     for service in services:
         spec = service.get("spec") or {}
-        problems.check(spec.get("type", "ClusterIP") == "ClusterIP", "the admin Service must be ClusterIP")
-        service_ports = spec.get("ports") or []
+        problems.check(str(spec.get("type", "ClusterIP")) == "ClusterIP", "the admin Service must be ClusterIP")
+        targets = [entry.get("targetPort") for entry in spec.get("ports") or []]
         problems.check(
-            any(entry.get("targetPort") == "admin" or entry.get("targetPort") == port for entry in service_ports),
+            any(target == "admin" or target == port for target in targets),
             "the admin Service must target the admin container port",
         )
 
     ingresses = [doc for doc in documents if doc.get("kind") == "Ingress"]
-    problems.check(not ingresses, "the admin overlay must not ship an Ingress")
     for ingress in ingresses:
-        for rule in (ingress.get("spec") or {}).get("rules") or []:
+        name = (ingress.get("metadata") or {}).get("name", "")
+        spec = ingress.get("spec") or {}
+        backends = []
+        for rule in spec.get("rules") or []:
             for path in ((rule.get("http") or {}).get("paths") or []):
-                service_name = ((path.get("backend") or {}).get("service") or {}).get("name", "")
-                problems.check("admin" not in service_name, "no Ingress path may target the admin Service")
+                backends.append(((path.get("backend") or {}).get("service") or {}).get("name", ""))
+        backends.append(((spec.get("defaultBackend") or {}).get("service") or {}).get("name", ""))
+        problems.check(
+            not any("admin" in str(backend) for backend in backends),
+            f"Ingress {name} must not select the admin Service",
+        )
 
-    network_policies = [doc for doc in documents if doc.get("kind") == "NetworkPolicy"]
-    problems.check(bool(network_policies), "the overlay must ship NetworkPolicies")
+    policies = [doc for doc in documents if doc.get("kind") == "NetworkPolicy" and router_selector_matches((doc.get("spec") or {}).get("podSelector"))]
+    problems.check(bool(policies), "the rendered overlay must ship a NetworkPolicy selecting the router pods")
     deny_all = any(
-        router_selector_matches(policy.get("spec", {}).get("podSelector"))
-        and "Ingress" in (policy.get("spec", {}).get("policyTypes") or [])
-        and policy.get("spec", {}).get("ingress") == []
-        for policy in network_policies
+        "Ingress" in ((policy.get("spec") or {}).get("policyTypes") or [])
+        and (policy.get("spec") or {}).get("ingress") == []
+        for policy in policies
     )
     problems.check(deny_all, "a default-deny ingress policy must select the router pods")
 
-    admin_port_allowed_without_source = False
-    admin_port_allowed_from_selected = False
-    for policy in network_policies:
-        spec = policy.get("spec") or {}
-        if not router_selector_matches(spec.get("podSelector")):
-            continue
-        for rule in spec.get("ingress") or []:
-            rule_ports = [entry.get("port") for entry in rule.get("ports") or []]
-            if port not in rule_ports:
+    admin_allowed_from_selected = False
+    for policy in policies:
+        for rule in (policy.get("spec") or {}).get("ingress") or []:
+            if rule_has_no_ports(rule):
+                problems.check(False, "an ingress rule without `ports` allows every port, including the admin port; name the ports explicitly")
                 continue
-            if rule.get("from"):
-                if any(
-                    (source.get("podSelector") or {}).get("matchLabels", {}).get("access.metrum.ai/admin-client") == "true"
-                    for source in rule["from"]
-                ):
-                    admin_port_allowed_from_selected = True
-            else:
-                admin_port_allowed_without_source = True
-    problems.check(not admin_port_allowed_without_source, "no NetworkPolicy may allow the admin port from every source")
-    problems.check(admin_port_allowed_from_selected, "the admin port must be allowed from selected admin-client pods")
+            if not rule_allows_admin_port(rule, port):
+                continue
+            sources = rule.get("from")
+            if not sources:
+                problems.check(False, "no NetworkPolicy may allow the admin port from every source (missing or empty `from`)")
+                continue
+            for source in sources:
+                reason = broad_source(source)
+                problems.check(not reason, f"admin port source refused: {reason}")
+                if source_is_admin_client(source):
+                    admin_allowed_from_selected = True
+    problems.check(admin_allowed_from_selected, "the admin port must be allowed from selected admin-client pods")
+    _ = names
 
 
 def main() -> int:
     problems = Problems()
-    check(problems)
+    check_documents(render_overlay(OVERLAY), problems)
     if problems.items:
         for item in problems.items:
             print(f"admin-plane overlay: {item}", file=sys.stderr)
         return 1
-    print("admin-plane overlay ok")
+    print("admin-plane overlay ok (rendered)")
     return 0
 
 

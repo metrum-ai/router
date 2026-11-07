@@ -3,6 +3,10 @@
 #
 # Admin control-plane overlay (v4.8.0, #817).
 #
+# Requires the v4.8.0 image that ships the admin listener and its --admin-listen
+# override flag (#809); apply this overlay on top of that release, not an earlier
+# image.
+#
 # Starts the admin listener on the pod IP, exposes it only through a private
 # ClusterIP Service with no Ingress, and adds default-deny ingress with
 # explicit allows: the serving port stays reachable, the admin port accepts

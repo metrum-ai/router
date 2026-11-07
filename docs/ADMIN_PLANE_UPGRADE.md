@@ -1,6 +1,7 @@
 # Admin Plane Upgrade and Operator Guide
 
 Copyright 2026 Metrum AI
+SPDX-License-Identifier: Apache-2.0
 
 This guide covers the v4.7 → v4.8 admin control-plane change: the admin listener, its exposure
 options, client credentials and rotation, the metrics move, the legacy-route flag, and the

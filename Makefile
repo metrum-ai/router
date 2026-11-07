@@ -475,6 +475,7 @@ ci-python: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
+	uv run --with pyyaml python scripts/check_admin_plane_manifests_test.py
 	$(MAKE) test-edge-bundle
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 	$(PYTHON) scripts/compat_results_test.py
@@ -520,8 +521,6 @@ test-fast: secret-contract capability-smoke-contracts
 	$(PYTHON) -m unittest discover -s benchmarks/overhead -p 'test_*.py' -q
 	$(PYTHON) benchmarks/overhead/decision_smoke.py
 	python3 scripts/router_test_time_guard_test.py
-	uv run --with pyyaml python scripts/check_admin_plane_manifests.py
-	uv run --with pyyaml python scripts/check_admin_plane_manifests_test.py
 	uv run --with pyyaml python scripts/tenant_provisioner_rbac_test.py
 
 # Full credential-free suite. Heavy targets stay behind shell Make invocations so
@@ -754,6 +753,15 @@ docs-diag-schema:
 
 docs-diag-schema-check:
 	go run ./cmd/docs-diag-schema --check
+
+# /admin/v1 OpenAPI contract (#811). The document is generated from the typed
+# route registry; CI fails when it drifts (TestAdminOpenAPIUpToDate).
+.PHONY: admin-openapi admin-openapi-check
+admin-openapi:
+	go test ./internal/router -run '^TestAdminOpenAPIUpToDate$' -count=1 -update-admin-openapi
+
+admin-openapi-check:
+	go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$' -count=1
 
 .PHONY: docs-brand-policy-test
 docs-brand-policy-test:
