@@ -650,6 +650,10 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
 	}
+	// A reload applies its own window as well, under the same single path.
+	if err := s.applyAdminPolicyFreshness(newCfg); err != nil {
+		return fmt.Errorf("reload active config: freshness: %w", err)
+	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
 	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {

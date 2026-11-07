@@ -4,10 +4,15 @@
 package router
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestPolicyFreshnessUsesSuccessfulSyncAge(t *testing.T) {
@@ -131,4 +136,70 @@ func TestPolicyFreshnessConfigValidation(t *testing.T) {
 			t.Fatalf("default = %v, %v", parsed, err)
 		}
 	})
+}
+
+// TestConfiguredMaxStalenessAppliesThroughTheConfigPath proves the operator's
+// window is actually used: a config file with max_staleness 10s, loaded through
+// the real configuration loader and applied by the same wiring startup and
+// reload use, makes the policy stale at 10s+1ns while exactly 10s is still fresh.
+func TestConfiguredMaxStalenessAppliesThroughTheConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	usageEnabled := true
+	base := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
+	base.Server.UsageDB = UsageDBConfig{Driver: "sqlite", Path: filepath.Join(dir, "usage.sqlite"), Enable: &usageEnabled}
+	base.Server.AdminAuth.Authorization = AdminAuthorizationConfig{
+		Enabled: true, Source: "db", MaxStaleness: "10s",
+	}
+	raw, err := yaml.Marshal(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got := cfg.Server.AdminAuth.Authorization.MaxStaleness; got != "10s" {
+		t.Fatalf("parsed max_staleness = %q, want 10s", got)
+	}
+
+	// Same wiring startup uses: default state, then the configured value.
+	s := freshnessGateService(t, "db", "postgres")
+	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	if err := s.applyAdminPolicyFreshness(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, ok := s.PolicyFreshness(); ok {
+		t.Fatal("applying the window must not acknowledge a synchronization")
+	}
+	p := Principal{Subject: "operator", Kind: "mtls"}
+	mutation := func() error {
+		ctx := WithAdminPolicyMutation(WithPrincipal(context.Background(), p))
+		return s.Authorize(ctx, p, AdminGlobalDomain, "admin:config", "write")
+	}
+	observed := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	s.policyFreshness.observeSuccess(1, observed)
+	if s.policyFreshness.stale(observed.Add(10 * time.Second)) {
+		t.Fatal("exactly 10s must still be within the configured window")
+	}
+	if !s.policyFreshness.stale(observed.Add(10*time.Second + time.Nanosecond)) {
+		t.Fatal("10s+1ns must be stale with a configured 10s window")
+	}
+	// And the gate itself enforces the configured window, not the 30s default.
+	s2 := freshnessGateService(t, "db", "postgres")
+	s2.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	if err := s2.applyAdminPolicyFreshness(cfg); err != nil {
+		t.Fatal(err)
+	}
+	s2.policyFreshness.observeSuccess(1, time.Now().Add(-10*time.Second-time.Millisecond))
+	ctx := WithAdminPolicyMutation(WithPrincipal(context.Background(), p))
+	if err := s2.Authorize(ctx, p, AdminGlobalDomain, "admin:config", "write"); !errors.Is(err, ErrPolicyStale) {
+		t.Fatalf("10s+1ms under a 10s window = %v, want ErrPolicyStale", err)
+	}
+	if err := mutation(); err != nil && !errors.Is(err, ErrPolicyStale) {
+		t.Fatalf("unexpected gate error: %v", err)
+	}
 }
