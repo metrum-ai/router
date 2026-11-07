@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security fixes
 
-- configured admin keys with a non-lowercase disabled status were still accepted on the serving port
 
+- configured admin keys with a non-lowercase disabled status were still accepted on the serving port
 - Serialize PostgreSQL revision-notifier shutdown with its listener goroutine
   and await pgx asynchronous connection cleanup, avoiding concurrent connection
   reads and closure during service shutdown.

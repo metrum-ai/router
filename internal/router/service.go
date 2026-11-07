@@ -91,19 +91,6 @@ type Service struct {
 	usage                    *usageStore
 	migrationStatusFn        func() (MigrationStatus, error)
 	metrics                  *metricsStore
-	trafficShape             *trafficShapeManager
-	bridgeSessions           *bridgeSessionBackends
-	scripts                  map[string]*scriptStrategy
-	observations             *dynamicObservationStore
-	toolReliability          *toolReliabilityStore
-	affinity                 *dynamicAffinityStore
-	responsesAffinity        *responsesAffinities
-	shaping                  *upstreamShapeManager
-	contentCaptureKeys       contentCaptureKeyResolver
-	reportCursor             [32]byte
-	tlsManager               *tlsacme.Manager
-	configControlPlane       *gorm.DB
-	configSnapshot           *ConfigSnapshot
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
 	// Idempotency-Key store and the freshness source. They are separate from the serving path.
 	adminMetricsStore    *adminMetricsStore
@@ -112,11 +99,26 @@ type Service struct {
 	adminAuditSink       func(AdminAuditEvent)
 	// adminAuthorizeFn is the authorization seam the admin listener installs; the reports
 	// surface uses it so its per-domain decisions carry the request context.
-	adminAuthorizeFn func(context.Context, Principal, string, string, string) error
-	adminIdempotency atomic.Value
-	configDBCloser   func() error
-	// adminAuditJanitorStop stops the retention purge jobs at shutdown.
+	adminAuthorizeFn   func(context.Context, Principal, string, string, string) error
+	adminIdempotency   atomic.Value
+	trafficShape       *trafficShapeManager
+	bridgeSessions     *bridgeSessionBackends
+	scripts            map[string]*scriptStrategy
+	observations       *dynamicObservationStore
+	toolReliability    *toolReliabilityStore
+	affinity           *dynamicAffinityStore
+	responsesAffinity  *responsesAffinities
+	shaping            *upstreamShapeManager
+	contentCaptureKeys contentCaptureKeyResolver
+	reportCursor       [32]byte
+	tlsManager         *tlsacme.Manager
+	configControlPlane *gorm.DB
+	configSnapshot     *ConfigSnapshot
+	configDBCloser     func() error
+	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
+	// adminAuditJanitorDone reports when each janitor goroutine has exited.
 	adminAuditJanitorStop chan struct{}
+	adminAuditJanitorDone []<-chan struct{}
 	configReloadStop      func()
 	configNotifyStop      func()
 	configInstanceID      string
@@ -434,18 +436,40 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		s.Close()
 		return nil, err
 	}
+	if err := s.initAdminKeys(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.routes()
 	s.initAdminPlane()
+	// Admin audit retention runs once per database that holds admin audit tables, and stops
+	// with the service.
+	s.StartAdminAuditJanitors()
 	// Start DB poll/notify only after the complete machine factory and initial
 	// compatible generation exist; a worker must never observe partial startup.
 	if err := s.initConfigControlPlane(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	// Admin audit retention runs once per database that holds admin audit tables, and stops
-	// with the service.
-	s.StartAdminAuditJanitors()
 	return s, nil
+}
+
+// initAdminKeys installs the #815 API-issued key store when the control-plane
+// database is present. File-mode deployments simply have no API-issued keys.
+func (s *Service) initAdminKeys() error {
+	if s == nil || s.cfg == nil || s.configControlPlane == nil {
+		return nil
+	}
+	maxLifetime, defaultOverlap, maxOverlap, err := adminKeyLifetimeSettings(s.cfg.Admin.Authentication.APIKeys)
+	if err != nil {
+		return err
+	}
+	s.adminKeyCfgMaxLifetime = maxLifetime
+	s.adminKeyCfgDefaultOverlap = defaultOverlap
+	s.adminKeyCfgDefaultOverlapSet = true
+	s.adminKeyCfgMaxOverlap = maxOverlap
+	s.adminKeys = newAdminKeyStore(s.configControlPlane, time.Now)
+	return nil
 }
 
 func newUpstreamHTTPClient(cfg UpstreamConfig) *http.Client {
@@ -569,8 +593,6 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s == nil {
 		return nil
 	}
-	s.machineReloadMu.Lock()
-	defer s.machineReloadMu.Unlock()
 	if s.configControlPlane == nil {
 		return nil
 	}
@@ -591,40 +613,28 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if err := newCfg.Validate(); err != nil {
 		return fmt.Errorf("reload active config: validate: %w", err)
 	}
-	// Prepare quota caller runtimes detached: later authn/authz preparation
-	// can still fail, and must leave directory and accounting untouched.
+	// Rebuild quota caller runtimes before swapping the config so any
+	// validation failure leaves the existing state untouched.
 	if s.quota == nil {
 		return fmt.Errorf("reload active config: quota store is required")
 	}
-	preparedCallers, err := prepareQuotaCallers(newCfg)
-	if err != nil {
+	if err := s.quota.rebuildCallers(newCfg); err != nil {
 		return fmt.Errorf("reload active config: rebuild callers: %w", err)
 	}
-	// Build against the detached candidate directory, not the still-active
-	// caller map. No live caller accounting changes before all prep succeeds.
+	// Rebuild the authorizer so admin policies reflect the new caller
+	// directory. The authorizer is recreated with the latest callers map and
+	// the same admin authorization config.
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, preparedCallers, s.usage, newCfg.Server.AdminAuth)
+	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage, newCfg.Server.AdminAuth)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
-	// Prepare the COMPLETE machine replacement before exposing any new keys,
-	// config or grants. Machine requests capture this one publication and pin
-	// its compatible authorizer; the serving snapshots below remain separate
-	// only for legacy compatibility, never a machine authentication source.
-	newMachine, err := s.prepareAdminMachineConfigGeneration(newCfg, newAuthorizer)
-	if err != nil {
-		return fmt.Errorf("reload active config: prepare machine generation: %w", err)
-	}
-	if newMachine != nil {
-		if err := s.publishAdminMachineGeneration(newMachine); err != nil {
-			return fmt.Errorf("reload active config: publish machine generation: %w", err)
-		}
-	}
-	s.quota.installPreparedCallers(preparedCallers)
+	// Publish grants before exposing replacement credentials. This ordering
+	// does not jointly bind authentication and authorization generations.
 	s.authorizerSnapshot.Store(newAuthorizer)
 	s.adminAPIKeys = newAdminKeys
 	s.cfg = newCfg
-	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, preparedCallers))
+	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
 	}
