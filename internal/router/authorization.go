@@ -105,7 +105,7 @@ type authorizer struct {
 	authoredPolicy [][]string
 }
 
-func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore, legacy ...AdminAuthConfig) (*authorizer, error) {
+func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore, legacy AdminAuthConfig) (*authorizer, error) {
 	enforcer, err := newAuthzEnforcer()
 	if err != nil {
 		return nil, err
@@ -172,13 +172,11 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			authoredPolicy = append(authoredPolicy, fields)
 		}
 	}
-	for _, auth := range legacy {
-		if err := addCompatibilityGrants(enforcer, auth); err != nil {
-			return nil, err
-		}
+	if err := addCompatibilityGrants(enforcer, legacy); err != nil {
+		return nil, err
 	}
 	snapshot := &authorizer{enforcer: enforcer, activePolicySet: activePolicySet, authoredPolicy: authoredPolicy}
-	if err := addGlobalCompatibilityGrants(snapshot, callers, legacy...); err != nil {
+	if err := addGlobalCompatibilityGrants(snapshot, callers, legacy); err != nil {
 		return nil, err
 	}
 	return snapshot, nil

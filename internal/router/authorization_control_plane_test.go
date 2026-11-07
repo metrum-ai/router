@@ -13,7 +13,7 @@ import (
 // A verified identity is not a grant. Compatibility permissions must be
 // compiled into the enforcer at load time, not accepted by a handler.
 func TestAdminAuthorizationRejectsUncompiledPermissionMaps(t *testing.T) {
-	a, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil)
+	a, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

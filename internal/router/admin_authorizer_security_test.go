@@ -10,7 +10,7 @@ import (
 )
 
 func TestEmergencyAuthorizationHasNoLocalAllowBypass(t *testing.T) {
-	a, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil)
+	a, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,11 +40,11 @@ func TestEmergencyAuditFailureAndNamespaceCollisions(t *testing.T) {
 		"g, workload, router-internal:security-admin, *",
 		"g, router-internal:emergency, role, *",
 	} {
-		if _, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{line}}, nil, nil); err == nil {
+		if _, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{line}}, nil, nil, AdminAuthConfig{}); err == nil {
 			t.Errorf("editable policy selected reserved identity: %s", line)
 		}
 	}
-	a, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil)
+	a, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

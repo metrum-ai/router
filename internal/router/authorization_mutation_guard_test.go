@@ -12,7 +12,14 @@ import (
 
 func mutationGuardService(t *testing.T, lines []string, legacy ...AdminAuthConfig) *Service {
 	t.Helper()
-	a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: lines}, nil, nil, legacy...)
+	if len(legacy) > 1 {
+		t.Fatal("mutation guard fixture accepts at most one compatibility configuration")
+	}
+	var config AdminAuthConfig
+	if len(legacy) == 1 {
+		config = legacy[0]
+	}
+	a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: lines}, nil, nil, config)
 	if err != nil {
 		t.Fatal(err)
 	}

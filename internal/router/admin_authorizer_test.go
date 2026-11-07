@@ -59,7 +59,7 @@ func TestMachineAuthorizerSoleDecisionAndEmergency(t *testing.T) {
 	if err := contract.Authorize(context.Background(), emergency, "other/prod", "admin:policy", "activate"); err != nil {
 		t.Fatal(err)
 	}
-	empty, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil)
+	empty, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

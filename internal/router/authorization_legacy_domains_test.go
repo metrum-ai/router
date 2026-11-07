@@ -7,7 +7,7 @@ import "testing"
 
 func TestLegacyPartialDomainNamesRemainLiteral(t *testing.T) {
 	cfg := AdminAuthorizationConfig{Enabled: true, Policy: []string{"g, subject, role, project/*", "p, role, project/*, metrics, read"}}
-	a, err := newAuthorizer(cfg, nil, nil)
+	a, err := newAuthorizer(cfg, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
