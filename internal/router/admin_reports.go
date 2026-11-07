@@ -1265,21 +1265,24 @@ func (s *Service) adminReportBearerForbidden(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Service) authorizeAdmin(subject adminAuthSubject, object, action string) bool {
-	return s.authorizer.enforce(authzSubjectForAdmin(subject), object, action)
+	if strings.HasPrefix(subject.subject, compatibilitySubjectPrefix) {
+		return false
+	}
+	return s.currentAuthorizer().enforce(authzSubjectForAdmin(subject), object, action)
 }
 
 func (s *Service) authorizeGlobalAdmin(subject adminAuthSubject, object, action string) bool {
 	global := subject
-	global.domain = "*"
+	global.domain = AdminGlobalDomain
 	return s.authorizeAdmin(global, object, action)
 }
 
 func (s *Service) authorizeCaller(caller *callerRuntime, object, action string) bool {
-	return s.authorizer.enforce(authzSubjectForCaller(caller), object, action)
+	return s.currentAuthorizer().enforce(authzSubjectForCaller(caller), object, action)
 }
 
 func (s *Service) authorizeCallerInDomain(caller *callerRuntime, domain, object, action string) bool {
-	return s.authorizer.enforceInDomain(authzSubjectForCaller(caller), domain, object, action)
+	return s.currentAuthorizer().enforceInDomain(authzSubjectForCaller(caller), domain, object, action)
 }
 
 func (s *Service) setAdminReportHeaders(w http.ResponseWriter, static bool) {

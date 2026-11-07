@@ -462,8 +462,7 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 		handler: handler,
 		err:     make(chan error, 1),
 	}
-	// A fixed capacity avoids deriving an allocation size from configuration.
-	caPaths := make([]string, 0, 2)
+	caPaths := make([]string, 0, 1+len(local.Authentication.MTLS.CAFiles))
 	if path := strings.TrimSpace(local.TLS.ClientCAFile); path != "" {
 		caPaths = append(caPaths, path)
 	}

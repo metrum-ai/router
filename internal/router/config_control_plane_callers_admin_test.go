@@ -470,6 +470,11 @@ func TestCallerAdminMutationsBumpRevisionAndAppendEvents(t *testing.T) {
 // AfterMutate and the revision poller.
 func TestServiceReloadActiveConfigFromDB(t *testing.T) {
 	db := callerAdminTestDB(t)
+	key, err := GenerateAdminAPIKey("reload-reader", nil, callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_RELOAD_ADMIN_KEY_HASH", key.TokenHash)
 
 	// Seed a canonical document with one caller.
 	tokenHash := strings.Repeat("a", 64)
@@ -535,6 +540,7 @@ callers:
 			Identifiers:       IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
 			DefaultModelGroup: "default",
+			AdminAuth:         AdminAuthConfig{APIKeys: []AdminAPIKeyConfig{{KeyID: "reload-reader", KeyHashEnv: "TEST_RELOAD_ADMIN_KEY_HASH", Domain: "search/dev", Permissions: []string{"config:read"}}}},
 			UsageDB: UsageDBConfig{
 				Enable:          &usageDBDisabled,
 				MigrationPolicy: usageDBMigrationPolicyAutoSafe,
@@ -570,9 +576,37 @@ callers:
 		t.Fatalf("initial caller auth index = %d legacy, %d token_hash, want 0", len(idx.legacyBySHA256), len(idx.byTokenID))
 	}
 
-	// Reload from the DB.
+	// Authenticate a real configured key, then ensure an invalid candidate
+	// cannot disturb its grants or verification state.
+	keySubject, ok := svc.authenticateAdminAPIKey(key.Token)
+	if !ok || !svc.authorizeAdminPermission(keySubject, "config:read") {
+		t.Fatal("bootstrap key must authenticate and read config")
+	}
+	invalidYAML := strings.Replace(canonicalYAML, "  default_model_group: default", "  default_model_group: default\n  admin_auth:\n    authorization:\n      enabled: true\n      policy: ['p, subject, search/dev, admin:*, read']", 1)
+	invalidHash := sha256.Sum256([]byte(invalidYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, invalidYAML, hex.EncodeToString(invalidHash[:]), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err == nil {
+		t.Fatal("invalid policy candidate reloaded")
+	}
+	if _, ok := svc.authenticateAdminAPIKey(key.Token); !ok || !svc.authorizeAdminPermission(keySubject, "config:read") {
+		t.Fatal("failed reload disturbed active credential/grant")
+	}
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, canonicalYAML, hex.EncodeToString(hash[:]), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// Reload from the DB. The canonical document removes the bootstrap key.
 	if err := svc.reloadActiveConfigFromDB(); err != nil {
 		t.Fatalf("reloadActiveConfigFromDB: %v", err)
+	}
+
+	if _, ok := svc.authenticateAdminAPIKey(key.Token); ok {
+		t.Fatal("removed key still authenticates after reload")
+	}
+	if svc.authorizeAdminPermission(keySubject, "config:read") {
+		t.Fatal("compiled key grant survived reload revocation")
 	}
 
 	// The service must now have the caller from the canonical document.
