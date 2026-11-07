@@ -104,6 +104,22 @@ func AdminV1ConfigAdminDeps(base ConfigAdminDeps, principalOf func(*http.Request
 			principal: &principal, authContext: r.Context(),
 		}, true
 	}
+	// The handlers' secondary checks call Authorize(subject, permission) directly; route it
+	// through the same seam with the request context the subject carries.
+	out.Authorize = func(subject adminAuthSubject, permission string) bool {
+		object, action, ok := adminPermissionObjectAction(permission)
+		if !ok || subject.principal == nil {
+			return false
+		}
+		ctx := subject.authContext
+		if ctx == nil {
+			return false
+		}
+		if adminV1DecisionCoversPrimary(ctx, subject.domain, object, action) {
+			return true
+		}
+		return authorize(ctx, *subject.principal, subject.domain, object, action) == nil
+	}
 	out.Decide = func(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool {
 		object, action, ok := adminPermissionObjectAction(permission)
 		if !ok || subject.principal == nil {
