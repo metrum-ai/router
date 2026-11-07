@@ -279,6 +279,50 @@ Removal requires at least one minor release **and** 90 days between
 `Deprecation` and `Sunset`; a test rejects a registry entry that declares a
 shorter notice.
 
+## Audit records, credential events and metrics
+
+Every mutating operation writes exactly one audit row in the same transaction as its change,
+in the database where the change lives: `router_config_change_events` for control-plane
+changes (extended with the actor kind and credential ID, issuer, authorization domain,
+object, `authz_action`, operation, request ID, outcome, before/after document hashes and an
+operator ticket) and `router_admin_audit_events` for usage-database changes. A failed audit
+insert aborts the change, so a write is refused rather than committed unaudited.
+
+Credential lifecycle changes (issue, rotate, revoke) write their audit row **and** a
+redacted credential event in the same transaction. Authentication outcomes are recorded per
+credential kind with a keyed client-IP digest (HMAC-SHA256). The key comes from `ROUTER_ADMIN_CLIENT_IP_HASH_KEY`; without it a random per-process key is used, so digests and the per-source failure caps are then per-process only and do not correlate across replicas or restarts; identical outcomes within one second collapse
+into a counted row and one source can create at most ten failure rows per minute, so a
+credential-guessing flood cannot grow the audit table. `admin.api.audit.retention_days`
+(default 90) governs how long admin audit rows are kept.
+
+Admin-plane metrics are rendered only on an admin-plane scrape:
+
+```
+router_admin_requests_total{operation,object,action,status}
+router_admin_request_duration_seconds{operation}
+router_admin_authz_denials_total{object,action,reason}
+router_admin_rate_limited_total{operation}
+router_admin_authentications_total{kind,outcome}
+router_admin_idempotent_replays_total{operation}
+router_admin_audit_write_failures_total{kind}
+router_admin_revision{scope="config"|"policy",kind="desired"|"applied"}
+```
+
+Labels are registry- or catalogue-bounded. The serving-port `/metrics` output is unchanged.
+`router_admin_revision` is omitted when the values are not known rather than publishing a
+misleading zero.
+
+### Stated limits for v4.8
+
+- Audit rows are written in the change's transaction; a separate delivery/export worker with
+  at-least-once semantics, bounded retries and poison handling is tracked on #821, not built
+  here.
+- The legacy (non-`/admin/v1`) content-capture purge, delete and training-label paths still
+  use their existing best-effort audit emission; only the versioned admin plane is
+  transactional today.
+- Credential events collapse per second per credential and are capped per source per minute;
+  the counter is the record of the collapsed volume.
+
 ## Regenerating the contract
 
 ```bash

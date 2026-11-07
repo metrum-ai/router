@@ -62,15 +62,27 @@ func (s *Service) trainingAdmin(w http.ResponseWriter, r *http.Request, action s
 			return 0, false
 		}
 	}
-	subject, ok := s.authenticateAdminSubject(w, r)
-	if !ok {
-		s.recordAdminSecurityAccess(r, adminAuthSubject{}, 401, "unauthorized", trainingObject, action)
-		return 0, false
-	}
-	if !s.authorizeGlobalAdmin(subject, trainingObject, action) {
-		s.recordAdminSecurityAccess(r, subject, 403, "training-forbidden", trainingObject, action)
-		writeJSON(w, 403, map[string]string{"error": "training-forbidden"})
-		return 0, false
+	subject := adminAuthSubject{}
+	if principal, machine := PrincipalFrom(r.Context()); machine {
+		// On /admin/v1 the contract layer authenticated the machine principal and took the
+		// content:training/<action> decision in the plane-global domain. The durable security
+		// event below stays mandatory.
+		subject = adminAuthSubject{
+			subject: principal.Subject, domain: AdminGlobalDomain, source: principal.Kind,
+			principal: &principal, authContext: s.PinAuthorization(r.Context()),
+		}
+	} else {
+		authenticated, ok := s.authenticateAdminSubject(w, r)
+		if !ok {
+			s.recordAdminSecurityAccess(r, adminAuthSubject{}, 401, "unauthorized", trainingObject, action)
+			return 0, false
+		}
+		if !s.authorizeGlobalAdmin(authenticated, trainingObject, action) {
+			s.recordAdminSecurityAccess(r, authenticated, 403, "training-forbidden", trainingObject, action)
+			writeJSON(w, 403, map[string]string{"error": "training-forbidden"})
+			return 0, false
+		}
+		subject = authenticated
 	}
 	if !s.securityReportsEnabled() {
 		writeJSON(w, 503, map[string]string{"error": "security-audit-required"})
@@ -140,6 +152,19 @@ func (s *Service) handleTrainingOutcome(w http.ResponseWriter, r *http.Request) 
 	s.usage.db.Model(&contentCaptureRecord{}).Where("request_id = ? AND scope = ?", capture.RequestID, capture.Scope).Count(&n)
 	if n != 0 {
 		writeJSON(w, 409, map[string]string{"error": "outcome-already-recorded"})
+		return
+	}
+	if adminPlaneAuthorized(r) {
+		meta, ok := AdminAuditMetaFrom(r.Context())
+		if !ok {
+			writeJSON(w, 503, map[string]string{"error": "audit-unavailable"})
+			return
+		}
+		if err := s.usage.CreateTrainingOutcomeAudited(capture, auditRecordFromMeta(meta, "training_label")); err != nil {
+			writeJSON(w, 500, map[string]string{"error": "label-write-failed"})
+			return
+		}
+		writeJSON(w, 201, map[string]string{"status": "recorded"})
 		return
 	}
 	if err := s.usage.db.Create(&capture).Error; err != nil {

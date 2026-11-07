@@ -49,8 +49,9 @@ func testResponseAffinityRow() responseAffinityRecord {
 	}
 }
 
-// responseAffinityPreviousSchema drops the dormant table and its ledger rows so
-// the store looks like a schema-11 database that has just upgraded the package.
+// responseAffinityPreviousSchema rebuilds the pre-migration state for the upgrade test: the
+// dormant table is dropped and the ledger rows at or after the affinity migration are cleared,
+// so the upgrade must create the table again.
 func responseAffinityPreviousSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if db.Migrator().HasTable(&responseAffinityRecord{}) {
@@ -58,11 +59,21 @@ func responseAffinityPreviousSchema(t *testing.T, db *gorm.DB) {
 			t.Fatal(err)
 		}
 	}
+	clearAffinityLedger(t, db)
+}
+
+// clearAffinityLedger removes the ledger rows at or after the affinity migration without
+// touching tables, which is what the disposable-database reverse step needs.
+func clearAffinityLedger(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	// Attempts reference the ledger row, so remove them first.
-	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageResponseAffinityMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+	// Clear the ledger rows at or after the affinity migration so the database reads as it
+	// did immediately before it. Tables are left in place: dropping them would make the
+	// revert assertion vacuous.
+	if err := db.Where("scope = ? AND migration_id >= ?", usageMigrationScope, usageResponseAffinityMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageResponseAffinityMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+	if err := db.Where("scope = ? AND migration_id >= ?", usageMigrationScope, usageResponseAffinityMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -100,7 +111,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 12 {
+	if err != nil || status.SchemaVersion != 14 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -132,6 +143,10 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
+	// A disposable database restored to the pre-affinity state also has the later ledger rows
+	// removed. The table itself is not dropped here: the assertion below already proved the
+	// reverse step removed it.
+	clearAffinityLedger(t, runner.db)
 	if runner.db.Migrator().HasTable(&responseAffinityRecord{}) {
 		t.Fatal("reverse step left the response affinity table behind")
 	}
@@ -168,7 +183,7 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 12 || !status.Compatible {
+	if err != nil || status.SchemaVersion != 14 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -286,6 +301,10 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
+	// A disposable database restored to the pre-affinity state also has the later ledger rows
+	// removed. The table itself is not dropped here: the assertion below already proved the
+	// reverse step removed it.
+	clearAffinityLedger(t, runner.db)
 	if runner.db.Migrator().HasTable(&responseAffinityRecord{}) {
 		t.Fatal("reverse step left the response affinity table behind")
 	}

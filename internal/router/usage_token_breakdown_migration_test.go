@@ -35,10 +35,12 @@ func TestTokenBreakdownMigrationPreservesUnknownHistoricalCoverage(t *testing.T)
 	if err := store.db.Migrator().DropTable(&responseAffinityRecord{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Where("scope = ? AND migration_id IN ?", usageMigrationScope, []int{2026102303, 2026103001, 2026110201}).Delete(&migrationAttemptRecord{}).Error; err != nil {
+	// Clear the ledger from the token-breakdown migration onward, so the later admin audit
+	// migrations are pending too and the replay exercises the whole tail.
+	if err := store.db.Where("scope = ? AND migration_id >= ?", usageMigrationScope, 2026102303).Delete(&migrationAttemptRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Exec("DELETE FROM schema_migration_ledger WHERE scope = ? AND migration_id IN (?, ?, ?)", usageMigrationScope, 2026102303, 2026103001, 2026110201).Error; err != nil {
+	if err := store.db.Exec("DELETE FROM schema_migration_ledger WHERE scope = ? AND migration_id >= ?", usageMigrationScope, 2026102303).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {

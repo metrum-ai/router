@@ -34,7 +34,7 @@ const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 const usageResponseAffinityMigrationID = 2026110201
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 14, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -216,7 +216,7 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	HandlerKey: "usage.response-affinity.apply.v1@applyResponseAffinityMigration", PostconditionKey: "usage.response-affinity.schema.v1@verifyResponseAffinityMigration",
 	Dependencies: []int{2026103001}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyResponseAffinityMigration, Verify: verifyResponseAffinityMigration,
-}}
+}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition()}
 
 func init() {
 	for i := range usageMigrationDefinitions {
