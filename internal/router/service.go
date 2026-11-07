@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -94,6 +95,17 @@ type Service struct {
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
+
+	// Admin listener state (#809). adminMux is the admin listener's route
+	// registry; it is nil unless admin.enabled is true, so the serving surface
+	// is unchanged by default. adminCASource is #828's client-CA source,
+	// installed before the plane starts so the handshake verifies against the
+	// current trust snapshot, and adminAuthenticate is #814's machine chain.
+	adminMux          *AdminMux
+	adminCASourceMu   sync.Mutex
+	adminCASource     AdminClientCASource
+	adminAuthMu       sync.Mutex
+	adminAuthenticate Authenticator
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -391,6 +403,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		}
 	}
 	s.routes()
+	s.initAdminPlane()
 	return s, nil
 }
 
@@ -542,6 +555,11 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
+		// The admin listener binds once; a reload cannot rebind it. Say so
+		// instead of leaving a half-applied control plane.
+		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
+	}
 	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
 }
@@ -614,7 +632,12 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
-	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
+	// authorization while the admin plane is disabled. Enabling the plane moves
+	// it to the admin listener unless admin.metrics.on_serving_port keeps it.
+	if s.cfg.Admin.metricsOnServingPort() {
+		s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	}
 	s.mux.HandleFunc("GET /admin/auth/login", s.handleAdminOIDCLogin)
 	s.mux.HandleFunc("GET /admin/auth/callback", s.handleAdminOIDCCallback)
 	s.mux.HandleFunc("POST /admin/auth/logout", s.handleAdminOIDCLogout)
