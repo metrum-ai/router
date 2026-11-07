@@ -794,6 +794,13 @@ func (s *Service) executeShadowRequest(run *shadowRunState, callerDialect string
 
 // ---- HTTP handlers ----
 
+// configAdminReasonForceRequest is the promotion body: an operator reason and
+// the force override, which requires the config:force permission.
+type configAdminReasonForceRequest struct {
+	Reason string `json:"reason,omitempty"`
+	Force  bool   `json:"force,omitempty"`
+}
+
 type configAdminShadowStartResponse struct {
 	Shadow ShadowRun `json:"shadow"`
 }
@@ -870,10 +877,7 @@ func (h *configAdminHandler) handleShadowPromote(w http.ResponseWriter, r *http.
 	if !h.writeGate(w) {
 		return
 	}
-	var body struct {
-		Reason string `json:"reason,omitempty"`
-		Force  bool   `json:"force,omitempty"`
-	}
+	var body configAdminReasonForceRequest
 	if r.Body != nil && r.ContentLength > 0 {
 		if !decodeConfigAdminBody(w, r, &body) {
 			return
