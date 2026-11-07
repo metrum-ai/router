@@ -213,6 +213,25 @@ is not supported. If the filesystem cannot provide the lock, the replica logs
 it, raises `metrum_ai_router_tls_issuer_lock_failures_total` and refuses to
 issue rather than racing another replica.
 
+## Proxy TLS mode
+
+Many deployments terminate TLS in a reverse proxy instead. The reference recipe
+lives in
+[`deploy/tls/caddy/`](https://github.com/metrum-ai/router/tree/main/deploy/tls/caddy):
+a Caddy build with a DNS-01 provider module in front of the router's loopback
+listeners, an idempotent `create-dns-record.sh` that only touches records it
+owns (same ownership-marker rule and format as the router's own record
+manager), and a documented `smoke-test.sh` for an operator run against a staging
+CA.
+
+Leave `server.tls.mode: off` in that mode: the proxy owns the certificate. Tell
+the router to trust the proxy for forwarded headers through
+`server.client_ip.trusted_proxy_cidrs`, and keep that list to the proxy address.
+
+The recipe's `smoke-test.sh` needs real DNS provider credentials and a hostname
+whose zone you control, so it is a manual operator check rather than a CI job;
+the router-native path is what the automated Pebble suite exercises.
+
 ## Limits
 
 - Only DNS-01 is implemented: no HTTP-01 or TLS-ALPN-01, and no OCSP stapling.
