@@ -28,6 +28,31 @@ const (
 	adminOIDCMaxPendingLoginPerClient = 32
 )
 
+// adminPlaneSubject is the admin identity of a machine principal on /admin/v1.
+// The domain is the credential's configured domain, which is the explicit request
+// target for plane-global operations and for the reports handlers whose
+// per-domain decisions stay in the handler.
+func (s *Service) adminPlaneSubject(principal Principal) adminAuthSubject {
+	domain := "default"
+	if s != nil && s.cfg != nil {
+		domain = s.adminCredentialDomain(principal)
+	}
+	return adminAuthSubject{subject: principal.Subject, domain: domain, source: principal.Kind, principal: &principal}
+}
+
+// adminCredentialDomain returns the domain a machine principal is configured for.
+func (s *Service) adminCredentialDomain(principal Principal) string {
+	if principal.Kind == "adminkey" {
+		keyID := strings.TrimPrefix(principal.Subject, "adminkey:")
+		for _, key := range s.cfg.Server.AdminAuth.APIKeys {
+			if key.KeyID == keyID && strings.TrimSpace(key.Domain) != "" {
+				return strings.TrimSpace(key.Domain)
+			}
+		}
+	}
+	return "default"
+}
+
 type adminAuthSubject struct {
 	credentialID string
 	subject      string
@@ -37,6 +62,14 @@ type adminAuthSubject struct {
 	issuer       string
 	groups       []string
 	permissions  map[string]bool
+	// principal is set for an /admin/v1 request: the contract layer already
+	// authenticated this machine identity and took the operation's primary
+	// decision, so handler-side checks (force, shadow) ask the Authorizer with
+	// this principal instead of consulting a permission map.
+	principal *Principal
+	// ctx carries the request context for an /admin/v1 request, so a handler's
+	// primary guard can see that the decision was already taken.
+	ctx context.Context
 }
 
 type adminOIDCRuntime struct {
@@ -226,6 +259,13 @@ func (s *Service) handleAdminAuthMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
+	// On /admin/v1 the contract layer already authenticated a machine principal
+	// (#814) and took the operation's primary decision (#812). Handlers that call
+	// this helper reuse that identity instead of re-parsing a credential, which is
+	// what keeps the legacy and versioned mounts on one handler body.
+	if principal, ok := PrincipalFrom(r.Context()); ok {
+		return s.adminPlaneSubject(principal), true
+	}
 	s.setAdminAuthHeaders(w)
 	if s == nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"type": "unauthorized", "message": "unauthorized"}})

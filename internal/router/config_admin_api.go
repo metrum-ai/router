@@ -59,28 +59,79 @@ type ConfigAdminDeps struct {
 	Now                     func() time.Time
 }
 
-// RegisterConfigAdminAPI registers every /admin/config/* route.
+// RegisterConfigAdminAPI registers every /admin/config/* route on the serving
+// port (the legacy surface, unchanged).
 func RegisterConfigAdminAPI(mux *http.ServeMux, deps ConfigAdminDeps) {
-	h := &configAdminHandler{deps: deps}
-	mux.HandleFunc("GET /admin/config/groups", h.handleListGroups)
-	mux.HandleFunc("GET /admin/config/groups/{group}", h.handleGetGroup)
-	mux.HandleFunc("PUT /admin/config/groups/{group}/targets", h.handleReplaceTargets)
-	mux.HandleFunc("POST /admin/config/groups/{group}/targets", h.handleAddTarget)
-	mux.HandleFunc("DELETE /admin/config/groups/{group}/targets/{target_id...}", h.handleRemoveTarget)
-	mux.HandleFunc("POST /admin/config/groups/{group}/targets:validate", h.handleValidateTargets)
-	mux.HandleFunc("POST /admin/config/groups/{group}/rollback", h.handleGroupRollback)
-	mux.HandleFunc("GET /admin/config/groups/{group}/history", h.handleGroupHistory)
-	mux.HandleFunc("POST /admin/config/groups/{group}/shadow", h.handleShadowStart)
-	mux.HandleFunc("GET /admin/config/groups/{group}/shadow", h.handleShadowStatus)
-	mux.HandleFunc("POST /admin/config/groups/{group}/shadow/promote", h.handleShadowPromote)
-	mux.HandleFunc("DELETE /admin/config/groups/{group}/shadow", h.handleShadowStop)
-	mux.HandleFunc("GET /admin/config/status", h.handleConfigStatus)
-	mux.HandleFunc("POST /admin/config/sets", h.handleImportSet)
-	mux.HandleFunc("GET /admin/config/sets", h.handleListSets)
-	mux.HandleFunc("GET /admin/config/sets/{set_id}", h.handleExportSet)
-	mux.HandleFunc("POST /admin/config/sets/{set_id}/activate", h.handleActivateSet)
-	mux.HandleFunc("POST /admin/config/rollback", h.handleSetRollback)
-	mux.HandleFunc("GET /admin/config/diff", h.handleConfigDiff)
+	newConfigAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, handler)
+	}, "/admin")
+}
+
+// newConfigAdminHandler builds the handler object without registering it, so the
+// same handler serves both the legacy surface and /admin/v1 (see
+// admin_v1_handlers.go). No handler body differs between the two mounts.
+func newConfigAdminHandler(deps ConfigAdminDeps) *configAdminHandler {
+	return &configAdminHandler{deps: deps}
+}
+
+// handlerKeys maps each config handler to the registry's HandlerKey.
+func (h *configAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"config.groups.list":            h.handleListGroups,
+		"config.group.get":              h.handleGetGroup,
+		"config.group.targets.replace":  h.handleReplaceTargets,
+		"config.group.targets.add":      h.handleAddTarget,
+		"config.group.targets.remove":   h.handleRemoveTarget,
+		"config.group.targets.validate": h.handleValidateTargets,
+		"config.group.rollback":         h.handleGroupRollback,
+		"config.group.history":          h.handleGroupHistory,
+		"config.group.shadow.start":     h.handleShadowStart,
+		"config.group.shadow.status":    h.handleShadowStatus,
+		"config.group.shadow.promote":   h.handleShadowPromote,
+		"config.group.shadow.stop":      h.handleShadowStop,
+		"config.status":                 h.handleConfigStatus,
+		"config.sets.import":            h.handleImportSet,
+		"config.sets.list":              h.handleListSets,
+		"config.sets.get":               h.handleExportSet,
+		"config.sets.activate":          h.handleActivateSet,
+		"config.sets.rollback":          h.handleSetRollback,
+		"config.diff":                   h.handleConfigDiff,
+	}
+}
+
+// register installs the legacy patterns under prefix. Callers use "/admin" (the
+// serving port) or "/admin/v1" (the versioned contract), and the wildcard names
+// are identical in both cases so r.PathValue keeps working untouched.
+func (h *configAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
+	for pattern, handler := range h.prefixedPatterns(prefix) {
+		handle(pattern, handler)
+	}
+}
+
+func (h *configAdminHandler) prefixedPatterns(prefix string) map[string]http.HandlerFunc {
+	keys := h.handlerKeys()
+	patterns := map[string]http.HandlerFunc{
+		"GET " + prefix + "/config/groups":                                   keys["config.groups.list"],
+		"GET " + prefix + "/config/groups/{group}":                           keys["config.group.get"],
+		"PUT " + prefix + "/config/groups/{group}/targets":                   keys["config.group.targets.replace"],
+		"POST " + prefix + "/config/groups/{group}/targets":                  keys["config.group.targets.add"],
+		"DELETE " + prefix + "/config/groups/{group}/targets/{target_id...}": keys["config.group.targets.remove"],
+		"POST " + prefix + "/config/groups/{group}/targets:validate":         keys["config.group.targets.validate"],
+		"POST " + prefix + "/config/groups/{group}/rollback":                 keys["config.group.rollback"],
+		"GET " + prefix + "/config/groups/{group}/history":                   keys["config.group.history"],
+		"POST " + prefix + "/config/groups/{group}/shadow":                   keys["config.group.shadow.start"],
+		"GET " + prefix + "/config/groups/{group}/shadow":                    keys["config.group.shadow.status"],
+		"POST " + prefix + "/config/groups/{group}/shadow/promote":           keys["config.group.shadow.promote"],
+		"DELETE " + prefix + "/config/groups/{group}/shadow":                 keys["config.group.shadow.stop"],
+		"GET " + prefix + "/config/status":                                   keys["config.status"],
+		"POST " + prefix + "/config/sets":                                    keys["config.sets.import"],
+		"GET " + prefix + "/config/sets":                                     keys["config.sets.list"],
+		"GET " + prefix + "/config/sets/{set_id}":                            keys["config.sets.get"],
+		"POST " + prefix + "/config/sets/{set_id}/activate":                  keys["config.sets.activate"],
+		"POST " + prefix + "/config/rollback":                                keys["config.sets.rollback"],
+		"GET " + prefix + "/config/diff":                                     keys["config.diff"],
+	}
+	return patterns
 }
 
 type configAdminHandler struct {

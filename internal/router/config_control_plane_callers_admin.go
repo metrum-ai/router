@@ -48,15 +48,38 @@ type CallerAdminDeps struct {
 	Now          func() time.Time
 }
 
-// RegisterCallerDirectoryAdmin registers the admin caller directory mutation
-// endpoints on mux. It is exported so the service route map stays untouched
-// while the control-plane wiring composes it.
+// RegisterCallerDirectoryAdmin registers the admin caller directory endpoints on
+// the serving port (the legacy surface, unchanged).
 func RegisterCallerDirectoryAdmin(mux *http.ServeMux, deps CallerAdminDeps) {
-	h := &callerAdminHandler{deps: deps}
-	mux.HandleFunc("GET /admin/callers", h.handleList)
-	mux.HandleFunc("POST /admin/callers/issue", h.handleIssue)
-	mux.HandleFunc("POST /admin/callers/{id}/rotate", h.handleRotate)
-	mux.HandleFunc("POST /admin/callers/{id}/revoke", h.handleRevoke)
+	newCallerAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, handler)
+	}, "/admin")
+}
+
+// newCallerAdminHandler builds the handler object without registering it, so the
+// same handler also serves /admin/v1. No handler body differs between mounts.
+func newCallerAdminHandler(deps CallerAdminDeps) *callerAdminHandler {
+	return &callerAdminHandler{deps: deps}
+}
+
+// handlerKeys maps each caller handler to the registry's HandlerKey.
+func (h *callerAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"callers.list":   h.handleList,
+		"callers.issue":  h.handleIssue,
+		"callers.rotate": h.handleRotate,
+		"callers.revoke": h.handleRevoke,
+	}
+}
+
+// register installs the caller directory patterns under prefix with the legacy
+// wildcard names, so r.PathValue("id") keeps working on both surfaces.
+func (h *callerAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
+	keys := h.handlerKeys()
+	handle("GET "+prefix+"/callers", keys["callers.list"])
+	handle("POST "+prefix+"/callers/issue", keys["callers.issue"])
+	handle("POST "+prefix+"/callers/{id}/rotate", keys["callers.rotate"])
+	handle("POST "+prefix+"/callers/{id}/revoke", keys["callers.revoke"])
 }
 
 type callerAdminHandler struct {

@@ -1116,6 +1116,22 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
+	s.writeMetricsPayload(w, rc)
+}
+
+// handleAdminPlaneMetrics serves GET /admin/v1/metrics: the same renderer and the
+// same metrics/read decision, taken by the /admin/v1 contract layer for the
+// machine principal instead of by a caller token.
+func (s *Service) handleAdminPlaneMetrics(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.beginAdminPlane(w, r, "metrics")
+	if !ok {
+		return
+	}
+	defer s.finish(rc, http.StatusOK, nil)
+	s.writeMetricsPayload(w, rc)
+}
+
+func (s *Service) writeMetricsPayload(w http.ResponseWriter, rc *requestContext) {
 	migration := MigrationStatus{Scope: usageMigrationScope, State: "unavailable", StatusUnavailable: true}
 	if s.usage != nil {
 		var err error
@@ -1134,6 +1150,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
+	_ = rc
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -1170,7 +1187,8 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Request) {
-	rc, ok := s.begin(w, r, "content-admin")
+	adminPlane := isAdminPlaneRequest(r)
+	rc, ok := s.beginContentCaptureAdmin(w, r, adminPlane)
 	if !ok {
 		return
 	}
@@ -1188,20 +1206,23 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
 		return
 	}
-	if len(targetDomains) == 0 {
-		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
-			s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
-			return
-		}
-	} else {
-		for _, domain := range targetDomains {
-			if domain == contentCaptureUnknownDomain {
+	if !adminPlane {
+		// Legacy caller surface: today's per-domain decision stays here.
+		if len(targetDomains) == 0 {
+			if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
-			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
-				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
-				return
+		} else {
+			for _, domain := range targetDomains {
+				if domain == contentCaptureUnknownDomain {
+					s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
+					return
+				}
+				if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
+					s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
+					return
+				}
 			}
 		}
 	}
@@ -1214,6 +1235,27 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"request_id": requestID, "deleted": rows})
 }
 
+// isAdminPlaneRequest reports whether the /admin/v1 contract layer authenticated
+// this request, in which case the contract layer also took the operation's
+// primary authorization decision.
+func isAdminPlaneRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	_, ok := PrincipalFrom(r.Context())
+	return ok
+}
+
+// beginContentCaptureAdmin chooses the authentication path for the content
+// capture maintenance handlers: the machine admin plane (no caller token) or the
+// legacy caller surface.
+func (s *Service) beginContentCaptureAdmin(w http.ResponseWriter, r *http.Request, adminPlane bool) (*requestContext, bool) {
+	if adminPlane {
+		return s.beginAdminPlane(w, r, "content-admin")
+	}
+	return s.begin(w, r, "content-admin")
+}
+
 func (s *Service) contentCaptureTargetDomains(requestID string) ([]string, error) {
 	if s == nil || s.usage == nil {
 		return nil, nil
@@ -1222,11 +1264,12 @@ func (s *Service) contentCaptureTargetDomains(requestID string) ([]string, error
 }
 
 func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *http.Request) {
-	rc, ok := s.begin(w, r, "content-admin")
+	adminPlane := isAdminPlaneRequest(r)
+	rc, ok := s.beginContentCaptureAdmin(w, r, adminPlane)
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
+	if !adminPlane && !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
 		code := "content-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -2058,27 +2101,15 @@ func usageEndpoint(r *http.Request) string {
 	return "unsupported"
 }
 
-func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
-	if dialect == "models" && isAnthropicModelRequest(r) {
-		dialect = "anthropic"
-	}
-	// Receive clock for router-added latency (issue #159). Captured before auth
-	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
-	// receive through httptrace.WroteRequest.
-	receiveAt := time.Now()
-	id := requestID()
-	w.Header().Set("X-Request-Id", id)
-	if dialect == "anthropic" {
-		w.Header().Set("Request-Id", id)
-	}
-	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
-	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
-	rc := &requestContext{
+// newRequestContext builds the per-request record without any authentication
+// decision. begin() adds the caller; beginAdminPlane() adds the machine admin
+// principal that the /admin/v1 contract layer already authenticated.
+func (s *Service) newRequestContext(r *http.Request, dialect, id string, receiveAt time.Time, ipInfo clientIPInfo) *requestContext {
+	return &requestContext{
 		id:                   id,
 		start:                receiveAt,
 		receiveAt:            receiveAt,
 		ctx:                  r.Context(),
-		caller:               caller,
 		dialect:              dialect,
 		client:               inferClient(r),
 		clientIP:             ipInfo,
@@ -2100,6 +2131,47 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			Warnings:             []string{},
 		},
 	}
+}
+
+// beginAdminPlane builds a request context for an admin-plane request whose
+// credential and authorization were already resolved by the /admin/v1 contract
+// layer. It performs no caller authentication: the admin plane is
+// machine-to-machine and never accepts a caller token.
+func (s *Service) beginAdminPlane(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	principal, ok := PrincipalFrom(r.Context())
+	if !ok {
+		writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
+		return nil, false
+	}
+	receiveAt := time.Now()
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.rec.CallerID = principal.Subject
+	rc.rec.UsageSource = "none"
+	rc.trace("router_receive", "admin plane request receive", Target{}, 0, 0, "", false, 0)
+	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
+	return rc, true
+}
+
+func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	if dialect == "models" && isAnthropicModelRequest(r) {
+		dialect = "anthropic"
+	}
+	// Receive clock for router-added latency (issue #159). Captured before auth
+	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
+	// receive through httptrace.WroteRequest.
+	receiveAt := time.Now()
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		w.Header().Set("Request-Id", id)
+	}
+	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.caller = caller
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
