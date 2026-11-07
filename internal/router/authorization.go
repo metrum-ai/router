@@ -33,7 +33,7 @@ g = _, _, _
 e = some(where (p.eft == allow))
 
 [matchers]
-m = (g(policySubject(r.sub), p.sub, r.dom) || g(policySubject(r.sub), p.sub, "*") || policySubject(r.sub) == p.sub || r.sub == p.sub) && grantMatch(r.dom, p.dom, r.obj, p.obj, r.act, p.act, p.sub)
+m = (g(policySubject(r.sub), p.sub, r.dom) || g(policySubject(r.sub), p.sub, "*") || policySubject(r.sub) == p.sub || r.sub == p.sub) && grantMatch(r.dom, p.dom, r.obj, p.obj, r.act, p.act, p.sub) && managementRoleMatch(r.sub, p.sub, p.obj)
 `
 
 const (
@@ -93,12 +93,16 @@ func newAuthzEnforcer() (*casbin.SyncedEnforcer, error) {
 	enforcer.AddFunction("actionMatch", actionMatch)
 	enforcer.AddFunction("grantMatch", grantMatch)
 	enforcer.AddFunction("policySubject", compatibilityPolicySubject)
+	enforcer.AddFunction("managementRoleMatch", managementRoleMatch)
 	return enforcer, nil
 }
 
 type authorizer struct {
 	enforcer        *casbin.SyncedEnforcer
 	activePolicySet string
+	// Authored records exclude immutable builtins and synthesized flags/maps.
+	// Retain them so online guards validate even duplicate/unchanged records.
+	authoredPolicy [][]string
 }
 
 func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore, legacy AdminAuthConfig) (*authorizer, error) {
@@ -132,6 +136,7 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 		return nil, err
 	}
 	activePolicySet := ""
+	var authoredPolicy [][]string
 	if cfg.Enabled {
 		policyLines, policySetID, err := authzPolicyLines(cfg, usage)
 		if err != nil {
@@ -164,12 +169,13 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			default:
 				return nil, fmt.Errorf("unsupported policy line %q", fields[0])
 			}
+			authoredPolicy = append(authoredPolicy, fields)
 		}
 	}
 	if err := addCompatibilityGrants(enforcer, legacy); err != nil {
 		return nil, err
 	}
-	snapshot := &authorizer{enforcer: enforcer, activePolicySet: activePolicySet}
+	snapshot := &authorizer{enforcer: enforcer, activePolicySet: activePolicySet, authoredPolicy: authoredPolicy}
 	if err := addGlobalCompatibilityGrants(snapshot, callers, legacy); err != nil {
 		return nil, err
 	}

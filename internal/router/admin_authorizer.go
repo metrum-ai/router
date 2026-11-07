@@ -34,6 +34,7 @@ const (
 // operations retain their existing handler audit path until outbox integration.
 type authorizationDecisionAudit func(context.Context, Principal, string, string, string, error) error
 
+type authorizationGuardKey struct{}
 type authorizationRevisionKey struct{}
 type pinnedAuthorizationRevision struct {
 	owner    *Service
@@ -91,7 +92,15 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 			decision = ErrAuthorizationUnavailable
 		}
 	}()
-	if strings.HasPrefix(principal.Subject, internalAuthorizationSubjectPrefix) || strings.TrimSpace(principal.Subject) == "" {
+	if strings.HasPrefix(principal.Subject, internalAuthorizationSubjectPrefix) || strings.TrimSpace(principal.Subject) == "" || principal.Subject == securityAdministratorRole {
+		return ErrAdminForbidden
+	}
+	internalObject := strings.HasPrefix(object, internalAuthorizationSubjectPrefix)
+	guardQuery := internalObject && ctx.Value(authorizationGuardKey{}) == true
+	if guardQuery && object != securityAdministratorCapability {
+		return ErrAdminForbidden
+	}
+	if internalObject && !isLegacy && !guardQuery {
 		return ErrAdminForbidden
 	}
 	if isLegacy {
@@ -119,9 +128,9 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 	}
 	subject := authorizationSubject{subject: principal.Subject, domain: domain, source: principal.Kind}
 	if isLegacy {
-		// Caller-token global authority uses the trusted adapter's credential
-		// kind and ID, never a machine principal's subject spelling.
-		if legacy.mode != "public" {
+		// Protected management queries check role membership, never a map.
+		// Caller-token projection uses the trusted adapter kind and ID.
+		if legacy.mode != "public" && !guardQuery {
 			subject.subject = compatibilityIdentity(adminAuthSubject{subject: principal.Subject, source: legacy.source, credentialID: principal.CredentialID}, legacy.mode)
 		}
 	} else {
@@ -154,6 +163,9 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 			}
 		}
 	}
+	if guardQuery {
+		subject.subject = managementGuardIdentity(subject.subject)
+	}
 	if !snapshot.enforce(subject, object, action) {
 		return ErrAdminForbidden
 	}
@@ -166,6 +178,11 @@ func addEmergencyAuthorizationGrants(a interface {
 }) error {
 	if _, err := a.AddPolicy(emergencyAuthorizationRole, "*", "*", ".*"); err != nil {
 		return err
+	}
+	for _, role := range []string{securityAdministratorRole, emergencyAuthorizationRole} {
+		if _, err := a.AddPolicy(role, AdminGlobalDomain, securityAdministratorCapability, "administer"); err != nil {
+			return err
+		}
 	}
 	_, err := a.AddGroupingPolicy(emergencyAuthorizationSubject, emergencyAuthorizationRole, "*")
 	return err

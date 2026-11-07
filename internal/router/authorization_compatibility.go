@@ -74,22 +74,30 @@ func compatibilityPolicySubject(args ...any) (any, error) {
 		return subject, nil
 	}
 	parts := strings.Split(strings.TrimPrefix(subject, compatibilitySubjectPrefix), ":")
-	if len(parts) != 4 || (parts[0] != "permission" && parts[0] != "object" && parts[0] != "global") {
+	if len(parts) != 4 || (parts[0] != "permission" && parts[0] != "object" && parts[0] != "global" && parts[0] != "guard") {
 		return subject, nil
 	}
 	public, err := base64.RawURLEncoding.DecodeString(parts[3])
 	if err != nil {
 		return subject, nil
 	}
-	if strings.HasPrefix(string(public), internalAuthorizationSubjectPrefix) {
+	if strings.HasPrefix(string(public), internalAuthorizationSubjectPrefix) && !(parts[0] == "guard" && string(public) == emergencyAuthorizationSubject) {
 		return subject, nil
 	}
 	return string(public), nil
 }
 
+// Guard aliases add no role edge and cannot be selected by public identities.
+// They let Casbin distinguish a protected role query from legacy literal data.
+const managementGuardSubjectPrefix = compatibilitySubjectPrefix + "guard:"
+
+func managementGuardIdentity(subject string) string {
+	return managementGuardSubjectPrefix + "::" + base64.RawURLEncoding.EncodeToString([]byte(subject))
+}
+
 func addCompatibilityGrants(e *casbin.SyncedEnforcer, cfg AdminAuthConfig) error {
 	add := func(subject adminAuthSubject, permissions []string) error {
-		if strings.HasPrefix(subject.subject, internalAuthorizationSubjectPrefix) {
+		if strings.HasPrefix(subject.subject, internalAuthorizationSubjectPrefix) || subject.subject == securityAdministratorRole {
 			return fmt.Errorf("admin subject uses a reserved identity")
 		}
 		combined := compatibilityIdentity(subject, "permission")
