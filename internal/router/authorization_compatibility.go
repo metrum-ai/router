@@ -11,7 +11,7 @@ import (
 	"github.com/casbin/casbin/v2"
 )
 
-const compatibilitySubjectPrefix = "router-internal:compat:"
+const compatibilitySubjectPrefix = internalAuthorizationSubjectPrefix + "compat:"
 
 // grantMatch preserves the two distinct v4.7 grant languages: configured
 // policy uses domain/object whole wildcards and anchored actions, whereas
@@ -30,7 +30,11 @@ func grantMatch(args ...any) (any, error) {
 		fields[i] = value
 	}
 	if strings.HasPrefix(fields[6], compatibilitySubjectPrefix+"object:") {
-		return fields[0] == fields[1] && fields[2]+":"+fields[4] == fields[3], nil
+		// An explicitly global credential retains caller-row maintenance in
+		// every stored domain. This is not a projected global identity: those
+		// grants below still match '*' literally and cannot widen row scope.
+		domainMatches := fields[0] == fields[1] || (fields[1] == AdminGlobalDomain && fields[2] == authzObjectAdminCallers)
+		return domainMatches && fields[2]+":"+fields[4] == fields[3], nil
 	}
 	if strings.HasPrefix(fields[6], compatibilitySubjectPrefix) {
 		return fields[0] == fields[1] && fields[2] == fields[3] && fields[4] == fields[5], nil
@@ -45,7 +49,7 @@ func grantMatch(args ...any) (any, error) {
 // credentials intentionally share a public policy subject. The direct-only
 // identity preserves the legacy Basic /admin/auth behavior.
 func compatibilityIdentity(subject adminAuthSubject, mode string) string {
-	if subject.credentialID == "" || (subject.source != "admin_key" && subject.source != "basic") {
+	if subject.credentialID == "" || (subject.source != "admin_key" && subject.source != "basic" && !(mode == "global" && subject.source == "caller_token")) {
 		if mode == "direct" || mode == "permission-raw" {
 			return compatibilitySubjectPrefix + "unavailable"
 		}
@@ -70,14 +74,14 @@ func compatibilityPolicySubject(args ...any) (any, error) {
 		return subject, nil
 	}
 	parts := strings.Split(strings.TrimPrefix(subject, compatibilitySubjectPrefix), ":")
-	if len(parts) != 4 || (parts[0] != "permission" && parts[0] != "object") {
+	if len(parts) != 4 || (parts[0] != "permission" && parts[0] != "object" && parts[0] != "global") {
 		return subject, nil
 	}
 	public, err := base64.RawURLEncoding.DecodeString(parts[3])
 	if err != nil {
 		return subject, nil
 	}
-	if strings.HasPrefix(string(public), compatibilitySubjectPrefix) {
+	if strings.HasPrefix(string(public), internalAuthorizationSubjectPrefix) {
 		return subject, nil
 	}
 	return string(public), nil
@@ -85,7 +89,7 @@ func compatibilityPolicySubject(args ...any) (any, error) {
 
 func addCompatibilityGrants(e *casbin.SyncedEnforcer, cfg AdminAuthConfig) error {
 	add := func(subject adminAuthSubject, permissions []string) error {
-		if strings.HasPrefix(subject.subject, compatibilitySubjectPrefix) {
+		if strings.HasPrefix(subject.subject, internalAuthorizationSubjectPrefix) {
 			return fmt.Errorf("admin subject uses a reserved identity")
 		}
 		combined := compatibilityIdentity(subject, "permission")
@@ -140,10 +144,5 @@ func addCompatibilityGrants(e *casbin.SyncedEnforcer, cfg AdminAuthConfig) error
 }
 
 func (s *Service) authorizeCompatibility(subject adminAuthSubject, object, action, mode string) bool {
-	if strings.HasPrefix(subject.subject, compatibilitySubjectPrefix) {
-		return false
-	}
-	identity := authzSubjectForAdmin(subject)
-	identity.subject = compatibilityIdentity(subject, mode)
-	return s.currentAuthorizer().enforce(identity, object, action)
+	return s.authorizeLegacy(subject, object, action, mode)
 }
