@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -178,5 +179,63 @@ func TestAdminKeyMetadataAuthorityRejectsStaleCache(t *testing.T) {
 	// Unknown IDs and mismatched generations never authenticate.
 	if ok, _ := store.accepts(context.Background(), "absent", 1, verifier); ok {
 		t.Fatal("unknown key accepted")
+	}
+}
+
+func TestAdminKeyIdempotentIssueAndLifecycleEvents(t *testing.T) {
+	store, _ := newAdminKeyStoreForTest(t)
+	events := 0
+	failEvents := false
+	store.recorder = func(_ *gorm.DB, event adminKeyLifecycleEvent) error {
+		if failEvents {
+			return errors.New("event write failed")
+		}
+		events++
+		return nil
+	}
+	req := adminKeyIssueRequest{ExpiresAt: time.Now().UTC().Add(time.Hour), MaxLifetime: 720 * time.Hour}
+	first, err := store.issueIdempotent(context.Background(), "op-1", "hash-1", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 {
+		t.Fatalf("issue did not record one lifecycle event: %d", events)
+	}
+	// A retry never reissues or rediscovers the secret.
+	if _, err := store.issueIdempotent(context.Background(), "op-1", "hash-1", req); !errors.Is(err, errAdminKeySecretUnavailable) {
+		t.Fatalf("retry err=%v want one-time secret unavailable", err)
+	}
+	if _, err := store.issueIdempotent(context.Background(), "op-1", "different", req); !errors.Is(err, errAdminKeyIdempotencyConflict) {
+		t.Fatalf("mismatched request hash err=%v want conflict", err)
+	}
+	// No second key row was created by the retries.
+	list, err := store.list(context.Background(), adminKeyListRequest{})
+	if err != nil || len(list.Keys) != 1 {
+		t.Fatalf("idempotent retries created extra keys: %d %v", len(list.Keys), err)
+	}
+	// An event failure rolls the lifecycle mutation back.
+	failEvents = true
+	if _, err := store.rotate(context.Background(), first.ID, adminKeyRotateRequest{Overlap: time.Minute}); err == nil {
+		t.Fatal("rotation committed despite event failure")
+	}
+	if err := store.revoke(context.Background(), first.ID); err == nil {
+		t.Fatal("revoke committed despite event failure")
+	}
+	failEvents = false
+	meta, err := store.get(context.Background(), first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Status != "active" || meta.Generations != 1 {
+		t.Fatalf("failed event left a partial mutation: %+v", meta)
+	}
+	if _, err := store.rotate(context.Background(), first.ID, adminKeyRotateRequest{Overlap: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.revoke(context.Background(), first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if events != 3 {
+		t.Fatalf("lifecycle events=%d want3 (issue,rotate,revoke)", events)
 	}
 }

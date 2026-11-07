@@ -25,6 +25,7 @@ import (
 const (
 	adminKeyMetadataTable      = "admin_api_key_metadata"
 	adminKeyGenerationTable    = "admin_api_key_generations"
+	adminKeyOperationTable     = "admin_api_key_operations"
 	adminKeyDefaultMaxLife     = 720 * time.Hour
 	adminKeyDefaultOverlap     = 5 * time.Minute
 	adminKeyMaxOverlap         = time.Hour
@@ -58,10 +59,18 @@ type adminKeyListResult struct {
 	Revision int64              `json:"revision"`
 }
 
+// adminKeyLifecycleEvent is the owned, redacted lifecycle payload. The #869
+// adapter maps it to AdminCredentialEvent inside the same transaction.
+type adminKeyLifecycleEvent struct {
+	KeyID, Subject, Generation, Action string
+}
+type adminKeyEventRecorder func(tx *gorm.DB, event adminKeyLifecycleEvent) error
+
 // adminKeyStore reads and mutates only the authoritative rows.
 type adminKeyStore struct {
-	db  *gorm.DB
-	now func() time.Time
+	db       *gorm.DB
+	now      func() time.Time
+	recorder adminKeyEventRecorder // nil = no lifecycle events configured
 }
 
 func newAdminKeyStore(db *gorm.DB, now func() time.Time) *adminKeyStore {
@@ -72,6 +81,13 @@ func newAdminKeyStore(db *gorm.DB, now func() time.Time) *adminKeyStore {
 }
 
 func (s *adminKeyStore) issue(ctx context.Context, req adminKeyIssueRequest) (adminKeySecret, error) {
+	return s.issueIdempotent(ctx, "", "", req)
+}
+
+// issueIdempotent stores a metadata-only reservation in the same transaction as
+// the key rows. A retry never issues or rediscovers the one-time secret; it
+// returns a stable conflict so the caller answers 409 one-time-secret-unavailable.
+func (s *adminKeyStore) issueIdempotent(ctx context.Context, idempotencyKey, requestHash string, req adminKeyIssueRequest) (adminKeySecret, error) {
 	maxLifetime := req.MaxLifetime
 	if maxLifetime == 0 {
 		maxLifetime = adminKeyDefaultMaxLife
@@ -97,14 +113,37 @@ func (s *adminKeyStore) issue(ctx context.Context, req adminKeyIssueRequest) (ad
 	}
 	out := adminKeySecret{ID: id, Subject: "adminkey:" + id, Generation: 1, ExpiresAt: req.ExpiresAt.UTC()}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if idempotencyKey != "" {
+			var existing []struct {
+				RequestHash string
+				State       string
+			}
+			if err := tx.Raw("SELECT request_hash, state FROM "+adminKeyOperationTable+" WHERE idempotency_key = ?", idempotencyKey).Scan(&existing).Error; err != nil {
+				return err
+			}
+			if len(existing) == 1 {
+				if existing[0].RequestHash != requestHash {
+					return errAdminKeyIdempotencyConflict
+				}
+				return errAdminKeySecretUnavailable
+			}
+			if err := tx.Exec("INSERT INTO "+adminKeyOperationTable+
+				" (idempotency_key, request_hash, state, key_id, created_at) VALUES (?, ?, 'reserved', ?, ?)",
+				idempotencyKey, requestHash, id, now).Error; err != nil {
+				return errAdminKeyIdempotencyConflict
+			}
+		}
 		if err := tx.Exec("INSERT INTO "+adminKeyMetadataTable+
 			" (id, subject, status, expires_at, created_at, revision) VALUES (?, ?, 'active', ?, ?, 1)",
 			id, out.Subject, out.ExpiresAt, now).Error; err != nil {
 			return err
 		}
-		return tx.Exec("INSERT INTO "+adminKeyGenerationTable+
+		if err := tx.Exec("INSERT INTO "+adminKeyGenerationTable+
 			" (key_id, generation, verifier, created_at, overlap_until) VALUES (?, 1, ?, ?, NULL)",
-			id, verifier, now).Error
+			id, verifier, now).Error; err != nil {
+			return err
+		}
+		return s.recordInTx(tx, adminKeyLifecycleEvent{KeyID: id, Subject: out.Subject, Generation: "1", Action: "issue"})
 	})
 	if err != nil {
 		return adminKeySecret{}, err
@@ -173,7 +212,7 @@ func (s *adminKeyStore) rotate(ctx context.Context, id string, req adminKeyRotat
 			return err
 		}
 		out = adminKeySecret{ID: id, Subject: row.Subject, Secret: secret, Generation: nextGeneration, ExpiresAt: row.ExpiresAt.UTC()}
-		return nil
+		return s.recordInTx(tx, adminKeyLifecycleEvent{KeyID: id, Subject: row.Subject, Generation: fmt.Sprint(nextGeneration), Action: "rotate"})
 	})
 	return out, err
 }
@@ -189,7 +228,10 @@ func (s *adminKeyStore) revoke(ctx context.Context, id string) error {
 		if result.RowsAffected == 0 {
 			return errAdminKeyAbsent
 		}
-		return tx.Exec("UPDATE "+adminKeyGenerationTable+" SET overlap_until = ? WHERE key_id = ? AND overlap_until IS NULL", now, id).Error
+		if err := tx.Exec("UPDATE "+adminKeyGenerationTable+" SET overlap_until = ? WHERE key_id = ? AND overlap_until IS NULL", now, id).Error; err != nil {
+			return err
+		}
+		return s.recordInTx(tx, adminKeyLifecycleEvent{KeyID: id, Action: "revoke"})
 	})
 }
 
@@ -266,10 +308,22 @@ func (s *adminKeyStore) accepts(ctx context.Context, id string, generation int, 
 	return true, nil
 }
 
+// recordInTx runs the lifecycle event inside the caller's key transaction, so
+// an event failure rolls the key mutation back. A store without a recorder is
+// allowed only for pure metadata/authentication tests.
+func (s *adminKeyStore) recordInTx(tx *gorm.DB, event adminKeyLifecycleEvent) error {
+	if s.recorder == nil {
+		return nil
+	}
+	return s.recorder(tx, event)
+}
+
 var (
-	errAdminKeyAbsent        = errors.New("admin key not found")
-	errAdminKeyRevoked       = errors.New("admin key revoked or expired")
-	errAdminKeyOverlapActive = errors.New("admin key rotation overlap still active")
+	errAdminKeySecretUnavailable   = errors.New("one-time secret unavailable")
+	errAdminKeyIdempotencyConflict = errors.New("admin key idempotency conflict")
+	errAdminKeyAbsent              = errors.New("admin key not found")
+	errAdminKeyRevoked             = errors.New("admin key revoked or expired")
+	errAdminKeyOverlapActive       = errors.New("admin key rotation overlap still active")
 )
 
 func randomAdminKeyID() (string, error) {
@@ -318,6 +372,7 @@ func applyAdminKeyPhase13(tx *gorm.DB) error {
 		"CREATE TABLE IF NOT EXISTS " + adminKeyMetadataTable + " (id TEXT PRIMARY KEY, subject TEXT NOT NULL, status TEXT NOT NULL, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP NOT NULL, revoked_at TIMESTAMP NULL, revision BIGINT NOT NULL DEFAULT 1)",
 		"CREATE TABLE IF NOT EXISTS " + adminKeyGenerationTable + " (key_id TEXT NOT NULL, generation INTEGER NOT NULL, verifier TEXT NOT NULL, created_at TIMESTAMP NOT NULL, overlap_until TIMESTAMP NULL, PRIMARY KEY (key_id, generation), FOREIGN KEY (key_id) REFERENCES " + adminKeyMetadataTable + "(id))",
 		"CREATE UNIQUE INDEX IF NOT EXISTS admin_api_key_subject_unique ON " + adminKeyMetadataTable + "(subject)",
+		"CREATE TABLE IF NOT EXISTS " + adminKeyOperationTable + " (idempotency_key TEXT PRIMARY KEY, request_hash TEXT NOT NULL, state TEXT NOT NULL, key_id TEXT NOT NULL, created_at TIMESTAMP NOT NULL)",
 	} {
 		if err := tx.Exec(stmt).Error; err != nil {
 			return fmt.Errorf("create admin key store: %w", err)
@@ -327,7 +382,7 @@ func applyAdminKeyPhase13(tx *gorm.DB) error {
 }
 
 func verifyAdminKeyPhase13(tx *gorm.DB) error {
-	for _, table := range []string{adminKeyMetadataTable, adminKeyGenerationTable} {
+	for _, table := range []string{adminKeyMetadataTable, adminKeyGenerationTable, adminKeyOperationTable} {
 		if !tx.Migrator().HasTable(table) {
 			return fmt.Errorf("required control-plane table %s is missing", table)
 		}
