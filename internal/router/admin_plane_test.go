@@ -733,80 +733,6 @@ func writeTestKey(t *testing.T, dir, name string, raw []byte) string {
 	return writeTestPEM(t, dir, name, raw)
 }
 
-// ACP-007: the metrics placement follows admin.enabled unless the compatibility
-// flag keeps the v4.7 scrape. The admin-listener copy lands with the #814/#812
-// seams.
-func TestAdminMetricsPlacement(t *testing.T) {
-	newFixture := func(t *testing.T, mutate func(*Config)) (*Service, string) {
-		t.Helper()
-		cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
-		cfg.Callers[0].MetricsAdmin = true
-		if mutate != nil {
-			mutate(cfg)
-		}
-		svc, err := New(cfg)
-		if err != nil {
-			t.Fatalf("New: %v", err)
-		}
-		t.Cleanup(svc.Close)
-		return svc, testToken
-	}
-	scrape := func(t *testing.T, svc *Service) *httptest.ResponseRecorder {
-		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-		req.Header.Set("Authorization", "Bearer "+testToken)
-		recorder := httptest.NewRecorder()
-		svc.Handler().ServeHTTP(recorder, req)
-		return recorder
-	}
-
-	t.Run("disabled plane keeps the v4.7 serving-port scrape", func(t *testing.T) {
-		svc, _ := newFixture(t, nil)
-		recorder := scrape(t, svc)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("GET /metrics = %d, want 200 with the plane disabled", recorder.Code)
-		}
-		if !strings.Contains(recorder.Body.String(), "# ") && recorder.Body.Len() == 0 {
-			t.Fatal("serving-port /metrics returned an empty exposition")
-		}
-	})
-	t.Run("enabled plane moves metrics off the serving port", func(t *testing.T) {
-		svc, _ := newFixture(t, func(cfg *Config) {
-			cfg.Admin.Enabled = true
-			cfg.Admin.Listen = "127.0.0.1:0"
-		})
-		recorder := scrape(t, svc)
-		if recorder.Code != http.StatusNotFound {
-			t.Fatalf("GET /metrics = %d, want 404 once the plane owns metrics (body %q)", recorder.Code, recorder.Body.String())
-		}
-	})
-	t.Run("compatibility flag restores the v4.7 scrape", func(t *testing.T) {
-		svc, _ := newFixture(t, func(cfg *Config) {
-			cfg.Admin.Enabled = true
-			cfg.Admin.Listen = "127.0.0.1:0"
-			keep := true
-			cfg.Admin.Metrics.OnServingPort = &keep
-		})
-		recorder := scrape(t, svc)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("GET /metrics = %d, want 200 with admin.metrics.on_serving_port: true", recorder.Code)
-		}
-	})
-	t.Run("caller token without metrics admin stays forbidden", func(t *testing.T) {
-		svc, _ := newFixture(t, func(cfg *Config) {
-			cfg.Callers[0].MetricsAdmin = false
-			cfg.Admin.Enabled = true
-			cfg.Admin.Listen = "127.0.0.1:0"
-			keep := true
-			cfg.Admin.Metrics.OnServingPort = &keep
-		})
-		recorder := scrape(t, svc)
-		if recorder.Code != http.StatusForbidden {
-			t.Fatalf("GET /metrics = %d, want 403 for a caller without metrics read", recorder.Code)
-		}
-	})
-}
-
 // The listener assigns one server-generated correlation ID per request and
 // never echoes a client-supplied one.
 func TestAdminRequestIDIsServerGenerated(t *testing.T) {
@@ -1159,4 +1085,78 @@ func TestAdminAuthenticatorChainUnsupportedCredential(t *testing.T) {
 	if code := adminProblemResponseCode(t, body); code != "unsupported_authentication" {
 		t.Fatalf("code = %q, want unsupported_authentication", code)
 	}
+}
+
+// ACP-007: the metrics placement follows admin.enabled unless the compatibility
+// flag keeps the v4.7 scrape. The admin-listener copy lands with the #814/#812
+// seams.
+func TestAdminMetricsPlacement(t *testing.T) {
+	newFixture := func(t *testing.T, mutate func(*Config)) (*Service, string) {
+		t.Helper()
+		cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+		cfg.Callers[0].MetricsAdmin = true
+		if mutate != nil {
+			mutate(cfg)
+		}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		t.Cleanup(svc.Close)
+		return svc, testToken
+	}
+	scrape := func(t *testing.T, svc *Service) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		recorder := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	t.Run("disabled plane keeps the v4.7 serving-port scrape", func(t *testing.T) {
+		svc, _ := newFixture(t, nil)
+		recorder := scrape(t, svc)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET /metrics = %d, want 200 with the plane disabled", recorder.Code)
+		}
+		if !strings.Contains(recorder.Body.String(), "# ") && recorder.Body.Len() == 0 {
+			t.Fatal("serving-port /metrics returned an empty exposition")
+		}
+	})
+	t.Run("enabled plane moves metrics off the serving port", func(t *testing.T) {
+		svc, _ := newFixture(t, func(cfg *Config) {
+			cfg.Admin.Enabled = true
+			cfg.Admin.Listen = "127.0.0.1:0"
+		})
+		recorder := scrape(t, svc)
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("GET /metrics = %d, want 404 once the plane owns metrics (body %q)", recorder.Code, recorder.Body.String())
+		}
+	})
+	t.Run("compatibility flag restores the v4.7 scrape", func(t *testing.T) {
+		svc, _ := newFixture(t, func(cfg *Config) {
+			cfg.Admin.Enabled = true
+			cfg.Admin.Listen = "127.0.0.1:0"
+			keep := true
+			cfg.Admin.Metrics.OnServingPort = &keep
+		})
+		recorder := scrape(t, svc)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("GET /metrics = %d, want 200 with admin.metrics.on_serving_port: true", recorder.Code)
+		}
+	})
+	t.Run("caller token without metrics admin stays forbidden", func(t *testing.T) {
+		svc, _ := newFixture(t, func(cfg *Config) {
+			cfg.Callers[0].MetricsAdmin = false
+			cfg.Admin.Enabled = true
+			cfg.Admin.Listen = "127.0.0.1:0"
+			keep := true
+			cfg.Admin.Metrics.OnServingPort = &keep
+		})
+		recorder := scrape(t, svc)
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("GET /metrics = %d, want 403 for a caller without metrics read", recorder.Code)
+		}
+	})
 }

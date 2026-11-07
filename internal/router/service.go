@@ -66,16 +66,8 @@ type Service struct {
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
 	adminSession       *adminSessionStore
-	// adminMux is the admin listener's route registry (#809). It is nil unless
-	// admin.enabled is true, so the serving surface is unchanged by default.
-	adminMux *AdminMux
-	// adminCASource is #828's client-CA source, installed before the plane
-	// starts so the handshake verifies against the current trust snapshot.
-	adminCASourceMu    sync.Mutex
-	adminCASource      AdminClientCASource
-	adminAuthMu        sync.Mutex
-	adminAuthenticate  Authenticator
-	authorizer         *authorizer
+	authorizer         *authorizer // immutable bootstrap fallback
+	authorizerSnapshot atomic.Pointer[authorizer]
 	quota              *quotaStore
 	cache              *responseCache
 	logger             *requestLogger
@@ -103,6 +95,17 @@ type Service struct {
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
+
+	// Admin listener state (#809). adminMux is the admin listener's route
+	// registry; it is nil unless admin.enabled is true, so the serving surface
+	// is unchanged by default. adminCASource is #828's client-CA source,
+	// installed before the plane starts so the handshake verifies against the
+	// current trust snapshot, and adminAuthenticate is #814's machine chain.
+	adminMux          *AdminMux
+	adminCASourceMu   sync.Mutex
+	adminCASource     AdminClientCASource
+	adminAuthMu       sync.Mutex
+	adminAuthenticate Authenticator
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -354,7 +357,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
 	}
 	s.adminAPIKeys = buildAdminAPIKeyRuntimes(cfg, os.LookupEnv)
-	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage)
+	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage, cfg.Server.AdminAuth)
 	if err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
@@ -537,24 +540,26 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	// directory. The authorizer is recreated with the latest callers map and
 	// the same admin authorization config.
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage)
+	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage, newCfg.Server.AdminAuth)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
-	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
-		// The admin listener binds once; a reload cannot rebind it. Say so
-		// instead of leaving a half-applied control plane.
-		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
-	}
-	s.cfg = newCfg
+	// Publish grants before exposing replacement credentials. This ordering
+	// does not jointly bind authentication and authorization generations.
+	s.authorizerSnapshot.Store(newAuthorizer)
 	s.adminAPIKeys = newAdminKeys
-	s.authorizer = newAuthorizer
+	s.cfg = newCfg
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
+		// The admin listener binds once; a reload cannot rebind it. Say so
+		// instead of leaving a half-applied control plane.
+		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
+	}
 	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
 	return nil
 }
@@ -1178,7 +1183,7 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject := adminAuthSubjectForBasic(basic)
-	if !subject.permissions["admin:auth:read"] {
+	if !s.authorizeCompatibility(subject, "admin:auth", authzActionRead, "direct") {
 		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "admin-forbidden", "admin:auth", authzActionRead)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "admin-forbidden", "message": "admin-forbidden"}})
 		return
