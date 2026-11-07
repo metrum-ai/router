@@ -656,7 +656,12 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
-	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
+	// authorization until the admin listener serves it. Moving it earlier would
+	// leave monitoring with no exposition, so validation refuses that config.
+	if s.cfg.Admin.metricsOnServingPort() {
+		s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	}
 	s.mux.HandleFunc("GET /admin/auth/login", s.handleAdminOIDCLogin)
 	s.mux.HandleFunc("GET /admin/auth/callback", s.handleAdminOIDCCallback)
 	s.mux.HandleFunc("POST /admin/auth/logout", s.handleAdminOIDCLogout)
