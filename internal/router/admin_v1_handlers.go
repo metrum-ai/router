@@ -18,6 +18,7 @@ package router
 import (
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // AdminV1Handlers builds the operation→handler map from the config and caller
@@ -90,7 +91,7 @@ func AdminV1ConfigAdminDeps(base ConfigAdminDeps, principalOf func(*http.Request
 			return adminAuthSubject{}, false
 		}
 		if domain == "" {
-			domain = "default"
+			domain = AdminGlobalDomain
 		}
 		return adminAuthSubject{subject: principal.Subject, domain: domain, source: principal.Kind, principal: &principal, ctx: r.Context()}, true
 	}
@@ -118,7 +119,7 @@ func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request
 			return false
 		}
 		if domain == "" {
-			domain = "default"
+			domain = AdminGlobalDomain
 		}
 		if adminV1DecisionCovers(r.Context(), object, action) {
 			// The contract layer already took this exact decision for the request.
@@ -126,5 +127,31 @@ func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request
 		}
 		return authorize(principal, domain, object, action)
 	}
+	out.AuthorizeDomain = func(r *http.Request, rowDomain, object, action string) bool {
+		principal, _, ok := principalOf(r)
+		if !ok || strings.TrimSpace(rowDomain) == "" {
+			return false
+		}
+		// A row is shown only when the principal is authorized for that row's own
+		// stored domain.
+		return authorize(principal, rowDomain, object, action)
+	}
 	return out
+}
+
+// adminCredentialDomain returns the authorization domain a machine principal is
+// configured for: an admin key's configured domain, otherwise the plane-global domain.
+func (s *Service) adminCredentialDomain(principal Principal) string {
+	if s == nil || s.cfg == nil {
+		return AdminGlobalDomain
+	}
+	if principal.Kind == "adminkey" {
+		keyID := strings.TrimPrefix(principal.Subject, "adminkey:")
+		for _, key := range s.cfg.Server.AdminAuth.APIKeys {
+			if key.KeyID == keyID && strings.TrimSpace(key.Domain) != "" {
+				return strings.TrimSpace(key.Domain)
+			}
+		}
+	}
+	return AdminGlobalDomain
 }

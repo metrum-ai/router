@@ -62,7 +62,6 @@ var adminV1OperationSpecs = []Operation{
 		ID: "listConfigGroups", Method: "GET", Path: "/admin/v1/config/groups", LegacyPath: "/admin/config/groups",
 		Summary: "List model groups in the active configuration",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
-		ETag:     AdminETagRevision,
 		Response: adminOpenObject{Members: []string{"mode", "runtime_scope", "set_id", "revision", "groups"}},
 		Errors:   []int{409}, Concurrency: AdminConcurrencyNone, Idempotency: AdminIdempotencyNone,
 		RateClass: AdminRateClassRead, HandlerKey: "config.groups.list",
@@ -250,7 +249,7 @@ var adminV1OperationSpecs = []Operation{
 	{
 		ID: "listCallers", Method: "GET", Path: "/admin/v1/callers", LegacyPath: "/admin/callers",
 		Summary: "List registered callers of the active configuration",
-		Object:  authzObjectAdminCallers, Action: authzActionList, Domain: AdminDomainGlobal,
+		Object:  authzObjectAdminCallers, Action: authzActionList, Domain: AdminDomainCallerTarget,
 		Response: adminOpenObject{Members: []string{"generated_utc", "config_set_id", "callers"}},
 		Errors:   []int{409},
 		Pagination: &AdminPaginationSpec{
@@ -459,7 +458,8 @@ var adminV1OperationSpecs = []Operation{
 		Summary: "Read the evidence for one request",
 		Object:  authzObjectAdminReports, Action: authzActionDrilldown, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"request", "captures", "usage"}}, Errors: []int{400, 404, 503},
-		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.request_evidence",
+		Query:   []adminQueryParameter{{Name: "request_id", Required: true, Description: "request identifier"}},
+		Adapter: "reports", RateClass: AdminRateClassRead, HandlerKey: "reports.request_evidence",
 	},
 	{
 		ID: "listAdminSecurityEvents", Method: "GET", Path: "/admin/v1/reports/security/events", LegacyPath: "/admin/reports/api/security/events",

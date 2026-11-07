@@ -42,19 +42,6 @@ const (
 	AdminConcurrencyRepresentation AdminConcurrencyMode = "representation"
 )
 
-// AdminETagMode declares whether an operation publishes a strong ETag.
-type AdminETagMode string
-
-const (
-	// AdminETagNone publishes no validator (the legacy behaviour).
-	AdminETagNone AdminETagMode = "none"
-	// AdminETagRevision publishes "rev-<configuration revision>".
-	AdminETagRevision AdminETagMode = "revision"
-	// AdminETagRepresentation publishes the resource's own representation hash;
-	// the handler sets it because only it knows the body.
-	AdminETagRepresentation AdminETagMode = "representation"
-)
-
 // AdminIdempotencyMode declares where replay protection lives.
 type AdminIdempotencyMode string
 
@@ -74,11 +61,11 @@ const (
 type AdminDomainSource string
 
 const (
-	// AdminDomainGlobal authorizes in the plane-global domain, the shared
-	// AdminGlobalDomain value, which is what today's global admin checks use. v4.7
-	// admin-key grants for plane-global objects are compiled into exactly this
-	// domain, so their decisions hold.
+	// AdminDomainGlobal authorizes in the plane-global domain ("default").
 	AdminDomainGlobal AdminDomainSource = "global"
+	// AdminDomainGlobalWildcard authorizes in the whole-plane wildcard domain
+	// ("*"), which is how today's authorizeGlobalAdmin decisions are taken.
+	AdminDomainGlobalWildcard AdminDomainSource = "global-wildcard"
 	// AdminDomainCallerTarget authorizes in the stored caller's
 	// "<project>/<environment>" domain.
 	AdminDomainCallerTarget AdminDomainSource = "caller-target"
@@ -167,14 +154,11 @@ type Operation struct {
 	// handler runs.
 	Object string
 	Action string
-	// ExtraChecks are additional decisions the contract layer always takes
-	// (shadow promotion needs both admin:shadow/write and admin:config/write).
+	// ExtraChecks are additional decisions the operation requires (shadow
+	// promotion needs both admin:shadow/write and admin:config/write; a forced
+	// write needs admin:config/force).
 	ExtraChecks []AdminCheck
-	// ConditionalChecks are decisions the handler takes after parsing the body
-	// (a forced write needs admin:config/force). They are documented but not
-	// enforced here, so a non-forced write is not required to hold the grant.
-	ConditionalChecks []AdminCheck
-	Domain            AdminDomainSource
+	Domain      AdminDomainSource
 	// Request/Response are typed schema prototypes (nil means no body).
 	Request  any
 	Response any
@@ -182,7 +166,6 @@ type Operation struct {
 	// contract-wide 400/401/403/429/500/503.
 	Errors      []int
 	Concurrency AdminConcurrencyMode
-	ETag        AdminETagMode
 	Idempotency AdminIdempotencyMode
 	Pagination  *AdminPaginationSpec
 	Query       []adminQueryParameter
@@ -214,9 +197,6 @@ type Operation struct {
 func (op Operation) normalized() Operation {
 	if op.Concurrency == "" {
 		op.Concurrency = AdminConcurrencyNone
-	}
-	if op.ETag == "" {
-		op.ETag = AdminETagNone
 	}
 	if op.Idempotency == "" {
 		op.Idempotency = AdminIdempotencyNone
@@ -280,14 +260,6 @@ func (op Operation) validate() error {
 	case AdminConcurrencyNone, AdminConcurrencyRevision, AdminConcurrencyRepresentation:
 	default:
 		return fmt.Errorf("operation %s has invalid concurrency mode %q", op.ID, op.Concurrency)
-	}
-	switch op.ETag {
-	case AdminETagNone, AdminETagRevision, AdminETagRepresentation:
-	default:
-		return fmt.Errorf("operation %s has invalid ETag mode %q", op.ID, op.ETag)
-	}
-	if op.ETag != AdminETagNone && op.Method != "GET" {
-		return fmt.Errorf("operation %s publishes an ETag but is not a GET", op.ID)
 	}
 	switch op.Idempotency {
 	case AdminIdempotencyNone, AdminIdempotencyHandler, AdminIdempotencyStore:

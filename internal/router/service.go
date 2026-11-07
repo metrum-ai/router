@@ -73,6 +73,10 @@ type Service struct {
 	usage              *usageStore
 	migrationStatusFn  func() (MigrationStatus, error)
 	metrics            *metricsStore
+	// adminAuthorizeFn is the authorization seam the admin listener installs; it is
+	// used for the /admin/v1 decisions (including the reports surface), never for the
+	// serving port.
+	adminAuthorizeFn   func(context.Context, Principal, string, string, string) error
 	trafficShape       *trafficShapeManager
 	bridgeSessions     *bridgeSessionBackends
 	scripts            map[string]*scriptStrategy
@@ -1116,22 +1120,6 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
-	s.writeMetricsPayload(w, rc)
-}
-
-// handleAdminPlaneMetrics serves GET /admin/v1/metrics: the same renderer and the
-// same metrics/read decision, taken by the /admin/v1 contract layer for the
-// machine principal instead of by a caller token.
-func (s *Service) handleAdminPlaneMetrics(w http.ResponseWriter, r *http.Request) {
-	rc, ok := s.beginAdminPlane(w, r, "metrics")
-	if !ok {
-		return
-	}
-	defer s.finish(rc, http.StatusOK, nil)
-	s.writeMetricsPayload(w, rc)
-}
-
-func (s *Service) writeMetricsPayload(w http.ResponseWriter, rc *requestContext) {
 	migration := MigrationStatus{Scope: usageMigrationScope, State: "unavailable", StatusUnavailable: true}
 	if s.usage != nil {
 		var err error
@@ -1150,7 +1138,6 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, rc *requestContext)
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
-	_ = rc
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -1187,8 +1174,7 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Request) {
-	adminPlane := isAdminPlaneRequest(r)
-	rc, ok := s.beginContentCaptureAdmin(w, r, adminPlane)
+	rc, ok := s.begin(w, r, "content-admin")
 	if !ok {
 		return
 	}
@@ -1206,23 +1192,20 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
 		return
 	}
-	if !adminPlane {
-		// Legacy caller surface: today's per-domain decision stays here.
-		if len(targetDomains) == 0 {
-			if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
+	if len(targetDomains) == 0 {
+		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
+			s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
+			return
+		}
+	} else {
+		for _, domain := range targetDomains {
+			if domain == contentCaptureUnknownDomain {
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
-		} else {
-			for _, domain := range targetDomains {
-				if domain == contentCaptureUnknownDomain {
-					s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
-					return
-				}
-				if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
-					s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
-					return
-				}
+			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
+				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
+				return
 			}
 		}
 	}
@@ -1235,27 +1218,6 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"request_id": requestID, "deleted": rows})
 }
 
-// isAdminPlaneRequest reports whether the /admin/v1 contract layer authenticated
-// this request, in which case the contract layer also took the operation's
-// primary authorization decision.
-func isAdminPlaneRequest(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	_, ok := PrincipalFrom(r.Context())
-	return ok
-}
-
-// beginContentCaptureAdmin chooses the authentication path for the content
-// capture maintenance handlers: the machine admin plane (no caller token) or the
-// legacy caller surface.
-func (s *Service) beginContentCaptureAdmin(w http.ResponseWriter, r *http.Request, adminPlane bool) (*requestContext, bool) {
-	if adminPlane {
-		return s.beginAdminPlane(w, r, "content-admin")
-	}
-	return s.begin(w, r, "content-admin")
-}
-
 func (s *Service) contentCaptureTargetDomains(requestID string) ([]string, error) {
 	if s == nil || s.usage == nil {
 		return nil, nil
@@ -1264,12 +1226,11 @@ func (s *Service) contentCaptureTargetDomains(requestID string) ([]string, error
 }
 
 func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *http.Request) {
-	adminPlane := isAdminPlaneRequest(r)
-	rc, ok := s.beginContentCaptureAdmin(w, r, adminPlane)
+	rc, ok := s.begin(w, r, "content-admin")
 	if !ok {
 		return
 	}
-	if !adminPlane && !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
+	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
 		code := "content-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -2101,9 +2062,44 @@ func usageEndpoint(r *http.Request) string {
 	return "unsupported"
 }
 
-// newRequestContext builds the per-request record without any authentication
-// decision. begin() adds the caller; beginAdminPlane() adds the machine admin
-// principal that the /admin/v1 contract layer already authenticated.
+// adminPlaneAuthorized reports whether the /admin/v1 contract layer authenticated the
+// request AND recorded an authorization decision for it. Handler code must never treat
+// "a principal is present" as authorized.
+func adminPlaneAuthorized(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if _, ok := PrincipalFrom(r.Context()); !ok {
+		return false
+	}
+	_, ok := AdminV1DecisionFrom(r.Context())
+	return ok
+}
+
+// beginAdminPlane builds a request context for an admin-plane request the contract layer
+// already authenticated and authorized. It performs no caller authentication: the admin
+// plane is machine-to-machine and never accepts a caller token.
+func (s *Service) beginAdminPlane(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	principal, ok := PrincipalFrom(r.Context())
+	if !ok || !adminPlaneAuthorized(r) {
+		writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
+		return nil, false
+	}
+	receiveAt := time.Now()
+	id := requestID()
+	w.Header().Set("X-Request-Id", id)
+	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.rec.CallerID = principal.Subject
+	rc.rec.UsageSource = "none"
+	rc.trace("router_receive", "admin plane request receive", Target{}, 0, 0, "", false, 0)
+	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
+	return rc, true
+}
+
+// newRequestContext builds the per-request record without any authentication decision.
+// begin() adds the caller; beginAdminPlane() adds the machine admin principal the
+// /admin/v1 contract layer already authenticated and authorized.
 func (s *Service) newRequestContext(r *http.Request, dialect, id string, receiveAt time.Time, ipInfo clientIPInfo) *requestContext {
 	return &requestContext{
 		id:                   id,
@@ -2131,28 +2127,6 @@ func (s *Service) newRequestContext(r *http.Request, dialect, id string, receive
 			Warnings:             []string{},
 		},
 	}
-}
-
-// beginAdminPlane builds a request context for an admin-plane request whose
-// credential and authorization were already resolved by the /admin/v1 contract
-// layer. It performs no caller authentication: the admin plane is
-// machine-to-machine and never accepts a caller token.
-func (s *Service) beginAdminPlane(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
-	principal, ok := PrincipalFrom(r.Context())
-	if !ok {
-		writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
-		return nil, false
-	}
-	receiveAt := time.Now()
-	id := requestID()
-	w.Header().Set("X-Request-Id", id)
-	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
-	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
-	rc.rec.CallerID = principal.Subject
-	rc.rec.UsageSource = "none"
-	rc.trace("router_receive", "admin plane request receive", Target{}, 0, 0, "", false, 0)
-	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
-	return rc, true
 }
 
 func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {

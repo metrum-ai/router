@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"gorm.io/gorm"
 	"time"
 )
 
@@ -22,7 +25,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // fakeAuthenticator resolves the principal from a test header. It is a test-only
-// stand-in for #814's chain, per the approved design.
+// stand-in for the #814 chain.
 type fakeAuthenticator struct {
 	principal Principal
 	err       error
@@ -173,7 +176,7 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 		if !ok {
 			return Principal{}, "", false
 		}
-		return principal, "default", true
+		return principal, AdminGlobalDomain, true
 	}
 	authorize := func(principal Principal, domain, object, action string) bool {
 		return harness.authorize.Authorize(rContext(), principal, domain, object, action) == nil
@@ -192,7 +195,7 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 		},
 		Handlers: handlers,
 		ResolveDomain: func(Principal) string {
-			return "default"
+			return AdminGlobalDomain
 		},
 		ResolveCallerDomain: func(r *http.Request) (string, error) {
 			if r.PathValue("id") == "missing" {
@@ -209,14 +212,16 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 			}
 			return []string{"example/prod"}, nil
 		},
-		CurrentETag:   func(r *http.Request) (string, int64, error) { return harness.currentETag(r) },
-		CursorCodec:   harness.codec,
-		Pagination:    AdminPaginationConfig{},
-		Idempotency:   harness.idempotency,
-		IdempotencyOn: true,
-		Limiter:       harness.limiter,
-		Throttle:      harness.throttle,
-		Clock:         func() time.Time { return harness.now },
+		CurrentETag:      func(r *http.Request) (string, int64, error) { return harness.currentETag(r) },
+		CursorCodec:      harness.codec,
+		Pagination:       AdminPaginationConfig{},
+		Idempotency:      harness.idempotency,
+		IdempotencyOn:    true,
+		Limiter:          harness.limiter,
+		Throttle:         harness.throttle,
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return harness.now },
 	})
 	if err != nil {
 		t.Fatalf("mount /admin/v1: %v", err)
@@ -393,7 +398,7 @@ func TestAdminV1ContentCaptureDomainFromRow(t *testing.T) {
 	harness.do(t, http.MethodDelete, "/admin/v1/content-captures/no-domain", nil, nil)
 	calls = harness.authorize.snapshot()
 	if len(calls) != 1 || calls[0].Domain != "*" {
-		t.Fatalf("a captured row without a domain must require the whole-plane grant: %+v", calls)
+		t.Fatalf("a captured row without a domain must require the plane-global grant: %+v", calls)
 	}
 }
 
@@ -629,8 +634,10 @@ func TestAdminV1DeprecationHeadersAtHTTP(t *testing.T) {
 				writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 			},
 		},
-		Limiter:  NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
-		Throttle: NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+		Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -678,48 +685,9 @@ func newAdminV1HarnessWithRegistry(t *testing.T, registry *AdminV1Registry) *adm
 	return harness
 }
 
-// mountWithExtra reinstalls the mount with additional handler bindings, which is
-// how the reports adapter test supplies its dispatch target.
-func (h *adminV1Harness) mountWithExtra(t *testing.T, extra map[string]http.HandlerFunc) *adminV1Harness {
-	t.Helper()
-	configDeps := ConfigAdminDeps{RuntimeScope: "prod", FileMode: true, Driver: "sqlite", InstanceID: "replica-test"}
-	principalOf := func(r *http.Request) (Principal, string, bool) {
-		principal, ok := PrincipalFrom(r.Context())
-		if !ok {
-			return Principal{}, "", false
-		}
-		return principal, "default", true
-	}
-	authorize := func(principal Principal, domain, object, action string) bool {
-		return h.authorize.Authorize(adminTestBackgroundContext, principal, domain, object, action) == nil
-	}
-	all := addReportPlaceholderHandlers(h.registry, extra)
-	for key, handler := range map[string]http.HandlerFunc{
-		"training.export":         func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
-		"training.outcomes.label": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
-		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("router_requests_total 1\n")) },
-		"content.captures.delete": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
-		"content.captures.purge":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
-		"test.count":              adminV1TestCountHandler,
-		"test.race":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
-	} {
-		all[key] = handler
-	}
-	handlers := AdminV1Handlers(
-		AdminV1ConfigAdminDeps(configDeps, principalOf, authorize),
-		AdminV1CallerAdminDeps(CallerAdminDeps{}, principalOf, authorize),
-		all,
-	)
-	mux := http.NewServeMux()
-	if err := RegisterAdminV1(mux, h.depsForMount(handlers)); err != nil {
-		t.Fatalf("mount /admin/v1: %v", err)
-	}
-	h.mux = mux
-	return h
-}
-
-// mount (re)installs the mount on a fresh mux with the harness's current seams.
-func (h *adminV1Harness) mount(t *testing.T) *adminV1Harness {
+// buildDeps composes the mount dependencies (config + caller + extra handlers)
+// and applies an optional mutator, so every harness mount shares one binding path.
+func (h *adminV1Harness) buildDeps(t *testing.T, extra map[string]http.HandlerFunc, mutate func(*AdminV1Deps)) AdminV1Deps {
 	t.Helper()
 	configDeps := ConfigAdminDeps{
 		RuntimeScope: "prod", FileMode: true, Driver: "sqlite", InstanceID: "replica-test",
@@ -731,41 +699,57 @@ func (h *adminV1Harness) mount(t *testing.T) *adminV1Harness {
 		if !ok {
 			return Principal{}, "", false
 		}
-		return principal, "default", true
+		return principal, AdminGlobalDomain, true
 	}
 	authorize := func(principal Principal, domain, object, action string) bool {
 		return h.authorize.Authorize(adminTestBackgroundContext, principal, domain, object, action) == nil
 	}
-	extra := map[string]http.HandlerFunc{
-		"training.export": func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{"export": "ok"})
-		},
-		"training.outcomes.label": func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{"label": "ok"})
-		},
-		"metrics.scrape": func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("router_requests_total 1\n")) },
-		"content.captures.delete": func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{"deleted": 1})
-		},
-		"content.captures.purge": func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{"deleted": 0})
-		},
-		"test.count": adminV1TestCountHandler,
-		"test.race":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+	all := addReportPlaceholderHandlers(h.registry, map[string]http.HandlerFunc{
+		"training.export":         func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"training.outcomes.label": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("router_requests_total 1\n")) },
+		"content.captures.delete": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"content.captures.purge":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"test.count":              adminV1TestCountHandler,
+		"test.race":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+	})
+	for key, handler := range extra {
+		all[key] = handler
 	}
-	extra = addReportPlaceholderHandlers(h.registry, extra)
 	handlers := AdminV1Handlers(
 		AdminV1ConfigAdminDeps(configDeps, principalOf, authorize),
 		AdminV1CallerAdminDeps(CallerAdminDeps{}, principalOf, authorize),
-		extra,
+		all,
 	)
+	deps := h.depsForMount(handlers)
+	if mutate != nil {
+		mutate(&deps)
+	}
+	return deps
+}
+
+// mountWithExtra reinstalls the mount with additional handler bindings.
+func (h *adminV1Harness) mountWithExtra(t *testing.T, extra map[string]http.HandlerFunc) *adminV1Harness {
+	t.Helper()
+	return h.mountWithDeps(t, extra, nil)
+}
+
+// mountWithDeps reinstalls the mount with a deps mutator, which is how a test
+// exercises a degraded seam (for example an unavailable idempotency store).
+func (h *adminV1Harness) mountWithDeps(t *testing.T, extra map[string]http.HandlerFunc, mutate func(*AdminV1Deps)) *adminV1Harness {
+	t.Helper()
 	mux := http.NewServeMux()
-	err := RegisterAdminV1(mux, h.depsForMount(handlers))
-	if err != nil {
+	if err := RegisterAdminV1(mux, h.buildDeps(t, extra, mutate)); err != nil {
 		t.Fatalf("mount /admin/v1: %v", err)
 	}
 	h.mux = mux
 	return h
+}
+
+// mount (re)installs the mount on a fresh mux with the harness's current seams.
+func (h *adminV1Harness) mount(t *testing.T) *adminV1Harness {
+	t.Helper()
+	return h.mountWithDeps(t, nil, nil)
 }
 
 func (h *adminV1Harness) depsForMount(handlers map[string]http.HandlerFunc) AdminV1Deps {
@@ -776,7 +760,7 @@ func (h *adminV1Harness) depsForMount(handlers map[string]http.HandlerFunc) Admi
 			return h.authorize.Authorize(ctx, principal, domain, object, action)
 		},
 		Handlers:            handlers,
-		ResolveDomain:       func(Principal) string { return "default" },
+		ResolveDomain:       func(Principal) string { return AdminGlobalDomain },
 		ResolveCallerDomain: func(r *http.Request) (string, error) { return "example/prod", nil },
 		ResolveCapturedDomains: func(r *http.Request) ([]string, error) {
 			if r.PathValue("request_id") == "unknown-domain" {
@@ -784,14 +768,16 @@ func (h *adminV1Harness) depsForMount(handlers map[string]http.HandlerFunc) Admi
 			}
 			return []string{"example/prod"}, nil
 		},
-		CurrentETag:   func(r *http.Request) (string, int64, error) { return h.currentETag(r) },
-		CursorCodec:   h.codec,
-		Pagination:    AdminPaginationConfig{},
-		Idempotency:   h.idempotency,
-		IdempotencyOn: true,
-		Limiter:       h.limiter,
-		Throttle:      h.throttle,
-		Clock:         func() time.Time { return h.now },
+		CurrentETag:      func(r *http.Request) (string, int64, error) { return h.currentETag(r) },
+		CursorCodec:      h.codec,
+		Pagination:       AdminPaginationConfig{},
+		Idempotency:      h.idempotency,
+		IdempotencyOn:    true,
+		Limiter:          h.limiter,
+		Throttle:         h.throttle,
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return h.now },
 	}
 }
 
@@ -830,6 +816,9 @@ func TestAdminV1ReportsAdapterReusesLegacyBranch(t *testing.T) {
 			continue
 		}
 		target := strings.ReplaceAll(op.Path, "{request_id}", "req-1")
+		if op.ID == "getAdminReportRequestEvidence" {
+			target += "?request_id=req-1"
+		}
 		recorder := harness.do(t, op.Method, target, nil, nil)
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("operation %s status = %d (%s)", op.ID, recorder.Code, recorder.Body.String())
@@ -923,9 +912,11 @@ func TestAdminV1KindIsNeverADecision(t *testing.T) {
 					writeJSON(w, http.StatusOK, map[string]any{"kind": principal.Kind})
 				},
 			},
-			ResolveDomain: func(Principal) string { return AdminGlobalDomain },
-			Limiter:       NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
-			Throttle:      NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+			ResolveDomain:    func(Principal) string { return AdminGlobalDomain },
+			Denials:          &recordingDenialSink{},
+			CredentialEvents: &recordingCredentialSink{},
+			Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+			Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -969,5 +960,487 @@ func TestAdminV1PrincipalFromIsTheOnlyIdentitySource(t *testing.T) {
 	}
 	if problem := decodeAdminProblem(t, recorder); problem.Code != "authentication_required" {
 		t.Fatalf("code = %q", problem.Code)
+	}
+}
+
+// TestAdminV1CursorWalkReturnsEachRowOnce proves a full cursor walk over a paginated
+// collection returns every row exactly once, and that limit=501 is rejected before
+// the handler runs (ACP-013/014).
+func TestAdminV1CursorWalkReturnsEachRowOnce(t *testing.T) {
+	harness := newAdminV1DBHarness(t)
+
+	// Seed more sets than one page holds, then walk with limit=5.
+	for i := 0; i < 12; i++ {
+		name := fmt.Sprintf("walk-set-%02d", i)
+		doc := strings.Replace(configAdminTestYAML, "server:", "server:\n  # "+name, 1)
+		if _, err := ImportCanonicalYAML(harness.db, "prod", name, []byte(doc), "test-seed"); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	seen := map[string]int{}
+	target := "/admin/v1/config/sets?limit=5&sort=created_at&direction=asc"
+	for page := 0; page < 20; page++ {
+		recorder := harness.do(t, http.MethodGet, target, nil, nil)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("page %d status = %d (%s)", page, recorder.Code, recorder.Body.String())
+		}
+		var body struct {
+			Sets []struct {
+				SetID string `json:"set_id"`
+			} `json:"sets"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if len(body.Sets) > 5 {
+			t.Fatalf("page %d returned %d rows, want at most 5", page, len(body.Sets))
+		}
+		if len(body.Sets) == 0 {
+			break
+		}
+		for _, set := range body.Sets {
+			seen[set.SetID]++
+		}
+		link := recorder.Header().Get("Link")
+		if link == "" {
+			break
+		}
+		start := strings.Index(link, "<")
+		end := strings.Index(link, ">")
+		if start < 0 || end <= start {
+			t.Fatalf("malformed Link header %q", link)
+		}
+		target = link[start+1 : end]
+	}
+	if len(seen) < 13 {
+		t.Fatalf("walk saw %d sets, want at least 13", len(seen))
+	}
+	for id, count := range seen {
+		if count != 1 {
+			t.Fatalf("set %s appeared %d times", id, count)
+		}
+	}
+
+	recorder := harness.do(t, http.MethodGet, "/admin/v1/config/sets?limit=501", nil, nil)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("limit=501 status = %d, want 400", recorder.Code)
+	}
+	if problem := decodeAdminProblem(t, recorder); problem.Code != "invalid-limit" {
+		t.Fatalf("code = %q", problem.Code)
+	}
+}
+
+// TestAdminV1MountRequiresAuditSinks proves a mutating surface refuses to mount
+// without the durable sinks, so an unauditable admin write cannot exist.
+func TestAdminV1MountRequiresAuditSinks(t *testing.T) {
+	registry, err := AdminV1DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := AdminV1Deps{
+		Registry:         registry,
+		Authenticate:     &fakeAuthenticator{principal: Principal{Subject: "adminkey:x", Kind: "adminkey"}},
+		Authorize:        func(context.Context, Principal, string, string, string) error { return nil },
+		Handlers:         addReportPlaceholderHandlers(registry, nil),
+		CredentialEvents: &recordingCredentialSink{},
+	}
+	if err := RegisterAdminV1(http.NewServeMux(), deps); err == nil {
+		t.Fatal("mount accepted a mutating surface without a denial sink")
+	}
+	deps.Denials = &recordingDenialSink{}
+	deps.CredentialEvents = nil
+	if err := RegisterAdminV1(http.NewServeMux(), deps); err == nil {
+		t.Fatal("mount accepted a surface without a credential event sink")
+	}
+}
+
+// TestAdminV1ThrottleSlowsFailedAttempts proves the authentication throttle is
+// consulted before the credential is validated, so repeated failures are actually
+// slowed down (and a success clears the state).
+func TestAdminV1ThrottleSlowsFailedAttempts(t *testing.T) {
+	harness := newAdminV1Harness(t)
+	harness.throttle = NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{
+		Enabled: boolPointer(true), Window: "5m", FreeAttempts: 1, BaseDelay: "1s", MaxDelay: "1s",
+	})
+	harness.authenticate.err = ErrInvalidCredential
+	harness.mount(t)
+
+	// The first failure is free; the second arms the cooldown; the third is refused.
+	for attempt := 1; attempt <= 2; attempt++ {
+		recorder := harness.do(t, http.MethodGet, "/admin/v1/config/status", nil, map[string]string{"Authorization": "Bearer rtr_admin_abc_secret"})
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401", attempt, recorder.Code)
+		}
+	}
+	throttled := harness.do(t, http.MethodGet, "/admin/v1/config/status", nil, map[string]string{"Authorization": "Bearer rtr_admin_abc_secret"})
+	if throttled.Code != http.StatusTooManyRequests {
+		t.Fatalf("third attempt status = %d, want 429 (throttled)", throttled.Code)
+	}
+	if throttled.Header().Get("Retry-After") == "" {
+		t.Fatal("throttled response without Retry-After")
+	}
+	if problem := decodeAdminProblem(t, throttled); problem.Code != "authentication-throttled" {
+		t.Fatalf("code = %q", problem.Code)
+	}
+
+	// A validated success clears the cooldown.
+	harness.authenticate.err = nil
+	// The mount calls this with the claimed credential and the source address on the
+	// first successful validation.
+	harness.throttle.RecordSuccess("adminkey:abc", "192.0.2.1")
+	after := harness.do(t, http.MethodGet, "/admin/v1/config/status", nil, map[string]string{"Authorization": "Bearer rtr_admin_abc_secret"})
+	if after.Code == http.StatusTooManyRequests {
+		t.Fatalf("a cleared throttle still refused the request: %d", after.Code)
+	}
+}
+
+// TestAdminV1LegacyErrorRewrittenAsProblem proves a handler's legacy error envelope
+// is rendered as a problem document on the v1 surface.
+func TestAdminV1LegacyErrorRewrittenAsProblem(t *testing.T) {
+	harness := newAdminV1Harness(t)
+	registry, err := NewAdminV1Registry([]Operation{{
+		ID: "legacyErrorFixture", Method: "GET", Path: "/admin/v1/tests/legacy-error",
+		Object: authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
+		RateClass: AdminRateClassRead, HandlerKey: "test.legacy_error", Errors: []int{409},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness.registry = registry
+	harness.mountWithDeps(t, map[string]http.HandlerFunc{
+		"test.legacy_error": func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{"type": "config-no-active-set", "message": "no active set"}})
+		},
+	}, nil)
+	recorder := harness.do(t, http.MethodGet, "/admin/v1/tests/legacy-error", nil, nil)
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "application/problem+json" {
+		t.Fatalf("content type = %q, want application/problem+json", got)
+	}
+	problem := decodeAdminProblem(t, recorder)
+	if problem.Code != "config-no-active-set" || problem.Status != http.StatusConflict {
+		t.Fatalf("problem = %+v", problem)
+	}
+	if !strings.Contains(problem.Detail, "no active set") {
+		t.Fatalf("detail = %q", problem.Detail)
+	}
+}
+
+// TestAdminV1SensitiveResponseNotRecorded proves a credential-bearing response is
+// never stored for replay: a retry answers "in doubt" rather than returning the token
+// a second time.
+func TestAdminV1SensitiveResponseNotRecorded(t *testing.T) {
+	harness := newAdminV1Harness(t)
+	harness.mountWithDeps(t, map[string]http.HandlerFunc{
+		"callers.issue": func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusCreated, map[string]any{"token": "rtr_metrum_once_only"})
+		},
+		"callers.rotate": func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]any{"token": "rtr_metrum_once_only"})
+		},
+	}, nil)
+	headers := map[string]string{"Idempotency-Key": "issue-key", "If-Match": `"rev-7"`}
+	first := harness.do(t, http.MethodPost, "/admin/v1/callers/issue", map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{}}, headers)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first status = %d (%s)", first.Code, first.Body.String())
+	}
+	second := harness.do(t, http.MethodPost, "/admin/v1/callers/issue", map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{}}, headers)
+	if strings.Contains(second.Body.String(), "rtr_metrum_once_only") {
+		t.Fatalf("the credential was replayed: %s", second.Body.String())
+	}
+	if second.Code != http.StatusConflict {
+		t.Fatalf("replay status = %d, want 409 in-doubt", second.Code)
+	}
+}
+
+// recordingDenialSink and recordingCredentialSink are in-memory sinks: the mount
+// requires durable sinks for a mutating surface, and the audit persistence itself is
+// metrum-ai/router#816.
+type recordingDenialSink struct {
+	mu     sync.Mutex
+	events []AdminDenialRecord
+	fail   bool
+}
+
+func (s *recordingDenialSink) RecordDenial(_ context.Context, record AdminDenialRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail {
+		return errors.New("denial sink unavailable")
+	}
+	s.events = append(s.events, record)
+	return nil
+}
+
+func (s *recordingDenialSink) snapshot() []AdminDenialRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]AdminDenialRecord, len(s.events))
+	copy(out, s.events)
+	return out
+}
+
+type recordingCredentialSink struct {
+	mu     sync.Mutex
+	events []AdminCredentialEvent
+	fail   bool
+}
+
+func (s *recordingCredentialSink) RecordCredentialEvent(_ context.Context, event AdminCredentialEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail {
+		return errors.New("credential event sink unavailable")
+	}
+	s.events = append(s.events, event)
+	return nil
+}
+
+func (s *recordingCredentialSink) snapshot() []AdminCredentialEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]AdminCredentialEvent, len(s.events))
+	copy(out, s.events)
+	return out
+}
+
+// switchableAuthenticator is a test authenticator whose error can be changed.
+type switchableAuthenticator struct {
+	principal Principal
+	err       error
+}
+
+func (a *switchableAuthenticator) Authenticate(context.Context, *http.Request) (Principal, error) {
+	if a.err != nil {
+		return Principal{}, a.err
+	}
+	return a.principal, nil
+}
+
+// adminV1DBHarness mounts the /admin/v1 config operations over a real control-plane
+// database with test-only authentication and authorization seams.
+type adminV1DBHarness struct {
+	db        *gorm.DB
+	mux       *http.ServeMux
+	authorize *fakeAuthorizer
+}
+
+func newAdminV1DBHarness(t *testing.T) *adminV1DBHarness {
+	t.Helper()
+	return newAdminV1DBHarnessWith(t, nil)
+}
+
+// newAdminV1DBHarnessWith mounts the DB harness with extra handler bindings.
+func newAdminV1DBHarnessWith(t *testing.T, extraHandlers map[string]http.HandlerFunc) *adminV1DBHarness {
+	t.Helper()
+	db := configAdminTestDB(t)
+	harness := &adminV1DBHarness{db: db, mux: http.NewServeMux(), authorize: &fakeAuthorizer{deny: map[string]bool{}}}
+	registry, err := AdminV1DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	principalOf := func(r *http.Request) (Principal, string, bool) {
+		principal, ok := PrincipalFrom(r.Context())
+		if !ok {
+			return Principal{}, "", false
+		}
+		return principal, AdminGlobalDomain, true
+	}
+	authorize := func(principal Principal, domain, object, action string) bool {
+		return harness.authorize.Authorize(context.Background(), principal, domain, object, action) == nil
+	}
+	configDeps := AdminV1ConfigAdminDeps(ConfigAdminDeps{
+		DB: db, RuntimeScope: "prod", Driver: "sqlite", InstanceID: "replica-test",
+		CurrentConfig:  func() *Config { return nil },
+		LoadedRevision: func() (int64, string, time.Time) { return 1, "set-1", time.Now().UTC() },
+	}, principalOf, authorize)
+	extra := addReportPlaceholderHandlers(registry, map[string]http.HandlerFunc{
+		"training.export":         func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"training.outcomes.label": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"content.captures.delete": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"content.captures.purge":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"test.count":              adminV1TestCountHandler,
+		"test.race":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+	})
+	for key, handler := range extraHandlers {
+		extra[key] = handler
+	}
+	handlers := AdminV1Handlers(
+		configDeps,
+		AdminV1CallerAdminDeps(CallerAdminDeps{DB: db, RuntimeScope: "prod"}, principalOf, authorize),
+		extra,
+	)
+	err = RegisterAdminV1(harness.mux, AdminV1Deps{
+		Registry:     registry,
+		Authenticate: headerPrincipalAuthenticator{},
+		Authorize: func(ctx context.Context, principal Principal, domain, object, action string) error {
+			return harness.authorize.Authorize(ctx, principal, domain, object, action)
+		},
+		Handlers: handlers,
+		ResolveDomain: func(Principal) string {
+			return AdminGlobalDomain
+		},
+		ResolveCallerDomain: func(r *http.Request) (string, error) {
+			return AdminV1CallerResourceDomain(db, "prod", r)
+		},
+		CurrentETag: func(r *http.Request) (string, int64, error) {
+			revision, err := currentRevisionForScope(db, "prod")
+			return AdminETagForRevision(revision), revision, err
+		},
+		CursorCodec:      NewAdminCursorCodec([]byte("mount-harness-cursor-key-000001")),
+		Idempotency:      newAdminV1DBHarnessIdempotency(t, db),
+		IdempotencyOn:    true,
+		Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+		Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return time.Now().UTC() },
+	})
+	if err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	return harness
+}
+
+// newAdminV1DBHarnessIdempotency returns a store backed by the harness database so a
+// test can inspect the persisted row.
+func newAdminV1DBHarnessIdempotency(t *testing.T, db *gorm.DB) AdminIdempotencyKeyStore {
+	t.Helper()
+	store, err := NewSQLAdminIdempotencyStore(db, AdminIdempotencyConfig{})
+	if err != nil {
+		t.Fatalf("idempotency store: %v", err)
+	}
+	return store
+}
+
+// headerPrincipalAuthenticator is a test authentication seam that reads a header.
+type headerPrincipalAuthenticator struct{}
+
+func (headerPrincipalAuthenticator) Authenticate(_ context.Context, r *http.Request) (Principal, error) {
+	subject := strings.TrimSpace(r.Header.Get("X-Test-Principal"))
+	if subject == "" {
+		return Principal{}, ErrNoCredential
+	}
+	return Principal{Subject: subject, Kind: "adminkey", CredentialID: "cred-mount", Issuer: "test-issuer"}, nil
+}
+
+func (h *adminV1DBHarness) do(t *testing.T, method, target string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader *strings.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader = strings.NewReader(string(raw))
+	} else {
+		reader = strings.NewReader("")
+	}
+	request := httptest.NewRequest(method, target, reader)
+	request.Header.Set("X-Test-Principal", "adminkey:mount")
+	for name, value := range headers {
+		request.Header.Set(name, value)
+	}
+	recorder := httptest.NewRecorder()
+	h.mux.ServeHTTP(recorder, request)
+	return recorder
+}
+
+// TestAdminV1ReportsDecideThroughAuthorize proves the reports operations decide through
+// the single Authorize seam with the request context and the principal, not through the
+// legacy credential helper: the contract layer takes no gate itself, and the handler's
+// per-domain decisions are the Authorize calls that carry the principal.
+func TestAdminV1ReportsDecideThroughAuthorize(t *testing.T) {
+	registry, err := AdminV1DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := &fakeAuthorizer{deny: map[string]bool{}}
+	var sawPrincipal bool
+	reports := func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFrom(r.Context())
+		sawPrincipal = ok && principal.Subject == "adminkey:test"
+		// The handler takes its decisions through the same seam.
+		domain := AdminGlobalDomain
+		if err := authorizer.Authorize(r.Context(), principal, domain, authzObjectAdminReports, authzActionRead); err != nil {
+			writeAdminProblemCode(w, r, http.StatusForbidden, "admin-forbidden", "")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	}
+	extra := map[string]http.HandlerFunc{}
+	for key, handler := range AdminV1ReportsHandlers(registry, reports) {
+		extra[key] = handler
+	}
+	harness := newAdminV1Harness(t)
+	harness.registry = registry
+	harness.mountWithExtra(t, extra)
+	harness.authorize.reset()
+
+	recorder := harness.do(t, http.MethodGet, "/admin/v1/reports/summary", nil, nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", recorder.Code, recorder.Body.String())
+	}
+	if !sawPrincipal {
+		t.Fatal("the reports handler did not see the published principal")
+	}
+	if calls := harness.authorize.snapshot(); len(calls) != 0 {
+		t.Fatalf("the contract layer took %d decisions for a reports operation, want 0: %+v", len(calls), calls)
+	}
+	handlerCalls := authorizer.snapshot()
+	if len(handlerCalls) != 1 {
+		t.Fatalf("the reports handler took %d decisions, want 1: %+v", len(handlerCalls), handlerCalls)
+	}
+	if handlerCalls[0].Principal.Subject != "adminkey:test" || handlerCalls[0].Object != authzObjectAdminReports {
+		t.Fatalf("handler decision = %+v", handlerCalls[0])
+	}
+}
+
+// TestAdminV1SensitiveResponseNeverStored proves the mount never persists a
+// credential-bearing response: the idempotency row holds metadata only, and a retry
+// answers "in doubt" (the one-time secret is unavailable) instead of replaying the token.
+func TestAdminV1SensitiveResponseNeverStored(t *testing.T) {
+	token := "rtr_" + "metrum_" + "9a8b7c6d5e4f3a2b1c0d"
+	harness := newAdminV1DBHarnessWith(t, map[string]http.HandlerFunc{
+		"callers.issue": func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusCreated, map[string]any{"token": token})
+		},
+	})
+	headers := map[string]string{
+		"Idempotency-Key": "issue-once",
+		"If-Match":        AdminETagForRevision(1),
+	}
+	first := harness.do(t, http.MethodPost, "/admin/v1/callers/issue", map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{}}, headers)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first status = %d (%s)", first.Code, first.Body.String())
+	}
+	if !strings.Contains(first.Body.String(), token) {
+		t.Fatalf("the first response did not carry the credential: %s", first.Body.String())
+	}
+	var stored []struct {
+		Body  string `gorm:"column:response_body"`
+		State string `gorm:"column:state"`
+	}
+	if err := harness.db.Table(adminIdempotencyTable).Find(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("stored %d idempotency rows, want 1", len(stored))
+	}
+	if strings.Contains(stored[0].Body, token) || stored[0].Body != "" {
+		t.Fatalf("the credential reached the store: %q", stored[0].Body)
+	}
+	if stored[0].State != "completed_unrecorded" {
+		t.Fatalf("state = %q, want completed_unrecorded", stored[0].State)
+	}
+	second := harness.do(t, http.MethodPost, "/admin/v1/callers/issue", map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{}}, headers)
+	if strings.Contains(second.Body.String(), token) {
+		t.Fatalf("the credential was replayed: %s", second.Body.String())
+	}
+	if second.Code != http.StatusConflict {
+		t.Fatalf("retry status = %d, want 409 in-doubt (%s)", second.Code, second.Body.String())
 	}
 }

@@ -62,25 +62,15 @@ func (s *Service) trainingAdmin(w http.ResponseWriter, r *http.Request, action s
 			return 0, false
 		}
 	}
-	subject := adminAuthSubject{}
-	if principal, machine := PrincipalFrom(r.Context()); machine {
-		// On /admin/v1 the contract layer authenticated the machine principal and
-		// took the content:training/<action> decision in the whole-plane domain.
-		// The durable security event below stays mandatory: a privileged export
-		// still fails closed unless its audit record commits first.
-		subject = adminAuthSubject{subject: principal.Subject, domain: "*", source: principal.Kind, principal: &principal}
-	} else {
-		authenticated, ok := s.authenticateAdminSubject(w, r)
-		if !ok {
-			s.recordAdminSecurityAccess(r, adminAuthSubject{}, 401, "unauthorized", trainingObject, action)
-			return 0, false
-		}
-		if !s.authorizeGlobalAdmin(authenticated, trainingObject, action) {
-			s.recordAdminSecurityAccess(r, authenticated, 403, "training-forbidden", trainingObject, action)
-			writeJSON(w, 403, map[string]string{"error": "training-forbidden"})
-			return 0, false
-		}
-		subject = authenticated
+	subject, ok := s.authenticateAdminSubject(w, r)
+	if !ok {
+		s.recordAdminSecurityAccess(r, adminAuthSubject{}, 401, "unauthorized", trainingObject, action)
+		return 0, false
+	}
+	if !s.authorizeGlobalAdmin(subject, trainingObject, action) {
+		s.recordAdminSecurityAccess(r, subject, 403, "training-forbidden", trainingObject, action)
+		writeJSON(w, 403, map[string]string{"error": "training-forbidden"})
+		return 0, false
 	}
 	if !s.securityReportsEnabled() {
 		writeJSON(w, 503, map[string]string{"error": "security-audit-required"})

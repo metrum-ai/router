@@ -702,7 +702,7 @@
         ],
         "x-admin-action": "list",
         "x-admin-concurrency": "",
-        "x-admin-domain": "global",
+        "x-admin-domain": "caller-target",
         "x-admin-idempotency": "",
         "x-admin-object": "admin:callers"
       }
@@ -3813,6 +3813,15 @@
       "get": {
         "operationId": "getAdminReportRequestEvidence",
         "parameters": [
+          {
+            "description": "request identifier",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
             "in": "header",

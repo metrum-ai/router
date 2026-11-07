@@ -4,6 +4,7 @@
 package router
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"embed"
@@ -904,6 +905,81 @@ type adminScalarEndpointSpec struct {
 	Diagnostic   string
 }
 
+// reportsAdminSubject resolves the reports identity. On /admin/v1 the machine principal
+// the contract layer authenticated is used as-is: no legacy credential check runs on
+// that surface. On the serving port the current browser/Basic/OIDC path is unchanged.
+func (s *Service) reportsAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
+	if principal, ok := PrincipalFrom(r.Context()); ok {
+		domain := AdminGlobalDomain
+		if s != nil && s.cfg != nil {
+			domain = s.adminCredentialDomain(principal)
+		}
+		return adminAuthSubject{
+			subject: principal.Subject, domain: domain, source: principal.Kind,
+			principal: &principal, ctx: r.Context(),
+		}, true
+	}
+	return s.authenticateAdminSubject(w, r)
+}
+
+// reportsAuthorize takes a reports decision. On /admin/v1 it is the single Authorizer,
+// carrying the request context so its typed errors (policy-stale,
+// authorization-unavailable, admin-forbidden) reach the client; on the serving port the
+// existing casbin decision is unchanged. The global variant asks for the whole-plane
+// domain, which is what the existing global reports check did.
+func (s *Service) reportsAuthorize(r *http.Request, subject adminAuthSubject, object, action string, global bool) (status int, code string, denied bool) {
+	if subject.principal == nil {
+		if global {
+			return http.StatusForbidden, "reports-forbidden", !s.authorizeGlobalAdmin(subject, object, action)
+		}
+		return http.StatusForbidden, "reports-forbidden", !s.authorizeAdmin(subject, object, action)
+	}
+	domain := subject.domain
+	if global {
+		domain = AdminGlobalDomain
+	}
+	err := s.adminAuthorizePrincipal(r.Context(), *subject.principal, domain, object, action)
+	if err == nil {
+		return 0, "", false
+	}
+	status, code = adminAuthorizationProblem(err)
+	return status, code, true
+}
+
+// adminAuthorizePrincipal is the context-carrying authorization seam the admin listener
+// installs. It fails closed when no seam is installed.
+func (s *Service) adminAuthorizePrincipal(ctx context.Context, principal Principal, domain, object, action string) error {
+	if s == nil || s.adminAuthorizeFn == nil {
+		return errAdminAuthorizationUnavailable
+	}
+	return s.adminAuthorizeFn(ctx, principal, domain, object, action)
+}
+
+// errAdminAuthorizationUnavailable is returned when no authorization seam is installed;
+// callers map it to 503 authorization-unavailable.
+var errAdminAuthorizationUnavailable = adminProblemError{status: http.StatusServiceUnavailable, code: "authorization-unavailable"}
+
+// adminProblemError is a typed decision error that carries its problem code.
+type adminProblemError struct {
+	status int
+	code   string
+}
+
+func (e adminProblemError) Error() string { return e.code }
+
+// AdminProblemCode reports the status and problem code for the shared renderer.
+func (e adminProblemError) AdminProblemCode() (int, string) { return e.status, e.code }
+
+// writeAdminSurfaceError renders an error on the admin surface: a problem document on
+// /admin/v1 and the existing envelope on the serving port.
+func writeAdminSurfaceError(w http.ResponseWriter, r *http.Request, status int, code, legacyType string) {
+	if _, ok := PrincipalFrom(r.Context()); ok {
+		writeAdminProblemCode(w, r, status, code, "")
+		return
+	}
+	writeJSON(w, status, map[string]any{"error": map[string]any{"type": legacyType, "message": legacyType}})
+}
+
 func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Server.AdminReports.Enabled {
 		http.NotFound(w, r)
@@ -919,7 +995,7 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	}
 	relPath := strings.TrimPrefix(r.URL.Path, prefix)
 	securityReport := strings.HasPrefix(relPath, "/api/security/") || strings.HasPrefix(relPath, "/security/")
-	subject, ok := s.authenticateAdminSubject(w, r)
+	subject, ok := s.reportsAdminSubject(w, r)
 	if !ok {
 		s.recordAdminSecurityAccess(r, adminAuthSubject{}, http.StatusUnauthorized, "unauthorized", authzObjectAdminReports, authzActionRead)
 		return
@@ -935,12 +1011,13 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	if securityReport {
 		object = authzObjectSecurityReports
 	}
-	if !s.authorizeAdmin(subject, object, action) {
-		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "reports-forbidden", object, action)
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "reports-forbidden", "message": "reports-forbidden"}})
+	if status, code, denied := s.reportsAuthorize(r, subject, object, action, false); denied {
+		s.recordAdminSecurityAccess(r, subject, status, code, object, action)
+		writeAdminSurfaceError(w, r, status, code, "reports-forbidden")
 		return
 	}
-	globalReports := s.authorizeGlobalAdmin(subject, object, action)
+	_, _, deniedGlobal := s.reportsAuthorize(r, subject, object, action, true)
+	globalReports := !deniedGlobal
 	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
 	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, prefix+"/static/"))
 	scalarSpec, scalarOK := adminScalarEndpointSpecs(strings.TrimPrefix(r.URL.Path, prefix))

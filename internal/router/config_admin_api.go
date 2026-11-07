@@ -59,17 +59,16 @@ type ConfigAdminDeps struct {
 	Now                     func() time.Time
 }
 
-// RegisterConfigAdminAPI registers every /admin/config/* route on the serving
-// port (the legacy surface, unchanged).
+// RegisterConfigAdminAPI registers every /admin/config/* route on the serving port
+// (the legacy surface, unchanged).
 func RegisterConfigAdminAPI(mux *http.ServeMux, deps ConfigAdminDeps) {
 	newConfigAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
 		mux.HandleFunc(pattern, handler)
 	}, "/admin")
 }
 
-// newConfigAdminHandler builds the handler object without registering it, so the
-// same handler serves both the legacy surface and /admin/v1 (see
-// admin_v1_handlers.go). No handler body differs between the two mounts.
+// newConfigAdminHandler builds the handler object without registering it, so the same
+// handler serves the legacy surface and /admin/v1.
 func newConfigAdminHandler(deps ConfigAdminDeps) *configAdminHandler {
 	return &configAdminHandler{deps: deps}
 }
@@ -99,39 +98,33 @@ func (h *configAdminHandler) handlerKeys() map[string]http.HandlerFunc {
 	}
 }
 
-// register installs the legacy patterns under prefix. Callers use "/admin" (the
-// serving port) or "/admin/v1" (the versioned contract), and the wildcard names
-// are identical in both cases so r.PathValue keeps working untouched.
+// register installs the legacy patterns under prefix with the legacy wildcard names, so
+// r.PathValue keeps working on both surfaces.
 func (h *configAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
-	for pattern, handler := range h.prefixedPatterns(prefix) {
-		handle(pattern, handler)
-	}
-}
-
-func (h *configAdminHandler) prefixedPatterns(prefix string) map[string]http.HandlerFunc {
 	keys := h.handlerKeys()
-	patterns := map[string]http.HandlerFunc{
-		"GET " + prefix + "/config/groups":                                   keys["config.groups.list"],
-		"GET " + prefix + "/config/groups/{group}":                           keys["config.group.get"],
-		"PUT " + prefix + "/config/groups/{group}/targets":                   keys["config.group.targets.replace"],
-		"POST " + prefix + "/config/groups/{group}/targets":                  keys["config.group.targets.add"],
-		"DELETE " + prefix + "/config/groups/{group}/targets/{target_id...}": keys["config.group.targets.remove"],
-		"POST " + prefix + "/config/groups/{group}/targets:validate":         keys["config.group.targets.validate"],
-		"POST " + prefix + "/config/groups/{group}/rollback":                 keys["config.group.rollback"],
-		"GET " + prefix + "/config/groups/{group}/history":                   keys["config.group.history"],
-		"POST " + prefix + "/config/groups/{group}/shadow":                   keys["config.group.shadow.start"],
-		"GET " + prefix + "/config/groups/{group}/shadow":                    keys["config.group.shadow.status"],
-		"POST " + prefix + "/config/groups/{group}/shadow/promote":           keys["config.group.shadow.promote"],
-		"DELETE " + prefix + "/config/groups/{group}/shadow":                 keys["config.group.shadow.stop"],
-		"GET " + prefix + "/config/status":                                   keys["config.status"],
-		"POST " + prefix + "/config/sets":                                    keys["config.sets.import"],
-		"GET " + prefix + "/config/sets":                                     keys["config.sets.list"],
-		"GET " + prefix + "/config/sets/{set_id}":                            keys["config.sets.get"],
-		"POST " + prefix + "/config/sets/{set_id}/activate":                  keys["config.sets.activate"],
-		"POST " + prefix + "/config/rollback":                                keys["config.sets.rollback"],
-		"GET " + prefix + "/config/diff":                                     keys["config.diff"],
+	for pattern, key := range map[string]string{
+		"GET " + prefix + "/config/groups":                                   "config.groups.list",
+		"GET " + prefix + "/config/groups/{group}":                           "config.group.get",
+		"PUT " + prefix + "/config/groups/{group}/targets":                   "config.group.targets.replace",
+		"POST " + prefix + "/config/groups/{group}/targets":                  "config.group.targets.add",
+		"DELETE " + prefix + "/config/groups/{group}/targets/{target_id...}": "config.group.targets.remove",
+		"POST " + prefix + "/config/groups/{group}/targets:validate":         "config.group.targets.validate",
+		"POST " + prefix + "/config/groups/{group}/rollback":                 "config.group.rollback",
+		"GET " + prefix + "/config/groups/{group}/history":                   "config.group.history",
+		"POST " + prefix + "/config/groups/{group}/shadow":                   "config.group.shadow.start",
+		"GET " + prefix + "/config/groups/{group}/shadow":                    "config.group.shadow.status",
+		"POST " + prefix + "/config/groups/{group}/shadow/promote":           "config.group.shadow.promote",
+		"DELETE " + prefix + "/config/groups/{group}/shadow":                 "config.group.shadow.stop",
+		"GET " + prefix + "/config/status":                                   "config.status",
+		"POST " + prefix + "/config/sets":                                    "config.sets.import",
+		"GET " + prefix + "/config/sets":                                     "config.sets.list",
+		"GET " + prefix + "/config/sets/{set_id}":                            "config.sets.get",
+		"POST " + prefix + "/config/sets/{set_id}/activate":                  "config.sets.activate",
+		"POST " + prefix + "/config/rollback":                                "config.sets.rollback",
+		"GET " + prefix + "/config/diff":                                     "config.diff",
+	} {
+		handle(pattern, keys[key])
 	}
-	return patterns
 }
 
 type configAdminHandler struct {
@@ -889,12 +882,39 @@ func (h *configAdminHandler) handleListSets(w http.ResponseWriter, r *http.Reque
 		CreatedAt        string `gorm:"column:created_at"`
 		ActivatedAt      string `gorm:"column:activated_at"`
 	}
-	if err := h.deps.DB.Table("router_config_sets").
+	// Pagination: without a page this keeps today's behaviour (newest 200); with one it
+	// applies the limit and a stable keyset on (created_at, id), so a full cursor walk
+	// returns each set exactly once.
+	page, paginated := AdminPageFrom(r.Context())
+	limit := 200
+	order := "created_at DESC, id DESC"
+	if paginated {
+		limit = page.LimitOr(200)
+		order = "created_at ASC, id ASC"
+		if page.Descending() {
+			order = "created_at DESC, id DESC"
+		}
+	}
+	query := h.deps.DB.Table("router_config_sets").
 		Select("id", "name", "status", "validation_status", "created_by", "created_at", "activated_at").
-		Where("runtime_scope = ?", h.deps.RuntimeScope).
-		Order("created_at DESC").Limit(200).Find(&rows).Error; err != nil {
+		Where("runtime_scope = ?", h.deps.RuntimeScope)
+	if paginated {
+		if values := page.CursorValues(); len(values) == 2 {
+			if page.Descending() {
+				query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", values[0], values[0], values[1])
+			} else {
+				query = query.Where("(created_at > ? OR (created_at = ? AND id > ?))", values[0], values[0], values[1])
+			}
+		}
+	}
+	if err := query.Order(order).Limit(limit + 1).Find(&rows).Error; err != nil {
 		writeConfigAdminError(w, http.StatusInternalServerError, "config-read-failed", "the configuration sets could not be read")
 		return
+	}
+	if paginated && len(rows) > limit {
+		rows = rows[:limit]
+		last := rows[len(rows)-1]
+		page.PublishNext(last.CreatedAt, last.ID)
 	}
 	sets := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
