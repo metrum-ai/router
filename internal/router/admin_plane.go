@@ -17,11 +17,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/metrum-ai/router/internal/tlsacme"
 )
 
-// AdminMux is the route registry for the admin listener (ACP-001). Other lanes
+// AdminMux is the route registry for the admin listener (ACP-001). Other components
 // mount their routes here: #811 mounts the /admin/v1 router, #814 installs its
-// authenticator chain with Use and #816 installs audit the same way, so no lane
+// authenticator chain with Use and #816 installs audit the same way, so no component
 // has to touch the server lifecycle.
 //
 // Patterns are Go 1.22 mux patterns ("GET /admin/v1/clients"), so method and
@@ -92,7 +94,7 @@ func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) ht
 // state only (ACP-006); every other admin route requires an identity.
 //
 // No installed chain means no authenticated identity, so every non-probe route
-// fails closed with 401. A route mounted by another lane can therefore never be
+// fails closed with 401. A route mounted by another component can therefore never be
 // reachable without authentication.
 func adminAuthentication(authenticate Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -391,7 +393,7 @@ func adminMachineOnlyGate(next http.Handler) http.Handler {
 }
 
 // AdminCertificateManager is the router-native certificate seam #810 supplies to
-// the listener. The TLS lane adapts its ACME manager to it (the adapter struct
+// the listener. The automated-TLS work (#810) adapts its ACME manager to it (the adapter struct
 // is named AdminCertificateSource there). The listener asks the manager whether
 // it serves the SNI and then fetches the certificate, all inside its single
 // handshake hook, before applying the #814 client-CA snapshot.
@@ -525,6 +527,20 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler) (*AdminPlane, er
 			return nil, err
 		}
 		p.tlsCfg = tlsCfg
+		if strings.EqualFold(strings.TrimSpace(local.TLS.CertificateSource), adminCertificateSourceACME) {
+			// #810 owns issuance and renewal; the listener consumes the manager
+			// through its single handshake hook.
+			manager, err := NewListenerTLSManager(local.TLS.ListenerTLSConfig, tlsacme.ListenerAdmin, "admin.tls")
+			if err != nil {
+				return nil, err
+			}
+			if manager == nil {
+				return nil, fmt.Errorf("admin.tls.certificate_source acme requires an ACME manager")
+			}
+			if err := p.SetCertificateSource(AdminTLSProvider{Manager: manager}); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
 		loopback, err := adminListenIsLoopback(local.Listen)
@@ -562,8 +578,8 @@ func (p *AdminPlane) SetCertificateSource(src AdminCertificateManager) error {
 	if p == nil || src == nil {
 		return fmt.Errorf("admin certificate source is required")
 	}
-	if p.tlsCfg == nil || !strings.EqualFold(strings.TrimSpace(p.cfg.TLS.CertificateSource), adminCertificateSourceACME) {
-		return fmt.Errorf("an admin certificate source requires admin.tls.mode router with certificate_source acme")
+	if p.tlsCfg == nil || !strings.EqualFold(strings.TrimSpace(p.cfg.TLS.Mode), adminTLSModeRouter) {
+		return fmt.Errorf("an admin certificate source requires admin.tls.mode router")
 	}
 	p.certMu.Lock()
 	p.certSrc = src
@@ -804,7 +820,7 @@ func (s *Service) initAdminPlane() {
 	// Nothing else is registered here yet: /admin/v1 mounts through
 	// RegisterAdminRoutes (#811) and /metrics lands with its slice. The
 	// catch-all keeps every other path a problem+json 404 so the plane never
-	// serves HTML or another lane's routes (ACP-N06).
+	// serves HTML or another component's routes (ACP-N06).
 	s.adminMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeAdminPlaneProblem(w, r, http.StatusNotFound, "admin-not-found")
 	})
@@ -829,7 +845,7 @@ func (s *Service) AdminHandler() http.Handler {
 }
 
 // RegisterAdminRoutes mounts routes on the admin listener. It is the hook
-// #811/#813/#815 register through and the only supported way for another lane
+// #811/#813/#815 register through and the only supported way for another component
 // to add an admin-port route.
 func (s *Service) RegisterAdminRoutes(register func(*AdminMux)) {
 	if s == nil || register == nil || !s.adminPlaneEnabled() || s.adminMux == nil {

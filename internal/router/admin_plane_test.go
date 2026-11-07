@@ -409,7 +409,9 @@ func TestAdminPlaintextNonLoopbackRefusedAtStartup(t *testing.T) {
 	// The same policy holds for a direct plane construction, so a caller that
 	// bypasses config loading still cannot open the plane.
 	enabled := true
-	direct := AdminPlaneConfig{Enabled: true, Listen: "0.0.0.0:0", LegacyRoutesOnServingPort: &enabled, TLS: AdminTLSConfig{Mode: adminTLSModeOff}}
+	direct := AdminPlaneConfig{Enabled: true, Listen: "0.0.0.0:0", LegacyRoutesOnServingPort: &enabled, TLS: AdminTLSConfig{
+		ListenerTLSConfig: ListenerTLSConfig{Mode: adminTLSModeOff},
+	}}
 	if _, err := NewAdminPlane(&direct, http.NotFoundHandler()); err == nil {
 		t.Fatal("NewAdminPlane() accepted a non-loopback plaintext listener")
 	}
@@ -501,12 +503,15 @@ func TestAdminMTLSHandshake(t *testing.T) {
 		cfg.Admin.Enabled = true
 		cfg.Admin.Listen = "127.0.0.1:0"
 		cfg.Admin.TLS = AdminTLSConfig{
-			Mode:         adminTLSModeRouter,
-			CertFile:     serverCertPath,
-			KeyFile:      serverKeyPath,
+			ListenerTLSConfig: ListenerTLSConfig{
+				Mode:       adminTLSModeRouter,
+				CertFile:   serverCertPath,
+				KeyFile:    serverKeyPath,
+				MinVersion: adminTLSMinVersion12,
+			},
+
 			ClientCAFile: clientCAPath,
 			ClientAuth:   clientAuth,
-			MinVersion:   adminTLSMinVersion12,
 		}
 		svc, err := New(cfg)
 		if err != nil {
@@ -601,12 +606,15 @@ func TestAdminMTLSHandshake(t *testing.T) {
 		cfg.Admin.Enabled = true
 		cfg.Admin.Listen = "127.0.0.1:0"
 		cfg.Admin.TLS = AdminTLSConfig{
-			Mode:         adminTLSModeRouter,
-			CertFile:     serverCertPath,
-			KeyFile:      serverKeyPath,
+			ListenerTLSConfig: ListenerTLSConfig{
+				Mode:       adminTLSModeRouter,
+				CertFile:   serverCertPath,
+				KeyFile:    serverKeyPath,
+				MinVersion: adminTLSMinVersion12,
+			},
+
 			ClientCAFile: clientCAPath,
 			ClientAuth:   adminClientAuthRequire,
-			MinVersion:   adminTLSMinVersion12,
 		}
 		svc, err := New(cfg)
 		if err != nil {
@@ -856,18 +864,22 @@ func TestAdminCertificateSourceWithMTLS(t *testing.T) {
 	}
 	dir := t.TempDir()
 	clientCAPath := writeTestPEM(t, dir, "client-ca.crt", clientCA.certPEM)
-	// The config carries certificate_source: acme with an acme block; the
-	// listener has no static certificate and no files.
+	// Router TLS with static files in the config; the #810 certificate manager
+	// replaces the served certificate through the handshake seam.
+	serverCertPath := writeTestPEM(t, dir, "server.crt", serverCertPEM)
+	serverKeyPath := writeTestKey(t, dir, "server.key", serverKeyPEM)
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Admin.Enabled = true
 	cfg.Admin.Listen = "127.0.0.1:0"
 	cfg.Admin.TLS = AdminTLSConfig{
-		Mode:              adminTLSModeRouter,
-		CertificateSource: adminCertificateSourceACME,
-		ACME:              map[string]any{"directory": "https://acme.test/directory"},
-		MinVersion:        adminTLSMinVersion12,
-		ClientCAFile:      clientCAPath,
-		ClientAuth:        adminClientAuthRequire,
+		ListenerTLSConfig: ListenerTLSConfig{
+			Mode:       adminTLSModeRouter,
+			CertFile:   serverCertPath,
+			KeyFile:    serverKeyPath,
+			MinVersion: adminTLSMinVersion12,
+		},
+		ClientCAFile: clientCAPath,
+		ClientAuth:   adminClientAuthRequire,
 	}
 	svc, err := New(cfg)
 	if err != nil {
@@ -882,10 +894,6 @@ func TestAdminCertificateSourceWithMTLS(t *testing.T) {
 	plane, err := NewAdminPlane(&cfg.Admin, handler)
 	if err != nil {
 		t.Fatalf("NewAdminPlane: %v", err)
-	}
-	// Starting without the manager fails closed.
-	if err := plane.Start(); err == nil || !strings.Contains(err.Error(), "certificate source") {
-		t.Fatalf("Start() without a certificate source = %v, want a refusal", err)
 	}
 	if err := plane.SetCertificateSource(&fakeAdminCertificateSource{names: map[string]*tls.Certificate{"localhost": &serverPair}}); err != nil {
 		t.Fatalf("SetCertificateSource: %v", err)
@@ -1143,12 +1151,15 @@ func TestAdminClientCAReloadInterval(t *testing.T) {
 	cfg.Admin.Enabled = true
 	cfg.Admin.Listen = "127.0.0.1:0"
 	cfg.Admin.TLS = AdminTLSConfig{
-		Mode:         adminTLSModeRouter,
-		CertFile:     serverCertPath,
-		KeyFile:      serverKeyPath,
+		ListenerTLSConfig: ListenerTLSConfig{
+			Mode:       adminTLSModeRouter,
+			CertFile:   serverCertPath,
+			KeyFile:    serverKeyPath,
+			MinVersion: adminTLSMinVersion12,
+		},
+
 		ClientCAFile: caPath,
 		ClientAuth:   adminClientAuthRequire,
-		MinVersion:   adminTLSMinVersion12,
 	}
 	cfg.Admin.Authentication.MTLS.ReloadInterval = "1s"
 	svc, err := New(cfg)

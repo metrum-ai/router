@@ -407,11 +407,63 @@ jobs:
           TLSACME_REQUIRE_PEBBLE: '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK GOMAXPROCS=2 go test ./internal/tlsacme/... -count=1 -run 'TestPebble' -v
 
+  admin-authz-advisories:
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 25
+    env:
+      GOMAXPROCS: '2'
+      GOMEMLIMIT: 8GiB
+    steps:
+      - name: Isolate job caches
+        run: |
+          echo "GOCACHE=$RUNNER_TEMP/authz-go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$RUNNER_TEMP/authz-go-mod" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Gate parser negative proofs
+        run: python3 -m unittest discover -s scripts -p 'test_check_admin_authz_advisories.py'
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Source vulnerability and published Casbin advisory gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOVULNDB: https://vuln.go.dev
+        run: |
+          set -euo pipefail
+          mkdir -p advisory-evidence
+          casbin_version=$(go list -m -f '{{.Version}}' github.com/casbin/casbin/v2)
+          printf '%s\n' "$casbin_version" > advisory-evidence/casbin-version.txt
+          date -u +%FT%TZ > advisory-evidence/scan-started-at-utc.txt
+          go list -m -f '{{.Path}} {{.Version}}{{if .Replace}} replaced{{end}}' all > advisory-evidence/modules.txt
+          go mod graph > advisory-evidence/module-graph.txt
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -json ./... > advisory-evidence/govulncheck.json
+          gh api -X GET advisories -f ecosystem=go -f affects="github.com/casbin/casbin/v2@${casbin_version}" -f per_page=100 > advisory-evidence/affected.json
+          gh api -X GET repos/casbin/casbin/security-advisories -f state=published -f per_page=100 > advisory-evidence/upstream.json
+          python3 scripts/check_admin_authz_advisories.py \
+            --scan advisory-evidence/govulncheck.json \
+            --affected advisory-evidence/affected.json \
+            --upstream advisory-evidence/upstream.json \
+            --casbin-version "$casbin_version" \
+            --modules advisory-evidence/modules.txt \
+            --module-graph advisory-evidence/module-graph.txt | tee advisory-evidence/summary.json
+      - name: Retain advisory evidence even on rejection
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: admin-authz-advisories-${{ github.sha }}
+          path: advisory-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
   ci:
     name: ci
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     if: always()
-    needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme]
+    needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories]
     timeout-minutes: 5
     steps:
       - name: Require every lane
@@ -425,7 +477,9 @@ jobs:
           K8S_SECURITY_RESULT: ${{ needs.k8s-security.result }}
           PARALLEL_TOOLS_RESULT: ${{ needs.parallel-tools.result }}
           TLS_ACME_RESULT: ${{ needs.tls-acme.result }}
+          ADVISORY_RESULT: ${{ needs.admin-authz-advisories.result }}
         run: |
+          [ "$ADVISORY_RESULT" = success ] || { echo "Advisory gate did not succeed: $ADVISORY_RESULT" >&2; exit 1; }
           if [ "$CI_EVENT" = push ]; then
             [ "$WARM_RESULT" = success ] || { echo "Main cache warm failed: $WARM_RESULT" >&2; exit 1; }
             for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT" "$K8S_SECURITY_RESULT" "$PARALLEL_TOOLS_RESULT" "$TLS_ACME_RESULT"; do

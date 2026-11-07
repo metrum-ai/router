@@ -93,6 +93,7 @@ const sidebars = {
         "configuration/admin-authentication",
         "configuration/admin-listener",
         "configuration/admin-authorization",
+        "configuration/tls",
         "privacy",
         "legal/software-licenses",
         "concepts/glossary",

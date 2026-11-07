@@ -5,10 +5,8 @@ eligibility:
 
 # Admin control plane (v4.8.0). Machine-to-machine only: no Basic, no cookies,
 # no browser sessions, no HTML. Disabled by default so a v4.7 configuration
-# keeps exactly one listener; `enabled: true` adds the admin listener and moves
-# /metrics to it unless admin.metrics.on_serving_port keeps it on the serving
-# port. The human reports UI is not part of the control plane and always stays
-# on the serving port with its current login.
+# keeps exactly one listener. The human reports UI is not part of the control
+# plane and always stays on the serving port with its current login.
 admin:
   enabled: false
   listen: 127.0.0.1:8081
@@ -28,8 +26,12 @@ admin:
     certificate_source: files # files (cert_file/key_file) | acme (automated issuance)
     cert_file: ""
     key_file: ""
-    # acme:
-    #   directory: https://acme-staging-v02.api.letsencrypt.org/directory
+    # acme:                   # automated issuance (#810); router mode only
+    #   domains: [admin.example.com]
+    #   email: ops@example.com
+    #   directory_url: https://acme-staging-v02.api.letsencrypt.org/directory
+    #   accept_tos: true
+    #   cache_dir: /var/lib/router/acme
     min_version: "1.2"
     client_ca_file: ""        # mTLS client CA bundle
     client_auth: none         # none | optional | require
@@ -43,9 +45,9 @@ admin:
     idle_timeout_ms: 60000
     shutdown_timeout_ms: 10000
   metrics:
-    # Unset keeps v4.7: /metrics stays on the serving port while the plane is
-    # disabled and moves to the admin listener when it is enabled.
-    # on_serving_port: true   # compatibility flag: keep caller-token /metrics here
+    # /metrics placement (ACP-007). Unset keeps the v4.7 serving-port scrape
+    # with caller-token authorization.
+    # on_serving_port: true
   # Machine authentication (#814): mTLS client identities, OAuth 2.0
   # client-credentials tokens, workload identity federation and admin API keys.
   # authentication:
@@ -74,6 +76,13 @@ server:
       #   valid_until: "2026-09-20T00:00:00Z" # Future, at most 30 days.
   listen: :8080
   default_model_group: default
+  # Automated TLS for the serving listener. Off by default: without a mode the
+  # router serves plaintext exactly as in v4.7. In router mode the certificate
+  # comes from `certificate_source: files` (cert_file/key_file), or is obtained
+  # and renewed over ACME DNS-01, which needs no inbound port and works for
+  # private hosts. See docs-site/docs/configuration/tls.md for the full block.
+  tls:
+    mode: off
   # Optional OpenAI endpoint compatibility gates. Disabled by default so
   # `/v1/chat/completions` accepts Chat Completions bodies and rejects
   # Responses-shaped bodies clearly. Enable only for deployments that have

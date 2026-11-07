@@ -72,43 +72,36 @@ type AdminPlaneConfig struct {
 	TLS         AdminTLSConfig     `yaml:"tls" json:"tls"`
 	Limits      AdminLimitsConfig  `yaml:"limits" json:"limits"`
 	Metrics     AdminMetricsConfig `yaml:"metrics" json:"metrics"`
-	// Authentication is owned by #814. This lane nests the block here so the
-	// whole plane configures in one place, and consumes the client-CA
-	// material for TLS handshake verification.
+	// Authentication is owned by #814. The listener nests the block here so the
+	// whole plane configures in one place, and consumes the client-CA material
+	// for TLS handshake verification.
 	Authentication AdminAuthenticationConfig `yaml:"authentication" json:"authentication"`
 }
 
-// AdminTLSConfig configures how the admin listener terminates TLS.
+// AdminTLSConfig configures how the admin listener terminates TLS. The
+// certificate part is #810's ListenerTLSConfig, embedded inline so server.tls
+// and admin.tls share one vocabulary (mode, certificate_source, files, acme,
+// min_version); this listener adds the reverse-proxy and client-authentication keys
+// around it.
 type AdminTLSConfig struct {
-	// Mode is off (plaintext, loopback only by default), router (the router
-	// serves its own certificate) or proxy (a reverse proxy terminates TLS).
-	Mode string `yaml:"mode" json:"mode"`
-	// CertificateSource selects where the router-native certificate comes
-	// from: files (default, CertFile/KeyFile) or acme (the #810 issuer, whose
-	// manager is installed into the listener's single handshake hook).
-	CertificateSource string `yaml:"certificate_source" json:"certificateSource,omitempty"`
-	// CertFile and KeyFile are required for mode router with certificate_source
-	// files.
-	CertFile string `yaml:"cert_file" json:"certFile,omitempty"`
-	KeyFile  string `yaml:"key_file" json:"keyFile,omitempty"`
-	// ACME is owned by #810. It is declared as an opaque block so a
-	// configuration that sets it is never silently ignored; the TLS lane
-	// replaces the type with its ListenerTLSConfig.acme and this lane keeps
-	// only hasACMEBlock.
-	ACME map[string]any `yaml:"acme" json:"acme,omitempty"`
-	// MinVersion is the minimum negotiated TLS version: 1.2 (default) or 1.3.
-	MinVersion string `yaml:"min_version" json:"minVersion,omitempty"`
-	// ClientCAFile is the bootstrap client CA bundle for mTLS. #814's
-	// reloadable CA snapshot replaces it once installed.
+	ListenerTLSConfig `yaml:",inline" json:"-"`
+	// ClientCAFile is the bootstrap client CA bundle for mTLS. The reloadable
+	// client-CA source from #814/#828 replaces it once installed.
 	ClientCAFile string `yaml:"client_ca_file" json:"clientCaFile,omitempty"`
 	// ClientAuth is none, optional or require. optional verifies a presented
-	// certificate and still lets API-key and JWT clients connect; require
-	// fails the handshake without one. Both verify against the current CA
-	// snapshot, so a wrong CA always fails the handshake.
+	// certificate and still lets API-key and JWT clients connect; require fails
+	// the handshake without one. Both verify against the current CA snapshot, so
+	// a wrong CA always fails the handshake.
 	ClientAuth string `yaml:"client_auth" json:"clientAuth,omitempty"`
 	// TrustedProxyCIDRs lists the reverse proxies allowed to terminate TLS for
 	// mode proxy. Non-loopback peers outside the list are rejected.
 	TrustedProxyCIDRs []string `yaml:"trusted_proxy_cidrs" json:"trustedProxyCidrs,omitempty"`
+}
+
+// hasACMEBlock reports whether an acme sub-block is configured (#810 owns the
+// block; this is the listener's read-only view of it).
+func (c AdminTLSConfig) hasACMEBlock() bool {
+	return c.ACME.configured()
 }
 
 // AdminLimitsConfig holds the admin listener's hardening limits. They are
@@ -147,12 +140,6 @@ type AdminAuthenticationMTLSConfig struct {
 	ReloadInterval string   `yaml:"reload_interval" json:"reloadInterval,omitempty"`
 }
 
-// hasACMEBlock reports whether an acme sub-block is configured. #810 owns the
-// block's type; this seam keeps the listener's checks independent of it.
-func (c AdminTLSConfig) hasACMEBlock() bool {
-	return len(c.ACME) > 0
-}
-
 func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	if cfg == nil {
 		return
@@ -177,9 +164,6 @@ func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	}
 	if strings.TrimSpace(cfg.TLS.MinVersion) == "" {
 		cfg.TLS.MinVersion = adminTLSMinVersion12
-	}
-	if strings.TrimSpace(cfg.TLS.CertificateSource) == "" {
-		cfg.TLS.CertificateSource = adminCertificateSourceFiles
 	}
 	if strings.TrimSpace(cfg.TLS.ClientAuth) == "" {
 		cfg.TLS.ClientAuth = adminClientAuthNone
@@ -298,61 +282,27 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 	if err != nil {
 		return err
 	}
-	switch strings.ToLower(strings.TrimSpace(cfg.TLS.Mode)) {
+	if err := ValidateAdminListenerTLS(cfg.TLS.ListenerTLSConfig, "admin.tls"); err != nil {
+		return err
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.TLS.Mode))
+	switch mode {
 	case adminTLSModeOff:
 		if !loopback && !cfg.AllowPlaintextNonLoopback {
 			return fmt.Errorf("admin.listen %q is not loopback and admin.tls.mode is off; configure admin.tls.mode router or proxy, bind a loopback address, or set admin.allow_plaintext_non_loopback (not recommended)", cfg.Listen)
-		}
-		if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
-			return fmt.Errorf("admin.tls.cert_file/key_file require admin.tls.mode router")
-		}
-		if strings.EqualFold(strings.TrimSpace(cfg.TLS.CertificateSource), adminCertificateSourceACME) {
-			return fmt.Errorf("admin.tls.certificate_source acme requires admin.tls.mode router")
-		}
-	case adminTLSModeRouter:
-		switch strings.ToLower(strings.TrimSpace(cfg.TLS.CertificateSource)) {
-		case adminCertificateSourceFiles:
-			if strings.TrimSpace(cfg.TLS.CertFile) == "" || strings.TrimSpace(cfg.TLS.KeyFile) == "" {
-				return fmt.Errorf("admin.tls.mode router requires admin.tls.cert_file and admin.tls.key_file")
-			}
-			if cfg.TLS.hasACMEBlock() {
-				return fmt.Errorf("admin.tls.acme requires admin.tls.certificate_source acme")
-			}
-		case adminCertificateSourceACME:
-			if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
-				return fmt.Errorf("admin.tls.certificate_source acme cannot be combined with admin.tls.cert_file/key_file")
-			}
-			if len(cfg.TLS.ACME) == 0 {
-				return fmt.Errorf("admin.tls.certificate_source acme requires an admin.tls.acme block")
-			}
-		default:
-			return fmt.Errorf("admin.tls.certificate_source must be files or acme")
-		}
-		if len(cfg.TLS.TrustedProxyCIDRs) > 0 {
-			return fmt.Errorf("admin.tls.trusted_proxy_cidrs require admin.tls.mode proxy")
 		}
 	case adminTLSModeProxy:
 		if len(cfg.TLS.TrustedProxyCIDRs) == 0 {
 			return fmt.Errorf("admin.tls.mode proxy requires admin.tls.trusted_proxy_cidrs")
 		}
-		if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
-			return fmt.Errorf("admin.tls.cert_file/key_file cannot be used with admin.tls.mode proxy")
+		if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" || cfg.TLS.hasACMEBlock() {
+			return fmt.Errorf("admin.tls.cert_file/key_file and admin.tls.acme cannot be used with admin.tls.mode proxy")
 		}
-		if cfg.TLS.hasACMEBlock() {
-			return fmt.Errorf("admin.tls.acme requires admin.tls.mode router")
-		}
-	default:
-		return fmt.Errorf("admin.tls.mode must be off, router or proxy")
 	}
 	for _, cidr := range cfg.TLS.TrustedProxyCIDRs {
 		if err := validateAdminTrustedProxyCIDR(cidr); err != nil {
 			return err
 		}
-	}
-	switch strings.TrimSpace(cfg.TLS.MinVersion) {
-	case adminTLSMinVersion12, adminTLSMinVersion13:
-	default:
-		return fmt.Errorf("admin.tls.min_version must be 1.2 or 1.3")
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.TLS.ClientAuth)) {
 	case adminClientAuthNone:
@@ -448,8 +398,17 @@ func validateAdminTrustedProxyCIDR(raw string) error {
 	if bits == 32 && ones < 8 {
 		return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /8; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
 	}
-	if bits == 128 && ones < 32 {
-		return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /32; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
+	if bits == 128 {
+		// IPv4-mapped IPv6 entries (::ffff:a.b.c.d/96 and longer) are matched
+		// against IPv4 peers by net.IPNet.Contains, which strips the mapped
+		// prefix. Apply the IPv4 floor to the embedded prefix so
+		// ::ffff:0.0.0.0/96 cannot widen the allowlist the way 0.0.0.0/0 would.
+		if network.IP.To4() != nil && ones >= 96 && ones-96 < 8 {
+			return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /8 once the IPv4-mapped prefix is applied; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
+		}
+		if ones < 32 {
+			return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /32; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
+		}
 	}
 	return nil
 }
