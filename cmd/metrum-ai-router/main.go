@@ -22,6 +22,7 @@ import (
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to router YAML config")
 	listen := flag.String("listen", "", "override server.listen (for replicas sharing one database-backed configuration on one host)")
+	adminListen := flag.String("admin-listen", "", "override admin.listen (for replicas sharing one database-backed configuration on one host); ignored when admin.enabled is false")
 	showVersion := flag.Bool("version", false, "print build version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -42,6 +43,13 @@ func main() {
 		log.Fatalf("initialize router: %v", err)
 	}
 	defer svc.Close()
+
+	// The admin control plane gets its own listener, deadlines and drain
+	// (#809). It is opt-in, so a v4.7 configuration starts exactly one server.
+	adminPlane, err := startAdminPlane(cfg, svc, *adminListen)
+	if err != nil {
+		log.Fatalf("admin plane: %v", err)
+	}
 
 	timeouts := serverTimeoutsFor(cfg)
 	srv := &http.Server{
@@ -85,10 +93,20 @@ func main() {
 		}
 	}
 
+	// Serving and admin drain independently: a stuck admin drain must never
+	// change serving shutdown, and an admin outage never changes serving
+	// readiness (ACP-006).
+	adminDone := make(chan struct{})
+	go func() {
+		shutdownAdminPlane(adminPlane)
+		close(adminDone)
+	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "shutdown: %v\n", err)
+	servingErr := srv.Shutdown(ctx)
+	<-adminDone
+	if servingErr != nil {
+		fmt.Fprintf(os.Stderr, "shutdown: %v\n", servingErr)
 		os.Exit(1)
 	}
 }
