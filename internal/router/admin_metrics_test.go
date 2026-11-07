@@ -142,6 +142,9 @@ func TestMetricsPayloadIncludesAdminSeriesOnlyOnTheAdminPlane(t *testing.T) {
 	admin := httptest.NewRecorder()
 	adminRequest := httptest.NewRequest(http.MethodGet, "/admin/v1/metrics", nil)
 	adminRequest = adminRequest.WithContext(WithPrincipal(adminRequest.Context(), Principal{Subject: "adminkey:x", Kind: "adminkey"}))
+	adminRequest = adminRequest.WithContext(WithAdminV1Decision(adminRequest.Context(), adminV1Decision{
+		Taken: []adminV1Taken{{Object: authzObjectMetrics, Action: authzActionRead, Domain: AdminGlobalDomain}},
+	}))
 	service.writeMetricsPayload(admin, adminRequest, nil)
 	if !strings.Contains(admin.Body.String(), `router_admin_requests_total{operation="listConfigSets"`) {
 		t.Fatalf("the admin scrape is missing the admin series:\n%s", admin.Body.String())

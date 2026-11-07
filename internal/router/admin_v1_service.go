@@ -277,3 +277,40 @@ func (s *Service) adminIdempotencyStore() (AdminIdempotencyKeyStore, bool) {
 
 // adminNow is the mount's clock.
 func (s *Service) adminNow() time.Time { return time.Now().UTC() }
+
+// StartAdminAuditJanitor starts the retention purge for the admin audit tables. It runs once
+// immediately and then on the given interval, deleting in bounded batches so it never issues
+// one unbounded delete. The job stops when stop is closed.
+func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}) {
+	if db == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	if retentionDays <= 0 {
+		retentionDays = 90
+	}
+	purge := func() {
+		cutoff := time.Now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+		for i := 0; i < 20; i++ { // at most 20 bounded batches per tick
+			removed, err := PurgeAdminAuditEventsBefore(db, cutoff)
+			if err != nil || removed == 0 {
+				return
+			}
+		}
+	}
+	go func() {
+		purge()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				purge()
+			}
+		}
+	}()
+}

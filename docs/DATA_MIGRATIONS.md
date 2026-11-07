@@ -147,18 +147,17 @@ The CLI intentionally accepts a PostgreSQL DSN only through a named environment 
 
 Four migrations back the admin control plane's Idempotency-Key store and audit records.
 All are additive and **online**: column additions, new tables and indexes only, with no
-rewrite of an existing row and no data job. The admin IDs sit in their own `20261107xx`
-block so they cannot collide with the authentication lane's phases 12 and 13, which use the
-same control-plane scope.
+rewrite of an existing row and no data job. The later admin IDs sit in their own `20261107xx` block so they cannot collide with the
+authentication phases 12 and 13, which use the same control-plane scope.
 
 | Migration id | Scope | Schema version | Maintenance | Data job | Rollback class |
 | --- | --- | --- | --- | --- | --- |
-| `2026110700` (`router-config.phase10.admin-idempotency.v1`) | `router-config` | 10 | online | none | `restore-required` |
+| `2026110601` (`router-config.phase10.admin-idempotency.v1`) | `router-config` | 10 | online | none | `restore-required` |
 | `2026110701` (`router-config.phase11.admin-audit.v1`) | `router-config` | 11 | online | none | `restore-required` |
 | `2026110702` (`usage.admin-audit.v1`) | `usage` | 13 | online | none | `restore-required` |
 | `2026110703` (`usage.admin-denial-columns.v1`) | `usage` | 14 | online | none | `restore-required` |
 
-- `2026110700` creates `router_admin_idempotency`: one `Idempotency-Key` record per
+- `2026110601` creates `router_admin_idempotency`: one `Idempotency-Key` record per
   principal, domain and operation, retained 24 hours and persisted.
 - `2026110701` adds the admin audit columns to `router_config_change_events` and creates
   `router_admin_credential_events`. The existing `action` column keeps its meaning (the

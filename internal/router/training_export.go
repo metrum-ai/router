@@ -142,6 +142,19 @@ func (s *Service) handleTrainingOutcome(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, 409, map[string]string{"error": "outcome-already-recorded"})
 		return
 	}
+	if adminPlaneAuthorized(r) {
+		meta, ok := AdminAuditMetaFrom(r.Context())
+		if !ok {
+			writeJSON(w, 503, map[string]string{"error": "audit-unavailable"})
+			return
+		}
+		if err := s.usage.CreateTrainingOutcomeAudited(capture, auditRecordFromMeta(meta, "training_label")); err != nil {
+			writeJSON(w, 500, map[string]string{"error": "label-write-failed"})
+			return
+		}
+		writeJSON(w, 201, map[string]string{"status": "recorded"})
+		return
+	}
 	if err := s.usage.db.Create(&capture).Error; err != nil {
 		writeJSON(w, 500, map[string]string{"error": "label-write-failed"})
 		return

@@ -1138,7 +1138,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead) {
+	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead, s.PinAuthorization(r.Context())) {
 		code := "metrics-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -1179,6 +1179,11 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
+	if s.tlsManager != nil {
+		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
+		// byte-identical /metrics output.
+		_, _ = io.WriteString(w, s.tlsManager.Prometheus())
+	}
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
@@ -1253,8 +1258,8 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 	if adminPlane {
 		// The contract layer already decided in the captured row's domain; the audited store
 		// call commits the deletion and its audit row together.
-		meta, metaErr := AdminAuditMetaFrom(r.Context())
-		if metaErr {
+		meta, ok := AdminAuditMetaFrom(r.Context())
+		if !ok {
 			s.writeError(w, rc, http.StatusServiceUnavailable, "audit-unavailable")
 			return
 		}
@@ -1317,8 +1322,8 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 			s.writeError(w, rc, http.StatusServiceUnavailable, "content-store-disabled")
 			return
 		}
-		meta, metaOK := AdminAuditMetaFrom(r.Context())
-		if !metaOK {
+		meta, ok := AdminAuditMetaFrom(r.Context())
+		if !ok {
 			s.writeError(w, rc, http.StatusServiceUnavailable, "audit-unavailable")
 			return
 		}

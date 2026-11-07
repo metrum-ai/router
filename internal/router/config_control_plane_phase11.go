@@ -154,10 +154,14 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 		// cannot turn the audit table into the denial-of-service vector.
 		return nil
 	}
+	// The collapse key includes the lifecycle and the outcome, so an issue followed by a
+	// revoke of the same credential never merges. Successful outcomes collapse too, so one
+	// busy credential cannot add a row per authenticated request.
 	collapsed := tx.Exec(
-		`UPDATE router_admin_credential_events SET count = count + 1 WHERE event_id = (SELECT event_id FROM router_admin_credential_events WHERE kind = ? AND credential_id = ? AND outcome = ? AND reason_code = ? AND client_ip_hash = ? AND at >= ? ORDER BY at DESC LIMIT 1)`,
+		`UPDATE router_admin_credential_events SET count = count + 1 WHERE event_id = (SELECT event_id FROM router_admin_credential_events WHERE kind = ? AND credential_id = ? AND outcome = ? AND reason_code = ? AND client_ip_hash = ? AND lifecycle = ? AND at >= ? ORDER BY at DESC LIMIT 1)`,
 		adminAuditFieldValue(event.Kind), adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Outcome),
 		adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.ClientIPHash),
+		adminAuditFieldValue(event.Lifecycle),
 		event.At.Add(-time.Second).UTC().Format(time.RFC3339Nano),
 	)
 	if collapsed.Error != nil {
@@ -188,8 +192,8 @@ func PurgeAdminAuditEventsBefore(db *gorm.DB, cutoff time.Time) (int64, error) {
 	stamp := cutoff.UTC().Format(time.RFC3339Nano)
 	var removed int64
 	for _, stmt := range []string{
-		`DELETE FROM router_admin_credential_events WHERE at < ?`,
-		`DELETE FROM router_admin_audit_events WHERE at < ?`,
+		`DELETE FROM router_admin_credential_events WHERE event_id IN (SELECT event_id FROM router_admin_credential_events WHERE at < ? LIMIT 500)`,
+		`DELETE FROM router_admin_audit_events WHERE event_id IN (SELECT event_id FROM router_admin_audit_events WHERE at < ? LIMIT 500)`,
 	} {
 		result := db.Exec(stmt, stamp)
 		if result.Error != nil {
@@ -208,17 +212,28 @@ const adminCredentialFailureSourceCap = 10
 // adminCredentialFailureWithinCap reports whether a failure event for this source may be
 // recorded, given the events already stored in the last minute.
 func adminCredentialFailureWithinCap(tx *gorm.DB, event AdminCredentialEvent) bool {
-	if tx == nil || strings.TrimSpace(event.ClientIPHash) == "" {
-		return true
+	if tx == nil {
+		return false
+	}
+	// A failure without a source digest still counts against a fixed bucket, so omitting or
+	// hiding the address cannot evade the cap.
+	bucket := strings.TrimSpace(event.ClientIPHash)
+	if bucket == "" {
+		bucket = adminCredentialFailureUnknownBucket
 	}
 	var count int64
 	if err := tx.Model(&adminCredentialEventRow{}).
-		Where("client_ip_hash = ? AND outcome = 'failure' AND at >= ?", event.ClientIPHash, event.At.Add(-time.Minute).UTC().Format(time.RFC3339Nano)).
+		Where("client_ip_hash = ? AND outcome = 'failure' AND at >= ?", bucket, event.At.Add(-time.Minute).UTC().Format(time.RFC3339Nano)).
 		Count(&count).Error; err != nil {
-		return true
+		// Fail closed: a cap that cannot be evaluated stops further failure rows rather than
+		// letting an unbounded flood through.
+		return false
 	}
 	return count < adminCredentialFailureSourceCap
 }
+
+// adminCredentialFailureUnknownBucket is the cap bucket for failures without a source digest.
+const adminCredentialFailureUnknownBucket = "unknown-source"
 
 type adminCredentialEventRow struct {
 	EventID string `gorm:"column:event_id;primaryKey"`

@@ -350,7 +350,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		if metaErr != nil {
 			return metaErr
 		}
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r), meta, "issue"); err != nil {
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r), meta, "issue", req.KeySlug); err != nil {
 			return err
 		}
 		return nil
@@ -460,7 +460,7 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 		if metaErr != nil {
 			return metaErr
 		}
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_rotate", h.actor(r), meta, "rotate"); err != nil {
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_rotate", h.actor(r), meta, "rotate", callerID); err != nil {
 			return err
 		}
 		return nil
@@ -524,7 +524,7 @@ func (h *callerAdminHandler) handleRevoke(w http.ResponseWriter, r *http.Request
 		if metaErr != nil {
 			return metaErr
 		}
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_revoke", h.actor(r), meta, "revoke"); err != nil {
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_revoke", h.actor(r), meta, "revoke", callerID); err != nil {
 			return err
 		}
 		return nil

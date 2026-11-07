@@ -49,11 +49,22 @@ func testResponseAffinityRow() responseAffinityRecord {
 	}
 }
 
-// responseAffinityPreviousSchema clears the ledger rows at or after the affinity migration
-// so the store looks like a database that has just upgraded the package and the migration is
-// pending. The table is deliberately left in place: dropping it would make the reverse-step
-// assertion vacuous.
+// responseAffinityPreviousSchema rebuilds the pre-migration state for the upgrade test: the
+// dormant table is dropped and the ledger rows at or after the affinity migration are cleared,
+// so the upgrade must create the table again.
 func responseAffinityPreviousSchema(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if db.Migrator().HasTable(&responseAffinityRecord{}) {
+		if err := db.Migrator().DropTable(&responseAffinityRecord{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clearAffinityLedger(t, db)
+}
+
+// clearAffinityLedger removes the ledger rows at or after the affinity migration without
+// touching tables, which is what the disposable-database reverse step needs.
+func clearAffinityLedger(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	// Attempts reference the ledger row, so remove them first.
 	// Clear the ledger rows at or after the affinity migration so the database reads as it
@@ -132,9 +143,10 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
-	// A disposable database restored to the pre-affinity state also has the later ledger
-	// rows removed; the affinity table itself is gone because the reverse step dropped it.
-	responseAffinityPreviousSchema(t, runner.db)
+	// A disposable database restored to the pre-affinity state also has the later ledger rows
+	// removed. The table itself is not dropped here: the assertion below already proved the
+	// reverse step removed it.
+	clearAffinityLedger(t, runner.db)
 	if runner.db.Migrator().HasTable(&responseAffinityRecord{}) {
 		t.Fatal("reverse step left the response affinity table behind")
 	}
@@ -289,9 +301,10 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
-	// A disposable database restored to the pre-affinity state also has the later ledger
-	// rows removed; the affinity table itself is gone because the reverse step dropped it.
-	responseAffinityPreviousSchema(t, runner.db)
+	// A disposable database restored to the pre-affinity state also has the later ledger rows
+	// removed. The table itself is not dropped here: the assertion below already proved the
+	// reverse step removed it.
+	clearAffinityLedger(t, runner.db)
 	if runner.db.Migrator().HasTable(&responseAffinityRecord{}) {
 		t.Fatal("reverse step left the response affinity table behind")
 	}

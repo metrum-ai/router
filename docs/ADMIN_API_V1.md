@@ -290,7 +290,7 @@ insert aborts the change, so a write is refused rather than committed unaudited.
 
 Credential lifecycle changes (issue, rotate, revoke) write their audit row **and** a
 redacted credential event in the same transaction. Authentication outcomes are recorded per
-credential kind with a salted client-IP digest; identical outcomes within one second collapse
+credential kind with a keyed client-IP digest (HMAC-SHA256, key from `ROUTER_ADMIN_CLIENT_IP_HASH_KEY` or a per-process random key); identical outcomes within one second collapse
 into a counted row and one source can create at most ten failure rows per minute, so a
 credential-guessing flood cannot grow the audit table. `admin.api.audit.retention_days`
 (default 90) governs how long admin audit rows are kept.

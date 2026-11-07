@@ -24,11 +24,16 @@ package router
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -191,16 +196,39 @@ type AdminCredentialEvent struct {
 	Lifecycle    string
 }
 
-// adminClientIPHash returns a stable digest of a source address for an audit row. The
-// address itself is never stored on a credential event.
+// adminClientIPHash returns a KEYED digest (HMAC-SHA256) of a source address for an audit
+// row. The address itself is never stored, and the key makes the digest non-reversible by
+// enumerating addresses. The key comes from admin.api.audit.client_ip_hash_env when set and
+// is otherwise random per process, which is stated in the guide.
 func adminClientIPHash(addr string) string {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte("admin-client-ip:" + addr))
-	return hex.EncodeToString(sum[:8])
+	mac := hmac.New(sha256.New, adminClientIPHashKey())
+	_, _ = mac.Write([]byte(addr))
+	return hex.EncodeToString(mac.Sum(nil)[:8])
 }
+
+var adminClientIPHashKeyOnce sync.Once
+
+// adminClientIPHashKey returns the process-wide client-IP digest key.
+func adminClientIPHashKey() []byte {
+	adminClientIPHashKeyOnce.Do(func() {
+		if value := strings.TrimSpace(os.Getenv("ROUTER_ADMIN_CLIENT_IP_HASH_KEY")); len(value) >= 16 {
+			adminClientIPHashKeyValue = []byte(value)
+			return
+		}
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			key = []byte(strconv.FormatInt(time.Now().UnixNano(), 10))
+		}
+		adminClientIPHashKeyValue = key
+	})
+	return adminClientIPHashKeyValue
+}
+
+var adminClientIPHashKeyValue []byte
 
 // AdminCredentialEventSink records authentication and lifecycle events. A
 // successful authentication must be recorded (fail closed); a failed one is

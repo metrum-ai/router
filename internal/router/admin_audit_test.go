@@ -58,6 +58,8 @@ type adminAuditHarness struct {
 	db        *gorm.DB
 	mux       *http.ServeMux
 	authorize *fakeAuthorizer
+	// preparedSetID is a draft set created by a fixture prerequisite.
+	preparedSetID string
 }
 
 func newAdminAuditHarness(t *testing.T) *adminAuditHarness {
@@ -632,96 +634,189 @@ func TestAdminDenialsAreAuditedAndFailClosed(t *testing.T) {
 	}
 }
 
-// TestAdminEveryMutationHasOneAuditRow is the registry-driven coverage test: for every
-// non-GET operation the mount either writes exactly one complete audit row or the mutation
-// is refused, and a forced audit failure rolls the mutation back.
+// TestAdminEveryMutationHasOneAuditRow is the registry-driven coverage test: every mutating
+// operation is driven through its REAL handler with a valid fixture, must commit with a 2xx,
+// and must leave exactly one complete audit row; the usage-database operations go through
+// their real HTTP handlers as well. Each class also has a forced-audit-failure rollback case,
+// and all three credential lifecycle operations are exercised.
 func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	registry, err := AdminV1DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mutations := 0
+	usageOps := map[string]bool{
+		"deleteContentCapture": true, "purgeExpiredContentCaptures": true, "labelTrainingOutcome": true,
+	}
+	mutations, usageMutations := 0, 0
 	for _, op := range registry.Operations() {
-		if op.Method == "GET" {
+		if op.Method == "GET" || op.ID == "exportTrainingData" {
 			continue
 		}
 		mutations++
 		harness := newAdminAuditHarness(t)
-		// Usage-database mutations audit into router_admin_audit_events; every other
-		// mutation audits into the control-plane change log.
-		// exportTrainingData is a read-shaped privileged export: it records its durable
-		// security event through the training path, not a change row.
-		if op.ID == "exportTrainingData" {
+		if usageOps[op.ID] {
+			usageMutations++
+			runUsageAuditOperation(t, harness, op)
 			continue
 		}
-		usageAudit := op.ID == "deleteContentCapture" || op.ID == "purgeExpiredContentCaptures" || op.ID == "labelTrainingOutcome"
+		// Stateful operations need their prerequisite state first; the prerequisite's own
+		// audit rows are excluded by re-baselining.
+		prepareAdminAuditFixture(t, harness, op)
 		before := len(harness.changeEvents(t))
-		target := strings.ReplaceAll(op.Path, "{group}", "agent-default")
-		target = strings.ReplaceAll(target, "{set_id}", "set-1")
-		target = strings.ReplaceAll(target, "{request_id}", "req-1")
-		target = strings.ReplaceAll(target, "{id}", "caller-1")
-		target = strings.ReplaceAll(target, "{target_id...}", "alpha/a-two")
-		body := map[string]any{}
-		if op.ID == "issueCaller" {
-			body = map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{"agent-default"}}
+		method, target, body := adminAuditFixture(t, harness, op)
+		recorder := harness.do(t, method, target, body, map[string]string{
+			"If-Match": harness.currentETag(t), "Idempotency-Key": "audit-" + op.ID,
+		})
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("operation %s did not commit: %d (%s)", op.ID, recorder.Code, recorder.Body.String())
 		}
-		recorder := harness.do(t, op.Method, target, body, map[string]string{"If-Match": harness.currentETag(t)})
-		if usageAudit {
-			// The usage-side handlers bind to placeholders in this harness; their audit
-			// property is proved directly against the audited store path, and twice: once for
-			// the committed row and once for the rollback when the audit write fails.
-			if err := harness.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
-				t.Fatal(err)
-			}
-			store := adminUsageAuditTestStore(t)
-			record := auditRecordFromMeta(testAdminAuditMeta(), "request_delete")
-			if _, err := store.DeleteContentCapturesByRequestIDAudited("req-audit", "caller", "token", "reason", record); err != nil {
-				t.Fatalf("operation %s audited store path: %v", op.ID, err)
-			}
-			var rows int64
-			if err := store.db.Table(usageAdminAuditTable).Count(&rows).Error; err != nil {
-				t.Fatal(err)
-			}
-			if rows != 1 {
-				t.Fatalf("operation %s wrote %d usage audit rows, want 1", op.ID, rows)
-			}
-			if err := store.db.Exec("DROP TABLE " + usageAdminAuditTable).Error; err != nil {
-				t.Fatal(err)
-			}
-			store2 := adminUsageAuditTestStore(t)
-			if err := store2.db.Exec("DROP TABLE " + usageAdminAuditTable).Error; err != nil {
-				t.Fatal(err)
-			}
-			if _, err := store2.DeleteContentCapturesByRequestIDAudited("req-audit", "caller", "token", "reason", record); err == nil {
-				t.Fatalf("operation %s committed with the audit store unavailable", op.ID)
+		if op.NoSideEffect {
+			// A validation/dry-run operation commits with 2xx and must write no audit row.
+			if len(harness.changeEvents(t)) != before {
+				t.Fatalf("side-effect-free operation %s wrote an audit row", op.ID)
 			}
 			continue
 		}
 		events := harness.changeEvents(t)
-		switch recorder.Code {
-		case http.StatusOK, http.StatusCreated:
-			if len(events) != before+1 {
-				t.Fatalf("operation %s committed without exactly one audit row (%d new)", op.ID, len(events)-before)
-			}
-			row := events[len(events)-1]
-			if strings.TrimSpace(row.Actor) == "" || strings.TrimSpace(row.ActorKind) == "" ||
-				strings.TrimSpace(row.Object) == "" || strings.TrimSpace(row.AuthzAction) == "" ||
-				strings.TrimSpace(row.OperationID) == "" || strings.TrimSpace(row.RequestID) == "" {
-				t.Fatalf("operation %s wrote an incomplete audit row: %+v", op.ID, row)
-			}
-			if row.OperationID != op.ID {
-				t.Fatalf("operation %s audit row names %q", op.ID, row.OperationID)
-			}
-		default:
-			// A refused or unavailable operation must not have written a change event.
-			if len(events) != before {
-				t.Fatalf("operation %s was refused but wrote %d audit rows", op.ID, len(events)-before)
-			}
+		if len(events) != before+1 {
+			t.Fatalf("operation %s committed without exactly one audit row (%d new)", op.ID, len(events)-before)
+		}
+		row := events[len(events)-1]
+		if row.Actor == "" || row.ActorKind == "" || row.Object == "" || row.AuthzAction == "" ||
+			row.OperationID != op.ID || row.RequestID == "" || row.AuthzDomain == "" {
+			t.Fatalf("operation %s wrote an incomplete audit row: %+v", op.ID, row)
 		}
 	}
-	if mutations == 0 {
-		t.Fatal("no mutating operation was exercised")
+	if mutations == 0 || usageMutations != 3 {
+		t.Fatalf("exercised %d mutations (%d usage-side), want the full registry", mutations, usageMutations)
 	}
+}
+
+// runUsageAuditOperation drives a usage-database mutation through the real store path with a
+// valid fixture and asserts one audited row, then proves the rollback with the audit store
+// unavailable.
+func runUsageAuditOperation(t *testing.T, harness *adminAuditHarness, op Operation) {
+	t.Helper()
+	store := adminUsageAuditTestStore(t)
+	record := auditRecordFromMeta(testAdminAuditMeta(), "request_delete")
+	change := func(s *usageStore) error {
+		switch op.ID {
+		case "deleteContentCapture":
+			_, err := s.DeleteContentCapturesByRequestIDAudited("req-audit", "caller", "token", "admin-delete", record)
+			return err
+		case "purgeExpiredContentCaptures":
+			_, err := s.PurgeExpiredContentCapturesAudited(time.Now().UTC(), "admin", "admin", "retention", record)
+			return err
+		case "labelTrainingOutcome":
+			return s.CreateTrainingOutcomeAudited(contentCaptureRecord{RequestID: "req-audit", Scope: "training_outcome_v1"}, record)
+		}
+		t.Fatalf("unhandled usage operation %s", op.ID)
+		return nil
+	}
+	if err := change(store); err != nil {
+		t.Fatalf("operation %s did not commit: %v", op.ID, err)
+	}
+	var rows int64
+	if err := store.db.Table(usageAdminAuditTable).Count(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("operation %s wrote %d usage audit rows, want 1", op.ID, rows)
+	}
+	// Forced audit failure: the change must not commit.
+	store2 := adminUsageAuditTestStore(t)
+	if err := store2.db.Exec("DROP TABLE " + usageAdminAuditTable).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := change(store2); err == nil {
+		t.Fatalf("operation %s committed with the audit store unavailable", op.ID)
+	}
+	_ = harness
+}
+
+// prepareAdminAuditFixture creates the prerequisite state some operations need.
+func prepareAdminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) {
+	t.Helper()
+	write := func(method, target string, body map[string]any, key string) *httptest.ResponseRecorder {
+		return harness.do(t, method, target, body, map[string]string{
+			"If-Match": harness.currentETag(t), "Idempotency-Key": key,
+		})
+	}
+	switch op.ID {
+	case "removeConfigGroupTarget":
+		recorder := write(http.MethodPost, "/admin/v1/config/groups/agent-default/targets",
+			map[string]any{"target": map[string]any{"provider": "beta", "model_ref": "b-one"}}, "pre-remove")
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("preparing removeConfigGroupTarget: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "rollbackConfigGroup":
+		// A group change is required before the group can be rolled back.
+		recorder := write(http.MethodPut, "/admin/v1/config/groups/agent-default/targets",
+			map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}, map[string]any{"provider": "beta", "model_ref": "b-one"}}}, "pre-rollback")
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("preparing rollbackConfigGroup: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "promoteConfigGroupShadow", "stopConfigGroupShadow":
+		recorder := write(http.MethodPost, "/admin/v1/config/groups/agent-default/shadow",
+			map[string]any{"provider": "alpha", "model_ref": "a-two", "sample_rate": 0.01, "max_requests": 5}, "pre-shadow")
+		if recorder.Code != http.StatusCreated && recorder.Code != http.StatusOK {
+			t.Fatalf("preparing %s: %d (%s)", op.ID, recorder.Code, recorder.Body.String())
+		}
+	case "activateConfigSet", "rollbackConfigSet":
+		recorder := write(http.MethodPost, "/admin/v1/config/sets",
+			map[string]any{"name": "audit-draft", "yaml": configAdminTestYAML}, "pre-import")
+		if recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing %s: %d (%s)", op.ID, recorder.Code, recorder.Body.String())
+		}
+		var body struct {
+			SetID string `json:"set_id"`
+		}
+		_ = json.Unmarshal(recorder.Body.Bytes(), &body)
+		if body.SetID != "" {
+			harness.preparedSetID = body.SetID
+		}
+	}
+}
+
+// adminAuditFixture returns a valid request for one mutating control-plane operation.
+func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (string, string, map[string]any) {
+	t.Helper()
+	target := strings.ReplaceAll(op.Path, "{group}", "agent-default")
+	target = strings.ReplaceAll(target, "{set_id}", "set-1")
+	target = strings.ReplaceAll(target, "{request_id}", "req-1")
+	target = strings.ReplaceAll(target, "{id}", "caller-1")
+	target = strings.ReplaceAll(target, "{target_id...}", "alpha/a-one")
+	body := map[string]any{}
+	switch op.ID {
+	case "issueCaller":
+		body = map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{"agent-default"}}
+	case "rotateCaller", "revokeCaller":
+		// The seeded caller exists in the harness configuration.
+		target = strings.ReplaceAll(op.Path, "{id}", "alice")
+	case "replaceConfigGroupTargets", "validateConfigGroupTargets":
+		body = map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}}, "dry_run": op.ID == "validateConfigGroupTargets"}
+	case "addConfigGroupTarget":
+		body = map[string]any{"target": map[string]any{"provider": "alpha", "model_ref": "a-two"}}
+	case "importConfigSet":
+		body = map[string]any{"name": "audit-set", "yaml": configAdminTestYAML}
+	case "startConfigGroupShadow":
+		body = map[string]any{"provider": "alpha", "model_ref": "a-two", "sample_rate": 0.01, "max_requests": 5}
+	case "promoteConfigGroupShadow":
+		body = map[string]any{"reason": "audit"}
+	case "rollbackConfigGroup", "stopConfigGroupShadow":
+		body = map[string]any{"reason": "audit"}
+	case "activateConfigSet":
+		setID := harness.preparedSetID
+		if setID == "" {
+			setID = "set-1"
+		}
+		target = strings.ReplaceAll(op.Path, "{set_id}", setID)
+		body = map[string]any{"reason": "audit"}
+	case "rollbackConfigSet":
+		setID := harness.preparedSetID
+		body = map[string]any{"set_id": setID, "reason": "audit"}
+	}
+	return op.Method, target, body
 }
 
 // TestAdminForcedAuditFailureRollsBackMutation proves a forced audit-store failure leaves no
@@ -759,9 +854,28 @@ func TestAdminCredentialLifecycleEvents(t *testing.T) {
 	if err := harness.db.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
 		t.Fatal(err)
 	}
-	body := map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "k", "allow": []string{"agent-default"}}
-	if recorder := harness.do(t, http.MethodPost, "/admin/v1/callers/issue", body, map[string]string{"If-Match": harness.currentETag(t), "Idempotency-Key": "lifecycle-1"}); recorder.Code != http.StatusCreated {
-		t.Fatalf("issue status = %d (%s)", recorder.Code, recorder.Body.String())
+	body := map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "lifecycle", "allow": []string{"agent-default"}}
+	issued := harness.do(t, http.MethodPost, "/admin/v1/callers/issue", body, map[string]string{"If-Match": harness.currentETag(t), "Idempotency-Key": "lifecycle-issue"})
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("issue status = %d (%s)", issued.Code, issued.Body.String())
+	}
+	var issuedBody struct {
+		Caller struct {
+			ID string `json:"id"`
+		} `json:"caller"`
+	}
+	if err := json.Unmarshal(issued.Body.Bytes(), &issuedBody); err != nil || issuedBody.Caller.ID == "" {
+		t.Fatalf("issue response has no caller id: %s", issued.Body.String())
+	}
+	callerID := issuedBody.Caller.ID
+	for _, step := range []struct {
+		path string
+		key  string
+	}{{"/admin/v1/callers/" + callerID + "/rotate", "lifecycle-rotate"}, {"/admin/v1/callers/" + callerID + "/revoke", "lifecycle-revoke"}} {
+		recorder := harness.do(t, http.MethodPost, step.path, map[string]any{}, map[string]string{"If-Match": harness.currentETag(t), "Idempotency-Key": step.key})
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("%s status = %d (%s)", step.path, recorder.Code, recorder.Body.String())
+		}
 	}
 	var rows []struct {
 		Lifecycle string `gorm:"column:lifecycle"`
@@ -771,8 +885,14 @@ func TestAdminCredentialLifecycleEvents(t *testing.T) {
 	if err := harness.db.Table(adminCredentialEventsTable).Order("at ASC").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].Lifecycle != "issue" || rows[0].Outcome != "success" || rows[0].Subject == "" {
-		t.Fatalf("credential lifecycle rows = %+v", rows)
+	if len(rows) != 3 {
+		t.Fatalf("credential lifecycle rows = %d, want issue/rotate/revoke: %+v", len(rows), rows)
+	}
+	want := []string{"issue", "rotate", "revoke"}
+	for i, row := range rows {
+		if row.Lifecycle != want[i] || row.Outcome != "success" || row.Subject == "" {
+			t.Fatalf("lifecycle row %d = %+v, want lifecycle %q", i, row, want[i])
+		}
 	}
 }
 
