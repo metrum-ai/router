@@ -45,8 +45,9 @@ admin:
     idle_timeout_ms: 60000
     shutdown_timeout_ms: 10000
   metrics:
-    # /metrics placement (ACP-007). Unset keeps the v4.7 serving-port scrape
-    # with caller-token authorization.
+    # /metrics placement (ACP-007). It stays on the serving port with the v4.7
+    # caller-token scrape until the admin listener serves it; setting
+    # on_serving_port: false is refused until then.
     # on_serving_port: true
   # Machine authentication (#814): mTLS client identities, OAuth 2.0
   # client-credentials tokens, workload identity federation and admin API keys.
