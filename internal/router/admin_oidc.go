@@ -29,6 +29,7 @@ const (
 )
 
 type adminAuthSubject struct {
+	authContext  context.Context
 	credentialID string
 	subject      string
 	domain       string
@@ -37,11 +38,9 @@ type adminAuthSubject struct {
 	issuer       string
 	groups       []string
 	permissions  map[string]bool
-	// principal carries the /admin/v1 machine identity and ctx its request context.
-	// Both are empty on the serving-port surface, whose credential checks and
-	// permission maps are unchanged.
+	// principal carries the /admin/v1 machine identity. It is empty on the
+	// serving-port surface, whose credential checks are unchanged.
 	principal *Principal
-	ctx       context.Context
 }
 
 type adminOIDCRuntime struct {
@@ -230,7 +229,12 @@ func (s *Service) handleAdminAuthMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, safeAdminSubjectResponse(subject))
 }
 
-func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
+func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Request) (result adminAuthSubject, authenticated bool) {
+	defer func() {
+		if authenticated {
+			result.authContext = s.PinAuthorization(r.Context())
+		}
+	}()
 	s.setAdminAuthHeaders(w)
 	if s == nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]any{"type": "unauthorized", "message": "unauthorized"}})

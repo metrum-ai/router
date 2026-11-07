@@ -67,16 +67,13 @@ type Service struct {
 	adminSession       *adminSessionStore
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
+	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
 	logger             *requestLogger
 	usage              *usageStore
 	migrationStatusFn  func() (MigrationStatus, error)
 	metrics            *metricsStore
-	// adminAuthorizeFn is the authorization seam the admin listener installs; it is
-	// used for the /admin/v1 decisions (including the reports surface), never for the
-	// serving port.
-	adminAuthorizeFn   func(context.Context, Principal, string, string, string) error
 	trafficShape       *trafficShapeManager
 	bridgeSessions     *bridgeSessionBackends
 	scripts            map[string]*scriptStrategy
@@ -1114,7 +1111,7 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead) {
+	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead, s.PinAuthorization(r.Context())) {
 		code := "metrics-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -1164,6 +1161,7 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject := adminAuthSubjectForBasic(basic)
+	subject.authContext = s.PinAuthorization(r.Context())
 	if !s.authorizeCompatibility(subject, "admin:auth", authzActionRead, "direct") {
 		s.recordAdminSecurityAccess(r, subject, http.StatusForbidden, "admin-forbidden", "admin:auth", authzActionRead)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": map[string]any{"type": "admin-forbidden", "message": "admin-forbidden"}})
@@ -1187,13 +1185,14 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, rc, http.StatusServiceUnavailable, "content-store-disabled")
 		return
 	}
+	authorizationContext := s.PinAuthorization(r.Context())
 	targetDomains, err := s.contentCaptureTargetDomains(requestID)
 	if err != nil {
 		s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
 		return
 	}
 	if len(targetDomains) == 0 {
-		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete) {
+		if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionDelete, authorizationContext) {
 			s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 			return
 		}
@@ -1203,7 +1202,7 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
-			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete) {
+			if !s.authorizeCallerInDomain(rc.caller, domain, authzObjectContentCapture, authzActionDelete, authorizationContext) {
 				s.writeError(w, rc, http.StatusForbidden, "content-forbidden")
 				return
 			}
@@ -1230,7 +1229,7 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge) {
+	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge, s.PinAuthorization(r.Context())) {
 		code := "content-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
@@ -2062,50 +2061,27 @@ func usageEndpoint(r *http.Request) string {
 	return "unsupported"
 }
 
-// adminPlaneAuthorized reports whether the /admin/v1 contract layer authenticated the
-// request AND recorded an authorization decision for it. Handler code must never treat
-// "a principal is present" as authorized.
-func adminPlaneAuthorized(r *http.Request) bool {
-	if r == nil {
-		return false
+func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
+	if dialect == "models" && isAnthropicModelRequest(r) {
+		dialect = "anthropic"
 	}
-	if _, ok := PrincipalFrom(r.Context()); !ok {
-		return false
-	}
-	_, ok := AdminV1DecisionFrom(r.Context())
-	return ok
-}
-
-// beginAdminPlane builds a request context for an admin-plane request the contract layer
-// already authenticated and authorized. It performs no caller authentication: the admin
-// plane is machine-to-machine and never accepts a caller token.
-func (s *Service) beginAdminPlane(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
-	principal, ok := PrincipalFrom(r.Context())
-	if !ok || !adminPlaneAuthorized(r) {
-		writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
-		return nil, false
-	}
+	// Receive clock for router-added latency (issue #159). Captured before auth
+	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
+	// receive through httptrace.WroteRequest.
 	receiveAt := time.Now()
 	id := requestID()
 	w.Header().Set("X-Request-Id", id)
+	if dialect == "anthropic" {
+		w.Header().Set("Request-Id", id)
+	}
+	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
-	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
-	rc.rec.CallerID = principal.Subject
-	rc.rec.UsageSource = "none"
-	rc.trace("router_receive", "admin plane request receive", Target{}, 0, 0, "", false, 0)
-	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
-	return rc, true
-}
-
-// newRequestContext builds the per-request record without any authentication decision.
-// begin() adds the caller; beginAdminPlane() adds the machine admin principal the
-// /admin/v1 contract layer already authenticated and authorized.
-func (s *Service) newRequestContext(r *http.Request, dialect, id string, receiveAt time.Time, ipInfo clientIPInfo) *requestContext {
-	return &requestContext{
+	rc := &requestContext{
 		id:                   id,
 		start:                receiveAt,
 		receiveAt:            receiveAt,
 		ctx:                  r.Context(),
+		caller:               caller,
 		dialect:              dialect,
 		client:               inferClient(r),
 		clientIP:             ipInfo,
@@ -2127,25 +2103,6 @@ func (s *Service) newRequestContext(r *http.Request, dialect, id string, receive
 			Warnings:             []string{},
 		},
 	}
-}
-
-func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) (*requestContext, bool) {
-	if dialect == "models" && isAnthropicModelRequest(r) {
-		dialect = "anthropic"
-	}
-	// Receive clock for router-added latency (issue #159). Captured before auth
-	// so request_trace_events.router_upstream_wrote_request.duration_ms spans
-	// receive through httptrace.WroteRequest.
-	receiveAt := time.Now()
-	id := requestID()
-	w.Header().Set("X-Request-Id", id)
-	if dialect == "anthropic" {
-		w.Header().Set("Request-Id", id)
-	}
-	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
-	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
-	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
-	rc.caller = caller
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":

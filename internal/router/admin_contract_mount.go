@@ -90,18 +90,7 @@ type AdminV1Deps struct {
 	IdempotencyOn bool
 	Limiter       AdminRateLimiter
 	Throttle      AdminAuthThrottle
-	// Audit and Observe are the #816 plug-in points; nil is valid.
-	Audit   func(AdminAuditEvent)
-	Observe func(AdminObservation)
-	// Denials records authorization and rate-limit refusals durably. A denial that
-	// cannot be recorded answers 5xx instead of a silent 403.
-	Denials AdminDenialSink
-	// CredentialEvents records authentication outcomes (ACP-066). A successful
-	// authentication that cannot be recorded is refused (fail closed); a failed one
-	// is best effort so an attacker cannot make the plane unavailable by forcing
-	// audit writes to fail.
-	CredentialEvents AdminCredentialEventSink
-	Clock            func() time.Time
+	Clock         func() time.Time
 }
 
 // AdminAuditEvent is one audit observation the contract layer emits (#816 fills
@@ -170,19 +159,6 @@ func RegisterAdminV1(r adminRouter, deps AdminV1Deps) error {
 			return err
 		}
 	}
-	// A mutating surface must be able to audit. Refusing to mount without the sinks is
-	// what makes "no unaudited admin write" structural rather than aspirational.
-	for _, op := range registry.Operations() {
-		if op.Method == "GET" {
-			continue
-		}
-		if deps.Denials == nil {
-			return fmt.Errorf("operation %s mutates but no denial/audit sink is installed", op.ID)
-		}
-	}
-	if deps.CredentialEvents == nil {
-		return errors.New("the admin mount requires a credential event sink")
-	}
 	mount := &adminV1Mount{deps: deps, registry: registry, codec: deps.CursorCodec}
 	for _, op := range registry.Operations() {
 		handler, ok := deps.Handlers[op.HandlerKey]
@@ -250,12 +226,6 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			audit.Outcome = outcome
 			audit.ReasonCode = reason
 			audit.Duration = observation.Duration
-			if m.deps.Observe != nil {
-				m.deps.Observe(observation)
-			}
-			if m.deps.Audit != nil {
-				m.deps.Audit(audit)
-			}
 		}
 
 		// Admission control for credential guessing: the claim and the source
@@ -281,28 +251,11 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			if m.deps.Throttle != nil {
 				m.deps.Throttle.RecordFailure(adminClaimedCredential(r), adminSourceAddress(r), started)
 			}
-			// Best effort: a failure flood must not be able to stop the plane.
-			if m.deps.Observe != nil {
-				m.deps.Observe(AdminObservation{OperationID: op.ID, Object: op.Object, Action: op.Action, Method: op.Method, Status: status, AuthFailed: true, PrincipalKind: adminClaimedKind(r)})
-			}
-			m.recordCredentialEvent(ctx, AdminCredentialEvent{
-				Kind: adminClaimedKind(r), CredentialID: adminClaimedCredential(r), Outcome: "failure",
-				ReasonCode: code, RequestID: requestIDValue, Lifecycle: "auth",
-			})
 			writeAdminProblemCode(w, r, status, code, "")
 			finish(status, "denied", code)
 			return
 		}
 		observation.PrincipalKind = principal.Kind
-		// Fail closed: a successful admin authentication must always leave a record.
-		if !m.recordCredentialEvent(ctx, AdminCredentialEvent{
-			Kind: principal.Kind, CredentialID: principal.CredentialID, Subject: principal.Subject,
-			Issuer: principal.Issuer, Outcome: "success", RequestID: requestIDValue, Lifecycle: "auth",
-		}) {
-			writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", "the authentication audit store is unavailable")
-			finish(http.StatusServiceUnavailable, "denied", "unavailable")
-			return
-		}
 		if m.deps.Throttle != nil {
 			m.deps.Throttle.RecordSuccess(adminClaimedCredential(r), adminSourceAddress(r))
 		}
@@ -317,14 +270,6 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			if retryAfter, ok := m.deps.Limiter.Allow(identity, op.RateClass, started); !ok {
 				problem := AdminProblemFor(r, http.StatusTooManyRequests, "rate-limited")
 				problem.RetryAfterSeconds = adminRetryAfterSeconds(retryAfter)
-				if !m.recordDenial(ctx, r, AdminDenialRecord{
-					At: started, PrincipalKind: principal.Kind, PrincipalSubject: principal.Subject,
-					CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: audit.Domain,
-					Object: op.Object, Action: op.Action, OperationID: op.ID, RequestID: requestIDValue,
-					ReasonCode: problem.Code, Path: op.Path, Status: problem.Status,
-				}) {
-					problem = AdminProblemFor(r, http.StatusServiceUnavailable, "unavailable")
-				}
 				WriteAdminProblem(w, r, problem)
 				observation.RateLimited = true
 				finish(problem.Status, "denied", problem.Code)
@@ -344,20 +289,12 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		}
 
 		// Authorization: one primary decision per operation plus its always-checks.
-		// Reports operations (DomainSource handler) keep the handler's own
-		// per-domain decisions authoritative, so no contract-layer gate runs here.
-		if op.Domain != AdminDomainHandler {
+		// Reports and the caller-directory listing keep the handler's own per-domain
+		// decisions authoritative, so no contract-layer gate runs here.
+		if op.Domain != AdminDomainHandler && (op.Domain != AdminDomainCallerTarget || op.Method != "GET") {
 			for _, domain := range domains {
 				if decisionErr := m.deps.Authorize(ctx, principal, domain, op.Object, op.Action); decisionErr != nil {
 					status, code := adminAuthorizationProblem(decisionErr)
-					if !m.recordDenial(ctx, r, AdminDenialRecord{
-						At: started, PrincipalKind: principal.Kind, PrincipalSubject: principal.Subject,
-						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: domain,
-						Object: op.Object, Action: op.Action, OperationID: op.ID, RequestID: requestIDValue,
-						ReasonCode: code, Path: op.Path, Status: status,
-					}) {
-						status, code = http.StatusServiceUnavailable, "unavailable"
-					}
 					writeAdminProblemCode(w, r, status, code, "")
 					finish(status, "denied", code)
 					return
@@ -367,17 +304,23 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			if len(domains) > 0 {
 				checkDomain = domains[0]
 			}
+			// Conditional checks (today: force) are evaluated from the request body the
+			// handler will read, so a plain write never needs the force grant. The body is
+			// peeked, not consumed.
+			bodyFlags := map[string]any{}
 			for _, check := range op.ExtraChecks {
+				if check.When == AdminCheckBodyForce {
+					if err := peekAdminJSONBody(r, &bodyFlags); err != nil {
+						writeAdminProblemCode(w, r, http.StatusBadRequest, "invalid-request", "")
+						finish(http.StatusBadRequest, "denied", "invalid-request")
+						return
+					}
+					break
+				}
+			}
+			for _, check := range op.ChecksFor(bodyFlags) {
 				if decisionErr := m.deps.Authorize(ctx, principal, checkDomain, check.Object, check.Action); decisionErr != nil {
 					status, code := adminAuthorizationProblem(decisionErr)
-					if !m.recordDenial(ctx, r, AdminDenialRecord{
-						At: started, PrincipalKind: principal.Kind, PrincipalSubject: principal.Subject,
-						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: checkDomain,
-						Object: check.Object, Action: check.Action, OperationID: op.ID, RequestID: requestIDValue,
-						ReasonCode: code, Path: op.Path, Status: status,
-					}) {
-						status, code = http.StatusServiceUnavailable, "unavailable"
-					}
 					writeAdminProblemCode(w, r, status, code, "")
 					finish(status, "denied", code)
 					return
@@ -387,15 +330,6 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			ctx = WithAdminV1Decision(ctx, taken)
 			r = r.WithContext(ctx)
 		}
-		// The audit context travels with the request so the write path stores it in
-		// the same transaction as the change (#816).
-		auditMeta := AdminAuditMeta{
-			Subject: principal.Subject, Kind: principal.Kind, CredentialID: principal.CredentialID,
-			Issuer: principal.Issuer, Domain: audit.Domain, Object: op.Object, Action: op.Action,
-			OperationID: op.ID, RequestID: requestIDValue, Ticket: adminTicketFrom(r),
-		}
-		ctx = WithAdminAuditMeta(ctx, auditMeta)
-		r = r.WithContext(ctx)
 
 		// Pagination and query validation.
 		page := adminPageRequest{Limit: m.deps.Pagination.normalized().DefaultLimit, Direction: "asc", Filters: map[string]string{}}
@@ -537,6 +471,17 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			}
 		}
 
+		// Record the operation context for handler-side guards and for the admin-plane
+		// gate. Reports and listings carry no contract-layer gate here; their handlers
+		// take the per-domain decisions themselves.
+		if _, ok := AdminV1DecisionFrom(ctx); !ok {
+			ctx = WithAdminV1Decision(ctx, adminV1Decision{
+				Checks:  append([]AdminCheck{{Object: op.Object, Action: op.Action}}, op.ExtraChecks...),
+				Domains: domains,
+			})
+			r = r.WithContext(ctx)
+		}
+
 		// The handler keeps today's bare-revision precondition parser, so translate
 		// the strong validator the contract layer accepted into that form. The
 		// decision above already validated the value.
@@ -560,16 +505,6 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			// A handler-side refusal (for example a conditional force check) is a
 			// denial too: record it, and refuse silently if that is impossible.
 			if responseStatus == http.StatusForbidden || responseStatus == http.StatusUnauthorized {
-				if !m.recordDenial(ctx, r, AdminDenialRecord{
-					At: started, PrincipalKind: principal.Kind, PrincipalSubject: principal.Subject,
-					CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: audit.Domain,
-					Object: op.Object, Action: op.Action, OperationID: op.ID, RequestID: requestIDValue,
-					ReasonCode: "handler-denied", Path: op.Path, Status: responseStatus,
-				}) {
-					capture.ReplaceBody(http.StatusServiceUnavailable, "application/problem+json",
-						adminProblemBytes(w, r, http.StatusServiceUnavailable, "unavailable", ""))
-					responseStatus = http.StatusServiceUnavailable
-				}
 			}
 		}
 		if idempotencyActive && idempotencyScope.Key != "" {
@@ -624,6 +559,13 @@ func (m *adminV1Mount) resolveDomains(op Operation, r *http.Request, principal P
 		// legacy handlers use.
 		return []string{m.deps.domainFor(principal)}, nil
 	case AdminDomainCallerTarget:
+		if op.Method == "GET" {
+			// A collection (the caller directory listing) has no single target domain: the
+			// handler authorizes each row in that row's stored domain. Taking one
+			// contract-layer decision here would either deny a legitimate listing or
+			// authorize the whole directory from a query parameter.
+			return nil, nil
+		}
 		if m.deps.ResolveCallerDomain == nil {
 			problem := AdminProblemFor(r, http.StatusServiceUnavailable, "unavailable")
 			problem.Detail = "the caller directory is unavailable"
@@ -745,39 +687,6 @@ func adminOperationPublishesRevisionETag(op Operation) bool {
 		return true
 	}
 	return false
-}
-
-// adminTicketFrom reads the operator-supplied incident reference, bounded. It is
-// an audit annotation only and never affects a decision.
-func adminTicketFrom(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	for _, header := range []string{"X-Admin-Ticket", "X-Ticket-Id"} {
-		if value := strings.TrimSpace(r.Header.Get(header)); value != "" {
-			return safeAdminTicket(value)
-		}
-	}
-	return ""
-}
-
-// recordDenial writes one durable denial record, reporting whether the sink
-// accepted it.
-func (m *adminV1Mount) recordDenial(ctx context.Context, r *http.Request, record AdminDenialRecord) bool {
-	if m.deps.Denials == nil {
-		return true
-	}
-	return m.deps.Denials.RecordDenial(ctx, record) == nil
-}
-
-// recordCredentialEvent writes one credential event, reporting whether the sink
-// accepted it.
-func (m *adminV1Mount) recordCredentialEvent(ctx context.Context, event AdminCredentialEvent) bool {
-	if m.deps.CredentialEvents == nil {
-		return true
-	}
-	event.At = m.deps.now()
-	return m.deps.CredentialEvents.RecordCredentialEvent(ctx, event) == nil
 }
 
 // adminClaimedKind names the credential class a request presents, for the
@@ -902,7 +811,8 @@ func adminAuthProblem(err error) (int, string) {
 	return http.StatusUnauthorized, "invalid_credential"
 }
 
-// adminAuthorizationProblem maps #812's typed errors onto problem codes.
+// adminAuthorizationProblem maps the authorization seam's errors onto problem codes: a
+// refusal is 403, an unavailable or stale policy is 503 (never a silent allow).
 func adminAuthorizationProblem(err error) (int, string) {
 	if err == nil {
 		return 0, ""
@@ -911,6 +821,12 @@ func adminAuthorizationProblem(err error) (int, string) {
 		if status, code := coder.AdminProblemCode(); status != 0 && code != "" {
 			return status, code
 		}
+	}
+	switch {
+	case errors.Is(err, ErrAuthorizationUnavailable):
+		return http.StatusServiceUnavailable, "authorization-unavailable"
+	case errors.Is(err, ErrAdminForbidden):
+		return http.StatusForbidden, "admin-forbidden"
 	}
 	return http.StatusForbidden, "admin-forbidden"
 }
@@ -1082,4 +998,18 @@ func adminProblemBytes(_ http.ResponseWriter, r *http.Request, status int, code,
 	var buffer bytes.Buffer
 	_ = json.NewEncoder(&buffer).Encode(problem)
 	return buffer.Bytes()
+}
+
+// adminPlaneAuthorized reports whether the /admin/v1 contract layer authenticated the
+// request AND recorded an authorization decision for it. Handler code must never treat
+// "a principal is present" as authorized.
+func adminPlaneAuthorized(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if _, ok := PrincipalFrom(r.Context()); !ok {
+		return false
+	}
+	_, ok := AdminV1DecisionFrom(r.Context())
+	return ok
 }

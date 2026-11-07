@@ -906,8 +906,8 @@ type adminScalarEndpointSpec struct {
 }
 
 // reportsAdminSubject resolves the reports identity. On /admin/v1 the machine principal
-// the contract layer authenticated is used as-is: no legacy credential check runs on
-// that surface. On the serving port the current browser/Basic/OIDC path is unchanged.
+// the contract layer authenticated is used as-is: no legacy credential check runs on that
+// surface. On the serving port the current browser/Basic/OIDC path is unchanged.
 func (s *Service) reportsAdminSubject(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
 	if principal, ok := PrincipalFrom(r.Context()); ok {
 		domain := AdminGlobalDomain
@@ -916,17 +916,16 @@ func (s *Service) reportsAdminSubject(w http.ResponseWriter, r *http.Request) (a
 		}
 		return adminAuthSubject{
 			subject: principal.Subject, domain: domain, source: principal.Kind,
-			principal: &principal, ctx: r.Context(),
+			principal: &principal, authContext: s.PinAuthorization(r.Context()),
 		}, true
 	}
 	return s.authenticateAdminSubject(w, r)
 }
 
 // reportsAuthorize takes a reports decision. On /admin/v1 it is the single Authorizer,
-// carrying the request context so its typed errors (policy-stale,
-// authorization-unavailable, admin-forbidden) reach the client; on the serving port the
-// existing casbin decision is unchanged. The global variant asks for the whole-plane
-// domain, which is what the existing global reports check did.
+// carrying the request context (so a stale or unavailable policy maps to its own status);
+// on the serving port the existing decision path is unchanged. The global variant asks
+// for the plane-global domain, which is what the existing global reports check did.
 func (s *Service) reportsAuthorize(r *http.Request, subject adminAuthSubject, object, action string, global bool) (status int, code string, denied bool) {
 	if subject.principal == nil {
 		if global {
@@ -938,37 +937,16 @@ func (s *Service) reportsAuthorize(r *http.Request, subject adminAuthSubject, ob
 	if global {
 		domain = AdminGlobalDomain
 	}
-	err := s.adminAuthorizePrincipal(r.Context(), *subject.principal, domain, object, action)
-	if err == nil {
-		return 0, "", false
+	ctx := r.Context()
+	if principal, ok := PrincipalFrom(ctx); ok {
+		ctx = WithPrincipal(ctx, principal)
 	}
-	status, code = adminAuthorizationProblem(err)
-	return status, code, true
-}
-
-// adminAuthorizePrincipal is the context-carrying authorization seam the admin listener
-// installs. It fails closed when no seam is installed.
-func (s *Service) adminAuthorizePrincipal(ctx context.Context, principal Principal, domain, object, action string) error {
-	if s == nil || s.adminAuthorizeFn == nil {
-		return errAdminAuthorizationUnavailable
+	if err := s.Authorize(ctx, *subject.principal, domain, object, action); err != nil {
+		status, code = adminAuthorizationProblem(err)
+		return status, code, true
 	}
-	return s.adminAuthorizeFn(ctx, principal, domain, object, action)
+	return 0, "", false
 }
-
-// errAdminAuthorizationUnavailable is returned when no authorization seam is installed;
-// callers map it to 503 authorization-unavailable.
-var errAdminAuthorizationUnavailable = adminProblemError{status: http.StatusServiceUnavailable, code: "authorization-unavailable"}
-
-// adminProblemError is a typed decision error that carries its problem code.
-type adminProblemError struct {
-	status int
-	code   string
-}
-
-func (e adminProblemError) Error() string { return e.code }
-
-// AdminProblemCode reports the status and problem code for the shared renderer.
-func (e adminProblemError) AdminProblemCode() (int, string) { return e.status, e.code }
 
 // writeAdminSurfaceError renders an error on the admin surface: a problem document on
 // /admin/v1 and the existing envelope on the serving port.
@@ -1342,10 +1320,7 @@ func (s *Service) adminReportBearerForbidden(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Service) authorizeAdmin(subject adminAuthSubject, object, action string) bool {
-	if strings.HasPrefix(subject.subject, compatibilitySubjectPrefix) {
-		return false
-	}
-	return s.currentAuthorizer().enforce(authzSubjectForAdmin(subject), object, action)
+	return s.authorizeLegacy(subject, object, action, "public")
 }
 
 func (s *Service) authorizeGlobalAdmin(subject adminAuthSubject, object, action string) bool {
@@ -1354,12 +1329,33 @@ func (s *Service) authorizeGlobalAdmin(subject adminAuthSubject, object, action 
 	return s.authorizeAdmin(global, object, action)
 }
 
-func (s *Service) authorizeCaller(caller *callerRuntime, object, action string) bool {
-	return s.currentAuthorizer().enforce(authzSubjectForCaller(caller), object, action)
+func callerAuthorizationCredentialID(caller *callerRuntime) string {
+	if caller == nil {
+		return ""
+	}
+	return strings.TrimSpace(caller.cfg.ID)
 }
 
-func (s *Service) authorizeCallerInDomain(caller *callerRuntime, domain, object, action string) bool {
-	return s.currentAuthorizer().enforceInDomain(authzSubjectForCaller(caller), domain, object, action)
+func (s *Service) authorizeCaller(caller *callerRuntime, object, action string, contexts ...context.Context) bool {
+	identity := authzSubjectForCaller(caller)
+	subject := adminAuthSubject{subject: identity.subject, domain: identity.domain, source: identity.source, credentialID: callerAuthorizationCredentialID(caller)}
+	if len(contexts) > 0 {
+		subject.authContext = contexts[0]
+	}
+	return s.authorizeLegacy(subject, object, action, "public")
+}
+
+func (s *Service) authorizeCallerInDomain(caller *callerRuntime, domain, object, action string, contexts ...context.Context) bool {
+	identity := authzSubjectForCaller(caller)
+	subject := adminAuthSubject{subject: identity.subject, domain: strings.TrimSpace(domain), source: identity.source, credentialID: callerAuthorizationCredentialID(caller)}
+	if len(contexts) > 0 {
+		subject.authContext = contexts[0]
+	}
+	mode := "public"
+	if subject.domain == AdminGlobalDomain && object == authzObjectMetrics {
+		mode = "global"
+	}
+	return s.authorizeLegacy(subject, object, action, mode)
 }
 
 func (s *Service) setAdminReportHeaders(w http.ResponseWriter, static bool) {

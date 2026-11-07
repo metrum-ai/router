@@ -16,6 +16,7 @@ package router
 // authorizer seams are installed on Service.
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -82,7 +83,7 @@ func AdminV1ReportsHandlers(registry *AdminV1Registry, handler http.HandlerFunc)
 // /admin/v1 mount from a base set: Authenticate reads the principal the contract
 // layer resolved, and Authorize sends the handler's secondary checks (force,
 // shadow) to the single Authorizer.
-func AdminV1ConfigAdminDeps(base ConfigAdminDeps, principalOf func(*http.Request) (Principal, string, bool), authorize func(Principal, string, string, string) bool) ConfigAdminDeps {
+func AdminV1ConfigAdminDeps(base ConfigAdminDeps, principalOf func(*http.Request) (Principal, string, bool), authorize func(ctx context.Context, principal Principal, domain, object, action string) error) ConfigAdminDeps {
 	out := base
 	out.Authenticate = func(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool) {
 		principal, domain, ok := principalOf(r)
@@ -93,25 +94,34 @@ func AdminV1ConfigAdminDeps(base ConfigAdminDeps, principalOf func(*http.Request
 		if domain == "" {
 			domain = AdminGlobalDomain
 		}
-		return adminAuthSubject{subject: principal.Subject, domain: domain, source: principal.Kind, principal: &principal, ctx: r.Context()}, true
+		return adminAuthSubject{
+			subject: principal.Subject, domain: domain, source: principal.Kind,
+			principal: &principal, authContext: r.Context(),
+		}, true
 	}
-	out.Authorize = func(subject adminAuthSubject, permission string) bool {
+	out.Decide = func(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool {
 		object, action, ok := adminPermissionObjectAction(permission)
 		if !ok || subject.principal == nil {
+			writeAdminProblemCode(w, r, http.StatusForbidden, "admin-forbidden", "")
 			return false
 		}
-		if adminV1DecisionCovers(subject.ctx, object, action) {
+		if adminV1DecisionCovers(r.Context(), object, action) {
 			// The contract layer already took this exact decision for the request.
 			return true
 		}
-		return authorize(*subject.principal, subject.domain, object, action)
+		if err := authorize(r.Context(), *subject.principal, subject.domain, object, action); err != nil {
+			status, code := adminAuthorizationProblem(err)
+			writeAdminProblemCode(w, r, status, code, "")
+			return false
+		}
+		return true
 	}
 	return out
 }
 
 // AdminV1CallerAdminDeps derives the caller directory dependencies for the
 // /admin/v1 mount.
-func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request) (Principal, string, bool), authorize func(Principal, string, string, string) bool) CallerAdminDeps {
+func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request) (Principal, string, bool), authorize func(ctx context.Context, principal Principal, domain, object, action string) error) CallerAdminDeps {
 	out := base
 	out.Authorize = func(r *http.Request, object, action string) bool {
 		principal, domain, ok := principalOf(r)
@@ -125,7 +135,7 @@ func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request
 			// The contract layer already took this exact decision for the request.
 			return true
 		}
-		return authorize(principal, domain, object, action)
+		return authorize(r.Context(), principal, domain, object, action) == nil
 	}
 	out.AuthorizeDomain = func(r *http.Request, rowDomain, object, action string) bool {
 		principal, _, ok := principalOf(r)
@@ -134,7 +144,7 @@ func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request
 		}
 		// A row is shown only when the principal is authorized for that row's own
 		// stored domain.
-		return authorize(principal, rowDomain, object, action)
+		return authorize(r.Context(), principal, rowDomain, object, action) == nil
 	}
 	return out
 }

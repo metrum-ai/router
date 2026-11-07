@@ -50,13 +50,16 @@ type ConfigAdminDeps struct {
 	InstanceID              string
 	Authenticate            func(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool)
 	Authorize               func(subject adminAuthSubject, permission string) bool
-	CurrentConfig           func() *Config
-	LoadedRevision          func() (revision int64, setID string, at time.Time)
-	Reload                  func() error
-	ReloadShadows           func()
-	UsageDB                 func() *gorm.DB
-	RecordAccess            func(r *http.Request, subject adminAuthSubject, status int, reason, object, action string)
-	Now                     func() time.Time
+	// Decide is the /admin/v1 permission decision: it carries the request context and
+	// returns the authorization error so stale/unavailable map to their own status.
+	Decide         func(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool
+	CurrentConfig  func() *Config
+	LoadedRevision func() (revision int64, setID string, at time.Time)
+	Reload         func() error
+	ReloadShadows  func()
+	UsageDB        func() *gorm.DB
+	RecordAccess   func(r *http.Request, subject adminAuthSubject, status int, reason, object, action string)
+	Now            func() time.Time
 }
 
 // RegisterConfigAdminAPI registers every /admin/config/* route on the serving port
@@ -73,57 +76,75 @@ func newConfigAdminHandler(deps ConfigAdminDeps) *configAdminHandler {
 	return &configAdminHandler{deps: deps}
 }
 
-// handlerKeys maps each config handler to the registry's HandlerKey.
-func (h *configAdminHandler) handlerKeys() map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
-		"config.groups.list":            h.handleListGroups,
-		"config.group.get":              h.handleGetGroup,
-		"config.group.targets.replace":  h.handleReplaceTargets,
-		"config.group.targets.add":      h.handleAddTarget,
-		"config.group.targets.remove":   h.handleRemoveTarget,
-		"config.group.targets.validate": h.handleValidateTargets,
-		"config.group.rollback":         h.handleGroupRollback,
-		"config.group.history":          h.handleGroupHistory,
-		"config.group.shadow.start":     h.handleShadowStart,
-		"config.group.shadow.status":    h.handleShadowStatus,
-		"config.group.shadow.promote":   h.handleShadowPromote,
-		"config.group.shadow.stop":      h.handleShadowStop,
-		"config.status":                 h.handleConfigStatus,
-		"config.sets.import":            h.handleImportSet,
-		"config.sets.list":              h.handleListSets,
-		"config.sets.get":               h.handleExportSet,
-		"config.sets.activate":          h.handleActivateSet,
-		"config.sets.rollback":          h.handleSetRollback,
-		"config.diff":                   h.handleConfigDiff,
+// adminConfigHandlerPatterns is the single pattern table: each legacy pattern, its
+// registry HandlerKey and the handler behind it.
+func (h *configAdminHandler) adminConfigHandlerPatterns() []struct {
+	suffix  string
+	key     string
+	handler http.HandlerFunc
+} {
+	return []struct {
+		suffix  string
+		key     string
+		handler http.HandlerFunc
+	}{
+		{"/config/groups", "config.groups.list", h.handleListGroups},
+		{"/config/groups/{group}", "config.group.get", h.handleGetGroup},
+		{"/config/groups/{group}/targets", "config.group.targets.replace", h.handleReplaceTargets},
+		{"/config/groups/{group}/targets", "config.group.targets.add", h.handleAddTarget},
+		{"/config/groups/{group}/targets/{target_id...}", "config.group.targets.remove", h.handleRemoveTarget},
+		{"/config/groups/{group}/targets:validate", "config.group.targets.validate", h.handleValidateTargets},
+		{"/config/groups/{group}/rollback", "config.group.rollback", h.handleGroupRollback},
+		{"/config/groups/{group}/history", "config.group.history", h.handleGroupHistory},
+		{"/config/groups/{group}/shadow", "config.group.shadow.start", h.handleShadowStart},
+		{"/config/groups/{group}/shadow", "config.group.shadow.status", h.handleShadowStatus},
+		{"/config/groups/{group}/shadow/promote", "config.group.shadow.promote", h.handleShadowPromote},
+		{"/config/groups/{group}/shadow", "config.group.shadow.stop", h.handleShadowStop},
+		{"/config/status", "config.status", h.handleConfigStatus},
+		{"/config/sets", "config.sets.import", h.handleImportSet},
+		{"/config/sets", "config.sets.list", h.handleListSets},
+		{"/config/sets/{set_id}", "config.sets.get", h.handleExportSet},
+		{"/config/sets/{set_id}/activate", "config.sets.activate", h.handleActivateSet},
+		{"/config/rollback", "config.sets.rollback", h.handleSetRollback},
+		{"/config/diff", "config.diff", h.handleConfigDiff},
 	}
 }
 
-// register installs the legacy patterns under prefix with the legacy wildcard names, so
+// handlerKeys maps each config handler to the registry's HandlerKey.
+func (h *configAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	out := map[string]http.HandlerFunc{}
+	for _, entry := range h.adminConfigHandlerPatterns() {
+		out[entry.key] = entry.handler
+	}
+	return out
+}
+
+// register installs the config patterns under prefix with the legacy wildcard names, so
 // r.PathValue keeps working on both surfaces.
 func (h *configAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
-	keys := h.handlerKeys()
-	for pattern, key := range map[string]string{
-		"GET " + prefix + "/config/groups":                                   "config.groups.list",
-		"GET " + prefix + "/config/groups/{group}":                           "config.group.get",
-		"PUT " + prefix + "/config/groups/{group}/targets":                   "config.group.targets.replace",
-		"POST " + prefix + "/config/groups/{group}/targets":                  "config.group.targets.add",
-		"DELETE " + prefix + "/config/groups/{group}/targets/{target_id...}": "config.group.targets.remove",
-		"POST " + prefix + "/config/groups/{group}/targets:validate":         "config.group.targets.validate",
-		"POST " + prefix + "/config/groups/{group}/rollback":                 "config.group.rollback",
-		"GET " + prefix + "/config/groups/{group}/history":                   "config.group.history",
-		"POST " + prefix + "/config/groups/{group}/shadow":                   "config.group.shadow.start",
-		"GET " + prefix + "/config/groups/{group}/shadow":                    "config.group.shadow.status",
-		"POST " + prefix + "/config/groups/{group}/shadow/promote":           "config.group.shadow.promote",
-		"DELETE " + prefix + "/config/groups/{group}/shadow":                 "config.group.shadow.stop",
-		"GET " + prefix + "/config/status":                                   "config.status",
-		"POST " + prefix + "/config/sets":                                    "config.sets.import",
-		"GET " + prefix + "/config/sets":                                     "config.sets.list",
-		"GET " + prefix + "/config/sets/{set_id}":                            "config.sets.get",
-		"POST " + prefix + "/config/sets/{set_id}/activate":                  "config.sets.activate",
-		"POST " + prefix + "/config/rollback":                                "config.sets.rollback",
-		"GET " + prefix + "/config/diff":                                     "config.diff",
-	} {
-		handle(pattern, keys[key])
+	methods := map[string]string{
+		"config.groups.list":            "GET",
+		"config.group.get":              "GET",
+		"config.group.targets.replace":  "PUT",
+		"config.group.targets.add":      "POST",
+		"config.group.targets.remove":   "DELETE",
+		"config.group.targets.validate": "POST",
+		"config.group.rollback":         "POST",
+		"config.group.history":          "GET",
+		"config.group.shadow.start":     "POST",
+		"config.group.shadow.status":    "GET",
+		"config.group.shadow.promote":   "POST",
+		"config.group.shadow.stop":      "DELETE",
+		"config.status":                 "GET",
+		"config.sets.import":            "POST",
+		"config.sets.list":              "GET",
+		"config.sets.get":               "GET",
+		"config.sets.activate":          "POST",
+		"config.sets.rollback":          "POST",
+		"config.diff":                   "GET",
+	}
+	for _, entry := range h.adminConfigHandlerPatterns() {
+		handle(methods[entry.key]+" "+prefix+entry.suffix, entry.handler)
 	}
 }
 
@@ -172,6 +193,9 @@ func (h *configAdminHandler) authenticate(w http.ResponseWriter, r *http.Request
 
 // authorize checks one fine-grained permission and writes 403 on denial.
 func (h *configAdminHandler) authorize(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool {
+	if h.deps.Decide != nil {
+		return h.deps.Decide(w, r, subject, permission)
+	}
 	if h.deps.Authorize == nil || !h.deps.Authorize(subject, permission) {
 		if h.deps.RecordAccess != nil {
 			h.deps.RecordAccess(r, subject, http.StatusForbidden, "config-forbidden", authzObjectAdminConfig, permission)

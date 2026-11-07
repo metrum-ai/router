@@ -65,24 +65,40 @@ func newCallerAdminHandler(deps CallerAdminDeps) *callerAdminHandler {
 	return &callerAdminHandler{deps: deps}
 }
 
+// callerAdminPatterns is the caller directory pattern table.
+func (h *callerAdminHandler) callerAdminPatterns() []struct {
+	pattern string
+	key     string
+	handler http.HandlerFunc
+} {
+	return []struct {
+		pattern string
+		key     string
+		handler http.HandlerFunc
+	}{
+		{"GET /callers", "callers.list", h.handleList},
+		{"POST /callers/issue", "callers.issue", h.handleIssue},
+		{"POST /callers/{id}/rotate", "callers.rotate", h.handleRotate},
+		{"POST /callers/{id}/revoke", "callers.revoke", h.handleRevoke},
+	}
+}
+
 // handlerKeys maps each caller handler to the registry's HandlerKey.
 func (h *callerAdminHandler) handlerKeys() map[string]http.HandlerFunc {
-	return map[string]http.HandlerFunc{
-		"callers.list":   h.handleList,
-		"callers.issue":  h.handleIssue,
-		"callers.rotate": h.handleRotate,
-		"callers.revoke": h.handleRevoke,
+	out := map[string]http.HandlerFunc{}
+	for _, entry := range h.callerAdminPatterns() {
+		out[entry.key] = entry.handler
 	}
+	return out
 }
 
 // register installs the caller directory patterns under prefix with the legacy wildcard
 // names, so r.PathValue("id") keeps working on both surfaces.
 func (h *callerAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
-	keys := h.handlerKeys()
-	handle("GET "+prefix+"/callers", keys["callers.list"])
-	handle("POST "+prefix+"/callers/issue", keys["callers.issue"])
-	handle("POST "+prefix+"/callers/{id}/rotate", keys["callers.rotate"])
-	handle("POST "+prefix+"/callers/{id}/revoke", keys["callers.revoke"])
+	for _, entry := range h.callerAdminPatterns() {
+		method, path, _ := strings.Cut(entry.pattern, " ")
+		handle(method+" "+prefix+path, entry.handler)
+	}
 }
 
 type callerAdminHandler struct {
@@ -109,14 +125,12 @@ func (h *callerAdminHandler) authorize(w http.ResponseWriter, r *http.Request, a
 	return true
 }
 
-// allowInDomain asks the request's authorization seam for one row's domain. It fails
-// closed when no seam is installed.
+// allowInDomain takes a caller-directory decision in one row's stored domain.
 func (h *callerAdminHandler) allowInDomain(r *http.Request, domain, object, action string) bool {
 	if h.deps.Authorize == nil || !h.deps.Authorize(r, object, action) {
 		return false
 	}
 	if h.deps.AuthorizeDomain == nil {
-		// Without a per-domain seam the general decision above is the answer.
 		return true
 	}
 	return h.deps.AuthorizeDomain(r, domain, object, action)
@@ -180,44 +194,16 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-config-set-unavailable")
 		return
 	}
-	// Pagination: caller_id is the unique tie-break, so a full cursor walk returns each
-	// caller exactly once.
-	page, paginated := AdminPageFrom(r.Context())
-	limit := 0
-	order := "caller_id ASC"
-	query := h.deps.DB.Where("config_set_id = ?", set.ID)
-	if paginated {
-		limit = page.LimitOr(50)
-		if page.Descending() {
-			order = "caller_id DESC"
-		}
-		if values := page.CursorValues(); len(values) == 1 {
-			if page.Descending() {
-				query = query.Where("caller_id < ?", values[0])
-			} else {
-				query = query.Where("caller_id > ?", values[0])
-			}
-		}
-		query = query.Limit(limit + 1)
-	}
 	var rows []callerRow
-	if err := query.Order(order).Find(&rows).Error; err != nil {
+	if err := h.deps.DB.Where("config_set_id = ?", set.ID).Order("caller_id ASC").Find(&rows).Error; err != nil {
 		writeCallerAdminError(w, http.StatusInternalServerError, "callers-query-failed")
 		return
-	}
-	if paginated && len(rows) > limit {
-		rows = rows[:limit]
-		page.PublishNext(rows[len(rows)-1].CallerID)
 	}
 	resp := callerAdminListResponse{
 		GeneratedUTC: h.now().Format(time.RFC3339Nano),
 		ConfigSetID:  set.ID,
 		Callers:      []callerAdminCallerView{},
 	}
-	// On /admin/v1 the caller directory is filtered per row by each row's stored
-	// domain, using the decisions the contract layer takes for this request. A row the
-	// caller may not see is omitted rather than widening the domain from a query
-	// parameter, and token material never leaves the router.
 	adminPlane := adminPlaneAuthorized(r)
 	for _, row := range rows {
 		var allowed []callerAllowedGroupRow
@@ -229,15 +215,13 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 		for _, a := range allowed {
 			allow = append(allow, a.GroupName)
 		}
-		if adminPlane {
-			rowDomain := authzDomainForProjectEnvironment(row.Project, row.Environment)
-			if !h.allowInDomain(r, rowDomain, authzObjectAdminCallers, authzActionList) {
-				continue
-			}
+		if adminPlane && !h.allowInDomain(r, authzDomainForProjectEnvironment(row.Project, row.Environment), authzObjectAdminCallers, authzActionList) {
+			// A row is listed only in its own stored domain.
+			continue
 		}
 		tokenHash, legacySHA256 := splitStoredCallerTokenVerifier(row.TokenSHA256)
 		if adminPlane {
-			// No verifier material on the versioned surface.
+			// Verification material never leaves the router on the versioned surface.
 			tokenHash, legacySHA256 = "", ""
 		}
 		resp.Callers = append(resp.Callers, callerAdminCallerView{
