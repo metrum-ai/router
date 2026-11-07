@@ -13,6 +13,10 @@ func adminPureCertificateIdentity(mechanism Authenticator) bool {
 		return a != nil
 	case *adminMTLSIssuerDispatcher:
 		return a != nil
+	case *adminMTLSTrustAuthenticator:
+		// Pure grouped identity selection only. Token possession has already
+		// verified the same store's current union; no SAN identity is needed.
+		return a != nil
 	default:
 		return false
 	}
