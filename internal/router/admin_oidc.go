@@ -29,13 +29,14 @@ const (
 )
 
 type adminAuthSubject struct {
-	subject     string
-	domain      string
-	source      string
-	email       string
-	issuer      string
-	groups      []string
-	permissions map[string]bool
+	credentialID string
+	subject      string
+	domain       string
+	source       string
+	email        string
+	issuer       string
+	groups       []string
+	permissions  map[string]bool
 }
 
 type adminOIDCRuntime struct {
@@ -266,10 +267,11 @@ func (s *Service) authenticateAdminSubject(w http.ResponseWriter, r *http.Reques
 
 func adminAuthSubjectForBasic(subject adminBasicRuntime) adminAuthSubject {
 	return adminAuthSubject{
-		subject:     subject.subject,
-		domain:      subject.domain,
-		source:      "basic",
-		permissions: subject.permissions,
+		subject:      subject.subject,
+		domain:       subject.domain,
+		source:       "basic",
+		credentialID: subject.username,
+		permissions:  subject.permissions,
 	}
 }
 
