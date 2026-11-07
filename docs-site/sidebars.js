@@ -91,6 +91,7 @@ const sidebars = {
         "configuration/experiment-profiles",
         "configuration/cache-usage-store",
         "configuration/admin-authentication",
+        "configuration/admin-listener",
         "configuration/admin-authorization",
         "configuration/tls",
         "privacy",
