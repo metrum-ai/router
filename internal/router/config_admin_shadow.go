@@ -176,7 +176,7 @@ func bumpRevisionOnlyTx(tx *gorm.DB, runtimeScope string) (int64, error) {
 // candidate must resolve against the active catalog and satisfy the group
 // contract for the shapes the group promises — the same eligibility bar as a
 // served target.
-func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRequest, actor string, policy GroupWritePolicy, now time.Time) (*ShadowRun, error) {
+func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRequest, actor string, policy GroupWritePolicy, audit AdminAuditMeta, now time.Time) (*ShadowRun, error) {
 	if db == nil {
 		return nil, configAdminError(409, "config_source_mode_file", "shadow runs require database mode (server.config_source.mode: database)")
 	}
@@ -263,6 +263,7 @@ func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRe
 				return err
 			}
 			if _, err := insertConfigChangeEventTx(tx, runtimeScope, state.ActiveSetID, configActionShadowStart, actor, revision, configChangeEventMeta{
+				Audit:     audit,
 				GroupName: group,
 				Reason:    req.Reason,
 				Detail:    "shadow_run=" + runID,
@@ -281,7 +282,7 @@ func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRe
 }
 
 // StopGroupShadow stops the group's active shadow run.
-func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, now time.Time) (*ShadowRun, error) {
+func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, audit AdminAuditMeta, now time.Time) (*ShadowRun, error) {
 	if db == nil {
 		return nil, configAdminError(409, "config_source_mode_file", "shadow runs require database mode (server.config_source.mode: database)")
 	}
@@ -313,6 +314,7 @@ func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, now
 				return err
 			}
 			if _, err := insertConfigChangeEventTx(tx, runtimeScope, state.ActiveSetID, configActionShadowStop, actor, revision, configChangeEventMeta{
+				Audit:     audit,
 				GroupName: group,
 				Reason:    reason,
 			}, now); err != nil {
@@ -338,7 +340,7 @@ func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, now
 // target and the previous targets remain as fallback (duplicates removed).
 // The audit event links the shadow run via detail=shadow_run=<run_id>, and
 // the run is marked promoted with the new set id.
-func PromoteGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, force bool, policy GroupWritePolicy, now time.Time) (*GroupTargetsWriteResult, string, error) {
+func PromoteGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, force bool, policy GroupWritePolicy, audit AdminAuditMeta, now time.Time) (*GroupTargetsWriteResult, string, error) {
 	if db == nil {
 		return nil, "", configAdminError(409, "config_source_mode_file", "shadow runs require database mode (server.config_source.mode: database)")
 	}
@@ -391,7 +393,7 @@ func PromoteGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, 
 	result, err := WriteGroupTargets(db, runtimeScope, GroupTargetsWriteRequest{
 		Group: group, Targets: targets, Reason: reason, Force: force,
 		Action: configActionShadowPromote,
-	}, actor, policy, now)
+	}, actor, policy, audit, now)
 	if err != nil {
 		return nil, "", err
 	}
@@ -820,7 +822,12 @@ func (h *configAdminHandler) handleShadowStart(w http.ResponseWriter, r *http.Re
 	if !decodeConfigAdminBody(w, r, &body) {
 		return
 	}
-	run, err := StartGroupShadow(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), body, subject.subject, h.policy(), h.now())
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminShadow, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	run, err := StartGroupShadow(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), body, subject.subject, h.policy(), auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -887,7 +894,12 @@ func (h *configAdminHandler) handleShadowPromote(w http.ResponseWriter, r *http.
 		writeConfigAdminError(w, http.StatusForbidden, "config-force-required", "force requires the config:force permission")
 		return
 	}
-	result, runID, err := PromoteGroupShadow(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), subject.subject, body.Reason, body.Force, h.policy(), h.now())
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminShadow, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	result, runID, err := PromoteGroupShadow(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), subject.subject, body.Reason, body.Force, h.policy(), auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -923,7 +935,12 @@ func (h *configAdminHandler) handleShadowStop(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	run, err := StopGroupShadow(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), subject.subject, body.Reason, h.now())
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminShadow, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	run, err := StopGroupShadow(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), subject.subject, body.Reason, auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return

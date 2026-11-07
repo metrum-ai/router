@@ -93,7 +93,7 @@ func TestConfigRevisionMutationsNotifySQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		_, err := bumpConfigRevision(tx, "prod", state.ActiveSetID, "caller_issue", "tester")
+		_, err := bumpConfigRevision(tx, "prod", state.ActiveSetID, "caller_issue", "tester", testAdminAuditMeta(), "issue")
 		return err
 	})
 	if err != nil {

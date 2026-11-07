@@ -30,7 +30,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const configControlPlanePhase10MigrationID = 2026110601
+const configControlPlanePhase10MigrationID = 2026110700
 
 // ConfigControlPlanePhase10MigrationDefinition returns the immutable migration
 // definition for the admin-plane idempotency store.

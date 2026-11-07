@@ -548,11 +548,16 @@ func (h *configAdminHandler) handleTargetsWrite(w http.ResponseWriter, r *http.R
 	if strings.HasSuffix(r.URL.Path, ":validate") {
 		body.DryRun = true
 	}
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
 	result, err := WriteGroupTargets(h.deps.DB, h.deps.RuntimeScope, GroupTargetsWriteRequest{
 		Group: r.PathValue("group"), Targets: body.Targets, Strategy: body.Strategy,
 		Reason: body.Reason, DryRun: body.DryRun, Force: body.Force,
 		IdempotencyKey: idempotencyKey, ExpectedRevision: expected, Action: action,
-	}, subject.subject, h.policy(), h.now())
+	}, subject.subject, h.policy(), auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -610,10 +615,15 @@ func (h *configAdminHandler) handleAddTarget(w http.ResponseWriter, r *http.Requ
 	targets = append(targets, GroupTargetSpec{})
 	copy(targets[insertAt+1:], targets[insertAt:])
 	targets[insertAt] = body.Target
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
 	result, err := WriteGroupTargets(h.deps.DB, h.deps.RuntimeScope, GroupTargetsWriteRequest{
 		Group: groupName, Targets: targets, Reason: body.Reason, DryRun: body.DryRun, Force: body.Force,
 		IdempotencyKey: idempotencyKey, ExpectedRevision: expected, Action: configActionGroupTargetAdd,
-	}, subject.subject, h.policy(), h.now())
+	}, subject.subject, h.policy(), auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -689,10 +699,15 @@ func (h *configAdminHandler) handleRemoveTarget(w http.ResponseWriter, r *http.R
 		writeConfigAdminError(w, http.StatusForbidden, "config-force-required", "force requires the config:force permission")
 		return
 	}
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
 	result, err := WriteGroupTargets(h.deps.DB, h.deps.RuntimeScope, GroupTargetsWriteRequest{
 		Group: groupName, Targets: kept, Reason: body.Reason, DryRun: body.DryRun, Force: body.Force,
 		IdempotencyKey: idempotencyKey, ExpectedRevision: expected, Action: configActionGroupTargetRemove,
-	}, subject.subject, h.policy(), h.now())
+	}, subject.subject, h.policy(), auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -722,7 +737,12 @@ func (h *configAdminHandler) handleGroupRollback(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	result, err := RollbackGroup(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), body.SetID, body.Reason, subject.subject, h.now())
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "activate")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	result, err := RollbackGroup(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), body.SetID, body.Reason, subject.subject, auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -819,7 +839,12 @@ func (h *configAdminHandler) handleImportSet(w http.ResponseWriter, r *http.Requ
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "Idempotency-Key header is invalid")
 		return
 	}
-	setID, err := importConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, body.Name, []byte(body.YAML), subject.subject, body.Reason, idempotencyKey, h.now())
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "activate")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	setID, err := importConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, body.Name, []byte(body.YAML), subject.subject, body.Reason, idempotencyKey, auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -829,7 +854,7 @@ func (h *configAdminHandler) handleImportSet(w http.ResponseWriter, r *http.Requ
 
 // importConfigSetForAPI imports a canonical document as a draft set and
 // records the set_import event with phase-8 metadata.
-func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []byte, actor, reason, idempotencyKey string, now time.Time) (string, error) {
+func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []byte, actor, reason, idempotencyKey string, audit AdminAuditMeta, now time.Time) (string, error) {
 	if err := rejectRawSecretsInYAML(yamlBytes); err != nil {
 		return "", configAdminError(400, "config-secret-refused", "the document contains credential-shaped material; use environment variable references")
 	}
@@ -872,7 +897,9 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 		}
 		revision, _ := currentRevisionForScope(tx, runtimeScope)
 		if _, err := insertConfigChangeEventTx(tx, runtimeScope, id, configActionSetImport, actor, revision, configChangeEventMeta{
-			Reason: reason, IdempotencyKey: idempotencyKey, RequestHash: "import:" + name,
+			Audit:     audit,
+			AfterHash: adminAuditHash(cleaned),
+			Reason:    reason, IdempotencyKey: idempotencyKey, RequestHash: "import:" + name,
 		}, now); err != nil {
 			return err
 		}
@@ -1026,7 +1053,12 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	revision, err := activateConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, setID, action, subject.subject, body.Reason, expected, h.now())
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "activate")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	revision, err := activateConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, setID, action, subject.subject, body.Reason, expected, auditMeta, h.now())
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -1041,7 +1073,7 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 
 // activateConfigSetForAPI activates (or rolls back to) a set with the guarded
 // runtime update and records the set_activate/set_rollback event.
-func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, now time.Time) (int64, error) {
+func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, audit AdminAuditMeta, now time.Time) (int64, error) {
 	var revision int64
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
@@ -1067,6 +1099,7 @@ func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, re
 			return err
 		}
 		if _, err := insertConfigChangeEventTx(tx, runtimeScope, setID, action, actor, rev, configChangeEventMeta{
+			Audit:     audit,
 			PrevSetID: state.ActiveSetID, Reason: reason,
 		}, now); err != nil {
 			return err

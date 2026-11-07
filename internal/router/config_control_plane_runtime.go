@@ -63,7 +63,7 @@ func (s *ConfigSnapshot) Get() *Config {
 // tables exist (e.g. via ensureConfigControlPlaneRuntimeTables). The action
 // and actor are recorded in the change event. The configSetID identifies the
 // active set being mutated. Returns the new revision number.
-func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor string) (int64, error) {
+func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor string, audit AdminAuditMeta, lifecycle string) (int64, error) {
 	if tx == nil {
 		return 0, errors.New("config control-plane transaction is required")
 	}
@@ -118,10 +118,24 @@ func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor st
 
 	eventID := newConfigChangeEventID()
 	if err := tx.Exec(
-		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		eventID, runtimeScope, configSetID, action, actor, now, revision,
+		adminAuditFieldValue(audit.Kind), adminAuditFieldValue(audit.CredentialID),
+		adminAuditFieldValue(audit.Issuer), adminAuditFieldValue(audit.Domain),
+		adminAuditFieldValue(audit.Object), adminAuditFieldValue(audit.Action),
+		adminAuditFieldValue(audit.OperationID), adminAuditFieldValue(audit.RequestID), "committed",
 	).Error; err != nil {
 		return 0, fmt.Errorf("append change event: %w", err)
+	}
+	// The credential lifecycle event commits with the credential change.
+	if strings.TrimSpace(lifecycle) != "" {
+		if err := insertAdminCredentialEventTx(tx, AdminCredentialEvent{
+			At: time.Now().UTC(), Kind: audit.Kind, CredentialID: audit.CredentialID,
+			Subject: audit.Subject, Issuer: audit.Issuer, Outcome: "success", RequestID: audit.RequestID,
+			Lifecycle: lifecycle,
+		}); err != nil {
+			return 0, err
+		}
 	}
 	queueConfigRevisionNotification(tx, runtimeScope)
 	return revision, nil

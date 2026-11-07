@@ -28,6 +28,13 @@ import (
 	"time"
 )
 
+// AdminAuditConfig is the YAML form of the admin.api.audit block.
+type AdminAuditConfig struct {
+	// RetentionDays is how long admin audit rows (change events, credential events and
+	// usage-side audit rows) are kept. 0 selects the 90-day default.
+	RetentionDays int `yaml:"retention_days" json:"retentionDays"`
+}
+
 // AdminAPIIdempotencyConfig is the YAML form of the idempotency block.
 type AdminAPIIdempotencyConfig struct {
 	TTL              string `yaml:"ttl" json:"ttl"`
@@ -37,6 +44,8 @@ type AdminAPIIdempotencyConfig struct {
 
 // AdminAPIConfig is the YAML form of the admin.api block.
 type AdminAPIConfig struct {
+	// Audit holds the admin audit retention policy.
+	Audit AdminAuditConfig `yaml:"audit" json:"audit"`
 	// CursorKeyEnv names the environment variable holding the pagination cursor
 	// signing key. Cursors are HMAC-signed; with a configured key they verify across
 	// replicas and restarts. Without one the key is random per process, so a cursor
@@ -51,6 +60,7 @@ type AdminAPIConfig struct {
 
 // adminAPISettings is the resolved, typed form used by the contract layer.
 type adminAPISettings struct {
+	auditRetentionDays  int
 	pagination          AdminPaginationConfig
 	idempotency         AdminIdempotencyConfig
 	rateLimit           AdminRateLimitConfig
@@ -183,8 +193,13 @@ func (c AdminAPIConfig) resolve() adminAPISettings {
 	if err != nil {
 		ttl = 24 * time.Hour
 	}
+	retentionDays := c.Audit.RetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 90
+	}
 	return adminAPISettings{
 		pagination:          c.Pagination.normalized(),
+		auditRetentionDays:  retentionDays,
 		idempotency:         AdminIdempotencyConfig{TTL: ttl, MaxKeyBytes: c.Idempotency.MaxKeyBytes, MaxResponseBytes: c.Idempotency.MaxResponseBytes},
 		rateLimit:           c.RateLimit.normalized(),
 		authFailureThrottle: c.AuthFailureThrottle.normalized(),

@@ -560,12 +560,20 @@ type securityAccessEventRecord struct {
 	RequestIsPrivate    bool   `gorm:"column:request_is_private;not null"`
 	RequestIsLoopback   bool   `gorm:"column:request_is_loopback;not null"`
 	RequestIsReserved   bool   `gorm:"column:request_is_reserved;not null"`
-	ModelGroup          string `gorm:"column:model_group;type:text;not null;index:idx_security_access_group"`
-	RequestedModel      string `gorm:"column:requested_model;type:text;not null"`
-	ResolvedGroup       string `gorm:"column:resolved_group;type:text;not null"`
-	InputTokens         int    `gorm:"column:input_tokens;not null;default:0"`
-	OutputTokens        int    `gorm:"column:output_tokens;not null;default:0"`
-	TotalTokens         int    `gorm:"column:total_tokens;not null;default:0"`
+	// Admin denial columns: the refused operation, the credential that attempted it and a
+	// digest of the source address. They are additive and stay empty for non-admin events.
+	CredentialKind string `gorm:"column:credential_kind;type:text;not null;default:''"`
+	CredentialID   string `gorm:"column:credential_id;type:text;not null;default:''"`
+	Object         string `gorm:"column:object;type:text;not null;default:'';index:idx_security_access_object"`
+	Action         string `gorm:"column:action;type:text;not null;default:''"`
+	OperationID    string `gorm:"column:operation_id;type:text;not null;default:''"`
+	ClientIPHash   string `gorm:"column:client_ip_hash;type:text;not null;default:''"`
+	ModelGroup     string `gorm:"column:model_group;type:text;not null;index:idx_security_access_group"`
+	RequestedModel string `gorm:"column:requested_model;type:text;not null"`
+	ResolvedGroup  string `gorm:"column:resolved_group;type:text;not null"`
+	InputTokens    int    `gorm:"column:input_tokens;not null;default:0"`
+	OutputTokens   int    `gorm:"column:output_tokens;not null;default:0"`
+	TotalTokens    int    `gorm:"column:total_tokens;not null;default:0"`
 }
 
 func (securityAccessEventRecord) TableName() string {

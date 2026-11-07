@@ -211,14 +211,16 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 			}
 			return []string{"example/prod"}, nil
 		},
-		CurrentETag:   func(r *http.Request) (string, int64, error) { return harness.currentETag(r) },
-		CursorCodec:   harness.codec,
-		Pagination:    AdminPaginationConfig{},
-		Idempotency:   harness.idempotency,
-		IdempotencyOn: true,
-		Limiter:       harness.limiter,
-		Throttle:      harness.throttle,
-		Clock:         func() time.Time { return harness.now },
+		CurrentETag:      func(r *http.Request) (string, int64, error) { return harness.currentETag(r) },
+		CursorCodec:      harness.codec,
+		Pagination:       AdminPaginationConfig{},
+		Idempotency:      harness.idempotency,
+		IdempotencyOn:    true,
+		Limiter:          harness.limiter,
+		Throttle:         harness.throttle,
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return harness.now },
 	})
 	if err != nil {
 		t.Fatalf("mount /admin/v1: %v", err)
@@ -654,8 +656,10 @@ func TestAdminV1DeprecationHeadersAtHTTP(t *testing.T) {
 				writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 			},
 		},
-		Limiter:  NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
-		Throttle: NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+		Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -685,9 +689,11 @@ func TestAdminV1MountRejectsUnboundOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = RegisterAdminV1(http.NewServeMux(), AdminV1Deps{
-		Registry:     registry,
-		Authenticate: &fakeAuthenticator{},
-		Authorize:    func(context.Context, Principal, string, string, string) error { return nil },
+		Registry:         registry,
+		Authenticate:     &fakeAuthenticator{},
+		Authorize:        func(context.Context, Principal, string, string, string) error { return nil },
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
 	})
 	if err == nil {
 		t.Fatal("mount accepted an operation without a handler")
@@ -786,14 +792,16 @@ func (h *adminV1Harness) depsForMount(handlers map[string]http.HandlerFunc) Admi
 			}
 			return []string{"example/prod"}, nil
 		},
-		CurrentETag:   func(r *http.Request) (string, int64, error) { return h.currentETag(r) },
-		CursorCodec:   h.codec,
-		Pagination:    AdminPaginationConfig{},
-		Idempotency:   h.idempotency,
-		IdempotencyOn: true,
-		Limiter:       h.limiter,
-		Throttle:      h.throttle,
-		Clock:         func() time.Time { return h.now },
+		CurrentETag:      func(r *http.Request) (string, int64, error) { return h.currentETag(r) },
+		CursorCodec:      h.codec,
+		Pagination:       AdminPaginationConfig{},
+		Idempotency:      h.idempotency,
+		IdempotencyOn:    true,
+		Limiter:          h.limiter,
+		Throttle:         h.throttle,
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return h.now },
 	}
 }
 
@@ -928,9 +936,11 @@ func TestAdminV1KindIsNeverADecision(t *testing.T) {
 					writeJSON(w, http.StatusOK, map[string]any{"kind": principal.Kind})
 				},
 			},
-			ResolveDomain: func(Principal) string { return AdminGlobalDomain },
-			Limiter:       NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
-			Throttle:      NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+			ResolveDomain:    func(Principal) string { return AdminGlobalDomain },
+			Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+			Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+			Denials:          &recordingDenialSink{},
+			CredentialEvents: &recordingCredentialSink{},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -1372,12 +1382,14 @@ func newAdminV1DBHarnessWith(t *testing.T, extraHandlers map[string]http.Handler
 			revision, err := currentRevisionForScope(db, "prod")
 			return AdminETagForRevision(revision), revision, err
 		},
-		CursorCodec:   NewAdminCursorCodec([]byte("mount-harness-cursor-key-000001")),
-		Idempotency:   newAdminV1DBHarnessIdempotency(t, db),
-		IdempotencyOn: true,
-		Limiter:       NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
-		Throttle:      NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
-		Clock:         func() time.Time { return time.Now().UTC() },
+		CursorCodec:      NewAdminCursorCodec([]byte("mount-harness-cursor-key-000001")),
+		Idempotency:      newAdminV1DBHarnessIdempotency(t, db),
+		IdempotencyOn:    true,
+		Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+		Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return time.Now().UTC() },
 	})
 	if err != nil {
 		t.Fatalf("mount: %v", err)
@@ -1394,17 +1406,6 @@ func newAdminV1DBHarnessIdempotency(t *testing.T, db *gorm.DB) AdminIdempotencyK
 		t.Fatalf("idempotency store: %v", err)
 	}
 	return store
-}
-
-// headerPrincipalAuthenticator is a test authentication seam that reads a header.
-type headerPrincipalAuthenticator struct{}
-
-func (headerPrincipalAuthenticator) Authenticate(_ context.Context, r *http.Request) (Principal, error) {
-	subject := strings.TrimSpace(r.Header.Get("X-Test-Principal"))
-	if subject == "" {
-		return Principal{}, ErrNoCredential
-	}
-	return Principal{Subject: subject, Kind: "adminkey", CredentialID: "cred-mount", Issuer: "test-issuer"}, nil
 }
 
 func (h *adminV1DBHarness) do(t *testing.T, method, target string, body any, headers map[string]string) *httptest.ResponseRecorder {
@@ -1645,13 +1646,14 @@ func TestAdminV1UnrecordedHandlerGateCallsAuthorizer(t *testing.T) {
 			revision, err := currentRevisionForScope(db, "prod")
 			return AdminETagForRevision(revision), revision, err
 		},
-		CursorCodec:   NewAdminCursorCodec([]byte("mount-harness-cursor-key-000001")),
-		Idempotency:   newAdminV1DBHarnessIdempotency(t, db),
-		IdempotencyOn: true,
-		Limiter:       NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
-		Throttle:      NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
-
-		Clock: func() time.Time { return time.Now().UTC() },
+		CursorCodec:      NewAdminCursorCodec([]byte("mount-harness-cursor-key-000001")),
+		Idempotency:      newAdminV1DBHarnessIdempotency(t, db),
+		IdempotencyOn:    true,
+		Limiter:          NewAdminRateLimiter(AdminRateLimitConfig{Enabled: boolPointer(false)}),
+		Throttle:         NewAdminAuthThrottle(AdminAuthFailureThrottleConfig{Enabled: boolPointer(false)}),
+		Denials:          &recordingDenialSink{},
+		CredentialEvents: &recordingCredentialSink{},
+		Clock:            func() time.Time { return time.Now().UTC() },
 	})
 	if err != nil {
 		t.Fatalf("mount: %v", err)

@@ -76,6 +76,16 @@ type Service struct {
 	usage              *usageStore
 	migrationStatusFn  func() (MigrationStatus, error)
 	metrics            *metricsStore
+	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
+	// Idempotency-Key store and the freshness source. They are separate from the serving path.
+	adminMetricsStore    *adminMetricsStore
+	adminMetricsOnce     sync.Once
+	adminFreshnessSource AdminFreshnessSource
+	adminAuditSink       func(AdminAuditEvent)
+	// adminAuthorizeFn is the authorization seam the admin listener installs; the reports
+	// surface uses it so its per-domain decisions carry the request context.
+	adminAuthorizeFn   func(context.Context, Principal, string, string, string) error
+	adminIdempotency   atomic.Value
 	trafficShape       *trafficShapeManager
 	bridgeSessions     *bridgeSessionBackends
 	scripts            map[string]*scriptStrategy
@@ -1128,12 +1138,32 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead, s.PinAuthorization(r.Context())) {
+	if !s.authorizeCaller(rc.caller, authzObjectMetrics, authzActionRead) {
 		code := "metrics-forbidden"
 		s.writeError(w, rc, http.StatusForbidden, code)
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
+	s.writeMetricsPayload(w, r, rc)
+}
+
+// ServeAdminPlaneMetrics serves the admin listener's metrics scrape, including its
+// unversioned /metrics alias, so both spellings render the same payload.
+func (s *Service) ServeAdminPlaneMetrics(w http.ResponseWriter, r *http.Request) {
+	s.handleAdminPlaneMetrics(w, r)
+}
+
+// handleAdminPlaneMetrics serves GET /admin/v1/metrics.
+func (s *Service) handleAdminPlaneMetrics(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.beginAdminPlane(w, r, "metrics")
+	if !ok {
+		return
+	}
+	defer s.finish(rc, http.StatusOK, nil)
+	s.writeMetricsPayload(w, r, rc)
+}
+
+func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc *requestContext) {
 	migration := MigrationStatus{Scope: usageMigrationScope, State: "unavailable", StatusUnavailable: true}
 	if s.usage != nil {
 		var err error
@@ -1149,14 +1179,14 @@ func (s *Service) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
-	if s.tlsManager != nil {
-		// Empty unless the serving listener terminates TLS itself, so a v4.7
-		// configuration keeps byte-identical /metrics output.
-		_, _ = io.WriteString(w, s.tlsManager.Prometheus())
-	}
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
+	// Admin-plane series are rendered only for an admin-plane scrape.
+	if adminPlaneAuthorized(r) {
+		_, _ = io.WriteString(w, s.adminMetrics().Prometheus(s.adminFreshnessSource))
+	}
+	_ = rc
 }
 
 func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -1194,7 +1224,14 @@ func (s *Service) handleAdminAuthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Request) {
-	rc, ok := s.begin(w, r, "content-admin")
+	adminPlane := adminPlaneAuthorized(r)
+	var rc *requestContext
+	var ok bool
+	if adminPlane {
+		rc, ok = s.beginAdminPlane(w, r, "content-admin")
+	} else {
+		rc, ok = s.begin(w, r, "content-admin")
+	}
 	if !ok {
 		return
 	}
@@ -1211,6 +1248,23 @@ func (s *Service) handleContentCaptureDelete(w http.ResponseWriter, r *http.Requ
 	targetDomains, err := s.contentCaptureTargetDomains(requestID)
 	if err != nil {
 		s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
+		return
+	}
+	if adminPlane {
+		// The contract layer already decided in the captured row's domain; the audited store
+		// call commits the deletion and its audit row together.
+		meta, metaErr := AdminAuditMetaFrom(r.Context())
+		if metaErr {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "audit-unavailable")
+			return
+		}
+		rows, err := s.usage.DeleteContentCapturesByRequestIDAudited(requestID, rc.rec.CallerID, rc.rec.TokenID, "admin-delete", auditRecordFromMeta(meta, "request_delete"))
+		if err != nil {
+			s.writeError(w, rc, http.StatusInternalServerError, "content-delete-failed")
+			return
+		}
+		defer s.finish(rc, http.StatusOK, nil)
+		writeJSON(w, http.StatusOK, map[string]any{"request_id": requestID, "deleted": rows})
 		return
 	}
 	if len(targetDomains) == 0 {
@@ -1247,8 +1301,34 @@ func (s *Service) contentCaptureTargetDomains(requestID string) ([]string, error
 }
 
 func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *http.Request) {
-	rc, ok := s.begin(w, r, "content-admin")
+	adminPlane := adminPlaneAuthorized(r)
+	var rc *requestContext
+	var ok bool
+	if adminPlane {
+		rc, ok = s.beginAdminPlane(w, r, "content-admin")
+	} else {
+		rc, ok = s.begin(w, r, "content-admin")
+	}
 	if !ok {
+		return
+	}
+	if adminPlane {
+		if s.usage == nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "content-store-disabled")
+			return
+		}
+		meta, metaOK := AdminAuditMetaFrom(r.Context())
+		if !metaOK {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "audit-unavailable")
+			return
+		}
+		rows, err := s.usage.PurgeExpiredContentCapturesAudited(time.Now().UTC(), rc.rec.CallerID, rc.rec.TokenID, "admin-retention-purge", auditRecordFromMeta(meta, "retention_purge"))
+		if err != nil {
+			s.writeError(w, rc, http.StatusInternalServerError, "content-purge-failed")
+			return
+		}
+		defer s.finish(rc, http.StatusOK, nil)
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": rows})
 		return
 	}
 	if !s.authorizeCaller(rc.caller, authzObjectContentCapture, authzActionPurge, s.PinAuthorization(r.Context())) {
