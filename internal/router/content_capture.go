@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -476,37 +477,83 @@ func truncateContentCaptureText(text string, maxBytes int) (string, bool) {
 }
 
 func (s *usageStore) PurgeExpiredContentCaptures(now time.Time, actorCallerID, actorTokenID, reason string) (int64, error) {
+	return s.purgeExpiredContentCaptures(now, actorCallerID, actorTokenID, reason, nil)
+}
+
+// PurgeExpiredContentCapturesAudited purges expired captures and writes the
+// admin audit row in the same transaction (#816): a failed audit insert aborts
+// the purge.
+func (s *usageStore) PurgeExpiredContentCapturesAudited(now time.Time, actorCallerID, actorTokenID, reason string, record AdminAuditRecord) (int64, error) {
+	return s.purgeExpiredContentCaptures(now, actorCallerID, actorTokenID, reason, &record)
+}
+
+func (s *usageStore) purgeExpiredContentCaptures(now time.Time, actorCallerID, actorTokenID, reason string, audit *AdminAuditRecord) (int64, error) {
 	if s == nil || s.db == nil {
 		return 0, nil
 	}
 	cutoff := formatUsageTime(now.UTC())
+	var deleted int64
+	run := func(db *gorm.DB) error {
+		var rows []contentCaptureRecord
+		if err := db.Where("retention_until <= ?", cutoff).Find(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		ids := make([]uint, 0, len(rows))
+		requestRows := map[string]int64{}
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+			requestRows[row.RequestID]++
+		}
+		if err := db.Where("capture_id IN ?", ids).Delete(&contentCaptureHeaderRecord{}).Error; err != nil {
+			return err
+		}
+		result := db.Where("id IN ?", ids).Delete(&contentCaptureRecord{})
+		if result.Error != nil {
+			return result.Error
+		}
+		deleted = result.RowsAffected
+		for requestID, rowCount := range requestRows {
+			s.emitContentCaptureAudit("retention_purge", requestID, actorCallerID, actorTokenID, "", rowCount, reason)
+		}
+		return nil
+	}
+	if audit == nil {
+		return deleted, run(s.db)
+	}
 	var rows []contentCaptureRecord
 	if err := s.db.Where("retention_until <= ?", cutoff).Find(&rows).Error; err != nil {
 		return 0, err
 	}
-	if len(rows) == 0 {
-		return 0, nil
-	}
-	ids := make([]uint, 0, len(rows))
-	requestRows := map[string]int64{}
-	for _, row := range rows {
-		ids = append(ids, row.ID)
-		requestRows[row.RequestID]++
-	}
-	if err := s.db.Where("capture_id IN ?", ids).Delete(&contentCaptureHeaderRecord{}).Error; err != nil {
+	record := *audit
+	record.ReasonCode = defaultString(record.ReasonCode, "retention_purge")
+	record.Detail = fmt.Sprintf("purged %d captures", len(rows))
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := insertAdminAuditUsageTx(tx, record); err != nil {
+			return err
+		}
+		return run(tx)
+	})
+	if err != nil {
 		return 0, err
 	}
-	result := s.db.Where("id IN ?", ids).Delete(&contentCaptureRecord{})
-	if result.Error != nil {
-		return 0, result.Error
-	}
-	for requestID, rowCount := range requestRows {
-		s.emitContentCaptureAudit("retention_purge", requestID, actorCallerID, actorTokenID, "", rowCount, reason)
-	}
-	return result.RowsAffected, nil
+	return deleted, nil
 }
 
 func (s *usageStore) DeleteContentCapturesByRequestID(requestID, actorCallerID, actorTokenID, reason string) (int64, error) {
+	return s.deleteContentCapturesByRequestID(requestID, actorCallerID, actorTokenID, reason, nil)
+}
+
+// DeleteContentCapturesByRequestIDAudited deletes one request's captures and
+// writes the admin audit row in the same transaction (#816): a failed audit
+// insert aborts the deletion.
+func (s *usageStore) DeleteContentCapturesByRequestIDAudited(requestID, actorCallerID, actorTokenID, reason string, record AdminAuditRecord) (int64, error) {
+	return s.deleteContentCapturesByRequestID(requestID, actorCallerID, actorTokenID, reason, &record)
+}
+
+func (s *usageStore) deleteContentCapturesByRequestID(requestID, actorCallerID, actorTokenID, reason string, audit *AdminAuditRecord) (int64, error) {
 	if s == nil || s.db == nil || strings.TrimSpace(requestID) == "" {
 		return 0, nil
 	}
@@ -519,25 +566,60 @@ func (s *usageStore) DeleteContentCapturesByRequestID(requestID, actorCallerID, 
 			return 0, err
 		}
 	}
-	var rows []contentCaptureRecord
-	if err := s.db.Where("request_id = ?", requestID).Find(&rows).Error; err != nil {
+	var deleted int64
+	run := func(db *gorm.DB) error {
+		var rows []contentCaptureRecord
+		if err := db.Where("request_id = ?", requestID).Find(&rows).Error; err != nil {
+			return err
+		}
+		ids := make([]uint, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row.ID)
+		}
+		if len(ids) > 0 {
+			if err := db.Where("capture_id IN ?", ids).Delete(&contentCaptureHeaderRecord{}).Error; err != nil {
+				return err
+			}
+		}
+		result := db.Where("request_id = ?", requestID).Delete(&contentCaptureRecord{})
+		if result.Error != nil {
+			return result.Error
+		}
+		deleted = result.RowsAffected
+		s.emitContentCaptureAudit("request_delete", requestID, actorCallerID, actorTokenID, "", result.RowsAffected, reason)
+		return nil
+	}
+	if audit == nil {
+		return deleted, run(s.db)
+	}
+	record := *audit
+	record.ReasonCode = defaultString(record.ReasonCode, "request_delete")
+	record.Detail = "deleted captures for " + requestID
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := insertAdminAuditUsageTx(tx, record); err != nil {
+			return err
+		}
+		return run(tx)
+	})
+	if err != nil {
 		return 0, err
 	}
-	ids := make([]uint, 0, len(rows))
-	for _, row := range rows {
-		ids = append(ids, row.ID)
+	return deleted, nil
+}
+
+// CreateTrainingOutcomeAudited records a training outcome label and its admin
+// audit row in one transaction (#816): a failed audit insert aborts the label.
+func (s *usageStore) CreateTrainingOutcomeAudited(capture contentCaptureRecord, record AdminAuditRecord) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("content store is disabled")
 	}
-	if len(ids) > 0 {
-		if err := s.db.Where("capture_id IN ?", ids).Delete(&contentCaptureHeaderRecord{}).Error; err != nil {
-			return 0, err
+	record.ReasonCode = defaultString(record.ReasonCode, "training_label")
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := insertAdminAuditUsageTx(tx, record); err != nil {
+			return err
 		}
-	}
-	result := s.db.Where("request_id = ?", requestID).Delete(&contentCaptureRecord{})
-	if result.Error != nil {
-		return 0, result.Error
-	}
-	s.emitContentCaptureAudit("request_delete", requestID, actorCallerID, actorTokenID, "", result.RowsAffected, reason)
-	return result.RowsAffected, nil
+		return tx.Create(&capture).Error
+	})
 }
 
 func (s *usageStore) ContentCaptureTargetDomainsByRequestID(requestID string) ([]string, error) {

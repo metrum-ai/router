@@ -90,7 +90,7 @@ func verifyConfigControlPlanePhase9(tx *gorm.DB) error {
 // ensureConfigShadowSchema applies the phase-9 DDL idempotently inside a
 // shadow lifecycle transaction (same pattern as ensureConfigAdminWriteSchema).
 func ensureConfigShadowSchema(tx *gorm.DB) error {
-	if err := ensureConfigAdminWriteSchema(tx); err != nil {
+	if err := ensureConfigAdminAuditSchema(tx); err != nil {
 		return err
 	}
 	if err := applyConfigControlPlanePhase9(tx); err != nil {

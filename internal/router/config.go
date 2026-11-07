@@ -83,17 +83,21 @@ type ServerConfig struct {
 	OpenAICompatibility OpenAICompatibilityConfig `yaml:"openai_compatibility" json:"openai_compatibility"`
 	AdminAuth           AdminAuthConfig           `yaml:"admin_auth"`
 	AdminReports        AdminReportsConfig        `yaml:"admin_reports"`
-	ClientIP            ClientIPConfig            `yaml:"client_ip" json:"client_ip"`
-	Cache               CacheConfig               `yaml:"cache"`
-	Logging             LoggingConfig             `yaml:"logging"`
-	UsageDB             UsageDBConfig             `yaml:"usage_db"`
-	ConfigSource        ConfigSourceConfig        `yaml:"config_source" json:"config_source"`
-	Upstream            UpstreamConfig            `yaml:"upstream"`
-	Diagnostics         DiagnosticsConfig         `yaml:"diagnostics"`
-	ContentCapture      ContentCaptureConfig      `yaml:"content_capture"`
-	Retention           RetentionConfig           `yaml:"retention"`
-	DecisionTelemetry   DecisionTelemetryConfig   `yaml:"decision_telemetry"`
-	TrafficShape        ServerTrafficShapeConfig  `yaml:"traffic_shape" json:"traffic_shape"`
+	// AdminAPI is the `admin.api` block of the /admin/v1 contract (#811). It is set
+	// through the admin listener's `admin:` section once #809 lands that block; the
+	// documented defaults apply while it is empty.
+	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
+	ClientIP          ClientIPConfig           `yaml:"client_ip" json:"client_ip"`
+	Cache             CacheConfig              `yaml:"cache"`
+	Logging           LoggingConfig            `yaml:"logging"`
+	UsageDB           UsageDBConfig            `yaml:"usage_db"`
+	ConfigSource      ConfigSourceConfig       `yaml:"config_source" json:"config_source"`
+	Upstream          UpstreamConfig           `yaml:"upstream"`
+	Diagnostics       DiagnosticsConfig        `yaml:"diagnostics"`
+	ContentCapture    ContentCaptureConfig     `yaml:"content_capture"`
+	Retention         RetentionConfig          `yaml:"retention"`
+	DecisionTelemetry DecisionTelemetryConfig  `yaml:"decision_telemetry"`
+	TrafficShape      ServerTrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never

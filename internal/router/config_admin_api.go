@@ -59,28 +59,79 @@ type ConfigAdminDeps struct {
 	Now                     func() time.Time
 }
 
-// RegisterConfigAdminAPI registers every /admin/config/* route.
+// RegisterConfigAdminAPI registers every /admin/config/* route on the serving
+// port (the legacy surface, unchanged).
 func RegisterConfigAdminAPI(mux *http.ServeMux, deps ConfigAdminDeps) {
-	h := &configAdminHandler{deps: deps}
-	mux.HandleFunc("GET /admin/config/groups", h.handleListGroups)
-	mux.HandleFunc("GET /admin/config/groups/{group}", h.handleGetGroup)
-	mux.HandleFunc("PUT /admin/config/groups/{group}/targets", h.handleReplaceTargets)
-	mux.HandleFunc("POST /admin/config/groups/{group}/targets", h.handleAddTarget)
-	mux.HandleFunc("DELETE /admin/config/groups/{group}/targets/{target_id...}", h.handleRemoveTarget)
-	mux.HandleFunc("POST /admin/config/groups/{group}/targets:validate", h.handleValidateTargets)
-	mux.HandleFunc("POST /admin/config/groups/{group}/rollback", h.handleGroupRollback)
-	mux.HandleFunc("GET /admin/config/groups/{group}/history", h.handleGroupHistory)
-	mux.HandleFunc("POST /admin/config/groups/{group}/shadow", h.handleShadowStart)
-	mux.HandleFunc("GET /admin/config/groups/{group}/shadow", h.handleShadowStatus)
-	mux.HandleFunc("POST /admin/config/groups/{group}/shadow/promote", h.handleShadowPromote)
-	mux.HandleFunc("DELETE /admin/config/groups/{group}/shadow", h.handleShadowStop)
-	mux.HandleFunc("GET /admin/config/status", h.handleConfigStatus)
-	mux.HandleFunc("POST /admin/config/sets", h.handleImportSet)
-	mux.HandleFunc("GET /admin/config/sets", h.handleListSets)
-	mux.HandleFunc("GET /admin/config/sets/{set_id}", h.handleExportSet)
-	mux.HandleFunc("POST /admin/config/sets/{set_id}/activate", h.handleActivateSet)
-	mux.HandleFunc("POST /admin/config/rollback", h.handleSetRollback)
-	mux.HandleFunc("GET /admin/config/diff", h.handleConfigDiff)
+	newConfigAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, handler)
+	}, "/admin")
+}
+
+// newConfigAdminHandler builds the handler object without registering it, so the
+// same handler serves both the legacy surface and /admin/v1 (see
+// admin_v1_handlers.go). No handler body differs between the two mounts.
+func newConfigAdminHandler(deps ConfigAdminDeps) *configAdminHandler {
+	return &configAdminHandler{deps: deps}
+}
+
+// handlerKeys maps each config handler to the registry's HandlerKey.
+func (h *configAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"config.groups.list":            h.handleListGroups,
+		"config.group.get":              h.handleGetGroup,
+		"config.group.targets.replace":  h.handleReplaceTargets,
+		"config.group.targets.add":      h.handleAddTarget,
+		"config.group.targets.remove":   h.handleRemoveTarget,
+		"config.group.targets.validate": h.handleValidateTargets,
+		"config.group.rollback":         h.handleGroupRollback,
+		"config.group.history":          h.handleGroupHistory,
+		"config.group.shadow.start":     h.handleShadowStart,
+		"config.group.shadow.status":    h.handleShadowStatus,
+		"config.group.shadow.promote":   h.handleShadowPromote,
+		"config.group.shadow.stop":      h.handleShadowStop,
+		"config.status":                 h.handleConfigStatus,
+		"config.sets.import":            h.handleImportSet,
+		"config.sets.list":              h.handleListSets,
+		"config.sets.get":               h.handleExportSet,
+		"config.sets.activate":          h.handleActivateSet,
+		"config.sets.rollback":          h.handleSetRollback,
+		"config.diff":                   h.handleConfigDiff,
+	}
+}
+
+// register installs the legacy patterns under prefix. Callers use "/admin" (the
+// serving port) or "/admin/v1" (the versioned contract), and the wildcard names
+// are identical in both cases so r.PathValue keeps working untouched.
+func (h *configAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
+	for pattern, handler := range h.prefixedPatterns(prefix) {
+		handle(pattern, handler)
+	}
+}
+
+func (h *configAdminHandler) prefixedPatterns(prefix string) map[string]http.HandlerFunc {
+	keys := h.handlerKeys()
+	patterns := map[string]http.HandlerFunc{
+		"GET " + prefix + "/config/groups":                                   keys["config.groups.list"],
+		"GET " + prefix + "/config/groups/{group}":                           keys["config.group.get"],
+		"PUT " + prefix + "/config/groups/{group}/targets":                   keys["config.group.targets.replace"],
+		"POST " + prefix + "/config/groups/{group}/targets":                  keys["config.group.targets.add"],
+		"DELETE " + prefix + "/config/groups/{group}/targets/{target_id...}": keys["config.group.targets.remove"],
+		"POST " + prefix + "/config/groups/{group}/targets:validate":         keys["config.group.targets.validate"],
+		"POST " + prefix + "/config/groups/{group}/rollback":                 keys["config.group.rollback"],
+		"GET " + prefix + "/config/groups/{group}/history":                   keys["config.group.history"],
+		"POST " + prefix + "/config/groups/{group}/shadow":                   keys["config.group.shadow.start"],
+		"GET " + prefix + "/config/groups/{group}/shadow":                    keys["config.group.shadow.status"],
+		"POST " + prefix + "/config/groups/{group}/shadow/promote":           keys["config.group.shadow.promote"],
+		"DELETE " + prefix + "/config/groups/{group}/shadow":                 keys["config.group.shadow.stop"],
+		"GET " + prefix + "/config/status":                                   keys["config.status"],
+		"POST " + prefix + "/config/sets":                                    keys["config.sets.import"],
+		"GET " + prefix + "/config/sets":                                     keys["config.sets.list"],
+		"GET " + prefix + "/config/sets/{set_id}":                            keys["config.sets.get"],
+		"POST " + prefix + "/config/sets/{set_id}/activate":                  keys["config.sets.activate"],
+		"POST " + prefix + "/config/rollback":                                keys["config.sets.rollback"],
+		"GET " + prefix + "/config/diff":                                     keys["config.diff"],
+	}
+	return patterns
 }
 
 type configAdminHandler struct {
@@ -484,7 +535,7 @@ func (h *configAdminHandler) handleTargetsWrite(w http.ResponseWriter, r *http.R
 		Group: r.PathValue("group"), Targets: body.Targets, Strategy: body.Strategy,
 		Reason: body.Reason, DryRun: body.DryRun, Force: body.Force,
 		IdempotencyKey: idempotencyKey, ExpectedRevision: expected, Action: action,
-	}, subject.subject, h.policy(), h.now())
+	}, subject.subject, h.policy(), h.now(), adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write"))
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -545,7 +596,7 @@ func (h *configAdminHandler) handleAddTarget(w http.ResponseWriter, r *http.Requ
 	result, err := WriteGroupTargets(h.deps.DB, h.deps.RuntimeScope, GroupTargetsWriteRequest{
 		Group: groupName, Targets: targets, Reason: body.Reason, DryRun: body.DryRun, Force: body.Force,
 		IdempotencyKey: idempotencyKey, ExpectedRevision: expected, Action: configActionGroupTargetAdd,
-	}, subject.subject, h.policy(), h.now())
+	}, subject.subject, h.policy(), h.now(), adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write"))
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -624,7 +675,7 @@ func (h *configAdminHandler) handleRemoveTarget(w http.ResponseWriter, r *http.R
 	result, err := WriteGroupTargets(h.deps.DB, h.deps.RuntimeScope, GroupTargetsWriteRequest{
 		Group: groupName, Targets: kept, Reason: body.Reason, DryRun: body.DryRun, Force: body.Force,
 		IdempotencyKey: idempotencyKey, ExpectedRevision: expected, Action: configActionGroupTargetRemove,
-	}, subject.subject, h.policy(), h.now())
+	}, subject.subject, h.policy(), h.now(), adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write"))
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -654,7 +705,7 @@ func (h *configAdminHandler) handleGroupRollback(w http.ResponseWriter, r *http.
 			return
 		}
 	}
-	result, err := RollbackGroup(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), body.SetID, body.Reason, subject.subject, h.now())
+	result, err := RollbackGroup(h.deps.DB, h.deps.RuntimeScope, r.PathValue("group"), body.SetID, body.Reason, subject.subject, h.now(), adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "activate"))
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -751,7 +802,7 @@ func (h *configAdminHandler) handleImportSet(w http.ResponseWriter, r *http.Requ
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "Idempotency-Key header is invalid")
 		return
 	}
-	setID, err := importConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, body.Name, []byte(body.YAML), subject.subject, body.Reason, idempotencyKey, h.now())
+	setID, err := importConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, body.Name, []byte(body.YAML), subject.subject, body.Reason, idempotencyKey, h.now(), adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "activate"))
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -759,9 +810,16 @@ func (h *configAdminHandler) handleImportSet(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusCreated, map[string]any{"set_id": setID, "runtime_scope": h.deps.RuntimeScope, "name": body.Name, "status": "draft"})
 }
 
+// importIdempotencyHash binds an import's Idempotency-Key to the set name AND the
+// document body, so the same key with a changed document is a conflict rather than
+// a silent replay of the previous import.
+func importIdempotencyHash(name string, document []byte) string {
+	return "import:" + name + ":" + adminAuditHash(document)
+}
+
 // importConfigSetForAPI imports a canonical document as a draft set and
 // records the set_import event with phase-8 metadata.
-func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []byte, actor, reason, idempotencyKey string, now time.Time) (string, error) {
+func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []byte, actor, reason, idempotencyKey string, now time.Time, audit ...AdminAuditMeta) (string, error) {
 	if err := rejectRawSecretsInYAML(yamlBytes); err != nil {
 		return "", configAdminError(400, "config-secret-refused", "the document contains credential-shaped material; use environment variable references")
 	}
@@ -782,11 +840,11 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 	}
 	var setID string
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := ensureConfigAdminWriteSchema(tx); err != nil {
+		if err := ensureConfigAdminAuditSchema(tx); err != nil {
 			return err
 		}
 		if key := strings.TrimSpace(idempotencyKey); key != "" {
-			replay, conflict, err := lookupIdempotentGroupWrite(tx, runtimeScope, key, "import:"+name, "")
+			replay, conflict, err := lookupIdempotentGroupWrite(tx, runtimeScope, key, importIdempotencyHash(name, cleaned), "")
 			if err != nil {
 				return err
 			}
@@ -804,7 +862,8 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 		}
 		revision, _ := currentRevisionForScope(tx, runtimeScope)
 		if _, err := insertConfigChangeEventTx(tx, runtimeScope, id, configActionSetImport, actor, revision, configChangeEventMeta{
-			Reason: reason, IdempotencyKey: idempotencyKey, RequestHash: "import:" + name,
+			Audit:  adminAuditMetaOrEmpty(audit),
+			Reason: reason, IdempotencyKey: idempotencyKey, RequestHash: importIdempotencyHash(name, cleaned),
 		}, now); err != nil {
 			return err
 		}
@@ -838,12 +897,39 @@ func (h *configAdminHandler) handleListSets(w http.ResponseWriter, r *http.Reque
 		CreatedAt        string `gorm:"column:created_at"`
 		ActivatedAt      string `gorm:"column:activated_at"`
 	}
-	if err := h.deps.DB.Table("router_config_sets").
+	// Pagination (ACP-013/014): without a page this keeps today's behaviour (newest
+	// 200); with one it applies the limit and a stable keyset on (created_at, id), so a
+	// full cursor walk returns each set exactly once.
+	page, paginated := AdminPageFrom(r.Context())
+	limit := 200
+	order := "created_at DESC, id DESC"
+	if paginated {
+		limit = page.LimitOr(200)
+		order = "created_at ASC, id ASC"
+		if page.Descending() {
+			order = "created_at DESC, id DESC"
+		}
+	}
+	query := h.deps.DB.Table("router_config_sets").
 		Select("id", "name", "status", "validation_status", "created_by", "created_at", "activated_at").
-		Where("runtime_scope = ?", h.deps.RuntimeScope).
-		Order("created_at DESC").Limit(200).Find(&rows).Error; err != nil {
+		Where("runtime_scope = ?", h.deps.RuntimeScope)
+	if paginated {
+		if values := page.CursorValues(); len(values) == 2 {
+			if page.Descending() {
+				query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", values[0], values[0], values[1])
+			} else {
+				query = query.Where("(created_at > ? OR (created_at = ? AND id > ?))", values[0], values[0], values[1])
+			}
+		}
+	}
+	if err := query.Order(order).Limit(limit + 1).Find(&rows).Error; err != nil {
 		writeConfigAdminError(w, http.StatusInternalServerError, "config-read-failed", "the configuration sets could not be read")
 		return
+	}
+	if paginated && len(rows) > limit {
+		rows = rows[:limit]
+		last := rows[len(rows)-1]
+		page.PublishNext(last.CreatedAt, last.ID)
 	}
 	sets := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
@@ -931,7 +1017,7 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	revision, err := activateConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, setID, action, subject.subject, body.Reason, expected, h.now())
+	revision, err := activateConfigSetForAPI(h.deps.DB, h.deps.RuntimeScope, setID, action, subject.subject, body.Reason, expected, h.now(), adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "activate"))
 	if err != nil {
 		h.mapWriteError(w, err)
 		return
@@ -946,13 +1032,13 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 
 // activateConfigSetForAPI activates (or rolls back to) a set with the guarded
 // runtime update and records the set_activate/set_rollback event.
-func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, now time.Time) (int64, error) {
+func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, now time.Time, audit ...AdminAuditMeta) (int64, error) {
 	var revision int64
 	err := db.Transaction(func(tx *gorm.DB) error {
 		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 			return err
 		}
-		if err := ensureConfigAdminWriteSchema(tx); err != nil {
+		if err := ensureConfigAdminAuditSchema(tx); err != nil {
 			return err
 		}
 		state, _, err := loadConfigAdminRuntime(tx, runtimeScope)
@@ -972,6 +1058,7 @@ func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, re
 			return err
 		}
 		if _, err := insertConfigChangeEventTx(tx, runtimeScope, setID, action, actor, rev, configChangeEventMeta{
+			Audit:     adminAuditMetaOrEmpty(audit),
 			PrevSetID: state.ActiveSetID, Reason: reason,
 		}, now); err != nil {
 			return err

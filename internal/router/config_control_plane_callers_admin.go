@@ -48,15 +48,38 @@ type CallerAdminDeps struct {
 	Now          func() time.Time
 }
 
-// RegisterCallerDirectoryAdmin registers the admin caller directory mutation
-// endpoints on mux. It is exported so the service route map stays untouched
-// while the control-plane wiring composes it.
+// RegisterCallerDirectoryAdmin registers the admin caller directory endpoints on
+// the serving port (the legacy surface, unchanged).
 func RegisterCallerDirectoryAdmin(mux *http.ServeMux, deps CallerAdminDeps) {
-	h := &callerAdminHandler{deps: deps}
-	mux.HandleFunc("GET /admin/callers", h.handleList)
-	mux.HandleFunc("POST /admin/callers/issue", h.handleIssue)
-	mux.HandleFunc("POST /admin/callers/{id}/rotate", h.handleRotate)
-	mux.HandleFunc("POST /admin/callers/{id}/revoke", h.handleRevoke)
+	newCallerAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, handler)
+	}, "/admin")
+}
+
+// newCallerAdminHandler builds the handler object without registering it, so the
+// same handler also serves /admin/v1. No handler body differs between mounts.
+func newCallerAdminHandler(deps CallerAdminDeps) *callerAdminHandler {
+	return &callerAdminHandler{deps: deps}
+}
+
+// handlerKeys maps each caller handler to the registry's HandlerKey.
+func (h *callerAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"callers.list":   h.handleList,
+		"callers.issue":  h.handleIssue,
+		"callers.rotate": h.handleRotate,
+		"callers.revoke": h.handleRevoke,
+	}
+}
+
+// register installs the caller directory patterns under prefix with the legacy
+// wildcard names, so r.PathValue("id") keeps working on both surfaces.
+func (h *callerAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
+	keys := h.handlerKeys()
+	handle("GET "+prefix+"/callers", keys["callers.list"])
+	handle("POST "+prefix+"/callers/issue", keys["callers.issue"])
+	handle("POST "+prefix+"/callers/{id}/rotate", keys["callers.rotate"])
+	handle("POST "+prefix+"/callers/{id}/revoke", keys["callers.revoke"])
 }
 
 type callerAdminHandler struct {
@@ -141,10 +164,36 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-config-set-unavailable")
 		return
 	}
+	// Pagination (ACP-013/014): caller_id alone is the unique tie-break, so a full
+	// cursor walk returns each caller exactly once.
+	page, paginated := AdminPageFrom(r.Context())
+	limit := 0
+	order := "caller_id ASC"
+	query := h.deps.DB.Where("config_set_id = ?", set.ID)
+	if paginated {
+		limit = page.LimitOr(50)
+		if page.Descending() {
+			order = "caller_id DESC"
+		}
+		if values := page.CursorValues(); len(values) == 1 {
+			if page.Descending() {
+				query = query.Where("caller_id < ?", values[0])
+			} else {
+				query = query.Where("caller_id > ?", values[0])
+			}
+		}
+	}
+	if limit > 0 {
+		query = query.Limit(limit + 1)
+	}
 	var rows []callerRow
-	if err := h.deps.DB.Where("config_set_id = ?", set.ID).Order("caller_id ASC").Find(&rows).Error; err != nil {
+	if err := query.Order(order).Find(&rows).Error; err != nil {
 		writeCallerAdminError(w, http.StatusInternalServerError, "callers-query-failed")
 		return
+	}
+	if paginated && len(rows) > limit {
+		rows = rows[:limit]
+		page.PublishNext(rows[len(rows)-1].CallerID)
 	}
 	resp := callerAdminListResponse{
 		GeneratedUTC: h.now().Format(time.RFC3339Nano),

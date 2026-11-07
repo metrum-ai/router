@@ -180,7 +180,7 @@ func (s *sqlAdminIdempotencyStore) Begin(scope adminIdempotencyScope, now time.T
 	if len(rows) > 0 {
 		record := rows[0]
 		if !record.ExpiresAt.IsZero() && !now.Before(record.ExpiresAt) {
-			if err := s.delete(scope); err != nil {
+			if err := s.deleteExpired(scope, record.ExpiresAt); err != nil {
 				return adminIdempotencyRecord{}, adminIdempotencyProceed, err
 			}
 		} else {
@@ -264,6 +264,16 @@ func (s *sqlAdminIdempotencyStore) load(scope adminIdempotencyScope) ([]adminIde
 		})
 	}
 	return out, nil
+}
+
+// deleteExpired removes an expired record only if it still carries the expiry that
+// was observed, so a concurrently re-claimed row is never deleted by the loser.
+func (s *sqlAdminIdempotencyStore) deleteExpired(scope adminIdempotencyScope, observedExpiry time.Time) error {
+	return s.db.Exec(
+		`DELETE FROM router_admin_idempotency WHERE principal_kind = ? AND principal_subject = ? AND domain = ? AND operation = ? AND idempotency_key = ? AND expires_at = ?`,
+		scope.PrincipalKind, scope.PrincipalSubject, scope.Domain, scope.Operation, scope.Key,
+		adminIdempotencyTime(observedExpiry),
+	).Error
 }
 
 func (s *sqlAdminIdempotencyStore) delete(scope adminIdempotencyScope) error {

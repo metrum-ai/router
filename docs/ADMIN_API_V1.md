@@ -279,6 +279,47 @@ Removal requires at least one minor release **and** 90 days between
 `Deprecation` and `Sunset`; a test rejects a registry entry that declares a
 shorter notice.
 
+## Audit, credential events and metrics
+
+Every mutating operation writes exactly one audit row in the **same transaction** as
+its change, in the database where the change lives:
+
+| Change lives in | Audit row |
+| --- | --- |
+| configuration control-plane database | `router_config_change_events` (extended with actor kind/credential/issuer, authorization domain, object, `authz_action`, operation, request ID, outcome, before/after document hashes and a ticket) |
+| usage database (content-capture deletion and purge, training outcome labels) | `router_admin_audit_events` |
+
+A failed audit insert aborts the change, so there is no path that commits an
+unaudited write: the write is refused with a 5xx and the revision, configuration
+sets and change log are unchanged. Records carry identifiers, digests and redacted
+free text only — never a token, verifier, claim, request body or upstream text.
+
+Authentication outcomes (success, failure, expired) are recorded per credential
+kind in `router_admin_credential_events`, together with credential issue, rotation
+and revocation. A successful authentication that cannot be recorded is refused; a
+failed authentication is recorded best effort with a counter, so a credential
+guessing flood cannot make the plane unavailable.
+
+Admin-plane metrics are rendered only on an admin-plane scrape:
+
+```
+router_admin_requests_total{operation,object,action,status}
+router_admin_request_duration_seconds{operation}            (histogram)
+router_admin_authz_denials_total{object,action,reason}      (401/403)
+router_admin_rate_limited_total{operation}                  (429)
+router_admin_authentications_total{kind,outcome}
+router_admin_idempotent_replays_total{operation}
+router_admin_audit_write_failures_total{kind}
+router_admin_revision{scope="config"|"policy",kind="desired"|"applied"}
+```
+
+Labels are registry- or catalogue-bounded: an operation ID, an object/action pair,
+a status code or a denial reason. No request path, subject, credential or address is
+ever a label. The serving-port `/metrics` output is unchanged, so a v4.7 scrape
+target keeps working. `router_admin_revision` is the freshness signal: `desired` is
+the published revision, `applied` the one this process enforces, and the series is
+omitted when the values are not known rather than publishing a misleading zero.
+
 ## Regenerating the contract
 
 ```bash

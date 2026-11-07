@@ -42,6 +42,19 @@ const (
 	AdminConcurrencyRepresentation AdminConcurrencyMode = "representation"
 )
 
+// AdminETagMode declares whether an operation publishes a strong ETag.
+type AdminETagMode string
+
+const (
+	// AdminETagNone publishes no validator (the legacy behaviour).
+	AdminETagNone AdminETagMode = "none"
+	// AdminETagRevision publishes "rev-<configuration revision>".
+	AdminETagRevision AdminETagMode = "revision"
+	// AdminETagRepresentation publishes the resource's own representation hash;
+	// the handler sets it because only it knows the body.
+	AdminETagRepresentation AdminETagMode = "representation"
+)
+
 // AdminIdempotencyMode declares where replay protection lives.
 type AdminIdempotencyMode string
 
@@ -56,16 +69,24 @@ const (
 	AdminIdempotencyStore AdminIdempotencyMode = "store"
 )
 
+// adminGlobalDomain is the plane-global authorization domain: the value of the
+// shared router.AdminGlobalDomain that the authorization lane exports (it matches
+// today's global admin checks, which evaluate in the "*" domain). The literal is
+// written exactly once, here, so no second declaration of the exported name exists
+// to collide when that lane lands; the mount then references the shared constant
+// directly.
+const adminGlobalDomain = "*"
+
 // AdminDomainSource declares how the authorization domain is resolved. The
 // domain is never derived from a request header.
 type AdminDomainSource string
 
 const (
-	// AdminDomainGlobal authorizes in the plane-global domain ("default").
+	// AdminDomainGlobal authorizes in the plane-global domain, the shared
+	// AdminGlobalDomain value, which is what today's global admin checks use. v4.7
+	// admin-key grants for plane-global objects are compiled into exactly this
+	// domain, so their decisions hold.
 	AdminDomainGlobal AdminDomainSource = "global"
-	// AdminDomainGlobalWildcard authorizes in the whole-plane wildcard domain
-	// ("*"), which is how today's authorizeGlobalAdmin decisions are taken.
-	AdminDomainGlobalWildcard AdminDomainSource = "global-wildcard"
 	// AdminDomainCallerTarget authorizes in the stored caller's
 	// "<project>/<environment>" domain.
 	AdminDomainCallerTarget AdminDomainSource = "caller-target"
@@ -154,11 +175,14 @@ type Operation struct {
 	// handler runs.
 	Object string
 	Action string
-	// ExtraChecks are additional decisions the operation requires (shadow
-	// promotion needs both admin:shadow/write and admin:config/write; a forced
-	// write needs admin:config/force).
+	// ExtraChecks are additional decisions the contract layer always takes
+	// (shadow promotion needs both admin:shadow/write and admin:config/write).
 	ExtraChecks []AdminCheck
-	Domain      AdminDomainSource
+	// ConditionalChecks are decisions the handler takes after parsing the body
+	// (a forced write needs admin:config/force). They are documented but not
+	// enforced here, so a non-forced write is not required to hold the grant.
+	ConditionalChecks []AdminCheck
+	Domain            AdminDomainSource
 	// Request/Response are typed schema prototypes (nil means no body).
 	Request  any
 	Response any
@@ -166,6 +190,7 @@ type Operation struct {
 	// contract-wide 400/401/403/429/500/503.
 	Errors      []int
 	Concurrency AdminConcurrencyMode
+	ETag        AdminETagMode
 	Idempotency AdminIdempotencyMode
 	Pagination  *AdminPaginationSpec
 	Query       []adminQueryParameter
@@ -197,6 +222,9 @@ type Operation struct {
 func (op Operation) normalized() Operation {
 	if op.Concurrency == "" {
 		op.Concurrency = AdminConcurrencyNone
+	}
+	if op.ETag == "" {
+		op.ETag = AdminETagNone
 	}
 	if op.Idempotency == "" {
 		op.Idempotency = AdminIdempotencyNone
@@ -260,6 +288,14 @@ func (op Operation) validate() error {
 	case AdminConcurrencyNone, AdminConcurrencyRevision, AdminConcurrencyRepresentation:
 	default:
 		return fmt.Errorf("operation %s has invalid concurrency mode %q", op.ID, op.Concurrency)
+	}
+	switch op.ETag {
+	case AdminETagNone, AdminETagRevision, AdminETagRepresentation:
+	default:
+		return fmt.Errorf("operation %s has invalid ETag mode %q", op.ID, op.ETag)
+	}
+	if op.ETag != AdminETagNone && op.Method != "GET" {
+		return fmt.Errorf("operation %s publishes an ETag but is not a GET", op.ID)
 	}
 	switch op.Idempotency {
 	case AdminIdempotencyNone, AdminIdempotencyHandler, AdminIdempotencyStore:

@@ -702,7 +702,7 @@
         ],
         "x-admin-action": "list",
         "x-admin-concurrency": "",
-        "x-admin-domain": "caller-target",
+        "x-admin-domain": "global",
         "x-admin-idempotency": "",
         "x-admin-object": "admin:callers"
       }
@@ -1372,7 +1372,7 @@
         "x-admin-action": "activate",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "handler",
+        "x-admin-idempotency": "store",
         "x-admin-object": "admin:config"
       }
     },
@@ -1466,7 +1466,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "handler",
+        "x-admin-idempotency": "store",
         "x-admin-object": "admin:shadow"
       },
       "get": {
@@ -1642,7 +1642,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "handler",
+        "x-admin-idempotency": "store",
         "x-admin-object": "admin:shadow"
       }
     },
@@ -1755,7 +1755,7 @@
             "when": "body.force"
           }
         ],
-        "x-admin-idempotency": "handler",
+        "x-admin-idempotency": "store",
         "x-admin-object": "admin:shadow"
       }
     },
@@ -2237,7 +2237,7 @@
         "x-admin-action": "activate",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "handler",
+        "x-admin-idempotency": "store",
         "x-admin-object": "admin:config"
       }
     },
@@ -2629,7 +2629,7 @@
         "x-admin-action": "activate",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "handler",
+        "x-admin-idempotency": "store",
         "x-admin-object": "admin:config"
       }
     },
@@ -3813,15 +3813,6 @@
       "get": {
         "operationId": "getAdminReportRequestEvidence",
         "parameters": [
-          {
-            "description": "request identifier",
-            "in": "query",
-            "name": "request_id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
             "in": "header",

@@ -142,3 +142,59 @@ Both later migrations are `restore-required`; package rollback never runs a reve
 `server.usage_db.migration_policy` controls serving-process behavior. `deployment-job` is the default. `validate` and `deployment-job` never apply application-schema DDL or run data jobs at startup; both require a current, compatible ledger and fail startup otherwise. `auto-safe` applies only checked-in transactional online definitions and is intended only for a reviewed small/single-node SQLite deployment. On a fresh SQLite database, after `ApplyPending` it may validate exactly ordinal `0` of the synthesized pending job when that checked-in job is explicitly marked zero-row-safe, and opens only when that checkpoint validates with zero scanned, updated, skipped, and failed rows. While that synthesized checkpoint still requires validation, existing usage rows fail closed. It never resumes, retries, loops through batches, bypasses validation, or accepts a pre-existing durable `pending`, `running`, `paused`, `cancelled`, `failed`, or unrecognized job state; those states use the non-serving deployment-job workflow. When the required job is already `validated`, restart skips the zero-row preflight and preserves the durable checkpoint result and counters, including after usage rows accumulate. For PostgreSQL production, use a non-serving deployment job and `deployment-job` (or `validate` after that job); do not rely on a serving replica to perform a migration.
 
 The CLI intentionally accepts a PostgreSQL DSN only through a named environment variable, never a command-line flag. For a checked-in data job, use `--action=resume --job=<key> --checkpoint-ordinal=<n>` for one bounded checkpoint, `--action=cancel --job=<key>` to request checkpoint-bound cancellation, or `--action=retry --job=<key> --recovery-evidence-ref=<safe-reference>` after recovery. Its ledger and output exclude SQL values, DSNs, raw configuration, request content, images, tool payloads, tokens, hashes, provider credentials, and payment data.
+
+## Admin control-plane audit migrations (v4.8.0)
+
+Two migrations back the admin control plane's audit records (#811, #816). Both are
+additive and **online**: column additions, new tables and indexes only, with no
+rewrite of an existing row and no data job.
+
+| Migration id | Scope | Schema version | Maintenance | Data job | Rollback class |
+| --- | --- | --- | --- | --- | --- |
+| `2026110601` (`router-config.phase10.admin-idempotency.v1`) | `router-config` | 10 | online | none | `restore-required` |
+| `2026110603` (`router-config.phase11.admin-audit.v1`) | `router-config` | 11 | online | none | `restore-required` |
+| `2026110604` (`usage.admin-audit.v1`) | `usage` | 13 | online | none | `restore-required` |
+
+- Phase 10 creates `router_admin_idempotency`: one `Idempotency-Key` record per
+  principal, domain and operation, retained 24 hours and persisted, so a retry
+  after a restart replays the recorded response.
+- Phase 11 adds the admin audit columns to `router_config_change_events`
+  (`actor_kind`, `actor_credential_id`, `actor_issuer`, `authz_domain`, `object`,
+  `authz_action`, `operation_id`, `request_id`, `outcome`, `before_hash`,
+  `after_hash`, `ticket`) and creates `router_admin_credential_events` for
+  authentication outcomes and credential lifecycle changes. The existing `action`
+  column keeps its meaning (the change action); `authz_action` is the authorized
+  action.
+- `2026110604` creates `router_admin_audit_events`, the audit row for admin
+  mutations whose change lives in the usage database (content-capture deletion and
+  purge, training outcome labels).
+
+### Upgrading a v4.7 deployment with `migration_policy: deployment-job`
+
+The serving process never applies these migrations. Run the deployment job while
+the router is stopped or drained, for both scopes:
+
+```sh
+# Usage scope: plan → approved backup → apply → data jobs → verify-serving.
+metrum-ai-router-migrate --scope=usage --action=plan --driver=postgres \
+  --dsn-env=ROUTER_USAGE_DB_DSN --json
+metrum-ai-router-migrate --scope=usage --action=apply \
+  --dsn-env=ROUTER_USAGE_DB_DSN --json
+metrum-ai-router-migrate --scope=usage --action=verify-serving \
+  --dsn-env=ROUTER_USAGE_DB_DSN
+
+# Configuration control-plane scope: same gate, online prefix only.
+metrum-ai-router-migrate --scope=router-config --action=plan --driver=postgres \
+  --dsn-env=ROUTER_CONFIG_DB_DSN --json
+metrum-ai-router-migrate --scope=router-config --action=apply \
+  --dsn-env=ROUTER_CONFIG_DB_DSN --json
+metrum-ai-router-migrate --scope=router-config --action=verify-serving \
+  --dsn-env=ROUTER_CONFIG_DB_DSN
+```
+
+`plan` must report these three migrations as pending (or already applied) with
+`maintenance: online` and no data job; a non-zero exit or an `incompatible` state
+means the binary and the database disagree and serving must not start. The
+idempotent-ensure paths keep an admin write working on a database that was migrated
+only through the previous phase, so a partially ordered job cannot produce an
+unauditable write.

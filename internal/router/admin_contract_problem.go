@@ -168,11 +168,11 @@ func AdminProblemForRequestID(r *http.Request, status int, code string, requestI
 	}
 	adminProblemCodesMu.RLock()
 	spec, ok := adminProblemCodes[code]
-	adminProblemCodesMu.RUnlock()
 	if !ok {
 		code, status = "internal-error", http.StatusInternalServerError
 		spec = adminProblemCodes[code]
 	}
+	adminProblemCodesMu.RUnlock()
 	if status == 0 {
 		status = spec.Status
 	}

@@ -18,6 +18,7 @@ package router
 // effective query.
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -347,4 +348,81 @@ func adminRetryAfterSeconds(after time.Duration) int {
 		seconds = 1
 	}
 	return seconds
+}
+
+// AdminPage is the parsed pagination of the current request, available to a
+// collection handler so it can apply the limit, the keyset filter and the next-page
+// link without knowing the cursor codec.
+type AdminPage struct {
+	Limit     int
+	Sort      string
+	Direction string
+	HasCursor bool
+	Cursor    adminCursorPayload
+
+	writer  http.ResponseWriter
+	request *http.Request
+	codec   *AdminCursorCodec
+	op      Operation
+}
+
+// AdminPageFrom returns the page of the current request, if it paginates.
+func AdminPageFrom(ctx context.Context) (*AdminPage, bool) {
+	page, ok := ctx.Value(adminPageContextKey{}).(*AdminPage)
+	return page, ok && page != nil
+}
+
+type adminPageContextKey struct{}
+
+// WithAdminPage records the parsed page for the handler.
+func WithAdminPage(ctx context.Context, page *AdminPage) context.Context {
+	return context.WithValue(ctx, adminPageContextKey{}, page)
+}
+
+// LimitOr returns the requested limit, or fallback when the request does not
+// paginate.
+func (p *AdminPage) LimitOr(fallback int) int {
+	if p == nil || p.Limit <= 0 {
+		return fallback
+	}
+	return p.Limit
+}
+
+// Descending reports whether the page walks the keys in descending order.
+func (p *AdminPage) Descending() bool { return p != nil && p.Direction == "desc" }
+
+// CursorValues returns the keyset tuple of the cursor, or nil for the first page.
+func (p *AdminPage) CursorValues() []string {
+	if p == nil || !p.HasCursor {
+		return nil
+	}
+	return p.Cursor.Values
+}
+
+// PublishNext emits the Link rel="next" header for the last row on this page.
+func (p *AdminPage) PublishNext(values ...string) {
+	if p == nil || p.writer == nil || p.codec == nil {
+		return
+	}
+	page := adminPageRequest{Limit: p.Limit, Sort: p.Sort, Direction: p.Direction, Filters: map[string]string{}}
+	next := adminCursorPayload{
+		Endpoint:    p.op.ID,
+		Sort:        p.Sort,
+		Direction:   p.Direction,
+		Fingerprint: adminFilterFingerprint(p.op.ID, nil, p.Sort, p.Direction),
+		Values:      values,
+	}
+	adminSetPaginationHeaders(p.writer, p.request, page, &next, p.codec, nil)
+}
+
+// adminPageContext builds the handler-visible page for an operation.
+func adminPageContext(w http.ResponseWriter, r *http.Request, op Operation, page adminPageRequest, codec *AdminCursorCodec) *AdminPage {
+	if op.Pagination == nil {
+		return nil
+	}
+	return &AdminPage{
+		Limit: page.Limit, Sort: page.Sort, Direction: page.Direction,
+		HasCursor: page.HasCursor, Cursor: page.Cursor,
+		writer: w, request: r, codec: codec, op: op,
+	}
 }

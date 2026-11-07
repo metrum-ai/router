@@ -62,6 +62,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "listConfigGroups", Method: "GET", Path: "/admin/v1/config/groups", LegacyPath: "/admin/config/groups",
 		Summary: "List model groups in the active configuration",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
+		ETag:     AdminETagRevision,
 		Response: adminOpenObject{Members: []string{"mode", "runtime_scope", "set_id", "revision", "groups"}},
 		Errors:   []int{409}, Concurrency: AdminConcurrencyNone, Idempotency: AdminIdempotencyNone,
 		RateClass: AdminRateClassRead, HandlerKey: "config.groups.list",
@@ -125,7 +126,7 @@ var adminV1OperationSpecs = []Operation{
 		Request:     configAdminRollbackRequest{},
 		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "restored_from_set_id", "diff", "propagation"}},
 		Errors:      []int{404, 409, 412, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.rollback",
 	},
 	{
@@ -143,7 +144,7 @@ var adminV1OperationSpecs = []Operation{
 		Response:      configAdminShadowStartResponse{},
 		SuccessStatus: 201,
 		Errors:        []int{404, 409, 412, 422, 428},
-		Concurrency:   AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		Concurrency:   AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.shadow.start",
 	},
 	{
@@ -163,7 +164,7 @@ var adminV1OperationSpecs = []Operation{
 		Request:     configAdminReasonForceRequest{},
 		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "replayed", "diff", "shadow_run_id"}},
 		Errors:      []int{404, 409, 412, 422, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.shadow.promote",
 	},
 	{
@@ -173,7 +174,7 @@ var adminV1OperationSpecs = []Operation{
 		Request:     configAdminRollbackRequest{},
 		Response:    configAdminShadowStartResponse{},
 		Errors:      []int{404, 409, 412, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.shadow.stop",
 	},
 	{
@@ -220,7 +221,7 @@ var adminV1OperationSpecs = []Operation{
 		Request:     configAdminRollbackRequest{},
 		Response:    adminOpenObject{Members: []string{"set_id", "previous_set_id", "revision", "replayed", "propagation"}},
 		Errors:      []int{404, 409, 412, 422, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.sets.activate",
 	},
 	{
@@ -230,7 +231,7 @@ var adminV1OperationSpecs = []Operation{
 		Request:     configAdminRollbackRequest{},
 		Response:    adminOpenObject{Members: []string{"set_id", "previous_set_id", "revision", "replayed", "propagation"}},
 		Errors:      []int{404, 409, 412, 422, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.sets.rollback",
 	},
 	{
@@ -249,7 +250,7 @@ var adminV1OperationSpecs = []Operation{
 	{
 		ID: "listCallers", Method: "GET", Path: "/admin/v1/callers", LegacyPath: "/admin/callers",
 		Summary: "List registered callers of the active configuration",
-		Object:  authzObjectAdminCallers, Action: authzActionList, Domain: AdminDomainCallerTarget,
+		Object:  authzObjectAdminCallers, Action: authzActionList, Domain: AdminDomainGlobal,
 		Response: adminOpenObject{Members: []string{"generated_utc", "config_set_id", "callers"}},
 		Errors:   []int{409},
 		Pagination: &AdminPaginationSpec{
@@ -458,8 +459,7 @@ var adminV1OperationSpecs = []Operation{
 		Summary: "Read the evidence for one request",
 		Object:  authzObjectAdminReports, Action: authzActionDrilldown, Domain: AdminDomainHandler,
 		Response: adminOpenObject{Members: []string{"request", "captures", "usage"}}, Errors: []int{400, 404, 503},
-		Query:   []adminQueryParameter{{Name: "request_id", Required: true, Description: "request identifier"}},
-		Adapter: "reports", RateClass: AdminRateClassRead, HandlerKey: "reports.request_evidence",
+		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.request_evidence",
 	},
 	{
 		ID: "listAdminSecurityEvents", Method: "GET", Path: "/admin/v1/reports/security/events", LegacyPath: "/admin/reports/api/security/events",
