@@ -50,37 +50,102 @@ type ConfigAdminDeps struct {
 	InstanceID              string
 	Authenticate            func(w http.ResponseWriter, r *http.Request) (adminAuthSubject, bool)
 	Authorize               func(subject adminAuthSubject, permission string) bool
-	CurrentConfig           func() *Config
-	LoadedRevision          func() (revision int64, setID string, at time.Time)
-	Reload                  func() error
-	ReloadShadows           func()
-	UsageDB                 func() *gorm.DB
-	RecordAccess            func(r *http.Request, subject adminAuthSubject, status int, reason, object, action string)
-	Now                     func() time.Time
+	// Decide is the /admin/v1 permission decision: it carries the request context and
+	// returns the authorization error so stale/unavailable map to their own status.
+	Decide         func(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool
+	CurrentConfig  func() *Config
+	LoadedRevision func() (revision int64, setID string, at time.Time)
+	Reload         func() error
+	ReloadShadows  func()
+	UsageDB        func() *gorm.DB
+	RecordAccess   func(r *http.Request, subject adminAuthSubject, status int, reason, object, action string)
+	Now            func() time.Time
 }
 
-// RegisterConfigAdminAPI registers every /admin/config/* route.
+// RegisterConfigAdminAPI registers every /admin/config/* route on the serving port
+// (the legacy surface, unchanged).
 func RegisterConfigAdminAPI(mux *http.ServeMux, deps ConfigAdminDeps) {
-	h := &configAdminHandler{deps: deps}
-	mux.HandleFunc("GET /admin/config/groups", h.handleListGroups)
-	mux.HandleFunc("GET /admin/config/groups/{group}", h.handleGetGroup)
-	mux.HandleFunc("PUT /admin/config/groups/{group}/targets", h.handleReplaceTargets)
-	mux.HandleFunc("POST /admin/config/groups/{group}/targets", h.handleAddTarget)
-	mux.HandleFunc("DELETE /admin/config/groups/{group}/targets/{target_id...}", h.handleRemoveTarget)
-	mux.HandleFunc("POST /admin/config/groups/{group}/targets:validate", h.handleValidateTargets)
-	mux.HandleFunc("POST /admin/config/groups/{group}/rollback", h.handleGroupRollback)
-	mux.HandleFunc("GET /admin/config/groups/{group}/history", h.handleGroupHistory)
-	mux.HandleFunc("POST /admin/config/groups/{group}/shadow", h.handleShadowStart)
-	mux.HandleFunc("GET /admin/config/groups/{group}/shadow", h.handleShadowStatus)
-	mux.HandleFunc("POST /admin/config/groups/{group}/shadow/promote", h.handleShadowPromote)
-	mux.HandleFunc("DELETE /admin/config/groups/{group}/shadow", h.handleShadowStop)
-	mux.HandleFunc("GET /admin/config/status", h.handleConfigStatus)
-	mux.HandleFunc("POST /admin/config/sets", h.handleImportSet)
-	mux.HandleFunc("GET /admin/config/sets", h.handleListSets)
-	mux.HandleFunc("GET /admin/config/sets/{set_id}", h.handleExportSet)
-	mux.HandleFunc("POST /admin/config/sets/{set_id}/activate", h.handleActivateSet)
-	mux.HandleFunc("POST /admin/config/rollback", h.handleSetRollback)
-	mux.HandleFunc("GET /admin/config/diff", h.handleConfigDiff)
+	newConfigAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, handler)
+	}, "/admin")
+}
+
+// newConfigAdminHandler builds the handler object without registering it, so the same
+// handler serves the legacy surface and /admin/v1.
+func newConfigAdminHandler(deps ConfigAdminDeps) *configAdminHandler {
+	return &configAdminHandler{deps: deps}
+}
+
+// adminConfigHandlerPatterns is the single pattern table: each legacy pattern, its
+// registry HandlerKey and the handler behind it.
+func (h *configAdminHandler) adminConfigHandlerPatterns() []struct {
+	suffix  string
+	key     string
+	handler http.HandlerFunc
+} {
+	return []struct {
+		suffix  string
+		key     string
+		handler http.HandlerFunc
+	}{
+		{"/config/groups", "config.groups.list", h.handleListGroups},
+		{"/config/groups/{group}", "config.group.get", h.handleGetGroup},
+		{"/config/groups/{group}/targets", "config.group.targets.replace", h.handleReplaceTargets},
+		{"/config/groups/{group}/targets", "config.group.targets.add", h.handleAddTarget},
+		{"/config/groups/{group}/targets/{target_id...}", "config.group.targets.remove", h.handleRemoveTarget},
+		{"/config/groups/{group}/targets:validate", "config.group.targets.validate", h.handleValidateTargets},
+		{"/config/groups/{group}/rollback", "config.group.rollback", h.handleGroupRollback},
+		{"/config/groups/{group}/history", "config.group.history", h.handleGroupHistory},
+		{"/config/groups/{group}/shadow", "config.group.shadow.start", h.handleShadowStart},
+		{"/config/groups/{group}/shadow", "config.group.shadow.status", h.handleShadowStatus},
+		{"/config/groups/{group}/shadow/promote", "config.group.shadow.promote", h.handleShadowPromote},
+		{"/config/groups/{group}/shadow", "config.group.shadow.stop", h.handleShadowStop},
+		{"/config/status", "config.status", h.handleConfigStatus},
+		{"/config/sets", "config.sets.import", h.handleImportSet},
+		{"/config/sets", "config.sets.list", h.handleListSets},
+		{"/config/sets/{set_id}", "config.sets.get", h.handleExportSet},
+		{"/config/sets/{set_id}/activate", "config.sets.activate", h.handleActivateSet},
+		{"/config/rollback", "config.sets.rollback", h.handleSetRollback},
+		{"/config/diff", "config.diff", h.handleConfigDiff},
+	}
+}
+
+// handlerKeys maps each config handler to the registry's HandlerKey.
+func (h *configAdminHandler) handlerKeys() map[string]http.HandlerFunc {
+	out := map[string]http.HandlerFunc{}
+	for _, entry := range h.adminConfigHandlerPatterns() {
+		out[entry.key] = entry.handler
+	}
+	return out
+}
+
+// register installs the config patterns under prefix with the legacy wildcard names, so
+// r.PathValue keeps working on both surfaces.
+func (h *configAdminHandler) register(handle func(pattern string, handler http.HandlerFunc), prefix string) {
+	methods := map[string]string{
+		"config.groups.list":            "GET",
+		"config.group.get":              "GET",
+		"config.group.targets.replace":  "PUT",
+		"config.group.targets.add":      "POST",
+		"config.group.targets.remove":   "DELETE",
+		"config.group.targets.validate": "POST",
+		"config.group.rollback":         "POST",
+		"config.group.history":          "GET",
+		"config.group.shadow.start":     "POST",
+		"config.group.shadow.status":    "GET",
+		"config.group.shadow.promote":   "POST",
+		"config.group.shadow.stop":      "DELETE",
+		"config.status":                 "GET",
+		"config.sets.import":            "POST",
+		"config.sets.list":              "GET",
+		"config.sets.get":               "GET",
+		"config.sets.activate":          "POST",
+		"config.sets.rollback":          "POST",
+		"config.diff":                   "GET",
+	}
+	for _, entry := range h.adminConfigHandlerPatterns() {
+		handle(methods[entry.key]+" "+prefix+entry.suffix, entry.handler)
+	}
 }
 
 type configAdminHandler struct {
@@ -128,6 +193,9 @@ func (h *configAdminHandler) authenticate(w http.ResponseWriter, r *http.Request
 
 // authorize checks one fine-grained permission and writes 403 on denial.
 func (h *configAdminHandler) authorize(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, permission string) bool {
+	if h.deps.Decide != nil {
+		return h.deps.Decide(w, r, subject, permission)
+	}
 	if h.deps.Authorize == nil || !h.deps.Authorize(subject, permission) {
 		if h.deps.RecordAccess != nil {
 			h.deps.RecordAccess(r, subject, http.StatusForbidden, "config-forbidden", authzObjectAdminConfig, permission)
@@ -838,12 +906,39 @@ func (h *configAdminHandler) handleListSets(w http.ResponseWriter, r *http.Reque
 		CreatedAt        string `gorm:"column:created_at"`
 		ActivatedAt      string `gorm:"column:activated_at"`
 	}
-	if err := h.deps.DB.Table("router_config_sets").
+	// Pagination: without a page this keeps today's behaviour (newest 200); with one it
+	// applies the limit and a stable keyset on (created_at, id), so a full cursor walk
+	// returns each set exactly once.
+	page, paginated := AdminPageFrom(r.Context())
+	limit := 200
+	order := "created_at DESC, id DESC"
+	if paginated {
+		limit = page.LimitOr(200)
+		order = "created_at ASC, id ASC"
+		if page.Descending() {
+			order = "created_at DESC, id DESC"
+		}
+	}
+	query := h.deps.DB.Table("router_config_sets").
 		Select("id", "name", "status", "validation_status", "created_by", "created_at", "activated_at").
-		Where("runtime_scope = ?", h.deps.RuntimeScope).
-		Order("created_at DESC").Limit(200).Find(&rows).Error; err != nil {
+		Where("runtime_scope = ?", h.deps.RuntimeScope)
+	if paginated {
+		if values := page.CursorValues(); len(values) == 2 {
+			if page.Descending() {
+				query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))", values[0], values[0], values[1])
+			} else {
+				query = query.Where("(created_at > ? OR (created_at = ? AND id > ?))", values[0], values[0], values[1])
+			}
+		}
+	}
+	if err := query.Order(order).Limit(limit + 1).Find(&rows).Error; err != nil {
 		writeConfigAdminError(w, http.StatusInternalServerError, "config-read-failed", "the configuration sets could not be read")
 		return
+	}
+	if paginated && len(rows) > limit {
+		rows = rows[:limit]
+		last := rows[len(rows)-1]
+		page.PublishNext(last.CreatedAt, last.ID)
 	}
 	sets := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {

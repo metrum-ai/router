@@ -29,7 +29,9 @@ const (
 )
 
 type adminAuthSubject struct {
-	authContext  context.Context
+	authContext context.Context
+	// principal carries the /admin/v1 machine identity. It is empty on the serving-port
+	// surface, whose credential checks are unchanged.
 	credentialID string
 	subject      string
 	domain       string
@@ -38,6 +40,7 @@ type adminAuthSubject struct {
 	issuer       string
 	groups       []string
 	permissions  map[string]bool
+	principal    *Principal
 }
 
 type adminOIDCRuntime struct {
