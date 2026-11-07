@@ -439,7 +439,13 @@ func newUpstreamHTTPClient(cfg UpstreamConfig) *http.Client {
 func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
-	return s.withStreamProgressDeadline(s.mux)
+	var h http.Handler = s.withStreamProgressDeadline(s.mux)
+	if s.cfg != nil && s.cfg.Admin.legacyRoutesEnabled() {
+		// The legacy machine admin routes keep their v4.7 handlers and decisions
+		// and only gain Deprecation/Sunset headers (ACP-009).
+		h = s.withLegacyAdminDeprecation(h)
+	}
+	return h
 }
 
 // TLSManager returns the serving listener's TLS manager, or nil when
@@ -676,7 +682,12 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
-	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
+	// authorization until the admin listener serves it. Moving it earlier would
+	// leave monitoring with no exposition, so validation refuses that config.
+	if s.cfg.Admin.metricsOnServingPort() {
+		s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	}
 	s.mux.HandleFunc("GET /admin/auth/login", s.handleAdminOIDCLogin)
 	s.mux.HandleFunc("GET /admin/auth/callback", s.handleAdminOIDCCallback)
 	s.mux.HandleFunc("POST /admin/auth/logout", s.handleAdminOIDCLogout)
@@ -684,42 +695,13 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
-	if s.configControlPlane != nil {
-		RegisterCallerDirectoryAdmin(s.mux, CallerAdminDeps{
-			DB:           s.configControlPlane,
-			RuntimeScope: s.cfg.Server.ConfigSource.RuntimeScope,
-			Authorize: func(r *http.Request, object, action string) bool {
-				w := &discardAdminAuthWriter{header: make(http.Header)}
-				subject, ok := s.authenticateAdminSubject(w, r)
-				if !ok {
-					return false
-				}
-				return s.authorizeAdminObjectAction(subject, object, action)
-			},
-			AfterMutate: func(r *http.Request, callerID string) error {
-				_ = r
-				_ = callerID
-				return s.reloadActiveConfigFromDB()
-			},
-		})
+	// The legacy machine admin routes stay on the serving port behind
+	// admin.legacy_routes_on_serving_port (ACP-009). The browser reports UI and
+	// the /admin/auth/* session routes are registered above and are not part of
+	// the control plane, so the flag never removes them.
+	if s.cfg.Admin.legacyRoutesEnabled() {
+		s.registerLegacyMachineAdminRoutes()
 	}
-	RegisterConfigAdminAPI(s.mux, ConfigAdminDeps{
-		DB:                      s.configControlPlane,
-		RuntimeScope:            s.cfg.Server.ConfigSource.RuntimeScope,
-		FileMode:                s.configControlPlane == nil,
-		RequireValidationStatus: s.cfg.Server.ConfigSource.RequireValidationStatus,
-		InstanceID:              s.configInstanceID,
-		Authenticate:            s.authenticateAdminSubject,
-		Authorize:               s.authorizeAdminPermission,
-		CurrentConfig:           func() *Config { return s.configSnapshot.Load() },
-		LoadedRevision:          s.loadedConfigRevision,
-		Reload:                  s.reloadActiveConfigFromDB,
-		ReloadShadows:           s.loadShadowRunsFromDB,
-		UsageDB:                 s.usageDBHandle,
-		RecordAccess:            s.recordAdminSecurityAccess,
-	})
-	s.mux.HandleFunc("POST /admin/training/export", s.handleTrainingExport)
-	s.mux.HandleFunc("POST /admin/training/outcomes/{request_id}", s.handleTrainingOutcome)
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
 	s.mux.HandleFunc("POST /v1/content-captures/purge-expired", s.handleContentCapturePurgeExpired)
 	s.mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)

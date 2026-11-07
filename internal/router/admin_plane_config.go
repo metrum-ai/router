@@ -196,10 +196,20 @@ func (c *AdminPlaneConfig) legacyRoutesEnabled() bool {
 	return *c.LegacyRoutesOnServingPort
 }
 
+// adminMetricsHandlerAvailable reports whether the admin listener serves
+// /metrics. The admin-side handler (admin identity with metrics read) is not
+// part of this release yet, so /metrics must stay on the serving port until it
+// lands: moving it earlier would silently break monitoring.
+const adminMetricsHandlerAvailable = false
+
 // metricsOnServingPort reports whether /metrics stays on the serving port with
-// v4.7 caller-token authorization (ACP-007).
+// v4.7 caller-token authorization (ACP-007). It stays until the admin listener
+// can serve it.
 func (c *AdminPlaneConfig) metricsOnServingPort() bool {
 	if c == nil {
+		return true
+	}
+	if !adminMetricsHandlerAvailable {
 		return true
 	}
 	if c.Metrics.OnServingPort != nil {
@@ -263,10 +273,12 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 	if cfg == nil {
 		return nil
 	}
+	if cfg.Metrics.OnServingPort != nil && !*cfg.Metrics.OnServingPort {
+		// Never accept "moved" while the admin listener cannot serve /metrics:
+		// that combination would leave monitoring with no exposition at all.
+		return fmt.Errorf("admin.metrics.on_serving_port: false is not available yet; the admin listener does not serve /metrics in this release, so /metrics must stay on the serving port")
+	}
 	if !cfg.Enabled {
-		if cfg.Metrics.OnServingPort != nil && !*cfg.Metrics.OnServingPort {
-			return fmt.Errorf("admin.metrics.on_serving_port: false requires admin.enabled: true (metrics would otherwise be served nowhere)")
-		}
 		if adminPlaneBlockLooksConfigured(cfg) {
 			log.Printf("WARNING: admin block is configured but admin.enabled is false; the admin listener is not started and /metrics stays on the serving port")
 		}

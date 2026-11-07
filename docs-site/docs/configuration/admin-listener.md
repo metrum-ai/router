@@ -67,7 +67,7 @@ admin:
 | `tls.client_auth` | `none` | `none`, `optional` or `require`. `optional` verifies a presented certificate and still lets API-key and token clients connect; `require` fails the handshake without one. A wrong or unknown CA always fails the handshake. |
 | `tls.trusted_proxy_cidrs` | `[]` | Required for `tls.mode: proxy`. Non-loopback peers outside the list are rejected. |
 | `limits.*` | see above | Admin-only body, header and connection deadlines, independent of the serving listener and its streaming settings. |
-| `metrics.on_serving_port` | unset | Keeps the v4.7 serving-port `/metrics` scrape with caller-token authorization. `/metrics` stays there until the admin listener serves it (admin identity with `metrics` read); moving it earlier is refused at startup. |
+| `metrics.on_serving_port` | unset | `/metrics` currently stays on the serving port with the v4.7 caller-token scrape. The move to the admin listener (admin identity with `metrics` read) is not available yet: setting `on_serving_port: false` is refused at startup so monitoring is never left with no exposition. |
 
 ## Exposure options
 
@@ -120,9 +120,9 @@ enabled must not be missing silently.
 
 1. Leave `admin.enabled: false` to keep the current surface, or set it to `true` to start the
    listener.
-2. If anything scrapes `/metrics` from the serving port with a caller token, set
-   `admin.metrics.on_serving_port: true` before enabling the plane, or move the scrape to the admin
-   listener.
+2. Keep scraping `/metrics` on the serving port with the caller token that has `metrics` read. The
+   move to the admin listener lands with its own handler; `admin.metrics.on_serving_port: false` is
+   refused until then.
 3. Move automation to `/admin/v1`. The legacy machine routes stay on the serving port while
    `legacy_routes_on_serving_port` is `true` and advertise `Deprecation` and `Sunset` headers.
 4. The browser reports UI is unchanged: it stays on the serving port with its current login.

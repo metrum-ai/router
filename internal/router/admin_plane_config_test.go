@@ -260,26 +260,32 @@ func TestAdminDisabledPlaneRules(t *testing.T) {
 	}
 	drop := false
 	if err := validateAdminPlane(&AdminPlaneConfig{Metrics: AdminMetricsConfig{OnServingPort: &drop}}); err == nil ||
-		!strings.Contains(err.Error(), "requires admin.enabled: true") {
+		!strings.Contains(err.Error(), "does not serve /metrics in this release") {
 		t.Fatalf("disabled plane with metrics off = %v, want an error", err)
 	}
 }
 
-// ACP-007: enabling the plane moves /metrics unless the operator keeps it.
-func TestAdminMetricsDefaultFollowsEnabled(t *testing.T) {
+// ACP-007: /metrics stays on the serving port until the admin listener serves
+// it, and the "moved" configuration is refused rather than silently dropping
+// the exposition.
+func TestAdminMetricsStayOnServingPortUntilAdminServesIt(t *testing.T) {
 	cfg := &AdminPlaneConfig{Enabled: true}
 	defaultAdminPlaneConfig(cfg)
-	if cfg.metricsOnServingPort() {
-		t.Fatal("enabled plane left /metrics on the serving port by default")
+	if !cfg.metricsOnServingPort() {
+		t.Fatal("enabled plane dropped /metrics without an admin-side handler")
 	}
 	keep := true
 	cfg.Metrics.OnServingPort = &keep
 	if !cfg.metricsOnServingPort() {
-		t.Fatal("compatibility flag did not restore serving-port /metrics")
+		t.Fatal("explicit compatibility flag did not keep serving-port /metrics")
 	}
-	cfg.Metrics.OnServingPort = nil
-	if cfg.metricsOnServingPort() {
-		t.Fatal("unset flag after reset did not follow enabled")
+	drop := false
+	cfg.Metrics.OnServingPort = &drop
+	if !cfg.metricsOnServingPort() {
+		t.Fatal("moved-to-admin configuration dropped serving-port /metrics before an admin handler exists")
+	}
+	if err := validateAdminPlane(cfg); err == nil || !strings.Contains(err.Error(), "not available yet") {
+		t.Fatalf("moved-but-not-served configuration = %v, want a validation error", err)
 	}
 }
 

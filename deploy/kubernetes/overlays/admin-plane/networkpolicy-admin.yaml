@@ -1,0 +1,48 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+#
+# Default-deny ingress for the router pods plus explicit allows:
+#   - the serving port admits inference traffic from anywhere in the cluster;
+#   - the admin port admits only pods labelled access.metrum.ai/admin-client:
+#     "true" in this namespace.
+# NetworkPolicy is additive, so the deny has to come first and be complete.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metrum-ai-router-default-deny-ingress
+  labels:
+    app.kubernetes.io/name: metrum-ai-router
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: metrum-ai-router
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metrum-ai-router-serving-and-selected-admin
+  labels:
+    app.kubernetes.io/name: metrum-ai-router
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: metrum-ai-router
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: metrum-ai-router
+          podSelector:
+            matchLabels:
+              access.metrum.ai/admin-client: "true"
+      ports:
+        - protocol: TCP
+          port: 8081
