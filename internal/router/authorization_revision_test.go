@@ -9,11 +9,11 @@ import (
 )
 
 func TestAuthorizationSnapshotRevocation(t *testing.T) {
-	allowed, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, subject, project/prod, metrics, read"}}, nil, nil)
+	allowed, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, subject, project/prod, metrics, read"}}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	denied, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil)
+	denied, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

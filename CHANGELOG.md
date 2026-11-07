@@ -5,6 +5,19 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Authorization compatibility
+
+- `router-internal:compat:` is reserved for compiled authorization identities.
+  Policies or configured public subjects selecting that namespace now fail
+  startup/reload validation rather than being interpreted as public grants.
+  Check existing offline policies before upgrading; do not use internal
+  compatibility identities as application subjects.
+- Basic authentication membership, password hash, subject and domain changes
+  require a restart. Authorization policy reload does not itself refresh the
+  Basic authentication directory; use a restart for Basic revocation/rotation.
+
 ## [4.7.0] - 2026-11-06
 
 Package release. Adds opt-in tool-aware routing, configurable HTTP deadlines with

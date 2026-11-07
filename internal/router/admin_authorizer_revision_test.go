@@ -15,11 +15,11 @@ import (
 )
 
 func TestAuthorizationRequestPinsOneRevision(t *testing.T) {
-	allowed, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, workload, project/prod, admin:config, read|write"}}, nil, nil)
+	allowed, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, workload, project/prod, admin:config, read|write"}}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	empty, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil)
+	empty, err := newAuthorizer(AdminAuthorizationConfig{}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
