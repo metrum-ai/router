@@ -106,8 +106,9 @@ type authenticatorChain struct{ mechanisms []Authenticator }
 // mechanisms must validate the certificate/proof themselves. A presented TLS
 // certificate also requires a successful mtls/certificate-only emergency
 // validator OR typed RFC 8705 possession evidence from the successful token
-// mechanism. After typed token-bound possession succeeds, only the concrete
-// pure mTLS identity mappers are redundant and skipped. Other validators,
+// mechanism. After typed token-bound possession or a declared certificate
+// emergency proof/Use succeeds, only concrete pure mTLS identity mappers are
+// redundant and skipped. Other validators,
 // especially emergency activation/Use acknowledgements, are never skipped.
 // Possession evidence never requires an additional SAN identity.
 // Register the token mechanism first when its identity
@@ -137,12 +138,12 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 	dpopPresented := len(authorizationFields) > 0 && strings.EqualFold(authorizationFields[0], "DPoP")
 	certificatePresented := r.TLS != nil && len(r.TLS.PeerCertificates) > 0
 	certificateValidated, authorizationValidated := false, false
-	certificateBoundToToken := false
+	certificateIdentityRedundant := false
 	for _, mechanism := range c.mechanisms {
 		if ctx.Err() != nil || mechanism == nil {
 			return Principal{}, ErrInvalidCredential
 		}
-		if certificateBoundToToken && adminPureCertificateIdentity(mechanism) {
+		if certificateIdentityRedundant && adminPureCertificateIdentity(mechanism) {
 			continue
 		}
 		stepCtx, certificateCoverage := newAdminCertificateCoverageContext(ctx)
@@ -160,7 +161,7 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 		}
 		if certificateCoverage.consume(p, r) {
 			certificateValidated = true
-			certificateBoundToToken = true
+			certificateIdentityRedundant = true
 		}
 		switch p.Kind {
 		case "mtls":
@@ -179,6 +180,10 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 			switch declared.credentialType {
 			case EmergencyCertificate:
 				certificateValidated = true
+				// This declared certificate mechanism has already proved native
+				// possession and durably acknowledged Use. Do not require a
+				// separate normal SAN identity, nor skip any other obligation.
+				certificateIdentityRedundant = true
 			case EmergencyBearerKey:
 				if dpopPresented {
 					return Principal{}, ErrInvalidCredential

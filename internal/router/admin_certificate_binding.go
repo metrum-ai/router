@@ -44,23 +44,7 @@ func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, cu
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(thumbprint)) != 1 {
 		return false
 	}
-	roots := currentRoots()
-	if roots == nil {
-		return false
-	}
-	intermediates := x509.NewCertPool()
-	for _, cert := range r.TLS.PeerCertificates[1:] {
-		if cert == nil {
-			return false
-		}
-		intermediates.AddCert(cert)
-	}
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
-		return false
-	}
-	// Reject a publication during verification before recording possession.
-	// A native connection's old VerifiedChains cannot pin removed trust roots.
-	if !adminLeafExplicitClientAuth(leaf) || currentRoots() != roots || ctx.Err() != nil {
+	if _, ok := verifyAdminNativeClientCertificate(ctx, r, currentRoots); !ok {
 		return false
 	}
 	// This is proof of possession, not certificate-to-subject mapping. Evidence
