@@ -21,7 +21,7 @@ jobs:
   router:
     name: router (${{ matrix.shard }})
     if: github.event_name != 'push'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -70,7 +70,7 @@ jobs:
   other-go:
     name: Other Go and Windows
     if: github.event_name != 'push'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     steps:
       - name: Isolate job caches
@@ -115,7 +115,7 @@ jobs:
   other:
     name: Compatibility, Python and examples
     if: github.event_name != 'push'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     steps:
       - name: Isolate job caches
@@ -170,7 +170,7 @@ jobs:
   # or main-push cache warming.
   sbom:
     if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -200,7 +200,7 @@ jobs:
   warm:
     name: Warm main caches
     if: github.event_name == 'push'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     steps:
       - name: Isolate job caches
@@ -282,7 +282,7 @@ jobs:
   k8s-security:
     name: Rendered Kubernetes security
     if: github.event_name != 'push'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -313,7 +313,7 @@ jobs:
   parallel-tools:
     name: Parallel tool-call fixtures
     if: github.event_name != 'push'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 15
     steps:
       - name: Isolate job caches
@@ -404,7 +404,7 @@ jobs:
 
   ci:
     name: ci
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     if: always()
     needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme]
     timeout-minutes: 5
