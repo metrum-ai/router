@@ -4,6 +4,9 @@
 package router
 
 import (
+	"bytes"
+	"log"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -291,5 +294,68 @@ func TestAdminAbsentBlockKeepsV47Surface(t *testing.T) {
 	}
 	if !cfg.Admin.metricsOnServingPort() || !cfg.Admin.legacyRoutesEnabled() {
 		t.Fatal("absent admin block changed the v4.7 surface")
+	}
+}
+
+// The proxy allowlist never trusts a default route or a broader-than-site
+// prefix, and the plaintext override warns once at startup.
+func TestAdminTrustedProxyCIDRWidening(t *testing.T) {
+	enabled := func() *AdminPlaneConfig {
+		cfg := &AdminPlaneConfig{Enabled: true}
+		defaultAdminPlaneConfig(cfg)
+		cfg.TLS.Mode = adminTLSModeProxy
+		return cfg
+	}
+	cases := []struct {
+		cidr    string
+		wantErr string
+	}{
+		{"0.0.0.0/0", "must not trust every peer"},
+		{"::/0", "must not trust every peer"},
+		{"10.0.0.0/7", "wider than /8"},
+		{"2001:db8::/16", "wider than /32"},
+		{"10.0.0.0/8", ""},
+		{"2001:db8:1:2::/64", ""},
+		{"192.0.2.7/32", ""},
+	}
+	for _, testCase := range cases {
+		cfg := enabled()
+		cfg.TLS.TrustedProxyCIDRs = []string{testCase.cidr}
+		err := validateAdminPlane(cfg)
+		if testCase.wantErr == "" {
+			if err != nil {
+				t.Fatalf("%s = %v, want nil", testCase.cidr, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), testCase.wantErr) {
+			t.Fatalf("%s = %v, want an error containing %q", testCase.cidr, err, testCase.wantErr)
+		}
+	}
+}
+
+func TestAdminPlaintextOverrideWarns(t *testing.T) {
+	var buf bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	enabled := true
+	cfg := AdminPlaneConfig{
+		Enabled:                   true,
+		Listen:                    "0.0.0.0:0",
+		AllowPlaintextNonLoopback: true,
+		LegacyRoutesOnServingPort: &enabled,
+		TLS:                       AdminTLSConfig{Mode: adminTLSModeOff},
+	}
+	plane, err := NewAdminPlane(&cfg, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if plane == nil {
+		t.Fatal("NewAdminPlane returned no plane")
+	}
+	if !strings.Contains(buf.String(), "allow_plaintext_non_loopback") {
+		t.Fatalf("startup log = %q, want the plaintext override warning", buf.String())
 	}
 }

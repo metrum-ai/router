@@ -345,8 +345,8 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		return fmt.Errorf("admin.tls.mode must be off, router or proxy")
 	}
 	for _, cidr := range cfg.TLS.TrustedProxyCIDRs {
-		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
-			return fmt.Errorf("admin.tls.trusted_proxy_cidrs contains an invalid CIDR")
+		if err := validateAdminTrustedProxyCIDR(cidr); err != nil {
+			return err
 		}
 	}
 	switch strings.TrimSpace(cfg.TLS.MinVersion) {
@@ -429,6 +429,27 @@ func validateAdminLimits(limits AdminLimitsConfig) error {
 		if limit.value > 24*60*60*1000 {
 			return fmt.Errorf("admin.limits.%s cannot exceed 24 hours", limit.name)
 		}
+	}
+	return nil
+}
+
+// validateAdminTrustedProxyCIDR rejects a proxy allowlist entry that trusts too
+// much: a default route or a prefix broader than a site allocation would let
+// almost any peer claim to be the TLS-terminating proxy.
+func validateAdminTrustedProxyCIDR(raw string) error {
+	_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs contains an invalid CIDR")
+	}
+	ones, bits := network.Mask.Size()
+	if strings.TrimSpace(raw) == "0.0.0.0/0" || strings.TrimSpace(raw) == "::/0" {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs must not trust every peer (0.0.0.0/0 or ::/0)")
+	}
+	if bits == 32 && ones < 8 {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /8; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
+	}
+	if bits == 128 && ones < 32 {
+		return fmt.Errorf("admin.tls.trusted_proxy_cidrs entry %q is wider than /32; list the proxy addresses or a narrower network", strings.TrimSpace(raw))
 	}
 	return nil
 }
