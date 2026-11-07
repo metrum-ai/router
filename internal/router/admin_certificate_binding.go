@@ -24,9 +24,15 @@ import (
 // Forwarded
 // certificate headers are never read. Pass the same root source as the listener.
 func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, currentRoots func() *x509.CertPool, thumbprint string) bool {
-	if ctx.Err() != nil || r == nil || r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 || len(r.TLS.PeerCertificates) > 16 || currentRoots == nil {
+	// Clear any earlier attempt within the same mechanism; failed possession
+	// must never leave a successful factor behind.
+	if report := adminCertificateCoverageFrom(ctx); report != nil {
+		report.verified.Store(nil)
+	}
+	if ctx == nil || ctx.Err() != nil || r == nil || r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 || len(r.TLS.PeerCertificates) > 16 || currentRoots == nil {
 		return false
 	}
+	authorization := adminSingleAuthorization(r)
 	leaf := r.TLS.PeerCertificates[0]
 	if leaf == nil {
 		return false
@@ -51,5 +57,11 @@ func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, cu
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
 		return false
 	}
-	return adminLeafExplicitClientAuth(leaf) && ctx.Err() == nil
+	if !adminLeafExplicitClientAuth(leaf) || ctx.Err() != nil {
+		return false
+	}
+	// This is proof of possession, not certificate-to-subject mapping. Evidence
+	// is consumable only by this successful token mechanism on this request.
+	recordAdminVerifiedCertificateBinding(ctx, authorization, digest)
+	return true
 }

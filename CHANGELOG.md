@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+### Security fixes
+
+- configured admin keys with a non-lowercase disabled status were still accepted on the serving port
 
 - v4.8.0 release binaries are built with Go 1.26.10 for standard-library
   security fixes. Source builds require at least Go 1.26.10; CI, release and

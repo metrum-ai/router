@@ -104,8 +104,10 @@ type authenticatorChain struct{ mechanisms []Authenticator }
 // The first matching identity wins, but every presented credential is checked:
 // a valid credential cannot mask another invalid one. Sender-constrained JWT
 // mechanisms must validate the certificate/proof themselves. A presented TLS
-// certificate also requires a successful mtls validator (or certificate-only
-// emergency validator). Register the token mechanism first when its identity
+// certificate also requires a successful mtls/certificate-only emergency
+// validator OR typed RFC 8705 possession evidence from the successful token
+// mechanism. Possession evidence never requires an additional SAN identity.
+// Register the token mechanism first when its identity
 // should win over the certificate identity. Validators must return their actual
 // credential kind; this is how the chain checks credential coverage.
 // The chain is opt-in for the new listener and never changes legacy handlers.
@@ -114,7 +116,7 @@ func NewAuthenticatorChain(mechanisms ...Authenticator) Authenticator {
 }
 
 func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
-	if ctx.Err() != nil || r == nil {
+	if ctx == nil || ctx.Err() != nil || r == nil {
 		return Principal{}, ErrInvalidCredential
 	}
 	if err := validateMachineAuthEnvelope(r); err != nil {
@@ -136,7 +138,8 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 		if ctx.Err() != nil || mechanism == nil {
 			return Principal{}, ErrInvalidCredential
 		}
-		p, err := mechanism.Authenticate(ctx, r)
+		stepCtx, certificateCoverage := newAdminCertificateCoverageContext(ctx)
+		p, err := mechanism.Authenticate(stepCtx, r)
 		switch {
 		case err == ErrNoCredential:
 			continue
@@ -145,6 +148,9 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 		}
 		if !validMachinePrincipal(p) {
 			return Principal{}, ErrInvalidCredential
+		}
+		if certificateCoverage.consume(p, r) {
+			certificateValidated = true
 		}
 		switch p.Kind {
 		case "mtls":
