@@ -52,13 +52,19 @@ func TestCreateAuthzPolicySetAcceptsExactAndWholeDomains(t *testing.T) {
 	}
 }
 
-func TestReloadPublishesAuthorizationBeforeCredentials(t *testing.T) {
+// TestReloadUsesTheSingleAuthorizationPublisher pins the #812 correction: the
+// reload must not store an authorizer of its own. The machine authorizer has one
+// publisher (syncPolicyAuthorizationLocked, under the singleton read and the
+// governance lock), so a reload asks that path to publish before it exposes the
+// replacement credentials.
+func TestReloadUsesTheSingleAuthorizationPublisher(t *testing.T) {
 	fs := token.NewFileSet()
 	file, err := parser.ParseFile(fs, "service.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var snapshot, keys token.Pos
+	var synchronized, keys token.Pos
+	var stored token.Pos
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != "reloadActiveConfigFromDB" {
@@ -66,9 +72,14 @@ func TestReloadPublishesAuthorizationBeforeCredentials(t *testing.T) {
 		}
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
-				if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Store" {
-					if field, ok := selector.X.(*ast.SelectorExpr); ok && field.Sel.Name == "authorizerSnapshot" {
-						snapshot = call.Pos()
+				if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
+					if selector.Sel.Name == "syncPolicyAuthorizationLocked" {
+						synchronized = call.Pos()
+					}
+					if selector.Sel.Name == "Store" {
+						if field, ok := selector.X.(*ast.SelectorExpr); ok && field.Sel.Name == "authorizerSnapshot" {
+							stored = call.Pos()
+						}
 					}
 				}
 			}
@@ -82,7 +93,16 @@ func TestReloadPublishesAuthorizationBeforeCredentials(t *testing.T) {
 			return true
 		})
 	}
-	if snapshot == token.NoPos || keys == token.NoPos || snapshot > keys {
-		t.Fatal("new credentials published before their authorization snapshot")
+	if synchronized == token.NoPos {
+		t.Fatal("reload does not publish through the synchronized authorizer path")
+	}
+	if stored != token.NoPos {
+		t.Fatal("reload stores an authorizer of its own: the machine authorizer must have one publisher")
+	}
+	if keys == token.NoPos {
+		t.Fatal("reload never publishes replacement credentials")
+	}
+	if synchronized > keys {
+		t.Fatal("new credentials published before the synchronized authorization snapshot")
 	}
 }

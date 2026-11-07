@@ -69,6 +69,7 @@ type Service struct {
 	adminSession       *adminSessionStore
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
+	policyFreshness    *policyFreshnessState
 	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
@@ -106,6 +107,8 @@ type Service struct {
 	adminAuditJanitorDone []<-chan struct{}
 	configReloadStop      func()
 	configNotifyStop      func()
+	policySyncStop        func()
+	policyNotifyStop      func()
 	configInstanceID      string
 	configLoaded          atomic.Value // configLoadedState
 	shadows               *shadowRuntime
@@ -364,6 +367,17 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
+	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	// The operator's configured window applies at CONSTRUCTION, before the first
+	// control-plane reload: a file-config deployment, or any process that has not
+	// reloaded yet, must not silently run with the default.
+	if err := s.applyAdminPolicyFreshness(cfg); err != nil {
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		bridgeSessions.Close()
+		return nil, fmt.Errorf("admin policy freshness: %w", err)
+	}
 	if err := s.initConfigControlPlane(); err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
@@ -424,6 +438,24 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 			permissions: perms,
 		}
 	}
+	if s.usage != nil && s.usage.db != nil {
+		stop, err := s.startPolicySynchronization(context.Background(), defaultPolicyPollInterval)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		s.policySyncStop = stop
+		if cfg.Server.AdminAuth.Authorization.Enabled && strings.EqualFold(strings.TrimSpace(cfg.Server.AdminAuth.Authorization.Source), "db") {
+			notifyCtx, cancelNotify := context.WithCancel(context.Background())
+			stopNotify, err := StartConfigRevisionNotifier(notifyCtx, s.usage.db, policyNotificationScope, func() { _ = s.syncPolicyAuthorization(notifyCtx) })
+			if err != nil {
+				cancelNotify()
+				log.Printf("admin policy notifier unavailable; authoritative polling remains enabled")
+			} else {
+				s.policyNotifyStop = func() { cancelNotify(); stopNotify() }
+			}
+		}
+	}
 	s.routes()
 	s.initAdminPlane()
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
@@ -475,6 +507,14 @@ func (s *Service) Close() {
 	if s.configReloadStop != nil {
 		s.configReloadStop()
 		s.configReloadStop = nil
+	}
+	if s.policyNotifyStop != nil {
+		s.policyNotifyStop()
+		s.policyNotifyStop = nil
+	}
+	if s.policySyncStop != nil {
+		s.policySyncStop()
+		s.policySyncStop = nil
 	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
@@ -556,6 +596,10 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s.configControlPlane == nil {
 		return nil
 	}
+	if s.usage != nil {
+		s.usage.policyMutationMu.Lock()
+		defer s.usage.policyMutationMu.Unlock()
+	}
 	if s.cfg == nil {
 		return fmt.Errorf("reload active config: service has no current configuration")
 	}
@@ -581,22 +625,44 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if err := s.quota.rebuildCallers(newCfg); err != nil {
 		return fmt.Errorf("reload active config: rebuild callers: %w", err)
 	}
-	// Rebuild the authorizer so admin policies reflect the new caller
-	// directory. The authorizer is recreated with the latest callers map and
-	// the same admin authorization config.
-	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage, newCfg.Server.AdminAuth)
-	if err != nil {
-		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
+	// The machine authorizer has exactly one publisher: the synchronized path
+	// below reads the authoritative singleton revision and publishes the
+	// snapshot under the governance lock. A reload therefore never constructs
+	// and stores an authorizer of its own; doing so would publish a second,
+	// unrevisioned generation beside the one the poller maintains. The reload
+	// supplies the not-yet-published configuration so the candidate is built
+	// from the new caller directory and admin authorization settings.
+	syncCtx := context.Background()
+	if err := s.syncPolicyAuthorizationLocked(syncCtx, newCfg); err != nil {
+		// Nothing about the new bundle is published: no authorizer (the
+		// synchronized path did not store one), no credentials, no config
+		// snapshot. Restore the caller runtimes the rebuild already changed
+		// and fail closed for mutating admin requests, so an old authorizer
+		// can never authorize a mutation beside a configuration that expects
+		// a newer policy revision.
+		if s.policyFreshness != nil {
+			s.policyFreshness.invalidate()
+		}
+		if s.cfg != nil {
+			if rollbackErr := s.quota.rebuildCallers(s.cfg); rollbackErr != nil {
+				log.Printf("config control-plane reload: caller rollback failed; mutating admin requests remain fail-closed")
+			}
+		}
+		return fmt.Errorf("reload active config: synchronized authorizer: %w", err)
 	}
-	// Publish grants before exposing replacement credentials. This ordering
-	// does not jointly bind authentication and authorization generations.
-	s.authorizerSnapshot.Store(newAuthorizer)
+	// Grants are published by the synchronized path above; credentials follow.
+	// This ordering does not jointly bind authentication and authorization
+	// generations.
+	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
 	s.adminAPIKeys = newAdminKeys
 	s.cfg = newCfg
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
+	}
+	// A reload applies its own window as well, under the same single path.
+	if err := s.applyAdminPolicyFreshness(newCfg); err != nil {
+		return fmt.Errorf("reload active config: freshness: %w", err)
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()

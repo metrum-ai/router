@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
@@ -31,8 +32,9 @@ import (
 )
 
 type usageStore struct {
-	db     *gorm.DB
-	writer *usageWriter
+	db               *gorm.DB
+	writer           *usageWriter
+	policyMutationMu sync.Mutex
 }
 
 // migrationStatus is a safe, read-only view of the checked-in usage migration

@@ -162,6 +162,12 @@ type AdminAuthorizationConfig struct {
 	Source     string   `yaml:"source" json:"source"`
 	PolicyFile string   `yaml:"policy_file" json:"policy_file"`
 	Policy     []string `yaml:"policy" json:"policy"`
+	// MaxStaleness bounds how old the last complete authoritative policy
+	// synchronization may be before mutating administrator requests are
+	// refused with 503 policy-stale. Empty keeps the 30s default; SQLite and
+	// static policy sources are exempt. A non-positive or unparseable value is
+	// a configuration error at startup, never a request error.
+	MaxStaleness string `yaml:"max_staleness" json:"max_staleness"`
 }
 
 type AdminReportsConfig struct {
@@ -2612,6 +2618,9 @@ func validCookieName(name string) bool {
 }
 
 func validateAdminAuthorization(cfg AdminAuthorizationConfig, usage UsageDBConfig) error {
+	if _, err := adminPolicyMaxStaleness(cfg); err != nil {
+		return fmt.Errorf("server admin_auth.authorization max_staleness: %w", err)
+	}
 	source := strings.ToLower(strings.TrimSpace(cfg.Source))
 	if source == "" {
 		source = "static"

@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	ErrPrivilegeEscalation = errors.New("privilege-escalation")
-	ErrLastPolicyAdmin     = errors.New("last-policy-admin")
-	ErrInvalidPolicy       = errors.New("invalid-policy")
+	ErrPrivilegeEscalation = &AdminAuthorizationError{status: 403, code: "privilege-escalation"}
+	ErrLastPolicyAdmin     = &AdminAuthorizationError{status: 409, code: "last-policy-admin"}
+	ErrInvalidPolicy       = &AdminAuthorizationError{status: 422, code: "invalid-policy"}
 )
 
 // Bound submitted records (including duplicates) and effective compiled views
@@ -60,6 +60,7 @@ func simulatePolicyGuard(ctx context.Context, snapshot *authorizer, principal Pr
 	}
 	simulator := &Service{authorizer: snapshot, authorizationAudit: func(context.Context, Principal, string, string, string, error) error { return nil }}
 	ctx = context.WithValue(ctx, legacyAuthorizationKey{}, struct{}{})
+	ctx = context.WithValue(ctx, adminPolicyMutationKey{}, false)
 	ctx = WithPrincipal(ctx, principal)
 	ctx = context.WithValue(ctx, authorizationGuardKey{}, true)
 	ctx = context.WithValue(ctx, authorizationRevisionKey{}, pinnedAuthorizationRevision{simulator, snapshot})
@@ -84,12 +85,12 @@ func guardPolicyMutation(ctx context.Context, actor Principal, current, candidat
 	if before == nil || after == nil || before.enforcer == nil || after.enforcer == nil {
 		return ErrAuthorizationUnavailable
 	}
-	if operation != "activate" && operation != "rollback" {
+	if operation != "write" && operation != "activate" && operation != "rollback" {
 		return ErrInvalidPolicy
 	}
 	// Freeze both inputs, including metadata/role reads, against asynchronous
 	// runtime publication. Candidate checks are simulations, not real requests.
-	current = &Service{authorizer: before, authorizationAudit: current.authorizationAudit}
+	current = &Service{authorizer: before, authorizationAudit: current.authorizationAudit, configSnapshot: current.configSnapshot, policyFreshness: current.policyFreshness, usage: current.usage}
 	candidate = &Service{authorizer: after}
 	// A request pin cannot authorize a write against a different locked revision.
 	ctx = context.WithValue(ctx, authorizationRevisionKey{}, pinnedAuthorizationRevision{current, before})

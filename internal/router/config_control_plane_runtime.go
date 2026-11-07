@@ -198,8 +198,23 @@ func StartConfigRevisionPoller(ctx context.Context, db *gorm.DB, runtimeScope st
 		return nil, err
 	}
 
+	cancel, _ := startRevisionPolling(ctx, interval, func(pollerCtx context.Context) {
+		current, err := currentRevisionForScope(db.WithContext(pollerCtx), runtimeScope)
+		if err == nil && current != last {
+			last = current
+			reload()
+		}
+	})
+	return cancel, nil
+}
+
+// startRevisionPolling shares scheduling between configuration and policy.
+// Each consumer defines success; a timer tick itself is never an observation.
+func startRevisionPolling(ctx context.Context, interval time.Duration, observe func(context.Context)) (func(), <-chan struct{}) {
 	pollerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -207,18 +222,11 @@ func StartConfigRevisionPoller(ctx context.Context, db *gorm.DB, runtimeScope st
 			case <-pollerCtx.Done():
 				return
 			case <-ticker.C:
-				current, err := currentRevisionForScope(db, runtimeScope)
-				if err != nil {
-					continue
-				}
-				if current != last {
-					last = current
-					reload()
-				}
+				observe(pollerCtx)
 			}
 		}
 	}()
-	return cancel, nil
+	return cancel, done
 }
 
 type revisionNotificationConnectionCleanup interface {
