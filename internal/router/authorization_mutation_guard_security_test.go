@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestPolicyGuardSupervisorRequiresAuthenticatedActor(t *testing.T) {
+func TestPolicyGuardRequiresAuthenticatedActor(t *testing.T) {
 	actor := Principal{Subject: "actor", Kind: "oauth"}
 	lines := mutationGuardBase(actor.Subject)
 	for _, ctx := range []context.Context{context.Background(), WithPrincipal(context.Background(), Principal{Subject: "other", Kind: "oauth"})} {
@@ -19,7 +19,7 @@ func TestPolicyGuardSupervisorRequiresAuthenticatedActor(t *testing.T) {
 	}
 }
 
-func TestPolicyGuardSupervisorReservesManagementRoleSubject(t *testing.T) {
+func TestPolicyGuardReservesManagementRoleSubject(t *testing.T) {
 	actor := Principal{Subject: securityAdministratorRole, Kind: "oauth"}
 	lines := []string{"p, security-admin, *, admin:policy, write|activate|rollback"}
 	if err := guardPolicyMutation(WithPrincipal(context.Background(), actor), actor, mutationGuardService(t, lines), mutationGuardService(t, lines), []Principal{actor}, "activate"); !errors.Is(err, ErrAdminForbidden) {
@@ -27,7 +27,7 @@ func TestPolicyGuardSupervisorReservesManagementRoleSubject(t *testing.T) {
 	}
 }
 
-func TestPolicyGuardSupervisorBoundsCandidateRowsAndMemberships(t *testing.T) {
+func TestPolicyGuardBoundsCandidateRowsAndMemberships(t *testing.T) {
 	actor := Principal{Subject: "actor", Kind: "oauth"}
 	base := mutationGuardBase(actor.Subject)
 	for _, test := range []struct {
@@ -47,7 +47,7 @@ func TestPolicyGuardSupervisorBoundsCandidateRowsAndMemberships(t *testing.T) {
 	}
 }
 
-func TestPolicyGuardSupervisorReadOnlyCannotDelegateAlternation(t *testing.T) {
+func TestPolicyGuardReadOnlyCannotDelegateAlternation(t *testing.T) {
 	actor := Principal{Subject: "actor", Kind: "oauth"}
 	base := mutationGuardBase(actor.Subject)
 	candidate := append(append([]string(nil), base...), "p, recipient, team/prod, admin:reports, read|write")
@@ -56,7 +56,7 @@ func TestPolicyGuardSupervisorReadOnlyCannotDelegateAlternation(t *testing.T) {
 	}
 }
 
-func TestPolicyGuardSupervisorEmergencyMutation(t *testing.T) {
+func TestPolicyGuardEmergencyMutation(t *testing.T) {
 	keeper := Principal{Subject: "keeper", Kind: "oauth"}
 	actor := Principal{Subject: "break-glass", Kind: "emergency"}
 	base := mutationGuardBase(keeper.Subject)
@@ -66,7 +66,7 @@ func TestPolicyGuardSupervisorEmergencyMutation(t *testing.T) {
 	}
 }
 
-func TestPolicyGuardSupervisorRoleInheritsUserSubjectGrants(t *testing.T) {
+func TestPolicyGuardRoleInheritsUserSubjectGrants(t *testing.T) {
 	actor := Principal{Subject: "actor", Kind: "oauth"}
 	base := append(mutationGuardBase(actor.Subject), "p, user, team/prod, admin:reports, write")
 	candidate := append(append([]string(nil), base...), "g, new-role, user, team/prod")
@@ -75,7 +75,7 @@ func TestPolicyGuardSupervisorRoleInheritsUserSubjectGrants(t *testing.T) {
 	}
 }
 
-func TestPolicyGuardSupervisorCeilingSimulationIsAuditFree(t *testing.T) {
+func TestPolicyGuardCeilingSimulationIsAuditFree(t *testing.T) {
 	actor := Principal{Subject: "actor", Kind: "oauth"}
 	base := mutationGuardBase(actor.Subject)
 	current := mutationGuardService(t, base)

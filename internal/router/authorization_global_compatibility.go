@@ -9,7 +9,7 @@ import (
 )
 
 // Global projection is action-specific. These legacy handlers operated on
-// plane-global resources but looked up a credential's configured grant domain.
+// global resources but looked up a credential's configured grant domain.
 // Keep the legacy grants unchanged and add a separate private identity for the
 // one AdminGlobalDomain target. Internal grants treat '*' as a literal domain,
 // never as permission in every project/environment.
