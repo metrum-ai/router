@@ -21,6 +21,8 @@ func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride str
 	if override := strings.TrimSpace(listenOverride); override != "" {
 		cfg.Admin.Listen = override
 	}
+	// #814's chain is installed on the service during startup; the handler is
+	// built after it so identity always comes from the chain.
 	handler := svc.AdminHandler()
 	if handler == nil {
 		log.Fatalf("admin plane is enabled but no admin handler was built")

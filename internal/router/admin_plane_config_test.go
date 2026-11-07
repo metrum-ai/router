@@ -42,6 +42,61 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "host:port",
 		},
 		{
+			name: "acme certificate source",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.Mode = adminTLSModeRouter
+				cfg.TLS.CertificateSource = adminCertificateSourceACME
+				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
+			},
+		},
+		{
+			name: "acme without an acme block",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.Mode = adminTLSModeRouter
+				cfg.TLS.CertificateSource = adminCertificateSourceACME
+			},
+			wantErr: "requires an admin.tls.acme block",
+		},
+		{
+			name: "acme with static files",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.Mode = adminTLSModeRouter
+				cfg.TLS.CertificateSource = adminCertificateSourceACME
+				cfg.TLS.CertFile = "server.crt"
+				cfg.TLS.KeyFile = "server.key"
+				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
+			},
+			wantErr: "cannot be combined",
+		},
+		{
+			name: "files source with an acme block",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.Mode = adminTLSModeRouter
+				cfg.TLS.CertFile = "server.crt"
+				cfg.TLS.KeyFile = "server.key"
+				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
+			},
+			wantErr: "requires admin.tls.certificate_source acme",
+		},
+		{
+			name: "unknown certificate source",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.Mode = adminTLSModeRouter
+				cfg.TLS.CertFile = "server.crt"
+				cfg.TLS.KeyFile = "server.key"
+				cfg.TLS.CertificateSource = "vault"
+			},
+			wantErr: "must be files or acme",
+		},
+		{
+			name: "acme without router TLS mode",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.CertificateSource = adminCertificateSourceACME
+				cfg.TLS.ACME = map[string]any{"directory": "https://acme.test/directory"}
+			},
+			wantErr: "requires admin.tls.mode router",
+		},
+		{
 			name:    "router TLS without certificate",
 			mutate:  func(cfg *AdminPlaneConfig) { cfg.TLS.Mode = adminTLSModeRouter },
 			wantErr: "requires admin.tls.cert_file",

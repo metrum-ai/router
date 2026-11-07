@@ -34,6 +34,8 @@ const (
 	adminClientAuthRequire          = "require"
 	adminTLSMinVersion12            = "1.2"
 	adminTLSMinVersion13            = "1.3"
+	adminCertificateSourceFiles     = "files"
+	adminCertificateSourceACME      = "acme"
 	// adminLegacySunsetFloor is the earliest Sunset date a v4.8.0 deployment
 	// may advertise: the v4.8.0 release date plus the 90-day minimum the epic
 	// requires before legacy removal in v5.0.0.
@@ -81,9 +83,19 @@ type AdminTLSConfig struct {
 	// Mode is off (plaintext, loopback only by default), router (the router
 	// serves its own certificate) or proxy (a reverse proxy terminates TLS).
 	Mode string `yaml:"mode" json:"mode"`
-	// CertFile and KeyFile are required for mode router.
+	// CertificateSource selects where the router-native certificate comes
+	// from: files (default, CertFile/KeyFile) or acme (the #810 issuer, whose
+	// manager is installed into the listener's single handshake hook).
+	CertificateSource string `yaml:"certificate_source" json:"certificateSource,omitempty"`
+	// CertFile and KeyFile are required for mode router with certificate_source
+	// files.
 	CertFile string `yaml:"cert_file" json:"certFile,omitempty"`
 	KeyFile  string `yaml:"key_file" json:"keyFile,omitempty"`
+	// ACME is owned by #810. It is declared as an opaque block so a
+	// configuration that sets it is never silently ignored; the TLS lane
+	// replaces the type with its ListenerTLSConfig.acme and this lane keeps
+	// only hasACMEBlock.
+	ACME map[string]any `yaml:"acme" json:"acme,omitempty"`
 	// MinVersion is the minimum negotiated TLS version: 1.2 (default) or 1.3.
 	MinVersion string `yaml:"min_version" json:"minVersion,omitempty"`
 	// ClientCAFile is the bootstrap client CA bundle for mTLS. #814's
@@ -135,6 +147,12 @@ type AdminAuthenticationMTLSConfig struct {
 	ReloadInterval string   `yaml:"reload_interval" json:"reloadInterval,omitempty"`
 }
 
+// hasACMEBlock reports whether an acme sub-block is configured. #810 owns the
+// block's type; this seam keeps the listener's checks independent of it.
+func (c AdminTLSConfig) hasACMEBlock() bool {
+	return len(c.ACME) > 0
+}
+
 func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	if cfg == nil {
 		return
@@ -159,6 +177,9 @@ func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	}
 	if strings.TrimSpace(cfg.TLS.MinVersion) == "" {
 		cfg.TLS.MinVersion = adminTLSMinVersion12
+	}
+	if strings.TrimSpace(cfg.TLS.CertificateSource) == "" {
+		cfg.TLS.CertificateSource = adminCertificateSourceFiles
 	}
 	if strings.TrimSpace(cfg.TLS.ClientAuth) == "" {
 		cfg.TLS.ClientAuth = adminClientAuthNone
@@ -285,9 +306,27 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
 			return fmt.Errorf("admin.tls.cert_file/key_file require admin.tls.mode router")
 		}
+		if strings.EqualFold(strings.TrimSpace(cfg.TLS.CertificateSource), adminCertificateSourceACME) {
+			return fmt.Errorf("admin.tls.certificate_source acme requires admin.tls.mode router")
+		}
 	case adminTLSModeRouter:
-		if strings.TrimSpace(cfg.TLS.CertFile) == "" || strings.TrimSpace(cfg.TLS.KeyFile) == "" {
-			return fmt.Errorf("admin.tls.mode router requires admin.tls.cert_file and admin.tls.key_file")
+		switch strings.ToLower(strings.TrimSpace(cfg.TLS.CertificateSource)) {
+		case adminCertificateSourceFiles:
+			if strings.TrimSpace(cfg.TLS.CertFile) == "" || strings.TrimSpace(cfg.TLS.KeyFile) == "" {
+				return fmt.Errorf("admin.tls.mode router requires admin.tls.cert_file and admin.tls.key_file")
+			}
+			if cfg.TLS.hasACMEBlock() {
+				return fmt.Errorf("admin.tls.acme requires admin.tls.certificate_source acme")
+			}
+		case adminCertificateSourceACME:
+			if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
+				return fmt.Errorf("admin.tls.certificate_source acme cannot be combined with admin.tls.cert_file/key_file")
+			}
+			if len(cfg.TLS.ACME) == 0 {
+				return fmt.Errorf("admin.tls.certificate_source acme requires an admin.tls.acme block")
+			}
+		default:
+			return fmt.Errorf("admin.tls.certificate_source must be files or acme")
 		}
 		if len(cfg.TLS.TrustedProxyCIDRs) > 0 {
 			return fmt.Errorf("admin.tls.trusted_proxy_cidrs require admin.tls.mode proxy")
@@ -298,6 +337,9 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		}
 		if strings.TrimSpace(cfg.TLS.CertFile) != "" || strings.TrimSpace(cfg.TLS.KeyFile) != "" {
 			return fmt.Errorf("admin.tls.cert_file/key_file cannot be used with admin.tls.mode proxy")
+		}
+		if cfg.TLS.hasACMEBlock() {
+			return fmt.Errorf("admin.tls.acme requires admin.tls.mode router")
 		}
 	default:
 		return fmt.Errorf("admin.tls.mode must be off, router or proxy")
