@@ -99,9 +99,23 @@ const (
 	maxAdminAuditField  = 300
 )
 
-// safeAdminTicket bounds and redacts an operator-supplied ticket or reason.
+// safeAdminTicket redacts an operator-supplied ticket or reason FIRST and only then bounds
+// it on a rune boundary, so a secret straddling the cut is removed rather than half-kept.
 func safeAdminTicket(raw string) string {
-	return truncateSafeDetail(redactDiagnosticSecrets(strings.TrimSpace(raw[0:min(len(raw), maxAdminTicketBytes)])))
+	return adminRedactThenTrim(raw, maxAdminTicketBytes)
+}
+
+// adminRedactThenTrim redacts text and then truncates it to maxRunes runes. Order matters: a
+// truncated secret is still a leak, and cutting bytes can split a multi-byte character.
+func adminRedactThenTrim(raw string, maxRunes int) string {
+	// Deliberately not routed through the diagnostics byte-truncator: that cuts bytes and can
+	// split a multi-byte character, and it would also cut before redaction.
+	redacted := redactDiagnosticSecrets(strings.TrimSpace(raw))
+	runes := []rune(redacted)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return string(runes)
 }
 
 // adminAuditHash returns a short stable digest of a representation, used for the
@@ -246,12 +260,9 @@ type AdminFreshnessSource interface {
 	ConfigFreshness() (desired, applied int64, observedAt time.Time, ok bool)
 }
 
-// adminAuditFieldValue bounds and redacts one audit field.
+// adminAuditFieldValue redacts one audit field and then bounds it on a rune boundary.
 func adminAuditFieldValue(raw string) string {
-	if len(raw) > maxAdminAuditField {
-		raw = raw[:maxAdminAuditField]
-	}
-	return truncateSafeDetail(redactDiagnosticSecrets(strings.TrimSpace(raw)))
+	return adminRedactThenTrim(raw, maxAdminAuditField)
 }
 
 // adminAuditMetaForWrite returns the audit context for one write. On /admin/v1

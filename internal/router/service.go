@@ -100,11 +100,13 @@ type Service struct {
 	configControlPlane *gorm.DB
 	configSnapshot     *ConfigSnapshot
 	configDBCloser     func() error
-	configReloadStop   func()
-	configNotifyStop   func()
-	configInstanceID   string
-	configLoaded       atomic.Value // configLoadedState
-	shadows            *shadowRuntime
+	// adminAuditJanitorStop stops the retention purge jobs at shutdown.
+	adminAuditJanitorStop chan struct{}
+	configReloadStop      func()
+	configNotifyStop      func()
+	configInstanceID      string
+	configLoaded          atomic.Value // configLoadedState
+	shadows               *shadowRuntime
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
@@ -422,6 +424,9 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	s.routes()
 	s.initAdminPlane()
+	// Admin audit retention runs once per database that holds admin audit tables, and stops
+	// with the service.
+	s.StartAdminAuditJanitors()
 	return s, nil
 }
 
@@ -457,6 +462,10 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.adminAuditJanitorStop != nil {
+		close(s.adminAuditJanitorStop)
+		s.adminAuditJanitorStop = nil
+	}
 	if s.configNotifyStop != nil {
 		s.configNotifyStop()
 		s.configNotifyStop = nil

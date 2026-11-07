@@ -278,9 +278,30 @@ func (s *Service) adminIdempotencyStore() (AdminIdempotencyKeyStore, bool) {
 // adminNow is the mount's clock.
 func (s *Service) adminNow() time.Time { return time.Now().UTC() }
 
-// StartAdminAuditJanitor starts the retention purge for the admin audit tables. It runs once
-// immediately and then on the given interval, deleting in bounded batches so it never issues
-// one unbounded delete. The job stops when stop is closed.
+// StartAdminAuditJanitors starts the admin audit retention purge for every database that holds
+// an admin audit table — the control-plane database (change events, credential events) and the
+// usage database (usage audit table) are separate handles, so each gets its own janitor. The
+// jobs run once immediately and then hourly in bounded batches, and stop when the returned
+// channel is closed.
+func (s *Service) StartAdminAuditJanitors() chan struct{} {
+	stop := make(chan struct{})
+	if s == nil {
+		return stop
+	}
+	retentionDays := s.adminAPISettings().auditRetentionDays
+	if s.configControlPlane != nil {
+		StartAdminAuditJanitor(s.configControlPlane, time.Hour, retentionDays, stop)
+	}
+	if s.usage != nil && s.usage.db != nil {
+		StartAdminAuditJanitor(s.usage.db, time.Hour, retentionDays, stop)
+	}
+	s.adminAuditJanitorStop = stop
+	return stop
+}
+
+// StartAdminAuditJanitor starts the retention purge for the admin audit tables in db. It runs
+// once immediately and then on the given interval, deleting in bounded batches so it never
+// issues one unbounded delete. The job stops when stop is closed.
 func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}) {
 	if db == nil {
 		return

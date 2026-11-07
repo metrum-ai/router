@@ -157,12 +157,19 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 	// The collapse key includes the lifecycle and the outcome, so an issue followed by a
 	// revoke of the same credential never merges. Successful outcomes collapse too, so one
 	// busy credential cannot add a row per authenticated request.
+	// Failures collapse within one second and successes within five minutes, both keyed by
+	// lifecycle and outcome. The longer success window means a credential that scrapes
+	// constantly adds one counted row per window, not one per request.
+	window := time.Second
+	if event.Outcome == "success" {
+		window = adminCredentialSuccessWindow
+	}
 	collapsed := tx.Exec(
 		`UPDATE router_admin_credential_events SET count = count + 1 WHERE event_id = (SELECT event_id FROM router_admin_credential_events WHERE kind = ? AND credential_id = ? AND outcome = ? AND reason_code = ? AND client_ip_hash = ? AND lifecycle = ? AND at >= ? ORDER BY at DESC LIMIT 1)`,
 		adminAuditFieldValue(event.Kind), adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Outcome),
 		adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.ClientIPHash),
 		adminAuditFieldValue(event.Lifecycle),
-		event.At.Add(-time.Second).UTC().Format(time.RFC3339Nano),
+		event.At.Add(-window).UTC().Format(time.RFC3339Nano),
 	)
 	if collapsed.Error != nil {
 		return fmt.Errorf("collapse credential event: %w", collapsed.Error)
@@ -185,19 +192,50 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 // PurgeAdminAuditEventsBefore removes audit records older than cutoff from both admin audit
 // tables, honouring the configured retention. It is bounded per call so a long-neglected
 // deployment cannot issue one unbounded delete.
+// adminAuditPurgeBatch bounds one delete statement.
+const adminAuditPurgeBatch = 500
+
+// adminAuditTable is one admin audit table and the column that orders it for pruning.
+type adminAuditTable struct {
+	Name    string
+	IDCol   string
+	TimeCol string
+}
+
+// adminAuditTablesForDB returns the admin audit tables that live in the given database. The
+// credential-event and usage audit tables are in different databases, so a janitor runs once
+// per handle and only touches the tables that handle owns.
+func adminAuditTablesForDB(db *gorm.DB) []adminAuditTable {
+	if db == nil {
+		return nil
+	}
+	var tables []adminAuditTable
+	if db.Migrator().HasTable(adminCredentialEventsTable) {
+		tables = append(tables, adminAuditTable{Name: adminCredentialEventsTable, IDCol: "event_id", TimeCol: "at"})
+	}
+	if db.Migrator().HasTable(usageAdminAuditTable) {
+		tables = append(tables, adminAuditTable{Name: usageAdminAuditTable, IDCol: "event_id", TimeCol: "at"})
+	}
+	return tables
+}
+
+// PurgeAdminAuditEventsBefore removes one bounded batch of expired admin audit rows from each
+// admin audit table present in db. The delete is portable: the subquery selects the primary
+// keys to remove by id, which is valid on SQLite and on PostgreSQL.
 func PurgeAdminAuditEventsBefore(db *gorm.DB, cutoff time.Time) (int64, error) {
 	if db == nil {
 		return 0, nil
 	}
 	stamp := cutoff.UTC().Format(time.RFC3339Nano)
 	var removed int64
-	for _, stmt := range []string{
-		`DELETE FROM router_admin_credential_events WHERE event_id IN (SELECT event_id FROM router_admin_credential_events WHERE at < ? LIMIT 500)`,
-		`DELETE FROM router_admin_audit_events WHERE event_id IN (SELECT event_id FROM router_admin_audit_events WHERE at < ? LIMIT 500)`,
-	} {
+	for _, table := range adminAuditTablesForDB(db) {
+		stmt := fmt.Sprintf(
+			`DELETE FROM %s WHERE %s IN (SELECT %s FROM %s WHERE %s < ? ORDER BY %s LIMIT %d)`,
+			table.Name, table.IDCol, table.IDCol, table.Name, table.TimeCol, table.TimeCol, adminAuditPurgeBatch,
+		)
 		result := db.Exec(stmt, stamp)
 		if result.Error != nil {
-			return removed, result.Error
+			return removed, fmt.Errorf("prune %s: %w", table.Name, result.Error)
 		}
 		removed += result.RowsAffected
 	}
@@ -234,6 +272,10 @@ func adminCredentialFailureWithinCap(tx *gorm.DB, event AdminCredentialEvent) bo
 
 // adminCredentialFailureUnknownBucket is the cap bucket for failures without a source digest.
 const adminCredentialFailureUnknownBucket = "unknown-source"
+
+// adminCredentialSuccessWindow is how long successful authentication outcomes for one
+// credential aggregate into a single counted row.
+const adminCredentialSuccessWindow = 5 * time.Minute
 
 type adminCredentialEventRow struct {
 	EventID string `gorm:"column:event_id;primaryKey"`

@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm"
 )
@@ -690,48 +692,142 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	if mutations == 0 || usageMutations != 3 {
 		t.Fatalf("exercised %d mutations (%d usage-side), want the full registry", mutations, usageMutations)
 	}
+	// The control-plane class gets its own forced-audit-failure rollback case.
+	assertControlPlaneAuditRollback(t)
 }
 
-// runUsageAuditOperation drives a usage-database mutation through the real store path with a
-// valid fixture and asserts one audited row, then proves the rollback with the audit store
+// assertControlPlaneAuditRollback proves a control-plane mutation rolls back when its audit row
+// cannot be written.
+func assertControlPlaneAuditRollback(t *testing.T) {
+	t.Helper()
+	harness := newAdminAuditHarness(t)
+	revisionBefore, err := currentRevisionForScope(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(harness.changeEvents(t))
+	if err := harness.db.Exec(`CREATE TRIGGER reject_ctrl_audit BEFORE INSERT ON router_config_change_events BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	recorder := harness.do(t, http.MethodPut, "/admin/v1/config/groups/agent-default/targets", map[string]any{
+		"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}},
+	}, map[string]string{"If-Match": harness.currentETag(t)})
+	if recorder.Code < 500 {
+		t.Fatalf("control-plane mutation with a failing audit store returned %d, want 5xx", recorder.Code)
+	}
+	revisionAfter, err := currentRevisionForScope(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revisionAfter != revisionBefore || len(harness.changeEvents(t)) != before {
+		t.Fatal("the control-plane mutation committed without its audit row")
+	}
+}
+
+// runUsageAuditOperation drives a usage-database mutation through its REAL HTTP handler with a
+// seeded capture, asserts one audited row, and proves the rollback with the audit store
 // unavailable.
 func runUsageAuditOperation(t *testing.T, harness *adminAuditHarness, op Operation) {
 	t.Helper()
-	store := adminUsageAuditTestStore(t)
-	record := auditRecordFromMeta(testAdminAuditMeta(), "request_delete")
-	change := func(s *usageStore) error {
+	usageStore, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = usageStore.Close() })
+	if err := usageStore.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	encryption := testContentCaptureEncryption(t)
+	service := &Service{usage: usageStore, contentCaptureKeys: envContentCaptureKeyResolver{}, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}}}}
+	now := time.Now().UTC()
+	capture := contentCaptureRecord{
+		RequestID: "req-audit", TS: formatUsageTime(now), Scope: contentCaptureScopeRequest,
+		CallerID: "caller", TokenID: "token", Encrypted: true, ContentText: "cipher",
+		EncryptionNonce: "nonce", EncryptionLocalKeyID: encryption.LocalKeyID,
+		RetentionUntil: formatUsageTime(now.Add(time.Hour)),
+	}
+	if err := usageStore.db.Create(&capture).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// The admin-plane decision is recorded by calling the handler from a request whose context
+	// carries the principal, the decision and the audit context, exactly as the mount does.
+	call := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(op.Method, op.Path, strings.NewReader(`{"version":"router-outcome-v1","task_hash":"`+strings.Repeat("a", 64)+`","task_success":true,"schema_valid":true,"quality":1,"backend":"acme-support-v1"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.SetPathValue("request_id", "req-audit")
+		ctx := WithPrincipal(request.Context(), Principal{Subject: "adminkey:audit", Kind: "adminkey", CredentialID: "cred-audit", Issuer: "test"})
+		ctx = WithAdminV1Decision(ctx, adminV1Decision{Taken: []adminV1Taken{{
+			Object: op.Object, Action: op.Action, Domain: AdminGlobalDomain,
+		}}})
+		ctx = WithAdminAuditMeta(ctx, testAdminAuditMeta())
+		request = request.WithContext(ctx)
+		recorder := httptest.NewRecorder()
 		switch op.ID {
 		case "deleteContentCapture":
-			_, err := s.DeleteContentCapturesByRequestIDAudited("req-audit", "caller", "token", "admin-delete", record)
-			return err
+			service.handleContentCaptureDelete(recorder, request)
 		case "purgeExpiredContentCaptures":
-			_, err := s.PurgeExpiredContentCapturesAudited(time.Now().UTC(), "admin", "admin", "retention", record)
-			return err
+			service.handleContentCapturePurgeExpired(recorder, request)
 		case "labelTrainingOutcome":
-			return s.CreateTrainingOutcomeAudited(contentCaptureRecord{RequestID: "req-audit", Scope: "training_outcome_v1"}, record)
+			service.handleTrainingOutcome(recorder, request)
+		default:
+			t.Fatalf("unhandled usage operation %s", op.ID)
 		}
-		t.Fatalf("unhandled usage operation %s", op.ID)
-		return nil
+		return recorder
 	}
-	if err := change(store); err != nil {
-		t.Fatalf("operation %s did not commit: %v", op.ID, err)
+
+	if recorder := call(); recorder.Code < 200 || recorder.Code >= 300 {
+		t.Fatalf("operation %s did not commit: %d (%s)", op.ID, recorder.Code, recorder.Body.String())
 	}
 	var rows int64
-	if err := store.db.Table(usageAdminAuditTable).Count(&rows).Error; err != nil {
+	if err := usageStore.db.Table(usageAdminAuditTable).Count(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
 	if rows != 1 {
 		t.Fatalf("operation %s wrote %d usage audit rows, want 1", op.ID, rows)
 	}
 	// Forced audit failure: the change must not commit.
-	store2 := adminUsageAuditTestStore(t)
-	if err := store2.db.Exec("DROP TABLE " + usageAdminAuditTable).Error; err != nil {
+	usageStore2, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage2.sqlite"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := change(store2); err == nil {
-		t.Fatalf("operation %s committed with the audit store unavailable", op.ID)
+	t.Cleanup(func() { _ = usageStore2.Close() })
+	service2 := &Service{usage: usageStore2, contentCaptureKeys: envContentCaptureKeyResolver{}, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}}}}
+	capture2 := capture
+	capture2.DeletionRequested = false
+	if err := usageStore2.db.Create(&capture2).Error; err != nil {
+		t.Fatal(err)
 	}
-	_ = harness
+	recorder := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(op.Method, op.Path, strings.NewReader(`{"version":"router-outcome-v1","task_hash":"`+strings.Repeat("a", 64)+`","task_success":true,"schema_valid":true,"quality":1,"backend":"acme-support-v1"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.SetPathValue("request_id", "req-audit")
+		ctx := WithPrincipal(request.Context(), Principal{Subject: "adminkey:audit", Kind: "adminkey", CredentialID: "cred-audit", Issuer: "test"})
+		ctx = WithAdminV1Decision(ctx, adminV1Decision{Taken: []adminV1Taken{{Object: op.Object, Action: op.Action, Domain: AdminGlobalDomain}}})
+		ctx = WithAdminAuditMeta(ctx, testAdminAuditMeta())
+		request = request.WithContext(ctx)
+		rec := httptest.NewRecorder()
+		switch op.ID {
+		case "deleteContentCapture":
+			service2.handleContentCaptureDelete(rec, request)
+		case "purgeExpiredContentCaptures":
+			service2.handleContentCapturePurgeExpired(rec, request)
+		case "labelTrainingOutcome":
+			service2.handleTrainingOutcome(rec, request)
+		}
+		return rec
+	}()
+	if recorder.Code < 500 {
+		t.Fatalf("operation %s returned %d with the audit store unavailable, want 5xx", op.ID, recorder.Code)
+	}
+	// Nothing was deleted or labelled: the capture is still there.
+	var remaining int64
+	if err := usageStore2.db.Model(&contentCaptureRecord{}).Where("request_id = ?", "req-audit").Count(&remaining).Error; err != nil {
+		t.Fatal(err)
+	}
+	if op.ID == "deleteContentCapture" && remaining == 0 {
+		t.Fatal("the deletion committed although its audit row could not be written")
+	}
 }
 
 // prepareAdminAuditFixture creates the prerequisite state some operations need.
@@ -750,7 +846,6 @@ func prepareAdminAuditFixture(t *testing.T, harness *adminAuditHarness, op Opera
 			t.Fatalf("preparing removeConfigGroupTarget: %d (%s)", recorder.Code, recorder.Body.String())
 		}
 	case "rollbackConfigGroup":
-		// A group change is required before the group can be rolled back.
 		recorder := write(http.MethodPut, "/admin/v1/config/groups/agent-default/targets",
 			map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}, map[string]any{"provider": "beta", "model_ref": "b-one"}}}, "pre-rollback")
 		if recorder.Code != http.StatusOK {
@@ -878,9 +973,10 @@ func TestAdminCredentialLifecycleEvents(t *testing.T) {
 		}
 	}
 	var rows []struct {
-		Lifecycle string `gorm:"column:lifecycle"`
-		Outcome   string `gorm:"column:outcome"`
-		Subject   string `gorm:"column:subject"`
+		Lifecycle    string `gorm:"column:lifecycle"`
+		Outcome      string `gorm:"column:outcome"`
+		CredentialID string `gorm:"column:credential_id"`
+		Subject      string `gorm:"column:subject"`
 	}
 	if err := harness.db.Table(adminCredentialEventsTable).Order("at ASC").Find(&rows).Error; err != nil {
 		t.Fatal(err)
@@ -890,8 +986,13 @@ func TestAdminCredentialLifecycleEvents(t *testing.T) {
 	}
 	want := []string{"issue", "rotate", "revoke"}
 	for i, row := range rows {
-		if row.Lifecycle != want[i] || row.Outcome != "success" || row.Subject == "" {
+		if row.Lifecycle != want[i] || row.Outcome != "success" {
 			t.Fatalf("lifecycle row %d = %+v, want lifecycle %q", i, row, want[i])
+		}
+		// The event names the AFFECTED credential, which for all three steps is the caller
+		// that was issued, rotated and then revoked.
+		if row.CredentialID != callerID || row.Subject != callerID {
+			t.Fatalf("lifecycle row %d names %q/%q, want the affected caller %q", i, row.CredentialID, row.Subject, callerID)
 		}
 	}
 }
@@ -944,4 +1045,122 @@ func TestAdminAuthenticationFailureFloodIsBounded(t *testing.T) {
 	if evaded > adminCredentialFailureSourceCap+2 {
 		t.Fatalf("%d failure rows for one source, cap is %d", evaded, adminCredentialFailureSourceCap)
 	}
+}
+
+// TestAdminAuditFieldRedactsBeforeTruncating proves the audit helpers redact first and only
+// then bound the text, so a secret straddling the cut is removed rather than half-kept.
+func TestAdminAuditFieldRedactsBeforeTruncating(t *testing.T) {
+	padding := strings.Repeat("x", maxAdminAuditField-8)
+	secret := "sk-live-9f8e7d6c5b4a39281706"
+	value := padding + " token=" + secret + " trailing"
+	got := adminAuditFieldValue(value)
+	if strings.Contains(got, secret) || strings.Contains(got, "sk-live") {
+		t.Fatalf("the value kept part of the secret: %q", got)
+	}
+	if len([]rune(got)) > maxAdminAuditField {
+		t.Fatalf("the value is %d runes, want at most %d", len([]rune(got)), maxAdminAuditField)
+	}
+
+	// A multi-byte character at the cut must not be split.
+	wide := strings.Repeat("é", maxAdminAuditField+40)
+	trimmed := adminAuditFieldValue(wide)
+	if len([]rune(trimmed)) != maxAdminAuditField {
+		t.Fatalf("wide value is %d runes, want %d", len([]rune(trimmed)), maxAdminAuditField)
+	}
+	if !utf8.ValidString(trimmed) {
+		t.Fatal("truncation split a multi-byte character")
+	}
+
+	// A ticket that would straddle its own bound is redacted, not half-kept.
+	ticketPadding := strings.Repeat("y", maxAdminTicketBytes-8)
+	ticket := safeAdminTicket(ticketPadding + " token=" + secret)
+	if strings.Contains(ticket, "sk-live") {
+		t.Fatalf("the ticket kept part of the secret: %q", ticket)
+	}
+}
+
+// TestAdminSuccessfulAuthRowsAggregate proves a credential that authenticates repeatedly
+// produces one counted row per window rather than one row per request.
+func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
+	db := configAdminTestDB(t)
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	event := AdminCredentialEvent{
+		Kind: "adminkey", CredentialID: "adminkey:scraper", Subject: "adminkey:scraper",
+		Outcome: "success", RequestID: "req-scrape", ClientIPHash: adminClientIPHash("198.51.100.7"),
+		Lifecycle: "auth",
+	}
+	for i := 0; i < 20; i++ {
+		event.At = now.Add(time.Duration(i) * 10 * time.Second)
+		event.RequestID = fmt.Sprintf("req-scrape-%02d", i)
+		if err := db.Transaction(func(tx *gorm.DB) error { return insertAdminCredentialEventTx(tx, event) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows []struct {
+		Count     int64  `gorm:"column:count"`
+		Lifecycle string `gorm:"column:lifecycle"`
+	}
+	if err := db.Table(adminCredentialEventsTable).Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("20 successful scrapes produced %d rows, want 1", len(rows))
+	}
+	if rows[0].Count != 20 || rows[0].Lifecycle != "auth" {
+		t.Fatalf("aggregated row = %+v, want count 20", rows[0])
+	}
+}
+
+// TestAdminAuditJanitorPurgesBothDatabases proves the retention janitor works against each
+// database independently: the control-plane tables and the usage audit table are in different
+// handles, and each janitor prunes only what its handle owns.
+func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
+	old := time.Now().UTC().Add(-200 * 24 * time.Hour)
+	control := configAdminTestDB(t)
+	if err := control.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := control.Exec(`INSERT INTO router_admin_credential_events (event_id, at, kind, outcome, lifecycle, count) VALUES ('old-event', ?, 'adminkey', 'success', 'auth', 1)`, old.Format(time.RFC3339Nano)).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	usageStore := adminUsageAuditTestStore(t)
+	if err := usageStore.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := insertAdminAuditUsageTx(usageStore.db, AdminAuditRecord{EventID: "old-usage-event", At: old, Outcome: "committed"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each handle prunes only its own table.
+	if _, err := PurgeAdminAuditEventsBefore(control, time.Now().UTC().Add(-90*24*time.Hour)); err != nil {
+		t.Fatalf("purge control plane: %v", err)
+	}
+	var controlRows, usageRows int64
+	if err := control.Table(adminCredentialEventsTable).Count(&controlRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := usageStore.db.Table(usageAdminAuditTable).Count(&usageRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if controlRows != 0 {
+		t.Fatalf("the control-plane janitor left %d expired credential rows", controlRows)
+	}
+	if usageRows != 1 {
+		t.Fatalf("the control-plane janitor touched the usage table (%d rows)", usageRows)
+	}
+	if _, err := PurgeAdminAuditEventsBefore(usageStore.db, time.Now().UTC().Add(-90*24*time.Hour)); err != nil {
+		t.Fatalf("purge usage: %v", err)
+	}
+	if err := usageStore.db.Table(usageAdminAuditTable).Count(&usageRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if usageRows != 0 {
+		t.Fatalf("the usage janitor left %d expired rows", usageRows)
+	}
+
+	// The scheduled entry point runs against a handle and stops on close.
+	stop := make(chan struct{})
+	StartAdminAuditJanitor(control, time.Hour, 90, stop)
+	close(stop)
 }

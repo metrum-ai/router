@@ -350,7 +350,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		if metaErr != nil {
 			return metaErr
 		}
-		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r), meta, "issue", req.KeySlug); err != nil {
+		if _, err := bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_issue", h.actor(r), meta, "issue", caller.ID); err != nil {
 			return err
 		}
 		return nil
