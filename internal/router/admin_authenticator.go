@@ -190,7 +190,7 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 }
 
 func validMachinePrincipal(p Principal) bool {
-	if strings.TrimSpace(p.Subject) == "" {
+	if strings.TrimSpace(p.Subject) == "" || strings.TrimSpace(p.Subject) == securityAdministratorRole {
 		return false
 	}
 	switch p.Kind {

@@ -33,7 +33,7 @@ g = _, _, _
 e = some(where (p.eft == allow))
 
 [matchers]
-m = (g(policySubject(r.sub), p.sub, r.dom) || g(policySubject(r.sub), p.sub, "*") || policySubject(r.sub) == p.sub || r.sub == p.sub) && grantMatch(r.dom, p.dom, r.obj, p.obj, r.act, p.act, p.sub)
+m = (g(policySubject(r.sub), p.sub, r.dom) || g(policySubject(r.sub), p.sub, "*") || policySubject(r.sub) == p.sub || r.sub == p.sub) && grantMatch(r.dom, p.dom, r.obj, p.obj, r.act, p.act, p.sub) && managementRoleMatch(r.sub, p.sub, p.obj)
 `
 
 const (
@@ -93,12 +93,16 @@ func newAuthzEnforcer() (*casbin.SyncedEnforcer, error) {
 	enforcer.AddFunction("actionMatch", actionMatch)
 	enforcer.AddFunction("grantMatch", grantMatch)
 	enforcer.AddFunction("policySubject", compatibilityPolicySubject)
+	enforcer.AddFunction("managementRoleMatch", managementRoleMatch)
 	return enforcer, nil
 }
 
 type authorizer struct {
 	enforcer        *casbin.SyncedEnforcer
 	activePolicySet string
+	// Authored records exclude immutable builtins and synthesized flags/maps.
+	// Retain them so online guards validate even duplicate/unchanged records.
+	authoredPolicy [][]string
 }
 
 func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRuntime, usage *usageStore, legacy AdminAuthConfig) (*authorizer, error) {
@@ -128,7 +132,11 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			}
 		}
 	}
+	if err := addEmergencyAuthorizationGrants(enforcer); err != nil {
+		return nil, err
+	}
 	activePolicySet := ""
+	var authoredPolicy [][]string
 	if cfg.Enabled {
 		policyLines, policySetID, err := authzPolicyLines(cfg, usage)
 		if err != nil {
@@ -161,12 +169,17 @@ func newAuthorizer(cfg AdminAuthorizationConfig, callers map[string]*callerRunti
 			default:
 				return nil, fmt.Errorf("unsupported policy line %q", fields[0])
 			}
+			authoredPolicy = append(authoredPolicy, fields)
 		}
 	}
 	if err := addCompatibilityGrants(enforcer, legacy); err != nil {
 		return nil, err
 	}
-	return &authorizer{enforcer: enforcer, activePolicySet: activePolicySet}, nil
+	snapshot := &authorizer{enforcer: enforcer, activePolicySet: activePolicySet, authoredPolicy: authoredPolicy}
+	if err := addGlobalCompatibilityGrants(snapshot, callers, legacy); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }
 
 func authzPolicyLines(cfg AdminAuthorizationConfig, usage *usageStore) ([]string, string, error) {
@@ -238,7 +251,7 @@ func validateCasbinPolicyFields(fields []string, label string) error {
 		return fmt.Errorf("%s must start with p or g", label)
 	}
 	for _, field := range fields {
-		if strings.HasPrefix(field, compatibilitySubjectPrefix) {
+		if strings.HasPrefix(field, internalAuthorizationSubjectPrefix) {
 			return fmt.Errorf("%s uses a reserved identity", label)
 		}
 		if strings.TrimSpace(field) == "" {
@@ -342,11 +355,6 @@ func (a *authorizer) enforce(subject authorizationSubject, object, action string
 	}
 	ok, err := a.enforcer.Enforce(subject.subject, subject.domain, object, action)
 	return err == nil && ok
-}
-
-func (a *authorizer) enforceInDomain(subject authorizationSubject, domain, object, action string) bool {
-	subject.domain = strings.TrimSpace(domain)
-	return a.enforce(subject, object, action)
 }
 
 func authzSubjectForBasic(subject adminBasicRuntime) authorizationSubject {

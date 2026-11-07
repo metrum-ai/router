@@ -209,8 +209,13 @@ func TestTLSStartupFailsWithoutACertificate(t *testing.T) {
 		t.Fatal("startup must fail when no certificate can be obtained")
 	}
 	// main only creates the server after EnsureCertificate succeeds, so an error
-	// here is exactly the "no listener, never plaintext" guarantee.
-	if manager.TLSConfig().Certificates != nil {
-		t.Fatal("no certificate should be installed after a failed issuance")
+	// here is exactly the "no listener, never plaintext" guarantee: no
+	// certificate is installed, the status is empty and a handshake has nothing
+	// to serve.
+	if status := manager.Status(); len(status) != 0 {
+		t.Fatalf("status after a failed startup = %+v, want empty", status)
+	}
+	if _, err := manager.GetCertificate(&tls.ClientHelloInfo{ServerName: "router.example.com"}); err == nil {
+		t.Fatal("GetCertificate must fail when startup could not obtain a certificate")
 	}
 }

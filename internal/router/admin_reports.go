@@ -4,6 +4,7 @@
 package router
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"embed"
@@ -1265,10 +1266,7 @@ func (s *Service) adminReportBearerForbidden(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Service) authorizeAdmin(subject adminAuthSubject, object, action string) bool {
-	if strings.HasPrefix(subject.subject, compatibilitySubjectPrefix) {
-		return false
-	}
-	return s.currentAuthorizer().enforce(authzSubjectForAdmin(subject), object, action)
+	return s.authorizeLegacy(subject, object, action, "public")
 }
 
 func (s *Service) authorizeGlobalAdmin(subject adminAuthSubject, object, action string) bool {
@@ -1277,12 +1275,33 @@ func (s *Service) authorizeGlobalAdmin(subject adminAuthSubject, object, action 
 	return s.authorizeAdmin(global, object, action)
 }
 
-func (s *Service) authorizeCaller(caller *callerRuntime, object, action string) bool {
-	return s.currentAuthorizer().enforce(authzSubjectForCaller(caller), object, action)
+func callerAuthorizationCredentialID(caller *callerRuntime) string {
+	if caller == nil {
+		return ""
+	}
+	return strings.TrimSpace(caller.cfg.ID)
 }
 
-func (s *Service) authorizeCallerInDomain(caller *callerRuntime, domain, object, action string) bool {
-	return s.currentAuthorizer().enforceInDomain(authzSubjectForCaller(caller), domain, object, action)
+func (s *Service) authorizeCaller(caller *callerRuntime, object, action string, contexts ...context.Context) bool {
+	identity := authzSubjectForCaller(caller)
+	subject := adminAuthSubject{subject: identity.subject, domain: identity.domain, source: identity.source, credentialID: callerAuthorizationCredentialID(caller)}
+	if len(contexts) > 0 {
+		subject.authContext = contexts[0]
+	}
+	return s.authorizeLegacy(subject, object, action, "public")
+}
+
+func (s *Service) authorizeCallerInDomain(caller *callerRuntime, domain, object, action string, contexts ...context.Context) bool {
+	identity := authzSubjectForCaller(caller)
+	subject := adminAuthSubject{subject: identity.subject, domain: strings.TrimSpace(domain), source: identity.source, credentialID: callerAuthorizationCredentialID(caller)}
+	if len(contexts) > 0 {
+		subject.authContext = contexts[0]
+	}
+	mode := "public"
+	if subject.domain == AdminGlobalDomain && object == authzObjectMetrics {
+		mode = "global"
+	}
+	return s.authorizeLegacy(subject, object, action, mode)
 }
 
 func (s *Service) setAdminReportHeaders(w http.ResponseWriter, static bool) {

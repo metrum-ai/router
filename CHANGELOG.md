@@ -7,13 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- v4.8.0 release binaries are built with Go 1.26.10 for standard-library
+  security fixes. Source builds require at least Go 1.26.10; CI, release and
+  container build producers use the patched toolchain.
+
 ### Authorization compatibility
 
-- `router-internal:compat:` is reserved for compiled authorization identities.
-  Policies or configured public subjects selecting that namespace now fail
-  startup/reload validation rather than being interpreted as public grants.
-  Check existing offline policies before upgrading; do not use internal
-  compatibility identities as application subjects.
+- The entire `router-internal:` prefix is reserved for internal authorization
+  identities, not only `router-internal:compat:`. Policies or configured public
+  subjects selecting that namespace fail startup/reload validation rather than
+  being interpreted as public grants. Check existing offline policies and
+  subject mappings before upgrading; do not use internal identities as
+  application subjects.
 - Basic authentication membership, password hash, subject and domain changes
   require a restart. Authorization policy reload does not itself refresh the
   Basic authentication directory; use a restart for Basic revocation/rotation.

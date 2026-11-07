@@ -21,6 +21,7 @@ package router
 // logged, stored, or returned outside the one-time generation output.
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"encoding/base64"
@@ -209,7 +210,7 @@ func buildAdminAPIKeyRuntimes(cfg *Config, lookupEnv func(string) (string, bool)
 }
 
 func buildAdminAPIKeyRuntime(key AdminAPIKeyConfig, lookupEnv func(string) (string, bool)) *adminAPIKeyRuntime {
-	if strings.TrimSpace(key.Status) == "disabled" {
+	if strings.ToLower(strings.TrimSpace(key.Status)) == "disabled" {
 		return nil
 	}
 	keyID := strings.TrimSpace(key.KeyID)
@@ -255,24 +256,38 @@ func (s *Service) authenticateAdminAPIKey(token string) (adminAuthSubject, bool)
 	if runtime == nil {
 		return adminAuthSubject{}, false
 	}
-	if s.adminKeyDigestMatches(runtime, token) {
-		return adminAuthSubjectForAPIKey(runtime), true
+	if !verifyAdminAPIKeyRuntime(context.Background(), runtime, s.callerAuth, token) {
+		return adminAuthSubject{}, false
 	}
-	// Bound KDF work under a flood of wrong secrets for a known key id,
-	// sharing the caller-auth semaphore.
-	st := s.callerAuth
+	return adminAuthSubjectForAPIKey(runtime), true
+}
+
+// Share the existing full-token verifier/digest cache with machine auth without
+// importing permission-map authorization. Background preserves legacy waiting
+// semantics; machine requests can cancel while waiting for a derivation slot.
+func verifyAdminAPIKeyRuntime(ctx context.Context, runtime *adminAPIKeyRuntime, st *callerAuthState, token string) bool {
+	if ctx == nil || ctx.Err() != nil || runtime == nil {
+		return false
+	}
+	if adminKeyDigestMatchesState(st, runtime, token) {
+		return ctx.Err() == nil
+	}
 	if st != nil && st.kdfSlots != nil {
-		st.kdfSlots <- struct{}{}
+		select {
+		case st.kdfSlots <- struct{}{}:
+		case <-ctx.Done():
+			return false
+		}
 		defer func() { <-st.kdfSlots }()
 	}
-	if !runtime.verifier.matches(token) {
-		return adminAuthSubject{}, false
+	if ctx.Err() != nil || !runtime.verifier.matches(token) || ctx.Err() != nil {
+		return false
 	}
 	if st != nil {
 		digest := st.digest(token)
 		runtime.verified.Store(&digest)
 	}
-	return adminAuthSubjectForAPIKey(runtime), true
+	return true
 }
 
 func adminAuthSubjectForAPIKey(runtime *adminAPIKeyRuntime) adminAuthSubject {
@@ -289,8 +304,11 @@ func adminAuthSubjectForAPIKey(runtime *adminAPIKeyRuntime) adminAuthSubject {
 // digest for this key. The digest is HMAC-SHA3-512 under a per-process random
 // key, so a config reload or restart simply re-runs the KDF once.
 func (s *Service) adminKeyDigestMatches(runtime *adminAPIKeyRuntime, token string) bool {
-	st := s.callerAuth
-	if st == nil {
+	return adminKeyDigestMatchesState(s.callerAuth, runtime, token)
+}
+
+func adminKeyDigestMatchesState(st *callerAuthState, runtime *adminAPIKeyRuntime, token string) bool {
+	if st == nil || runtime == nil {
 		return false
 	}
 	cached := runtime.verified.Load()
