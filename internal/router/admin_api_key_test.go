@@ -269,19 +269,19 @@ func TestAdminKeyOIDCPermissionParity(t *testing.T) {
 	if svc.authorizeAdminPermission(oidcSubject, "config:write") {
 		t.Fatal("OIDC subject without write policy must be denied")
 	}
-	// Admin key subjects enforce their exact permission set without any
-	// Casbin grant: the read-only key cannot write even if policy exists for
-	// other subjects.
-	keySubject := adminAuthSubject{subject: "adminkey:ops-primary", domain: "local/test", source: "admin_key", permissions: map[string]bool{"config:read": true}}
+	// Use the authenticated credential identity: compatibility grants are
+	// compiled under it, not under the public policy subject. The read-only
+	// key cannot write even if policy exists for other subjects.
+	keySubject := adminAuthSubjectForAPIKey(svc.adminAPIKeys["ops-primary"])
 	if !svc.authorizeAdminPermission(keySubject, "config:read") {
 		t.Fatal("admin key config:read grant must be honored")
 	}
 	if svc.authorizeAdminPermission(keySubject, "config:write") {
 		t.Fatal("admin key config:write must be denied for a read-only key")
 	}
-	// Admin key permissions are never projected into Casbin policy.
+	// Public-subject-only routes must not inherit compatibility grants.
 	if svc.authorizeAdmin(keySubject, "admin:config", "read") {
-		t.Fatal("admin key permissions must not become Casbin policy lines")
+		t.Fatal("credential-local grants leaked into public-subject policy")
 	}
 }
 
