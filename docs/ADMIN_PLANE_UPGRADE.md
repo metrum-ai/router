@@ -253,6 +253,15 @@ kubectl -n <namespace> run serving-client --rm -it --restart=Never --image=curli
   sh -c 'curl -m 3 -fsS http://metrum-ai-router:80/healthz'
 ```
 
+The admin port admits exactly one kind of source: a pod labelled
+`access.metrum.ai/admin-client: "true"` **in a named namespace**. The check refuses a `namespaceSelector` with
+no labels (any namespace), the admin-client label without a namespace match, and any rule that mixes the
+admin-client selector with another source. A deployment that must reach the admin port from a network range
+(for example a reviewed bastion subnet) instead of a labelled pod records it in
+`BROAD_IPBLOCK_OVERRIDES` in `scripts/check_admin_plane_manifests.py` as `cidr -> reason`; the reason is
+printed on every run, ranges wider than `/16` (IPv4) or `/48` (IPv6) need that entry, and `0.0.0.0/0` is never
+allowed.
+
 A public Ingress cannot reach the admin Service because no Ingress selects it; the NetworkPolicy
 would also drop the traffic. Delete the test pods (`kubectl -n <namespace> delete pod
 unselected-client selected-client serving-client`) when finished.

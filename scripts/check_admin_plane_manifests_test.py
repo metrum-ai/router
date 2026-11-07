@@ -116,15 +116,73 @@ def healthy(admin_rule: list[dict] | None = None) -> list[dict]:
 
 
 class CheckRenderedManifestsTest(unittest.TestCase):
-    def run_check(self, documents: list[dict]) -> tuple[int, str]:
+    def run_check(self, documents: list[dict], overrides: dict[str, str] | None = None) -> tuple[int, str]:
         problems = check.Problems()
-        check.check_documents(documents, problems)
+        check.check_documents(documents, problems, overrides)
         return (1 if problems.items else 0), "\n".join(problems.items)
 
     def assert_rejected(self, documents: list[dict], needle: str) -> None:
         code, output = self.run_check(documents)
         self.assertEqual(code, 1, output)
         self.assertIn(needle, output)
+
+
+    def test_namespace_selector_without_labels_is_refused(self) -> None:
+        source = {
+            "namespaceSelector": {},
+            "podSelector": {"matchLabels": {"access.metrum.ai/admin-client": "true"}},
+        }
+        self.assert_rejected(
+            healthy([{"from": [source], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]),
+            "namespaceSelector with no labels allows every namespace",
+        )
+
+    def test_admin_client_label_in_every_namespace_is_refused(self) -> None:
+        # The admin-client label alone, without a namespace match, must not count.
+        source = {"podSelector": {"matchLabels": {"access.metrum.ai/admin-client": "true"}}}
+        self.assert_rejected(
+            healthy([{"from": [source], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]),
+            "allowed from selected admin-client pods",
+        )
+
+    def test_mixed_admin_client_and_other_source_is_refused(self) -> None:
+        source = {"podSelector": {"matchLabels": {"app": "bastion"}}}
+        self.assert_rejected(
+            healthy([{"from": SELECTED_FROM + [source], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]),
+            "must not mix the admin-client selector with another source",
+        )
+
+    def test_mixed_admin_client_and_ipblock_is_refused(self) -> None:
+        source = {"ipBlock": {"cidr": "10.1.0.0/24"}}
+        self.assert_rejected(
+            healthy([{"from": SELECTED_FROM + [source], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]),
+            "must not mix the admin-client selector with another source",
+        )
+
+    def test_wide_ipv4_ipblock_needs_a_documented_override(self) -> None:
+        rule = [{"from": [{"ipBlock": {"cidr": "10.0.0.0/8"}}], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]
+        self.assert_rejected(healthy(rule), "wider than /16")
+
+    def test_wide_ipv6_ipblock_needs_a_documented_override(self) -> None:
+        rule = [{"from": [{"ipBlock": {"cidr": "2001:db8::/32"}}], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]
+        self.assert_rejected(healthy(rule), "wider than /48")
+
+    def test_bastion_network_needs_a_documented_override(self) -> None:
+        rule = [{"from": [{"ipBlock": {"cidr": "10.1.0.0/24"}}], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]
+        self.assert_rejected(healthy(rule), "needs a documented override")
+
+    def test_documented_override_allows_a_bastion_network(self) -> None:
+        rule = [{"from": [{"ipBlock": {"cidr": "10.1.0.0/24"}}], "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]
+        documents = healthy(rule)
+        # An explicitly documented bastion range carries its reason and still
+        # needs the admin-client selector somewhere for the normal path, so the
+        # healthy rule set keeps both an override and the selector.
+        documents = [doc for doc in documents if doc.get("metadata", {}).get("name") != "metrum-ai-router-serving-and-selected-admin"]
+        documents.append(allow_policy([{"from": SELECTED_FROM, "ports": [{"protocol": "TCP", "port": ADMIN_PORT}]}]))
+        documents.append(allow_policy(rule))
+        problems = check.Problems()
+        check.check_documents(documents, problems, {"10.1.0.0/24": "reviewed bastion subnet, ticket OPS-1234"})
+        self.assertEqual(problems.items, [])
 
     def test_healthy_overlay_passes(self) -> None:
         code, output = self.run_check(healthy())
@@ -182,7 +240,7 @@ class CheckRenderedManifestsTest(unittest.TestCase):
                     }
                 ]
             ),
-            "wider than /8",
+            "wider than /16",
         )
 
     def test_selector_without_admin_label_is_not_enough(self) -> None:
