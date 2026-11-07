@@ -17,7 +17,7 @@ permissions:
 jobs:
   analyze:
     if: vars.CODEQL_ADVANCED_ENABLED == 'true'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 90
     permissions:
       contents: read

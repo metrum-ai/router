@@ -10,7 +10,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"math/big"
 	"net"
@@ -156,27 +158,55 @@ func TestValidateListenerTLS(t *testing.T) {
 		{
 			name:    "acme without domains",
 			mutate:  func(c *ListenerTLSConfig) { c.ACME.Domains = nil },
-			wantErr: "server.tls: domains is required",
+			wantErr: "server.tls.acme: domains is required",
 		},
 		{
 			name:    "tos not accepted",
 			mutate:  func(c *ListenerTLSConfig) { c.ACME.AcceptTOS = false },
-			wantErr: "server.tls: accept_tos must be true",
+			wantErr: "server.tls.acme: accept_tos must be true",
 		},
 		{
 			name:    "http directory",
 			mutate:  func(c *ListenerTLSConfig) { c.ACME.DirectoryURL = "http://acme.internal/directory" },
-			wantErr: "server.tls: directory_url must be https",
+			wantErr: "server.tls.acme: directory_url must be https",
 		},
 		{
 			name:    "both credential forms",
 			mutate:  func(c *ListenerTLSConfig) { c.ACME.DNS.Credentials.APITokenFile = "/run/secrets/cf" },
-			wantErr: "server.tls.dns.credentials.api_token: set exactly one of api_token_env or api_token_file",
+			wantErr: "server.tls.acme.dns.credentials.api_token: set exactly one of api_token_env or api_token_file",
 		},
 		{
 			name:    "zone not a suffix",
 			mutate:  func(c *ListenerTLSConfig) { c.ACME.DNS.Zone = "other.net" },
 			wantErr: "is not a suffix of domain",
+		},
+		{
+			name: "invalid min_version for the files source",
+			mutate: func(c *ListenerTLSConfig) {
+				*c = ListenerTLSConfig{Mode: "router", CertificateSource: "files", CertFile: "/etc/tls.crt", KeyFile: "/etc/tls.key", MinVersion: "TLS1.3"}
+			},
+			wantErr: "server.tls.min_version must be 1.2 or 1.3",
+		},
+		{
+			name: "invalid min_version for acme",
+			mutate: func(c *ListenerTLSConfig) {
+				c.MinVersion = "1.1"
+			},
+			wantErr: "server.tls.min_version must be 1.2 or 1.3",
+		},
+		{
+			name: "negative renewal jitter",
+			mutate: func(c *ListenerTLSConfig) {
+				c.ACME.Renewal.JitterSeconds = -1
+			},
+			wantErr: "server.tls.acme.renewal.jitter_seconds cannot be negative",
+		},
+		{
+			name: "oversized reload interval",
+			mutate: func(c *ListenerTLSConfig) {
+				c.ACME.ReloadIntervalSeconds = 400 * 24 * 60 * 60
+			},
+			wantErr: "server.tls.acme.reload_interval_seconds must be at most",
 		},
 		{
 			name: "mode off with certificate keys",
@@ -245,7 +275,7 @@ func TestAdminListenerTLSSeam(t *testing.T) {
 	broken.CertificateSource = "acme"
 	broken.ACME.Domains = []string{"admin.example.com"}
 	err = ValidateAdminListenerTLS(broken, "admin.tls")
-	if err == nil || !strings.HasPrefix(err.Error(), "admin.tls:") {
+	if err == nil || !strings.HasPrefix(err.Error(), "admin.tls") {
 		t.Fatalf("error = %v, want an admin.tls prefix", err)
 	}
 }
@@ -387,5 +417,210 @@ func TestAdminCertificateSourceAdapter(t *testing.T) {
 	}
 	if _, err := source.GetCertificate(&tls.ClientHelloInfo{ServerName: "other.example.com"}); err == nil {
 		t.Fatal("GetCertificate must refuse an unknown name")
+	}
+}
+
+// issueTestClientCertificate signs a client certificate with a test CA.
+func issueTestClientCertificate(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, commonName string) tls.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate client key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: commonName},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create client certificate: %v", err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+// TestAdminTLSProviderComposesWithListenerHandshakeHook proves the seam the
+// admin listener uses: its single GetConfigForClient asks the provider for the
+// SNI answer and the certificate, then applies its own client-CA policy.
+func TestAdminTLSProviderComposesWithListenerHandshakeHook(t *testing.T) {
+	dir := t.TempDir()
+	domain := "admin.example.com"
+	certPath, keyPath := writeTestCertificate(t, dir, []string{domain})
+	manager, err := NewListenerTLSManager(ListenerTLSConfig{
+		Mode:              "router",
+		CertificateSource: "files",
+		CertFile:          certPath,
+		KeyFile:           keyPath,
+		ACME:              TLSACMEServerConfig{Domains: []string{domain}},
+	}, "admin", "admin.tls")
+	if err != nil || manager == nil {
+		t.Fatalf("manager: %v", err)
+	}
+	provider := AdminTLSProvider{Manager: manager}
+
+	// A client CA for the listener-owned mTLS half.
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "admin-client-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create CA: %v", err)
+	}
+	ca, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("parse CA: %v", err)
+	}
+	clientCAs := x509.NewCertPool()
+	clientCAs.AddCert(ca)
+
+	serverRoots := x509.NewCertPool()
+	serverPEM, _ := os.ReadFile(certPath)
+	serverRoots.AppendCertsFromPEM(serverPEM)
+
+	listenerConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			if !provider.CheckSNI(hello.ServerName) {
+				return nil, fmt.Errorf("admin listener does not serve the requested SNI")
+			}
+			cert, err := provider.GetCertificate(hello)
+			if err != nil {
+				return nil, err
+			}
+			return &tls.Config{
+				MinVersion:   tls.VersionTLS12,
+				Certificates: []tls.Certificate{*cert},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientCAs:    clientCAs,
+			}, nil
+		},
+	}
+
+	handshake := func(clientCert *tls.Certificate, serverName string) error {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		defer func() { _ = listener.Close() }()
+		serverErr := make(chan error, 1)
+		go func() {
+			conn, err := listener.Accept()
+			if err != nil {
+				serverErr <- err
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			serverErr <- tls.Server(conn, listenerConfig).Handshake()
+		}()
+		cfg := &tls.Config{RootCAs: serverRoots, ServerName: serverName}
+		if clientCert != nil {
+			cfg.Certificates = []tls.Certificate{*clientCert}
+		}
+		client, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", listener.Addr().String(), cfg)
+		if err == nil {
+			_ = client.Close()
+			return <-serverErr
+		}
+		<-serverErr
+		return err
+	}
+
+	goodClient := issueTestClientCertificate(t, ca, caKey, "client-1")
+	if err := handshake(&goodClient, domain); err != nil {
+		t.Fatalf("certificate + mTLS handshake failed: %v", err)
+	}
+	if err := handshake(nil, domain); err == nil {
+		t.Fatal("a client without a certificate must fail when the listener requires one")
+	}
+	if err := handshake(&goodClient, "other.example.com"); err == nil {
+		t.Fatal("an unknown SNI must fail")
+	}
+}
+
+// TestTLSCredentialSentinelNeverLeavesTheConfig proves ACP-N08e at the router
+// boundary: a resolved DNS credential never appears in the canonical YAML
+// document, the metric exposition or the manager status.
+func TestTLSCredentialSentinelNeverLeavesTheConfig(t *testing.T) {
+	const (
+		envName = "TLS_SENTINEL_DNS_TOKEN"
+		secret  = "sentinel-dns-token-value-0123456789"
+	)
+	t.Setenv(envName, secret)
+	dir := t.TempDir()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[]}`)
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "key", dir)
+	cfg.Callers[0].MetricsAdmin = true
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+	cfg.Server.TLS = ListenerTLSConfig{
+		Mode:              "router",
+		CertificateSource: "acme",
+		ACME: TLSACMEServerConfig{
+			Domains:      []string{"router.example.com"},
+			AcceptTOS:    true,
+			DirectoryURL: "https://acme.example.com/directory",
+			CacheDir:     filepath.Join(dir, "tls"),
+			DNS: TLSDNSConfig{
+				Provider:    "digitalocean",
+				Zone:        "example.com",
+				Credentials: TLSDNSCredentialsConfig{TokenEnv: envName},
+			},
+		},
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	defer svc.Close()
+
+	document, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if strings.Contains(string(document), secret) {
+		t.Fatal("the canonical configuration document contains the resolved credential")
+	}
+	if !strings.Contains(string(document), envName) {
+		t.Fatal("the canonical document must keep the secret reference, not resolve it")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), secret) {
+		t.Fatal("the metric exposition contains the resolved credential")
+	}
+
+	manager := svc.TLSManager()
+	if manager == nil {
+		t.Fatal("acme mode must expose a manager")
+	}
+	status, err := json.Marshal(manager.Status())
+	if err != nil {
+		t.Fatalf("marshal status: %v", err)
+	}
+	if strings.Contains(string(status), secret) {
+		t.Fatal("the manager status contains the resolved credential")
 	}
 }

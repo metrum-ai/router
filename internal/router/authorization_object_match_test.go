@@ -31,7 +31,7 @@ func TestAuthzObjectMatchIsExact(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: c.policy}, nil, nil)
+			a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: c.policy}, nil, nil, AdminAuthConfig{})
 			if err != nil {
 				t.Fatalf("newAuthorizer: %v", err)
 			}
@@ -47,7 +47,7 @@ func TestAuthzObjectMatchIsExact(t *testing.T) {
 // merely contains "read".
 func TestAuthzActionMatchIsAnchored(t *testing.T) {
 	policy := []string{"p, basic:admin, *, admin:reports, read"}
-	a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: policy}, nil, nil)
+	a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: policy}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatalf("newAuthorizer: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestAuthzActionMatchIsAnchored(t *testing.T) {
 // single wildcard "*" matches every object, while partial wildcards are
 // rejected at policy load time.
 func TestAuthzObjectWildcardSemantics(t *testing.T) {
-	a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: []string{"p, basic:admin, example/prod, *, read"}}, nil, nil)
+	a, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: []string{"p, basic:admin, example/prod, *, read"}}, nil, nil, AdminAuthConfig{})
 	if err != nil {
 		t.Fatalf("newAuthorizer: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestAuthzObjectWildcardSemantics(t *testing.T) {
 		t.Error("single wildcard object grant must match metrics")
 	}
 
-	if _, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: []string{"p, basic:admin, example/prod, admin:*, read"}}, nil, nil); err == nil {
+	if _, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: []string{"p, basic:admin, example/prod, admin:*, read"}}, nil, nil, AdminAuthConfig{}); err == nil {
 		t.Error("partial wildcard object admin:* must be rejected at load time")
 	}
 }

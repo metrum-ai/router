@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   contracts:
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +50,7 @@ jobs:
   api-compat:
     needs: changes
     if: github.event_name != 'merge_group' || needs.changes.outputs.go == '1' || needs.changes.outputs.examples == '1'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,7 +73,7 @@ jobs:
   harbor:
     needs: changes
     if: github.event_name != 'merge_group' || needs.changes.outputs.go == '1' || needs.changes.outputs.examples == '1'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,7 +87,7 @@ jobs:
   d3:
     needs: changes
     if: github.event_name != 'merge_group' || needs.changes.outputs.go == '1' || needs.changes.outputs.examples == '1'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,7 +100,7 @@ jobs:
           python-version: '3.12'
       - run: make d3-policy-e2e
   changes:
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -138,7 +138,7 @@ jobs:
   lrp:
     needs: changes
     if: needs.changes.outputs.lrp == 'true'
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 90
     env:
       OMP_NUM_THREADS: '1'

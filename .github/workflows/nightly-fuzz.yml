@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   fuzz:
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
