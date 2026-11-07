@@ -135,10 +135,7 @@ type AdminAuthenticationConfig struct {
 // AdminAuthenticationMTLSConfig carries the reloadable client CA bundle #814
 // owns. The listener reads it through the shared, immutable CA snapshot so the
 // handshake and the per-request revalidation always agree.
-type AdminAuthenticationMTLSConfig struct {
-	CAFiles        []string `yaml:"ca_files" json:"caFiles,omitempty"`
-	ReloadInterval string   `yaml:"reload_interval" json:"reloadInterval,omitempty"`
-}
+type AdminAuthenticationMTLSConfig = AdminMTLSTrustConfig
 
 func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	if cfg == nil {
@@ -313,13 +310,21 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		if strings.EqualFold(strings.TrimSpace(cfg.TLS.Mode), adminTLSModeProxy) {
 			return fmt.Errorf("admin.tls.client_auth cannot be used with admin.tls.mode proxy (a reverse proxy cannot prove a native TLS client identity)")
 		}
-		if strings.TrimSpace(cfg.TLS.ClientCAFile) == "" && len(cfg.Authentication.MTLS.CAFiles) == 0 {
-			return fmt.Errorf("admin.tls.client_auth %s requires a client CA (admin.tls.client_ca_file or admin.authentication.mtls.ca_files)", cfg.TLS.ClientAuth)
+		if strings.TrimSpace(cfg.TLS.ClientCAFile) == "" && !adminMTLSHasCAFiles(cfg.Authentication.MTLS) {
+			return fmt.Errorf("admin.tls.client_auth %s requires a client CA (bootstrap client_ca_file or authentication.mtls flat/grouped ca_files)", cfg.TLS.ClientAuth)
 		}
 	default:
 		return fmt.Errorf("admin.tls.client_auth must be none, optional or require")
 	}
-	if len(cfg.Authentication.MTLS.CAFiles) > 0 && strings.EqualFold(strings.TrimSpace(cfg.TLS.ClientAuth), adminClientAuthNone) {
+	mtls := cfg.Authentication.MTLS
+	flat := strings.TrimSpace(mtls.Issuer) != "" || len(mtls.CAFiles) != 0 || len(mtls.Subjects) != 0
+	if len(mtls.TrustDomains) != 0 && flat {
+		return fmt.Errorf("admin.authentication.mtls cannot mix trust_domains with flat issuer/ca_files/subjects")
+	}
+	if flat && strings.TrimSpace(mtls.Issuer) == "" {
+		return fmt.Errorf("admin.authentication.mtls flat form requires an explicit issuer")
+	}
+	if adminMTLSHasCAFiles(mtls) && strings.EqualFold(strings.TrimSpace(cfg.TLS.ClientAuth), adminClientAuthNone) {
 		return fmt.Errorf("admin.authentication.mtls.ca_files requires admin.tls.client_auth optional or require")
 	}
 	if interval := strings.TrimSpace(cfg.Authentication.MTLS.ReloadInterval); interval != "" {

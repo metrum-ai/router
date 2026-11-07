@@ -69,32 +69,41 @@ type Service struct {
 	adminSession       *adminSessionStore
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
-	authorizationAudit authorizationDecisionAudit
-	quota              *quotaStore
-	cache              *responseCache
-	logger             *requestLogger
-	usage              *usageStore
-	migrationStatusFn  func() (MigrationStatus, error)
-	metrics            *metricsStore
-	trafficShape       *trafficShapeManager
-	bridgeSessions     *bridgeSessionBackends
-	scripts            map[string]*scriptStrategy
-	observations       *dynamicObservationStore
-	toolReliability    *toolReliabilityStore
-	affinity           *dynamicAffinityStore
-	responsesAffinity  *responsesAffinities
-	shaping            *upstreamShapeManager
-	contentCaptureKeys contentCaptureKeyResolver
-	reportCursor       [32]byte
-	tlsManager         *tlsacme.Manager
-	configControlPlane *gorm.DB
-	configSnapshot     *ConfigSnapshot
-	configDBCloser     func() error
-	configReloadStop   func()
-	configNotifyStop   func()
-	configInstanceID   string
-	configLoaded       atomic.Value // configLoadedState
-	shadows            *shadowRuntime
+	machineGeneration  atomic.Pointer[adminMachineGeneration]
+	// Producer-side only: requests never acquire either mutex. Serialize
+	// off-path builders against config reload and preserve hook delivery order.
+	machineReloadMu      sync.Mutex
+	machinePublicationMu sync.Mutex
+	machineCAHooks       []adminMachineCAHook
+	// Installed before serving. The factory builds all machine namespaces,
+	// roots and authenticators against a compatible immutable authorizer.
+	machineGenerationBuilder func(*Config, *authorizer) (*adminMachineGeneration, error)
+	authorizationAudit       authorizationDecisionAudit
+	quota                    *quotaStore
+	cache                    *responseCache
+	logger                   *requestLogger
+	usage                    *usageStore
+	migrationStatusFn        func() (MigrationStatus, error)
+	metrics                  *metricsStore
+	trafficShape             *trafficShapeManager
+	bridgeSessions           *bridgeSessionBackends
+	scripts                  map[string]*scriptStrategy
+	observations             *dynamicObservationStore
+	toolReliability          *toolReliabilityStore
+	affinity                 *dynamicAffinityStore
+	responsesAffinity        *responsesAffinities
+	shaping                  *upstreamShapeManager
+	contentCaptureKeys       contentCaptureKeyResolver
+	reportCursor             [32]byte
+	tlsManager               *tlsacme.Manager
+	configControlPlane       *gorm.DB
+	configSnapshot           *ConfigSnapshot
+	configDBCloser           func() error
+	configReloadStop         func()
+	configNotifyStop         func()
+	configInstanceID         string
+	configLoaded             atomic.Value // configLoadedState
+	shadows                  *shadowRuntime
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
@@ -526,6 +535,8 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s == nil {
 		return nil
 	}
+	s.machineReloadMu.Lock()
+	defer s.machineReloadMu.Unlock()
 	if s.configControlPlane == nil {
 		return nil
 	}
@@ -546,28 +557,40 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if err := newCfg.Validate(); err != nil {
 		return fmt.Errorf("reload active config: validate: %w", err)
 	}
-	// Rebuild quota caller runtimes before swapping the config so any
-	// validation failure leaves the existing state untouched.
+	// Prepare quota caller runtimes detached: later authn/authz preparation
+	// can still fail, and must leave directory and accounting untouched.
 	if s.quota == nil {
 		return fmt.Errorf("reload active config: quota store is required")
 	}
-	if err := s.quota.rebuildCallers(newCfg); err != nil {
+	preparedCallers, err := prepareQuotaCallers(newCfg)
+	if err != nil {
 		return fmt.Errorf("reload active config: rebuild callers: %w", err)
 	}
-	// Rebuild the authorizer so admin policies reflect the new caller
-	// directory. The authorizer is recreated with the latest callers map and
-	// the same admin authorization config.
+	// Build against the detached candidate directory, not the still-active
+	// caller map. No live caller accounting changes before all prep succeeds.
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, s.quota.callers, s.usage, newCfg.Server.AdminAuth)
+	newAuthorizer, err := newAuthorizer(newCfg.Server.AdminAuth.Authorization, preparedCallers, s.usage, newCfg.Server.AdminAuth)
 	if err != nil {
 		return fmt.Errorf("reload active config: rebuild authorizer: %w", err)
 	}
-	// Publish grants before exposing replacement credentials. This ordering
-	// does not jointly bind authentication and authorization generations.
+	// Prepare the COMPLETE machine replacement before exposing any new keys,
+	// config or grants. Machine requests capture this one publication and pin
+	// its compatible authorizer; the serving snapshots below remain separate
+	// only for legacy compatibility, never a machine authentication source.
+	newMachine, err := s.prepareAdminMachineConfigGeneration(newCfg, newAuthorizer)
+	if err != nil {
+		return fmt.Errorf("reload active config: prepare machine generation: %w", err)
+	}
+	if newMachine != nil {
+		if err := s.publishAdminMachineGeneration(newMachine); err != nil {
+			return fmt.Errorf("reload active config: publish machine generation: %w", err)
+		}
+	}
+	s.quota.installPreparedCallers(preparedCallers)
 	s.authorizerSnapshot.Store(newAuthorizer)
 	s.adminAPIKeys = newAdminKeys
 	s.cfg = newCfg
-	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
+	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, preparedCallers))
 	if s.configSnapshot != nil {
 		s.configSnapshot.Store(newCfg)
 	}

@@ -103,7 +103,16 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 				cfg.TLS.KeyFile = "server.key"
 				cfg.TLS.ClientAuth = adminClientAuthOptional
 				cfg.Authentication.MTLS.CAFiles = []string{"client-ca.crt"}
+				cfg.Authentication.MTLS.Issuer = "configured-client-ca"
 			},
+		},
+		{
+			name: "flat authentication CA requires configured issuer",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.TLS.ClientAuth = adminClientAuthOptional
+				cfg.Authentication.MTLS.CAFiles = []string{"client-ca.crt"}
+			},
+			wantErr: "explicit issuer",
 		},
 		{
 			name:    "client CA without client auth",
@@ -111,8 +120,11 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "requires admin.tls.client_auth",
 		},
 		{
-			name:    "authentication CA files without client auth",
-			mutate:  func(cfg *AdminPlaneConfig) { cfg.Authentication.MTLS.CAFiles = []string{"ca.crt"} },
+			name: "authentication CA files without client auth",
+			mutate: func(cfg *AdminPlaneConfig) {
+				cfg.Authentication.MTLS.Issuer = "configured-client-ca"
+				cfg.Authentication.MTLS.CAFiles = []string{"ca.crt"}
+			},
 			wantErr: "requires admin.tls.client_auth",
 		},
 		{

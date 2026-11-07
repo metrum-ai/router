@@ -52,7 +52,10 @@ admin:
   # client-credentials tokens, workload identity federation and admin API keys.
   # authentication:
   #   mtls:
+  #     issuer: "" # Required configured trust-domain ID when flat ca_files is populated.
   #     ca_files: []
+  #     # Or trust_domains: [{issuer: workload-a, ca_files: [/etc/router/a-ca.pem], subjects: []}]
+  #     # Never mix trust_domains with flat issuer/ca_files/subjects.
   #     reload_interval: 30s
 
 server:
