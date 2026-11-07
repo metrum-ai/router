@@ -113,3 +113,22 @@ not cancel operations already past their accepted boundary. Joint runtime and
 authorization-generation integration remains separate work.
 
 See [the configuration fragment](../examples/admin-mtls-trust-domains.fragment.yaml).
+
+## Request generation and finite timeout
+
+Every admin request captures one immutable authentication bundle (credential
+catalogs, trust roots, sender state and its compatible authorization snapshot)
+exactly once, before credential validation. Later mount, handler, guard and
+contract recheck decisions use that same captured authority; there is no second
+lookup and no credential re-proof. Reload or CA rotation publishes one complete
+replacement bundle atomically. A request that captured generation N keeps
+completing under N after N+1 publishes — this is bounded overlap, not a lease,
+admission gate or dispatch fence.
+
+Admin requests run with a finite 60-second context deadline, and the listener's
+default `limits.write_timeout_ms` is also 60000. The context deadline stops
+cooperative work (JWKS fetch, discovery, sender proof, database calls that honor
+context) and the write timeout bounds the response. Neither force-terminates an
+uncooperative handler's side effects, so the timeout bounds served responses
+rather than guaranteeing instantaneous revocation for work already past its
+accepted boundary.

@@ -125,12 +125,9 @@ type AdminMetricsConfig struct {
 	OnServingPort *bool `yaml:"on_serving_port" json:"onServingPort,omitempty"`
 }
 
-// AdminAuthenticationConfig is owned by #814. Only the client-CA material
-// needed for the listener's TLS handshake verification is declared here; #814
-// extends this type with its issuer, JWKS, DPoP and emergency configuration.
-type AdminAuthenticationConfig struct {
-	MTLS AdminAuthenticationMTLSConfig `yaml:"mtls" json:"mtls"`
-}
+// AdminAuthenticationConfig aliases the authn-owned schema. Runtime preparation
+// validates and consumes it; schema decoding alone grants no credential trust.
+type AdminAuthenticationConfig = AdminMachineAuthenticationConfig
 
 // AdminAuthenticationMTLSConfig carries the reloadable client CA bundle #814
 // owns. The listener reads it through the shared, immutable CA snapshot so the
@@ -357,6 +354,9 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		if parsed.Before(floor) {
 			return fmt.Errorf("admin.legacy_sunset must be on or after %s (v4.8.0 plus the 90-day minimum before legacy removal)", adminLegacySunsetFloor)
 		}
+	}
+	if _, err := prepareAdminMachineRuntimeSettings(cfg.Authentication, cfg.ExternalURL); err != nil {
+		return err
 	}
 	return validateAdminLimits(cfg.Limits)
 }

@@ -24,11 +24,13 @@ import (
 type adminMachineJWTSubject struct{ Claim, Value, Subject string }
 type adminMachineJWTConfig struct {
 	// Test-only hook; not a configuration key. Runtime construction leaves false.
-	allowInsecureLoopback  bool
-	Issuer, Audience, Kind string
-	Algorithms             []string
-	MaxLifetime, ClockSkew time.Duration
-	Subjects               []adminMachineJWTSubject
+	allowInsecureLoopback                                    bool
+	Issuer, Audience, Kind                                   string
+	Algorithms                                               []string
+	MaxLifetime, ClockSkew                                   time.Duration
+	JWKSCacheTTL, JWKSRefreshMinInterval, JWKSRequestTimeout time.Duration
+	clockSkewExplicit                                        bool // preserves configured 0s rather than applying a default
+	Subjects                                                 []adminMachineJWTSubject
 	// Exact additional host[:port] authorities; HTTPS port 443 is implicit.
 	// No wildcard/URL entries. The issuer's own authority is always allowed.
 	AllowedJWKSHosts []string
@@ -53,6 +55,22 @@ type adminMachineJWTAuthenticator struct {
 const machineJWKSTTL = 5 * time.Minute
 const machineJWKSRefreshInterval = 30 * time.Second
 
+func normalizeMachineJWTJWKSSettings(cfg *adminMachineJWTConfig) error {
+	if cfg.JWKSCacheTTL == 0 {
+		cfg.JWKSCacheTTL = machineJWKSTTL
+	}
+	if cfg.JWKSRefreshMinInterval == 0 {
+		cfg.JWKSRefreshMinInterval = machineJWKSRefreshInterval
+	}
+	if cfg.JWKSRequestTimeout == 0 {
+		cfg.JWKSRequestTimeout = 5 * time.Second
+	}
+	if cfg.JWKSCacheTTL < time.Millisecond || cfg.JWKSCacheTTL > time.Hour || cfg.JWKSRefreshMinInterval < time.Millisecond || cfg.JWKSRefreshMinInterval > cfg.JWKSCacheTTL || cfg.JWKSRequestTimeout < time.Millisecond || cfg.JWKSRequestTimeout > 30*time.Second {
+		return errors.New("admin JWT JWKS settings invalid")
+	}
+	return nil
+}
+
 func machineIssuerEndpoint(raw string, testLoopback bool) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" {
@@ -67,6 +85,9 @@ func machineIssuerEndpoint(raw string, testLoopback bool) bool {
 
 func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTConfig, client *http.Client) (*adminMachineJWTAuthenticator, error) {
 	cfg.allowInsecureLoopback = cfg.allowInsecureLoopback && client != nil
+	if err := normalizeMachineJWTJWKSSettings(&cfg); err != nil {
+		return nil, err
+	}
 	if cfg.Issuer == "" || cfg.Audience == "" || len(cfg.Subjects) == 0 || !machineIssuerEndpoint(cfg.Issuer, cfg.allowInsecureLoopback) {
 		return nil, errors.New("admin JWT issuer, audience or subjects invalid")
 	}
@@ -86,7 +107,7 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 	if cfg.MaxLifetime == 0 {
 		cfg.MaxLifetime = time.Hour
 	}
-	if cfg.ClockSkew == 0 {
+	if cfg.ClockSkew == 0 && !cfg.clockSkewExplicit {
 		cfg.ClockSkew = 30 * time.Second
 	}
 	if cfg.MaxLifetime < 0 || cfg.ClockSkew < 0 || cfg.ClockSkew > time.Minute {
@@ -143,7 +164,7 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 		return nil, err
 	}
 	a.keys = keys
-	a.expires = time.Now().Add(machineJWKSTTL)
+	a.expires = time.Now().Add(a.cfg.JWKSCacheTTL)
 	a.lastAttempt = time.Now()
 	return a, nil
 }
@@ -152,7 +173,11 @@ func (a *adminMachineJWTAuthenticator) fetchJSON(ctx context.Context, endpoint s
 	if !machineJWTEndpointAllowed(a.cfg, endpoint) {
 		return errors.New("admin JWT endpoint forbidden")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeout := a.cfg.JWKSRequestTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second // unnormalized direct fixture
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -228,7 +253,7 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 				continue
 			}
 		}
-		if !fresh && now.Sub(a.lastAttempt) < machineJWKSRefreshInterval || fresh && now.Sub(a.lastUnknownRefresh) < machineJWKSRefreshInterval {
+		if !fresh && now.Sub(a.lastAttempt) < a.cfg.JWKSRefreshMinInterval || fresh && now.Sub(a.lastUnknownRefresh) < a.cfg.JWKSRefreshMinInterval {
 			a.mu.Unlock()
 			return jose.JSONWebKey{}, ErrInvalidCredential
 		}
@@ -244,13 +269,13 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 		// needed by other requests. All waiters, including the initiator, can
 		// independently cancel; the shared work has its own bounded timeout.
 		go func() {
-			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.JWKSRequestTimeout)
 			defer cancel()
 			keys, err := a.fetchKeys(refreshCtx)
 			a.mu.Lock()
 			if err == nil {
 				a.keys = keys
-				a.expires = time.Now().Add(machineJWKSTTL)
+				a.expires = time.Now().Add(a.cfg.JWKSCacheTTL)
 			}
 			a.refreshing = nil
 			close(done)

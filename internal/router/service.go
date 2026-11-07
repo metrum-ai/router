@@ -359,13 +359,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
-	if err := s.initConfigControlPlane(); err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
-	}
 	if _, err := rand.Read(s.reportCursor[:]); err != nil {
 		_ = quota.Close()
 		_ = logger.Close()
@@ -419,8 +412,18 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 			permissions: perms,
 		}
 	}
+	if err := s.initAdminMachineRuntime(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.routes()
 	s.initAdminPlane()
+	// Start DB poll/notify only after the complete machine factory and initial
+	// compatible generation exist; a worker must never observe partial startup.
+	if err := s.initConfigControlPlane(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
