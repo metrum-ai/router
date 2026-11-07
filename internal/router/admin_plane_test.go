@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -587,10 +588,10 @@ func TestAdminMTLSHandshake(t *testing.T) {
 			t.Fatalf("New: %v", err)
 		}
 		t.Cleanup(svc.Close)
-		// #814 installs its source on the service; the binary hands it to the
-		// plane before Start (this is the same wiring startAdminPlane does).
-		store := &AdminClientCASnapshot{}
-		if err := store.LoadPEMFiles([]string{clientCAPath}); err != nil {
+		// #828's store is the source; the binary hands it to the plane before
+		// Start (this is the same wiring startAdminPlane does).
+		store, err := NewAdminClientCAStore([]string{clientCAPath})
+		if err != nil {
 			t.Fatal(err)
 		}
 		svc.SetAdminClientCASource(store)
@@ -615,20 +616,25 @@ func TestAdminMTLSHandshake(t *testing.T) {
 		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/healthz"); err != nil {
 			t.Fatalf("handshake with the installed source: %v", err)
 		}
-		store.Store(x509.NewCertPool()) // no trust anchors left
+		// Publishing a source with no trust anchors withdraws the trust.
+		source := &testAdminCASource{}
+		source.set(x509.NewCertPool())
+		plane.SetClientCASource(source)
 		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/healthz"); err == nil {
 			t.Fatal("handshake succeeded after the installed source dropped all roots")
 		}
 	})
-	t.Run("CA snapshot reload applies to new handshakes", func(t *testing.T) {
+	t.Run("CA source reload applies to new handshakes", func(t *testing.T) {
 		plane, url, roots := start(t, adminClientAuthRequire)
 		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/admin/test/peer"); err != nil {
 			t.Fatalf("handshake before reload: %v", err)
 		}
-		// Rotate the trust to the previously unknown CA.
+		// Rotate the trust to the previously unknown CA through the #828 seam.
 		pool := x509.NewCertPool()
 		pool.AddCert(otherCA.cert)
-		plane.ClientCASnapshot().Store(pool)
+		source := &testAdminCASource{}
+		source.set(pool)
+		plane.SetClientCASource(source)
 		if _, err := clientFor(roots, goodClient, goodClientKey).Get(url + "/admin/test/peer"); err == nil {
 			t.Fatal("the removed root still verified a client after the snapshot reload")
 		}
@@ -799,4 +805,358 @@ func TestAdminMetricsPlacement(t *testing.T) {
 			t.Fatalf("GET /metrics = %d, want 403 for a caller without metrics read", recorder.Code)
 		}
 	})
+}
+
+// The listener assigns one server-generated correlation ID per request and
+// never echoes a client-supplied one.
+func TestAdminRequestIDIsServerGenerated(t *testing.T) {
+	fixture := newAdminTestFixture(t, nil)
+	req, err := http.NewRequest(http.MethodGet, fixture.adminURL+"/admin/missing", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Request-Id", "client-supplied-id")
+	resp, body := adminDo(t, req)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+	header := resp.Header.Get("X-Request-Id")
+	if header == "" || !strings.HasPrefix(header, "req_") {
+		t.Fatalf("X-Request-Id = %q, want a generated req_ id", header)
+	}
+	if strings.Contains(body, "client-supplied-id") {
+		t.Fatalf("problem echoed the client request id: %q", body)
+	}
+	var problem struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal([]byte(body), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if problem.RequestID != header {
+		t.Fatalf("body request_id %q != header %q", problem.RequestID, header)
+	}
+}
+
+// A fake #810 certificate manager proves the single handshake hook asks the
+// certificate source first, then still applies the #814 client-CA snapshot.
+type fakeAdminCertificateSource struct {
+	names map[string]*tls.Certificate
+}
+
+func (f *fakeAdminCertificateSource) CheckSNI(name string) bool {
+	_, ok := f.names[name]
+	return ok
+}
+
+func (f *fakeAdminCertificateSource) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cert, ok := f.names[hello.ServerName]
+	if !ok {
+		return nil, fmt.Errorf("unknown SNI")
+	}
+	return cert, nil
+}
+
+// testAdminCASource is a minimal #828 client-CA source with a controllable
+// snapshot, used to prove reloads reach new handshakes.
+type testAdminCASource struct {
+	mu    sync.Mutex
+	pool  *x509.CertPool
+	hooks []func(*x509.CertPool)
+}
+
+func (s *testAdminCASource) Snapshot() *x509.CertPool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pool
+}
+
+func (s *testAdminCASource) OnReload(hook func(*x509.CertPool)) {
+	if hook == nil {
+		return
+	}
+	s.mu.Lock()
+	s.hooks = append(s.hooks, hook)
+	current := s.pool
+	s.mu.Unlock()
+	hook(current)
+}
+
+func (s *testAdminCASource) set(pool *x509.CertPool) {
+	s.mu.Lock()
+	s.pool = pool
+	hooks := append([]func(*x509.CertPool){}, s.hooks...)
+	s.mu.Unlock()
+	for _, hook := range hooks {
+		hook(pool)
+	}
+}
+
+func TestAdminCertificateSourceWithMTLS(t *testing.T) {
+	serverCA := newAdminTestCA(t)
+	clientCA := newAdminTestCA(t)
+	serverCertPEM, serverKeyPEM := serverCA.issue(t, "router.test", []string{"localhost"}, nil, true)
+	clientCertPEM, clientKeyPEM := clientCA.issue(t, "client.test", nil, nil, false)
+
+	serverPair, err := tls.X509KeyPair(serverCertPEM, serverKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	clientCAPath := writeTestPEM(t, dir, "client-ca.crt", clientCA.certPEM)
+	// The config carries certificate_source: acme with an acme block; the
+	// listener has no static certificate and no files.
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Admin.Enabled = true
+	cfg.Admin.Listen = "127.0.0.1:0"
+	cfg.Admin.TLS = AdminTLSConfig{
+		Mode:              adminTLSModeRouter,
+		CertificateSource: adminCertificateSourceACME,
+		ACME:              map[string]any{"directory": "https://acme.test/directory"},
+		MinVersion:        adminTLSMinVersion12,
+		ClientCAFile:      clientCAPath,
+		ClientAuth:        adminClientAuthRequire,
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	handler := svc.AdminHandler()
+	if handler == nil {
+		t.Fatal("AdminHandler() = nil")
+	}
+	plane, err := NewAdminPlane(&cfg.Admin, handler)
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	// Starting without the manager fails closed.
+	if err := plane.Start(); err == nil || !strings.Contains(err.Error(), "certificate source") {
+		t.Fatalf("Start() without a certificate source = %v, want a refusal", err)
+	}
+	if err := plane.SetCertificateSource(&fakeAdminCertificateSource{names: map[string]*tls.Certificate{"localhost": &serverPair}}); err != nil {
+		t.Fatalf("SetCertificateSource: %v", err)
+	}
+	if err := plane.Start(); err != nil {
+		t.Fatalf("admin Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = plane.Shutdown(ctx)
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(serverCA.cert)
+	clientReq := func(t *testing.T) *http.Client {
+		t.Helper()
+		pair, err := tls.X509KeyPair(clientCertPEM, clientKeyPEM)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &http.Client{
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{
+				RootCAs:      roots,
+				Certificates: []tls.Certificate{pair},
+				ServerName:   "localhost",
+				MinVersion:   tls.VersionTLS12,
+			}},
+			Timeout: 5 * time.Second,
+		}
+	}
+	url := "https://" + plane.Addr()
+	resp, err := clientReq(t).Get(url + "/healthz")
+	if err != nil {
+		t.Fatalf("handshake with the ACME-style certificate and a client certificate: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin /healthz = %d, want 200", resp.StatusCode)
+	}
+	// A name the source does not serve fails at the handshake.
+	other := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			ServerName: "unknown.test",
+			// The unknown SNI never gets a certificate, so skip verification of
+			// the server name here and expect the handshake to fail anyway.
+			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
+		}},
+		Timeout: 5 * time.Second,
+	}
+	if _, err := other.Get(url + "/healthz"); err == nil {
+		t.Fatal("handshake for an unserved SNI succeeded")
+	}
+	// Client certificates are still required: the source only supplies the
+	// server certificate.
+	noClient := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			RootCAs:    roots,
+			ServerName: "localhost",
+			MinVersion: tls.VersionTLS12,
+		}},
+		Timeout: 5 * time.Second,
+	}
+	if _, err := noClient.Get(url + "/healthz"); err == nil {
+		t.Fatal("handshake without a client certificate succeeded with client_auth: require")
+	}
+}
+
+// fakeAdminAuthenticator is a minimal #814 chain for listener tests: it accepts
+// one bearer token and maps it to a principal, and rejects everything else.
+type fakeAdminAuthenticator struct {
+	token     string
+	principal Principal
+}
+
+// AuthenticatorFunc adapts a function to the #814 Authenticator interface (test
+// double only).
+type AuthenticatorFunc func(context.Context, *http.Request) (Principal, error)
+
+func (f AuthenticatorFunc) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
+	return f(ctx, r)
+}
+
+func (f *fakeAdminAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
+	if err := ctx.Err(); err != nil {
+		return Principal{}, ErrInvalidCredential
+	}
+	header := strings.TrimSpace(r.Header.Get("Authorization"))
+	if header == "" {
+		return Principal{}, ErrNoCredential
+	}
+	scheme, value, _ := strings.Cut(header, " ")
+	if !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(value) != f.token {
+		return Principal{}, ErrInvalidCredential
+	}
+	return f.principal, nil
+}
+
+// The admin listener takes identity only from the installed #814 chain and
+// publishes it with WithPrincipal; unauthenticated requests get #814's typed
+// problem codes.
+func newAdminAuthTestFixture(t *testing.T, authenticate Authenticator) *adminTestFixture {
+	t.Helper()
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Admin.Enabled = true
+	cfg.Admin.Listen = "127.0.0.1:0"
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	// The chain must be installed before the plane builds its handler.
+	svc.SetAdminAuthenticator(authenticate)
+	fixture := &adminTestFixture{cfg: cfg, svc: svc}
+	fixture.serving = httptest.NewServer(svc.Handler())
+	t.Cleanup(fixture.serving.Close)
+	handler := svc.AdminHandler()
+	if handler == nil {
+		t.Fatal("AdminHandler() = nil")
+	}
+	plane, err := NewAdminPlane(&cfg.Admin, handler)
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if err := plane.Start(); err != nil {
+		t.Fatalf("admin Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = plane.Shutdown(ctx)
+	})
+	fixture.admin = plane
+	fixture.adminURL = "http://" + plane.Addr()
+	return fixture
+}
+
+func TestAdminAuthenticatorChainWiring(t *testing.T) {
+	want := Principal{Subject: "spiffe://example.test/ops", Kind: "mtls", CredentialID: "cert-1", Issuer: "example-ca"}
+	fixture := newAdminAuthTestFixture(t, &fakeAdminAuthenticator{token: "machine-token", principal: want})
+	fixture.svc.RegisterAdminRoutes(func(mux *AdminMux) {
+		mux.HandleFunc("GET /admin/test/whoami", func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := PrincipalFrom(r.Context())
+			if !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"subject":%q,"kind":%q}`, principal.Subject, principal.Kind)
+		})
+	})
+	// Health probes stay unauthenticated and state-only.
+	resp, body := adminGet(t, fixture.adminURL+"/healthz")
+	if resp.StatusCode != http.StatusOK || strings.TrimSpace(body) != `{"ok":true}` {
+		t.Fatalf("admin /healthz = %d %q, want the unauthenticated state-only probe", resp.StatusCode, body)
+	}
+	// No credential: authentication_required.
+	resp, body = adminGet(t, fixture.adminURL+"/admin/test/whoami")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated request = %d, want 401 (body %q)", resp.StatusCode, body)
+	}
+	if code := adminProblemResponseCode(t, body); code != "authentication_required" {
+		t.Fatalf("unauthenticated code = %q, want authentication_required", code)
+	}
+	if challenge := resp.Header.Get("WWW-Authenticate"); !strings.Contains(challenge, "Bearer") {
+		t.Fatalf("WWW-Authenticate = %q, want a bearer challenge", challenge)
+	}
+	// Wrong credential: invalid_credential.
+	bad, err := http.NewRequest(http.MethodGet, fixture.adminURL+"/admin/test/whoami", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad.Header.Set("Authorization", "Bearer wrong")
+	resp, body = adminDo(t, bad)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong credential = %d, want 401", resp.StatusCode)
+	}
+	if code := adminProblemResponseCode(t, body); code != "invalid_credential" {
+		t.Fatalf("wrong credential code = %q, want invalid_credential", code)
+	}
+	// The authenticated principal reaches the handler through PrincipalFrom.
+	good, err := http.NewRequest(http.MethodGet, fixture.adminURL+"/admin/test/whoami", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good.Header.Set("Authorization", "Bearer machine-token")
+	resp, body = adminDo(t, good)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated request = %d, want 200 (body %q)", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, want.Subject) || !strings.Contains(body, `"kind":"mtls"`) {
+		t.Fatalf("handler principal = %q, want the chain's principal", body)
+	}
+	// The browser-credential gate still runs first, before the chain.
+	cookieReq, err := http.NewRequest(http.MethodGet, fixture.adminURL+"/admin/test/whoami", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookieReq.Header.Set("Cookie", "a=b")
+	cookieReq.Header.Set("Authorization", "Bearer machine-token")
+	resp, body = adminDo(t, cookieReq)
+	if resp.StatusCode != http.StatusUnauthorized || adminProblemResponseCode(t, body) != "unsupported_authentication" {
+		t.Fatalf("cookie request = %d %q, want unsupported_authentication", resp.StatusCode, body)
+	}
+}
+
+// The chain errors map onto #814's published codes.
+func TestAdminAuthenticatorChainUnsupportedCredential(t *testing.T) {
+	fixture := newAdminAuthTestFixture(t, AuthenticatorFunc(func(context.Context, *http.Request) (Principal, error) {
+		return Principal{}, ErrUnsupportedAuthentication
+	}))
+	fixture.svc.RegisterAdminRoutes(func(mux *AdminMux) {
+		mux.HandleFunc("GET /admin/test/anything", func(w http.ResponseWriter, r *http.Request) {})
+	})
+	req, err := http.NewRequest(http.MethodGet, fixture.adminURL+"/admin/test/anything", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, body := adminDo(t, req)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	if code := adminProblemResponseCode(t, body); code != "unsupported_authentication" {
+		t.Fatalf("code = %q, want unsupported_authentication", code)
+	}
 }

@@ -4,6 +4,7 @@
 package router
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -47,6 +48,10 @@ var (
 	}
 )
 
+// adminRequestIDHeader carries the server-generated correlation ID on every
+// admin-plane response.
+const adminRequestIDHeader = "X-Request-Id"
+
 // RegisterAdminProblemCode adds or replaces a catalogue entry. Other lanes
 // register their codes through #811's renderer once it lands; the listener only
 // owns the codes above.
@@ -73,16 +78,46 @@ func AdminProblemFor(r *http.Request, status int, code string) AdminProblem {
 		entry.status = status
 	}
 	problem := AdminProblem{
-		Type:   "urn:metrum-router:problem:" + code,
-		Title:  entry.title,
-		Status: entry.status,
-		Code:   code,
-		Detail: entry.detail,
+		Type:      "urn:metrum-router:problem:" + code,
+		Title:     entry.title,
+		Status:    entry.status,
+		Code:      code,
+		Detail:    entry.detail,
+		RequestID: AdminRequestIDFrom(r),
 	}
 	if r != nil && r.URL != nil {
 		problem.Instance = r.URL.Path
 	}
 	return problem
+}
+
+type adminRequestIDContextKey struct{}
+
+// WithAdminRequestID stores the request ID the admin listener assigned.
+func WithAdminRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, adminRequestIDContextKey{}, id)
+}
+
+// AdminRequestID returns the admin-plane request ID for r, generating one when
+// the listener has not assigned one yet.
+func AdminRequestID(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if id, ok := r.Context().Value(adminRequestIDContextKey{}).(string); ok && id != "" {
+		return id
+	}
+	return newAdminRequestID()
+}
+
+// AdminRequestIDFrom is AdminRequestID without generating a new ID; it returns
+// "" when none is assigned.
+func AdminRequestIDFrom(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	id, _ := r.Context().Value(adminRequestIDContextKey{}).(string)
+	return id
 }
 
 // WriteAdminProblem renders the problem document with the admin-listener
@@ -93,13 +128,16 @@ func WriteAdminProblem(w http.ResponseWriter, r *http.Request, problem AdminProb
 		return
 	}
 	if problem.RequestID == "" {
+		problem.RequestID = AdminRequestID(r)
+	}
+	if problem.RequestID == "" {
 		problem.RequestID = newAdminRequestID()
 	}
 	header := w.Header()
 	header.Set("Content-Type", "application/problem+json")
 	header.Set("Cache-Control", "no-store")
 	header.Set("X-Content-Type-Options", "nosniff")
-	header.Set("X-Request-Id", problem.RequestID)
+	header.Set(adminRequestIDHeader, problem.RequestID)
 	status := problem.Status
 	if status == 0 {
 		status = http.StatusInternalServerError
