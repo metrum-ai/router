@@ -70,6 +70,12 @@ type Service struct {
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
 	machineGeneration  atomic.Pointer[adminMachineGeneration]
+	// #815 API-issued admin keys live in the authoritative control-plane DB.
+	adminKeys                    *adminKeyStore
+	adminKeyCfgMaxLifetime       time.Duration
+	adminKeyCfgDefaultOverlap    time.Duration
+	adminKeyCfgDefaultOverlapSet bool
+	adminKeyCfgMaxOverlap        time.Duration
 	// machinePublicationMu is the ONLY lock in the machine-plane publication
 	// path. Every publisher (startup, policy synchronization, configuration
 	// reload, CA reload) prepares and installs its replacement while holding it,
@@ -414,6 +420,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	// The factory needs the bootstrap authorizer, so it is installed here; the
 	// control plane is opened earlier but its workers only run after this point.
 	if err := s.initAdminMachineRuntime(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if err := s.initAdminKeys(); err != nil {
 		s.Close()
 		return nil, err
 	}
@@ -5719,6 +5729,52 @@ func contentTypeIsSSE(h http.Header) bool {
 
 func (s *Service) identifiersAvailable() bool {
 	return s.cfg.Server.Identifiers.passthrough() || s.identifiers != nil
+}
+
+// initAdminKeys installs the #815 API-issued key store when the control-plane
+// database is present. File-mode deployments simply have no API-issued keys.
+func (s *Service) initAdminKeys() error {
+	if s == nil || s.cfg == nil || s.configControlPlane == nil {
+		return nil
+	}
+	maxLifetime, defaultOverlap, maxOverlap, err := adminKeyLifetimeSettings(s.cfg.Admin.Authentication.APIKeys)
+	if err != nil {
+		return err
+	}
+	s.adminKeyCfgMaxLifetime = maxLifetime
+	s.adminKeyCfgDefaultOverlap = defaultOverlap
+	s.adminKeyCfgDefaultOverlapSet = true
+	s.adminKeyCfgMaxOverlap = maxOverlap
+	// The lifecycle surface exists only where its authoritative tables do: a
+	// deployment that has not applied the control-plane key migration keeps the
+	// routes unmounted instead of advertising a store every call would fail on.
+	for _, table := range []string{adminKeyMetadataTable, adminKeyGenerationTable, adminKeyOperationTable} {
+		if !s.configControlPlane.Migrator().HasTable(table) {
+			log.Printf("admin key lifecycle stores unavailable; key routes stay unmounted (apply the control-plane key migration)")
+			return nil
+		}
+	}
+	store := newAdminKeyStore(s.configControlPlane, time.Now)
+	// #869: every issue, rotate and revoke writes its credential event inside the
+	// key mutation's own transaction, so a failed audit insert rolls the key
+	// change back instead of leaving an unaudited credential.
+	store.recorder = s.adminKeyLifecycleRecorder
+	s.adminKeys = store
+	return nil
+}
+
+// adminKeyLifecycleRecorder is the production #869 adapter for API-issued key
+// lifecycle events. Only bounded enumerations and redacted identifiers reach the
+// event row; no secret, verifier or request text is ever included.
+func (s *Service) adminKeyLifecycleRecorder(tx *gorm.DB, event adminKeyLifecycleEvent) error {
+	return insertAdminCredentialEventTx(tx, AdminCredentialEvent{
+		Kind:         "adminkey",
+		Lifecycle:    event.Action,
+		CredentialID: event.KeyID,
+		Subject:      adminAuditFieldValue(event.Subject),
+		Issuer:       "local",
+		Outcome:      "success",
+	})
 }
 
 // startAdminMachineGeneration publishes the initial machine generation. It runs

@@ -17,6 +17,10 @@ import (
 // candidate built from the same catalogs it is about to publish.
 type generationInventory struct {
 	generation *adminMachineGeneration
+	// excludeCredential removes one credential from the inventory. A revocation
+	// evaluates the administrators the store would leave, not the ones still
+	// published.
+	excludeCredential string
 }
 
 func (g generationInventory) enabledPolicyAdmins(_ *Config) ([]Principal, error) {
@@ -25,6 +29,9 @@ func (g generationInventory) enabledPolicyAdmins(_ *Config) ([]Principal, error)
 	}
 	seen := map[string]Principal{}
 	add := func(p Principal) {
+		if g.excludeCredential != "" && p.CredentialID == g.excludeCredential {
+			return
+		}
 		key := p.Kind + "\x00" + p.Subject + "\x00" + p.CredentialID
 		seen[key] = p
 	}
@@ -61,6 +68,15 @@ func (g generationInventory) enabledPolicyAdmins(_ *Config) ([]Principal, error)
 			}
 			for _, mapping := range binding.Authenticator.cfg.Subjects {
 				add(Principal{Subject: mapping.Subject, Kind: kind, CredentialID: mapping.Value, Issuer: issuer})
+			}
+		}
+	}
+	// API-issued keys are administrators too: they are counted from the same
+	// immutable snapshot this generation will authenticate them from.
+	if g.generation.storeKeys != nil {
+		for _, entries := range g.generation.storeKeys.keys {
+			for _, entry := range entries {
+				add(Principal{Subject: entry.runtime.subject, Kind: "adminkey", CredentialID: entry.keyID, Issuer: "local"})
 			}
 		}
 	}

@@ -18,18 +18,33 @@ import (
 type adminOrdinaryKeyMachineAuthenticator struct {
 	normal    func() *adminConfiguredKeyCatalog
 	emergency func() *adminEmergencyKeyCatalog
+	store     func() *adminStoreKeyCatalog
 	verifier  Authenticator
+	// storeVerifier claims API-issued identifiers; it runs before the configured
+	// catalog so an issued key is never mistaken for an unknown configured one.
+	storeVerifier Authenticator
 }
 
-func newAdminOrdinaryKeyMachineAuthenticator(normal func() *adminConfiguredKeyCatalog, emergency func() *adminEmergencyKeyCatalog) (Authenticator, error) {
+// newAdminOrdinaryKeyMachineAuthenticator composes the two sources of ordinary
+// admin keys: the configured catalog and, when the control-plane key store
+// exists, the API-issued keys of this exact generation. Both are immutable
+// per-generation snapshots; neither mutates another's namespace.
+func newAdminOrdinaryKeyMachineAuthenticator(normal func() *adminConfiguredKeyCatalog, emergency func() *adminEmergencyKeyCatalog, store func() *adminStoreKeyCatalog) (Authenticator, error) {
 	if normal == nil || emergency == nil || !adminMachineKeyCatalogsDisjoint(normal(), emergency()) {
 		return nil, errors.New("machine key catalogs unavailable or overlapping")
+	}
+	if store == nil {
+		return nil, errors.New("admin store key source required")
 	}
 	verifier, err := newConfiguredAdminKeyAuthenticator(normal)
 	if err != nil {
 		return nil, err
 	}
-	return &adminOrdinaryKeyMachineAuthenticator{normal: normal, emergency: emergency, verifier: verifier}, nil
+	storeVerifier, err := newAdminStoreKeyAuthenticator(store)
+	if err != nil {
+		return nil, err
+	}
+	return &adminOrdinaryKeyMachineAuthenticator{normal: normal, emergency: emergency, store: store, verifier: verifier, storeVerifier: storeVerifier}, nil
 }
 func adminMachineKeyCatalogsDisjoint(normal *adminConfiguredKeyCatalog, emergency *adminEmergencyKeyCatalog) bool {
 	if normal == nil || emergency == nil {
@@ -64,6 +79,19 @@ func (a *adminOrdinaryKeyMachineAuthenticator) Authenticate(ctx context.Context,
 		id, _, _ := strings.Cut(strings.TrimPrefix(raw, adminAPIKeyPrefix+"_"), "_")
 		if _, enrolled := emergency.keys[id]; enrolled {
 			return Principal{}, ErrNoCredential
+		}
+	}
+	if a.store() != nil {
+		principal, err := a.storeVerifier.Authenticate(ctx, r)
+		if !errors.Is(err, ErrNoCredential) {
+			// Owned by the store snapshot: the verdict is terminal.
+			if err != nil {
+				return Principal{}, err
+			}
+			if a.normal() != normal || a.emergency() != emergency || ctx.Err() != nil {
+				return Principal{}, ErrInvalidCredential
+			}
+			return principal, nil
 		}
 	}
 	p, err := a.verifier.Authenticate(ctx, r)

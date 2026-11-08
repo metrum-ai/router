@@ -125,6 +125,26 @@ func machineAuthorizeRequest(svc *Service, token string) int {
 	return recorder.Code
 }
 
+// machineAuthorizeRequestObject runs one authenticated admin request against an
+// explicit object/action pair through the published generation.
+func machineAuthorizeRequestObject(svc *Service, token, object, action string) int {
+	handler := svc.adminMachineGenerationMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFrom(r.Context())
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if err := svc.Authorize(svc.PinAuthorization(r.Context()), principal, "default", object, action); err != nil {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, configuredMachineKeyRequest(token))
+	return recorder.Code
+}
+
 func machineDDLPolicyStore(t *testing.T) *usageStore {
 	t.Helper()
 	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))

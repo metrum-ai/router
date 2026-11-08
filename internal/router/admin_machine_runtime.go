@@ -31,6 +31,9 @@ type adminMachineRuntime struct {
 	events     *adminMachineCredentialEventSink
 	activation *adminEmergencyActivationStore
 	replicas   int
+	// keys is the authoritative API-issued key store (#815). Nil on file-mode
+	// deployments, which have no issued keys at all.
+	keys *adminKeyStore
 }
 
 // initAdminMachineRuntime installs the runtime and its generation factory. It
@@ -41,7 +44,7 @@ func (s *Service) initAdminMachineRuntime() error {
 	if !s.cfg.Admin.Enabled {
 		return nil
 	}
-	runtime := &adminMachineRuntime{replay: newAdminDPoPReplayState(), emergencySlots: make(chan struct{}, 1), lookup: os.LookupEnv, replicas: 1}
+	runtime := &adminMachineRuntime{replay: newAdminDPoPReplayState(), emergencySlots: make(chan struct{}, 1), lookup: os.LookupEnv, replicas: 1, keys: s.adminKeys}
 	if s.configControlPlane != nil && s.cfg.Admin.Enabled {
 		sink, err := newAdminMachineCredentialEventSink(s.adminCredentialEventSink())
 		if err != nil {
@@ -102,7 +105,19 @@ func (rt *adminMachineRuntime) prepare(cfg *Config, compatible *authorizer) (*ad
 	if err := rt.prepareEmergencyCatalogs(cfg, ordinaryIDs, g); err != nil {
 		return nil, err
 	}
-	keyAuth, err := newAdminOrdinaryKeyMachineAuthenticator(func() *adminConfiguredKeyCatalog { return g.keys }, func() *adminEmergencyKeyCatalog { return g.emergencyKeys })
+	if rt.keys != nil {
+		// One immutable snapshot per generation: an issued key can only be
+		// accepted by the generation that published it, and every request still
+		// rechecks the authoritative row.
+		snapshotCtx, cancel := context.WithTimeout(context.Background(), adminMachineRequestTimeout)
+		g.storeKeys, err = newAdminStoreKeyCatalog(snapshotCtx, rt.keys, ordinaryIDs)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+	}
+	keyAuth, err := newAdminOrdinaryKeyMachineAuthenticator(func() *adminConfiguredKeyCatalog { return g.keys },
+		func() *adminEmergencyKeyCatalog { return g.emergencyKeys }, func() *adminStoreKeyCatalog { return g.storeKeys })
 	if err != nil {
 		return nil, err
 	}

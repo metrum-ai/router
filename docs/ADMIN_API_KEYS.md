@@ -144,3 +144,37 @@ Note: `GET /admin/auth/check` accepts admin keys that hold
 - Admin responses use `Cache-Control: no-store`.
 - Keep raw keys out of tickets, docs, shell history, CI logs, and the config
   database. Only the verifier ever touches a config file or environment.
+
+## API-issued admin keys
+
+With a control-plane database (`server.config_source.mode: database`) the admin
+plane can also issue its own admin keys over the `/admin/v1` contract. These are
+separate from `server.admin_auth.api_keys`: configured keys keep their file/env
+verifier and their v4.7 behaviour, and the serving port is unaffected.
+
+| Operation | Route | Authorized on |
+|---|---|---|
+| issue | `POST /admin/v1/admin-keys` | `admin:keys` / `issue` |
+| list | `GET /admin/v1/admin-keys` | `admin:keys` / `list` |
+| read | `GET /admin/v1/admin-keys/{id}` | `admin:keys` / `get` |
+| rotate | `POST /admin/v1/admin-keys/{id}/rotate` | `admin:keys` / `rotate` |
+| revoke | `POST /admin/v1/admin-keys/{id}/revoke` | `admin:keys` / `revoke` |
+
+- **The secret is shown once.** Issue and rotate return the only copy of the
+  secret with `Cache-Control: no-store`; reads never return it. A retry with the
+  same `Idempotency-Key` answers `409 one-time-secret-unavailable` and never
+  reissues or replays the secret.
+- **Rotation keeps the previous generation usable only for its overlap window**
+  (`default_rotation_overlap`, at most `max_rotation_overlap`, both bounded by
+  `max_lifetime`). After the window the previous generation is refused.
+- **Revocation and expiry are authoritative on every request**: a generation
+  snapshot decides which keys exist, and the store is re-read for the verdict, so
+  a revoked or expired key fails with `401` without waiting for a reload.
+  Operator doc: revoking the last enabled policy administrator is refused with
+  `409 last-policy-administrator`.
+- **An issued key carries no grants.** Its subject is always the
+  server-generated `adminkey:<id>`; bind it to a policy through the policy API
+  before use. Until it is bound, the key authenticates but every operation is
+  refused (`403`) at the single `Authorize` decision.
+- **File mode has no issued keys.** Without a control-plane database the routes
+  are not mounted, and no key can be issued or accepted.
