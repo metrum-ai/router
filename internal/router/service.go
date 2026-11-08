@@ -70,6 +70,10 @@ type Service struct {
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
 	policyFreshness    *policyFreshnessState
+	// policyAdmins supplies the enabled-machine-administrator inventory for the
+	// reverse guard. Nil means the configured admin keys on main today; #871
+	// installs its prepared machine generation here.
+	policyAdmins       policyAdminInventory
 	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
@@ -624,6 +628,36 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	if err := s.quota.rebuildCallers(newCfg); err != nil {
 		return fmt.Errorf("reload active config: rebuild callers: %w", err)
+	}
+	// Cross-store reverse guard: a reload that would leave no enabled normal
+	// policy administrator is refused BEFORE publication. The candidate
+	// authorizer is built from the reloaded configuration and the candidate's own
+	// enabled inventory from the published snapshot. The build reads through the
+	// pool while the governance lock is held: it is not a transaction snapshot, so
+	// it can only ever refuse too much (fail closed), never admit a lockout.
+	// The guard only applies when the reloaded configuration actually uses the
+	// authoritative policy store: static/SQLite authority has no policy plane to
+	// lock out, and refusing those reloads would break unrelated control-plane work.
+	activePolicyAuthority := newCfg.Server.AdminAuth.Authorization.Enabled &&
+		strings.EqualFold(strings.TrimSpace(newCfg.Server.AdminAuth.Authorization.Source), "db")
+	if activePolicyAuthority && s.usage != nil && s.usage.db != nil {
+		candidate, guardErr := s.policyAuthorizerService(s.usage.db, newCfg, nil)
+		if guardErr != nil {
+			if rollbackErr := s.quota.rebuildCallers(s.cfg); rollbackErr != nil {
+				log.Printf("config control-plane reload: caller rollback failed")
+			}
+			return fmt.Errorf("reload active config: policy administrator guard unavailable: %w", guardErr)
+		}
+		if guardErr := s.GuardPolicyAdministrationLockout(candidate, newCfg); guardErr != nil {
+			if metrics := s.adminMetrics(); metrics != nil {
+				metrics.RecordPolicyGuardRefusal()
+			}
+			log.Printf("config control-plane reload refused for scope %q: policy administrator lockout guard", scope)
+			if rollbackErr := s.quota.rebuildCallers(s.cfg); rollbackErr != nil {
+				log.Printf("config control-plane reload: caller rollback failed")
+			}
+			return guardErr
+		}
 	}
 	// The machine authorizer has exactly one publisher: the synchronized path
 	// below reads the authoritative singleton revision and publishes the

@@ -155,8 +155,10 @@ func TestConfiguredMaxStalenessAppliesAtConstruction(t *testing.T) {
 	// boundary is asserted on its configured state (pure math over the maxAge that
 	// construction applied) and on the gate itself through a PostgreSQL authority
 	// that receives the same parsed configuration.
-	observed := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
-	svc.policyFreshness.observeSuccess(1, observed)
+	// A constructed service may already have observed a successful startup
+	// synchronization, so the boundary is measured from a current observation.
+	observed := time.Now().UTC()
+	svc.policyFreshness.observeSuccess(8, observed)
 	if svc.policyFreshness.stale(observed.Add(10 * time.Second)) {
 		t.Fatal("exactly 10s must still be within the configured window")
 	}

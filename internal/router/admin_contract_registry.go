@@ -28,6 +28,16 @@ import (
 )
 
 // AdminConcurrencyMode declares the precondition an operation requires.
+// AdminETagSource selects the strong validator source of an operation.
+type AdminETagSource string
+
+const (
+	// AdminETagConfig is the default: the configuration revision validator.
+	AdminETagConfig AdminETagSource = ""
+	// AdminETagPolicy validates against the policy revision.
+	AdminETagPolicy AdminETagSource = "policy"
+)
+
 type AdminConcurrencyMode string
 
 const (
@@ -185,7 +195,12 @@ type Operation struct {
 	// NoSideEffect marks read-shaped POSTs (validation/dry-run) that must not
 	// require a precondition.
 	NoSideEffect bool
-	Deprecated   *AdminDeprecation
+
+	// ETagSource names which strong validator gates this operation's If-Match:
+	// the configuration revision (default) or the POLICY revision. A policy
+	// write must never be gated on the config tag.
+	ETagSource AdminETagSource
+	Deprecated *AdminDeprecation
 	// HandlerKey names the handler the mount layer binds to this operation.
 	HandlerKey string
 	// Adapter is optional: it rewrites the request for handlers that dispatch on

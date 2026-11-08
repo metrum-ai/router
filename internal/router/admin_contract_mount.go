@@ -80,6 +80,10 @@ type AdminV1Deps struct {
 	ResolveCapturedDomains func(*http.Request) ([]string, error)
 	// CurrentETag returns the strong validator of a revision-scoped resource.
 	CurrentETag func(*http.Request) (string, int64, error)
+	// PolicyCurrentETag returns the strong validator of the POLICY revision. It
+	// is used by any operation whose registry entry selects AdminETagPolicy, so a
+	// policy write is never gated on the configuration tag.
+	PolicyCurrentETag func(*http.Request) (string, int64, error)
 	// CursorCodec signs pagination cursors.
 	CursorCodec *AdminCursorCodec
 	// Pagination holds the configured limits.
@@ -190,6 +194,20 @@ func RegisterAdminV1(r adminRouter, deps AdminV1Deps) error {
 		}
 	}
 	return nil
+}
+
+// etagFor selects the operation's declared strong-validator source. An
+// operation that declares the policy revision cannot fall back to the config
+// validator: a missing policy validator is an unavailable resource, not a
+// silently different tag.
+func (m *adminV1Mount) etagFor(op Operation, r *http.Request) (string, int64, error) {
+	if op.ETagSource == AdminETagPolicy {
+		if m.deps.PolicyCurrentETag == nil {
+			return "", 0, ErrAuthorizationUnavailable
+		}
+		return m.deps.PolicyCurrentETag(r)
+	}
+	return m.currentETag(r)
 }
 
 // adminHandleGuarded registers one pattern, converting a mux pattern conflict (a
@@ -491,10 +509,16 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			strings.TrimSpace(r.Header.Get("Idempotency-Key")) != ""
 		var translationRevision int64
 		if op.RequiredPrecondition() {
-			currentETag, revision, etagErr := m.currentETag(r)
+			currentETag, revision, etagErr := m.etagFor(op, r)
 			if etagErr != nil {
 				releaseClaim()
-				writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", "the configuration revision is unavailable")
+				// Name the validator that actually failed: a policy operation must
+				// not report the configuration revision.
+				detail := "the configuration revision is unavailable"
+				if op.ETagSource == AdminETagPolicy {
+					detail = "the policy revision is unavailable"
+				}
+				writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", detail)
 				finish(http.StatusServiceUnavailable, "denied", "unavailable")
 				return
 			}
@@ -537,7 +561,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		// validator. Reports, metrics and status have no configuration-revision
 		// validator, so a 304 for them could hide a body that changed independently.
 		if op.Method == "GET" && adminOperationPublishesRevisionETag(op) {
-			if currentETag, _, etagErr := m.currentETag(r); etagErr == nil && currentETag != "" && adminIfNoneMatchHit(r, currentETag) {
+			if currentETag, _, etagErr := m.etagFor(op, r); etagErr == nil && currentETag != "" && adminIfNoneMatchHit(r, currentETag) {
 				adminWriteNotModified(w, currentETag)
 				finish(http.StatusNotModified, "allowed", "")
 				return

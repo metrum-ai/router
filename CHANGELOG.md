@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   security fixes. Source builds require at least Go 1.26.10; CI, release and
   container build producers use the patched toolchain.
 
+- Guarded policy resources on `/admin/v1`: 19 typed operations (set/rule/membership list-create-get-replace-delete, validate, diff, activate, rollback) inside one mutex plus an exclusive singleton transaction, with actor-bound authorization before any precondition work, immutable active/retired content, clone-rollback with fresh IDs and a last-normal-administrator guard. Mutations write exactly one usage audit row in their own transaction (#869); a request without authenticated audit metadata, or a rejected audit insert, changes nothing. Production wiring installs every operation, builds the enabled-administrator inventory from the published configuration under the lock, and refuses a reload that would lock out policy administration. Policy operations take their `If-Match` from the POLICY revision, not the configuration revision. The policy runtime singleton is registered in the usage migration ledger as `2026110704` (schema 15).
+
 ### Authorization compatibility
 
 - The entire `router-internal:` prefix is reserved for internal authorization

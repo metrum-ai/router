@@ -73,34 +73,71 @@ func simulatePolicyGuard(ctx context.Context, snapshot *authorizer, principal Pr
 // candidate record passes online validation, including unchanged/duplicate
 // records; synthesized rows are checked separately for effective scope changes.
 // It does not persist anything or substitute for a transactional store guard.
-func guardPolicyMutation(ctx context.Context, actor Principal, current, candidate *Service, enabled []Principal, operation string) error {
-	if ctx == nil || current == nil || candidate == nil {
-		return ErrAuthorizationUnavailable
+type policyMutationAuthority struct {
+	ctx     context.Context
+	actor   Principal
+	current *Service
+}
+
+// Authorization precedes ETag/resource checks and candidate construction. Its
+// frozen view is retained through the whole-candidate guard and persistence.
+func authorizePolicyMutationActor(ctx context.Context, actor Principal, current *Service, operation string) (policyMutationAuthority, error) {
+	var denied policyMutationAuthority
+	if ctx == nil || current == nil {
+		return denied, ErrAuthorizationUnavailable
 	}
 	authenticated, present := PrincipalFrom(ctx)
 	if !present || authenticated != actor || !validMachinePrincipal(actor) {
-		return ErrAdminForbidden
+		return denied, ErrAdminForbidden
 	}
-	before, after := current.currentAuthorizer(), candidate.currentAuthorizer()
-	if before == nil || after == nil || before.enforcer == nil || after.enforcer == nil {
-		return ErrAuthorizationUnavailable
+	before := current.currentAuthorizer()
+	if before == nil || before.enforcer == nil {
+		return denied, ErrAuthorizationUnavailable
 	}
 	if operation != "write" && operation != "activate" && operation != "rollback" {
-		return ErrInvalidPolicy
+		return denied, ErrInvalidPolicy
 	}
-	// Freeze both inputs, including metadata/role reads, against asynchronous
-	// runtime publication. Candidate checks are simulations, not real requests.
 	current = &Service{authorizer: before, authorizationAudit: current.authorizationAudit, configSnapshot: current.configSnapshot, policyFreshness: current.policyFreshness, usage: current.usage}
-	candidate = &Service{authorizer: after}
-	// A request pin cannot authorize a write against a different locked revision.
+	// Override request pins, retaining real audit and freshness for this actor.
 	ctx = context.WithValue(ctx, authorizationRevisionKey{}, pinnedAuthorizationRevision{current, before})
 	ctx = context.WithValue(ctx, authorizationGuardKey{}, true)
 	if err := current.Authorize(ctx, actor, AdminGlobalDomain, "admin:policy", operation); err != nil {
-		return err
+		return denied, err
 	}
 	if err := current.Authorize(ctx, actor, AdminGlobalDomain, securityAdministratorCapability, "administer"); err != nil {
+		return denied, err
+	}
+	return policyMutationAuthority{ctx, actor, current}, nil
+}
+
+func guardPolicyMutation(ctx context.Context, actor Principal, current, candidate *Service, enabled []Principal, operation string) error {
+	if candidate == nil {
+		return ErrAuthorizationUnavailable
+	}
+	after := candidate.currentAuthorizer()
+	if after == nil || after.enforcer == nil {
+		return ErrAuthorizationUnavailable
+	}
+	// Freeze the supplied candidate before real actor audit callbacks run.
+	// The transaction path instead constructs its candidate after authorization.
+	candidate = &Service{authorizer: after}
+	authority, err := authorizePolicyMutationActor(ctx, actor, current, operation)
+	if err != nil {
 		return err
 	}
+	return authority.guard(candidate, enabled)
+}
+
+func (authority policyMutationAuthority) guard(candidate *Service, enabled []Principal) error {
+	ctx, actor, current := authority.ctx, authority.actor, authority.current
+	if ctx == nil || current == nil || candidate == nil {
+		return ErrAuthorizationUnavailable
+	}
+	before, after := current.currentAuthorizer(), candidate.currentAuthorizer()
+	if before == nil || after == nil || after.enforcer == nil {
+		return ErrAuthorizationUnavailable
+	}
+	candidate = &Service{authorizer: after}
 	if len(after.authoredPolicy) > maxPolicyGuardCandidateRows {
 		return ErrInvalidPolicy
 	}

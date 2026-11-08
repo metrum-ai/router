@@ -69,6 +69,9 @@ type adminMetricsStore struct {
 	authOutcomes map[adminAuthKey]int64
 	replays      map[string]int64
 	auditFailurs map[string]int64
+	// policyGuardRefusals counts configuration/credential changes refused because
+	// they would leave no enabled normal policy administrator (cross-store guard).
+	policyGuardRefusals int64
 }
 
 func newAdminMetricsStore() *adminMetricsStore {
@@ -142,6 +145,16 @@ func (m *adminMetricsStore) RecordIdempotentReplay(operation string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.replays[sanitizeMetricLabel(operation, "unknown")]++
+}
+
+// RecordPolicyGuardRefusal counts a refused policy-administrator lockout.
+func (m *adminMetricsStore) RecordPolicyGuardRefusal() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.policyGuardRefusals++
 }
 
 // RecordAuditFailure counts a failed audit write.
@@ -307,6 +320,12 @@ func (m *adminMetricsStore) Prometheus(freshness AdminFreshnessSource) string {
 	for _, operation := range replayKeys {
 		fmt.Fprintf(&out, "router_admin_idempotent_replays_total{operation=%q} %d\n", operation, replay[operation])
 	}
+	out.WriteString("# HELP router_admin_policy_guard_refusals_total Configuration/credential changes refused to avoid locking out policy administration.\n")
+	out.WriteString("# TYPE router_admin_policy_guard_refusals_total counter\n")
+	m.mu.Lock()
+	refusals := m.policyGuardRefusals
+	m.mu.Unlock()
+	fmt.Fprintf(&out, "router_admin_policy_guard_refusals_total %d\n", refusals)
 	out.WriteString("# HELP router_admin_audit_write_failures_total Failed admin audit writes.\n")
 	out.WriteString("# TYPE router_admin_audit_write_failures_total counter\n")
 	for _, kind := range auditKeys {
