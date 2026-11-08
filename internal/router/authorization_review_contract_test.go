@@ -52,19 +52,20 @@ func TestCreateAuthzPolicySetAcceptsExactAndWholeDomains(t *testing.T) {
 	}
 }
 
-// TestReloadUsesTheSingleAuthorizationPublisher pins the #812 correction: the
-// reload must not store an authorizer of its own. The machine authorizer has one
-// publisher (syncPolicyAuthorizationLocked, under the singleton read and the
-// governance lock), so a reload asks that path to publish before it exposes the
-// replacement credentials.
+// TestReloadUsesTheSingleAuthorizationPublisher pins the #812/#871 correction:
+// the reload must not store an authorizer, credentials or a machine generation
+// of its own. It PREPARES the authoritative snapshot, then installs the snapshot,
+// the caller directory, the serving-port key catalogue, the configuration and the
+// machine generation through exactly one publication call, so a failed reload
+// publishes nothing and a successful one publishes everything together.
 func TestReloadUsesTheSingleAuthorizationPublisher(t *testing.T) {
 	fs := token.NewFileSet()
 	file, err := parser.ParseFile(fs, "service.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var synchronized, keys token.Pos
-	var stored token.Pos
+	var prepared, published token.Pos
+	publications, stores, credentialWrites := 0, 0, 0
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != "reloadActiveConfigFromDB" {
@@ -73,12 +74,19 @@ func TestReloadUsesTheSingleAuthorizationPublisher(t *testing.T) {
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
 				if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
-					if selector.Sel.Name == "syncPolicyAuthorizationLocked" {
-						synchronized = call.Pos()
-					}
-					if selector.Sel.Name == "Store" {
+					switch selector.Sel.Name {
+					case "preparePolicyAuthorizationLocked":
+						prepared = call.Pos()
+					case "syncPolicyAuthorizationLocked":
+						t.Error("reload delegates to the poller path instead of preparing and publishing once")
+					case "publishMachinePlane":
+						publications++
+						published = call.Pos()
+					case "publishAdminMachineGeneration", "replaceAdminMachineGeneration":
+						t.Errorf("reload uses a second publisher: %s", selector.Sel.Name)
+					case "Store":
 						if field, ok := selector.X.(*ast.SelectorExpr); ok && field.Sel.Name == "authorizerSnapshot" {
-							stored = call.Pos()
+							stores++
 						}
 					}
 				}
@@ -86,23 +94,26 @@ func TestReloadUsesTheSingleAuthorizationPublisher(t *testing.T) {
 			if assignment, ok := n.(*ast.AssignStmt); ok {
 				for _, lhs := range assignment.Lhs {
 					if field, ok := lhs.(*ast.SelectorExpr); ok && field.Sel.Name == "adminAPIKeys" {
-						keys = assignment.Pos()
+						credentialWrites++
 					}
 				}
 			}
 			return true
 		})
 	}
-	if synchronized == token.NoPos {
-		t.Fatal("reload does not publish through the synchronized authorizer path")
+	if prepared == token.NoPos {
+		t.Fatal("reload does not prepare the authoritative authorizer snapshot")
 	}
-	if stored != token.NoPos {
+	if publications != 1 {
+		t.Fatalf("reload publications = %d, want exactly one", publications)
+	}
+	if prepared > published {
+		t.Fatal("machine plane published before the authoritative snapshot was prepared")
+	}
+	if stores != 0 {
 		t.Fatal("reload stores an authorizer of its own: the machine authorizer must have one publisher")
 	}
-	if keys == token.NoPos {
-		t.Fatal("reload never publishes replacement credentials")
-	}
-	if synchronized > keys {
-		t.Fatal("new credentials published before the synchronized authorization snapshot")
+	if credentialWrites != 0 {
+		t.Fatal("reload publishes replacement credentials outside the single publication")
 	}
 }

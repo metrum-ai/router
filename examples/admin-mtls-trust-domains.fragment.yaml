@@ -1,0 +1,29 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Draft mTLS configuration fragment, not a complete runnable router config.
+# Listener/bootstrap/audit integration remains pending.
+admin:
+  authentication:
+    mtls:
+      reload_interval: 30s
+      trust_domains:
+        - issuer: corp-a
+          ca_files:
+            - /etc/router/admin/corp-a.pem
+          subjects:
+            - san: uri:spiffe://workloads.example/automation
+              subject: automation-a
+        - issuer: corp-b
+          ca_files:
+            - /etc/router/admin/corp-b.pem
+          subjects:
+            - san: uri:spiffe://workloads.example/automation
+              subject: automation-b
+# Alternative flat form: exactly one implicit domain with explicit issuer.
+# Replace the mtls block above; NEVER combine ca_files with trust_domains.
+#   mtls:
+#     issuer: corp-a
+#     ca_files: [/etc/router/admin/corp-a.pem]
+#     subjects:
+#       - san: dns:automation.example
+#         subject: automation-a

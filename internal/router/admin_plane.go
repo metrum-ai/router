@@ -71,6 +71,12 @@ func (m *AdminMux) Use(mw func(http.Handler) http.Handler) {
 // Use middleware → routes. Every response is JSON; the fallback is a JSON 404
 // so the plane never serves HTML (ACP-N06).
 func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) http.Handler {
+	return m.handlerWithAuthentication(cfg, adminAuthentication(authenticate))
+}
+
+// Keep generation capture/authentication inside the listener's existing
+// hardening/proxy/machine-only gates, at the same layer as legacy installation.
+func (m *AdminMux) handlerWithAuthentication(cfg *AdminPlaneConfig, authenticate func(http.Handler) http.Handler) http.Handler {
 	if m == nil {
 		return http.NotFoundHandler()
 	}
@@ -81,7 +87,7 @@ func (m *AdminMux) handler(cfg *AdminPlaneConfig, authenticate Authenticator) ht
 	for i := len(middleware) - 1; i >= 0; i-- {
 		h = middleware[i](h)
 	}
-	h = adminAuthentication(authenticate)(h)
+	h = authenticate(h)
 	h = adminMachineOnlyGate(h)
 	h = adminProxyGate(cfg)(h)
 	h = adminHardening(cfg)(h)
@@ -477,8 +483,11 @@ type AdminPlane struct {
 	ln       net.Listener
 	err      chan error
 	reloadMu sync.Mutex
-	reload   context.CancelFunc
-	reloadWG sync.WaitGroup
+	// Keep the original dynamic source's capability separately from the
+	// immutable pool folded into handshake state by its OnReload callback.
+	caReloader adminCAReloader
+	reload     context.CancelFunc
+	reloadWG   sync.WaitGroup
 
 	// acme is the #810 manager for admin.tls.certificate_source: acme. The
 	// listener obtains the certificate before it binds and renews it in the
@@ -536,13 +545,25 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler, opts ...AdminPla
 	caPaths = append(caPaths, local.Authentication.MTLS.CAFiles...)
 	switch strings.ToLower(strings.TrimSpace(local.TLS.ClientAuth)) {
 	case adminClientAuthOptional, adminClientAuthRequire:
-		// #828's store owns the trust anchors and reloads them; an unreadable
-		// or empty bundle fails startup instead of trusting nothing silently.
-		store, err := NewAdminClientCAStore(caPaths)
-		if err != nil {
-			return nil, err
+		var source AdminClientCASource
+		if adminMTLSTrustConfigured(local.Authentication.MTLS) {
+			// Configured domains supersede the legacy bootstrap CA file. Use
+			// the complete loader: uniqueness and scoped maps validate before
+			// the handshake union is exposed, even for possession-only domains.
+			store, err := NewAdminMTLSTrustStore(local.Authentication.MTLS)
+			if err != nil {
+				return nil, err
+			}
+			source = store
+		} else {
+			store, err := NewAdminClientCAStore(caPaths)
+			if err != nil {
+				return nil, err
+			}
+			source = store
 		}
-		p.clientCAS.Store(&adminCASourceHolder{source: store})
+		p.clientCAS.Store(&adminCASourceHolder{source: source})
+		p.caReloader, _ = source.(adminCAReloader)
 	}
 	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeRouter) {
 		tlsCfg, err := p.routerTLSConfig()
@@ -622,6 +643,9 @@ func (p *AdminPlane) SetClientCASource(src AdminClientCASource) {
 	if p == nil || src == nil {
 		return
 	}
+	p.reloadMu.Lock()
+	p.caReloader, _ = src.(adminCAReloader)
+	p.reloadMu.Unlock()
 	src.OnReload(func(pool *x509.CertPool) {
 		p.clientCAS.Store(&adminCASourceHolder{source: &adminFixedCASource{pool: pool}})
 	})
@@ -757,7 +781,9 @@ func (p *AdminPlane) startClientCAReload() {
 	if interval <= 0 {
 		return
 	}
-	source, _ := p.ClientCASource().(adminCAReloader)
+	p.reloadMu.Lock()
+	source := p.caReloader
+	p.reloadMu.Unlock()
 	if source == nil {
 		log.Printf("admin client CA reload_interval is set but the installed source cannot reload; rotation needs a restart")
 		return
@@ -916,6 +942,9 @@ func (s *Service) handleAdminPlaneHealth(w http.ResponseWriter, r *http.Request)
 func (s *Service) AdminHandler() http.Handler {
 	if s == nil || !s.adminPlaneEnabled() {
 		return nil
+	}
+	if s.machineGeneration.Load() != nil {
+		return s.adminMux.handlerWithAuthentication(&s.cfg.Admin, s.adminMachineGenerationListenerAuthentication())
 	}
 	return s.adminMux.handler(&s.cfg.Admin, s.AdminAuthenticator())
 }

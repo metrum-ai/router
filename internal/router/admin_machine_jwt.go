@@ -24,11 +24,13 @@ import (
 type adminMachineJWTSubject struct{ Claim, Value, Subject string }
 type adminMachineJWTConfig struct {
 	// Test-only hook; not a configuration key. Runtime construction leaves false.
-	allowInsecureLoopback  bool
-	Issuer, Audience, Kind string
-	Algorithms             []string
-	MaxLifetime, ClockSkew time.Duration
-	Subjects               []adminMachineJWTSubject
+	allowInsecureLoopback                                    bool
+	Issuer, Audience, Kind                                   string
+	Algorithms                                               []string
+	MaxLifetime, ClockSkew                                   time.Duration
+	JWKSCacheTTL, JWKSRefreshMinInterval, JWKSRequestTimeout time.Duration
+	clockSkewExplicit                                        bool // preserves configured 0s rather than applying a default
+	Subjects                                                 []adminMachineJWTSubject
 	// Exact additional host[:port] authorities; HTTPS port 443 is implicit.
 	// No wildcard/URL entries. The issuer's own authority is always allowed.
 	AllowedJWKSHosts []string
@@ -53,6 +55,22 @@ type adminMachineJWTAuthenticator struct {
 const machineJWKSTTL = 5 * time.Minute
 const machineJWKSRefreshInterval = 30 * time.Second
 
+func normalizeMachineJWTJWKSSettings(cfg *adminMachineJWTConfig) error {
+	if cfg.JWKSCacheTTL == 0 {
+		cfg.JWKSCacheTTL = machineJWKSTTL
+	}
+	if cfg.JWKSRefreshMinInterval == 0 {
+		cfg.JWKSRefreshMinInterval = machineJWKSRefreshInterval
+	}
+	if cfg.JWKSRequestTimeout == 0 {
+		cfg.JWKSRequestTimeout = 5 * time.Second
+	}
+	if cfg.JWKSCacheTTL < time.Millisecond || cfg.JWKSCacheTTL > time.Hour || cfg.JWKSRefreshMinInterval < time.Millisecond || cfg.JWKSRefreshMinInterval > cfg.JWKSCacheTTL || cfg.JWKSRequestTimeout < time.Millisecond || cfg.JWKSRequestTimeout > 30*time.Second {
+		return errors.New("admin JWT JWKS settings invalid")
+	}
+	return nil
+}
+
 func machineIssuerEndpoint(raw string, testLoopback bool) bool {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" {
@@ -67,6 +85,9 @@ func machineIssuerEndpoint(raw string, testLoopback bool) bool {
 
 func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTConfig, client *http.Client) (*adminMachineJWTAuthenticator, error) {
 	cfg.allowInsecureLoopback = cfg.allowInsecureLoopback && client != nil
+	if err := normalizeMachineJWTJWKSSettings(&cfg); err != nil {
+		return nil, err
+	}
 	if cfg.Issuer == "" || cfg.Audience == "" || len(cfg.Subjects) == 0 || !machineIssuerEndpoint(cfg.Issuer, cfg.allowInsecureLoopback) {
 		return nil, errors.New("admin JWT issuer, audience or subjects invalid")
 	}
@@ -86,7 +107,7 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 	if cfg.MaxLifetime == 0 {
 		cfg.MaxLifetime = time.Hour
 	}
-	if cfg.ClockSkew == 0 {
+	if cfg.ClockSkew == 0 && !cfg.clockSkewExplicit {
 		cfg.ClockSkew = 30 * time.Second
 	}
 	if cfg.MaxLifetime < 0 || cfg.ClockSkew < 0 || cfg.ClockSkew > time.Minute {
@@ -143,7 +164,7 @@ func newAdminMachineJWTAuthenticator(ctx context.Context, cfg adminMachineJWTCon
 		return nil, err
 	}
 	a.keys = keys
-	a.expires = time.Now().Add(machineJWKSTTL)
+	a.expires = time.Now().Add(a.cfg.JWKSCacheTTL)
 	a.lastAttempt = time.Now()
 	return a, nil
 }
@@ -152,7 +173,11 @@ func (a *adminMachineJWTAuthenticator) fetchJSON(ctx context.Context, endpoint s
 	if !machineJWTEndpointAllowed(a.cfg, endpoint) {
 		return errors.New("admin JWT endpoint forbidden")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeout := a.cfg.JWKSRequestTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second // unnormalized direct fixture
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -228,7 +253,7 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 				continue
 			}
 		}
-		if !fresh && now.Sub(a.lastAttempt) < machineJWKSRefreshInterval || fresh && now.Sub(a.lastUnknownRefresh) < machineJWKSRefreshInterval {
+		if !fresh && now.Sub(a.lastAttempt) < a.cfg.JWKSRefreshMinInterval || fresh && now.Sub(a.lastUnknownRefresh) < a.cfg.JWKSRefreshMinInterval {
 			a.mu.Unlock()
 			return jose.JSONWebKey{}, ErrInvalidCredential
 		}
@@ -244,13 +269,13 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 		// needed by other requests. All waiters, including the initiator, can
 		// independently cancel; the shared work has its own bounded timeout.
 		go func() {
-			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.cfg.JWKSRequestTimeout)
 			defer cancel()
 			keys, err := a.fetchKeys(refreshCtx)
 			a.mu.Lock()
 			if err == nil {
 				a.keys = keys
-				a.expires = time.Now().Add(machineJWKSTTL)
+				a.expires = time.Now().Add(a.cfg.JWKSCacheTTL)
 			}
 			a.refreshing = nil
 			close(done)
@@ -264,39 +289,60 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 	}
 }
 
+// Private verified token result is not yet an authenticated Principal: a cnf
+// claim still requires its sender proof before it may leave the dispatcher.
+type adminVerifiedMachineJWT struct {
+	principal    Principal
+	confirmation json.RawMessage
+}
+
 func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
-	if ctx.Err() != nil || r == nil {
+	if ctx == nil || ctx.Err() != nil || r == nil {
 		return Principal{}, ErrInvalidCredential
 	}
 	raw := bearerTokenFromRequest(r)
 	if raw == "" || strings.HasPrefix(raw, adminAPIKeyPrefix) {
 		return Principal{}, ErrNoCredential
 	}
-	if len(raw) > maxMachineCredentialBytes {
+	verified, err := a.verifyToken(ctx, raw)
+	if err != nil {
+		return Principal{}, err
+	}
+	// Standalone use continues to reject every bound token. Only the runtime
+	// dispatcher can complete proof verification and return its identity.
+	if len(verified.confirmation) != 0 {
 		return Principal{}, ErrInvalidCredential
+	}
+	return verified.principal, nil
+}
+
+func (a *adminMachineJWTAuthenticator) verifyToken(ctx context.Context, raw string) (adminVerifiedMachineJWT, error) {
+	var zero adminVerifiedMachineJWT
+	if ctx == nil || ctx.Err() != nil || raw == "" || len(raw) > maxMachineCredentialBytes {
+		return zero, ErrInvalidCredential
 	}
 	token, err := jwt.ParseSigned(raw, a.algorithms)
 	if err != nil || len(token.Headers) != 1 || token.Headers[0].KeyID == "" {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	header := token.Headers[0]
 	typeValue, present := header.ExtraHeaders[jose.HeaderKey("typ")]
 	tokenType, stringType := typeValue.(string)
 	if present && !stringType {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	switch strings.ToLower(tokenType) {
 	case "at+jwt", "application/at+jwt":
 	case "", "jwt":
 		if !a.cfg.AllowLegacyTokenType {
-			return Principal{}, ErrInvalidCredential
+			return zero, ErrInvalidCredential
 		}
 	default:
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	key, err := a.key(ctx, header.KeyID, header.Algorithm)
 	if err != nil {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	var claims struct {
 		jwt.Claims
@@ -304,16 +350,16 @@ func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http
 		Confirmation json.RawMessage `json:"cnf"`
 	}
 	if token.Claims(key.Key, &claims) != nil {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	now := time.Now()
 	skew := a.cfg.ClockSkew
-	if claims.Issuer != a.cfg.Issuer || !claims.Audience.Contains(a.cfg.Audience) || claims.Expiry == nil || claims.IssuedAt == nil || len(claims.Confirmation) > 0 {
-		return Principal{}, ErrInvalidCredential
+	if claims.Issuer != a.cfg.Issuer || !claims.Audience.Contains(a.cfg.Audience) || claims.Expiry == nil || claims.IssuedAt == nil {
+		return zero, ErrInvalidCredential
 	}
 	exp, iat := claims.Expiry.Time(), claims.IssuedAt.Time()
 	if !exp.After(iat) || exp.Sub(iat) > a.cfg.MaxLifetime || !now.Before(exp.Add(skew)) || iat.After(now.Add(skew)) || claims.NotBefore != nil && claims.NotBefore.Time().After(now.Add(skew)) {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
 	subject, credentialID := "", ""
 	for _, mapping := range a.cfg.Subjects {
@@ -325,13 +371,13 @@ func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http
 			continue
 		}
 		if subject != "" && subject != mapping.Subject {
-			return Principal{}, ErrInvalidCredential
+			return zero, ErrInvalidCredential
 		}
 		subject = mapping.Subject
 		credentialID = mapping.Claim + ":" + mapping.Value
 	}
 	if subject == "" || ctx.Err() != nil {
-		return Principal{}, ErrInvalidCredential
+		return zero, ErrInvalidCredential
 	}
-	return Principal{Subject: subject, Kind: a.cfg.Kind, Issuer: a.cfg.Issuer, CredentialID: credentialID}, nil
+	return adminVerifiedMachineJWT{principal: Principal{Subject: subject, Kind: a.cfg.Kind, Issuer: a.cfg.Issuer, CredentialID: credentialID}, confirmation: claims.Confirmation}, nil
 }

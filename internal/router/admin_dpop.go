@@ -28,6 +28,21 @@ import (
 var ErrSenderConstraintFailed = errors.New("sender_constraint_failed")
 
 const adminDPoPClockLeeway = 5 * time.Second
+const adminDPoPMaxProofAge = 5 * time.Minute
+
+// Node-owned replay state survives validator/configuration replacement. Shared
+// ledgers retain to the supported acceptance ceiling: otherwise a later age
+// increase could revive a proof already removed under a shorter old window.
+// Capacity is still enforced per validator; no live record is evicted.
+type adminDPoPReplayState struct {
+	mu           sync.Mutex
+	seen         map[[32]byte]time.Time
+	retentionAge time.Duration // immutable; never shorter than a validator window
+}
+
+func newAdminDPoPReplayState() *adminDPoPReplayState {
+	return &adminDPoPReplayState{seen: make(map[[32]byte]time.Time), retentionAge: adminDPoPMaxProofAge}
+}
 
 // adminDPoPValidator implements the RFC 9449 protected-resource proof checks.
 // A fixed five-second leeway tolerates host clock differences: iat may be at
@@ -39,21 +54,27 @@ type adminDPoPValidator struct {
 	externalBase string
 	proofMaxAge  time.Duration
 	capacity     int
-	mu           sync.Mutex
-	seen         map[[32]byte]time.Time
-	now          func() time.Time
+	*adminDPoPReplayState
+	now func() time.Time
 }
 
 func newAdminDPoPValidator(externalBase string, maxAge time.Duration, capacity int) (*adminDPoPValidator, error) {
+	// Preserve the standalone profile's original retention; only node-shared
+	// generation ledgers need the future-configuration acceptance ceiling.
+	state := &adminDPoPReplayState{seen: make(map[[32]byte]time.Time), retentionAge: maxAge}
+	return newAdminDPoPValidatorWithReplay(externalBase, maxAge, capacity, state)
+}
+
+func newAdminDPoPValidatorWithReplay(externalBase string, maxAge time.Duration, capacity int, state *adminDPoPReplayState) (*adminDPoPValidator, error) {
 	u, err := url.Parse(externalBase)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || maxAge <= 0 || maxAge > 5*time.Minute || capacity <= 0 || capacity > 100000 {
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || maxAge <= 0 || maxAge > adminDPoPMaxProofAge || capacity <= 0 || capacity > 100000 || state == nil || state.seen == nil || state.retentionAge < maxAge || state.retentionAge > adminDPoPMaxProofAge {
 		return nil, errors.New("admin DPoP configuration invalid")
 	}
 	base, err := normalizeAdminDPoPURI(externalBase)
 	if err != nil {
 		return nil, errors.New("admin DPoP external URL invalid")
 	}
-	return &adminDPoPValidator{externalBase: strings.TrimRight(base, "/"), proofMaxAge: maxAge, capacity: capacity, seen: make(map[[32]byte]time.Time), now: time.Now}, nil
+	return &adminDPoPValidator{externalBase: strings.TrimRight(base, "/"), proofMaxAge: maxAge, capacity: capacity, adminDPoPReplayState: state, now: time.Now}, nil
 }
 
 // normalizeAdminDPoPURI applies scheme, host, default-port and percent-encoded
@@ -214,6 +235,6 @@ func (v *adminDPoPValidator) Validate(ctx context.Context, r *http.Request, acce
 	if len(v.seen) >= v.capacity {
 		return ErrSenderConstraintFailed
 	}
-	v.seen[replayKey] = expires
+	v.seen[replayKey] = issuedAt.Add(v.retentionAge + adminDPoPClockLeeway)
 	return nil
 }

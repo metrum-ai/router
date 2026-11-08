@@ -59,6 +59,9 @@ func machineJWTDialControl(allowPrivate bool) func(string, string, syscall.RawCo
 }
 
 func newMachineJWTHTTPClient(cfg adminMachineJWTConfig, provided *http.Client) (*http.Client, error) {
+	if err := normalizeMachineJWTJWKSSettings(&cfg); err != nil {
+		return nil, err
+	}
 	client := &http.Client{}
 	if provided != nil {
 		*client = *provided
@@ -75,7 +78,7 @@ func newMachineJWTHTTPClient(cfg adminMachineJWTConfig, provided *http.Client) (
 		transport.Dial = nil
 		transport.DialTLS = nil
 		transport.DialTLSContext = nil
-		transport.DialContext = (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second, Control: machineJWTDialControl(cfg.AllowPrivateNetwork)}).DialContext
+		transport.DialContext = (&net.Dialer{Timeout: cfg.JWKSRequestTimeout, KeepAlive: 30 * time.Second, Control: machineJWTDialControl(cfg.AllowPrivateNetwork)}).DialContext
 		client.Transport = transport
 	} else if !cfg.allowInsecureLoopback {
 		// Nonstandard transports are permitted only by the private test hook. The
@@ -83,7 +86,7 @@ func newMachineJWTHTTPClient(cfg adminMachineJWTConfig, provided *http.Client) (
 		return nil, errors.New("admin JWT HTTP transport invalid")
 	}
 	client.Jar = nil
-	client.Timeout = 5 * time.Second
+	client.Timeout = cfg.JWKSRequestTimeout
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("admin JWT redirects forbidden") }
 	return client, nil
 }

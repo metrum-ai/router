@@ -576,12 +576,50 @@ callers:
 		t.Fatalf("initial caller auth index = %d legacy, %d token_hash, want 0", len(idx.legacyBySHA256), len(idx.byTokenID))
 	}
 
+	// The machine path publishes a complete immutable generation. Builder
+	// failure must stop reload before keys/config/authorizer are exposed.
+	failMachinePreparation := false
+	svc.machineGenerationBuilder = func(candidate *Config, compatible *authorizer) (*adminMachineGeneration, error) {
+		if failMachinePreparation {
+			return nil, ErrInvalidCredential
+		}
+		keys, err := newConfiguredAdminKeyCatalog(candidate, func(string) (string, bool) { return key.TokenHash, true })
+		if err != nil {
+			return nil, err
+		}
+		auth, err := newConfiguredAdminKeyAuthenticator(func() *adminConfiguredKeyCatalog { return keys })
+		if err != nil {
+			return nil, err
+		}
+		return &adminMachineGeneration{auth: NewAuthenticatorChain(auth), authorizer: compatible, keys: keys}, nil
+	}
+	initialMachine, err := svc.machineGenerationBuilder(cfg, svc.currentAuthorizer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.publishAdminMachineGeneration(initialMachine); err != nil {
+		t.Fatal(err)
+	}
+
 	// Authenticate a real configured key, then ensure an invalid candidate
 	// cannot disturb its grants or verification state.
 	keySubject, ok := svc.authenticateAdminAPIKey(key.Token)
 	if !ok || !svc.authorizeAdminPermission(keySubject, "config:read") {
 		t.Fatal("bootstrap key must authenticate and read config")
 	}
+	// Isolate machine preparation failure before testing policy errors. Both
+	// the live directory and persistent quota state must retain bootstrap.
+	failMachinePreparation = true
+	if err := svc.reloadActiveConfigFromDB(); err == nil {
+		t.Fatal("failed machine preparation accepted")
+	}
+	svc.quota.mu.Lock()
+	rejectedCallers, rejectedStates := len(svc.quota.callers), len(svc.quota.state.Callers)
+	svc.quota.mu.Unlock()
+	if rejectedCallers != 0 || rejectedStates != 0 {
+		t.Fatalf("failed machine preparation installed rejected caller state: directory=%d persistent=%d", rejectedCallers, rejectedStates)
+	}
+	failMachinePreparation = false
 	invalidYAML := strings.Replace(canonicalYAML, "  default_model_group: default", "  default_model_group: default\n  admin_auth:\n    authorization:\n      enabled: true\n      policy: ['p, subject, search/dev, admin:*, read']", 1)
 	invalidHash := sha256.Sum256([]byte(invalidYAML))
 	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, invalidYAML, hex.EncodeToString(invalidHash[:]), "set-1").Error; err != nil {
@@ -593,13 +631,35 @@ callers:
 	if _, ok := svc.authenticateAdminAPIKey(key.Token); !ok || !svc.authorizeAdminPermission(keySubject, "config:read") {
 		t.Fatal("failed reload disturbed active credential/grant")
 	}
+	svc.quota.mu.Lock()
+	rejectedCallers, rejectedStates = len(svc.quota.callers), len(svc.quota.state.Callers)
+	svc.quota.mu.Unlock()
+	if rejectedCallers != 0 || rejectedStates != 0 {
+		t.Fatal("failed authorizer preparation installed rejected caller state")
+	}
 	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, canonicalYAML, hex.EncodeToString(hash[:]), "set-1").Error; err != nil {
 		t.Fatal(err)
 	}
 
+	failMachinePreparation = true
+	if err := svc.reloadActiveConfigFromDB(); err == nil {
+		t.Fatal("failed machine preparation accepted")
+	}
+	if svc.machineGeneration.Load() != initialMachine || svc.currentAuthorizer() != initialMachine.authorizer || svc.cfg != cfg {
+		t.Fatal("failed preparation partially published config/grants")
+	}
+	if _, ok := svc.authenticateAdminAPIKey(key.Token); !ok {
+		t.Fatal("failed machine preparation removed old key")
+	}
+	failMachinePreparation = false
+
 	// Reload from the DB. The canonical document removes the bootstrap key.
 	if err := svc.reloadActiveConfigFromDB(); err != nil {
 		t.Fatalf("reloadActiveConfigFromDB: %v", err)
+	}
+	machine := svc.machineGeneration.Load()
+	if machine == initialMachine || machine.authorizer != svc.currentAuthorizer() || len(machine.keys.keys) != 0 {
+		t.Fatal("machine reload did not publish compatible keys/grants together")
 	}
 
 	if _, ok := svc.authenticateAdminAPIKey(key.Token); ok {

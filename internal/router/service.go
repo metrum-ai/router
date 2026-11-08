@@ -69,18 +69,24 @@ type Service struct {
 	adminSession       *adminSessionStore
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
-	policyFreshness    *policyFreshnessState
-	// policyAdmins supplies the enabled-machine-administrator inventory for the
-	// reverse guard. Nil means the configured admin keys on main today; #871
-	// installs its prepared machine generation here.
-	policyAdmins       policyAdminInventory
-	authorizationAudit authorizationDecisionAudit
-	quota              *quotaStore
-	cache              *responseCache
-	logger             *requestLogger
-	usage              *usageStore
-	migrationStatusFn  func() (MigrationStatus, error)
-	metrics            *metricsStore
+	machineGeneration  atomic.Pointer[adminMachineGeneration]
+	// machinePublicationMu is the ONLY lock in the machine-plane publication
+	// path. Every publisher (startup, policy synchronization, configuration
+	// reload, CA reload) prepares and installs its replacement while holding it,
+	// so a generation is always built from the inputs published at that moment
+	// and an older publication can never follow a newer one. Requests never take
+	// it: they capture the published generation exactly once.
+	machinePublicationMu     sync.Mutex
+	machineCAHooks           []adminMachineCAHook
+	machineGenerationBuilder func(*Config, *authorizer) (*adminMachineGeneration, error)
+	policyFreshness          *policyFreshnessState
+	authorizationAudit       authorizationDecisionAudit
+	quota                    *quotaStore
+	cache                    *responseCache
+	logger                   *requestLogger
+	usage                    *usageStore
+	migrationStatusFn        func() (MigrationStatus, error)
+	metrics                  *metricsStore
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
 	// Idempotency-Key store and the freshness source. They are separate from the serving path.
 	adminMetricsStore    *adminMetricsStore
@@ -405,6 +411,12 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		bridgeSessions.Close()
 		return nil, err
 	}
+	// The factory needs the bootstrap authorizer, so it is installed here; the
+	// control plane is opened earlier but its workers only run after this point.
+	if err := s.initAdminMachineRuntime(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	if cfg.Server.AdminAuth.OIDC.Enabled {
 		s.adminOIDC, err = newAdminOIDCRuntime(context.Background(), cfg.Server.AdminAuth.OIDC, s.httpClient)
 		if err != nil {
@@ -459,6 +471,15 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 				s.policyNotifyStop = func() { cancelNotify(); stopNotify() }
 			}
 		}
+	}
+	// The initial machine generation is published only AFTER the first
+	// authoritative policy synchronization above: the first admin request must
+	// never authenticate against a generation pinned to authority that the
+	// deployment's policy already superseded. File-mode deployments have no
+	// synchronization, so this publishes the bootstrap generation directly.
+	if err := s.startAdminMachineGeneration(); err != nil {
+		s.Close()
+		return nil, err
 	}
 	s.routes()
 	s.initAdminPlane()
@@ -626,77 +647,85 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s.quota == nil {
 		return fmt.Errorf("reload active config: quota store is required")
 	}
-	if err := s.quota.rebuildCallers(newCfg); err != nil {
+	// Prepare callers detached so any later failure leaves the live directory
+	// and persistent accounting untouched.
+	preparedCallers, err := prepareQuotaCallers(newCfg)
+	if err != nil {
 		return fmt.Errorf("reload active config: rebuild callers: %w", err)
 	}
-	// Cross-store reverse guard: a reload that would leave no enabled normal
-	// policy administrator is refused BEFORE publication. The candidate
-	// authorizer is built from the reloaded configuration and the candidate's own
-	// enabled inventory from the published snapshot. The build reads through the
-	// pool while the governance lock is held: it is not a transaction snapshot, so
-	// it can only ever refuse too much (fail closed), never admit a lockout.
-	// The guard only applies when the reloaded configuration actually uses the
-	// authoritative policy store: static/SQLite authority has no policy plane to
-	// lock out, and refusing those reloads would break unrelated control-plane work.
-	activePolicyAuthority := newCfg.Server.AdminAuth.Authorization.Enabled &&
-		strings.EqualFold(strings.TrimSpace(newCfg.Server.AdminAuth.Authorization.Source), "db")
-	if activePolicyAuthority && s.usage != nil && s.usage.db != nil {
-		candidate, guardErr := s.policyAuthorizerService(s.usage.db, newCfg, nil)
-		if guardErr != nil {
-			if rollbackErr := s.quota.rebuildCallers(s.cfg); rollbackErr != nil {
-				log.Printf("config control-plane reload: caller rollback failed")
-			}
-			return fmt.Errorf("reload active config: policy administrator guard unavailable: %w", guardErr)
-		}
-		if guardErr := s.GuardPolicyAdministrationLockout(candidate, newCfg); guardErr != nil {
-			if metrics := s.adminMetrics(); metrics != nil {
-				metrics.RecordPolicyGuardRefusal()
-			}
-			log.Printf("config control-plane reload refused for scope %q: policy administrator lockout guard", scope)
-			if rollbackErr := s.quota.rebuildCallers(s.cfg); rollbackErr != nil {
-				log.Printf("config control-plane reload: caller rollback failed")
-			}
-			return guardErr
-		}
-	}
-	// The machine authorizer has exactly one publisher: the synchronized path
-	// below reads the authoritative singleton revision and publishes the
-	// snapshot under the governance lock. A reload therefore never constructs
-	// and stores an authorizer of its own; doing so would publish a second,
-	// unrevisioned generation beside the one the poller maintains. The reload
-	// supplies the not-yet-published configuration so the candidate is built
-	// from the new caller directory and admin authorization settings.
-	syncCtx := context.Background()
-	if err := s.syncPolicyAuthorizationLocked(syncCtx, newCfg); err != nil {
-		// Nothing about the new bundle is published: no authorizer (the
-		// synchronized path did not store one), no credentials, no config
-		// snapshot. Restore the caller runtimes the rebuild already changed
-		// and fail closed for mutating admin requests, so an old authorizer
-		// can never authorize a mutation beside a configuration that expects
-		// a newer policy revision.
-		if s.policyFreshness != nil {
-			s.policyFreshness.invalidate()
-		}
-		if s.cfg != nil {
-			if rollbackErr := s.quota.rebuildCallers(s.cfg); rollbackErr != nil {
-				log.Printf("config control-plane reload: caller rollback failed; mutating admin requests remain fail-closed")
-			}
-		}
+	// The authoritative policy snapshot is PREPARED here, not published. The
+	// singleton read, the authorizer build and everything the reload derives from
+	// them happen before anything becomes visible, so a rejection at any point
+	// below leaves the published authorizer, credential generation, caller
+	// directory and configuration exactly as they were. The reload never stores an
+	// authorizer of its own: the one publisher below installs this snapshot, which
+	// is also the only place the machine authorizer can be replaced.
+	preparedPolicy, err := s.preparePolicyAuthorizationLocked(context.Background(), newCfg, preparedCallers)
+	if err != nil {
 		return fmt.Errorf("reload active config: synchronized authorizer: %w", err)
 	}
-	// Grants are published by the synchronized path above; credentials follow.
-	// This ordering does not jointly bind authentication and authorization
-	// generations.
-	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
-	s.adminAPIKeys = newAdminKeys
-	s.cfg = newCfg
-	s.callerAuth.rebuild(callerRuntimesInConfigOrder(newCfg, s.quota.callers))
-	if s.configSnapshot != nil {
-		s.configSnapshot.Store(newCfg)
+	if preparedPolicy == nil || preparedPolicy.authorizer == nil {
+		return fmt.Errorf("reload active config: synchronized authorizer: %w", ErrAuthorizationUnavailable)
 	}
-	// A reload applies its own window as well, under the same single path.
-	if err := s.applyAdminPolicyFreshness(newCfg); err != nil {
+	// The cross-store reverse guard runs INSIDE the publication, against the
+	// candidate machine generation: it must answer for the administrators this
+	// reload would actually install, not for the ones still published (a reload
+	// that removes the last admin key or mTLS/oauth mapping otherwise passes
+	// because the old generation still has it). The guard only applies when the
+	// reloaded configuration uses the authoritative policy store: static/SQLite
+	// authority has no policy plane to lock out, and refusing those reloads would
+	// break unrelated control-plane work.
+	guardPolicy := preparedPolicy.authoritative && s.usage != nil && s.usage.db != nil
+	// Resolve the reload's own freshness window before publication: it is a
+	// configuration error, and a configuration error must not follow a partial
+	// publication.
+	maxStaleness, err := adminPolicyMaxStaleness(newCfg.Server.AdminAuth.Authorization)
+	if err != nil {
 		return fmt.Errorf("reload active config: freshness: %w", err)
+	}
+	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
+	// ONE publication installs the whole reload or none of it: the synchronized
+	// authorizer and its freshness acknowledgement, the prepared caller
+	// directory, the serving-port key catalogue, the configuration, and the
+	// machine generation prepared exactly once from that authorizer and
+	// configuration. Preparation runs inside the publication lock, so the
+	// generation is built from the configuration being published and cannot be
+	// built from a superseded one. A preparation failure publishes nothing; the
+	// commit after it cannot fail.
+	if err := s.publishMachinePlane(func(machinePlaneSnapshot) (*machinePlanePublication, error) {
+		generation, prepErr := s.prepareAdminMachineConfigGeneration(newCfg, preparedPolicy.authorizer)
+		if prepErr != nil {
+			return nil, fmt.Errorf("reload active config: prepare machine generation: %w", prepErr)
+		}
+		if guardPolicy {
+			// The inventory of the CANDIDATE: the generation this publication is
+			// about to install, or - when the reloaded configuration has no machine
+			// plane - the configured machine credentials of the candidate document.
+			// Using the published generation here would let a reload remove the last
+			// administrator, because the old generation still has it.
+			var inventory policyAdminInventory = configuredPolicyAdminInventory{}
+			if generation != nil {
+				inventory = generationInventory{generation: generation}
+			}
+			if guardErr := s.guardPolicyAdministrationLockoutAgainst(s.policyAuthorizerView(preparedPolicy.authorizer), newCfg, inventory); guardErr != nil {
+				if metrics := s.adminMetrics(); metrics != nil {
+					metrics.RecordPolicyGuardRefusal()
+				}
+				log.Printf("config control-plane reload refused for scope %q: policy administrator lockout guard", scope)
+				return nil, guardErr
+			}
+		}
+		return &machinePlanePublication{
+			Generation:   generation,
+			Authorizer:   preparedPolicy.authorizer,
+			Config:       newCfg,
+			Callers:      preparedCallers,
+			APIKeys:      newAdminKeys,
+			MaxStaleness: maxStaleness,
+			Policy:       preparedPolicy.observation,
+		}, nil
+	}); err != nil {
+		return fmt.Errorf("reload active config: publish machine plane: %w", err)
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
@@ -705,7 +734,7 @@ func (s *Service) reloadActiveConfigFromDB() error {
 		// instead of leaving a half-applied control plane.
 		log.Printf("config control-plane reload: admin listener settings changed; restart required for admin.listen, admin.tls and admin.limits to take effect")
 	}
-	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(s.cfg.Callers))
+	log.Printf("config control-plane reload applied: scope=%q callers=%d", scope, len(newCfg.Callers))
 	return nil
 }
 
@@ -5690,4 +5719,40 @@ func contentTypeIsSSE(h http.Header) bool {
 
 func (s *Service) identifiersAvailable() bool {
 	return s.cfg.Server.Identifiers.passthrough() || s.identifiers != nil
+}
+
+// startAdminMachineGeneration publishes the initial machine generation. It runs
+// after the first policy synchronization so the generation is pinned to the
+// snapshot that synchronization published. A first synchronization that failed
+// leaves the bootstrap snapshot current: the plane still authenticates, and the
+// policy freshness gate keeps mutating decisions fail-closed.
+func (s *Service) startAdminMachineGeneration() error {
+	if s == nil || s.cfg == nil || s.machineGenerationBuilder == nil {
+		return nil
+	}
+	c := s.cfg.Admin.Authentication
+	// Preserve the empty listener's existing trusted bootstrap setter seam. No
+	// credential-empty default publication is needed to keep that plane closed.
+	if len(s.cfg.Server.AdminAuth.APIKeys) == 0 && !adminMTLSTrustConfigured(c.MTLS) && len(c.Issuers) == 0 && len(c.Emergency.Credentials) == 0 {
+		return nil
+	}
+	// Prepare INSIDE the publication, from the configuration and the authorizer
+	// that are current under the lock. The policy poller and its LISTEN/NOTIFY
+	// callback run concurrently from startup, so a generation prepared before the
+	// lock could be pinned to an authorizer a synchronization already superseded -
+	// and every later synchronization would then see "no change" and leave machine
+	// requests on revoked grants.
+	return s.publishMachinePlane(func(current machinePlaneSnapshot) (*machinePlanePublication, error) {
+		if current.Config == nil || current.Authorizer == nil {
+			return nil, errors.New("initial machine generation requires a published configuration and authorizer")
+		}
+		next, err := s.prepareAdminMachineConfigGeneration(current.Config, current.Authorizer)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
+			return nil, errors.New("initial machine generation requires a generation factory")
+		}
+		return &machinePlanePublication{Generation: next}, nil
+	})
 }

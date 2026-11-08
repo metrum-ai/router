@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -32,7 +33,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -59,8 +60,51 @@ func main() {
 		reportsCommand(os.Args[2:])
 	case "blueprint":
 		blueprintCommand(os.Args[2:])
+	case "emergency":
+		emergencyCommand(os.Args[2:])
 	default:
 		die("unsupported command %q", os.Args[1])
+	}
+}
+
+// emergencyCommand runs the OFFLINE emergency activate/deactivate controller
+// against the control-plane database. It is a local command: no URL, token or
+// admin HTTP route is involved, and events commit with the lifecycle row.
+func emergencyCommand(args []string) {
+	if len(args) < 2 || (args[0] != "activate" && args[0] != "deactivate") {
+		die("usage: metrum-ai-routerctl emergency <activate|deactivate> --config <file> --credential-id <id> --reason <text> [--until <rfc3339>]")
+	}
+	// One parse for bootstrap and lifecycle flags: the inner controller receives
+	// only lifecycle arguments, so it never sees --config/--db.
+	fs := flag.NewFlagSet("emergency", flag.ExitOnError)
+	configPath := fs.String("config", "", "router configuration file with emergency enrollments")
+	credentialID := fs.String("credential-id", "", "enrolled credential ID")
+	reason := fs.String("reason", "", "bounded activation/deactivation reason")
+	until := fs.String("until", "", "absolute activation deadline (RFC3339)")
+	opts := addConfigDBFlags(fs)
+	fs.Parse(args[1:])
+	if strings.TrimSpace(*configPath) == "" {
+		die("emergency requires --config")
+	}
+	cfg, err := router.LoadConfig(*configPath)
+	if err != nil {
+		die("%v", err)
+	}
+	db, closer, err := openConfigDB(*opts)
+	if err != nil {
+		die("%v", err)
+	}
+	defer closer()
+	run, err := router.RouterctlEmergencyCommand(db, cfg, 1)
+	if err != nil {
+		die("%v", err)
+	}
+	inner := []string{args[0], "--credential-id", *credentialID, "--reason", *reason}
+	if strings.TrimSpace(*until) != "" {
+		inner = append(inner, "--until", *until)
+	}
+	if err := run(context.Background(), inner, os.Stdout); err != nil {
+		die("%v", err)
 	}
 }
 
