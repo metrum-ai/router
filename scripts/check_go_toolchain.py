@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 
-MINIMUM = (1, 26, 10)
+MINIMUM = (1, 27, 3)
 
 
 def supported(version):
@@ -20,9 +20,9 @@ def main():
     fields = output.split()
     version = fields[2] if len(fields) >= 3 and fields[:2] == ["go", "version"] else "unknown"
     if not supported(version):
-        print(f"Go patch floor violation: {version}; require stable Go >= 1.26.10", file=sys.stderr)
+        print(f"Go patch floor violation: {version}; require stable Go >= 1.27.3", file=sys.stderr)
         return 1
-    print(f"Go patch floor verified: {version} (minimum 1.26.10)")
+    print(f"Go patch floor verified: {version} (minimum 1.27.3)")
     return 0
 
 

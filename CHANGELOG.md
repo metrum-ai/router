@@ -112,11 +112,22 @@ under `migration_policy: deployment-job` (the default); run the documented non-s
 
 ### Security
 
-- Release binaries are built with Go 1.26.10, which carries the Go standard-library security fixes
-  for the 37 package and symbol advisories recorded in #854 (GO-2026-4599 through GO-2026-6809; the
-  Go vulnerability database lists them at https://pkg.go.dev/vuln/). Source builds require at least
-  Go 1.26.10, and the CI, release and container build producers assert the version they actually
-  run (#854).
+- v4.8.0 release binaries are built with Go 1.27.3. That toolchain carries the
+  Go 1.27.2 standard-library security fixes (net/http HTTP/1 and HTTP/2 request
+  handling, `crypto/tls` ECH, `html/template` escaping, `mime/multipart` header
+  parsing) and Go 1.27.3's `crypto/x509` chain filter for distrusted intermediate
+  certificates. Source builds require at least Go 1.27.3; the CI, release and
+  container build producers use the patched toolchain and assert the version they
+  actually run. The Go 1.26.10 floor that first carried the standard-library
+  security fixes for the 37 package and symbol advisories recorded in #854
+  (GO-2026-4599 through GO-2026-6809; the Go vulnerability database lists them at
+  https://pkg.go.dev/vuln/) remains the security history of this release, and a
+  `govulncheck` scan on the shipped toolchain reports no package or symbol
+  findings. Go 1.27 also removes the `asynctimerchan`, `gotypesalias`,
+  `tlsunsafeekm`, `tlsrsakex`, `tls3des`, `tls10server` and `x509keypairleaf`
+  GODEBUG settings; this tree sets none of them and relies on none of the removed
+  behaviours. The one changed default, `tracebacklabels=1`, only adds pprof
+  goroutine labels to tracebacks and is left at its new default.
 
 - Typed safe authorization problems and a trusted PostgreSQL policy-mutation freshness gate backed
   by complete revision synchronization: every non-read `/admin/v1` operation (emergency credentials
@@ -127,9 +138,6 @@ under `migration_policy: deployment-job` (the default); run the documented non-s
   at 10s+1ns). The machine authorizer has one publisher: a configuration reload asks the
   synchronized path to publish instead of storing its own authorizer.
 
-- The PostgreSQL revision notifier serializes shutdown with its listener goroutine and awaits pgx
-  asynchronous connection cleanup, avoiding concurrent connection reads and closure during service
-  shutdown.
 
 ### Authorization compatibility
 
@@ -238,7 +246,35 @@ to `/admin/v1`, then set `legacy_routes_on_serving_port: false`.
 
 ### Release verification
 
-The live release gate runs on this release commit with the v4.7.0 gate configuration unchanged; the per-stage result is recorded here before the release is tagged.
+The live release gate ran on the release commit `f2ae91d1` with the v4.7.0 gate configuration
+unchanged (baseline sha256 `41a3dc29…`, stage-C sha256 `cafaee3d…`; `scripts/release_gate.py` sha256
+`1cffad95…`, identical to the v4.7.0 tag), in one sequential run so the timing-sensitive stages
+shared one pool. The router was built with Go 1.27.3. Every red cell is reported as red.
+
+| Stage | Result on f2ae91d1 | v4.7.1 | v4.7.0 |
+| --- | --- | --- | --- |
+| A: 24 agent cells (6 routed lanes and 2 direct baselines x file/edit/quote) | 20/24 | 20/24 | 19-21/24 across the replicated runs |
+| B: Harbor matrix, routed vs direct in both API styles | pass, 5/5 in every lane plus the offline replay | pass, 5/5 plus the offline replay | pass, 5/5 plus the offline replay |
+| C: live SDK compatibility suites | fail, fully classified | fail, fully classified | fail, fully classified |
+| D: parallel tool calls, direct vs routed | pass, 6/6 | pass, 6/6 | pass, 6/6 |
+
+The four red stage-A cells are the three `openai-chat -> gpt` cells, where the provider answers
+`400 upstream-rejected` for the `reasoning_effort` plus tools request shape (the documented
+limitation, identical on v4.7.0 and v4.7.1), and `routed-openai-responses-claude/quote`, which failed
+on admission `429 tpm-exceeded` at the unchanged caller quota, the same quota class v4.7.0 recorded
+as moving between cells from run to run. Stage C's tester reports are byte-identical to the archived
+v4.7.0 reports apart from request ids and the local port: documented `501` surfaces and typed `400`
+refusals, with no router defect in the classification, and the stage is not reported as a pass.
+Stage B passed the bounded Harbor matrix on a dedicated Docker host: every lane 5/5, routed equal to
+direct on every task, and the offline replay passed before any provider call.
+
+Upgrade path, with the released v4.7.1 binaries: a v4.7.1 usage database (schema 12, data version 1)
+takes exactly the three `20261107xx` usage migrations, `verify-serving` passes, the router starts and
+serves (usage rows 3 to 6), and the upgraded schema is identical to a fresh v4.8.0 install — 49
+tables, 1082 columns and 227 indexes on both sides. A v4.7.1 file-config deployment returns identical
+outcomes on both versions (readiness, `/v1/models`, a chat completion, `/metrics`, the legacy admin
+route, `/admin/v1` on the serving port, an unknown path), and a router-config control-plane database
+moves from schema 9 to 12 with `verify` passing.
 
 ## [4.7.1] - 2026-11-08
 

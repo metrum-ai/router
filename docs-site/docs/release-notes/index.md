@@ -104,11 +104,18 @@ snapshot before deploying the earlier package. The deployment-job order for both
 
 ### Security
 
-- v4.8.0 release binaries are built with Go 1.26.10, which carries the Go standard-library security
-  fixes for the 37 package and symbol advisories recorded in
+- v4.8.0 release binaries are built with Go 1.27.3. That toolchain carries the Go 1.27.2
+  standard-library security fixes (net/http HTTP/1 and HTTP/2 request handling, `crypto/tls` ECH,
+  `html/template` escaping, `mime/multipart` header parsing) and Go 1.27.3's `crypto/x509` chain
+  filter for distrusted intermediate certificates. Source builds require at least Go 1.27.3; the CI,
+  release and container build producers use the patched toolchain and assert the version they
+  actually run. The Go 1.26.10 floor that first carried the standard-library security fixes for the
+  37 package and symbol advisories recorded in
   [#854](https://github.com/metrum-ai/router/issues/854) (GO-2026-4599 through GO-2026-6809; the
-  [Go vulnerability database](https://pkg.go.dev/vuln/) lists them). Source builds require at least
-  Go 1.26.10, and the CI, release and container build producers assert the version they actually run.
+  [Go vulnerability database](https://pkg.go.dev/vuln/) lists them) remains the security history of
+  this release. Go 1.27 also removes the `asynctimerchan`, `gotypesalias`, `tlsunsafeekm`,
+  `tlsrsakex`, `tls3des`, `tls10server` and `x509keypairleaf` GODEBUG settings; this tree sets none
+  of them and relies on none of the removed behaviours.
 - The entire `router-internal:` prefix is reserved for internal authorization identities: policies or
   public subject mappings that select it fail startup/reload validation instead of being read as
   public grants.
@@ -133,7 +140,27 @@ snapshot before deploying the earlier package. The deployment-job order for both
 
 ### Release verification
 
-The live release gate runs on this release commit with the v4.7.0 gate configuration unchanged; the per-stage result is recorded here before the release is tagged.
+The live release gate ran on the release commit `f2ae91d1` with the v4.7.0 gate configuration
+unchanged, byte for byte, in one sequential run, with the router built with Go 1.27.3.
+
+| Stage | Result on f2ae91d1 | v4.7.1 | v4.7.0 |
+| --- | --- | --- | --- |
+| A: 24 agent cells | 20/24 | 20/24 | 19-21/24 |
+| B: Harbor matrix, both API styles | pass, 5/5 in every lane plus the offline replay | pass, 5/5 plus the replay | pass, 5/5 plus the replay |
+| C: live SDK compatibility suites | fail, fully classified | fail, fully classified | fail, fully classified |
+| D: parallel tool calls | pass, 6/6 | pass, 6/6 | pass, 6/6 |
+
+The four red stage-A cells are the three `openai-chat -> gpt` cells (the documented
+`reasoning_effort` plus tools limitation, identical on v4.7.0 and v4.7.1) and
+`routed-openai-responses-claude/quote` on admission `429` at the unchanged caller quota. Stage C's
+tester reports are byte-identical to the archived v4.7.0 reports apart from request ids and the local
+port, so the classification is unchanged and the stage is not reported as a pass.
+
+The upgrade path is proven with the released v4.7.1 binaries: the v4.7.1 usage database takes exactly
+the three new usage migrations, `verify-serving` passes, the router starts and serves, and the
+upgraded schema matches a fresh v4.8.0 install exactly (49 tables, 1082 columns, 227 indexes). A
+v4.7.1 file-config deployment behaves identically on both versions, and a router-config
+control-plane database moves from schema 9 to 12.
 
 ### Upgrade
 

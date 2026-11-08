@@ -19,7 +19,7 @@ RUN apt-get update \
     unzip \
   && rm -rf /var/lib/apt/lists/*
 
-ARG GO_VERSION=1.26.10
+ARG GO_VERSION=1.27.3
 RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
     | tar -C /usr/local -xz \
   && ln -sf /usr/local/go/bin/go /usr/local/bin/go \
