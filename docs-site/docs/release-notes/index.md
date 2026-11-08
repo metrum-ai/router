@@ -56,9 +56,8 @@ infer the running version from a date written in documentation.
   same toolchain. The Go standard-library advisories that apply
   to Go 1.26.0, including the 37 package and symbol advisories recorded in
   [#854](https://github.com/metrum-ai/router/issues/854) (GO-2026-4599 through
-  GO-2026-6809; the Go vulnerability database lists them at
-  <https://pkg.go.dev/vuln/>), are fixed in that toolchain, so v4.7.1 binaries do
-  not carry them. A `govulncheck` scan of this tree on exactly Go 1.26.10
+  GO-2026-6809; the [Go vulnerability database](https://pkg.go.dev/vuln/) lists
+  them), are fixed in that toolchain, so v4.7.1 binaries do not carry them. A `govulncheck` scan of this tree on exactly Go 1.26.10
   reports no package or symbol findings and one module-only advisory
   (GO-2026-5932, `golang.org/x/crypto/openpgp`) that router code does not call.
 
