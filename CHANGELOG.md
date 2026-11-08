@@ -104,8 +104,8 @@ database restore.
 - v4.7.1 release binaries are built with Go 1.26.10, which carries the Go
   standard-library security fixes for the 37 package and symbol advisories
   recorded in #854 (GO-2026-4599 through GO-2026-6809; the Go vulnerability
-  database lists them at https://pkg.go.dev/vuln/). Container images use the same
-  toolchain. Source builds require at least Go 1.26.10, and the CI, release and
+  database lists them at https://pkg.go.dev/vuln/). Source builds require at
+  least Go 1.26.10, and the CI, release and
   container build producers assert the version they actually run. A
   `govulncheck` scan of this tree on exactly Go 1.26.10 reports no package or
   symbol findings and one module-only advisory (GO-2026-5932,
