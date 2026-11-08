@@ -18,8 +18,8 @@ infer the running version from a date written in documentation.
 
 ### Highlights
 
-- **Rebuilt with Go 1.26.10.** Every v4.7.1 binary and container image is built
-  with Go 1.26.10, which carries the Go standard-library security fixes for the
+- **Rebuilt with Go 1.26.10.** Every v4.7.1 binary is built with Go 1.26.10,
+  which carries the Go standard-library security fixes for the
   37 advisories recorded in
   [#854](https://github.com/metrum-ai/router/issues/854). Source builds now
   require Go 1.26.10 or newer, and the CI, release and container build producers
@@ -35,7 +35,7 @@ infer the running version from a date written in documentation.
 
 | Area | Change |
 | --- | --- |
-| Build | v4.7.1 binaries and container images use Go 1.26.10; source builds require at least Go 1.26.10 |
+| Build | v4.7.1 binaries use Go 1.26.10; source builds require at least Go 1.26.10 |
 | Migration tooling | `--action=plan --json` and `--action=status --json` return a document while a migration is pending: id, name, release, checksum, manifest digest, execution, maintenance, lock, timeout and rollback classes, data-job key, postcondition and dependencies. A JSON encoding failure is a non-zero exit, never an empty success |
 | Database | Unchanged: the usage schema stays at version 12. An upgrade from v4.7.0 runs no migration, and a rollback to v4.7.0 needs no restore for schema reasons |
 | Configuration and API | Unchanged: no field is added, renamed or removed, and no authorization decision changes |
@@ -52,8 +52,8 @@ infer the running version from a date written in documentation.
 
 ### Security
 
-- v4.7.1 release binaries are built with Go 1.26.10, and container images use the
-  same toolchain. The Go standard-library advisories that apply
+- v4.7.1 release binaries are built with Go 1.26.10. The Go standard-library
+  advisories that apply
   to Go 1.26.0, including the 37 package and symbol advisories recorded in
   [#854](https://github.com/metrum-ai/router/issues/854) (GO-2026-4599 through
   GO-2026-6809; the [Go vulnerability database](https://pkg.go.dev/vuln/) lists
