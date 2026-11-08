@@ -60,9 +60,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table and its ledger migration ship in the guarded policy-resource change
   (#866) in the same release; reads and static/SQLite authority are unaffected,
   and restore recovery today is a restart (an operator reseed ships with #866).
-- v4.8.0 release binaries are built with Go 1.26.10 for standard-library
-  security fixes. Source builds require at least Go 1.26.10; CI, release and
-  container build producers use the patched toolchain.
+- v4.8.0 release binaries are built with Go 1.27.3. That toolchain carries the
+  Go 1.27.2 standard-library security fixes (net/http HTTP/1 and HTTP/2 request
+  handling, `crypto/tls` ECH, `html/template` escaping, `mime/multipart` header
+  parsing) and Go 1.27.3's `crypto/x509` chain filter for distrusted intermediate
+  certificates. Source builds require at least Go 1.27.3; CI, release and
+  container build producers use the patched toolchain. Go 1.27 also removes the
+  `asynctimerchan`, `gotypesalias`, `tlsunsafeekm`, `tlsrsakex`, `tls3des`,
+  `tls10server` and `x509keypairleaf` GODEBUG settings; this tree sets none of
+  them and relies on none of the removed behaviours. The one changed default,
+  `tracebacklabels=1`, only adds pprof goroutine labels to tracebacks and is left
+  at its new default.
 
 - Guarded policy resources on `/admin/v1`: 19 typed operations (set/rule/membership list-create-get-replace-delete, validate, diff, activate, rollback) inside one mutex plus an exclusive singleton transaction, with actor-bound authorization before any precondition work, immutable active/retired content, clone-rollback with fresh IDs and a last-normal-administrator guard. Mutations write exactly one usage audit row in their own transaction (#869); a request without authenticated audit metadata, or a rejected audit insert, changes nothing. Production wiring installs every operation, builds the enabled-administrator inventory from the published configuration under the lock, and refuses a reload that would lock out policy administration. Policy operations take their `If-Match` from the POLICY revision, not the configuration revision. The policy runtime singleton is registered in the usage migration ledger as `2026110704` (schema 15).
 
