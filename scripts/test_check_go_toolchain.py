@@ -23,11 +23,13 @@ class GoPatchFloorTests(unittest.TestCase):
         self.assertIn("golang:1.26.10-alpine", (ROOT / "Dockerfile").read_text())
         self.assertIn("ARG GO_VERSION=1.26.10\n", (ROOT / "deploy/github-runners-router/Dockerfile").read_text())
 
-    def test_security_note_is_in_unreleased(self):
+    def test_security_note_is_in_newest_section(self):
+        # main carries the note under [Unreleased]; a release branch carries it
+        # in the newest released section, so check the first section either way.
         text = (ROOT / "CHANGELOG.md").read_text()
-        unreleased = text.split("## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
-        self.assertIn("### Security", unreleased)
-        self.assertIn("release binaries are built with Go 1.26.10", unreleased)
+        newest = text.split("\n## [", 1)[1].split("\n## [", 1)[0]
+        self.assertIn("### Security", newest)
+        self.assertIn("release binaries are built with Go 1.26.10", newest)
 
     def test_ci_and_release_builds_assert_actual_runtime(self):
         for name in ("ci.yml", "release.yml", "release-compat.yml"):

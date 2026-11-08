@@ -52,7 +52,8 @@ infer the running version from a date written in documentation.
 
 ### Security
 
-- v4.7.1 is built with Go 1.26.10. The Go standard-library advisories that apply
+- v4.7.1 release binaries are built with Go 1.26.10, and container images use the
+  same toolchain. The Go standard-library advisories that apply
   to Go 1.26.0, including the 37 package and symbol advisories recorded in
   [#854](https://github.com/metrum-ai/router/issues/854) (GO-2026-4599 through
   GO-2026-6809; the Go vulnerability database lists them at

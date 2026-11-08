@@ -28,12 +28,12 @@ database restore.
 
 ### Security
 
-- Release binaries and container images are built with Go 1.26.10, which carries
-  the Go standard-library security fixes for the 37 package and symbol
-  advisories recorded in #854 (GO-2026-4599 through GO-2026-6809; the Go
-  vulnerability database lists them at https://pkg.go.dev/vuln/). Source builds
-  require at least Go 1.26.10, and the CI, release and container build producers
-  use the patched toolchain and assert the version they actually run. A
+- v4.7.1 release binaries are built with Go 1.26.10, which carries the Go
+  standard-library security fixes for the 37 package and symbol advisories
+  recorded in #854 (GO-2026-4599 through GO-2026-6809; the Go vulnerability
+  database lists them at https://pkg.go.dev/vuln/). Container images use the same
+  toolchain. Source builds require at least Go 1.26.10, and the CI, release and
+  container build producers assert the version they actually run. A
   `govulncheck` scan of this tree on exactly Go 1.26.10 reports no package or
   symbol findings and one module-only advisory (GO-2026-5932,
   `golang.org/x/crypto/openpgp`) that router code does not call.
@@ -73,12 +73,18 @@ the safe JSON plan, serves a request (usage rows 0 to 1) and finishes at
 `schema_version=12 data_version=1 state=current pending=0 entries=13`; the
 released v4.7.0 binaries still read that database afterwards.
 
-This change set contains release documentation only:
+This change set contains release documentation and one test-only change:
 
 ```
 CHANGELOG.md
+scripts/test_check_go_toolchain.py
 docs-site/docs/release-notes/index.md
 ```
+
+The test change is the #854 Go-floor note assertion: it read the `[Unreleased]`
+section by name, which a release branch does not have once its notes become the
+newest released section, so it now reads the newest section (still `[Unreleased]`
+on main). It asserts the same two strings and no router behaviour.
 
 `git diff --stat 2deb954d791d HEAD -- internal cmd go.mod go.sum` is empty, so
 the router code is identical to the gated commit.
