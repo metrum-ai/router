@@ -50,13 +50,21 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 	if err != nil {
 		return err
 	}
+	// The guarded policy operations are part of the production surface whenever a
+	// transaction-capable usage store exists; their handlers need the same store.
+	policyMounted := s.usage != nil && s.usage.db != nil
+	if policyMounted {
+		if registry, err = adminV1RegistryWithPolicy(); err != nil {
+			return err
+		}
+	}
 	idempotency, idempotencyOn := s.adminIdempotencyStore()
 	settings := s.adminAPISettings()
 	return RegisterAdminV1(r, AdminV1Deps{
 		Registry:     registry,
 		Authenticate: authenticate,
 		Authorize:    s.Authorize,
-		Handlers:     s.adminV1HandlerSet(registry),
+		Handlers:     s.adminV1Handlers(registry, policyMounted),
 		ResolveDomain: func(principal Principal) string {
 			return s.adminCredentialDomain(principal)
 		},
@@ -69,19 +77,34 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 			}
 			return AdminV1CapturedRowDomains(s.contentCaptureTargetDomains, r)
 		},
-		CurrentETag:      s.adminV1CurrentETag,
-		CursorCodec:      NewAdminCursorCodec(nil),
-		Pagination:       settings.pagination,
-		Idempotency:      idempotency,
-		IdempotencyOn:    idempotencyOn,
-		Limiter:          NewAdminRateLimiter(settings.rateLimit),
-		Throttle:         NewAdminAuthThrottle(settings.authFailureThrottle),
-		Denials:          s.adminDenialSink(),
-		CredentialEvents: s.adminCredentialEventSink(),
-		Observe:          s.adminObserveHookFor(),
-		Audit:            s.adminAuditSink,
-		Clock:            s.adminNow,
+		CurrentETag:       s.adminV1CurrentETag,
+		PolicyCurrentETag: s.policyCurrentETag,
+		CursorCodec:       NewAdminCursorCodec(nil),
+		Pagination:        settings.pagination,
+		Idempotency:       idempotency,
+		IdempotencyOn:     idempotencyOn,
+		Limiter:           NewAdminRateLimiter(settings.rateLimit),
+		Throttle:          NewAdminAuthThrottle(settings.authFailureThrottle),
+		Denials:           s.adminDenialSink(),
+		CredentialEvents:  s.adminCredentialEventSink(),
+		Observe:           s.adminObserveHookFor(),
+		Audit:             s.adminAuditSink,
+		Clock:             s.adminNow,
 	})
+}
+
+// adminV1Handlers binds every operation to its handler, adding the guarded
+// policy handlers (with the real same-transaction audit writer) when the policy
+// surface is mounted.
+func (s *Service) adminV1Handlers(registry *AdminV1Registry, policyMounted bool) map[string]http.HandlerFunc {
+	handlers := s.adminV1HandlerSet(registry)
+	if !policyMounted || s.usage == nil {
+		return handlers
+	}
+	for key, handler := range newPolicyAdminHandlersWithAudit(s.usage, s.policyAdminDeps(), policyMutationAuditWriter) {
+		handlers[key] = handler
+	}
+	return handlers
 }
 
 // adminV1HandlerSet binds every operation to the handler that serves its legacy

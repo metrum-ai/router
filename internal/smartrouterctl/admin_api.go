@@ -94,17 +94,24 @@ func (e *AdminAPIError) Error() string {
 // AdminAPIError with the typed error body. The response body is returned
 // raw on success. The admin token never appears in errors.
 func (c *AdminAPIClient) Do(method, path string, body any, headers map[string]string) ([]byte, int, error) {
+	raw, status, _, err := c.DoWithHeaders(method, path, body, headers)
+	return raw, status, err
+}
+
+// DoWithHeaders preserves shared transport/error behavior while exposing ETag
+// and signed-pagination metadata to versioned API clients.
+func (c *AdminAPIClient) DoWithHeaders(method, path string, body any, headers map[string]string) ([]byte, int, http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 		reader = bytes.NewReader(raw)
 	}
 	req, err := http.NewRequest(method, c.BaseURL+path, reader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -120,12 +127,12 @@ func (c *AdminAPIClient) Do(method, path string, body any, headers map[string]st
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("admin API request failed: %w", err)
+		return nil, 0, nil, fmt.Errorf("admin API request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, resp.StatusCode, resp.Header.Clone(), err
 	}
 	if resp.StatusCode >= 400 {
 		apiErr := &AdminAPIError{Status: resp.StatusCode, Type: "error", Raw: string(raw)}
@@ -139,9 +146,9 @@ func (c *AdminAPIClient) Do(method, path string, body any, headers map[string]st
 			apiErr.Type = parsed.Error.Type
 			apiErr.Message = parsed.Error.Message
 		}
-		return nil, resp.StatusCode, apiErr
+		return nil, resp.StatusCode, resp.Header.Clone(), apiErr
 	}
-	return raw, resp.StatusCode, nil
+	return raw, resp.StatusCode, resp.Header.Clone(), nil
 }
 
 // NewIdempotencyKey returns a random idempotency key for a mutating call.
