@@ -5,86 +5,276 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.8.0] - 2026-11-08
+
+Control plane release. Adds an opt-in, machine-to-machine admin control plane on its own listener:
+admin API keys, OAuth 2.0 client-credentials and workload identity federation tokens with sender
+constraints, mTLS trust domains, offline emergency credentials, one Casbin decision point on every
+admin operation, a versioned `/admin/v1` contract with generated OpenAPI 3.1, the policy-resource
+API with live reload and a freshness gate, audit written in the same transaction as the change, and
+automated TLS for both listeners.
+
+A v4.7 configuration keeps working unchanged. `admin.enabled` defaults to `false` (one listener,
+exactly v4.7 behaviour), `admin.legacy_routes_on_serving_port` stays `true`, `/metrics` stays on the
+serving port with the v4.7 caller-token scrape, and the browser reports UI is untouched.
+
+**Migrations.** Two scopes move. All six migrations are additive and online (column additions, new
+tables and indexes, no row rewrite), transactional, carry no data job, and are `restore-required`
+for rollback: usage schema **12 → 15** (`2026110702`, `2026110703`, `2026110704`) and router-config
+schema **9 → 12** (`2026110601`, `2026110701`, `2026110801`). The serving process never applies them
+under `migration_policy: deployment-job` (the default); run the documented non-serving
+`plan → apply → verify-serving` job for both scopes.
 
 ### Added
 
-- Admin machine authentication on the dedicated admin listener: configured
-  admin API keys, OAuth 2.0 client-credentials and workload identity federation
-  tokens with DPoP or certificate sender constraints, mTLS trust domains, and
-  offline-enrolled emergency keys and certificates. Every request captures one
-  immutable authentication/authorization generation and every operation still
-  goes through the single authorization decision point.
-- Admin API key lifecycle endpoints (`/admin/v1/admin-keys`): issue (secret shown
-  once), list, get, rotate with overlap and revoke, with authorization on the
-  shared plane-global `admin:keys` object and an authoritative row read on every
-  authentication.
+- **Dedicated admin listener** (#809). `admin.listen` defaults to `127.0.0.1:8081`; the listener is
+  opt-in, machine-to-machine only (no HTTP Basic, cookies, browser sessions, HTML or CORS), and
+  serves `/healthz`, `/readyz` and the versioned `/admin/v1` operations. It returns
+  `application/problem+json` 404 for inference paths, the docs site and the reports UI, 405 for an
+  unsupported method on a mounted operation, and the serving socket returns 404 for `/admin/v1/*`.
+  Every response carries `Cache-Control: no-store`, `nosniff`, `default-src 'none'` CSP,
+  `X-Frame-Options: DENY` and `no-referrer`. A non-loopback bind without TLS refuses to start unless
+  `allow_plaintext_non_loopback: true`. The listener starts after the serving listener, drains within
+  `limits.shutdown_timeout_ms`, never changes serving readiness when it stops, and stops the process
+  if a plane the operator enabled cannot bind. The legacy machine `/admin/*` routes stay on the
+  serving port behind `legacy_routes_on_serving_port: true` with `Deprecation`, `Sunset` and `Link:
+  </admin/v1>` headers.
+
+- **Machine authentication on the admin plane** (#814): mTLS client identities from explicitly
+  configured trust domains (issuer-qualified SAN maps, never derived from certificate DNs or
+  forwarded headers), OAuth 2.0 client-credentials and workload identity federation tokens with
+  audience, algorithm, lifetime, clock-skew and JWKS-host bounds, DPoP or certificate sender
+  constraints (`cnf.jkt` tokens must be presented with `DPoP`), configured admin API keys, and
+  offline-enrolled emergency keys and certificates. Every request captures one immutable
+  authentication/authorization generation before credential validation, and there is exactly one
+  publication path; reload, CA rotation and policy synchronization publish one complete replacement
+  atomically, and a rejected reload changes nothing. Admin requests run with a finite 60-second
+  deadline.
+
+- **Admin API key lifecycle** (#815) at `/admin/v1/admin-keys`: issue (the secret is shown once),
+  list, get, rotate with an overlap window, revoke and expire, authorized against the plane-global
+  `admin:keys` object, with an authoritative row read on every authentication.
+
+- **Casbin on every admin decision** (#812). Every operation goes through the single
+  `Authorizer.Authorize(ctx, principal, domain, object, action)` decision point. Compatibility grants
+  translate the v4.7 permission maps and flags, wildcard rules are bounded, escalation and
+  last-normal-administrator guards are enforced, and an advisory gate tracks the Casbin advisories.
+
+- **Policy-resource API** (#813): 19 typed operations on `/admin/v1` (policy-set
+  list/create/get/replace/delete, nested rule and membership list/create/get/replace/delete, and
+  validate/diff/activate/rollback) inside one governance mutex plus an exclusive singleton
+  transaction, with actor-bound authorization before any precondition work, immutable
+  active/retired content, clone-rollback with fresh IDs, and a last-normal-administrator guard on
+  draft writes as well as activate/rollback. Policy operations take `If-Match` from the POLICY
+  revision, not the configuration revision. Live reload and replica propagation run through the
+  authoritative store; the freshness gate answers `503 policy-stale` on an expired revision clock
+  while reads stay available.
+
+- **`/admin/v1` contract** (#811): a typed versioned route registry with generated OpenAPI 3.1 and a
+  CI drift check, RFC 9457 problem+json errors, pagination and filters with HMAC-signed cursors,
+  `ETag`/`If-Match`, `Idempotency-Key` (one persisted record per principal, domain and operation,
+  24-hour TTL), dry-run, a per-identity rate limit and an authentication-failure throttle, and an
+  explicit deprecation policy. Defaults: `pagination` 50/500, `idempotency` 24h with 128-byte keys
+  and 1 MiB responses, `rate_limit` 20 read rps / 5 write rps with 40/10 bursts and 4096 identities,
+  `auth_failure_throttle` 5 free attempts in 5 minutes with 250 ms-to-4 s backoff.
+
+- **Audit for admin mutations** (#816): the change-audit row is written in the same transaction as
+  the change (one `router_admin_audit_events` row for usage-database changes, one
+  `router_admin_credential_events` row plus audit columns for control-plane changes), denial columns
+  on the usage security access log, and admin-plane metrics. A request without authenticated audit
+  metadata, or a rejected audit insert, changes nothing.
+
+- **Automated TLS for both listeners** (#810): `server.tls` and `admin.tls` accept `mode: off`,
+  `router` or `proxy`, `certificate_source: files` or `acme` (ACME DNS-01 with configurable DNS
+  providers, ARI-aware renewal, EAB), a `1.2`/`1.3` floor, an mTLS client-CA bundle with
+  `none`/`optional`/`require` client authentication, and proxy peer allowlists. A Caddy reference
+  recipe with a DigitalOcean-first walkthrough ships under `deploy/tls/caddy/`.
+
+- **Admin plane deployment** (#817): a Kubernetes overlay that publishes the admin port as a
+  ClusterIP Service only (no Ingress, NodePort or LoadBalancer), a default-deny NetworkPolicy that
+  admits only labelled admin clients in a named namespace, CI rendering and scanning of the overlay,
+  and the v4.7 → v4.8 operator guide in `docs/ADMIN_PLANE_UPGRADE.md`.
 
 ### Fixed
 
-- `metrum-ai-router-migrate --json` prints the status document while a migration
-  is pending instead of an empty line with a zero exit. A pending migration is
-  described by its identity, integrity and execution metadata (id, name,
-  release, checksum, manifest digest, execution and maintenance mode, lock,
-  timeout and rollback class, data-job key, postcondition and dependencies); its
-  handler functions are never encoded. An encoding failure is a non-zero exit
-  with a bounded error, and the deployment-job steps in
-  `docs/DATA_MIGRATIONS.md` have a regression test that runs
-  `--action=plan --json` and `--action=status --json` against a ledger with
-  pending migrations (#807).
+- Configured admin API keys whose status was written in any case are now disabled when they say
+  disabled: runtime key building normalizes the status the same way validation always has, so
+  `DISABLED` and `Disabled` keys no longer authenticate on the serving port (#851).
+
+- `metrum-ai-router-migrate --json` prints the status document while a migration is pending
+  instead of an empty line with a zero exit. A pending migration is described by its identity,
+  integrity and execution metadata (id, name, release, checksum, manifest digest, execution and
+  maintenance mode, lock, timeout and rollback class, data-job key, postcondition and dependencies);
+  its handler functions are never encoded. An encoding failure is a non-zero exit with a bounded
+  error, and the deployment-job steps in `docs/DATA_MIGRATIONS.md` have a regression test that runs
+  `--action=plan --json` and `--action=status --json` against a ledger with pending migrations
+  (#807). This fix is also in v4.7.1.
 
 ### Security
 
-- configured admin keys with a non-lowercase disabled status were still accepted
-  on the serving port.
-- Serialize PostgreSQL revision-notifier shutdown with its listener goroutine
-  and await pgx asynchronous connection cleanup, avoiding concurrent connection
-  reads and closure during service shutdown.
-- Add typed safe authorization problems and a trusted PostgreSQL policy-mutation
-  freshness gate, backed by complete revision synchronization. The shared
-  `/admin/v1` mount marks mutations from the trusted registry entry's declared
-  method before any decision, so every non-read operation (emergency included)
-  answers `503 policy-stale` on an expired clock while reads stay available;
-  wrapped typed errors are mapped with `errors.As`. Failed reads or builds
-  preserve the previous authorizer and successful-sync time, and the observation
-  time is sampled before the shared-locked read. `admin_auth.authorization.
-  max_staleness` is validated and applied at startup and on reload (never a
-  request-time 422; a configured 10s window makes the policy stale at 10s+1ns),
-  and the machine authorizer now has one publisher: a configuration reload asks
-  the synchronized path to publish instead of storing its own authorizer. The
-  policy runtime migration, audit/replay and reverse configuration guards remain
-  separate control-plane integration requirements.
-
-  Release note: with PostgreSQL authority and DB-sourced policy, `/admin/v1`
-  mutations answer `503 policy-stale` until the policy runtime table exists. That
-  table and its ledger migration ship in the guarded policy-resource change
-  (#866) in the same release; reads and static/SQLite authority are unaffected,
-  and restore recovery today is a restart (an operator reseed ships with #866).
 - v4.8.0 release binaries are built with Go 1.27.3. That toolchain carries the
   Go 1.27.2 standard-library security fixes (net/http HTTP/1 and HTTP/2 request
   handling, `crypto/tls` ECH, `html/template` escaping, `mime/multipart` header
   parsing) and Go 1.27.3's `crypto/x509` chain filter for distrusted intermediate
-  certificates. Source builds require at least Go 1.27.3; CI, release and
-  container build producers use the patched toolchain. Go 1.27 also removes the
-  `asynctimerchan`, `gotypesalias`, `tlsunsafeekm`, `tlsrsakex`, `tls3des`,
-  `tls10server` and `x509keypairleaf` GODEBUG settings; this tree sets none of
-  them and relies on none of the removed behaviours. The one changed default,
-  `tracebacklabels=1`, only adds pprof goroutine labels to tracebacks and is left
-  at its new default.
+  certificates. Source builds require at least Go 1.27.3; the CI, release and
+  container build producers use the patched toolchain and assert the version they
+  actually run. The Go 1.26.10 floor that first carried the standard-library
+  security fixes for the 37 package and symbol advisories recorded in #854
+  (GO-2026-4599 through GO-2026-6809; the Go vulnerability database lists them at
+  https://pkg.go.dev/vuln/) remains the security history of this release, and a
+  `govulncheck` scan on the shipped toolchain reports no package or symbol
+  findings. Go 1.27 also removes the `asynctimerchan`, `gotypesalias`,
+  `tlsunsafeekm`, `tlsrsakex`, `tls3des`, `tls10server` and `x509keypairleaf`
+  GODEBUG settings; this tree sets none of them and relies on none of the removed
+  behaviours. The one changed default, `tracebacklabels=1`, only adds pprof
+  goroutine labels to tracebacks and is left at its new default.
 
-- Guarded policy resources on `/admin/v1`: 19 typed operations (set/rule/membership list-create-get-replace-delete, validate, diff, activate, rollback) inside one mutex plus an exclusive singleton transaction, with actor-bound authorization before any precondition work, immutable active/retired content, clone-rollback with fresh IDs and a last-normal-administrator guard. Mutations write exactly one usage audit row in their own transaction (#869); a request without authenticated audit metadata, or a rejected audit insert, changes nothing. Production wiring installs every operation, builds the enabled-administrator inventory from the published configuration under the lock, and refuses a reload that would lock out policy administration. Policy operations take their `If-Match` from the POLICY revision, not the configuration revision. The policy runtime singleton is registered in the usage migration ledger as `2026110704` (schema 15).
+- Typed safe authorization problems and a trusted PostgreSQL policy-mutation freshness gate backed
+  by complete revision synchronization: every non-read `/admin/v1` operation (emergency credentials
+  included) answers `503 policy-stale` on an expired clock while reads stay available, wrapped typed
+  errors are mapped with `errors.As`, a failed read or build preserves the previous authorizer and
+  successful-sync time, and `server.admin_auth.authorization.max_staleness` is validated and applied
+  at startup and on reload (never a request-time 422; a configured 10s window makes the policy stale
+  at 10s+1ns). The machine authorizer has one publisher: a configuration reload asks the
+  synchronized path to publish instead of storing its own authorizer.
+
 
 ### Authorization compatibility
 
-- The entire `router-internal:` prefix is reserved for internal authorization
-  identities, not only `router-internal:compat:`. Policies or configured public
-  subjects selecting that namespace fail startup/reload validation rather than
-  being interpreted as public grants. Check existing offline policies and
-  subject mappings before upgrading; do not use internal identities as
-  application subjects.
-- Basic authentication membership, password hash, subject and domain changes
-  require a restart. Authorization policy reload does not itself refresh the
-  Basic authentication directory; use a restart for Basic revocation/rotation.
+- The entire `router-internal:` prefix is reserved for internal authorization identities, not only
+  `router-internal:compat:`. Policies or configured public subjects selecting that namespace fail
+  startup/reload validation rather than being interpreted as public grants. Check existing offline
+  policies and subject mappings before upgrading; do not use internal identities as application
+  subjects.
+
+- Basic authentication membership, password hash, subject and domain changes require a restart.
+  Authorization policy reload does not itself refresh the Basic authentication directory; use a
+  restart for Basic revocation/rotation.
+
+- **PostgreSQL authority with DB-sourced policy:** `/admin/v1` mutations answer `503 policy-stale`
+  until the policy runtime table exists. The table ships with usage migration `2026110704` (schema
+  15) in this release. Reads and static/SQLite authority are unaffected. Restore recovery today is a
+  restart; an operator reseed ships later.
+
+### Migrations in v4.8.0
+
+| Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
+| --- | --- | --- | --- | --- | --- | --- |
+| `2026110601` | `router-config` | 10 | admin API Idempotency-Key store | online | none | `restore-required` |
+| `2026110701` | `router-config` | 11 | admin audit columns and credential events | online | none | `restore-required` |
+| `2026110801` | `router-config` | 12 | admin API-issued key metadata and generations | online | none | `restore-required` |
+| `2026110702` | `usage` | 13 | admin audit events for usage-database changes | online | none | `restore-required` |
+| `2026110703` | `usage` | 14 | admin denial columns on the security access log | online | none | `restore-required` |
+| `2026110704` | `usage` | 15 | policy runtime singleton revision | online | none | `restore-required` |
+
+`2026110601` creates the `Idempotency-Key` store; `2026110701` adds the admin audit columns and the
+credential-event table; `2026110801` adds the API-issued key metadata and generations; `2026110702`
+creates the usage audit table for mutations whose change lives in the usage database; `2026110703`
+adds the denial columns to the usage security access log; `2026110704` creates the policy runtime
+singleton and seeds legacy active state only for a newly created table. `2026110704` depends on
+`2026110703`, which depends on `2026110702`; `2026110801` depends on `2026110701`, which depends on `2026110601`. Rollback for every one of them is `restore-required`: package rollback never runs a
+reverse migration, so restore the approved pre-migration snapshot before deploying the earlier
+package.
+
+### New configuration in v4.8.0
+
+- `admin.*` (new, disabled by default): `enabled` (`false`), `listen` (`127.0.0.1:8081`),
+  `allow_plaintext_non_loopback` (`false`), `legacy_routes_on_serving_port` (`true`),
+  `legacy_sunset` (`2027-03-01T00:00:00Z`), `external_url` (unset), `tls.{mode, certificate_source,
+  cert_file, key_file, min_version, client_ca_file, client_auth, trusted_proxy_cidrs,
+  acme.{domains, email, directory_url, accept_tos, allow_insecure_directory, cache_dir, key_type,
+  startup_timeout_seconds, reload_interval_seconds, renewal, eab, dns}}`, `limits.{max_body_bytes,
+  max_header_bytes, read_header_timeout_ms, read_timeout_ms, write_timeout_ms, idle_timeout_ms,
+  shutdown_timeout_ms}`, `metrics.on_serving_port` and `authentication.{mtls.{issuer, ca_files,
+  subjects, trust_domains, reload_interval}, issuers[].{issuer_url, audience, kind, algorithms,
+  max_lifetime, clock_skew, subjects, sender_constraint, allowed_jwks_hosts, allow_private_network,
+  allow_legacy_token_type}, jwks.{cache_ttl, refresh_min_interval, request_timeout}, dpop.{proof_max_age,
+  replay_capacity}, api_keys.enabled, emergency.credentials[].{id, subject, issuer, kind,
+  key_hash_env, certificate_sha256, issued_at, expires_at}}`.
+- `server.admin_api.*` (new, defaults apply when absent): `audit.retention_days`, `cursor_key_env`,
+  `pagination.{default_limit, max_limit}`, `idempotency.{ttl, max_key_bytes, max_response_bytes}`,
+  `rate_limit.{enabled, read_rps, read_burst, write_rps, write_burst, max_identities}`,
+  `auth_failure_throttle.{enabled, window, free_attempts, base_delay, max_delay}`.
+- `server.tls.*` (new, serving listener): `mode` (`off`), `certificate_source` (`files`), `cert_file`,
+  `key_file`, `min_version` (`1.2`), `acme.*` with the same fields as `admin.tls.acme`.
+- `server.admin_auth.authorization.max_staleness` (new): bounds how old the last complete
+  authoritative policy synchronization may be before PostgreSQL-authority mutations fail closed.
+- No existing field is removed or renamed, and every new block is optional.
+
+### Upgrade
+
+A v4.7 configuration needs no change: without an `admin:` block the router behaves exactly like
+v4.7 (one listener, legacy routes, `/metrics` on the serving port, same authorization decisions).
+Under `migration_policy: deployment-job`, run the non-serving migration job for both scopes before
+starting the new package:
+
+```sh
+metrum-ai-router-migrate --scope=usage --action=plan    --driver=postgres --dsn-env=ROUTER_USAGE_DB_DSN --json
+metrum-ai-router-migrate --scope=usage --action=apply   --driver=postgres --dsn-env=ROUTER_USAGE_DB_DSN --json
+metrum-ai-router-migrate --scope=usage --action=verify-serving --driver=postgres --dsn-env=ROUTER_USAGE_DB_DSN
+metrum-ai-router-migrate --scope=router-config --action=plan  --driver=postgres --dsn-env=ROUTER_CONFIG_DB_DSN --json
+metrum-ai-router-migrate --scope=router-config --action=apply --driver=postgres --dsn-env=ROUTER_CONFIG_DB_DSN --json
+metrum-ai-router-migrate --scope=router-config --action=verify-serving --driver=postgres --dsn-env=ROUTER_CONFIG_DB_DSN
+```
+
+`plan` must report the six migrations above as pending (or already applied) with `maintenance:
+online` and no data job; a non-zero exit or an `incompatible` state means binary and database
+disagree and serving must not start. SQLite deployments follow the same order with `--driver=sqlite`.
+Adopting the control plane afterwards is a separate, reversible step: enable `admin.enabled`, keep
+`metrics.on_serving_port: true` until the scrape moves, issue one machine credential, move automation
+to `/admin/v1`, then set `legacy_routes_on_serving_port: false`.
+
+### Known limitations
+
+- `/metrics` stays on the serving port: `admin.metrics.on_serving_port: false` is refused at startup
+  until the admin-side metrics handler ships, so monitoring is never left with no exposition.
+- TLS certificate and key changes need a restart; only the client CA bundle reloads live. A
+  Unix-socket admin listener and an Ingress/NodePort/LoadBalancer for the admin plane are not
+  available.
+- Emergency activation is single-replica, and DPoP replay state is node-local, so a replay against a
+  different replica is not excluded by a shared ledger; multi-replica coordination is not part of
+  this release.
+- With file-mode configuration (`server.config_source.mode` not `database`) the machine runtime has
+  no durable credential-event sink: authentication works, but no authentication or credential
+  lifecycle events are written, and emergency enrollment is refused rather than backed by a no-op.
+- PostgreSQL authority with DB-sourced policy answers `503 policy-stale` for mutations until
+  migration `2026110704` has run (see above); restore recovery today is a restart, and an operator
+  reseed ships later.
+- The reported policy-resource slice installs all 19 operations, but complete published-generation
+  credential inventory and reverse guard before configuration/key persistence, rejected-attempt
+  audit and admin-plane metrics wiring remain follow-ups.
+
+### Release verification
+
+The live release gate ran on the release commit `f2ae91d1` with the v4.7.0 gate configuration
+unchanged (baseline sha256 `41a3dc29…`, stage-C sha256 `cafaee3d…`; `scripts/release_gate.py` sha256
+`1cffad95…`, identical to the v4.7.0 tag), in one sequential run so the timing-sensitive stages
+shared one pool. The router was built with Go 1.27.3. Every red cell is reported as red.
+
+| Stage | Result on f2ae91d1 | v4.7.1 | v4.7.0 |
+| --- | --- | --- | --- |
+| A: 24 agent cells (6 routed lanes and 2 direct baselines x file/edit/quote) | 20/24 | 20/24 | 19-21/24 across the replicated runs |
+| B: Harbor matrix, routed vs direct in both API styles | pass, 5/5 in every lane plus the offline replay | pass, 5/5 plus the offline replay | pass, 5/5 plus the offline replay |
+| C: live SDK compatibility suites | fail, fully classified | fail, fully classified | fail, fully classified |
+| D: parallel tool calls, direct vs routed | pass, 6/6 | pass, 6/6 | pass, 6/6 |
+
+The four red stage-A cells are the three `openai-chat -> gpt` cells, where the provider answers
+`400 upstream-rejected` for the `reasoning_effort` plus tools request shape (the documented
+limitation, identical on v4.7.0 and v4.7.1), and `routed-openai-responses-claude/quote`, which failed
+on admission `429 tpm-exceeded` at the unchanged caller quota, the same quota class v4.7.0 recorded
+as moving between cells from run to run. Stage C's tester reports are byte-identical to the archived
+v4.7.0 reports apart from request ids and the local port: documented `501` surfaces and typed `400`
+refusals, with no router defect in the classification, and the stage is not reported as a pass.
+Stage B passed the bounded Harbor matrix on a dedicated Docker host: every lane 5/5, routed equal to
+direct on every task, and the offline replay passed before any provider call.
+
+Upgrade path, with the released v4.7.1 binaries: a v4.7.1 usage database (schema 12, data version 1)
+takes exactly the three `20261107xx` usage migrations, `verify-serving` passes, the router starts and
+serves (usage rows 3 to 6), and the upgraded schema is identical to a fresh v4.8.0 install — 49
+tables, 1082 columns and 227 indexes on both sides. A v4.7.1 file-config deployment returns identical
+outcomes on both versions (readiness, `/v1/models`, a chat completion, `/metrics`, the legacy admin
+route, `/admin/v1` on the serving port, an unknown path), and a router-config control-plane database
+moves from schema 9 to 12 with `verify` passing.
 
 ## [4.7.1] - 2026-11-08
 

@@ -145,7 +145,7 @@ The CLI intentionally accepts a PostgreSQL DSN only through a named environment 
 
 ## Admin control-plane audit migrations (v4.8.0)
 
-Four migrations back the admin control plane's Idempotency-Key store and audit records.
+Six migrations back the admin control plane: its Idempotency-Key store, audit records, API-issued key metadata and the policy runtime.
 All are additive and **online**: column additions, new tables and indexes only, with no
 rewrite of an existing row and no data job. The later admin IDs sit in their own `20261107xx` block so they cannot collide with the
 authentication phases 12 and 13, which use the same control-plane scope.
@@ -156,6 +156,7 @@ authentication phases 12 and 13, which use the same control-plane scope.
 | `2026110701` (`router-config.phase11.admin-audit.v1`) | `router-config` | 11 | online | none | `restore-required` |
 | `2026110702` (`usage.admin-audit.v1`) | `usage` | 13 | online | none | `restore-required` |
 | `2026110703` (`usage.admin-denial-columns.v1`) | `usage` | 14 | online | none | `restore-required` |
+| `2026110704` (`usage.policy-runtime.v1`) | `usage` | 15 | online | none | `restore-required` |
 | `2026110801` (`router-config.phase12.admin-keys.v1`) | `router-config` | 12 | online | none | `restore-required` |
 
 - `2026110601` creates `router_admin_idempotency`: one `Idempotency-Key` record per
@@ -166,6 +167,9 @@ authentication phases 12 and 13, which use the same control-plane scope.
 - `2026110702` creates `router_admin_audit_events`, the audit row for admin mutations whose
   change lives in the usage database (content-capture deletion and purge, training labels).
 - `2026110703` adds the admin denial columns to the usage security access log.
+- `2026110704` creates the policy runtime singleton and seeds legacy active state only for a newly
+  created table. It depends on `2026110703`; until it has run, PostgreSQL authority with DB-sourced
+  policy answers `503 policy-stale` for mutations while reads stay available.
 - `2026110801` creates the API-issued admin key tables (`admin_api_key_metadata`,
   `admin_api_key_generations`, `admin_api_key_operations`). The store is only used
   when it exists: a deployment without this step starts normally and answers `503`
@@ -185,9 +189,14 @@ metrum-ai-router-migrate --scope=usage --action=verify-serving --dsn-env=ROUTER_
 metrum-ai-router-migrate --scope=router-config --action=plan --driver=postgres \
   --dsn-env=ROUTER_CONFIG_DB_DSN --json
 metrum-ai-router-migrate --scope=router-config --action=apply --dsn-env=ROUTER_CONFIG_DB_DSN --json
-metrum-ai-router-migrate --scope=router-config --action=verify-serving --dsn-env=ROUTER_CONFIG_DB_DSN
+metrum-ai-router-migrate --scope=router-config --action=verify --dsn-env=ROUTER_CONFIG_DB_DSN
 ```
 
 `plan` must report these migrations as pending (or already applied) with
 `maintenance: online` and no data job; a non-zero exit or an `incompatible` state means the
-binary and the database disagree and serving must not start.
+binary and the database disagree and serving must not start. The router-config scope also has a
+transactional maintenance batch: `--action=apply` applies the online prefix and stops at it, so run
+`--action=maintenance --backup-evidence-ref=<safe reference>` in the approved window and then
+`--action=apply` once more for the later online migrations. The scope exposes only `status`, `plan`,
+`verify`, `apply` and `maintenance`, so its postcondition check is `--action=verify`, not
+`--action=verify-serving` (which is the usage scope and what serving startup validates).
