@@ -234,11 +234,28 @@ type revisionNotificationConnectionCleanup interface {
 	CleanupDone() chan struct{}
 }
 
+// revisionNotificationCleanupWait bounds how long shutdown waits for pgx to
+// finish releasing a connection. Cleanup normally completes promptly; a stuck
+// socket must not be able to hold service shutdown forever.
+const revisionNotificationCleanupWait = 5 * time.Second
+
 func finishRevisionNotificationConnection(conn revisionNotificationConnectionCleanup) {
+	finishRevisionNotificationConnectionWithin(conn, revisionNotificationCleanupWait)
+}
+
+func finishRevisionNotificationConnectionWithin(conn revisionNotificationConnectionCleanup, wait time.Duration) {
 	_ = conn.Close(context.Background())
 	// A receive failure may have marked PgConn closed while asynchronous
 	// cancellation/socket cleanup is still running. Close then returns early.
-	<-conn.CleanupDone()
+	if wait <= 0 {
+		<-conn.CleanupDone()
+		return
+	}
+	select {
+	case <-conn.CleanupDone():
+	case <-time.After(wait):
+		log.Printf("config control-plane notifier connection cleanup did not finish within %s; continuing shutdown", wait)
+	}
 }
 
 // StartConfigRevisionNotifier attempts to LISTEN on the router_config channel
