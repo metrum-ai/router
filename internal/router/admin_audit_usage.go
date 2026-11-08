@@ -173,6 +173,13 @@ var usageAdminDenialColumns = []string{
 	"credential_kind", "credential_id", "object", "action", "operation_id", "client_ip_hash",
 }
 
+// usageAdminDenialColumnsIndex is the index the usage model declares on the denial
+// column the security access log filters by. A fresh install gets it from the baseline
+// handler; an upgraded database only gets it from this migration, so it is created and
+// verified here. Without it the baseline postcondition (re-run by verify-serving and by
+// deployment-job startup validation) fails on every database created before v4.8.0.
+const usageAdminDenialColumnsIndex = "idx_security_access_object"
+
 func applyUsageAdminDenialColumnsMigration(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("admin denial column migration requires database")
@@ -187,6 +194,11 @@ func applyUsageAdminDenialColumnsMigration(db *gorm.DB) error {
 			return fmt.Errorf("add security log column %s: %w", column, err)
 		}
 	}
+	if !migrator.HasIndex("security_access_events", usageAdminDenialColumnsIndex) {
+		if err := db.Exec(`CREATE INDEX IF NOT EXISTS ` + usageAdminDenialColumnsIndex + ` ON security_access_events (object)`).Error; err != nil {
+			return fmt.Errorf("create security log index %s: %w", usageAdminDenialColumnsIndex, err)
+		}
+	}
 	return verifyUsageAdminDenialColumnsMigration(db)
 }
 
@@ -195,6 +207,9 @@ func verifyUsageAdminDenialColumnsMigration(db *gorm.DB) error {
 		if !db.Migrator().HasColumn("security_access_events", column) {
 			return fmt.Errorf("required usage column security_access_events.%s is missing", column)
 		}
+	}
+	if !db.Migrator().HasIndex("security_access_events", usageAdminDenialColumnsIndex) {
+		return fmt.Errorf("required usage index security_access_events.%s is missing", usageAdminDenialColumnsIndex)
 	}
 	return nil
 }
