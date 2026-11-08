@@ -156,6 +156,7 @@ authentication phases 12 and 13, which use the same control-plane scope.
 | `2026110701` (`router-config.phase11.admin-audit.v1`) | `router-config` | 11 | online | none | `restore-required` |
 | `2026110702` (`usage.admin-audit.v1`) | `usage` | 13 | online | none | `restore-required` |
 | `2026110703` (`usage.admin-denial-columns.v1`) | `usage` | 14 | online | none | `restore-required` |
+| `2026110801` (`router-config.phase12.admin-keys.v1`) | `router-config` | 12 | online | none | `restore-required` |
 
 - `2026110601` creates `router_admin_idempotency`: one `Idempotency-Key` record per
   principal, domain and operation, retained 24 hours and persisted.
@@ -165,6 +166,10 @@ authentication phases 12 and 13, which use the same control-plane scope.
 - `2026110702` creates `router_admin_audit_events`, the audit row for admin mutations whose
   change lives in the usage database (content-capture deletion and purge, training labels).
 - `2026110703` adds the admin denial columns to the usage security access log.
+- `2026110801` creates the API-issued admin key tables (`admin_api_key_metadata`,
+  `admin_api_key_generations`, `admin_api_key_operations`). The store is only used
+  when it exists: a deployment without this step starts normally and answers `503`
+  on the key lifecycle routes rather than advertising a store it does not have.
 
 ### Upgrading with `migration_policy: deployment-job`
 

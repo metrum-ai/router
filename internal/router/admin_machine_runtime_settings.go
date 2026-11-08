@@ -163,6 +163,9 @@ func prepareAdminMachineRuntimeSettings(c AdminMachineAuthenticationConfig, exte
 		}
 		s.issuers = append(s.issuers, adminMachineIssuerSettings{profile: adminMachineJWTConfig{Issuer: i.IssuerURL, Audience: i.Audience, Kind: kind, Algorithms: algs, MaxLifetime: maxLife, ClockSkew: skew, clockSkewExplicit: i.ClockSkew != "", JWKSCacheTTL: s.jwksCacheTTL, JWKSRefreshMinInterval: s.jwksRefreshMinInterval, JWKSRequestTimeout: s.jwksRequestTimeout, Subjects: subjects, AllowedJWKSHosts: hosts, AllowPrivateNetwork: i.AllowPrivateNetwork, AllowLegacyTokenType: i.AllowLegacyTokenType}, minimumConstraint: minimum})
 	}
+	if _, _, _, err := adminKeyLifetimeSettings(c.APIKeys); err != nil {
+		return s, err
+	}
 	if err := validateAdminMachineEmergencyDescriptors(c.Emergency.Credentials); err != nil {
 		return s, err
 	}
@@ -201,4 +204,25 @@ func validateAdminMachineEmergencyDescriptors(credentials []AdminMachineEmergenc
 		}
 	}
 	return nil
+}
+
+// adminKeyLifetimeSettings validates the #815 API-issued key lifetimes and
+// returns max lifetime, default overlap and max overlap.
+func adminKeyLifetimeSettings(c AdminMachineAPIKeysConfig) (time.Duration, time.Duration, time.Duration, error) {
+	maxLifetime, err := adminMachineSettingDuration(c.MaxLifetime, "api_keys.max_lifetime", adminKeyDefaultMaxLife, time.Hour, adminKeyDefaultMaxLife)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defaultOverlap, err := adminMachineSettingDuration(c.DefaultRotationOverlap, "api_keys.default_rotation_overlap", adminKeyDefaultOverlap, 0, adminKeyMaxOverlap)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	maxOverlap, err := adminMachineSettingDuration(c.MaxRotationOverlap, "api_keys.max_rotation_overlap", adminKeyMaxOverlap, 0, adminKeyMaxOverlap)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if defaultOverlap > maxOverlap {
+		return 0, 0, 0, errors.New("admin.authentication api_keys default rotation overlap exceeds maximum")
+	}
+	return maxLifetime, defaultOverlap, maxOverlap, nil
 }

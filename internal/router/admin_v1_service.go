@@ -46,25 +46,25 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 		return errors.New("admin v1 mount requires the authentication and authorization seams")
 	}
 	s.adminAuthorizeFn = authorize
-	registry, err := AdminV1DefaultRegistry()
+	registry, err := s.adminV1ProductionRegistry()
 	if err != nil {
 		return err
 	}
 	// The guarded policy operations are part of the production surface whenever a
 	// transaction-capable usage store exists; their handlers need the same store.
 	policyMounted := s.usage != nil && s.usage.db != nil
-	if policyMounted {
-		if registry, err = adminV1RegistryWithPolicy(); err != nil {
-			return err
-		}
-	}
+	// API-issued admin keys are mounted only for a service that owns the
+	// authoritative key store: the operations and their handlers are composed
+	// per service, so the shared default specs are never mutated and a file-mode
+	// deployment never advertises routes it cannot serve.
+	keyStoreMounted := s.adminKeys != nil
 	idempotency, idempotencyOn := s.adminIdempotencyStore()
 	settings := s.adminAPISettings()
 	return RegisterAdminV1(r, AdminV1Deps{
 		Registry:     registry,
 		Authenticate: authenticate,
 		Authorize:    s.Authorize,
-		Handlers:     s.adminV1Handlers(registry, policyMounted),
+		Handlers:     s.adminV1Handlers(registry, policyMounted, keyStoreMounted),
 		ResolveDomain: func(principal Principal) string {
 			return s.adminCredentialDomain(principal)
 		},
@@ -96,8 +96,13 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 // adminV1Handlers binds every operation to its handler, adding the guarded
 // policy handlers (with the real same-transaction audit writer) when the policy
 // surface is mounted.
-func (s *Service) adminV1Handlers(registry *AdminV1Registry, policyMounted bool) map[string]http.HandlerFunc {
+func (s *Service) adminV1Handlers(registry *AdminV1Registry, policyMounted, keyStoreMounted bool) map[string]http.HandlerFunc {
 	handlers := s.adminV1HandlerSet(registry)
+	if keyStoreMounted {
+		for key, handler := range s.adminKeyHandlers() {
+			handlers[key] = handler
+		}
+	}
 	if !policyMounted || s.usage == nil {
 		return handlers
 	}
@@ -105,6 +110,29 @@ func (s *Service) adminV1Handlers(registry *AdminV1Registry, policyMounted bool)
 		handlers[key] = handler
 	}
 	return handlers
+}
+
+// adminV1ProductionRegistry composes exactly the operations this service can
+// serve: the shared default surface, plus the guarded policy operations when a
+// transaction-capable usage store exists, plus the API-issued key lifecycle when
+// this service owns the authoritative key store.
+func (s *Service) adminV1ProductionRegistry() (*AdminV1Registry, error) {
+	if s == nil {
+		return nil, errors.New("service is nil")
+	}
+	policyMounted := s.usage != nil && s.usage.db != nil
+	keyStoreMounted := s.adminKeys != nil
+	if !policyMounted && !keyStoreMounted {
+		return AdminV1DefaultRegistry()
+	}
+	operations := AdminV1Operations()
+	if policyMounted {
+		operations = append(operations, policyOperationSpecs()...)
+	}
+	if keyStoreMounted {
+		operations = append(operations, adminKeyOperations()...)
+	}
+	return NewAdminV1Registry(operations)
 }
 
 // adminV1HandlerSet binds every operation to the handler that serves its legacy

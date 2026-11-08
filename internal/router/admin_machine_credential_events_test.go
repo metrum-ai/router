@@ -8,14 +8,9 @@ package router
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
-
-	sqliteDriver "github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 )
 
 type machineEventRecordingSink struct {
@@ -93,37 +88,4 @@ func TestRuntimeMachineCredentialEventsDurable(t *testing.T) {
 	if _, err := newAdminMachineCredentialEventSink(nil); err == nil {
 		t.Fatal("nil sink accepted")
 	}
-}
-
-// failingCredentialEventSink is an unavailable audit store: successful
-// machine authentication must fail closed against it.
-type failingCredentialEventSink struct{}
-
-func (f *failingCredentialEventSink) RecordCredentialEvent(context.Context, AdminCredentialEvent) error {
-	return errors.New("event store unavailable")
-}
-
-func mustMachineEventSink(t *testing.T) *adminMachineCredentialEventSink {
-	t.Helper()
-	sink, err := newAdminMachineCredentialEventSink(&failingCredentialEventSink{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sink
-}
-
-func mustActivationStore(t *testing.T) *adminEmergencyActivationStore {
-	t.Helper()
-	db, err := gorm.Open(sqliteDriver.Open(filepath.Join(t.TempDir(), "activation.sqlite")), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := applyAdminEmergencyActivationSchema(db); err != nil {
-		t.Fatal(err)
-	}
-	store, err := newAdminEmergencyActivationStore(db, 1, time.Now, func(reason string) string { return reason })
-	if err != nil {
-		t.Fatal(err)
-	}
-	return store
 }

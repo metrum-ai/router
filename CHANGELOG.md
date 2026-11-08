@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offline-enrolled emergency keys and certificates. Every request captures one
   immutable authentication/authorization generation and every operation still
   goes through the single authorization decision point.
+- Admin API key lifecycle endpoints (`/admin/v1/admin-keys`): issue (secret shown
+  once), list, get, rotate with overlap and revoke, with authorization on the
+  shared plane-global `admin:keys` object and an authoritative row read on every
+  authentication.
 
 ### Fixed
 

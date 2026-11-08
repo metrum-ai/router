@@ -37,7 +37,8 @@ func TestRuntimeEmergencyAndConfiguredKeyComposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ordinary, err := newAdminOrdinaryKeyMachineAuthenticator(func() *adminConfiguredKeyCatalog { return normalCatalog }, func() *adminEmergencyKeyCatalog { return enrollment })
+	ordinary, err := newAdminOrdinaryKeyMachineAuthenticator(func() *adminConfiguredKeyCatalog { return normalCatalog },
+		func() *adminEmergencyKeyCatalog { return enrollment }, func() *adminStoreKeyCatalog { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}

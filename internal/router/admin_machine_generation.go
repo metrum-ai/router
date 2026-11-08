@@ -22,6 +22,7 @@ type adminMachineGeneration struct {
 	auth                  Authenticator
 	authorizer            *authorizer
 	keys                  *adminConfiguredKeyCatalog
+	storeKeys             *adminStoreKeyCatalog
 	emergencyKeys         *adminEmergencyKeyCatalog
 	emergencyCertificates *adminEmergencyCertificateCatalog
 	trust                 *AdminMTLSTrustStore
@@ -212,6 +213,30 @@ func (s *Service) publishMachinePlane(prepare func(machinePlaneSnapshot) (*machi
 
 // The factory is installed before serving. A running machine plane cannot
 // silently fall back to serving-port credential/grant publication on reload.
+// reloadMachineCredentials republishes the complete generation from the CURRENT
+// configuration and the CURRENT synchronized authorizer after an authoritative
+// credential mutation (issue, rotate or revoke of an API-issued key), through the
+// one publication path. A CA reload and a credential mutation therefore cannot
+// publish each other's superseded state.
+func (s *Service) reloadMachineCredentials() error {
+	if s == nil || s.machineGenerationBuilder == nil {
+		return nil
+	}
+	return s.publishMachinePlane(func(current machinePlaneSnapshot) (*machinePlanePublication, error) {
+		if current.Config == nil || current.Authorizer == nil || current.Generation == nil {
+			return nil, errors.New("machine credential publication requires a published generation")
+		}
+		next, err := s.prepareAdminMachineConfigGeneration(current.Config, current.Authorizer)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
+			return nil, errors.New("machine credential publication requires a generation")
+		}
+		return &machinePlanePublication{Generation: next}, nil
+	})
+}
+
 func (s *Service) prepareAdminMachineConfigGeneration(cfg *Config, compatible *authorizer) (*adminMachineGeneration, error) {
 	if s.machineGenerationBuilder == nil {
 		if s.machineGeneration.Load() != nil {
