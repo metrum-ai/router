@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `metrum-ai-router-migrate --json` prints the status document while a migration
+  is pending instead of an empty line with a zero exit. A pending migration is
+  described by its identity, integrity and execution metadata (id, name,
+  release, checksum, manifest digest, execution and maintenance mode, lock,
+  timeout and rollback class, data-job key, postcondition and dependencies); its
+  handler functions are never encoded. An encoding failure is a non-zero exit
+  with a bounded error, and the deployment-job steps in
+  `docs/DATA_MIGRATIONS.md` have a regression test that runs
+  `--action=plan --json` and `--action=status --json` against a ledger with
+  pending migrations (#807).
+
 ### Security
 
 - Serialize PostgreSQL revision-notifier shutdown with its listener goroutine
