@@ -14,6 +14,136 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.8.0 - 2026-11-08
+
+### Highlights
+
+- **An admin control plane on its own listener, machine-to-machine only.** `admin.enabled: true`
+  starts a second listener (`admin.listen`, default `127.0.0.1:8081`) that accepts mTLS client
+  identities from configured trust domains, OAuth 2.0 client-credentials and workload identity
+  federation tokens with DPoP or certificate sender constraints, configured admin API keys and
+  offline emergency credentials. It accepts no HTTP Basic, cookies, browser sessions, HTML or CORS.
+  See [Admin Listener](/docs/configuration/admin-listener) and the
+  [operator guide](https://github.com/metrum-ai/router/blob/main/docs/ADMIN_PLANE_UPGRADE.md).
+- **One authorization decision point.** Every `/admin/v1` operation goes through
+  `Authorizer.Authorize(ctx, principal, domain, object, action)` backed by Casbin, with compatibility
+  grants for the v4.7 permission maps and flags, escalation and last-normal-administrator guards,
+  and a policy freshness gate that answers `503 policy-stale` on an expired revision clock while
+  reads stay available.
+- **A versioned API contract.** `/admin/v1` has a typed route registry with generated OpenAPI 3.1 and
+  a CI drift check, problem+json errors, pagination with signed cursors, `ETag`/`If-Match`,
+  `Idempotency-Key`, dry-run, rate limits and an authentication-failure throttle.
+- **Admin keys, policy resources and audit.** Issue/list/get/rotate/revoke admin API keys with a
+  one-time secret; 19 typed policy-resource operations with immutable active content and
+  clone-rollback; audit written in the same transaction as the change.
+- **Automated TLS for both listeners.** `server.tls` and `admin.tls` support router-served
+  certificates from files or ACME DNS-01, proxy termination, an mTLS client-CA bundle and a TLS 1.2
+  or 1.3 floor.
+- **A v4.7 configuration is unaffected.** Without an `admin:` block the router behaves exactly like
+  v4.7, and the defaults keep the compatibility surface: `legacy_routes_on_serving_port: true` and
+  `/metrics` on the serving port.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Admin transport | Opt-in second listener; loopback by default; a non-loopback bind needs TLS or `allow_plaintext_non_loopback: true`; the legacy `/admin/*` routes stay on the serving port with `Deprecation`, `Sunset` and `Link` headers |
+| Admin credentials | Machine credentials on the admin listener: mTLS, OAuth 2.0 client credentials, workload identity federation, admin API keys and emergency credentials. The serving-port browser login for the reports UI is unchanged |
+| Authorization | Casbin on every admin decision with v4.7 compatibility grants; `router-internal:` is reserved for internal identities and is refused in public subjects; Basic-auth membership and secret changes need a restart |
+| Database | Two scopes move, six additive online migrations with no data job: usage schema 12 → 15 and router-config schema 9 → 12, all `restore-required` for rollback; `migration_policy: deployment-job` (the default) requires the non-serving migration job before serving |
+| PostgreSQL with DB-sourced policy | `/admin/v1` mutations answer `503 policy-stale` until usage migration `2026110704` (schema 15) has created the policy runtime table; reads and static/SQLite authority are unaffected |
+| `/metrics` | Stays on the serving port with the v4.7 caller-token scrape; `admin.metrics.on_serving_port: false` is refused until the admin-side handler ships |
+| TLS | `server.tls` and `admin.tls` are new and off by default; certificate and key changes need a restart, the client CA bundle reloads live |
+| Kubernetes | New admin-plane overlay publishing the admin port as a ClusterIP Service only, with a default-deny NetworkPolicy that admits labelled admin clients in a named namespace |
+
+### Migrations
+
+| Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
+| --- | --- | --- | --- | --- | --- | --- |
+| `2026110601` | `router-config` | 10 | admin API Idempotency-Key store | online | none | `restore-required` |
+| `2026110701` | `router-config` | 11 | admin audit columns and credential events | online | none | `restore-required` |
+| `2026110801` | `router-config` | 12 | admin API-issued key metadata and generations | online | none | `restore-required` |
+| `2026110702` | `usage` | 13 | admin audit events for usage-database changes | online | none | `restore-required` |
+| `2026110703` | `usage` | 14 | admin denial columns on the security access log | online | none | `restore-required` |
+| `2026110704` | `usage` | 15 | policy runtime singleton revision | online | none | `restore-required` |
+
+Every one is additive and transactional with no row rewrite and no data job. `2026110704` depends on
+`2026110703`, which depends on `2026110702`; `2026110801` depends on `2026110701`, which depends on
+`2026110601`. Package rollback never runs a reverse migration: restore the approved pre-migration
+snapshot before deploying the earlier package. The deployment-job order for both scopes is in
+[DATA_MIGRATIONS.md](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md).
+
+### New configuration
+
+- `admin.*` (new, disabled by default): `enabled`, `listen`, `allow_plaintext_non_loopback`,
+  `legacy_routes_on_serving_port` (default `true`), `legacy_sunset`, `external_url`,
+  `tls.{mode, certificate_source, cert_file, key_file, min_version, client_ca_file, client_auth,
+  trusted_proxy_cidrs, acme.*}`, `limits.{max_body_bytes, max_header_bytes, read_header_timeout_ms,
+  read_timeout_ms, write_timeout_ms, idle_timeout_ms, shutdown_timeout_ms}`,
+  `metrics.on_serving_port`, and `authentication.{mtls.*, issuers[], jwks.*, dpop.*, api_keys.*,
+  emergency.credentials[]}` for the machine credentials. Defaults and every key are in
+  [Admin Listener](/docs/configuration/admin-listener).
+- `server.admin_api.*` (new, defaults apply when absent): `audit.retention_days`,
+  `cursor_key_env`, `pagination.{default_limit, max_limit}`, `idempotency.{ttl, max_key_bytes,
+  max_response_bytes}`, `rate_limit.{enabled, read_rps, read_burst, write_rps, write_burst,
+  max_identities}`, `auth_failure_throttle.{enabled, window, free_attempts, base_delay, max_delay}`.
+- `server.tls.*` (new): `mode` (`off`), `certificate_source` (`files` or `acme`), `cert_file`,
+  `key_file`, `min_version` (`1.2`), `acme.*` with the same fields as `admin.tls.acme`.
+- `server.admin_auth.authorization.max_staleness` (new): bounds how old the last complete
+  authoritative policy synchronization may be before PostgreSQL-authority mutations fail closed.
+- No existing field is removed or renamed, and every new block is optional.
+
+### Fixed
+
+- Configured admin API keys whose status is written in any case are disabled when they say disabled:
+  `DISABLED` and `Disabled` keys no longer authenticate on the serving port
+  ([#851](https://github.com/metrum-ai/router/issues/851)).
+- `metrum-ai-router-migrate --json` prints the status document while a migration is pending instead
+  of an empty line with a zero exit, and an encoding failure is a non-zero exit with a bounded error
+  ([#807](https://github.com/metrum-ai/router/issues/807)). This fix is also in v4.7.1.
+
+### Security
+
+- v4.8.0 release binaries are built with Go 1.26.10, which carries the Go standard-library security
+  fixes for the 37 package and symbol advisories recorded in
+  [#854](https://github.com/metrum-ai/router/issues/854) (GO-2026-4599 through GO-2026-6809; the
+  [Go vulnerability database](https://pkg.go.dev/vuln/) lists them). Source builds require at least
+  Go 1.26.10, and the CI, release and container build producers assert the version they actually run.
+- The entire `router-internal:` prefix is reserved for internal authorization identities: policies or
+  public subject mappings that select it fail startup/reload validation instead of being read as
+  public grants.
+- Admin requests capture one immutable authentication/authorization generation, every credential
+  reload publishes one complete replacement atomically, and a rejected reload changes nothing. Admin
+  requests run with a finite 60-second deadline, and `cnf.jkt`-bound tokens must use the `DPoP`
+  scheme (a `Bearer` presentation is refused with `sender_constraint_failed`).
+
+### Known limitations
+
+- `/metrics` stays on the serving port: `admin.metrics.on_serving_port: false` is refused until the
+  admin-side handler ships.
+- Certificate and key changes need a restart; the client CA bundle reloads live. A Unix-socket admin
+  listener and an Ingress/NodePort/LoadBalancer for the admin plane are not available.
+- Emergency activation is single-replica and DPoP replay state is node-local; multi-replica
+  coordination is not part of this release.
+- With file-mode configuration the machine runtime has no durable credential-event sink:
+  authentication works, but no authentication or credential lifecycle events are written, and
+  emergency enrollment is refused rather than backed by a no-op adapter.
+- PostgreSQL authority with DB-sourced policy answers `503 policy-stale` for mutations until
+  migration `2026110704` has run; restore recovery today is a restart.
+
+### Release verification
+
+The live release gate runs on this release commit with the v4.7.0 gate configuration unchanged; the per-stage result is recorded here before the release is tagged.
+
+### Upgrade
+
+A v4.7 configuration needs no change: without an `admin:` block the router behaves exactly like
+v4.7. Under `migration_policy: deployment-job`, run the non-serving `plan` → `apply` →
+`verify-serving` job for the usage scope and the router-config scope before starting the new package.
+Adopting the control plane afterwards is reversible: enable `admin.enabled`, keep
+`metrics.on_serving_port: true` until the scrape moves, issue one machine credential, move automation
+to `/admin/v1`, then set `legacy_routes_on_serving_port: false`.
+
 ## v4.7.1 - 2026-11-08
 
 ### Highlights
