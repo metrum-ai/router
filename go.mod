@@ -1,6 +1,6 @@
 module github.com/metrum-ai/router
 
-go 1.26.10
+go 1.27.3
 
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1
