@@ -79,7 +79,9 @@ func (s *Service) enabledPolicyAdminInventory(cfg *Config) ([]Principal, error) 
 	if cfg == nil {
 		return nil, ErrAuthorizationUnavailable
 	}
-	out := make([]Principal, 0, len(cfg.Server.AdminAuth.APIKeys)+len(cfg.Server.AdminAuth.Basic.Users))
+	// No pre-sized capacity: the sum of two configured lengths can overflow the
+	// allocation hint, and the inventory is small either way.
+	var out []Principal
 	for keyID, runtime := range buildAdminAPIKeyRuntimes(cfg, os.LookupEnv) {
 		subject := runtime.subject
 		if subject == "" {
