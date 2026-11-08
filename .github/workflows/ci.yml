@@ -63,6 +63,11 @@ jobs:
           key: ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
           restore-keys: |
             ci-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+      - name: Verify Go patch floor
+        if: env.CI_RUN_GO == '1'
+        run: |
+          python3 scripts/check_go_toolchain.py
+          python3 -m unittest discover -s scripts -p test_check_go_toolchain.py
       - name: Router shard
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index ${{ matrix.shard }}

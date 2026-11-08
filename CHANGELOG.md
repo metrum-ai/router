@@ -5,6 +5,14 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- v4.7.1 release binaries are built with Go 1.26.10 for standard-library
+  security fixes. Source builds require at least Go 1.26.10; CI, release and
+  container build producers use the patched toolchain.
+
 ## [4.7.0] - 2026-11-06
 
 Package release. Adds opt-in tool-aware routing, configurable HTTP deadlines with
