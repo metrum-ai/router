@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
 	"gorm.io/gorm"
 )
@@ -31,7 +30,7 @@ func adminV1RegistryWithPolicy() (*AdminV1Registry, error) {
 func (s *Service) policyAdminDeps() policyMutationDeps {
 	return policyMutationDeps{
 		PublishedConfig: func() *Config { return s.configSnapshot.Load() },
-		Enabled:         s.enabledPolicyAdminInventory,
+		Enabled:         s.enabledPolicyAdmins,
 		Current: func(tx *gorm.DB, cfg *Config) (*Service, error) {
 			return s.policyAuthorizerService(tx, cfg, nil)
 		},
@@ -70,16 +69,27 @@ func (s *Service) policyAuthorizerService(tx *gorm.DB, cfg *Config, lines []stri
 	return view, nil
 }
 
-// enabledPolicyAdminInventory lists the ENABLED normal administrator credentials
-// of one published configuration: configured admin keys that resolve to a usable
-// verifier and are not disabled. Basic users are included when they authenticate
-// without a token verifier; OIDC subjects cannot be enumerated before login and
-// are therefore not counted (documented conservative limit of the reverse guard).
-func (s *Service) enabledPolicyAdminInventory(cfg *Config) ([]Principal, error) {
+// policyAdminInventory enumerates the enabled normal machine administrators of a
+// published configuration. #871 supplies its prepared machine generation
+// (mtls/oauth/federated subjects plus DB-store keys) through this seam, so the
+// reverse guard never has to know how credentials are produced.
+type policyAdminInventory interface {
+	enabledPolicyAdmins(snapshot *Config) ([]Principal, error)
+}
+
+// configuredPolicyAdminInventory counts the machine credentials that exist in
+// configuration on main today: enabled admin API keys whose verifier resolves.
+// Basic users cannot count (they are not machine principals), and OIDC browser
+// users have no enumerable subject before login. Until #871 merges, those kinds
+// are therefore NOT part of the inventory — the reverse guard only sees
+// configured admin keys.
+type configuredPolicyAdminInventory struct{}
+
+func (configuredPolicyAdminInventory) enabledPolicyAdmins(cfg *Config) ([]Principal, error) {
 	if cfg == nil {
 		return nil, ErrAuthorizationUnavailable
 	}
-	// No pre-sized capacity: the sum of two configured lengths can overflow the
+	// No pre-sized capacity: the sum of configured lengths can overflow the
 	// allocation hint, and the inventory is small either way.
 	var out []Principal
 	for keyID, runtime := range buildAdminAPIKeyRuntimes(cfg, os.LookupEnv) {
@@ -89,36 +99,40 @@ func (s *Service) enabledPolicyAdminInventory(cfg *Config) ([]Principal, error) 
 		}
 		out = append(out, Principal{Subject: subject, Kind: "adminkey", CredentialID: keyID, Issuer: "local"})
 	}
-	for _, user := range cfg.Server.AdminAuth.Basic.Users {
-		username := strings.TrimSpace(user.Username)
-		if username == "" {
-			continue
-		}
-		// A basic user whose password hash is not resolvable cannot authenticate,
-		// so it must not count as an enabled administrator.
-		if strings.TrimSpace(os.Getenv(strings.TrimSpace(user.PasswordHashEnv))) == "" {
-			continue
-		}
-		subject := strings.TrimSpace(user.Subject)
-		if subject == "" {
-			subject = "basic:" + username
-		}
-		out = append(out, Principal{Subject: subject, Kind: "basic", CredentialID: username})
-	}
 	return out, nil
 }
 
-// guardConfigReloadPolicyAdministrators is the cross-store reverse guard: a
-// configuration reload that would leave NO enabled normal administrator able to
-// read/write/activate policy is refused before publication, so the fleet cannot
-// lock itself out of its own policy plane through a config or credential change.
-// It evaluates the candidate authorizer built from the reloaded configuration
-// and the candidate's own enabled inventory.
-func (s *Service) guardConfigReloadPolicyAdministrators(candidate *Service, cfg *Config) error {
+// enabledPolicyAdmins answers the guard's inventory question through the
+// configured seam, defaulting to main's configuration-only inventory.
+func (s *Service) enabledPolicyAdmins(cfg *Config) ([]Principal, error) {
+	inventory := s.policyAdmins
+	if inventory == nil {
+		inventory = configuredPolicyAdminInventory{}
+	}
+	return inventory.enabledPolicyAdmins(cfg)
+}
+
+// GuardPolicyAdministrationLockout is the cross-store reverse guard: a change
+// that would leave NO enabled normal administrator able to read/write/activate
+// policy is refused, so the fleet cannot lock itself out of its own policy plane
+// through a configuration or credential change. It evaluates the candidate
+// authorizer built from the not-yet-published snapshot against that snapshot's
+// own enabled inventory.
+//
+// #871 calls this from key revoke/disable and from its single publish path. The
+// caller MUST hold s.usage.policyMutationMu, exactly as the reload path does, so
+// the verdict and the publication it guards cannot interleave with another
+// local policy change. Cross-replica interleaving: the inventory and candidate
+// are read through the pool, so another replica committing a credential change
+// between this verdict and this process's publication is not excluded by the
+// local lock; that writer is itself responsible for running this guard (which is
+// why #871 calls it from its single publish path). A stale read can therefore
+// refuse spuriously, never admit a lockout this process could observe.
+func (s *Service) GuardPolicyAdministrationLockout(candidate *Service, cfg *Config) error {
 	if candidate == nil || cfg == nil {
 		return ErrAuthorizationUnavailable
 	}
-	inventory, err := s.enabledPolicyAdminInventory(cfg)
+	inventory, err := s.enabledPolicyAdmins(cfg)
 	if err != nil {
 		return err
 	}

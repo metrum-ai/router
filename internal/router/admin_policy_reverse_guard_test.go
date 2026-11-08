@@ -170,3 +170,41 @@ callers: []
 		t.Fatalf("successful reload changed the refusal counter: %d", got)
 	}
 }
+
+// TestConfiguredPolicyAdminInventoryCountsOnlyMachineKeys pins today's inventory
+// contract: configured admin keys whose verifier resolves count, disabled keys do
+// not, and basic (non-machine) administrators never count until #871 supplies the
+// prepared machine generation through the seam.
+func TestConfiguredPolicyAdminInventoryCountsOnlyMachineKeys(t *testing.T) {
+	key, err := GenerateAdminAPIKey("inventory-admin", nil, callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_INVENTORY_KEY_HASH", key.TokenHash)
+	basicHash, err := bcrypt.GenerateFromPassword([]byte("x"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_INVENTORY_BASIC_HASH", string(basicHash))
+	cfg := &Config{}
+	cfg.Server.AdminAuth.APIKeys = []AdminAPIKeyConfig{
+		{KeyID: "inventory-admin", KeyHashEnv: "TEST_INVENTORY_KEY_HASH", Domain: "*"},
+		{KeyID: "disabled-admin", KeyHashEnv: "TEST_INVENTORY_KEY_HASH", Domain: "*", Status: "disabled"},
+	}
+	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, Users: []AdminBasicAuthUser{{
+		Username: "human", Subject: "basic:human", PasswordHashEnv: "TEST_INVENTORY_BASIC_HASH", Domain: "*",
+	}}}
+	inventory, err := configuredPolicyAdminInventory{}.enabledPolicyAdmins(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory) != 1 {
+		t.Fatalf("inventory = %+v, want exactly the one enabled machine key", inventory)
+	}
+	if inventory[0].Kind != "adminkey" || inventory[0].CredentialID != "inventory-admin" {
+		t.Fatalf("unexpected inventory entry: %+v", inventory[0])
+	}
+	if inventory[0].Subject != key.KeyID && inventory[0].Subject != "adminkey:inventory-admin" {
+		t.Fatalf("unexpected subject: %q", inventory[0].Subject)
+	}
+}

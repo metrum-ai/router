@@ -70,6 +70,10 @@ type Service struct {
 	authorizer         *authorizer // immutable bootstrap fallback
 	authorizerSnapshot atomic.Pointer[authorizer]
 	policyFreshness    *policyFreshnessState
+	// policyAdmins supplies the enabled-machine-administrator inventory for the
+	// reverse guard. Nil means the configured admin keys on main today; #871
+	// installs its prepared machine generation here.
+	policyAdmins       policyAdminInventory
 	authorizationAudit authorizationDecisionAudit
 	quota              *quotaStore
 	cache              *responseCache
@@ -644,7 +648,7 @@ func (s *Service) reloadActiveConfigFromDB() error {
 			}
 			return fmt.Errorf("reload active config: policy administrator guard unavailable: %w", guardErr)
 		}
-		if guardErr := s.guardConfigReloadPolicyAdministrators(candidate, newCfg); guardErr != nil {
+		if guardErr := s.GuardPolicyAdministrationLockout(candidate, newCfg); guardErr != nil {
 			if metrics := s.adminMetrics(); metrics != nil {
 				metrics.RecordPolicyGuardRefusal()
 			}

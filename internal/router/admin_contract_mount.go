@@ -512,7 +512,13 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			currentETag, revision, etagErr := m.etagFor(op, r)
 			if etagErr != nil {
 				releaseClaim()
-				writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", "the configuration revision is unavailable")
+				// Name the validator that actually failed: a policy operation must
+				// not report the configuration revision.
+				detail := "the configuration revision is unavailable"
+				if op.ETagSource == AdminETagPolicy {
+					detail = "the policy revision is unavailable"
+				}
+				writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", detail)
 				finish(http.StatusServiceUnavailable, "denied", "unavailable")
 				return
 			}
