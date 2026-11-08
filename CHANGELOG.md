@@ -5,26 +5,83 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.7.1] - 2026-11-08
+
+Patch release. Rebuilds v4.7.0 with the Go 1.26.10 toolchain floor for its
+standard-library security fixes, and fixes `router-migrate --json` reporting
+while a migration is pending. No configuration field, API surface, authorization
+decision or usage-schema version changes: the usage schema stays at version 12,
+so an upgrade from v4.7.0 runs no migration and a rollback to v4.7.0 needs no
+database restore.
 
 ### Fixed
 
 - `metrum-ai-router-migrate --json` prints the status document while a migration
-  is pending instead of an empty line with a zero exit. A pending migration is
-  described by its identity, integrity and execution metadata (id, name,
-  release, checksum, manifest digest, execution and maintenance mode, lock,
-  timeout and rollback class, data-job key, postcondition and dependencies); its
-  handler functions are never encoded. An encoding failure is a non-zero exit
-  with a bounded error, and the deployment-job steps in
-  `docs/DATA_MIGRATIONS.md` have a regression test that runs
-  `--action=plan --json` and `--action=status --json` against a ledger with
-  pending migrations (#807).
+  is pending, instead of an empty line with a zero exit. A pending migration is
+  a migration definition that carries handler functions, which the encoder
+  cannot represent; the status is now projected into a handler-free document
+  whose pending entry carries only safe metadata (id, name, release, checksum,
+  manifest digest, execution, maintenance, lock, timeout and rollback classes,
+  data-job key, postcondition and dependencies). The rest of the document keeps
+  its existing shape and field names, and an encoding failure is a non-zero exit
+  with a bounded error (#807).
 
 ### Security
 
-- v4.7.1 release binaries are built with Go 1.26.10 for standard-library
-  security fixes. Source builds require at least Go 1.26.10; CI, release and
-  container build producers use the patched toolchain.
+- Release binaries and container images are built with Go 1.26.10, which carries
+  the Go standard-library security fixes for the 37 package and symbol
+  advisories recorded in #854 (GO-2026-4599 through GO-2026-6809; the Go
+  vulnerability database lists them at https://pkg.go.dev/vuln/). Source builds
+  require at least Go 1.26.10, and the CI, release and container build producers
+  use the patched toolchain and assert the version they actually run. A
+  `govulncheck` scan of this tree on exactly Go 1.26.10 reports no package or
+  symbol findings and one module-only advisory (GO-2026-5932,
+  `golang.org/x/crypto/openpgp`) that router code does not call.
+
+### Release verification
+
+The live release gate ran on the release commit `2deb954d791d` with the v4.7.0
+gate configuration unchanged (the archived baseline configuration, sha256
+`41a3dc29…`, and the archived stage-C configuration, sha256 `cafaee3d…`), in one
+sequential run so the timing-sensitive stages shared one pool. Every red cell is
+reported as red:
+
+| Stage | Result on 2deb954d | v4.7.0 result |
+| --- | --- | --- |
+| A: 24 agent cells (6 routed lanes and 2 direct baselines x file/edit/quote) | 20/24 | 19-21/24 across the replicated runs |
+| B: Harbor matrix, routed vs direct in both API styles | skipped: the stage needs a Docker host and none was available | pass, 5/5 both styles |
+| C: live SDK compatibility suites | fail, fully classified | fail, fully classified |
+| D: parallel tool calls, direct vs routed | pass, 6/6 | pass, 6/6 |
+
+The four red stage-A cells are the three `openai-chat -> gpt` cells, where the
+provider answers `400 upstream-rejected` for the `reasoning_effort` plus tools
+request shape (the documented limitation, identical on v4.7.0), and
+`routed-openai-responses-claude/quote`, which failed on admission `429
+tpm-exceeded` at the unchanged caller quota, the same quota class v4.7.0 recorded
+as moving between cells from run to run. Stage C's tester reports are identical
+to the archived v4.7.0 reports apart from request ids and the local port:
+documented `501` surfaces (`/v1/complete`, moderations, message batches, beta
+files, `responses compact` and `responses input_tokens` on the Claude target) and
+typed `400` refusals (embeddings without an embeddings group, document modality,
+thinking and chat on the GPT target). No router defect appears in the
+classification, and the stage is not reported as a pass; stage B is reported
+skipped, never as a pass.
+
+Upgrade path, with the released v4.7.0 binaries: v4.7.0 creates a usage database
+(schema 12); v4.7.1 opens it, reports a fresh ledger's 13 pending migrations in
+the safe JSON plan, serves a request (usage rows 0 to 1) and finishes at
+`schema_version=12 data_version=1 state=current pending=0 entries=13`; the
+released v4.7.0 binaries still read that database afterwards.
+
+This change set contains release documentation only:
+
+```
+CHANGELOG.md
+docs-site/docs/release-notes/index.md
+```
+
+`git diff --stat 2deb954d791d HEAD -- internal cmd go.mod go.sum` is empty, so
+the router code is identical to the gated commit.
 
 ## [4.7.0] - 2026-11-06
 

@@ -14,6 +14,94 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.7.1 - 2026-11-08
+
+### Highlights
+
+- **Rebuilt with Go 1.26.10.** Every v4.7.1 binary and container image is built
+  with Go 1.26.10, which carries the Go standard-library security fixes for the
+  37 advisories recorded in
+  [#854](https://github.com/metrum-ai/router/issues/854). Source builds now
+  require Go 1.26.10 or newer, and the CI, release and container build producers
+  use the patched toolchain and assert the version they actually run.
+- **Migration status is readable while work is pending.**
+  `metrum-ai-router-migrate --json` prints the status document at the point the
+  deployment-job procedure in
+  [DATA_MIGRATIONS.md](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md)
+  asks for it, instead of an empty line with a zero exit
+  ([#807](https://github.com/metrum-ai/router/issues/807)).
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Build | v4.7.1 binaries and container images use Go 1.26.10; source builds require at least Go 1.26.10 |
+| Migration tooling | `--action=plan --json` and `--action=status --json` return a document while a migration is pending: id, name, release, checksum, manifest digest, execution, maintenance, lock, timeout and rollback classes, data-job key, postcondition and dependencies. A JSON encoding failure is a non-zero exit, never an empty success |
+| Database | Unchanged: the usage schema stays at version 12. An upgrade from v4.7.0 runs no migration, and a rollback to v4.7.0 needs no restore for schema reasons |
+| Configuration and API | Unchanged: no field is added, renamed or removed, and no authorization decision changes |
+
+### Fixed
+
+- `metrum-ai-router-migrate --json` printed an empty line and exited 0 whenever a
+  migration was pending. A pending migration is a migration definition that
+  carries handler functions, which the encoder cannot represent; the status is
+  now projected into a handler-free document whose pending entry carries only
+  safe metadata. The rest of the document keeps its existing shape and field
+  names, and an encoding failure now exits non-zero with a bounded error
+  ([#807](https://github.com/metrum-ai/router/issues/807)).
+
+### Security
+
+- v4.7.1 is built with Go 1.26.10. The Go standard-library advisories that apply
+  to Go 1.26.0, including the 37 package and symbol advisories recorded in
+  [#854](https://github.com/metrum-ai/router/issues/854) (GO-2026-4599 through
+  GO-2026-6809; the Go vulnerability database lists them at
+  <https://pkg.go.dev/vuln/>), are fixed in that toolchain, so v4.7.1 binaries do
+  not carry them. A `govulncheck` scan of this tree on exactly Go 1.26.10
+  reports no package or symbol findings and one module-only advisory
+  (GO-2026-5932, `golang.org/x/crypto/openpgp`) that router code does not call.
+
+### Known limitations
+
+- An OpenAI Chat target still rejects a request that pairs `reasoning_effort`
+  with tools, and a Chat-dialect agent lane against such a target reports the
+  provider's typed refusal. The release gate records those cells as red on this
+  release and on v4.7.0.
+- The live SDK stage is a scoped subset: provider-hosted tools and
+  resource-creating endpoints are excluded by design and reported as such, not
+  as unsupported passes.
+
+### Release verification
+
+The live release gate ran on the release commit `2deb954d791d` with the v4.7.0
+gate configuration unchanged, byte for byte, in one sequential run.
+
+| Stage | Result on 2deb954d | v4.7.0 result |
+| --- | --- | --- |
+| A: 24 agent cells (6 routed lanes and 2 direct baselines x file/edit/quote) | 20/24 | 19-21/24 across the replicated runs |
+| B: Harbor matrix, routed vs direct in both API styles | skipped: the stage needs a Docker host and none was available | pass, 5/5 both styles |
+| C: live SDK compatibility suites | fail, fully classified | fail, fully classified |
+| D: parallel tool calls, direct vs routed | pass, 6/6 | pass, 6/6 |
+
+The four red stage-A cells are the three `openai-chat -> gpt` cells, where the
+provider answers `400 upstream-rejected` for the `reasoning_effort` plus tools
+request shape (the documented limitation above, identical on v4.7.0), and
+`routed-openai-responses-claude/quote`, which failed on admission `429
+tpm-exceeded` at the unchanged caller quota. Stage C's tester reports are
+identical to the archived v4.7.0 reports apart from request ids and the local
+port: documented `501` surfaces (`/v1/complete`, moderations, message batches,
+beta files, `responses compact` and `responses input_tokens` on the Claude
+target) and typed `400` refusals (embeddings without an embeddings group,
+document modality, thinking and chat on the GPT target). No router defect appears
+in the classification, and the stage is not reported as a pass; stage B is
+reported skipped, never as a pass.
+
+### Upgrade
+
+A v4.7.0 usage database opens on v4.7.1 without a migration, every existing row
+stays readable, writes continue, and the released v4.7.0 binaries still read the
+database afterwards.
+
 ## v4.7.0 - 2026-11-06
 
 ### Highlights
