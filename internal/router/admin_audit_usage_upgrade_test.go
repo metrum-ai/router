@@ -4,21 +4,22 @@
 package router
 
 import (
-	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
 )
 
-// v471UsageMigrationCount is the number of usage migrations the v4.7.1 release
-// shipped (schema version 12). The v4.8.0 additions are appended after them, so a
-// runner built from this prefix produces exactly the database an upgraded
-// deployment brings to v4.8.0: every v4.7.1 column and index already applied, none
-// of the v4.8.0 ones, and the historical-validation data job validated.
-const v471UsageMigrationCount = 13
+// usageV471SchemaFile is the schema and ledger of a usage database written by the
+// RELEASED v4.7.1 binaries (usage schema version 12, data version 1, historical
+// validation job validated). It is generated from the published asset, not
+// synthesised from this binary's handlers, so the upgrade tests see exactly the
+// tables, columns and indexes a customer upgrading from v4.7.1 has.
+const usageV471SchemaFile = "testdata/usage-v4.7.1-schema.sql"
 
 func openUpgradeTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -35,43 +36,50 @@ func openUpgradeTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// buildV471UsageDatabase leaves db in the state a released v4.7.1 deployment has:
-// usage schema 12, data version 1, every bound data job validated.
-func buildV471UsageDatabase(t *testing.T, db *gorm.DB) {
+// loadV471UsageDatabase turns an empty database into the one a released v4.7.1
+// deployment has, by executing the captured schema and ledger statements in order.
+func loadV471UsageDatabase(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if v471UsageMigrationCount >= len(usageMigrationDefinitions) {
-		t.Fatalf("release manifest no longer contains v4.8.0 migrations after the v4.7.1 prefix")
-	}
-	compatibility := MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 1}
-	legacy, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, compatibility,
-		usageMigrationDefinitions[:v471UsageMigrationCount], usageDataJobDefinitions)
+	raw, err := os.ReadFile(usageV471SchemaFile)
 	if err != nil {
-		t.Fatalf("build v4.7.1 migration runner: %v", err)
+		t.Fatalf("read %s: %v", usageV471SchemaFile, err)
 	}
-	if err := legacy.ApplyPending("v471-shape"); err != nil {
-		t.Fatalf("apply v4.7.1 migrations: %v", err)
+	var statement strings.Builder
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		statement.WriteString(line)
+		statement.WriteString("\n")
+		if !strings.HasSuffix(trimmed, ";") {
+			continue
+		}
+		if err := db.Exec(statement.String()).Error; err != nil {
+			t.Fatalf("load v4.7.1 schema statement failed: %v\n%s", err, statement.String())
+		}
+		statement.Reset()
 	}
-	if _, err := legacy.RunDataJob(context.Background(), "historical-usage-validation-v1", "v471-shape",
-		DataJobCheckpoint{Ordinal: 0}); err != nil {
-		t.Fatalf("run v4.7.1 data job: %v", err)
+	if statement.Len() != 0 {
+		t.Fatalf("v4.7.1 schema file ends with an unterminated statement: %s", statement.String())
 	}
-	status, err := legacy.Verify()
+
+	runner, err := newUsageMigrationRunner(db)
 	if err != nil {
-		t.Fatalf("verify v4.7.1 shape: %v", err)
+		t.Fatalf("build migration runner on the loaded v4.7.1 database: %v", err)
 	}
-	if status.SchemaVersion != 12 || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
-		t.Fatalf("v4.7.1 shape is not serving compatible: %+v", status)
+	status, err := runner.Status()
+	if err != nil {
+		t.Fatalf("status of the loaded v4.7.1 database: %v", err)
 	}
-	// The released v4.7.1 binary's model did not declare the v4.8.0 denial-column
-	// index, so its baseline handler never created it and its own postconditions
-	// passed without it. Today's baseline handler does know the index, so applying
-	// the v4.7.1 migration prefix in this binary creates it; dropping it here
-	// restores the shape the released binary actually wrote.
-	if err := db.Exec("DROP INDEX IF EXISTS " + usageAdminDenialColumnsIndex).Error; err != nil {
-		t.Fatalf("drop index to reproduce the released v4.7.1 shape: %v", err)
+	if status.SchemaVersion != 12 || status.DataVersion != 1 || !status.Compatible || status.State != "pending" {
+		t.Fatalf("loaded database is not the released v4.7.1 shape: %+v", status)
+	}
+	if len(status.Pending) != 3 {
+		t.Fatalf("expected exactly the three v4.8.0 usage migrations pending, got %d", len(status.Pending))
 	}
 	if db.Migrator().HasIndex("security_access_events", usageAdminDenialColumnsIndex) {
-		t.Fatalf("could not reproduce the released v4.7.1 shape: %s still present", usageAdminDenialColumnsIndex)
+		t.Fatalf("the released v4.7.1 schema must not contain %s", usageAdminDenialColumnsIndex)
 	}
 }
 
@@ -96,17 +104,14 @@ func upgradeToV480(t *testing.T, db *gorm.DB) MigrationStatus {
 	return status
 }
 
-// A database created by the released v4.7.1 binaries has the v4.8.0 denial columns
-// only after this migration runs, and it never receives a model index from a
-// migration it does not run. The migration therefore has to create the index, or
+// A database created by the released v4.7.1 binaries has no
+// security_access_events.idx_security_access_object: the index is declared on the
+// v4.8.0 GORM model, so a fresh install gets it from the baseline handler while an
+// existing database only gains it from migration 2026110703. Without that step,
 // verify-serving and deployment-job startup both fail on every upgraded database.
 func TestUpgradeFromV471CreatesAdminDenialIndex(t *testing.T) {
 	db := openUpgradeTestDB(t)
-	buildV471UsageDatabase(t, db)
-
-	if db.Migrator().HasIndex("security_access_events", usageAdminDenialColumnsIndex) {
-		t.Fatalf("v4.7.1 shape unexpectedly already has %s", usageAdminDenialColumnsIndex)
-	}
+	loadV471UsageDatabase(t, db)
 
 	upgradeToV480(t, db)
 
@@ -124,7 +129,7 @@ func TestUpgradeFromV471CreatesAdminDenialIndex(t *testing.T) {
 // database, because it is the same check deployment-job startup performs.
 func TestUpgradeFromV471PassesBaselinePostcondition(t *testing.T) {
 	db := openUpgradeTestDB(t)
-	buildV471UsageDatabase(t, db)
+	loadV471UsageDatabase(t, db)
 	upgradeToV480(t, db)
 
 	for _, definition := range usageMigrationDefinitions {
@@ -189,8 +194,10 @@ func readUsageSchemaShape(t *testing.T, db *gorm.DB) usageSchemaShape {
 }
 
 // Every table, column and index a fresh v4.8.0 install has must also exist after
-// upgrading a v4.7.1 database. This is the guard against another model-declared
-// index or column that no migration creates on the upgrade path.
+// upgrading the captured v4.7.1 database. Because both sides are real schemas
+// (testdata from the released binary, and this binary's fresh install), this is the
+// guard against another model-declared index or column that no migration creates on
+// the upgrade path.
 func TestUpgradedUsageSchemaMatchesFreshInstall(t *testing.T) {
 	fresh := openUpgradeTestDB(t)
 	freshRunner, err := newUsageMigrationRunner(fresh)
@@ -202,7 +209,7 @@ func TestUpgradedUsageSchemaMatchesFreshInstall(t *testing.T) {
 	}
 
 	upgraded := openUpgradeTestDB(t)
-	buildV471UsageDatabase(t, upgraded)
+	loadV471UsageDatabase(t, upgraded)
 	upgradeToV480(t, upgraded)
 
 	freshShape := readUsageSchemaShape(t, fresh)
