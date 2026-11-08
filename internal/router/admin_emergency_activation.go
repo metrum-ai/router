@@ -90,8 +90,10 @@ func newAdminEmergencyActivationStore(db *gorm.DB, replicas int, now func() time
 	return &adminEmergencyActivationStore{db: db, now: now, redactReason: redactReason}, nil
 }
 
-// The phase-12 migration uses this DDL. Registration after the phase-11 audit
-// migration belongs to the integration slice; constructors never auto-migrate.
+// The control-plane emergency-ledger migration applies this DDL; constructors
+// never auto-migrate. Until that migration is registered by the deployment slice,
+// a database without the ledger starts without emergency credentials and refuses
+// an emergency enrollment rather than substituting a no-op adapter.
 func applyAdminEmergencyActivationSchema(tx *gorm.DB) error {
 	for _, sql := range []string{
 		`CREATE TABLE IF NOT EXISTS router_admin_emergency_activations (activation_id TEXT PRIMARY KEY, credential_id TEXT NOT NULL, binding_digest TEXT NOT NULL, subject TEXT NOT NULL, issuer TEXT NOT NULL, reason TEXT NOT NULL, activated_at_ms BIGINT NOT NULL, until_ms BIGINT NOT NULL, credential_expires_ms BIGINT NOT NULL, deactivated_at_ms BIGINT NOT NULL DEFAULT 0)`,

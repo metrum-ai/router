@@ -50,6 +50,15 @@ func (s *Service) PinAuthorization(ctx context.Context) context.Context {
 	if s == nil || ctx == nil {
 		return ctx
 	}
+	if captured, ok := ctx.Value(adminMachineGenerationContextKey{}).(capturedAdminMachineGeneration); ok && captured.owner == s && captured.generation != nil {
+		// Machine credentials and grants were captured together. An earlier
+		// generic pin must not substitute the independently published serving
+		// snapshot, and later mount/handler/guard pins cannot change it.
+		if pin, ok := ctx.Value(authorizationRevisionKey{}).(pinnedAuthorizationRevision); ok && pin.owner == s && pin.snapshot == captured.generation.authorizer {
+			return ctx
+		}
+		return context.WithValue(ctx, authorizationRevisionKey{}, pinnedAuthorizationRevision{s, captured.generation.authorizer})
+	}
 	if pin, ok := ctx.Value(authorizationRevisionKey{}).(pinnedAuthorizationRevision); ok && pin.owner == s {
 		return ctx
 	}

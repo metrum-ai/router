@@ -208,3 +208,133 @@ func TestConfiguredPolicyAdminInventoryCountsOnlyMachineKeys(t *testing.T) {
 		t.Fatalf("unexpected subject: %q", inventory[0].Subject)
 	}
 }
+
+// TestConfigReloadWithPublishedMachineGenerationRefusesCandidateLockout is the
+// regression for the reload guard evaluating the PUBLISHED administrators instead
+// of the candidate: with a machine generation published, a reload that removes
+// the last configured administrator used to pass because the old generation still
+// contained it. The guard now runs against the generation the reload would
+// install, so the reload is refused with the old configuration and generation
+// intact and the refusal counted.
+func TestConfigReloadWithPublishedMachineGenerationRefusesCandidateLockout(t *testing.T) {
+	dir := t.TempDir()
+	usagePath := filepath.Join(dir, "usage.sqlite")
+	seed, err := openTestUsageStorePath(usagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := seed.CreateAuthzPolicySet(authzPolicySetInput{
+		ID: "policy-set", Name: "main", Version: 1,
+		Policy: []string{
+			"p, adminkey:policy-admin, *, admin:policy, write|activate",
+			"g, adminkey:policy-admin, " + securityAdministratorRole + ", *",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.ActivateAuthzPolicySet("policy-set", "tester", "req-guard", "guard fixture", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db := callerAdminTestDB(t)
+	key, err := GenerateAdminAPIKey("policy-admin", nil, callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_POLICY_ADMIN_MACHINE_HASH", key.TokenHash)
+
+	// The machine plane stays ENABLED and the reloaded document removes the only
+	// configured administrator.
+	document := `server:
+  listen: ':8080'
+  default_model_group: default
+  admin_auth:
+    authorization:
+      enabled: true
+      source: db
+  identifiers:
+    mode: passthrough
+providers:
+  mock:
+    base_url: http://127.0.0.1:1/v1
+    dialect: openai
+    api_key_env: TEST_API_KEY
+models:
+  default:
+    strategy: static
+    targets:
+      - provider: mock
+        model: mock-model
+callers: []
+admin:
+  enabled: true
+  listen: 127.0.0.1:0
+`
+	hash := sha256.Sum256([]byte(document))
+	if err := db.Exec(
+		`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`,
+		document, hex.EncodeToString(hash[:]), time.Now().UTC().Format(time.RFC3339Nano), "set-1",
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	usageEnabled := true
+	cfg := &Config{
+		Server: ServerConfig{
+			Identifiers:       IdentifierConfig{Mode: "passthrough"},
+			Listen:            ":0",
+			DefaultModelGroup: "default",
+			AdminAuth: AdminAuthConfig{
+				APIKeys: []AdminAPIKeyConfig{{
+					KeyID: "policy-admin", KeyHashEnv: "TEST_POLICY_ADMIN_MACHINE_HASH",
+					Domain: "*", Permissions: []string{"config:read"},
+				}},
+				Authorization: AdminAuthorizationConfig{Enabled: true, Source: "db"},
+			},
+			UsageDB: UsageDBConfig{
+				Enable: &usageEnabled, Driver: "sqlite", Path: usagePath,
+				MigrationPolicy: usageDBMigrationPolicyAutoSafe,
+			},
+			ConfigSource: ConfigSourceConfig{
+				Mode: "database", Driver: "sqlite",
+				Path: db.Config.Dialector.(*sqlite.Dialector).DSN, RuntimeScope: "staging",
+			},
+		},
+		StatePath: filepath.Join(dir, "state.json"),
+		Provider: map[string]ProviderConfig{
+			"mock": {BaseURL: "http://127.0.0.1:1/v1", Dialect: "openai", APIKey: "test-key"},
+		},
+		Models: map[string]ModelGroup{
+			"default": {Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-model"}}},
+		},
+		Admin: AdminPlaneConfig{Enabled: true, Listen: "127.0.0.1:0"},
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(svc.Close)
+	published := svc.machineGeneration.Load()
+	if published == nil || published.keys == nil || published.keys.keys["policy-admin"] == nil {
+		t.Fatal("startup did not publish a generation carrying the configured administrator")
+	}
+
+	// RED on the published-inventory guard: the old generation still has the key,
+	// so the reload would have been accepted and silently locked the fleet out.
+	if err := svc.reloadActiveConfigFromDB(); !errors.Is(err, ErrLastPolicyAdmin) {
+		t.Fatalf("reload removing the only published administrator = %v, want ErrLastPolicyAdmin", err)
+	}
+	if len(svc.cfg.Server.AdminAuth.APIKeys) != 1 || svc.cfg.Server.AdminAuth.APIKeys[0].KeyID != "policy-admin" {
+		t.Fatalf("refused reload replaced the configuration: %+v", svc.cfg.Server.AdminAuth.APIKeys)
+	}
+	if svc.machineGeneration.Load() != published {
+		t.Fatal("refused reload published a machine generation")
+	}
+	if got := svc.adminMetrics().policyGuardRefusals; got != 1 {
+		t.Fatalf("policy guard refusals = %d, want 1", got)
+	}
+}

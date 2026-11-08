@@ -60,7 +60,7 @@ func newAdminMTLSAuthenticator(issuer string, roots interface{ Snapshot() *x509.
 }
 
 func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
-	if ctx.Err() != nil || r == nil {
+	if ctx == nil || ctx.Err() != nil || r == nil {
 		return Principal{}, ErrInvalidCredential
 	}
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
@@ -68,7 +68,7 @@ func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 	}
 	// A forwarded header can never manufacture a TLS identity. Handshake
 	// verification is required but not sufficient: reverify against current roots.
-	if len(r.TLS.VerifiedChains) == 0 {
+	if len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) > 16 {
 		return Principal{}, ErrInvalidCredential
 	}
 	leaf := r.TLS.PeerCertificates[0]
@@ -92,6 +92,12 @@ func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 	if !adminLeafExplicitClientAuth(leaf) {
 		return Principal{}, ErrInvalidCredential
 	}
+	return a.principalForVerifiedLeaf(ctx, leaf)
+}
+
+// Caller has verified this leaf under this configured issuer's current roots
+// and explicit ClientAuth policy. Mapping is never used to select an issuer.
+func (a *adminMTLSAuthenticator) principalForVerifiedLeaf(ctx context.Context, leaf *x509.Certificate) (Principal, error) {
 	// Unmapped extra SANs are ignored. All mapped SANs must agree on exactly
 	// one subject; no preference ordering can mask conflicting mapped SANs.
 	subject := ""

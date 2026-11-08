@@ -35,13 +35,23 @@ type quotaStore struct {
 // the new configuration. This is used by the DB-mode reload path to swap in
 // updated caller definitions without losing quota history.
 func (q *quotaStore) rebuildCallers(cfg *Config) error {
-	if cfg == nil {
-		return errors.New("rebuild callers: config is required")
+	callers, err := prepareQuotaCallers(cfg)
+	if err != nil {
+		return err
 	}
-	now := time.Now().UTC()
+	q.installPreparedCallers(callers)
+	return nil
+}
+
+// Preparation is detached: rejecting later authn/authz preparation must not
+// change the live caller directory or persistent accounting state.
+func prepareQuotaCallers(cfg *Config) (map[string]*callerRuntime, error) {
+	if cfg == nil {
+		return nil, errors.New("rebuild callers: config is required")
+	}
 	dir, err := cfg.validateAccounts()
 	if err != nil {
-		return fmt.Errorf("rebuild callers: %w", err)
+		return nil, fmt.Errorf("rebuild callers: %w", err)
 	}
 	newCallers := make(map[string]*callerRuntime, len(cfg.Callers))
 	for _, callerCfg := range cfg.Callers {
@@ -71,6 +81,13 @@ func (q *quotaStore) rebuildCallers(cfg *Config) error {
 		}
 		newCallers[callerCfg.ID] = rt
 	}
+	return newCallers, nil
+}
+
+// Installation is infallible. Capture current accounting under the live lock
+// at commit, not during preparation: serving requests may complete meanwhile.
+func (q *quotaStore) installPreparedCallers(newCallers map[string]*callerRuntime) {
+	now := time.Now().UTC()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	// Preserve existing caller state for IDs that survive the reload.
@@ -92,7 +109,6 @@ func (q *quotaStore) rebuildCallers(cfg *Config) error {
 		}
 	}
 	q.callers = newCallers
-	return nil
 }
 
 type callerRuntime struct {

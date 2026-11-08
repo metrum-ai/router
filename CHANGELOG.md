@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Admin machine authentication on the dedicated admin listener: configured
+  admin API keys, OAuth 2.0 client-credentials and workload identity federation
+  tokens with DPoP or certificate sender constraints, mTLS trust domains, and
+  offline-enrolled emergency keys and certificates. Every request captures one
+  immutable authentication/authorization generation and every operation still
+  goes through the single authorization decision point.
+
 ### Fixed
 
 - `metrum-ai-router-migrate --json` prints the status document while a migration
@@ -22,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- configured admin keys with a non-lowercase disabled status were still accepted
+  on the serving port.
 - Serialize PostgreSQL revision-notifier shutdown with its listener goroutine
   and await pgx asynchronous connection cleanup, avoiding concurrent connection
   reads and closure during service shutdown.

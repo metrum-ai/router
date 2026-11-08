@@ -104,8 +104,14 @@ type authenticatorChain struct{ mechanisms []Authenticator }
 // The first matching identity wins, but every presented credential is checked:
 // a valid credential cannot mask another invalid one. Sender-constrained JWT
 // mechanisms must validate the certificate/proof themselves. A presented TLS
-// certificate also requires a successful mtls validator (or certificate-only
-// emergency validator). Register the token mechanism first when its identity
+// certificate also requires a successful mtls/certificate-only emergency
+// validator OR typed RFC 8705 possession evidence from the successful token
+// mechanism. After typed token-bound possession or a declared certificate
+// emergency proof/Use succeeds, only concrete pure mTLS identity mappers are
+// redundant and skipped. Other validators,
+// especially emergency activation/Use acknowledgements, are never skipped.
+// Possession evidence never requires an additional SAN identity.
+// Register the token mechanism first when its identity
 // should win over the certificate identity. Validators must return their actual
 // credential kind; this is how the chain checks credential coverage.
 // The chain is opt-in for the new listener and never changes legacy handlers.
@@ -114,7 +120,7 @@ func NewAuthenticatorChain(mechanisms ...Authenticator) Authenticator {
 }
 
 func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
-	if ctx.Err() != nil || r == nil {
+	if ctx == nil || ctx.Err() != nil || r == nil {
 		return Principal{}, ErrInvalidCredential
 	}
 	if err := validateMachineAuthEnvelope(r); err != nil {
@@ -132,19 +138,30 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 	dpopPresented := len(authorizationFields) > 0 && strings.EqualFold(authorizationFields[0], "DPoP")
 	certificatePresented := r.TLS != nil && len(r.TLS.PeerCertificates) > 0
 	certificateValidated, authorizationValidated := false, false
+	certificateIdentityRedundant := false
 	for _, mechanism := range c.mechanisms {
 		if ctx.Err() != nil || mechanism == nil {
 			return Principal{}, ErrInvalidCredential
 		}
-		p, err := mechanism.Authenticate(ctx, r)
+		if certificateIdentityRedundant && adminPureCertificateIdentity(mechanism) {
+			continue
+		}
+		stepCtx, certificateCoverage := newAdminCertificateCoverageContext(ctx)
+		p, err := mechanism.Authenticate(stepCtx, r)
 		switch {
 		case err == ErrNoCredential:
 			continue
+		case errors.Is(err, ErrSenderConstraintFailed):
+			return Principal{}, ErrSenderConstraintFailed
 		case err != nil:
 			return Principal{}, ErrInvalidCredential
 		}
 		if !validMachinePrincipal(p) {
 			return Principal{}, ErrInvalidCredential
+		}
+		if certificateCoverage.consume(p, r) {
+			certificateValidated = true
+			certificateIdentityRedundant = true
 		}
 		switch p.Kind {
 		case "mtls":
@@ -163,6 +180,10 @@ func (c *authenticatorChain) Authenticate(ctx context.Context, r *http.Request) 
 			switch declared.credentialType {
 			case EmergencyCertificate:
 				certificateValidated = true
+				// This declared certificate mechanism has already proved native
+				// possession and durably acknowledged Use. Do not require a
+				// separate normal SAN identity, nor skip any other obligation.
+				certificateIdentityRedundant = true
 			case EmergencyBearerKey:
 				if dpopPresented {
 					return Principal{}, ErrInvalidCredential

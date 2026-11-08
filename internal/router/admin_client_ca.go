@@ -4,9 +4,7 @@
 package router
 
 import (
-	"bytes"
 	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"io"
 	"os"
@@ -78,42 +76,16 @@ func (s *AdminClientCAStore) Reload() error {
 		if readErr != nil || closeErr != nil || totalBytes > maxAdminCABundleBytes {
 			return errors.New("admin client CA bundle unreadable or oversized")
 		}
-		data = bytes.TrimSpace(data)
-		if len(data) == 0 {
-			return errors.New("admin client CA bundle empty")
+		certificates, err := decodeAdminClientCAs(data)
+		if err != nil {
+			return err
 		}
-		for len(data) > 0 {
-			if !bytes.HasPrefix(data, []byte("-----BEGIN CERTIFICATE-----")) {
-				return errors.New("admin client CA bundle malformed")
-			}
-			// Decode only the first textual block. pem.Decode searches past
-			// malformed input, so feeding it the entire bundle could silently
-			// discard a corrupt anchor and publish partial trust.
-			const begin = "-----BEGIN CERTIFICATE-----"
-			const end = "-----END CERTIFICATE-----"
-			endIndex := bytes.Index(data, []byte(end))
-			if endIndex < 0 {
-				return errors.New("admin client CA PEM malformed")
-			}
-			blockEnd := endIndex + len(end)
-			firstBlock := data[:blockEnd]
-			if bytes.Contains(firstBlock[len(begin):], []byte("-----BEGIN")) {
-				return errors.New("admin client CA PEM nested block")
-			}
-			block, trailing := pem.Decode(firstBlock)
-			if block == nil || len(bytes.TrimSpace(trailing)) != 0 || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
-				return errors.New("admin client CA PEM malformed")
-			}
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err != nil || !cert.BasicConstraintsValid || !cert.IsCA || cert.KeyUsage&x509.KeyUsageCertSign == 0 {
-				return errors.New("admin client CA certificate invalid")
-			}
+		for _, cert := range certificates {
 			count++
 			if count > maxAdminCACertificates {
 				return errors.New("admin client CA certificate limit exceeded")
 			}
 			pool.AddCert(cert)
-			data = bytes.TrimSpace(data[blockEnd:])
 		}
 	}
 	s.current.Store(pool)

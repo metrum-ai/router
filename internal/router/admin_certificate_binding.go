@@ -22,11 +22,18 @@ import (
 // is used for independent validity/chain/clientAuth revalidation. The leaf must
 // explicitly contain clientAuth EKU and must not contain anyExtendedKeyUsage.
 // Forwarded
-// certificate headers are never read. Pass the same root source as the listener.
+// certificate headers are never read. Pass the same root source as the listener:
+// immutable pool snapshots must be stable until a new reload publication.
 func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, currentRoots func() *x509.CertPool, thumbprint string) bool {
-	if ctx.Err() != nil || r == nil || r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 || len(r.TLS.PeerCertificates) > 16 || currentRoots == nil {
+	// Clear any earlier attempt within the same mechanism; failed possession
+	// must never leave a successful factor behind.
+	if report := adminCertificateCoverageFrom(ctx); report != nil {
+		report.verified.Store(nil)
+	}
+	if ctx == nil || ctx.Err() != nil || r == nil || r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 || len(r.TLS.PeerCertificates) > 16 || currentRoots == nil {
 		return false
 	}
+	authorization := adminSingleAuthorization(r)
 	leaf := r.TLS.PeerCertificates[0]
 	if leaf == nil {
 		return false
@@ -37,19 +44,11 @@ func validateAdminCertificateBoundToken(ctx context.Context, r *http.Request, cu
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(thumbprint)) != 1 {
 		return false
 	}
-	roots := currentRoots()
-	if roots == nil {
+	if _, ok := verifyAdminNativeClientCertificate(ctx, r, currentRoots); !ok {
 		return false
 	}
-	intermediates := x509.NewCertPool()
-	for _, cert := range r.TLS.PeerCertificates[1:] {
-		if cert == nil {
-			return false
-		}
-		intermediates.AddCert(cert)
-	}
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
-		return false
-	}
-	return adminLeafExplicitClientAuth(leaf) && ctx.Err() == nil
+	// This is proof of possession, not certificate-to-subject mapping. Evidence
+	// is consumable only by this successful token mechanism on this request.
+	recordAdminVerifiedCertificateBinding(ctx, authorization, digest)
+	return true
 }
