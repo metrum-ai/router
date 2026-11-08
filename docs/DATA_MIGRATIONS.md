@@ -189,9 +189,14 @@ metrum-ai-router-migrate --scope=usage --action=verify-serving --dsn-env=ROUTER_
 metrum-ai-router-migrate --scope=router-config --action=plan --driver=postgres \
   --dsn-env=ROUTER_CONFIG_DB_DSN --json
 metrum-ai-router-migrate --scope=router-config --action=apply --dsn-env=ROUTER_CONFIG_DB_DSN --json
-metrum-ai-router-migrate --scope=router-config --action=verify-serving --dsn-env=ROUTER_CONFIG_DB_DSN
+metrum-ai-router-migrate --scope=router-config --action=verify --dsn-env=ROUTER_CONFIG_DB_DSN
 ```
 
 `plan` must report these migrations as pending (or already applied) with
 `maintenance: online` and no data job; a non-zero exit or an `incompatible` state means the
-binary and the database disagree and serving must not start.
+binary and the database disagree and serving must not start. The router-config scope also has a
+transactional maintenance batch: `--action=apply` applies the online prefix and stops at it, so run
+`--action=maintenance --backup-evidence-ref=<safe reference>` in the approved window and then
+`--action=apply` once more for the later online migrations. The scope exposes only `status`, `plan`,
+`verify`, `apply` and `maintenance`, so its postcondition check is `--action=verify`, not
+`--action=verify-serving` (which is the usage scope and what serving startup validates).
