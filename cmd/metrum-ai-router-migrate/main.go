@@ -147,11 +147,94 @@ func main() {
 		die("migration %s: %v", *action, err)
 	}
 	if *jsonOut {
-		b, _ := json.Marshal(status)
-		fmt.Println(string(b))
+		document, err := migrationStatusJSON(status)
+		if err != nil {
+			die("migration %s: encode safe json status: %v", *action, err)
+		}
+		fmt.Println(string(document))
 		return
 	}
 	fmt.Printf("scope=%s schema_version=%d data_version=%d compatible=%t state=%s pending=%d entries=%d\n", status.Scope, status.SchemaVersion, status.DataVersion, status.Compatible, status.State, len(status.Pending), len(status.Entries))
+}
+
+// migrationStatusDocument is the JSON shape of router.MigrationStatus. It
+// exists because a pending migration is a router.MigrationDefinition, whose
+// Apply and Verify function fields encoding/json cannot marshal; the document
+// therefore replaces Pending with a safe metadata projection and leaves every
+// other field exactly as the status reports it.
+type migrationStatusDocument struct {
+	Scope             string
+	StatusUnavailable bool
+	SchemaVersion     int
+	DataVersion       int
+	Compatibility     router.MigrationCompatibility
+	Compatible        bool
+	State             string
+	Pending           []pendingMigrationSummary
+	Entries           []router.MigrationLedgerEntry
+	Jobs              []router.MigrationDataJobStatus
+}
+
+// pendingMigrationSummary is the safe, handler-free description of a migration
+// that still has to run: identity, integrity and execution metadata only, never
+// the Go handlers themselves.
+type pendingMigrationSummary struct {
+	ID               int
+	Scope            string
+	Name             string
+	Release          string
+	Checksum         string
+	ManifestDigest   string
+	SchemaVersion    int
+	DataVersion      int
+	Transactional    bool
+	ExecutionMode    string
+	MaintenanceMode  string
+	LockClass        string
+	TimeoutClass     string
+	RollbackClass    string
+	DataJobKey       string
+	PostconditionKey string
+	Dependencies     []int
+}
+
+// migrationStatusJSON encodes the safe status document. It returns the encoding
+// error instead of dropping it, so a status that cannot be represented becomes
+// a non-zero exit rather than an empty success.
+func migrationStatusJSON(status router.MigrationStatus) ([]byte, error) {
+	document := migrationStatusDocument{
+		Scope:             status.Scope,
+		StatusUnavailable: status.StatusUnavailable,
+		SchemaVersion:     status.SchemaVersion,
+		DataVersion:       status.DataVersion,
+		Compatibility:     status.Compatibility,
+		Compatible:        status.Compatible,
+		State:             status.State,
+		Entries:           status.Entries,
+		Jobs:              status.Jobs,
+	}
+	for _, pending := range status.Pending {
+		document.Pending = append(document.Pending, pendingMigrationSummary{
+			ID:               pending.ID,
+			Scope:            pending.Scope,
+			Name:             pending.Name,
+			Release:          pending.Release,
+			Checksum:         pending.Checksum,
+			ManifestDigest:   pending.ManifestDigest,
+			SchemaVersion:    pending.SchemaVersion,
+			DataVersion:      pending.DataVersion,
+			Transactional:    pending.Transactional,
+			ExecutionMode:    pending.ExecutionMode,
+			MaintenanceMode:  pending.MaintenanceMode,
+			LockClass:        pending.LockClass,
+			TimeoutClass:     pending.TimeoutClass,
+			RollbackClass:    pending.RollbackClass,
+			DataJobKey:       pending.DataJobKey,
+			PostconditionKey: pending.PostconditionKey,
+			Dependencies:     pending.Dependencies,
+		})
+	}
+	return json.Marshal(document)
 }
 
 func die(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...); os.Exit(1) }
