@@ -94,8 +94,10 @@ port: documented `501` surfaces (`/v1/complete`, moderations, message batches,
 beta files, `responses compact` and `responses input_tokens` on the Claude
 target) and typed `400` refusals (embeddings without an embeddings group,
 document modality, thinking and chat on the GPT target). No router defect appears
-in the classification, and the stage is not reported as a pass; stage B is
-reported skipped, never as a pass.
+in the classification, and the stage is not reported as a pass. Stage B passed
+the bounded Harbor matrix on a dedicated Docker host: every lane 5/5, routed
+equal to direct on every task, and the offline replay passed before any provider
+call.
 
 ### Upgrade
 
