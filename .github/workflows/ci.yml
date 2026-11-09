@@ -355,7 +355,7 @@ jobs:
   tls-acme:
     name: TLS ACME (Pebble)
     if: github.event_name != 'push'
-    runs-on: router-arc-small
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 20
     steps:
       - name: Isolate job caches
