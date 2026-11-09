@@ -23,11 +23,21 @@ class GoPatchFloorTests(unittest.TestCase):
         self.assertIn("golang:1.27.3-alpine", (ROOT / "Dockerfile").read_text())
         self.assertIn("ARG GO_VERSION=1.27.3\n", (ROOT / "deploy/github-runners-router/Dockerfile").read_text())
 
-    def test_security_note_is_in_unreleased(self):
+    def test_go_toolchain_security_note_is_in_v480_release_section(self):
+        # The Go 1.27.3 security note shipped with v4.8.0, so it must stay in the released
+        # 4.8.0 section (Keep a Changelog). The check no longer depends on [Unreleased],
+        # which is empty right after a release.
         text = (ROOT / "CHANGELOG.md").read_text()
-        unreleased = text.split("## [Unreleased]\n", 1)[1].split("\n## [", 1)[0]
-        self.assertIn("### Security", unreleased)
-        self.assertIn("v4.8.0 release binaries are built with Go 1.27.3", unreleased)
+        marker = "\n## [4.8.0] - "
+        self.assertIn(marker, text)
+        section = text.split(marker, 1)[1].split("\n## [", 1)[0]
+        self.assertIn("### Security", section)
+        self.assertIn("v4.8.0 release binaries are built with Go 1.27.3", section)
+
+    def test_changelog_keeps_an_unreleased_section(self):
+        text = (ROOT / "CHANGELOG.md").read_text()
+        self.assertIn("\n## [Unreleased]\n", text)
+        self.assertLess(text.index("\n## [Unreleased]\n"), text.index("\n## [4.8.0] - "))
 
     def test_ci_and_release_builds_assert_actual_runtime(self):
         for name in ("ci.yml", "release.yml", "release-compat.yml"):
