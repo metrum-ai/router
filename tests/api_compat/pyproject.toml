@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
   "pytest==9.1.1",
   "PyYAML==6.0.3",
-  "openai==3.41.0",
+  "openai==3.46.0",
   "anthropic==1.15.0",
 ]
 
