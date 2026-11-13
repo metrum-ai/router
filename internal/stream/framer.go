@@ -11,25 +11,31 @@ import (
 )
 
 var ErrLimit = errors.New("stream: size limit exceeded")
-var ErrFrameTooLarge = errors.New("stream: line exceeds 64 KiB")
+var ErrFrameTooLarge = errors.New("stream: line exceeds configured limit")
 
 const maxFramerLineBytes = 64 << 10
 
 // Framer retains at most one event. Limit bounds total upstream bytes; zero is unlimited.
-// Individual SSE lines are bounded to 64 KiB including one normalized line ending.
+// Individual SSE lines are bounded including one normalized line ending.
+// The default is 64 KiB; the router supplies its validated server ceiling.
 type Framer struct {
+	maxLineBytes int
 	reader       *bufio.Reader
 	skipLF       bool // A CR ended the previous line; swallow an optional LF lazily.
 	Limit, Bytes int64
 }
 
-func NewFramer(r io.Reader, limit int64) *Framer {
+func NewFramer(r io.Reader, limit int64, maxLineBytes ...int) *Framer {
+	lineLimit := maxFramerLineBytes
+	if len(maxLineBytes) > 0 && maxLineBytes[0] > 0 {
+		lineLimit = maxLineBytes[0]
+	}
 	if limit > 0 {
 		r = io.LimitReader(r, limit+1)
 	}
 	// Hide an existing *bufio.Reader: NewReaderSize otherwise reuses a larger
 	// supplied buffer, allowing oversized lines when the total limit is zero.
-	return &Framer{reader: bufio.NewReaderSize(struct{ io.Reader }{r}, maxFramerLineBytes), Limit: limit}
+	return &Framer{reader: bufio.NewReaderSize(struct{ io.Reader }{r}, 64<<10), Limit: limit, maxLineBytes: lineLimit}
 }
 func (f *Framer) Next() (Event, error) {
 	var e Event
@@ -100,7 +106,7 @@ func (f *Framer) nextLine() ([]byte, error) {
 		default:
 			// Reserve one byte for the normalized terminator. CRLF counts as one
 			// line ending, but both bytes still count against the stream budget.
-			if len(line) >= maxFramerLineBytes-1 {
+			if len(line) >= f.maxLineBytes-1 {
 				return nil, ErrFrameTooLarge
 			}
 			line = append(line, b)
