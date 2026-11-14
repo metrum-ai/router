@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   mock-chain-matrix:
-    runs-on: router-arc
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
