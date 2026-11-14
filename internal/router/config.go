@@ -50,8 +50,13 @@ type Config struct {
 	secretEnvRefs []string
 }
 
+const defaultMaxSSELineBytes = 8 << 20
+const minMaxSSELineBytes = 64 << 10
+const maxMaxSSELineBytes = 32 << 20
+
 type StreamingConfig struct {
-	Translator string `yaml:"translator" json:"translator"`
+	MaxSSELineBytes int    `yaml:"max_sse_line_bytes" json:"maxSseLineBytes"`
+	Translator      string `yaml:"translator" json:"translator"`
 }
 
 // Model identity modes for server.responses.model_identity. Upstream reports
@@ -1339,6 +1344,9 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
+	if c.Server.Streaming.MaxSSELineBytes == 0 {
+		c.Server.Streaming.MaxSSELineBytes = defaultMaxSSELineBytes
+	}
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
 	}
@@ -1570,6 +1578,9 @@ func (c *Config) ValidateForImport() error {
 }
 
 func (c *Config) validate(requireAdminKeyEnv bool) error {
+	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
+		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
+	}
 	switch c.Server.Streaming.Translator {
 	case "", "incremental", "synthesized":
 	default:
