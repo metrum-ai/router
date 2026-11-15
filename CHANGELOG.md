@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
+- Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
+- Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
+
 ### Security
 
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1

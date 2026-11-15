@@ -43,7 +43,7 @@ func TestStreamPolicyE2E(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
 			if model == "large" {
-				fmt.Fprint(w, "data: "+strings.Repeat("x", 65<<10)+"\n\n")
+				fmt.Fprint(w, "data: "+strings.Repeat("x", (8<<20)+1)+"\n\n")
 				return
 			}
 			fmt.Fprint(w, "data: {\"id\":\"chatcmpl_test\",\"model\":\"stream\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello\"}}]}\n\n")
