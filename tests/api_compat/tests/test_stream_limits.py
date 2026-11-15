@@ -184,6 +184,7 @@ def _limits_config(work, upstream_url: str, usage_db=None) -> str:
   identifiers: {{mode: passthrough}}
   default_model_group: chat
   cache: {{enabled: false}}
+  streaming: {{max_sse_line_bytes: 65536}}
   upstream: {{max_response_bytes: {MAX_RESPONSE_BYTES}}}
 {usage_block}  logging: {{path: "{work / 'router.jsonl'}"}}
 state_path: "{work / 'state.json'}"
