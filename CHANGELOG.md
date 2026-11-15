@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1
+  server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries,
+  container images and the CI runner image are built with Go 1.27.4, and source builds
+  require at least Go 1.27.4.
+
 ## [4.8.0] - 2026-11-08
 
 Control plane release. Adds an opt-in, machine-to-machine admin control plane on its own listener:

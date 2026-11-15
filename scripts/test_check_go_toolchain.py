@@ -9,19 +9,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class GoPatchFloorTests(unittest.TestCase):
     def test_obsolete_and_prerelease_toolchains_fail(self):
-        for version in ("go1.25.99", "go1.26.10", "go1.27.0", "go1.27.2", "go1.27.3rc1", "devel go1.28", "", "go1.27", "go1.27.3 extra"):
+        for version in ("go1.25.99", "go1.26.10", "go1.27.0", "go1.27.2", "go1.27.3", "go1.27.4rc1", "devel go1.28", "", "go1.27", "go1.27.4 extra"):
             with self.subTest(version=version):
                 self.assertFalse(check.supported(version))
 
     def test_fixed_stable_versions_pass(self):
-        for version in ("go1.27.3", "go1.27.4", "go1.28.0", "go1.30.0"):
+        for version in ("go1.27.4", "go1.27.5", "go1.28.0", "go1.30.0"):
             with self.subTest(version=version):
                 self.assertTrue(check.supported(version))
 
     def test_build_producers_use_fixed_floor(self):
-        self.assertIn("\ngo 1.27.3\n", (ROOT / "go.mod").read_text())
-        self.assertIn("golang:1.27.3-alpine", (ROOT / "Dockerfile").read_text())
-        self.assertIn("ARG GO_VERSION=1.27.3\n", (ROOT / "deploy/github-runners-router/Dockerfile").read_text())
+        self.assertIn("\ngo 1.27.4\n", (ROOT / "go.mod").read_text())
+        self.assertIn("golang:1.27.4-alpine", (ROOT / "Dockerfile").read_text())
+        self.assertIn("ARG GO_VERSION=1.27.4\n", (ROOT / "deploy/github-runners-router/Dockerfile").read_text())
 
     def test_go_toolchain_security_note_is_in_v480_release_section(self):
         # The Go 1.27.3 security note shipped with v4.8.0, so it must stay in the released
