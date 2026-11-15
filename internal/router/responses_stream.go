@@ -39,7 +39,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			native.OnResponseID = rc.affinityCapture
 		}
 	}
-	f := stream.NewFramer(body, maxBytes)
+	f := stream.NewFramer(body, maxBytes, rc.sseLineLimit())
 	reason := stream.StopError
 	var started time.Time
 	emit := func(events []stream.Event) error {
@@ -143,7 +143,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		up, err = f.Next()
 		if err != nil {
 			if errors.Is(err, stream.ErrFrameTooLarge) {
-				return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds 64 KiB", Committed: result.Committed}
+				return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds configured max_sse_line_bytes", Retryable: !result.Committed, Committed: result.Committed}
 			}
 			if errors.Is(err, stream.ErrLimit) {
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit"}

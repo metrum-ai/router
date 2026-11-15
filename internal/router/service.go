@@ -160,6 +160,7 @@ type requestContext struct {
 	via                    []string
 	securityRecorded       bool
 	pacedUpstreamStream    bool
+	maxSSELineBytes        int
 	chatStreamIncludeUsage bool
 	traceSeq               int
 	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
@@ -1843,7 +1844,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	rc.rec.FallbackUsed = fallbackUsed
 	if err != nil {
 		if committedStreamError(err) {
-			usage := committedStreamUsage(err, req, dialect, reservationTokens)
+			usage := addUsage(committedStreamUsage(err, req, dialect, reservationTokens), rc.rec.DiscardedUsage)
 			if totalTokens(usage) > 0 {
 				if _, _, qerr := s.quota.RecordTokens(rc.caller, resAd.Reservation, usage); qerr != nil {
 					rc.rec.QuotaState = "error"
@@ -1868,6 +1869,13 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			}
 			s.finish(rc, status, &code)
 			return
+		}
+		if usage := rc.rec.DiscardedUsage; totalTokens(usage) > 0 {
+			rc.rec.Usage = usage
+			rc.rec.UsageSource = "discarded"
+			if _, _, qerr := s.quota.RecordTokens(rc.caller, resAd.Reservation, usage); qerr != nil {
+				rc.rec.QuotaState, rc.rec.KeyState = "error", "error"
+			}
 		}
 		s.writeUpstreamFailureError(w, rc, req, dec, attempts, err, captureDecision)
 		return
@@ -2811,6 +2819,12 @@ func (s *Service) callUpstreams(ctx context.Context, w http.ResponseWriter, rc *
 			attempt.ErrorMessage = s.sanitizeDiagnosticError(attempt.ErrorMessage)
 		}
 		if err == nil {
+			// Estimate the serving stream before discarded usage is folded in;
+			// otherwise discarded tokens would mask missing final usage.
+			if resp != nil && resp.Streamed && totalTokens(rc.rec.DiscardedUsage) > 0 && totalTokens(resp.Usage) == 0 {
+				resp.Usage = estimatedStreamUsage(req, resp.Text)
+				resp.Warnings = appendWarning(resp.Warnings, "usage-estimated")
+			}
 			attempt.Selected = true
 			s.recordToolValidation(rc, dec.GroupName, req, resp, &attempt)
 			rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
@@ -2821,6 +2835,10 @@ func (s *Service) callUpstreams(ctx context.Context, w http.ResponseWriter, rc *
 			return resp, attemptIndex, i > 0, nil
 		}
 		classified := classifyError(err)
+		if !classified.Committed && classified.PartialUsage != nil && totalTokens(*classified.PartialUsage) > 0 {
+			rc.rec.DiscardedUsage = addUsage(rc.rec.DiscardedUsage, *classified.PartialUsage)
+			rc.rec.Warnings = appendWarning(rc.rec.Warnings, "upstream-usage-without-downstream-output")
+		}
 		s.recordAdaptiveTrafficBackoff(rc, dec.GroupName, tgt, classified, shapeInput)
 		canFallback := classified.Retryable || classified.Fallbackable
 		if !classified.Canceled && !classified.Committed && i < len(targets)-1 {
@@ -3265,6 +3283,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			idleBody = newStreamIdleReader(httpResp.Body, streamIdle)
 			streamBody = idleBody
 		}
+		rc.maxSSELineBytes = s.cfg.Server.Streaming.MaxSSELineBytes
 		streamResult, streamErr := proxy(attemptCtx, pw, streamBody, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
 			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))

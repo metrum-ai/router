@@ -93,6 +93,8 @@ Enable it only after validating a client adapter that posts a Responses-shaped b
 
 ## Streaming translator
 
+`server.streaming.max_sse_line_bytes` bounds each upstream SSE line before copying it into the event buffer. It defaults to 8388608 (8 MiB); zero selects that default. Explicit values must be between 65536 (64 KiB) and 33554432 (32 MiB), inclusive. The total response ceiling in `server.upstream.max_response_bytes` still applies independently.
+
 `server.streaming.translator` accepts `incremental` (default) or `synthesized`.
 Incremental mode uses native same-dialect Chat, Responses, and Anthropic streams.
 Responses emits each recognized event immediately and transforms protocol IDs

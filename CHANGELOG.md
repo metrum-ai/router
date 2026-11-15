@@ -5,6 +5,12 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v4.7.2 (unreleased)
+
+- Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
+- Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
+- Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
+
 ## [4.7.1] - 2026-11-08
 
 Patch release. Rebuilds v4.7.0 with the Go 1.26.10 toolchain floor for its

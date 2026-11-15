@@ -101,9 +101,9 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			upErr.Committed = result.Committed
 			return result, upErr
 		}
-		line, err := reader.ReadSlice('\n')
-		if errors.Is(err, bufio.ErrBufferFull) {
-			return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds 64 KiB", Committed: result.Committed}
+		line, err := readNativeSSELine(reader, rc.sseLineLimit())
+		if errors.Is(err, errNativeSSELineTooLarge) {
+			return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds configured max_sse_line_bytes", Retryable: !result.Committed, Committed: result.Committed}
 		}
 		if len(line) > 0 {
 			result.Bytes += int64(len(line))
@@ -347,4 +347,32 @@ func streamErrorCode(err error) string {
 		}
 	}
 	return fmt.Sprintf("%T", err)
+}
+
+// A fixed read buffer avoids allocating the configured ceiling for small streams.
+// Check each fragment before copying it into the bounded line buffer.
+var errNativeSSELineTooLarge = errors.New("upstream SSE line exceeds configured limit")
+
+func (rc *requestContext) sseLineLimit() int {
+	if rc != nil && rc.maxSSELineBytes > 0 {
+		return rc.maxSSELineBytes
+	}
+	return defaultMaxSSELineBytes
+}
+
+func readNativeSSELine(reader *bufio.Reader, limit int) ([]byte, error) {
+	var line []byte
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		if len(fragment) > limit-len(line) {
+			return nil, errNativeSSELineTooLarge
+		}
+		if len(line) == 0 && !errors.Is(err, bufio.ErrBufferFull) {
+			return fragment, err
+		}
+		line = append(line, fragment...)
+		if !errors.Is(err, bufio.ErrBufferFull) {
+			return line, err
+		}
+	}
 }
