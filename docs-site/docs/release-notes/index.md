@@ -14,6 +14,102 @@ this page. The version banner, `/docs/releases`, and `/version` are the
 authoritative sources for its exact router version and build timestamp; do not
 infer the running version from a date written in documentation.
 
+## v4.7.2 - 2026-11-15
+
+### Highlights
+
+- **Larger bounded streaming lines.** The default SSE line ceiling is 8 MiB;
+  large tool arguments and repeated completion payloads can pass without
+  removing the memory bound.
+- **Fallback before commitment.** An oversized upstream line can use the existing
+  eligible fallback chain before any downstream output is committed.
+- **Discarded usage remains auditable.** Reported tokens are retained and marked
+  when an attempt produces no downstream output.
+
+### Operator Impact
+
+| Area | Change |
+| --- | --- |
+| Streaming | Default upstream SSE line limit increases from 64 KiB to 8 MiB; post-commit failures still end the stream without replay |
+| Usage records | Retained discarded usage has an explicit warning; a request that ultimately fails without downstream output has `usage_source: discarded` |
+| Configuration | New optional `server.streaming.max_sse_line_bytes`; valid range 65536–33554432 bytes, zero selects 8388608 |
+| Database | Unchanged at schema 12; no migration on upgrade from v4.7.1 |
+| API and authorization | No endpoint or response-schema surface changes; authorization decisions are unchanged |
+| Build | Go 1.26.10 floor retained; CI runner labels are configurable |
+
+### Fixed
+
+- Replace the fixed 64 KiB upstream SSE line ceiling with an 8 MiB default.
+  `server.streaming.max_sse_line_bytes` accepts 65536 through 33554432 bytes
+  (64 KiB–32 MiB); zero selects the default. Each line is checked before buffer
+  growth, and the independent total-response ceiling still applies.
+- Allow `upstream_frame_too_large` to use the existing eligible fallback chain
+  before downstream commitment. Once a stream is committed, it is terminated
+  on failure and is never replayed to a different target.
+- Retain upstream-reported usage from discarded pre-commit attempts. Requests
+  that ultimately fail with no downstream output use `usage_source: discarded`;
+  the `upstream-usage-without-downstream-output` warning also identifies retained
+  discarded usage when a later attempt succeeds. Missing usage on the serving
+  stream is estimated before discarded usage is added.
+- Make CI runner labels configurable; this changes build placement only.
+
+### Known limitations
+
+- A line above the configured ceiling is still rejected. After downstream
+  commitment the HTTP status cannot be replaced, and the stream cannot fall back.
+- The unchanged gate retains provider request-shape refusals and caller TPM
+  admission failures. The SDK compatibility stage remains red, with each case
+  classified in the verification record.
+- Harbor requires a Docker host. Stage B was not run for this RC because no Docker host was provided; its v4.7.1 result is historical evidence only.
+
+### Release verification
+
+The gate ran once, sequentially, on RC
+`fc77797c245516e2a6fb3f98de5ee22ee4d3202a`, with the previous release's
+configuration bytes unchanged: Stage A baseline SHA-256
+`41a3dc29746c2728fec3633db05a1c8c40bd59dae6076b60f41eefec3d451b13` and Stage C
+SHA-256 `cafaee3d2dab566205463863c844fa3b707904b4c7dba46896102912d00dd7f0`.
+Every red cell remains red; the gate's overall exit is nonzero.
+
+| Stage | v4.7.2 RC `fc77797c2455` | v4.7.1 result |
+| --- | --- | --- |
+| A: 24 agent cells, routed and direct, file/edit/quote | 20/24 | 20/24 |
+| B: Harbor direct/routed matrix in both API styles | not run: needs a Docker host | pass, 5/5 both styles plus offline replay |
+| C: live SDK compatibility suites | fail, fully classified; 63/108 suites pass | fail, fully classified; 63/108 suites pass |
+| D: parallel tool calls, direct and routed | pass, 6/6 | pass, 6/6 |
+
+The four red Stage A cells are the three Chat-to-GPT file/edit/quote cells
+(provider `400 upstream-rejected`, with TPM admission refusals also observed on
+edit retries) and the Responses-to-Claude quote cell (`429 tpm-exceeded`).
+Stage C's per-suite verdicts and normalized error messages match the archived
+comparison reports used for v4.7.1: OpenAI-to-GPT 11/27, OpenAI-to-Claude 18/27,
+Anthropic-to-GPT 16/27, and Anthropic-to-Claude 18/27. Its red cells retain the
+same typed `400` and `501` refusals; none is relabelled as a pass. Stage B has no
+new result and is not included in a claim of a complete four-stage pass.
+
+The unchanged Stage A harness counter does not follow the baseline's quoted
+absolute database path. Its nominal zero is not a spend claim; the actual
+usage database was captured and audited separately. The configured cap was
+unchanged. See the [release verification record](https://github.com/metrum-ai/router/blob/release/v4.7.x/docs/evidence/releases/v4.7.2/README.md) for the measured
+results, baseline comparison, upgrade commands, and non-gate streaming proof.
+
+An additional **non-gate** RC streaming check wrote a 200,000-byte file
+from 200,632 bytes of tool arguments and completed the actual tool-result
+continuation. Its largest upstream SSE line was 209,948 bytes. Replaying
+the identical provider stream against the released v4.7.1 binary reproduced
+`upstream_frame_too_large` and a missing terminal marker after HTTP commitment.
+This focused proof supplements the gate; it does not add a passing gate cell.
+
+
+### Upgrade
+
+A SQLite database created by the released v4.7.1 binary opens on the RC at schema 12
+with zero pending migrations and an unchanged migration ledger. A mock-backed
+request increases usage rows from 1 to 2 without changing the schema DDL; the
+released v4.7.1 server reopens it and its released usage-report tool reads those
+rows afterwards. No database restore is needed for rollback to v4.7.1 for
+schema reasons. Follow the normal backup and upgrade procedure.
+
 ## v4.7.1 - 2026-11-08
 
 ### Highlights
