@@ -30,13 +30,14 @@ var secretStreamOversizeCandidate = regexp.MustCompile(`(?i)(?:\b(?:gh[pousr]_|g
 
 var secretStreamMatcherOnce sync.Once
 var secretStreamMatcher *regexp.Regexp
+var secretStreamKeywordStart = regexp.MustCompile(`(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|Authorization)\b`)
 
 func compiledSecretStreamMatcher() *regexp.Regexp {
 	secretStreamMatcherOnce.Do(func() {
 		var alternatives []string
 		for _, rule := range builtinSecretRules() {
-			if rule.Name == "jwt" || rule.Name == "private_key" {
-				continue // Their longer candidates have dedicated bounded scanners.
+			if rule.Name == "private_key" {
+				continue // PEM candidates have a dedicated bounded scanner.
 			}
 			alternatives = append(alternatives, "(?:"+rule.Expression+")")
 		}
@@ -164,7 +165,10 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 	chatContentAndFinish := ok && secretStreamChatTerminal(payload)
 	if snapshot {
 		before := d.state.result.Replacements
-		snapshotChanged := redactSecretStreamSnapshot(payload, d.state)
+		snapshotChanged, snapshotErr := redactSecretStreamSnapshot(payload, d.state)
+		if snapshotErr != nil {
+			return nil, snapshotErr
+		}
 		if err := d.failIfMatched(before); err != nil {
 			return nil, err
 		}
@@ -559,7 +563,10 @@ func (d *secretStreamDLP) flushBefore(event stream.Event, payload map[string]any
 	var out []stream.Event
 	if d.pending != "" && d.lastEvent.Data != nil {
 		before := d.state.result.Replacements
-		tail := d.state.redact(d.pending)
+		tail, _, err := redactSecretStreamChunk(d.state, d.pending, "", true)
+		if err != nil {
+			return nil, err
+		}
 		if err := d.failIfMatched(before); err != nil {
 			return nil, err
 		}
@@ -670,7 +677,7 @@ func addSecretStreamSequence(payload map[string]any, add int) {
 	}
 }
 
-func redactSecretStreamSnapshot(value any, state *piiRedactionState) bool {
+func redactSecretStreamSnapshot(value any, state *piiRedactionState) (bool, error) {
 	changed := false
 	switch x := value.(type) {
 	case map[string]any:
@@ -678,20 +685,31 @@ func redactSecretStreamSnapshot(value any, state *piiRedactionState) bool {
 			switch v := child.(type) {
 			case string:
 				if key == "text" || key == "content" || key == "output_text" {
-					redacted := state.redact(v)
+					redacted, _, err := redactSecretStreamChunk(state, "", v, true)
+					if err != nil {
+						return changed, err
+					}
 					x[key] = redacted
 					changed = changed || redacted != v
 				}
 			default:
-				changed = redactSecretStreamSnapshot(child, state) || changed
+				childChanged, err := redactSecretStreamSnapshot(child, state)
+				if err != nil {
+					return changed, err
+				}
+				changed = childChanged || changed
 			}
 		}
 	case []any:
 		for _, child := range x {
-			changed = redactSecretStreamSnapshot(child, state) || changed
+			childChanged, err := redactSecretStreamSnapshot(child, state)
+			if err != nil {
+				return changed, err
+			}
+			changed = childChanged || changed
 		}
 	}
-	return changed
+	return changed, nil
 }
 
 func filterNativeSecretStreamFrame(frame []byte, d *secretStreamDLP) ([][]byte, error) {
@@ -785,6 +803,10 @@ func redactSecretStreamChunk(state *piiRedactionState, pending, chunk string, fi
 	if err != nil {
 		return "", "", err
 	}
+	boundary, err = secretStreamKeywordReleaseBoundary(combined, boundary)
+	if err != nil {
+		return "", "", err
+	}
 	boundary, err = secretStreamPEMReleaseBoundary(combined, boundary, false)
 	if err != nil {
 		return "", "", err
@@ -834,7 +856,7 @@ func secretStreamJWTReleaseBoundary(value string, boundary int) (int, error) {
 			return boundary, nil
 		}
 		start := search + rel
-		if start > 0 && isJWTSegmentByte(value[start-1]) {
+		if start > 0 && isJWTNameByte(value[start-1]) {
 			search = start + 3
 			continue
 		}
@@ -852,18 +874,18 @@ func secretStreamJWTReleaseBoundary(value string, boundary int) (int, error) {
 			if segmentLength > 4096 {
 				return 0, errSecretStreamWindowExceeded
 			}
+			if cursor == len(value) {
+				if valid && start < boundary {
+					boundary = start
+				}
+				return boundary, nil
+			}
 			minimum := 8
 			if segment == 0 {
 				minimum = 11
 			}
 			if segmentLength < minimum {
 				valid = false
-			}
-			if cursor == len(value) {
-				if valid && start < boundary {
-					boundary = start
-				}
-				return boundary, nil
 			}
 			if segment < 2 && value[cursor] == '.' {
 				cursor++
@@ -886,6 +908,138 @@ func secretStreamJWTReleaseBoundary(value string, boundary int) (int, error) {
 			return boundary, nil
 		}
 	}
+}
+
+func isJWTNameByte(value byte) bool {
+	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z' || value >= '0' && value <= '9' || value == '_'
+}
+
+// secretStreamKeywordReleaseBoundary holds credential labels while a value
+// marker or value may still follow them. This preserves assignments with long
+// whitespace padding and bearer headers whose token starts far after Bearer.
+func secretStreamKeywordReleaseBoundary(value string, boundary int) (int, error) {
+	for _, span := range secretStreamKeywordStart.FindAllStringIndex(value, -1) {
+		start, cursor := span[0], span[1]
+		authorization := strings.EqualFold(value[start:cursor], "Authorization")
+		var incomplete bool
+		var err error
+		cursor, incomplete, err = skipSecretKeywordSpace(value, start, cursor)
+		if err != nil {
+			return 0, err
+		}
+		if incomplete {
+			return min(boundary, start), nil
+		}
+		if authorization {
+			if value[cursor] != ':' {
+				continue
+			}
+			cursor++
+			cursor, incomplete, err = skipSecretKeywordSpace(value, start, cursor)
+			if err != nil {
+				return 0, err
+			}
+			if incomplete {
+				return min(boundary, start), nil
+			}
+			remaining := value[cursor:]
+			const bearer = "Bearer"
+			if len(remaining) < len(bearer) {
+				if strings.EqualFold(remaining, bearer[:len(remaining)]) {
+					return min(boundary, start), nil
+				}
+				continue
+			}
+			if !strings.EqualFold(remaining[:len(bearer)], bearer) || len(remaining) > len(bearer) && isJWTNameByte(remaining[len(bearer)]) {
+				continue
+			}
+			cursor += len(bearer)
+			if cursor == len(value) {
+				return min(boundary, start), nil
+			}
+			if !isSecretKeywordSpace(value[cursor]) {
+				continue
+			}
+			cursor, incomplete, err = skipSecretKeywordSpace(value, start, cursor)
+			if err != nil {
+				return 0, err
+			}
+			if incomplete {
+				return min(boundary, start), nil
+			}
+			tokenStart := cursor
+			for cursor < len(value) && isBearerTokenByte(value[cursor]) {
+				cursor++
+			}
+			if cursor == len(value) {
+				if len(value)-start >= secretStreamPEMMax {
+					return 0, errSecretStreamWindowExceeded
+				}
+				return min(boundary, start), nil
+			}
+			if cursor == tokenStart {
+				continue
+			}
+			continue // A complete value is handled by the compiled detector.
+		}
+
+		if cursor != len(value) && value[cursor] != ':' && value[cursor] != '=' {
+			continue
+		}
+		if cursor == len(value) {
+			return min(boundary, start), nil
+		}
+		cursor++
+		cursor, incomplete, err = skipSecretKeywordSpace(value, start, cursor)
+		if err != nil {
+			return 0, err
+		}
+		if incomplete {
+			return min(boundary, start), nil
+		}
+		if value[cursor] == '"' || value[cursor] == '\'' {
+			cursor++
+			if cursor == len(value) {
+				return min(boundary, start), nil
+			}
+		}
+		tokenStart := cursor
+		for cursor < len(value) && isCredentialAssignmentByte(value[cursor]) {
+			cursor++
+		}
+		if cursor == len(value) {
+			if len(value)-start >= secretStreamPEMMax {
+				return 0, errSecretStreamWindowExceeded
+			}
+			return min(boundary, start), nil
+		}
+		if cursor == tokenStart {
+			continue
+		}
+	}
+	return boundary, nil
+}
+
+func skipSecretKeywordSpace(value string, start, cursor int) (int, bool, error) {
+	for cursor < len(value) && isSecretKeywordSpace(value[cursor]) {
+		cursor++
+		if cursor-start >= secretStreamPEMMax {
+			return 0, false, errSecretStreamWindowExceeded
+		}
+	}
+	return cursor, cursor == len(value), nil
+}
+
+func isSecretKeywordSpace(value byte) bool {
+	return value == ' ' || value == '\t' || value == '\n' || value == '\r' || value == '\f'
+}
+
+func isCredentialAssignmentByte(value byte) bool {
+	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z' || value >= '0' && value <= '9' || strings.ContainsRune("_./+=-", rune(value))
+}
+
+func isBearerTokenByte(value byte) bool {
+	return isCredentialAssignmentByte(value) || value == '~'
 }
 
 // secretStreamPEMReleaseBoundary scans all BEGIN markers, including markers
@@ -966,7 +1120,7 @@ func hasOversizeJWT(value string) bool {
 			return false
 		}
 		start := search + rel
-		if start > 0 && isJWTSegmentByte(value[start-1]) {
+		if start > 0 && isJWTNameByte(value[start-1]) {
 			search = start + 3
 			continue
 		}

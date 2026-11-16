@@ -813,6 +813,128 @@ func TestSecretDLPStreamReleaseEdgeProperty(t *testing.T) {
 	}
 }
 
+func TestSecretDLPStreamHyphenatedJWTReleaseEdges(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefixLengths := []int{0, 1, 64, 300, 500, 508, 512, 516, 600, 1024}
+	for _, payloadLength := range []int{300, 900, 1500} {
+		token := "eyJ" + strings.Repeat("h", 64) + "." + strings.Repeat("p", payloadLength) + "." + strings.Repeat("s", 128)
+		for _, prefixLength := range prefixLengths {
+			t.Run(fmt.Sprintf("payload_%d/prefix_%d", payloadLength, prefixLength), func(t *testing.T) {
+				state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+				input := strings.Repeat("P", prefixLength) + "-" + token + strings.Repeat("Z", 600)
+				var pending string
+				var output strings.Builder
+				for start := 0; start < len(input); start += 16 {
+					end := min(start+16, len(input))
+					safe, next, feedErr := redactSecretStreamChunk(state, pending, input[start:end], false)
+					if feedErr != nil {
+						t.Fatalf("feed [%d:%d]: %v", start, end, feedErr)
+					}
+					if strings.Contains(safe, token[:12]) {
+						t.Fatalf("feed [%d:%d] released JWT header; pending=%d safe=%q", start, end, len(pending), safe[max(0, strings.Index(safe, token[:12])-12):])
+					}
+					assertNoSecretFragment(t, safe, token, 12)
+					output.WriteString(safe)
+					pending = next
+				}
+				safe, _, err := redactSecretStreamChunk(state, pending, "", true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				output.WriteString(safe)
+				if strings.Contains(output.String(), token) || !strings.Contains(output.String(), "[SECRET_JWT_1]") {
+					t.Fatalf("hyphenated JWT was leaked or not redacted; payload=%d prefix=%d tail=%q", payloadLength, prefixLength, output.String()[max(0, output.Len()-200):])
+				}
+				assertNoSecretFragment(t, output.String(), token, 12)
+			})
+		}
+	}
+}
+
+func TestSecretDLPStreamKeywordPaddingIsHeld(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name        string
+		input       string
+		secret      string
+		placeholder string
+	}{
+		{name: "assignment", input: "api_key" + strings.Repeat(" ", 600) + "=" + strings.Repeat("a", 48) + " tail" + strings.Repeat("z", 600), secret: "api_key" + strings.Repeat(" ", 600) + "=" + strings.Repeat("a", 48), placeholder: "[SECRET_CREDENTIAL_1]"},
+		{name: "authorization_bearer", input: "Authorization: Bearer" + strings.Repeat(" ", 600) + strings.Repeat("b", 64) + " tail" + strings.Repeat("z", 600), secret: "Authorization: Bearer" + strings.Repeat(" ", 600) + strings.Repeat("b", 64), placeholder: "[SECRET_BEARER_1]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+			var pending string
+			var output strings.Builder
+			for start := 0; start < len(tc.input); start += 16 {
+				end := min(start+16, len(tc.input))
+				safe, next, feedErr := redactSecretStreamChunk(state, pending, tc.input[start:end], false)
+				if feedErr != nil {
+					t.Fatalf("feed [%d:%d]: %v", start, end, feedErr)
+				}
+				assertNoSecretFragment(t, safe, tc.secret, 12)
+				output.WriteString(safe)
+				pending = next
+			}
+			safe, _, err := redactSecretStreamChunk(state, pending, "", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output.WriteString(safe)
+			if strings.Contains(output.String(), tc.secret) || !strings.Contains(output.String(), tc.placeholder) {
+				t.Fatalf("padded keyword candidate leaked or was not redacted: %q", output.String()[max(0, output.Len()-200):])
+			}
+			assertNoSecretFragment(t, output.String(), tc.secret, 12)
+		})
+	}
+}
+
+func TestSecretDLPTruncatedPEMStreamsFailClosed(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	newDLP := func() *secretStreamDLP {
+		return &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
+	}
+	truncatedKey := "-----BEGIN RSA PRIVATE KEY-----\n" + strings.Repeat("K", 700)
+
+	t.Run("responses_done_snapshot", func(t *testing.T) {
+		dlp := newDLP()
+		delta, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "delta": truncatedKey, "sequence_number": 0})
+		out, err := dlp.filterEvent(stream.Event{Type: "response.output_text.delta", Data: delta})
+		if err != nil || len(out) != 0 {
+			t.Fatalf("Responses delta leaked before done: events=%#v err=%v", out, err)
+		}
+		done, _ := json.Marshal(map[string]any{"type": "response.output_text.done", "text": truncatedKey, "item_id": "msg_truncated", "sequence_number": 1})
+		out, err = dlp.filterEvent(stream.Event{Type: "response.output_text.done", Data: done})
+		if !errors.Is(err, errSecretStreamWindowExceeded) || len(out) != 0 {
+			t.Fatalf("Responses done snapshot did not fail closed: events=%#v err=%v", out, err)
+		}
+	})
+
+	t.Run("anthropic_message_stop", func(t *testing.T) {
+		dlp := newDLP()
+		delta, _ := json.Marshal(map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": truncatedKey}})
+		out, err := dlp.filterEvent(stream.Event{Name: "content_block_delta", Type: "content_block_delta", Data: delta})
+		if err != nil || len(out) != 0 {
+			t.Fatalf("Anthropic delta leaked before stop: events=%#v err=%v", out, err)
+		}
+		stop, _ := json.Marshal(map[string]any{"type": "message_stop"})
+		out, err = dlp.filterEvent(stream.Event{Name: "message_stop", Type: "message_stop", Data: stop})
+		if !errors.Is(err, errSecretStreamWindowExceeded) || len(out) != 0 {
+			t.Fatalf("Anthropic message_stop did not fail closed: events=%#v err=%v", out, err)
+		}
+	})
+}
+
 func TestSecretDLPStreamCertificateThenRSA4096KeyIn16ByteChunks(t *testing.T) {
 	rules, err := compilePIIRules(builtinSecretRules())
 	if err != nil {

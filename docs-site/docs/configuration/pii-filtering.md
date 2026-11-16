@@ -15,11 +15,14 @@ the median of three runs:
 
 | Path | Input | Measured CPU time |
 | --- | --- | ---: |
-| Request matcher (`BenchmarkSecretMatcher`) | 2.75 KiB benign request | 0.749 ms/request |
-| Stream window (`BenchmarkSecretStreamWindow`) | 33.3 KiB response in 128-byte deltas | 46.0 ms/stream |
+| Request matcher (`BenchmarkSecretMatcher`) | 2.75 KiB benign request | 0.741 ms/request |
+| Stream window (`BenchmarkSecretStreamWindow`) | 33.3 KiB response in 128-byte deltas | 54.2 ms/stream |
 
 These are local microbenchmarks, not end-to-end latency guarantees. The stream
-measurement includes scanning a complete 33.3 KiB response. First-token delay
+measurement includes scanning a complete 33.3 KiB response. The current
+implementation rescans retained text on each chunk, so worst-case work is
+quadratic in the held length and bounded by the 64 KiB candidate cap; incremental
+scanning may reduce this cost later. First-token delay
 also includes the ordinary 512-byte rolling tail, a plausible JWT held from its
 start up to 12,290 bytes, or a PEM block held through its end marker up to 64 KiB.
 
