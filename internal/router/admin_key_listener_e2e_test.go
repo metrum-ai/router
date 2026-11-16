@@ -13,10 +13,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -27,6 +29,9 @@ import (
 type adminKeyE2E struct {
 	service     *Service
 	server      *httptest.Server
+	baseURL     string
+	client      *http.Client
+	socket      string
 	store       *adminKeyStore
 	keyID       string // bootstrap configured key id
 	token       string // bootstrap token
@@ -46,6 +51,10 @@ func mountAdminV1ForTest(t testing.TB, svc *Service) {
 }
 
 func newAdminKeyE2E(t *testing.T, includeBackupAdmin ...bool) *adminKeyE2E {
+	return newAdminKeyE2EWithSocket(t, "", includeBackupAdmin...)
+}
+
+func newAdminKeyE2EWithSocket(t *testing.T, socket string, includeBackupAdmin ...bool) *adminKeyE2E {
 	t.Helper()
 	withBackup := len(includeBackupAdmin) == 0 || includeBackupAdmin[0]
 	narrowBootstrap := len(includeBackupAdmin) > 1 && includeBackupAdmin[1]
@@ -118,6 +127,10 @@ func newAdminKeyE2E(t *testing.T, includeBackupAdmin ...bool) *adminKeyE2E {
 		},
 		Admin: AdminPlaneConfig{Enabled: true, Listen: "127.0.0.1:0"},
 	}
+	if socket != "" {
+		cfg.Admin.Listen = ""
+		cfg.Admin.UnixSocket = AdminUnixSocketConfig{Path: socket, Mode: "0600"}
+	}
 	svc := &Service{
 		cfg:                cfg,
 		configControlPlane: db,
@@ -152,10 +165,34 @@ func newAdminKeyE2E(t *testing.T, includeBackupAdmin ...bool) *adminKeyE2E {
 		t.Fatal(err)
 	}
 	mountAdminV1ForTest(t, svc)
-	server := httptest.NewServer(svc.AdminHandler())
-	t.Cleanup(server.Close)
+	e2e := &adminKeyE2E{socket: socket}
+	if socket != "" {
+		plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := plane.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = plane.Shutdown(t.Context()) })
+		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		}}
+		e2e.client = &http.Client{Transport: transport}
+		e2e.baseURL = "http://unix"
+		t.Cleanup(transport.CloseIdleConnections)
+	} else {
+		server := httptest.NewServer(svc.AdminHandler())
+		t.Cleanup(server.Close)
+		e2e.server = server
+		e2e.client = server.Client()
+		e2e.baseURL = server.URL
+	}
 	// A controllable clock for the rotation overlap window.
-	e2e := &adminKeyE2E{service: svc, server: server, store: svc.adminKeys, keyID: bootstrap.KeyID, token: bootstrap.Token, backupToken: backup.Token, now: time.Now().UTC()}
+	e2e.service, e2e.store, e2e.keyID, e2e.token, e2e.now = svc, svc.adminKeys, bootstrap.KeyID, bootstrap.Token, time.Now().UTC()
+	if withBackup {
+		e2e.backupToken = backup.Token
+	}
 	svc.adminKeys.now = func() time.Time { return e2e.now }
 	t.Cleanup(func() { svc.Close() })
 	return e2e
@@ -499,7 +536,7 @@ func (e *adminKeyE2E) do(t *testing.T, method, path, token string, body any, hea
 	} else {
 		reader = bytes.NewReader(nil)
 	}
-	request, err := http.NewRequestWithContext(context.Background(), method, e.server.URL+path, reader)
+	request, err := http.NewRequestWithContext(context.Background(), method, e.baseURL+path, reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +545,7 @@ func (e *adminKeyE2E) do(t *testing.T, method, path, token string, body any, hea
 	for key, value := range headers {
 		request.Header.Set(key, value)
 	}
-	response, err := e.server.Client().Do(request)
+	response, err := e.client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,6 +555,33 @@ func (e *adminKeyE2E) do(t *testing.T, method, path, token string, body any, hea
 		t.Fatal(err)
 	}
 	return response, out.Bytes()
+}
+
+func TestAdminKeyAuthorizationThroughUnixSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets are unavailable on Windows")
+	}
+	e := newAdminKeyE2EWithSocket(t, filepath.Join(t.TempDir(), "admin.sock"))
+	response, body := e.do(t, http.MethodPost, "/admin/v1/admin-keys", e.token,
+		map[string]any{"expires_at": e.now.Add(time.Hour).Format(time.RFC3339)},
+		map[string]string{"If-Match": AdminETagForRevision(7), "Idempotency-Key": "unix-socket-issue"})
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("issue over Unix socket = %d body=%s", response.StatusCode, body)
+	}
+	var issued struct {
+		Secret string `json:"secret"`
+	}
+	if err := json.Unmarshal(body, &issued); err != nil || issued.Secret == "" {
+		t.Fatalf("decode issued key: secret-present=%t err=%v", issued.Secret != "", err)
+	}
+	response, body = e.do(t, http.MethodGet, "/admin/v1/admin-keys", issued.Secret, nil, nil)
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("Casbin-denied socket request = %d body=%s, want 403", response.StatusCode, body)
+	}
+	response, body = e.do(t, http.MethodGet, "/admin/v1/admin-keys", e.token, nil, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("authorized socket request = %d body=%s, want 200", response.StatusCode, body)
+	}
 }
 
 // grant administers policy and the key lifecycle to the given subjects through

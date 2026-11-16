@@ -229,14 +229,18 @@ keys removed before restart.
 ## v5.0.0 routerctl Admin API changes
 
 The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
-listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
-`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+listener. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket; do not
+combine them. Unix sockets can run alone or alongside TCP, and their filesystem mode controls which
+local users can connect. Remote TCP endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
 `ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
 no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
 the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
 `admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
 `admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
 and the admin credential setting; response bodies and credentials are not printed.
+
+When `admin.unix_socket.path` is configured without `admin.listen`, the socket is the only admin
+listener and the default TCP listener is disabled. Set `admin.listen` explicitly to keep TCP access.
 
 | Command | v5 behavior and flags |
 | --- | --- |

@@ -24,6 +24,8 @@ with its current login and is unaffected by this guide.
 
 A configuration without an `admin:` block starts the loopback admin listener by default. Set
 `admin.enabled: false` explicitly to keep a single listener.
+Configuring only `admin.unix_socket.path` disables the default TCP admin listener; set
+`admin.listen` explicitly to keep TCP access as well.
 
 ## v5.0.0 control-plane schema 17
 
@@ -46,6 +48,16 @@ each replica a unique `admin.listen`; the default address can be bound only once
 kubectl -n <namespace> port-forward deploy/<router-deployment> 8081:8081
 curl -fsS http://127.0.0.1:8081/healthz
 ```
+
+**Unix socket.** Add `admin.unix_socket.path` to expose the same authenticated control plane locally.
+When it is the only listener configured, the admin plane starts without a TCP listener; set
+`admin.listen` as well to retain TCP access.
+The default socket mode is `0600`; set `owner` to a numeric UID when the router must hand the socket
+to a local service account, and set `mode` to an octal permission string when needed. Filesystem
+permissions gate connection, while the same machine credential and authorization checks still gate
+each request. Use `metrum-ai-routerctl ... --socket /run/metrum/admin.sock --admin-key-file <file>`
+instead of `--router-url` for API-backed commands. Existing non-socket paths and permission errors
+fail startup; shutdown removes the socket created by that process.
 
 **Router-native TLS.** The router serves its own certificate. Mount the certificate and key from a
 Secret and point the listener at them:
@@ -197,9 +209,10 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 `metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Config import, export, activate,
 and rollback use the Admin API by default; add `--offline` only when the router is stopped and the
 operator intentionally accesses the control-plane database. Other online operations use the Admin
-API directly. The default endpoint is `http://127.0.0.1:8081`; set `--router-url` or `ROUTER_URL`
-when the listener is elsewhere. Plain HTTP is accepted only on loopback; remote endpoints require
-HTTPS. Admin credentials come from `ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
+API directly. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket;
+the options cannot be combined. A socket can be the only listener or run alongside TCP. Plain HTTP
+is accepted only on loopback; remote endpoints require HTTPS. Admin credentials come from
+`ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
 `--admin-key-file`.
 
 | Operation | Versioned API | Router CLI | Notes |
