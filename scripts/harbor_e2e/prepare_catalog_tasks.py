@@ -19,7 +19,7 @@ TASKS = {
 ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = """FROM node:22.16.0-bookworm-slim
 RUN apt-get update -qq && apt-get install -y -qq python3 && npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.4.0 && pi --version
-RUN useradd --uid 10001 --user-group --create-home --home-dir /home/harbor --shell /usr/sbin/nologin harbor && install -d -o 10001 -g 10001 /app /logs/verifier
+RUN useradd --uid 10001 --user-group --create-home --home-dir /home/harbor --shell /usr/sbin/nologin harbor && install -d -o 10001 -g 10001 /app /logs/agent /logs/verifier /run/harbor-e2e
 ENV HOME=/home/harbor
 WORKDIR /app
 COPY --chown=10001:10001 workspace/ /app/

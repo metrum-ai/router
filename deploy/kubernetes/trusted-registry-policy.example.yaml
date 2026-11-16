@@ -13,6 +13,7 @@ spec:
           - resources:
               kinds:
                 - Pod
+                - Pod/ephemeralcontainers
       validate:
         failureAction: Enforce
         message: Images must come from an approved registry and use an immutable digest.

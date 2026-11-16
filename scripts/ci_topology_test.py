@@ -555,6 +555,10 @@ def assert_consolidated_ci() -> None:
                    "anchore/sbom-action@", "anchore/scan-action@", "severity-cutoff: high", "fail-build: true",
                    "actions/upload-artifact@"):
         require(marker in sbom, f"required SBOM lane lost {marker}")
+    live_eval = read(WORKFLOWS / "eval-infra-nightly.yml")
+    require('sudo chown "$(id -u):10001" "$HARBOR_E2E_CREDS/router-token"' in live_eval
+            and 'chmod 0640 "$HARBOR_E2E_CREDS/router-token"' in live_eval,
+            "live Harbor router token must be readable only by host owner and UID 10001 group")
     harbor_images = lanes["harbor-task-images"]
     require("runs-on: ubuntu-latest" in harbor_images
             and "scripts/harbor_e2e/test_nonroot_images.sh" in harbor_images,
