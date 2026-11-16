@@ -4,6 +4,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/metrum-ai/router/internal/router"
+	"gopkg.in/yaml.v3"
 )
 
 func TestCallerGenerateWritesTokenOnceAndNeverPrintsIt(t *testing.T) {
@@ -228,6 +231,105 @@ callers: []
 		t.Fatal("hash must not echo the raw token")
 	}
 
+	// Apply the documented v4 migration: old config fails with guidance,
+	// then the same token verifies after installing the salted hash.
+	legacyConfigPath := filepath.Join(dir, "legacy-config.yaml")
+	rawToken := strings.TrimSpace(string(mustRead(t, tokenPath)))
+	legacyDigest := sha256.Sum256([]byte(rawToken))
+	legacyConfig := strings.Replace(string(raw), "token_hash:", "token_sha256: "+hex.EncodeToString(legacyDigest[:])+"\n    # token_hash:", 1)
+	if err := os.WriteFile(legacyConfigPath, []byte(legacyConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err = exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--config", legacyConfigPath, "--id", "op-local-dev").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "callers migrate-legacy") || !strings.Contains(string(out), "caller op-local-dev") {
+		t.Fatalf("v4 config did not fail with migration guidance: %v: %s", err, out)
+	}
+	migrate := exec.Command("go", "run", ".", "callers", "migrate-legacy", "--config", legacyConfigPath, "--id", "op-local-dev", "--token-file", "-")
+	migrate.Stdin = strings.NewReader(rawToken + "\n")
+	out, err = migrate.CombinedOutput()
+	if err != nil {
+		t.Fatalf("migrate-legacy: %v: %s", err, out)
+	}
+	migratedCfg, err := router.LoadConfig(legacyConfigPath)
+	if err != nil {
+		t.Fatalf("load migrated caller: %v", err)
+	}
+	if migratedCfg.Callers[0].TokenFormatVersion != 0 || migratedCfg.Callers[0].TokenEntropyBits != 0 {
+		t.Fatalf("legacy token was stamped with v2 entropy metadata: %+v", migratedCfg.Callers[0])
+	}
+	migratedCfg.Security.KeyHygiene = router.KeyHygieneConfig{MinEntropyBits: 128, Enforce: true}
+	if err := migratedCfg.Validate(); err == nil || !strings.Contains(err.Error(), "token entropy") {
+		t.Fatalf("enforce accepted migrated token with unknown entropy: %v", err)
+	}
+	out, err = exec.Command("go", "run", ".", "callers", "verify", "--token-file", tokenPath, "--config", legacyConfigPath, "--id", "op-local-dev").CombinedOutput()
+	if err != nil || !strings.Contains(string(out), `"match": true`) || strings.Contains(string(mustRead(t, legacyConfigPath)), "token_sha256") {
+		t.Fatalf("migrated v4 config did not verify: %v: %s", err, out)
+	}
+
+	// A legacy token that cannot map to a token_id is rotated from its v4 file.
+	freeLegacyPath := filepath.Join(dir, "freeform-legacy.yaml")
+	freeLegacyToken := "legacy-free-form-router-key"
+	freeDigest := sha256.Sum256([]byte(freeLegacyToken))
+	freeConfig := strings.Replace(string(raw), "token_hash:", "token_sha256: "+hex.EncodeToString(freeDigest[:])+"\n    # token_hash:", 1)
+	if err := os.WriteFile(freeLegacyPath, []byte(freeConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	freeRotated := filepath.Join(dir, "freeform-rotated.token")
+	out, err = exec.Command("go", "run", ".", "callers", "rotate", "--config", freeLegacyPath, "--id", "op-local-dev", "--token-out", freeRotated).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rotate legacy file: %v: %s", err, out)
+	}
+	if strings.Contains(string(mustRead(t, freeLegacyPath)), "token_sha256") {
+		t.Fatal("rotating legacy file left token_sha256 behind")
+	}
+	if out, err := exec.Command("go", "run", ".", "callers", "verify", "--token-file", freeRotated, "--config", freeLegacyPath, "--id", "op-local-dev").CombinedOutput(); err != nil {
+		t.Fatalf("verify token rotated from legacy file: %v: %s", err, out)
+	}
+
+	// Disabled legacy callers are cleaned without reading a token or issuing a replacement.
+	disabledLegacyPath := filepath.Join(dir, "disabled-legacy.yaml")
+	var disabledConfig router.Config
+	if err := yaml.Unmarshal(raw, &disabledConfig); err != nil {
+		t.Fatal(err)
+	}
+	disabledConfig.Callers[0].Status = "disabled"
+	disabledConfig.Callers[0].TokenHash = ""
+	disabledConfig.Callers[0].TokenSHA256 = hex.EncodeToString(legacyDigest[:])
+	disabledYAML, err := yaml.Marshal(&disabledConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(disabledLegacyPath, disabledYAML, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err = exec.Command("go", "run", ".", "callers", "migrate-legacy", "--config", disabledLegacyPath, "--id", "op-local-dev").CombinedOutput()
+	if err != nil {
+		t.Fatalf("clean disabled legacy caller: %v: %s", err, out)
+	}
+	disabledCfg, err := router.LoadConfig(disabledLegacyPath)
+	if err != nil || disabledCfg.Callers[0].Status != "disabled" || disabledCfg.Callers[0].TokenHash != "" || strings.Contains(string(mustRead(t, disabledLegacyPath)), "token_sha256") {
+		t.Fatalf("disabled caller migration changed access state: cfg=%+v err=%v", disabledCfg, err)
+	}
+	revokedLegacyPath := filepath.Join(dir, "revoked-legacy.yaml")
+	disabledConfig.Callers[0].Status = "active"
+	disabledConfig.Callers[0].RevokedTokenHash = hex.EncodeToString(legacyDigest[:])
+	disabledConfig.Callers[0].TokenSHA256 = hex.EncodeToString(legacyDigest[:])
+	revokedYAML, err := yaml.Marshal(&disabledConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(revokedLegacyPath, revokedYAML, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err = exec.Command("go", "run", ".", "callers", "migrate-legacy", "--config", revokedLegacyPath, "--id", "op-local-dev").CombinedOutput()
+	if err != nil {
+		t.Fatalf("clean revoked legacy caller: %v: %s", err, out)
+	}
+	revokedCfg, err := router.LoadConfig(revokedLegacyPath)
+	if err != nil || revokedCfg.Callers[0].Status != "disabled" || revokedCfg.Callers[0].RevokedTokenHash != hex.EncodeToString(legacyDigest[:]) || revokedCfg.Callers[0].TokenHash != "" {
+		t.Fatalf("revoked caller was re-enabled or lost its marker: cfg=%+v err=%v", revokedCfg, err)
+	}
+
 	// A token without the <token_id>_<secret> shape cannot be found by
 	// token_hash lookup, so hash refuses it instead of locking the caller out.
 	freeForm := filepath.Join(dir, "freeform.token")
@@ -236,7 +338,7 @@ callers: []
 	}
 	refuse := exec.Command("go", "run", ".", "callers", "hash", "--token-file", freeForm)
 	out, err = refuse.CombinedOutput()
-	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(out), "callers rotate") || !strings.Contains(string(out), "#281") {
+	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 || !strings.Contains(string(out), "callers rotate") {
 		t.Fatalf("hash of a non-prefixed token must refuse with exit 1: %v: %s", err, out)
 	}
 	if strings.Contains(string(out), "legacy-free-form-caller-secret-value") || strings.Contains(string(out), "pbkdf2-sha3-512:") {
@@ -281,17 +383,15 @@ callers: []
 	}
 }
 
-func TestCallerGenerateLegacyHashFormat(t *testing.T) {
+func TestCallerGenerateRejectsRemovedHashFormat(t *testing.T) {
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "caller.token")
-	out, err := exec.Command("go", "run", ".", "callers", "generate", "--owner-user", "op", "--project", "local", "--allow", "default",
-		"--token-out", tokenPath, "--hash-format", "legacy-sha256").CombinedOutput()
-	if err != nil || !strings.Contains(string(out), `"token_hash_format": "legacy-sha256"`) {
-		t.Fatalf("legacy generate: %v: %s", err, out)
-	}
-	if out, err := exec.Command("go", "run", ".", "callers", "generate", "--owner-user", "op", "--project", "local", "--allow", "default",
-		"--token-out", filepath.Join(dir, "other.token"), "--hash-format", "md5").CombinedOutput(); err == nil {
-		t.Fatalf("unknown hash format accepted: %s", out)
+	for _, hashFormat := range []string{"legacy-sha256", "md5"} {
+		out, err := exec.Command("go", "run", ".", "callers", "generate", "--owner-user", "op", "--project", "local", "--allow", "default",
+			"--token-out", tokenPath, "--hash-format", hashFormat).CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "flag provided but not defined: -hash-format") {
+			t.Fatalf("removed hash format %q accepted: %v: %s", hashFormat, err, out)
+		}
 	}
 }
 
@@ -334,7 +434,8 @@ providers:
     api_key_env: SENTINEL
 callers:
   - id: alice
-    token_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    token_hash: pbkdf2-sha3-512:i=10000:c3RhcnR1cC10ZXN0LXNhbHQxNg:w9K-aqgc1Dil4f71Pwhzu4Ui9AhbKY42pZq1ZVnJji5V0164n8bY3SpZYNqRE4L_M_6OZ2ywFpPqtZ1TlQjMtw
+    token_id: rtr_test_alice
     allow: [default]
 models:
   default:

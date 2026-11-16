@@ -458,12 +458,12 @@ func TestAutoContainmentDetectorStormCapsManyCallersEndToEnd(t *testing.T) {
 	cfg.Callers = nil
 	tokens := make([]string, 20)
 	for i := range tokens {
-		token := fmt.Sprintf("storm-token-%02d", i)
-		sum := sha256.Sum256([]byte(token))
+		tokenID := fmt.Sprintf("rtr_storm_%02d", i)
+		token := tokenID + "_storm-token"
 		tokens[i] = token
 		cfg.Callers = append(cfg.Callers, CallerConfig{
 			ID: fmt.Sprintf("storm-%02d", i), User: "storm-user", Project: "security-test", Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]), TokenID: fmt.Sprintf("rtr_storm_%02d", i), Allow: []string{"default"},
+			TokenHash: mustCallerTokenHashForTest(t, token), TokenID: tokenID, Allow: []string{"default"},
 			Rate: RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 		})
 	}

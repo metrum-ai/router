@@ -4,7 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1216,8 +1215,7 @@ type CallerConfig struct {
 	// TokenHash is the caller token verifier,
 	// "pbkdf2-sha3-512:i=<iterations>:<salt>:<key>". It requires TokenID.
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
-	// TokenSHA256 is the deprecated unsalted SHA-256 hex of the caller token.
-	// It is still accepted, with a startup warning; use TokenHash instead.
+	// TokenSHA256 is decoded only so load can report v4 migration guidance.
 	TokenSHA256        string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
 	TokenID            string               `yaml:"token_id" json:"token_id"`
 	TokenFormatVersion int                  `yaml:"token_format_version,omitempty" json:"token_format_version,omitempty"`
@@ -1367,6 +1365,9 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if err := validateRemovedScriptConfig(cleaned); err != nil {
 		return nil, err
 	}
+	if err := validateRemovedCallerTokenSHA256(cleaned); err != nil {
+		return nil, err
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
@@ -1453,6 +1454,43 @@ func validateRemovedScriptConfig(raw []byte) error {
 		}
 	}
 	return nil
+}
+
+// ValidateCallerTokenConfigCompatibility rejects removed caller-token fields
+// before local tooling decodes a configuration that the router cannot load.
+func ValidateCallerTokenConfigCompatibility(raw []byte) error {
+	return validateRemovedCallerTokenSHA256(raw)
+}
+
+func validateRemovedCallerTokenSHA256(raw []byte) error {
+	// Decode into typed values so YAML aliases and merge keys are included.
+	var decoded struct {
+		Callers []struct {
+			ID          string `yaml:"id"`
+			TokenSHA256 string `yaml:"token_sha256"`
+		} `yaml:"callers"`
+	}
+	if err := yaml.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	for _, caller := range decoded.Callers {
+		if strings.TrimSpace(caller.TokenSHA256) != "" {
+			return removedCallerTokenSHA256Error(caller.ID)
+		}
+	}
+	return nil
+}
+
+func removedCallerTokenSHA256Error(callerID string) error {
+	if strings.TrimSpace(callerID) == "" {
+		callerID = "<unknown>"
+	}
+	return fmt.Errorf("caller %s uses removed callers[].token_sha256; with the v5 routerctl migrate it using `callers migrate-legacy --config <config.yaml> --id <caller-id> --token-file <private-file>|-` (disabled callers need no token) or rotate it using `callers rotate --config <config.yaml> --id <caller-id> --token-out <private-file>`; add `--reactivate` only to explicitly restore access", callerID)
+}
+
+func validSHA256Hex(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == 32
 }
 
 func yamlNodeHasNonZeroValue(node *yaml.Node) bool {
@@ -2394,6 +2432,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("duplicate caller id %q for callers %s and %s", caller.ID, previousCallerID, caller.ID)
 		}
 		callerIDs[caller.ID] = caller.ID
+		status := normalizeStatusDefault(caller.Status)
 		entropyBits := caller.TokenEntropyBits
 		if caller.TokenFormatVersion != 0 && caller.TokenFormatVersion != 2 {
 			return fmt.Errorf("caller %s token_format_version must be 2 when set", caller.ID)
@@ -2408,13 +2447,13 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("caller %s token_entropy_bits requires token_format_version 2", caller.ID)
 		}
 		devKey := callerHasDevelopmentToken(caller)
-		if entropyBits < entropyFloor {
+		if entropyBits < entropyFloor && status != "disabled" {
 			if c.Security.KeyHygiene.Enforce {
 				return fmt.Errorf("caller %s token entropy is below security.key_hygiene.min_entropy_bits", caller.ID)
 			}
 			log.Printf("WARNING: caller %q token entropy is unknown or below configured floor; rotate to a checksummed v2 token with at least %d bits", caller.ID, entropyFloor)
 		}
-		if devKey {
+		if devKey && status != "disabled" {
 			if c.Security.KeyHygiene.Enforce {
 				return fmt.Errorf("caller %s uses a development environment token", caller.ID)
 			}
@@ -2429,13 +2468,12 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if caller.Environment != "" && slugify(caller.Environment) == "" {
 			return fmt.Errorf("caller %s has invalid environment", caller.ID)
 		}
-		status := normalizeStatusDefault(caller.Status)
 		if !validCallerKeyStatus(status) {
 			return fmt.Errorf("caller %s has invalid status %q", caller.ID, caller.Status)
 		}
 		if strings.TrimSpace(caller.TokenHash) != "" {
-			if caller.TokenSHA256 != "" {
-				return fmt.Errorf("caller %s sets both token_hash and deprecated token_sha256; keep only token_hash", caller.ID)
+			if strings.TrimSpace(caller.TokenSHA256) != "" {
+				return removedCallerTokenSHA256Error(caller.ID)
 			}
 			if err := ValidateCallerTokenHash(caller.TokenHash); err != nil {
 				return fmt.Errorf("caller %s has invalid token_hash: %w", caller.ID, err)
@@ -2456,19 +2494,14 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			}
 			callerTokenHashes[tokenHashKey] = caller.ID
 		} else {
-			if caller.TokenSHA256 == "" || len(caller.TokenSHA256) != sha256.Size*2 {
-				return fmt.Errorf("caller %s has invalid token_sha256", caller.ID)
+			if strings.TrimSpace(caller.TokenSHA256) != "" {
+				return removedCallerTokenSHA256Error(caller.ID)
 			}
-			if _, err := hex.DecodeString(caller.TokenSHA256); err != nil {
-				return fmt.Errorf("caller %s has invalid token_sha256: %w", caller.ID, err)
+			if status != "disabled" {
+				return fmt.Errorf("caller %s requires token_hash", caller.ID)
 			}
-			tokenHashKey := strings.ToLower(caller.TokenSHA256)
-			if previousCallerID, ok := callerTokenHashes[tokenHashKey]; ok {
-				return fmt.Errorf("duplicate caller token_sha256 for callers %s and %s", previousCallerID, caller.ID)
-			}
-			callerTokenHashes[tokenHashKey] = caller.ID
 		}
-		if caller.RevokedTokenHash != "" && caller.RevokedTokenHash != caller.TokenHash && !strings.EqualFold(caller.RevokedTokenHash, caller.TokenSHA256) {
+		if caller.RevokedTokenHash != "" && caller.TokenHash != "" && caller.RevokedTokenHash != caller.TokenHash && !strings.EqualFold(caller.RevokedTokenHash, caller.TokenSHA256) && !validSHA256Hex(caller.RevokedTokenHash) {
 			return fmt.Errorf("caller %s revoked_token_hash must match its stored token verifier", caller.ID)
 		}
 		if caller.TokenID != "" {

@@ -17,6 +17,27 @@ import (
 // LoadConfigRaw reads router YAML without expanding environment expressions so
 // ${ENV} placeholders survive file-owned edits.
 func LoadConfigRaw(path string) (*router.Config, error) {
+	cfg, err := loadConfigRaw(path)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := router.ValidateCallerTokenConfigCompatibility(raw); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// LoadConfigRawForCallerMigration decodes a legacy caller verifier so callers
+// rotate/migrate-legacy can replace it before the router reloads the config.
+func LoadConfigRawForCallerMigration(path string) (*router.Config, error) {
+	return loadConfigRaw(path)
+}
+
+func loadConfigRaw(path string) (*router.Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -38,7 +59,8 @@ func LoadConfigRaw(path string) (*router.Config, error) {
 }
 
 // WriteConfigAtomic writes cfg to path after a timestamped sibling backup, then
-// validates YAML types with LoadConfigRaw, without expanding environment expressions.
+// validates YAML types without expanding environment expressions. The migration
+// decoder allows other legacy caller rows to remain until each is migrated.
 func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("config is required")
@@ -78,7 +100,7 @@ func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err 
 	// Re-parse without env expansion so ${ENV} placeholders remain intact.
 	// Full router.LoadConfig validation remains the `config validate` gate once
 	// adjacent env.json and concrete token hashes are present.
-	if _, err := LoadConfigRaw(path); err != nil {
+	if _, err := LoadConfigRawForCallerMigration(path); err != nil {
 		return backupPath, fmt.Errorf("written config failed parse: %w", err)
 	}
 	return backupPath, nil
@@ -237,18 +259,8 @@ func RevokeCaller(cfg *router.Config, callerID string) error {
 	return fmt.Errorf("caller %q not found", callerID)
 }
 
-// RotateCallerHash replaces token_sha256 and token_id for an existing caller.
-//
-// Deprecated: use RotateCallerTokenHash, which writes token_hash.
-func RotateCallerHash(cfg *router.Config, callerID, tokenSHA256, tokenID string) error {
-	if len(tokenSHA256) != 64 {
-		return fmt.Errorf("token_sha256 must be 64 hex characters")
-	}
-	return rotateCallerVerifier(cfg, callerID, "", tokenSHA256, tokenID)
-}
-
-// RotateCallerTokenHash replaces token_hash and token_id for an existing
-// caller and clears any deprecated token_sha256.
+// RotateCallerTokenHash replaces token_hash and token_id without changing caller
+// status or revocation metadata. Re-enabling access is a separate explicit action.
 func RotateCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID string) error {
 	if err := router.ValidateCallerTokenHash(tokenHash); err != nil {
 		return fmt.Errorf("invalid token_hash: %w", err)
@@ -256,10 +268,6 @@ func RotateCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID stri
 	if strings.TrimSpace(tokenID) == "" {
 		return fmt.Errorf("token_hash requires token_id")
 	}
-	return rotateCallerVerifier(cfg, callerID, tokenHash, "", tokenID)
-}
-
-func rotateCallerVerifier(cfg *router.Config, callerID, tokenHash, tokenSHA256, tokenID string) error {
 	callerID = strings.TrimSpace(callerID)
 	if callerID == "" {
 		return fmt.Errorf("caller id is required")
@@ -267,12 +275,10 @@ func rotateCallerVerifier(cfg *router.Config, callerID, tokenHash, tokenSHA256, 
 	for i, existing := range cfg.Callers {
 		if existing.ID == callerID {
 			cfg.Callers[i].TokenHash = tokenHash
-			cfg.Callers[i].TokenSHA256 = tokenSHA256
+			cfg.Callers[i].TokenSHA256 = ""
 			if strings.TrimSpace(tokenID) != "" {
 				cfg.Callers[i].TokenID = tokenID
 			}
-			cfg.Callers[i].Status = "active"
-			cfg.Callers[i].RevokedTokenHash = ""
 			if tokenHash != "" {
 				cfg.Callers[i].TokenFormatVersion = 2
 				cfg.Callers[i].TokenEntropyBits = 256
@@ -284,6 +290,65 @@ func rotateCallerVerifier(cfg *router.Config, callerID, tokenHash, tokenSHA256, 
 		}
 	}
 	return fmt.Errorf("caller %q not found", callerID)
+}
+
+// MigrateLegacyCallerTokenHash replaces a v4 verifier while preserving the
+// caller's state. Disabled and revoked callers have no usable verifier after
+// migration and do not receive a token.
+func MigrateLegacyCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID string) (bool, error) {
+	callerID = strings.TrimSpace(callerID)
+	if callerID == "" {
+		return false, fmt.Errorf("caller id is required")
+	}
+	for i := range cfg.Callers {
+		caller := &cfg.Callers[i]
+		if caller.ID != callerID {
+			continue
+		}
+		caller.TokenSHA256 = ""
+		if normalizeCallerStatus(caller.Status) == "disabled" || caller.RevokedTokenHash != "" {
+			caller.TokenHash = ""
+			caller.TokenFormatVersion = 0
+			caller.TokenEntropyBits = 0
+			if caller.RevokedTokenHash != "" {
+				caller.Status = "disabled"
+			}
+			return false, nil
+		}
+		if err := router.ValidateCallerTokenHash(tokenHash); err != nil {
+			return false, fmt.Errorf("invalid token_hash: %w", err)
+		}
+		if strings.TrimSpace(tokenID) == "" {
+			return false, fmt.Errorf("token_hash requires token_id")
+		}
+		caller.TokenHash = tokenHash
+		caller.TokenID = tokenID
+		caller.TokenFormatVersion = 0
+		caller.TokenEntropyBits = 0
+		return true, nil
+	}
+	return false, fmt.Errorf("caller %q not found", callerID)
+}
+
+// ReactivateCaller is the explicit recovery path after rotating a disabled or
+// revoked caller. The caller's old verifier has already been replaced.
+func ReactivateCaller(cfg *router.Config, callerID string) error {
+	for i := range cfg.Callers {
+		if cfg.Callers[i].ID == callerID {
+			cfg.Callers[i].Status = "active"
+			cfg.Callers[i].RevokedTokenHash = ""
+			return nil
+		}
+	}
+	return fmt.Errorf("caller %q not found", callerID)
+}
+
+func normalizeCallerStatus(status string) string {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		return "active"
+	}
+	return status
 }
 
 // EnsureAccountDirectory creates minimal user/project/membership rows when missing.

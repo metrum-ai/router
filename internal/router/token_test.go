@@ -5,8 +5,6 @@ package router
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -33,9 +31,6 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	}
 	if strings.Contains(generated.TokenID, generated.Token[strings.LastIndex(generated.Token, "_")+1:]) {
 		t.Fatal("token id contains secret")
-	}
-	if generated.TokenSHA256 != "" || generated.Caller.TokenSHA256 != "" {
-		t.Fatalf("default generation must not emit deprecated token_sha256: %#v", generated)
 	}
 	if !validCallerTokenChecksum(generated.Token) {
 		t.Fatal("generated caller token has invalid checksum")
@@ -88,20 +83,6 @@ func TestGenerateCallerTokenWithUnderscoreSecret(t *testing.T) {
 	auth.rebuild([]*callerRuntime{runtime})
 	if caller, _ := auth.lookup(generated.Token); caller == nil {
 		t.Fatal("generated token with underscores in its secret did not authenticate")
-	}
-}
-
-func TestCallerAuthLegacyTokenLookupAndRevocation(t *testing.T) {
-	token := "legacy-router-token"
-	caller := &callerRuntime{cfg: CallerConfig{ID: "legacy", TokenSHA256: legacyCallerTokenSHA256Hex(token), TokenID: "legacy"}}
-	auth := newCallerAuthState()
-	auth.rebuild([]*callerRuntime{caller})
-	if got, _ := auth.lookup(token); got == nil {
-		t.Fatal("legacy token did not authenticate")
-	}
-	auth.rebuild([]*callerRuntime{caller}, map[string]struct{}{caller.cfg.TokenSHA256: {}})
-	if got, _ := auth.lookup(token); got != nil {
-		t.Fatal("revoked legacy token authenticated")
 	}
 }
 
@@ -195,22 +176,20 @@ func TestCallerHasDevelopmentToken(t *testing.T) {
 	}
 }
 
-func TestGenerateCallerTokenLegacySHA256Format(t *testing.T) {
+func TestGenerateCallerTokenAlwaysUsesSaltedHash(t *testing.T) {
 	generated, err := GenerateCallerToken(TokenGenerateOptions{
-		OwnerUser:  "alice",
-		Project:    "search",
-		Allow:      []string{"default"},
-		HashFormat: TokenHashFormatLegacySHA256,
+		OwnerUser: "alice",
+		Project:   "search",
+		Allow:     []string{"default"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256([]byte(generated.Token))
-	if generated.TokenHash != "" || generated.TokenSHA256 != hex.EncodeToString(sum[:]) || generated.Caller.TokenSHA256 != generated.TokenSHA256 {
-		t.Fatalf("legacy format mismatch: %#v", generated)
+	if generated.TokenHash == "" || generated.Caller.TokenHash != generated.TokenHash || generated.Caller.TokenID == "" {
+		t.Fatalf("salted token hash missing: %#v", generated)
 	}
-	if _, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "alice", Project: "search", Allow: []string{"default"}, HashFormat: "md5"}); err == nil {
-		t.Fatal("unknown hash format must be rejected")
+	if ok, err := VerifyCallerTokenHash(generated.TokenHash, generated.Token); err != nil || !ok {
+		t.Fatalf("generated token hash verification = %v, %v", ok, err)
 	}
 }
 

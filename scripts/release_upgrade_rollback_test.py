@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -19,6 +20,56 @@ SPEC.loader.exec_module(MODULE)
 
 
 class StrictJSONTests(unittest.TestCase):
+    def test_v48_legacy_caller_config_migrates_with_real_commands(self):
+        root = Path(__file__).parents[1]
+        token_id = "rtr_metrum_migration_prod_v48_k1"
+        token = token_id + "_existing-held-token-secret"
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        second_id = "rtr_metrum_migration_prod_v48_k2"
+        second_token = second_id + "_second-held-token-secret"
+        second_digest = hashlib.sha256(second_token.encode()).hexdigest()
+        with tempfile.TemporaryDirectory() as raw_dir:
+            directory = Path(raw_dir)
+            config = directory / "config.yaml"
+            token_file = directory / "caller.token"
+            second_token_file = directory / "second-caller.token"
+            token_file.write_text(token + "\n", encoding="utf-8")
+            token_file.chmod(0o600)
+            second_token_file.write_text(second_token + "\n", encoding="utf-8")
+            second_token_file.chmod(0o600)
+            config.write_text(
+                "server:\n  listen: ':8080'\ncallers:\n"
+                "  - id: production-api\n"
+                f"    token_sha256: {digest}\n"
+                f"    token_id: {token_id}\n"
+                "  - id: production-worker\n"
+                f"    token_sha256: {second_digest}\n"
+                f"    token_id: {second_id}\n",
+                encoding="utf-8",
+            )
+            migrated = subprocess.run(
+                ["go", "run", "./cmd/metrum-ai-routerctl", "callers", "migrate-legacy",
+                 "--config", str(config), "--id", "production-api", "--token-file", str(token_file)],
+                cwd=root, text=True, capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            migrated = subprocess.run(
+                ["go", "run", "./cmd/metrum-ai-routerctl", "callers", "migrate-legacy",
+                 "--config", str(config), "--id", "production-worker", "--token-file", str(second_token_file)],
+                cwd=root, text=True, capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            updated = config.read_text(encoding="utf-8")
+            self.assertNotIn("token_sha256", updated)
+            self.assertIn("token_hash: pbkdf2-sha3-512:i=20000:", updated)
+            verified = subprocess.run(
+                ["go", "run", "./cmd/metrum-ai-routerctl", "callers", "verify",
+                 "--config", str(config), "--id", "production-api", "--token-file", str(token_file)],
+                cwd=root, text=True, capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(verified.returncode, 0, verified.stderr)
+            self.assertIn('"match": true', verified.stdout)
+
     def test_workflow_compares_the_full_candidate_commit_sha(self):
         workflow = Path(__file__).parents[1] / ".github/workflows/release-upgrade-check.yml"
         self.assertIn('--candidate-commit "$(git rev-parse HEAD)"', workflow.read_text(encoding="utf-8"))

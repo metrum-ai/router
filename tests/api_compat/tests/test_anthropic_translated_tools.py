@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from conftest import request as http_request, unused_port
-from harness import CALLER, CALLER_DIGEST
+from harness import CALLER, CALLER_ID, CALLER_DIGEST
 from harness.scripted_upstream import FakeUpstream, ScriptedScenario
 
 
@@ -44,7 +44,7 @@ def translated_tools_router(request, router, tmp_path):
             "dialect": dialect,
         }},
         "models": {"translated": {"strategy": "static", "targets": [target]}},
-        "callers": [{"id": "synthetic", "token_sha256": CALLER_DIGEST, "allow": ["translated"]}],
+        "callers": [{"id": "synthetic", "token_hash": CALLER_DIGEST, "token_id": CALLER_ID, "allow": ["translated"]}],
     }
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config))

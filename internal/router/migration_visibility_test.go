@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -225,11 +223,10 @@ func TestMetricsRetainsAuthorizedGlobalFamiliesWhenMigrationStatusUnavailable(t 
 	dir := t.TempDir()
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
 	cfg.Server.UsageDB = UsageDBConfig{Driver: "sqlite", Path: filepath.Join(dir, "usage.sqlite"), MigrationPolicy: usageDBMigrationPolicyAutoSafe}
-	adminToken := "rtr_metrics_admin_unavailable"
-	adminSum := sha256.Sum256([]byte(adminToken))
+	adminToken := "rtr_metrics_admin_unavailable_secret"
 	cfg.Callers = append(cfg.Callers, CallerConfig{
 		ID: "metrics-admin", User: "ops", Project: "observability", Environment: "test",
-		TokenSHA256: hex.EncodeToString(adminSum[:]), TokenID: "rtr_metrics_admin_unavailable",
+		TokenHash: mustCallerTokenHashForTest(t, adminToken), TokenID: "rtr_metrics_admin_unavailable",
 		Allow: []string{"default"}, MetricsAdmin: true, Rate: RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 	})
 	svc, err := New(cfg)

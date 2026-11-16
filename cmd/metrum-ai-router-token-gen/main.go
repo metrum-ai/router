@@ -34,7 +34,6 @@ func main() {
 	keySlug := fs.String("key", "", "visible key slug; defaults to kYYYYMMDD")
 	allowRaw := fs.String("allow", "", "comma-separated allowed internal model groups; required")
 	format := fs.String("format", "yaml", "output format: yaml, json, or env")
-	hashFormat := fs.String("hash-format", router.TokenHashFormatPBKDF2SHA3, "stored token verifier: "+router.TokenHashFormatPBKDF2SHA3+" (token_hash) or "+router.TokenHashFormatLegacySHA256+" (deprecated token_sha256)")
 	hashIterations := fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations for token_hash")
 	if err := fs.Parse(os.Args[2:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -47,7 +46,6 @@ func main() {
 		Environment:    *environment,
 		KeySlug:        *keySlug,
 		Allow:          splitCSV(*allowRaw),
-		HashFormat:     *hashFormat,
 		HashIterations: *hashIterations,
 	})
 	if err != nil {
@@ -68,7 +66,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: router-token-gen generate --owner-user USER_ID --project PROJECT --allow GROUP[,GROUP...] [--env ENV] [--key KEY] [--format yaml|json|env] [--hash-format pbkdf2-sha3-512|legacy-sha256] [--hash-iterations N]")
+	fmt.Fprintln(os.Stderr, "usage: router-token-gen generate --owner-user USER_ID --project PROJECT --allow GROUP[,GROUP...] [--env ENV] [--key KEY] [--format yaml|json|env] [--hash-iterations N]")
 }
 
 func firstNonEmpty(values ...string) string {
@@ -94,17 +92,15 @@ func splitCSV(raw string) []string {
 
 func printYAML(g router.GeneratedToken) {
 	out := struct {
-		Token       string                `yaml:"token"`
-		TokenID     string                `yaml:"token_id"`
-		TokenHash   string                `yaml:"token_hash,omitempty"`
-		TokenSHA256 string                `yaml:"token_sha256,omitempty"`
-		Caller      []router.CallerConfig `yaml:"callers"`
+		Token     string                `yaml:"token"`
+		TokenID   string                `yaml:"token_id"`
+		TokenHash string                `yaml:"token_hash,omitempty"`
+		Caller    []router.CallerConfig `yaml:"callers"`
 	}{
-		Token:       g.Token,
-		TokenID:     g.TokenID,
-		TokenHash:   g.TokenHash,
-		TokenSHA256: g.TokenSHA256,
-		Caller:      []router.CallerConfig{g.Caller},
+		Token:     g.Token,
+		TokenID:   g.TokenID,
+		TokenHash: g.TokenHash,
+		Caller:    []router.CallerConfig{g.Caller},
 	}
 	raw, err := yaml.Marshal(out)
 	if err != nil {
@@ -126,8 +122,5 @@ func printEnv(g router.GeneratedToken) {
 	fmt.Printf("ROUTER_TOKEN_ID=%q\n", g.TokenID)
 	if g.TokenHash != "" {
 		fmt.Printf("ROUTER_TOKEN_HASH=%q\n", g.TokenHash)
-	}
-	if g.TokenSHA256 != "" {
-		fmt.Printf("ROUTER_TOKEN_SHA256=%q\n", g.TokenSHA256)
 	}
 }

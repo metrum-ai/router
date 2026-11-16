@@ -25,7 +25,7 @@ const adminSwapE2ECallerToken = "rtr_admin_swap_e2e_caller_token"
 // adminSwapE2ECanonicalYAML returns the serving document for the swap e2e.
 // The admin key travels inside the canonical document (key_hash_env names
 // the verifier environment variable; the raw key never appears).
-func adminSwapE2ECanonicalYAML(upstreamURL string) string {
+func adminSwapE2ECanonicalYAML(t *testing.T, upstreamURL string) string {
 	return fmt.Sprintf(`server:
   listen: ':0'
   identifiers:
@@ -63,11 +63,11 @@ callers:
     project: search
     environment: dev
     status: active
-    token_sha256: "%x"
+    token_hash: "%s"
     token_id: rtr_admin_swap_e2e
     allow:
       - default
-`, upstreamURL, sha256HexForTest(adminSwapE2ECallerToken))
+`, upstreamURL, mustCallerTokenHashForTest(t, adminSwapE2ECallerToken))
 }
 
 func TestServeE2EAdminGroupSwapWithoutRestart(t *testing.T) {
@@ -108,7 +108,7 @@ func TestServeE2EAdminGroupSwapWithoutRestart(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeDB() })
 	applyConfigControlPlaneMigrationsForTest(t, r)
-	setID, err := ImportCanonicalYAML(r.db, "prod", "initial", []byte(adminSwapE2ECanonicalYAML(upstream.URL)), "test-seed")
+	setID, err := ImportCanonicalYAML(r.db, "prod", "initial", []byte(adminSwapE2ECanonicalYAML(t, upstream.URL)), "test-seed")
 	if err != nil {
 		t.Fatal(err)
 	}
