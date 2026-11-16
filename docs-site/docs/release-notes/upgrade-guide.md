@@ -15,6 +15,32 @@ The admin reports UI adds a Security Console to the Security events report. It r
 
 The console only displays signals returned by the selected time range and report page. A missing signal does not prove that a caller is safe. Request evidence remains subject to the existing report drilldown permissions.
 
+## v5.0.0 security posture self-test
+
+`metrum-ai-routerctl doctor --security --config config.yaml` reads the existing
+configuration and makes no config changes. Use `--format json` and `--fail-on`
+to gate CI. Plain HTTP `--target` values must be loopback. The check reports caller
+key format, recorded entropy, and key age against a 90-day maximum. Caller entries now accept optional
+`token_issued_at` UTC RFC3339 timestamps; token generation and admin issue or
+rotation write this field automatically. Add original issue times to manually
+managed caller keys. Existing configs remain valid; keys without a timestamp
+warn until updated or rotated, and keys older than 90 days fail.
+
+The `/metrics` endpoint remains on the serving port and requires an active
+caller configured with `metrics_admin: true`. The doctor checks this setting;
+it does not suggest moving metrics to the admin listener. DB-backed config mode
+reports that database-stored caller keys were not inspected. Engine image pins
+are compared with the release's `engine-advisories.json` snapshot; use
+`--advisories <file>` to select one explicitly. Without a snapshot, the
+advisory result is informational `not checked` and makes no network request.
+
+To display a result in admin reports, use `--report-latest --router-url` with
+`--admin-key-file` or the existing admin-key environment variables. The router
+stores only check IDs, outcomes, severities, timestamp, and aggregate status.
+Apply usage migration 2026111602 (usage schema version 17) first. Grant `admin:security_reports` / `write`
+only to the self-test operator; read and export grants do not include write.
+
+
 
 ## Detector service boundary (v5.0.0)
 

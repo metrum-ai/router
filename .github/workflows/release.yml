@@ -76,10 +76,25 @@ jobs:
           python-version: "3.12"
       - name: Verify Go patch floor
         run: python3 scripts/check_go_toolchain.py
+      - name: Generate engine advisory snapshot for release packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/engine-gate-requirements.txt" <<'EOF'
+          PyYAML==6.0.3 \
+            --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc \
+            --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28
+          EOF
+          python3 -m pip install --user --require-hashes --only-binary=:all: -r "${RUNNER_TEMP}/engine-gate-requirements.txt"
+          mkdir -p dist
+          python3 scripts/engine_advisory_gate.py --check --snapshot dist/engine-advisories.json
       - name: Build release binaries
+        env:
+          ENGINE_ADVISORY_SNAPSHOT: dist/engine-advisories.json
         run: make package
       - name: Validate binary inventory and checksums
-        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-binaries
@@ -88,6 +103,7 @@ jobs:
             dist/metrum-ai-router-*.zip
             dist/SHA256SUMS
             dist/release-artifacts.json
+            dist/engine-advisories.json
           if-no-files-found: error
           retention-days: 7
 
@@ -124,9 +140,11 @@ jobs:
           name: release-binaries
           path: ${{ runner.temp }}/primary-dist
       - name: Rebuild binary packages on a clean runner
+        env:
+          ENGINE_ADVISORY_SNAPSHOT: ${{ runner.temp }}/primary-dist/engine-advisories.json
         run: make package
       - name: Recreate rebuilt inventory
-        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
       - name: Compare package checksums
         run: python3 scripts/compare_release_checksums.py "${RUNNER_TEMP}/primary-dist/SHA256SUMS" dist/SHA256SUMS
 

@@ -517,6 +517,21 @@ var adminV1OperationSpecs = []Operation{
 		Adapter:  "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.version",
 	},
 	{
+		ID: "getAdminSecurityPostureReport", Method: "GET", Path: "/admin/v1/reports/security/posture/latest", LegacyPath: "/admin/reports/api/security/posture/latest",
+		Summary: "Get the latest security posture self-test summary",
+		Object:  authzObjectSecurityReports, Action: authzActionRead, Domain: AdminDomainHandler,
+		Response: adminOpenObject{Members: []string{"schema", "generated_at", "outcome", "findings"}}, Errors: []int{404, 503},
+		Adapter: "reports", RateClass: AdminRateClassRead, HandlerKey: "reports.security_posture.latest.read",
+	},
+	{
+		ID: "saveAdminSecurityPostureReport", Method: "POST", Path: "/admin/v1/reports/security/posture/latest", LegacyPath: "/admin/reports/api/security/posture/latest",
+		Summary: "Save the latest security posture self-test summary",
+		Object:  authzObjectSecurityReports, Action: "write", Domain: AdminDomainHandler,
+		Request:  adminOpenObject{Members: []string{"schema", "generated_at", "outcome", "findings"}},
+		Response: adminOpenObject{Members: []string{"saved"}}, Errors: []int{400, 413, 503},
+		Adapter: "reports", RateClass: AdminRateClassWrite, HandlerKey: "reports.security_posture.latest.write",
+	},
+	{
 		ID: "getAdminQuotaStatus", Method: "GET", Path: "/admin/v1/reports/quota-status", LegacyPath: "/admin/reports/api/quota-status",
 		Summary: "Report caller quota status",
 		Object:  authzObjectAdminReports, Action: authzActionRead, Domain: AdminDomainHandler,

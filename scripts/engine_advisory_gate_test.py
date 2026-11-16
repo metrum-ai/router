@@ -92,8 +92,11 @@ class DeploymentTreeTests(unittest.TestCase):
         )
         return deploy
 
-    def run_check(self, deploy: Path, github: list[dict[str, str]]) -> int:
-        with patch.object(gate, "DEPLOY", deploy), patch.object(sys, "argv", ["engine_advisory_gate.py", "--check"]), \
+    def run_check(self, deploy: Path, github: list[dict[str, str]], snapshot: Path | None = None) -> int:
+        argv = ["engine_advisory_gate.py", "--check"]
+        if snapshot is not None:
+            argv.extend(["--snapshot", str(snapshot)])
+        with patch.object(gate, "DEPLOY", deploy), patch.object(sys, "argv", argv), \
              patch.object(gate, "github_advisories", return_value=github), \
              patch.object(gate, "osv_advisories", return_value=[]):
             return gate.main()
@@ -117,6 +120,19 @@ class DeploymentTreeTests(unittest.TestCase):
             deploy = self.make_deploy_tree(Path(temp), "vllm/vllm-openai:v0.33.0")
             result = self.run_check(deploy, [])
         self.assertEqual(result, 0)
+
+    def test_main_writes_snapshot_with_all_pins_and_findings(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            deploy = self.make_deploy_tree(root, "vllm/vllm-openai:v0.11.0")
+            snapshot = root / "dist/engine-advisories.json"
+            result = self.run_check(deploy, [{"ghsa_id": "GHSA-fixture"}], snapshot)
+            payload = json.loads(snapshot.read_text(encoding="utf-8"))
+        self.assertEqual(result, 1)
+        self.assertEqual(payload["checked_images"], 2)
+        self.assertEqual(len(payload["images"]), 2)
+        self.assertEqual(payload["advisories"], 2)
+        self.assertTrue(all(item["image"] == "vllm/vllm-openai:v0.11.0" for item in payload["images"]))
 
 
 class NetworkFailureTests(unittest.TestCase):

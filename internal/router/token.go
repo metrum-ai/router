@@ -50,6 +50,11 @@ type GeneratedToken struct {
 }
 
 func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	now = now.UTC()
 	user := slugify(opts.OwnerUser)
 	if user == "" {
 		user = slugify(opts.User)
@@ -67,10 +72,6 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 	}
 	keySlug := slugify(opts.KeySlug)
 	if keySlug == "" {
-		now := opts.Now
-		if now.IsZero() {
-			now = time.Now().UTC()
-		}
 		keySlug = "k" + now.Format("20060102")
 	}
 	hashFormat := strings.ToLower(strings.TrimSpace(opts.HashFormat))
@@ -112,6 +113,7 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 		Quota:              QuotaConfig{Day: BudgetConfig{Requests: 5000, Tokens: 20000000}, Month: BudgetConfig{Tokens: 400000000}, SoftPct: 80},
 		Key:                KeyConfig{LifetimeTokens: 2000000000, SoftPct: 90, OnExhaust: "disable"},
 	}
+	caller.TokenIssuedAt = now.Format(time.RFC3339)
 	if hashFormat == TokenHashFormatLegacySHA256 {
 		caller.TokenSHA256 = legacyCallerTokenSHA256Hex(token)
 	} else {

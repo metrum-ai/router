@@ -21,6 +21,7 @@ bin/metrum-ai-router-token-gen
 bin/metrum-ai-router-usage-report
 bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
+bin/engine-advisories.json (release-built archives)
 config/config.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md

@@ -64,6 +64,7 @@ const sidebars = {
         "operations/usage-reporting",
         "operations/cfo-reporting",
         "operations/admin-browser-reports",
+        "security-governance/security-doctor",
         "operations/switch-models-price-change",
         "troubleshooting/index",
         "troubleshooting/requests",

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -71,9 +72,50 @@ func postgresGateHandle() *gorm.DB {
 func (h *adminV1Harness) doAs(t *testing.T, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(method, target, strings.NewReader(""))
+	if adminOperationMutates(Operation{Method: method}) {
+		request.Header.Set("If-Match", `"rev-7"`)
+		request.Header.Set("Idempotency-Key", "freshness-mount-test")
+	}
+	if strings.Contains(target, "/callers/issue") {
+		request.Body = io.NopCloser(strings.NewReader(`{"owner_user":"u","project":"p","environment":"e","key_slug":"k","allow":[]}`))
+	}
 	recorder := httptest.NewRecorder()
 	h.mux.ServeHTTP(recorder, request)
 	return recorder
+}
+
+// freshnessReportWriteHandler models the report adapter's handler-owned
+// authorization decision. Report operations keep their per-domain policy
+// checks in the adapter, so the mount test must not use the generic success
+// placeholder for this mutating report operation.
+func freshnessReportWriteHandler(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFrom(r.Context())
+		if !ok {
+			writeAdminProblemCode(w, r, http.StatusUnauthorized, "authentication_required", "")
+			return
+		}
+		if err := svc.Authorize(r.Context(), principal, AdminGlobalDomain, authzObjectSecurityReports, "write"); err != nil {
+			status, code := adminAuthorizationProblem(err)
+			writeAdminProblemCode(w, r, status, code, "")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"saved": true})
+	}
+}
+
+func freshnessReportWriteHandlerBinding(t *testing.T, svc *Service, registry *AdminV1Registry) map[string]http.HandlerFunc {
+	t.Helper()
+	bindings := map[string]http.HandlerFunc{}
+	for _, op := range registry.Operations() {
+		if adminOperationMutates(op) {
+			bindings[op.HandlerKey] = func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+			}
+		}
+	}
+	bindings["reports.security_posture.latest.write"] = AdminV1ReportsHandlers(registry, freshnessReportWriteHandler(svc))["reports.security_posture.latest.write"]
+	return bindings
 }
 
 // TestAdminV1MountMarksEveryMutatingOperation proves the trusted registry — not a
@@ -88,6 +130,13 @@ func TestAdminV1MountMarksEveryMutatingOperation(t *testing.T) {
 		marked, sawMarker = present && value, present
 		return nil
 	}
+	harness.mountWithExtra(t, map[string]http.HandlerFunc{
+		"reports.security_posture.latest.write": AdminV1ReportsHandlers(harness.registry, func(w http.ResponseWriter, r *http.Request) {
+			value, present := r.Context().Value(adminPolicyMutationKey{}).(bool)
+			marked, sawMarker = present && value, present
+			writeJSON(w, http.StatusOK, map[string]any{"saved": true})
+		})["reports.security_posture.latest.write"],
+	})
 	mutating, reads := 0, 0
 	for _, op := range harness.registry.Operations() {
 		marked, sawMarker = false, false
@@ -120,6 +169,8 @@ func TestAdminV1StalePolicyRefusesEveryMutationThroughMount(t *testing.T) {
 	svc := freshnessMountService(t, "operator")
 	svc.policyFreshness.observeSuccess(4, time.Now().Add(-2*time.Minute))
 	harness.authorizeOverride = svc.Authorize
+	extra := freshnessReportWriteHandlerBinding(t, svc, harness.registry)
+	harness.mountWithExtra(t, extra)
 
 	mutations, reads := 0, 0
 	for _, op := range harness.registry.Operations() {
@@ -176,6 +227,8 @@ func TestAdminV1StalePolicyRefusesEmergencyMutation(t *testing.T) {
 	svc := freshnessMountService(t, "recovery")
 	svc.policyFreshness.observeSuccess(4, time.Now().Add(-2*time.Minute))
 	harness.authorizeOverride = svc.Authorize
+	extra := freshnessReportWriteHandlerBinding(t, svc, harness.registry)
+	harness.mountWithExtra(t, extra)
 
 	for _, op := range harness.registry.Operations() {
 		if !adminOperationMutates(op) {

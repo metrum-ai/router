@@ -645,10 +645,12 @@ func TestAdminDenialsAreAuditedAndFailClosed(t *testing.T) {
 }
 
 // TestAdminEveryMutationHasOneAuditRow is the registry-driven coverage test: every mutating
-// operation is driven through its REAL handler with a valid fixture, must commit with a 2xx,
-// and must leave exactly one complete audit row; the usage-database operations go through
-// their real HTTP handlers as well. Each class also has a forced-audit-failure rollback case,
-// and all three credential lifecycle operations are exercised.
+// control-plane operation is driven through its REAL handler with a valid fixture, must commit
+// with a 2xx, and must leave exactly one complete audit row; the usage-database operations go
+// through their real HTTP handlers as well. The security posture report has a dedicated
+// security-access audit assertion because it writes the usage store rather than config state.
+// Each class also has a forced-audit-failure rollback case, and all three credential lifecycle
+// operations are exercised.
 func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	registry, err := AdminV1DefaultRegistry()
 	if err != nil {
@@ -665,6 +667,9 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 		if op.ID == "containCallerWebhook" {
 			// The webhook credential path has dedicated HMAC and replay tests; this
 			// generic registry loop uses only the ordinary admin authenticator.
+			continue
+		}
+		if op.ID == "saveAdminSecurityPostureReport" {
 			continue
 		}
 		mutations++
