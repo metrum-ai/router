@@ -56,6 +56,14 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> int:
+    makefile = (ROOT / "Makefile").read_text()
+    require("BUILD_LDFLAGS = -buildid=" in makefile, "release builds must disable Go build IDs")
+    package_build = next(
+        line for line in makefile.splitlines()
+        if "go build" in line and "$$pkg_dir/bin/$$bin" in line
+    )
+    require("-trimpath" in package_build, "packaged binaries must use -trimpath")
+
     good = run_make("validate-build-metadata")
     require(good.returncode == 0, f"normal metadata rejected:\n{good.stdout}\n{good.stderr}")
 
