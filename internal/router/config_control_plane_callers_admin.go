@@ -328,20 +328,20 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		// Sync the canonical document with the new caller.
 		if err := h.syncCanonicalDocument(tx, set.ID, func(callers []CallerConfig) ([]CallerConfig, error) {
 			newCaller := CallerConfig{
-				ID:           row.CallerID,
-				OwnerUser:    row.OwnerUser,
-				Project:      row.Project,
-				Environment:  row.Environment,
-				Status:       row.Status,
-				TokenHash:    caller.TokenHash,
-				TokenSHA256:  caller.TokenSHA256,
-				TokenID:      row.TokenID,
+				ID:                 row.CallerID,
+				OwnerUser:          row.OwnerUser,
+				Project:            row.Project,
+				Environment:        row.Environment,
+				Status:             row.Status,
+				TokenHash:          caller.TokenHash,
+				TokenSHA256:        caller.TokenSHA256,
+				TokenID:            row.TokenID,
 				TokenFormatVersion: caller.TokenFormatVersion,
-				TokenEntropyBits: caller.TokenEntropyBits,
-				Allow:        append([]string(nil), caller.Allow...),
-				MetricsAdmin: row.MetricsAdmin,
-				ContentAdmin: row.ContentAdmin,
-				Rate:         rate,
+				TokenEntropyBits:   caller.TokenEntropyBits,
+				Allow:              append([]string(nil), caller.Allow...),
+				MetricsAdmin:       row.MetricsAdmin,
+				ContentAdmin:       row.ContentAdmin,
+				Rate:               rate,
 			}
 			return append(callers, newCaller), nil
 		}); err != nil {

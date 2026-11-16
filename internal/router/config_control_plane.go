@@ -216,16 +216,18 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 		DefaultModelGroup: server.DefaultModelGroup,
 	}, StatePath: server.StatePath, Provider: map[string]ProviderConfig{}, Models: map[string]ModelGroup{}}
 	var document configControlPlaneDocumentRow
-	if err := db.Where("config_set_id = ?", set.ID).First(&document).Error; err == nil {
-		var securityOnly struct {
-			Security RouterSecurityConfig `yaml:"security"`
+	if db.Migrator().HasTable("router_config_documents") {
+		if err := db.Where("config_set_id = ?", set.ID).First(&document).Error; err == nil {
+			var securityOnly struct {
+				Security RouterSecurityConfig `yaml:"security"`
+			}
+			if err := yaml.Unmarshal([]byte(document.CanonicalYAML), &securityOnly); err != nil {
+				return nil, fmt.Errorf("load security config: %w", err)
+			}
+			cfg.Security = securityOnly.Security
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("load canonical security config: %w", err)
 		}
-		if err := yaml.Unmarshal([]byte(document.CanonicalYAML), &securityOnly); err != nil {
-			return nil, fmt.Errorf("load security config: %w", err)
-		}
-		cfg.Security = securityOnly.Security
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("load canonical security config: %w", err)
 	}
 	var providers []providerRow
 	if err := db.Where("config_set_id = ?", set.ID).Order("provider_name ASC").Find(&providers).Error; err != nil {
