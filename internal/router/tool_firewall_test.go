@@ -135,6 +135,43 @@ func TestToolApprovalReleaseDenyAndTimeout(t *testing.T) {
 	}
 }
 
+func TestToolApprovalPendingCapacityFailsClosed(t *testing.T) {
+	store := newToolApprovalRuntime(1)
+	result := make(chan string, 1)
+	go func() {
+		decision, ok := store.wait(context.Background(), "approval_0123456789abcdef0123456789abcdef", time.Second)
+		if !ok {
+			result <- "timeout"
+			return
+		}
+		result <- decision
+	}()
+	deadline := time.Now().Add(time.Second)
+	registered := false
+	for time.Now().Before(deadline) {
+		store.mu.Lock()
+		pending := len(store.pending)
+		store.mu.Unlock()
+		if pending == 1 {
+			registered = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !registered {
+		t.Fatal("approval was not registered")
+	}
+	if _, ok := store.wait(context.Background(), "approval_abcdefabcdefabcdefabcdefabcdefab", time.Second); ok {
+		t.Fatal("approval exceeded the configured pending capacity")
+	}
+	if !store.resolve("approval_0123456789abcdef0123456789abcdef", "release") {
+		t.Fatal("registered approval could not be resolved")
+	}
+	if decision := <-result; decision != "release" {
+		t.Fatalf("decision=%q, want release", decision)
+	}
+}
+
 func TestToolApprovalAdminEndpointResolvesPendingHold(t *testing.T) {
 	store := newToolApprovalRuntime(1)
 	svc := &Service{toolApprovals: store}
