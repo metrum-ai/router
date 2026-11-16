@@ -6,3 +6,5 @@ g, basic:reports-admin, reports_admin, example/prod
 p, metrics_admin, example/prod, metrics, read
 p, content_admin, example/prod, content:capture, delete|purge
 p, reports_admin, example/prod, admin:reports, read|export|drilldown
+g, adminkey:secops, role:containment, *
+p, role:containment, *, admin:containment, contain

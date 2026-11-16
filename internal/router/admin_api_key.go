@@ -70,6 +70,7 @@ var knownAdminKeyPermissions = map[string]bool{
 	"admin:callers:issue":           true,
 	"admin:callers:rotate":          true,
 	"admin:callers:revoke":          true,
+	"admin:containment:contain":     true,
 	"admin:reports:read":            true,
 	"admin:reports:export":          true,
 	"admin:reports:drilldown":       true,

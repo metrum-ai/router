@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
+
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 
@@ -16,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 - Record recomputed prompt tokens when upstream reports cached prompt tokens. Usage and cost reports now show cached and recomputed input tokens with reporting coverage.
 - Prefer targets marked `tiered_kv_cache: true` for estimated prompts of at least 32,000 tokens. Dynamic-score affinity accepts `metadata.session_id` and remains bounded per process.
 
