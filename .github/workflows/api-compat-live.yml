@@ -8,6 +8,7 @@ name: API compatibility live status
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "Makefile"
       - "scripts/api_compat_live.py"
@@ -39,6 +40,7 @@ permissions:
 
 jobs:
   live-unit:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 10
     steps:
@@ -48,7 +50,7 @@ jobs:
 
   live:
     needs: live-unit
-    if: github.event_name == 'workflow_dispatch' && needs.live-unit.result == 'success'
+    if: github.event_name == 'workflow_dispatch' && needs.live-unit.result == 'success' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     environment: evaluation
     timeout-minutes: 20

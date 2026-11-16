@@ -5,6 +5,10 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Security hardening
+
+Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned
@@ -70,6 +74,22 @@ This can change client addresses recorded in security access events and used by
 admin OIDC rate limiting for proxied deployments. Review the trusted proxy
 CIDRs and verify that each proxy appends its connecting peer to
 `X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
+
+## v5.0.0 admin listener and serving-port routes
+
+The authenticated admin listener starts by default at `127.0.0.1:8081`. Move machine automation
+from legacy `/admin/*` paths on the serving port to `/admin/v1/*` on the admin listener before
+upgrading. Set `admin.enabled: false` only when the deployment needs a single listener; remote binds
+require TLS or the explicit plaintext opt-in. Browser reports and `/admin/auth/*` remain on the
+serving port. Remove `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` from file
+configurations; either key fails config loading with migration guidance.
+
+For database-mode configurations, back up the router-config database and run the non-serving
+`router-migrate --scope router-config --action apply` followed by
+`router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>`
+before starting v5.0.0. The maintenance migration removes those two v4-only keys from stored
+canonical documents and refreshes their content hashes. File-mode configurations need only have the
+keys removed before restart.
 
 ## Pre-Upgrade Checklist
 
@@ -207,6 +227,21 @@ and explicit writable cache and temporary mounts. The example runner also
 expects to start as its non-root user. Re-validate device access, model startup
 and runner registration in your own environment before adopting those examples;
 the offline checks in CI do not exercise a GPU or a runner image.
+
+## v5.0.0 admin resource API
+
+The versioned admin API adds provider and model-catalog reads, provider writes,
+project environments, project-environment memberships, project USD budgets and
+alert thresholds, caller quota updates,
+and retention policy writes. Mutations require
+database-backed configuration mode and a current `If-Match` revision. Provider
+API-key environment references and headers are write-only and do not appear in
+responses. Shortening retention requires the separate `config:force`
+permission. The existing config revision notifier and poller propagate changes
+to other serving replicas. No database migration is required for these routes.
+Project budget counters are per process and reset on restart; ceilings are
+approximate across replicas. Removing or raising a ceiling, or waiting for its
+UTC budget window to reset, restores admission after a trip.
 
 ## Compatibility and operations (v4.4.0)
 

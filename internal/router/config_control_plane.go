@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -40,7 +41,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 13, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -141,7 +142,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12))
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}
@@ -214,6 +215,28 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 		Listen:            server.Listen,
 		DefaultModelGroup: server.DefaultModelGroup,
 	}, StatePath: server.StatePath, Provider: map[string]ProviderConfig{}, Models: map[string]ModelGroup{}}
+	// The relational projection intentionally excludes listener-only settings.
+	// When a canonical document exists, retain its admin block before defaults
+	// are applied so an explicit enabled: false survives this legacy load path.
+	if db.Migrator().HasTable(&configControlPlaneDocumentRow{}) {
+		var canonical configControlPlaneDocumentRow
+		if err := db.Where("config_set_id = ?", set.ID).First(&canonical).Error; err == nil {
+			raw := []byte(canonical.CanonicalYAML)
+			if err := validateRemovedScriptConfig(raw); err != nil {
+				return nil, err
+			}
+			var canonicalConfig Config
+			if err := yaml.Unmarshal(raw, &canonicalConfig); err != nil {
+				return nil, fmt.Errorf("parse active canonical YAML: %w", err)
+			}
+			if err := applyV5AdminConfig(raw, &canonicalConfig); err != nil {
+				return nil, fmt.Errorf("parse active canonical YAML: %w", err)
+			}
+			cfg.Admin = canonicalConfig.Admin
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("load active canonical YAML: %w", err)
+		}
+	}
 	var providers []providerRow
 	if err := db.Where("config_set_id = ?", set.ID).Order("provider_name ASC").Find(&providers).Error; err != nil {
 		return nil, err

@@ -29,8 +29,6 @@ admin:
   # admin.tls.mode: router with a mounted secret for TLS, or
   # admin.tls.mode: proxy behind a trusted sidecar.
   allow_plaintext_non_loopback: true
-  legacy_routes_on_serving_port: true
-  legacy_sunset: "2027-03-01T00:00:00Z"
   metrics:
     on_serving_port: false
 state_path: /app/state/router-state.json

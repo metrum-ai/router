@@ -33,6 +33,17 @@ type adminKeyE2E struct {
 	now     time.Time
 }
 
+func mountAdminV1ForTest(t testing.TB, svc *Service) {
+	t.Helper()
+	var mountErr error
+	svc.RegisterAdminRoutes(func(m *AdminMux) {
+		mountErr = svc.MountAdminV1(m, svc.AdminAuthenticator(), svc.Authorize)
+	})
+	if mountErr != nil {
+		t.Fatalf("mount admin v1: %v", mountErr)
+	}
+}
+
 func newAdminKeyE2E(t *testing.T) *adminKeyE2E {
 	t.Helper()
 	db := callerAdminTestDB(t) // production config-control-plane migrations + active set
@@ -108,11 +119,7 @@ func newAdminKeyE2E(t *testing.T) *adminKeyE2E {
 	if err := svc.startAdminMachineGeneration(); err != nil {
 		t.Fatal(err)
 	}
-	svc.RegisterAdminRoutes(func(m *AdminMux) {
-		if err := svc.MountAdminV1(m, svc.AdminAuthenticator(), svc.Authorize); err != nil {
-			t.Errorf("mount admin v1: %v", err)
-		}
-	})
+	mountAdminV1ForTest(t, svc)
 	server := httptest.NewServer(svc.AdminHandler())
 	t.Cleanup(server.Close)
 	// A controllable clock for the rotation overlap window.

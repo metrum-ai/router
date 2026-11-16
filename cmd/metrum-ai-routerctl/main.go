@@ -34,7 +34,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|verify|config|callers|contain|release|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|verify|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -59,6 +59,8 @@ func main() {
 		providersCommand(os.Args[2:])
 	case "models":
 		modelsCommand(os.Args[2:])
+	case "admin-resource":
+		adminResourceCommand(os.Args[2:])
 	case "status":
 		statusCommand(os.Args[2:])
 	case "usage":
@@ -94,6 +96,43 @@ func verifyReleaseCommand(args []string) {
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 		die("write verification result: %v", err)
 	}
+}
+
+// adminResourceCommand exposes the versioned resource API to operators without
+// duplicating every route's request schema in the CLI.
+func adminResourceCommand(args []string) {
+	if len(args) == 0 {
+		die("usage: metrum-ai-routerctl admin-resource <GET|POST|PUT|DELETE> --path /admin/v1/... [--body JSON] [flags]")
+	}
+	method := strings.ToUpper(strings.TrimSpace(args[0]))
+	if method != http.MethodGet && method != http.MethodPost && method != http.MethodPut && method != http.MethodDelete {
+		die("unsupported admin-resource method %q", method)
+	}
+	fs, api := addAdminAPIFlags("admin-resource")
+	path := fs.String("path", "", "versioned Admin API path")
+	bodyJSON := fs.String("body", "", "JSON request body for POST/PUT")
+	fs.Parse(args[1:])
+	if fs.NArg() != 0 || !strings.HasPrefix(*path, "/admin/v1/") || strings.Contains(*path, "?") || strings.Contains(*path, "#") {
+		die("admin-resource requires a clean --path under /admin/v1")
+	}
+	var body any
+	if strings.TrimSpace(*bodyJSON) != "" {
+		if err := json.Unmarshal([]byte(*bodyJSON), &body); err != nil {
+			die("invalid --body JSON: %v", err)
+		}
+	}
+	if (method == http.MethodPost || method == http.MethodPut) && body == nil {
+		die("%s requires --body JSON", method)
+	}
+	var headers map[string]string
+	if method != http.MethodGet {
+		headers = api.mutationHeaders()
+	}
+	response, _, err := mustAdminAPIClient(api).Do(method, *path, body, headers)
+	if err != nil {
+		dieAdmin(err)
+	}
+	writeRawJSON(response)
 }
 
 func containmentCommand(action string, args []string) {

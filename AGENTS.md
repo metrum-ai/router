@@ -18,3 +18,10 @@ request or declaring the work finished.
 ## Extension boundary
 
 User code never runs inside the router process. Custom routing logic must run as a standalone external policy service.
+
+
+## Admin API compatibility
+
+In v5.0.0, machine admin clients use `/admin/v1` on the admin listener. Legacy machine `/admin/*`
+routes are removed from the serving port. The browser reports UI and `/admin/auth/*` session routes
+remain on the serving port.

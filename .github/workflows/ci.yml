@@ -4,6 +4,7 @@
 name: ci
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
   push:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   router:
     name: router (${{ matrix.shard }})
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     strategy:
@@ -74,7 +75,7 @@ jobs:
 
   other-go:
     name: Other Go and Windows
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     steps:
@@ -143,7 +144,7 @@ jobs:
 
   other:
     name: Compatibility, Python and examples
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     steps:
@@ -203,7 +204,7 @@ jobs:
   # The source SBOM is required on merge groups and manual dispatch, not PRs
   # or main-push cache warming.
   sbom:
-    if: github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch'
+    if: ${{ (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 90
     steps:
@@ -233,7 +234,7 @@ jobs:
 
   warm:
     name: Warm main caches
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     steps:
@@ -315,7 +316,7 @@ jobs:
 
   k8s-security:
     name: Rendered Kubernetes security
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 20
     steps:
@@ -346,7 +347,7 @@ jobs:
 
   parallel-tools:
     name: Parallel tool-call fixtures
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 15
     steps:
@@ -383,7 +384,7 @@ jobs:
   # this job installs them at pinned versions so CI always exercises the path.
   tls-acme:
     name: TLS ACME (Pebble)
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 20
     steps:
@@ -437,6 +438,7 @@ jobs:
         run: env -u AWS_BEARER_TOKEN_BEDROCK GOMAXPROCS=2 go test ./internal/tlsacme/... -count=1 -run 'TestPebble' -v
 
   admin-authz-advisories:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 25
     env:
@@ -469,21 +471,35 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p advisory-evidence
+          cp scripts/admin_authz_advisory_exceptions.json advisory-evidence/exceptions.json
           casbin_version=$(go list -m -f '{{.Version}}' github.com/casbin/casbin/v2)
           printf '%s\n' "$casbin_version" > advisory-evidence/casbin-version.txt
           date -u +%FT%TZ > advisory-evidence/scan-started-at-utc.txt
           go list -m -f '{{.Path}} {{.Version}}{{if .Replace}} replaced{{end}}' all > advisory-evidence/modules.txt
           go mod graph > advisory-evidence/module-graph.txt
-          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -json ./... > advisory-evidence/govulncheck.json
-          gh api -X GET advisories -f ecosystem=go -f affects="github.com/casbin/casbin/v2@${casbin_version}" -f per_page=100 > advisory-evidence/affected.json
-          gh api -X GET repos/casbin/casbin/security-advisories -f state=published -f per_page=100 > advisory-evidence/upstream.json
+          if ! go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -json ./... > advisory-evidence/govulncheck.json 2> advisory-evidence/vuln-go-status.txt; then
+            exit 1
+          fi
+          if ! gh api --paginate --jq '.[]' -X GET advisories -f ecosystem=go -f affects="github.com/casbin/casbin/v2@${casbin_version}" -f per_page=100 > advisory-evidence/affected.ndjson 2> advisory-evidence/github-affected-status.txt; then
+            exit 1
+          fi
+          if ! jq -e -s 'if all(.[]; type == "object") then . else error("malformed advisory pages") end' advisory-evidence/affected.ndjson > advisory-evidence/affected.json; then
+            exit 1
+          fi
+          if ! gh api --paginate --jq '.[]' -X GET repos/casbin/casbin/security-advisories -f state=published -f per_page=100 > advisory-evidence/upstream.ndjson 2> advisory-evidence/github-upstream-status.txt; then
+            exit 1
+          fi
+          if ! jq -e -s 'if all(.[]; type == "object") then . else error("malformed advisory pages") end' advisory-evidence/upstream.ndjson > advisory-evidence/upstream.json; then
+            exit 1
+          fi
           python3 scripts/check_admin_authz_advisories.py \
             --scan advisory-evidence/govulncheck.json \
             --affected advisory-evidence/affected.json \
             --upstream advisory-evidence/upstream.json \
             --casbin-version "$casbin_version" \
             --modules advisory-evidence/modules.txt \
-            --module-graph advisory-evidence/module-graph.txt | tee advisory-evidence/summary.json
+            --module-graph advisory-evidence/module-graph.txt \
+            --exceptions advisory-evidence/exceptions.json | tee advisory-evidence/summary.json
       - name: Retain advisory evidence even on rejection
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -495,6 +511,7 @@ jobs:
 
   engine-advisory-gate:
     name: inference-engine-advisory-gate
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 10
     steps:
@@ -520,7 +537,7 @@ jobs:
   ci:
     name: ci
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
-    if: always()
+    if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate]
     timeout-minutes: 5
     steps:

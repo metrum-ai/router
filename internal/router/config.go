@@ -37,9 +37,8 @@ func (c EligibilityConfig) implicitEnabled() bool {
 type Config struct {
 	Eligibility EligibilityConfig `yaml:"eligibility"`
 	Server      ServerConfig      `yaml:"server"`
-	// Admin is the control plane's own listener (#809). An absent or disabled
-	// block keeps the v4.7 surface: no second listener, legacy /admin/* and
-	// /metrics on the serving port.
+	// Admin is the control plane's own listener (#809). File configuration
+	// enables it by default; explicit false keeps one listener.
 	Admin              AdminPlaneConfig          `yaml:"admin" json:"admin"`
 	Users              []UserConfig              `yaml:"users"`
 	Projects           []ProjectConfig           `yaml:"projects"`
@@ -1156,6 +1155,21 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
+	ID           string                     `yaml:"id" json:"id"`
+	Name         string                     `yaml:"name" json:"name"`
+	Status       string                     `yaml:"status" json:"status"`
+	Description  string                     `yaml:"description" json:"description"`
+	Environments []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget       ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+}
+
+type ProjectBudgetConfig struct {
+	DailyUSD        float64 `yaml:"daily_usd,omitempty" json:"daily_usd,omitempty"`
+	MonthlyUSD      float64 `yaml:"monthly_usd,omitempty" json:"monthly_usd,omitempty"`
+	AlertThresholds []int   `yaml:"alert_thresholds,omitempty" json:"alert_thresholds,omitempty"`
+}
+
+type ProjectEnvironmentConfig struct {
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Status      string `yaml:"status" json:"status"`
@@ -1163,12 +1177,13 @@ type ProjectConfig struct {
 }
 
 type ProjectMembershipConfig struct {
-	UserID   string `yaml:"user_id" json:"user_id"`
-	Project  string `yaml:"project" json:"project"`
-	Role     string `yaml:"role" json:"role"`
-	Status   string `yaml:"status" json:"status"`
-	Source   string `yaml:"source" json:"source"`
-	JoinedAt string `yaml:"joined_at" json:"joined_at"`
+	UserID      string `yaml:"user_id" json:"user_id"`
+	Project     string `yaml:"project" json:"project"`
+	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Role        string `yaml:"role" json:"role"`
+	Status      string `yaml:"status" json:"status"`
+	Source      string `yaml:"source" json:"source"`
+	JoinedAt    string `yaml:"joined_at" json:"joined_at"`
 }
 
 type RateConfig struct {
@@ -1265,10 +1280,54 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
 	}
+	if err := applyV5AdminConfig(cleaned, &cfg); err != nil {
+		return nil, err
+	}
 	cfg.setDefaults()
 	cfg.baseDir = filepath.Dir(path)
 	cfg.secretEnvRefs = envRefs
 	return &cfg, cfg.Validate()
+}
+
+func applyV5AdminConfig(raw []byte, cfg *Config) error {
+	adminEnabledSet, err := validateV5AdminConfig(raw)
+	if err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Admin.enabledSet = adminEnabledSet
+	}
+	return nil
+}
+
+// validateV5AdminConfig rejects removed v4.8 admin settings and reports
+// whether admin.enabled was explicitly set. Omission enables the listener.
+func validateV5AdminConfig(raw []byte) (bool, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return false, err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return false, nil
+	}
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "admin" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		admin := root.Content[0].Content[i+1]
+		enabledSet := false
+		for j := 0; j+1 < len(admin.Content); j += 2 {
+			key := admin.Content[j].Value
+			switch key {
+			case "enabled":
+				enabledSet = true
+			case "legacy_routes_on_serving_port", "legacy_sunset":
+				return false, fmt.Errorf("config key admin.%s was removed in v5.0.0; remove it from file configuration, or run `metrum-ai-router-migrate --scope router-config --action apply` followed by `metrum-ai-router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>` for stored configurations; use /admin/v1 on the admin listener", key)
+			}
+		}
+		return enabledSet, nil
+	}
+	return false, nil
 }
 
 func validateRemovedScriptConfig(raw []byte) error {
@@ -1509,6 +1568,9 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
+	if !c.Admin.enabledSet {
+		c.Admin.Enabled = true
+	}
 	defaultAdminPlaneConfig(&c.Admin)
 	for i := range c.Server.Detectors {
 		detector := &c.Server.Detectors[i]
@@ -1700,10 +1762,15 @@ func (c *Config) setDefaults() {
 	for i := range c.Projects {
 		c.Projects[i].ID = normalizeAccountID(c.Projects[i].ID)
 		c.Projects[i].Status = normalizeStatusDefault(c.Projects[i].Status)
+		for j := range c.Projects[i].Environments {
+			c.Projects[i].Environments[j].ID = normalizeAccountID(c.Projects[i].Environments[j].ID)
+			c.Projects[i].Environments[j].Status = normalizeStatusDefault(c.Projects[i].Environments[j].Status)
+		}
 	}
 	for i := range c.ProjectMemberships {
 		c.ProjectMemberships[i].UserID = normalizeAccountID(c.ProjectMemberships[i].UserID)
 		c.ProjectMemberships[i].Project = normalizeAccountID(c.ProjectMemberships[i].Project)
+		c.ProjectMemberships[i].Environment = normalizeAccountID(c.ProjectMemberships[i].Environment)
 		c.ProjectMemberships[i].Status = normalizeStatusDefault(c.ProjectMemberships[i].Status)
 		c.ProjectMemberships[i].Role = normalizeRoleDefault(c.ProjectMemberships[i].Role)
 	}
@@ -3293,6 +3360,9 @@ func validateRetentionConfig(cfg RetentionConfig) error {
 		seen[dataClass] = true
 		if class.RetentionDays <= 0 {
 			return fmt.Errorf("%s retention_days must be positive", label)
+		}
+		if class.RetentionDays > 36500 {
+			return fmt.Errorf("%s retention_days must not exceed 36500", label)
 		}
 		if class.BatchSize <= 0 {
 			return fmt.Errorf("%s batch_size must be positive", label)
