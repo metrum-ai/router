@@ -32,34 +32,63 @@ def read_checksums(path: Path) -> dict[str, str]:
     return entries
 
 
-def archive_member_digests(path: Path) -> dict[str, str]:
-    """Return member content digests without extracting archive paths."""
+def archive_members(path: Path) -> list[dict[str, object]]:
+    """Return ordered content and metadata fingerprints without extracting paths."""
     if path.name.endswith(".tar.gz"):
         with tarfile.open(path, "r:gz") as archive:
-            return {
-                item.name: hashlib.sha256(archive.extractfile(item).read()).hexdigest()
+            return [
+                {
+                    "name": item.name,
+                    "sha256": (
+                        hashlib.sha256(archive.extractfile(item).read()).hexdigest()
+                        if item.isfile()
+                        else ""
+                    ),
+                    "metadata": (
+                        item.type.hex(), item.mtime, item.uid, item.gid, item.mode,
+                        item.uname, item.gname, item.linkname,
+                        tuple(sorted(item.pax_headers.items())),
+                    ),
+                }
                 for item in archive.getmembers()
-                if item.isfile()
-            }
+            ]
     if path.suffix == ".zip":
         with zipfile.ZipFile(path) as archive:
-            return {
-                item.filename: hashlib.sha256(archive.read(item)).hexdigest()
+            return [
+                {
+                    "name": item.filename,
+                    "sha256": hashlib.sha256(archive.read(item)).hexdigest() if not item.is_dir() else "",
+                    "metadata": (
+                        item.date_time, item.external_attr, item.compress_type,
+                        item.create_system, item.flag_bits,
+                    ),
+                }
                 for item in archive.infolist()
-                if not item.is_dir()
-            }
+            ]
     raise ValueError(f"unsupported release archive format: {path.name}")
 
 
-def compare_archive_members(primary: Path, rebuild: Path) -> tuple[list[str], list[str], list[str]]:
-    before = archive_member_digests(primary)
-    after = archive_member_digests(rebuild)
-    changed = sorted(
-        member
-        for member in before.keys() & after.keys()
-        if before[member] != after[member]
-    )
-    return changed, sorted(set(before) - set(after)), sorted(set(after) - set(before))
+def compare_archive_members(primary: Path, rebuild: Path) -> dict[str, object]:
+    before_members = archive_members(primary)
+    after_members = archive_members(rebuild)
+    before = {member["name"]: member for member in before_members}
+    after = {member["name"]: member for member in after_members}
+    return {
+        "changed_content": sorted(
+            member
+            for member in before.keys() & after.keys()
+            if before[member]["sha256"] != after[member]["sha256"]
+        ),
+        "changed_metadata": sorted(
+            member
+            for member in before.keys() & after.keys()
+            if before[member]["metadata"] != after[member]["metadata"]
+        ),
+        "missing": sorted(set(before) - set(after)),
+        "added": sorted(set(after) - set(before)),
+        "order_changed": [member["name"] for member in before_members]
+        != [member["name"] for member in after_members],
+    }
 
 
 def main() -> int:
@@ -88,7 +117,7 @@ def main() -> int:
         if args.primary_dist is not None and args.rebuild_dist is not None:
             for name in changed:
                 try:
-                    member_changes, missing_members, added_members = compare_archive_members(
+                    member_report = compare_archive_members(
                         args.primary_dist / name,
                         args.rebuild_dist / name,
                     )
@@ -96,16 +125,19 @@ def main() -> int:
                     print(f"archive member comparison failed for {name}: {exc}", file=sys.stderr)
                     continue
                 labels = [
-                    label + "=" + "|".join(members)
-                    for label, members in (
-                        ("changed", member_changes),
-                        ("missing", missing_members),
-                        ("added", added_members),
-                    )
-                    if members
+                    f"{label}=" + "|".join(member_report[label])
+                    for label in ("changed_content", "changed_metadata", "missing", "added")
+                    if member_report[label]
                 ]
+                labels.append("order=" + ("changed" if member_report["order_changed"] else "same"))
+                has_member_diff = any(
+                    member_report[label]
+                    for label in ("changed_content", "changed_metadata", "missing", "added")
+                ) or member_report["order_changed"]
+                if not has_member_diff:
+                    labels.append("members_identical; container_bytes_differ")
                 print(
-                    f"archive members {name}: " + (", ".join(labels) or "contents match"),
+                    f"archive members {name}: " + ", ".join(labels),
                     file=sys.stderr,
                 )
         return 1
