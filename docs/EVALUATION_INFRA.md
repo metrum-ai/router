@@ -4,10 +4,10 @@
 # Evaluation infrastructure (#330)
 
 The eval-infra tracker relocated from #271/#94. This document describes the
-**offline** infrastructure: the preregistered matrix, the pairwise coverage
-generator, and the report schema. Paid nightly/live runs are tracked on #330
-with bounded-spend approvals; this repository's CI only validates the
-infrastructure deterministically.
+preregistered matrix, pairwise coverage generator, report schema, and bounded
+nightly direct-provider canary. Pull-request CI validates infrastructure
+deterministically; paid requests run only from `main` in the protected
+`evaluation` Actions environment.
 
 ## Preregistered matrix (EVAL-01, EVAL-03)
 
@@ -18,7 +18,8 @@ infrastructure deterministically.
   Identical tasks, client versions, tool implementation, caps, and verifier;
   the seed is recorded, without claiming temperature zero is deterministic.
 - **Cells** (EVAL-03): each cell declares its suite, mode, environment,
-  `sample_size` (chosen before evaluation), and allowed regression deltas
+  `sample_size` tasks per cell (chosen before evaluation, accumulated across
+  nights), and allowed regression deltas
   (`allowed_score_delta`, `allowed_error_rate`). A single trial of a cell is
   a smoke gate, never broad statistical certification. Regression thresholds
   reference `config/evaluation-policy.example.json`.
@@ -81,6 +82,40 @@ side by side.
 Missing controls or insufficient samples are reported as violations; they
 cannot silently become certification.
 
+### Bounded nightly run (#762)
+
+`.github/workflows/eval-infra-nightly.yml` runs on a daily schedule or manual
+dispatch, with its job restricted to `main` and protected by the existing
+`evaluation` environment. It has no pull-request trigger. The only secrets
+passed to the paid step are `COMPAT_MATRIX_OPENAI_API_KEY` and
+`COMPAT_MATRIX_CALLER_TOKEN`; both stay in the environment-scoped secret store.
+No repository-wide secret is used. The workflow currently runs the four
+preregistered differential-canary rows supported without Docker. The three
+Humaneval rows remain explicitly missing in the aggregate until their live
+evaluation runtime is available; missing cells never become passing or
+certified. Harbor live cells after HARBOR-01 are tracked separately below.
+
+The enforced ceiling is **$1.00 per workflow run and $1.00 total per UTC night**.
+Before the first provider request the runner reserves a conservative bound for
+all direct and router calls, pinned and current-stable, and adds reservations
+from earlier same-day runs. Same-day history is downloaded from sanitized
+workflow artifacts; a missing or malformed prior report fails closed. Each
+canary invocation also has a $0.50 guard. The report records router charges
+from the local usage database and direct-provider token usage priced at the
+recorded list rates; direct charges are estimates and are not invoice
+reconciled. The rolling artifact reports task attempts, passes, Wilson 95%
+intervals, paired outcomes, missing/under-sampled cells, violations and cost
+totals. It is evidence only, not a certification claim.
+
+The workflow retains only schema reports and the rolling aggregate for 14 days.
+Prompts, raw provider responses, credentials, router logs and temporary usage
+databases are not uploaded. Key rotation is performed on the existing
+`evaluation` environment secrets, one provider at a time, then checked with a
+manual main-branch run. Break glass is to remove or disable the affected
+environment secret and let the run fail closed; do not copy the key to a
+repository secret or use a local fallback. PR, fork and offline CI lanes never
+receive these keys.
+
 ## Direct-provider differential canary (ARCH-05)
 
 The last ARCH-05 layer compares the router against the provider itself. The same
@@ -138,16 +173,19 @@ pinned cells do not declare `baseline_kind: pinned`, and sets each
 `<cell>-current-stable` row's `provenance.baseline_of` to its pinned cell before
 validating the merged report with the same schema and gates.
 
-## What still needs paid runs (tracked on #330)
+## What still needs paid runs
 
-- Nightly repeated trials of the `nightly-live` cells (EVAL-01/03/05) —
-  real provider calls.
-- Live runs of the direct-provider differential canary (ARCH-05): the layer is
-  implemented and offline-tested; a recorded live run needs bounded spend.
+- Nightly repeated trials of the three Humaneval rows in `nightly-live`
+  (EVAL-01/03/05); the current nightly workflow runs only the four
+  non-Docker differential-canary rows.
+- Additional repeated live runs of the direct-provider differential canary
+  (ARCH-05) are recorded by the nightly workflow and accumulate toward the
+  preregistered sample size.
 - Real-client runs with images and reasoning (AGENT-06).
-- Live Harbor coverage beyond HARBOR-01 (HARBOR-02…HARBOR-18).
+- Live Harbor coverage beyond HARBOR-01 (HARBOR-02…HARBOR-18); it needs a
+  Docker-capable runner.
 
-Each is skipped explicitly until its bounded-spend approval lands; skipped
-cells are never counted as certification.
+Cells without a supported live runtime remain explicit as missing or blocked;
+they are never counted as passing or certified.
 
 Metrum AI

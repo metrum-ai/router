@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add a protected main-only nightly evaluation canary with a $1 per-run and per-night spend ceiling, sanitized reports and sample-aware rolling aggregates; Docker-dependent Humaneval and Harbor live rows remain explicitly uncovered.
+
 ### Fixed
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
@@ -22,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1
   server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries,

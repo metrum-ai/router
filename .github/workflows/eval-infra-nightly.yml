@@ -1,0 +1,89 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Evaluation infrastructure nightly
+# Paid evaluation ceiling: $1.00 per workflow run and per UTC night. Details in
+# docs/EVALUATION_INFRA.md; the runner enforces the reservation before requests.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: eval-infra-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    if: github.ref == 'refs/heads/main'
+    environment: evaluation
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install report dependency
+        run: uv pip install --system 'PyYAML==6.0.3'
+      - name: Fetch same-day sanitized reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/history
+          today="$(date -u +%F)"
+          gh run list --workflow eval-infra-nightly.yml --branch main --limit 100 \
+            --json databaseId,createdAt,status --jq '.[] | select(.createdAt | startswith("'"$today"'")) | .databaseId' \
+            > artifacts/history/run-ids.txt
+          if [ "$(wc -l < artifacts/history/run-ids.txt)" -ge 100 ]; then
+            echo "Same-day run history reached the query limit; refusing to bypass the nightly spend ceiling."
+            exit 1
+          fi
+          while IFS= read -r run_id; do
+            [ -n "$run_id" ] || continue
+            [ "$run_id" = '${{ github.run_id }}' ] && continue
+            gh run download "$run_id" --name "eval-nightly-$run_id" --dir "artifacts/history/$run_id" || {
+              echo "A same-day evaluation report could not be downloaded; refusing to bypass the nightly spend ceiling."
+              exit 1
+            }
+          done < artifacts/history/run-ids.txt
+      - name: Run bounded nightly canary
+        env:
+          OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
+          PARALLEL_LIVE_TOKEN: ${{ secrets.COMPAT_MATRIX_CALLER_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t prior < <(find artifacts/history -name run-report.json -type f -print | sort)
+          python3 scripts/eval_nightly_live.py --out artifacts/run-report.json --history "${prior[@]}"
+      - name: Build rolling aggregate
+        if: always() && hashFiles('artifacts/run-report.json') != ''
+        run: |
+          set -euo pipefail
+          mapfile -t reports < <(find artifacts/history -name run-report.json -type f -print | sort)
+          reports+=(artifacts/run-report.json)
+          python3 scripts/eval_nightly_aggregate.py --out artifacts/rolling-aggregate.json "${reports[@]}"
+      - name: Publish sanitized evaluation reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-nightly-${{ github.run_id }}
+          path: |
+            artifacts/run-report.json
+            artifacts/rolling-aggregate.json
+          if-no-files-found: warn
+          retention-days: 14
