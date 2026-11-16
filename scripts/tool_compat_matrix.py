@@ -591,6 +591,8 @@ def render(matrix: dict) -> str:
         " from an authorized manual run ingested with `--ingest`. Every live cell names its date and"
         " commit; a cell that regresses from the recorded baseline fails the nightly run, and a"
         " failing cell needs a triage issue before a release rather than blocking one by itself."
+        " The `nightly` cell set runs the HTTP gate; `release` adds the pinned OpenAI Chat, OpenAI Responses,"
+        " and Anthropic Messages SDK tool loops. Dispatch with `cell_set=release` on main to attach the report."
     )
     add("")
     add("## Limits")
@@ -649,8 +651,8 @@ def ingest(matrix: dict, report: dict) -> tuple[dict, list[str]]:
             continue
         cell = known[cell_id]
         cell["status"] = status
-        if status == "pass":
-            cell["tier"] = "live"
+        # A live failure is still live evidence; keep tier aligned with status.
+        cell["tier"] = "live"
         live = {
             "date": date,
             "commit": commit,
