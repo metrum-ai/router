@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from parallel_live_budget import Budget
-from parallel_tool_live import Gate, client_cells_for_set, router_config
+from parallel_tool_live import Gate, client_cells_for_set, router_config, sanitize_gate_report
 
 
 class Response:
@@ -41,8 +41,12 @@ class Response:
 
 
 class SDKClient:
+    instances = []
+
     def __init__(self, **_kwargs):
         self.calls = 0
+        self.requests = []
+        type(self).instances.append(self)
         self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self.chat_create))
         self.responses = types.SimpleNamespace(create=self.responses_create)
         self.messages = types.SimpleNamespace(create=self.messages_create)
@@ -51,30 +55,48 @@ class SDKClient:
     def usage():
         return {"prompt_tokens": 10, "completion_tokens": 5, "input_tokens": 10, "output_tokens": 5}
 
-    def chat_create(self, **_kwargs):
+    def chat_create(self, **kwargs):
         self.calls += 1
+        self.requests.append(kwargs)
         if self.calls == 1:
             call = types.SimpleNamespace(id="call-1", function=types.SimpleNamespace(name="read_file", arguments='{"path":"notes/a.txt"}'))
             msg = {"tool_calls": [call]}
             return Response({"choices": [{"message": msg}], "usage": self.usage()})
         return Response({"choices": [{"message": {"content": "LIVE-EVAL-MARKER-A"}}], "usage": self.usage()})
 
-    def responses_create(self, **_kwargs):
+    def responses_create(self, **kwargs):
         self.calls += 1
+        self.requests.append(kwargs)
         if self.calls == 1:
             output = [types.SimpleNamespace(type="function_call", name="read_file", call_id="call-1", arguments='{"path":"notes/a.txt"}', model_dump=lambda mode="json": {"type": "function_call", "name": "read_file", "call_id": "call-1", "arguments": '{"path":"notes/a.txt"}'})]
             return Response({"output": output, "output_text": "", "usage": {"input_tokens": 10, "output_tokens": 5}})
         return Response({"output": [], "output_text": "LIVE-EVAL-MARKER-A", "usage": {"input_tokens": 10, "output_tokens": 5}})
 
-    def messages_create(self, **_kwargs):
+    def messages_create(self, **kwargs):
         self.calls += 1
+        self.requests.append(kwargs)
         if self.calls == 1:
-            content = [types.SimpleNamespace(type="tool_use", id="call-1", name="read_file", input={"path": "notes/a.txt"}, model_dump=lambda mode="json": {"type": "tool_use", "id": "call-1", "name": "read_file", "input": {"path": "notes/a.txt"}})]
+            content = [types.SimpleNamespace(type="tool_use", id="call-1", name="read_file", input={"path": "notes/a.txt"}, model_dump=lambda mode="json", exclude_none=False: {"type": "tool_use", "id": "call-1", "name": "read_file", "input": {"path": "notes/a.txt"}})]
             return Response({"content": content, "usage": {"input_tokens": 10, "output_tokens": 5}})
         return Response({"content": [types.SimpleNamespace(type="text", text="LIVE-EVAL-MARKER-A")], "usage": {"input_tokens": 10, "output_tokens": 5}})
 
 
 class ClientCellTest(unittest.TestCase):
+    def test_gate_artifact_keeps_cells_and_drops_response_bodies(self):
+        report = sanitize_gate_report({
+            "cell_set": "release",
+            "cells": [{"cell": "openai-chat-sdk", "group": "openai-chat-sdk", "problems": ["timeout"], "cost_usd": 0.0, "provider_response": "private body"}],
+            "router_usage_rows": [{"total_cost_usd": 0.001, "request_id": "private-id", "prompt": "private prompt"}],
+            "reserved_usd": 0.1,
+            "list_rate_usage_usd": 0.0,
+            "unknown_usage_turns": 0,
+            "halted": False,
+            "cap_usd": 1.0,
+        })
+        self.assertEqual(report["cells"][0]["problems"], ["timeout"])
+        self.assertEqual(report["router_usage_rows"], [{"total_cost_usd": 0.001}])
+        self.assertNotIn("private", json.dumps(report))
+
     def test_sdk_cells_are_release_only_and_provider_pinned(self):
         self.assertEqual(client_cells_for_set("nightly"), ())
         cells = client_cells_for_set("release")
@@ -105,6 +127,9 @@ class ClientCellTest(unittest.TestCase):
                 self.assertEqual(gate.cells[0]["group"], group)
                 expected_cost = 0.00007 if surface == "anthropic-messages" else 0.000009
                 self.assertAlmostEqual(gate.cells[0]["cost_usd"], expected_cost, places=10, msg=name)
+                first_request = SDKClient.instances[-1].requests[0]
+                self.assertEqual(first_request.get("temperature", first_request.get("extra_body", {}).get("temperature")), 0)
+                self.assertEqual(first_request["tool_choice"]["name"] if surface != "openai-chat" else first_request["tool_choice"]["function"]["name"], "read_file")
 
     def test_missing_tool_result_is_a_sanitized_failure(self):
         class BadClient(SDKClient):

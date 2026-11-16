@@ -45,6 +45,15 @@ RELEASE_CLIENT_CELLS = (
     ("openai-responses-sdk", "openai-responses", "openai-responses-sdk"),
     ("anthropic-messages-sdk", "anthropic-messages", "anthropic-messages-sdk"),
 )
+GATE_ARTIFACT_CELL_FIELDS = (
+    "cell",
+    "group",
+    "problems",
+    "cost_usd",
+    "turn1_status",
+    "turn2_status",
+    "call_count",
+)
 
 
 def client_cells_for_set(cell_set: str) -> tuple[tuple[str, str, str], ...]:
@@ -270,7 +279,15 @@ class Gate:
         finally:
             self.cells.append(result)
 
-    def client_cell(self, name: str, surface: str, base_url: str, model: str = "gate", group: str | None = None) -> None:
+    def client_cell(
+        self,
+        name: str,
+        surface: str,
+        base_url: str,
+        model: str = "gate",
+        group: str | None = None,
+        timeout: float = 90.0,
+    ) -> None:
         """Run one real SDK tool call and continuation against the local router."""
         result = {"cell": name, "surface": surface, "client": name.split("-", 1)[0], "group": group or model, "problems": [], "cost_usd": 0.0}
         token = TOKEN
@@ -303,9 +320,9 @@ class Gate:
         try:
             if surface == "openai-chat":
                 from openai import OpenAI
-                client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=90)
+                client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=timeout)
                 schema = [{"type": "function", "function": {**tools[0], "strict": False}}]
-                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema}
+                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "temperature": 0, "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema, "tool_choice": {"type": "function", "function": {"name": "read_file"}}}
                 first = invoke("openai-chat", first_body, lambda: client.chat.completions.create(**first_body))
                 calls = (first.choices[0].message.tool_calls if first and first.choices else None) or []
                 if len(calls) != 1 or calls[0].function.name != "read_file":
@@ -330,9 +347,9 @@ class Gate:
                 text = second.choices[0].message.content or "" if second and second.choices else ""
             elif surface == "openai-responses":
                 from openai import OpenAI
-                client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=90)
+                client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=timeout)
                 schema = [{"type": "function", **tools[0], "strict": False}]
-                first_body = {"model": group or model, "max_output_tokens": MAX_OUTPUT, "input": "Use read_file once for notes/a.txt.", "tools": schema}
+                first_body = {"model": group or model, "max_output_tokens": MAX_OUTPUT, "temperature": 0, "input": "Use read_file once for notes/a.txt.", "tools": schema, "tool_choice": {"type": "function", "name": "read_file"}}
                 first = invoke("openai-responses", first_body, lambda: client.responses.create(**first_body))
                 calls = [item for item in (first.output if first else []) if item.type == "function_call"]
                 if len(calls) != 1 or calls[0].name != "read_file":
@@ -355,10 +372,15 @@ class Gate:
                 text = second.output_text if second else ""
             else:
                 from anthropic import Anthropic
-                client = Anthropic(api_key=token, base_url=base_url, max_retries=0, timeout=90)
+                client = Anthropic(api_key=token, base_url=base_url, max_retries=0, timeout=timeout)
                 schema = [{"name": tools[0]["name"], "description": tools[0]["description"], "input_schema": tools[0]["parameters"]}]
-                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema}
-                first = invoke("anthropic", first_body, lambda: client.messages.create(**first_body))
+                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "temperature": 0, "system": "You are a tool-using agent.", "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema, "tool_choice": {"type": "tool", "name": "read_file"}}
+                # anthropic-python 2.3 models temperature as an extra body
+                # field rather than a typed Messages.create keyword.
+                first = invoke("anthropic", first_body, lambda: client.messages.create(
+                    **{key: value for key, value in first_body.items() if key != "temperature"},
+                    extra_body={"temperature": first_body["temperature"]},
+                ))
                 calls = [block for block in (first.content if first else []) if block.type == "tool_use"]
                 if len(calls) != 1 or calls[0].name != "read_file":
                     result["problems"].append("tool-call-mismatch")
@@ -368,7 +390,7 @@ class Gate:
                     return
                 second_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [
                     {"role": "user", "content": "Use read_file once for notes/a.txt."},
-                    {"role": "assistant", "content": [block.model_dump(mode="json") for block in first.content]},
+                    {"role": "assistant", "content": [block.model_dump(mode="json", exclude_none=True) for block in first.content]},
                     {"role": "user", "content": [{"type": "tool_result", "tool_use_id": calls[0].id, "content": expected}, {"type": "text", "text": "Reply with the exact marker from the tool result."}]},
                 ], "tools": schema}
                 second = invoke("anthropic", second_body, lambda: client.messages.create(**second_body))
@@ -413,6 +435,39 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
     import yaml  # noqa: PLC0415 - optional dependency for this harness only
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return path, port
+
+
+def sanitize_gate_report(report: dict) -> dict:
+    """Return the bounded per-cell artifact without provider response bodies."""
+    cells = report.get("cells")
+    if not isinstance(cells, list):
+        raise ValueError("gate report cells must be a list")
+    rows = report.get("router_usage_rows")
+    if not isinstance(rows, list):
+        raise ValueError("gate report router_usage_rows must be a list")
+    safe_rows = []
+    row_errors = 0
+    for row in rows:
+        if not isinstance(row, dict) or "total_cost_usd" not in row:
+            row_errors += 1
+            continue
+        safe_rows.append({"total_cost_usd": row["total_cost_usd"]})
+    safe_cells = []
+    for cell in cells:
+        if not isinstance(cell, dict) or not isinstance(cell.get("cell"), str):
+            raise ValueError("gate report contains an invalid cell")
+        safe_cells.append({key: cell[key] for key in GATE_ARTIFACT_CELL_FIELDS if key in cell})
+    return {
+        "cell_set": report.get("cell_set"),
+        "cells": safe_cells,
+        "router_usage_rows": safe_rows,
+        "router_usage_row_errors": row_errors,
+        "reserved_usd": report.get("reserved_usd"),
+        "list_rate_usage_usd": report.get("list_rate_usage_usd"),
+        "unknown_usage_turns": report.get("unknown_usage_turns"),
+        "halted": report.get("halted"),
+        "cap_usd": report.get("cap_usd"),
+    }
 
 
 def main() -> int:
@@ -488,7 +543,7 @@ def main() -> int:
                     connection.close()
         report = {"cell_set": args.cell_set, "cells": gate.cells, "router_usage_rows": usage_rows, "reserved_usd": float(budget.reserved), "list_rate_usage_usd": float(budget.list_usage_cost), "unknown_usage_turns": budget.unknown_usage, "halted": budget.blocked, "cap_usd": float(budget.cap)}
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        args.out.write_text(json.dumps(sanitize_gate_report(report), indent=2) + "\n", encoding="utf-8")
     failed = [cell["cell"] for cell in gate.cells if cell["problems"]]
     print(f"cells={len(gate.cells)} failed={len(failed)} routed_cost={budget.list_usage_cost}")
     for cell in gate.cells:

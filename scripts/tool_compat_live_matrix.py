@@ -115,6 +115,8 @@ def charged_cost_usd(raw: dict) -> tuple[Decimal, str, str]:
 
 
 def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-compat-live", cell_set: str = "nightly") -> dict:
+    if cell_set not in {"nightly", "release"}:
+        raise ReportError(f"unknown cell_set {cell_set!r}")
     cells = raw.get("cells")
     if not isinstance(cells, list) or not cells:
         raise ReportError("gate report has no cells")
@@ -138,10 +140,16 @@ def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-co
         entry = {
             "id": CELL_MAP[name],
             "status": "fail" if problems else "pass",
-            "detail": detail or "nightly live gate",
+            "detail": detail or f"{cell_set} live gate",
             "cost": cost,
         }
         out_cells.append(entry)
+    if cell_set == "release":
+        required = {"openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"}
+        present = {cell.get("cell") for cell in cells}
+        missing = sorted(required - present)
+        if missing:
+            raise ReportError(f"release gate report is missing SDK cells: {', '.join(missing)}")
     report = {
         "schema_version": 1,
         "date": date,

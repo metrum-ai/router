@@ -496,6 +496,7 @@ ci-python: secret-contract capability-smoke-contracts
 	$(PYTHON) scripts/tool_compat_matrix_test.py
 	$(PYTHON) scripts/tool_compat_live_matrix_test.py
 	$(PYTHON) scripts/parallel_tool_live_client_test.py
+	uv run --project tests/api_compat --locked python scripts/parallel_tool_live_router_test.py
 	$(PYTHON) scripts/ci_changes_test.py
 
 .PHONY: ci-examples

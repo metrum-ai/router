@@ -77,10 +77,12 @@ blocks the release; report it rather than working around it.
 Dispatch `.github/workflows/agent-tool-compat-live.yml` from `main` with
 `cell_set=release` before release checks. The run uses the protected
 `evaluation` environment, retains its $1 per-run cap and monthly ceiling, and
-attaches the sanitized per-cell report to the Actions run. The report includes
-live tool-call continuations from pinned OpenAI Chat, OpenAI Responses, and
-Anthropic Messages Python SDK clients. A failed cell remains visible and needs
-triage; it is not converted to a pass by the release selector.
+attaches the sanitized per-cell report to the Actions run. Both the OpenAI and
+Anthropic evaluation keys are required for nightly and release runs; earlier
+nightly runs needed only the OpenAI key. The report includes live tool-call
+continuations from pinned OpenAI Chat, OpenAI Responses, and Anthropic Messages
+Python SDK clients. A failed cell remains visible and needs triage; it is not
+converted to a pass by the release selector.
 
 ## Release provenance (#332)
 

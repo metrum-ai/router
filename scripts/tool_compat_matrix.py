@@ -651,8 +651,8 @@ def ingest(matrix: dict, report: dict) -> tuple[dict, list[str]]:
             continue
         cell = known[cell_id]
         cell["status"] = status
-        if status == "pass":
-            cell["tier"] = "live"
+        # A live failure is still live evidence; keep tier aligned with status.
+        cell["tier"] = "live"
         live = {
             "date": date,
             "commit": commit,

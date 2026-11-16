@@ -56,6 +56,30 @@ class ReportTest(unittest.TestCase):
         self.assertIn("openai-sdk-responses-tool-loop", ids)
         self.assertIn("anthropic-sdk-messages-tool-loop", ids)
 
+    def test_release_report_requires_all_three_sdk_cells(self):
+        raw = gate_report()
+        raw["cells"].extend([
+            {"cell": "openai-chat-sdk", "problems": []},
+            {"cell": "openai-responses-sdk", "problems": []},
+            {"cell": "anthropic-messages-sdk", "problems": []},
+        ])
+        for missing in ("openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"):
+            partial = {**raw, "cells": [cell for cell in raw["cells"] if cell["cell"] != missing]}
+            with self.subTest(missing=missing), self.assertRaisesRegex(live.ReportError, "missing SDK cells"):
+                live.build_report(partial, "2026-11-03", "abcdef123", cell_set="release")
+
+    def test_detail_names_the_actual_run_type(self):
+        nightly = live.build_report(gate_report(), "2026-11-03", "abcdef123", cell_set="nightly")
+        self.assertEqual(nightly["cells"][0]["detail"], "nightly live gate")
+        raw = gate_report()
+        raw["cells"].extend([
+            {"cell": "openai-chat-sdk", "problems": []},
+            {"cell": "openai-responses-sdk", "problems": []},
+            {"cell": "anthropic-messages-sdk", "problems": []},
+        ])
+        release = live.build_report(raw, "2026-11-03", "abcdef123", cell_set="release")
+        self.assertEqual(release["cells"][0]["detail"], "release live gate")
+
     def test_cost_comes_from_router_rows_and_direct_cells_are_provider_invoiced(self):
         report = live.build_report(gate_report(), "2026-11-03", "abcdef123")
         self.assertAlmostEqual(report["cost"]["usd"], 0.00063, places=8)

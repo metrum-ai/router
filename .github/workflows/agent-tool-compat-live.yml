@@ -121,21 +121,43 @@ jobs:
             --cap "$RUN_CAP_USD" --out tmp/compat-matrix/gate.json
 
       - name: Convert the gate run into matrix results
+        if: always() && steps.gate.outcome != 'skipped'
         run: |
           set -euo pipefail
-          python3 scripts/tool_compat_live_matrix.py report \
-            --gate-report tmp/compat-matrix/gate.json \
-            --out tmp/compat-matrix/matrix-live.json \
-            --date "$(date -u +%F)" --commit "$GITHUB_SHA" \
-            --cell-set "$CELL_SET"
+          if python3 - <<'PY'
+          import os
+          from pathlib import Path
+          report = Path("tmp/compat-matrix/gate.json")
+          raise SystemExit(0 if report.exists() and int(report.stat().st_mtime) >= int(os.environ["FRESH_AFTER"]) else 1)
+          PY
+          then
+            python3 scripts/tool_compat_live_matrix.py report \
+              --gate-report tmp/compat-matrix/gate.json \
+              --out tmp/compat-matrix/matrix-live.json \
+              --date "$(date -u +%F)" --commit "$GITHUB_SHA" \
+              --cell-set "$CELL_SET"
+          else
+            echo "No fresh gate report from this run; skipping conversion."
+          fi
 
       - name: Ingest results and compare against the recorded baseline
+        if: always()
         run: |
           set -euo pipefail
-          git show HEAD:tests/tool_compat/matrix.json > tmp/compat-matrix/baseline.json
-          python3 scripts/tool_compat_matrix.py \
-            --ingest tmp/compat-matrix/matrix-live.json --write
-          python3 scripts/tool_compat_matrix.py --compare tmp/compat-matrix/baseline.json
+          if python3 - <<'PY'
+          import os
+          from pathlib import Path
+          report = Path("tmp/compat-matrix/matrix-live.json")
+          raise SystemExit(0 if report.exists() and int(report.stat().st_mtime) >= int(os.environ["FRESH_AFTER"]) else 1)
+          PY
+          then
+            git show HEAD:tests/tool_compat/matrix.json > tmp/compat-matrix/baseline.json
+            python3 scripts/tool_compat_matrix.py \
+              --ingest tmp/compat-matrix/matrix-live.json --write
+            python3 scripts/tool_compat_matrix.py --compare tmp/compat-matrix/baseline.json
+          else
+            echo "No fresh converted report from this run; skipping ingest."
+          fi
 
       # Charged before the summary so the reported ledger figure includes this
       # run. A refused run never started the gate, so it records nothing.
@@ -205,6 +227,7 @@ jobs:
         with:
           name: tool-compat-matrix-live-${{ github.run_id }}
           path: |
+            tmp/compat-matrix/gate.json
             tmp/compat-matrix/matrix-live.json
             tmp/compat-matrix/spend.json
             tests/tool_compat/matrix.json

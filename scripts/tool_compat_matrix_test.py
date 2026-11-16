@@ -159,14 +159,14 @@ class RenderTest(unittest.TestCase):
 
 
 class IngestAndCompareTest(unittest.TestCase):
-    def report(self, status="pass", issue=None):
+    def report(self, status="pass", issue=None, cell_id="pi-chat-same-dialect-stream"):
         return {
             "schema_version": 1,
             "date": "2026-11-03",
             "commit": "abcdef1234567890",
             "runner": "agent-tool-compat-live",
             "cost": {"usd": 0.00042, "source": "usage_rows", "scope": "run"},
-            "cells": [{"id": "pi-chat-same-dialect-stream", "status": status, "issue": issue}],
+            "cells": [{"id": cell_id, "status": status, "issue": issue}],
         }
 
     def test_ingest_pass_upgrades_to_live(self):
@@ -193,6 +193,16 @@ class IngestAndCompareTest(unittest.TestCase):
         cell = next(c for c in updated["cells"] if c["id"] == "pi-chat-same-dialect-stream")
         self.assertEqual(cell["issue"], 123)
         self.assertEqual(matrix.validate(updated), [])
+
+    def test_ingest_failure_moves_not_covered_cell_to_live(self):
+        data = base()
+        cell_id = "openai-sdk-responses-tool-loop"
+        cell = next(c for c in data["cells"] if c["id"] == cell_id)
+        self.assertEqual((cell["tier"], cell["status"]), ("not-covered", "not-covered"))
+        updated, errors = matrix.ingest(data, self.report("fail", cell_id=cell_id))
+        self.assertEqual(errors, [])
+        updated_cell = next(c for c in updated["cells"] if c["id"] == cell_id)
+        self.assertEqual((updated_cell["tier"], updated_cell["status"]), ("live", "fail"))
 
     def test_ingest_unknown_cell_fails_closed(self):
         data = base()
