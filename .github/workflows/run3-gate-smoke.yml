@@ -3,6 +3,7 @@
 name: Run 3 held-out gate smoke
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'examples/fine-tune-qwen3p8-27b/run3/**'
       - 'scripts/ci_changes.py'
@@ -16,6 +17,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 jobs:
   gate:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 10
     steps:
