@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -3412,18 +3413,24 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	if !ok {
 		return target, fmt.Errorf("model group %s references unknown provider %s", group, target.Provider)
 	}
+	var catalog ProviderModel
 	if target.ModelRef == "" {
 		if target.Model == "" {
 			return target, fmt.Errorf("model group %s target for provider %s missing model or model_ref", group, target.Provider)
 		}
-		return target, nil
-	}
-	catalog, ok := provider.Models[target.ModelRef]
-	if !ok {
-		return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
-	}
-	if target.Model == "" {
-		target.Model = catalog.Model
+		catalog, ok = providerModelByID(provider.Models, target.Model)
+		if !ok {
+			// Preserve direct-model targets that are not represented in the provider catalog.
+			return target, nil
+		}
+	} else {
+		catalog, ok = provider.Models[target.ModelRef]
+		if !ok {
+			return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
+		}
+		if target.Model == "" {
+			target.Model = catalog.Model
+		}
 	}
 	if target.Dialect == "" {
 		target.Dialect = catalog.Dialect
@@ -3513,6 +3520,26 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 		return target, fmt.Errorf("model group %s target model_ref %s for provider %s resolved without model", group, target.ModelRef, target.Provider)
 	}
 	return target, nil
+}
+
+// providerModelByID finds catalog metadata for a direct model target. Prefer
+// an exact catalog key, then match the provider-facing model ID deterministically.
+func providerModelByID(models map[string]ProviderModel, modelID string) (ProviderModel, bool) {
+	if catalog, ok := models[modelID]; ok {
+		return catalog, true
+	}
+	keys := make([]string, 0, len(models))
+	for key := range models {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		catalog := models[key]
+		if catalog.Model == modelID {
+			return catalog, true
+		}
+	}
+	return ProviderModel{}, false
 }
 
 func mergeBridgeSupport(base, override BridgeSupport) BridgeSupport {

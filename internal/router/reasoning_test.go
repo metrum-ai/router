@@ -158,7 +158,7 @@ func TestReasoningRequestFiltersTargetsAndTranslates(t *testing.T) {
 	}
 }
 
-func TestReasoningEffortMixedWeightedAndAllIncapable(t *testing.T) {
+func TestReasoningEffortDirectModelMixedWeightedAndAllIncapable(t *testing.T) {
 	var upstreamCalls int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamCalls++
@@ -166,7 +166,7 @@ func TestReasoningEffortMixedWeightedAndAllIncapable(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["model"] != "reasoning-chat" || body["reasoning_effort"] != "low" {
+		if body["model"] != "gpt-6-luna" || body["reasoning_effort"] != "low" {
 			t.Fatalf("weighted group selected unsupported target or lost effort: %#v", body)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"id": "reasoning-ok", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
@@ -175,15 +175,16 @@ func TestReasoningEffortMixedWeightedAndAllIncapable(t *testing.T) {
 
 	t.Run("mixed-weighted", func(t *testing.T) {
 		cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+		chatSupport := RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed"}
 		cfg.Provider["openai"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-responses", APIKey: "provider-key", Models: map[string]ProviderModel{
-			"reasoning": {Model: "reasoning-chat", Dialect: "openai-responses", RequestShapeSupport: RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed"}, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
+			"gpt-6-luna": {Model: "gpt-6-luna", Dialect: "openai-responses", RequestShapeSupport: chatSupport, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
 		}}
 		cfg.Provider["compatible"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai", APIKey: "provider-key", Models: map[string]ProviderModel{
-			"plain": {Model: "plain-chat"},
+			"plain": {Model: "plain-chat", Dialect: "openai-chat", RequestShapeSupport: chatSupport},
 		}}
 		cfg.Models["default"] = ModelGroup{Strategy: "weighted", Targets: []Target{
-			{Provider: "compatible", ModelRef: "plain", Weight: 100},
-			{Provider: "openai", ModelRef: "reasoning", Dialect: "openai-chat", Weight: 1},
+			{Provider: "openai", Model: "gpt-6-luna", Dialect: "openai-chat", RequestShapeSupport: chatSupport, Weight: 100},
+			{Provider: "compatible", Model: "plain-chat", Dialect: "openai-chat", RequestShapeSupport: chatSupport, Weight: 100},
 		}}
 		legacy, err := yaml.Marshal(cfg)
 		if err != nil {
@@ -222,7 +223,7 @@ func TestReasoningEffortMixedWeightedAndAllIncapable(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
 			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 		}
 		if upstreamCalls != before {
@@ -310,7 +311,7 @@ func TestReasoningEffortMixedRejectionsNameReasoningField(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	if upstreamCalls != 0 {
@@ -501,7 +502,7 @@ func TestReasoningNoEligibleTargetAndModelListMetadata(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
