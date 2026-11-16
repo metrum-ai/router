@@ -98,7 +98,7 @@ jobs:
           retention-days: 90
 
   harbor:
-    if: always() && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/security/1059-harbor-nonroot-registry'))
+    if: always() && github.ref == 'refs/heads/main'
     needs: nightly
     environment: evaluation
     runs-on: ubuntu-latest
@@ -106,7 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: main
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -126,25 +126,13 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/harbor-history
           today="$(date -u +%F)"
-          branches=(main)
-          if [ "$GITHUB_REF_NAME" != main ]; then
-            branches+=("$GITHUB_REF_NAME")
+          gh run list --workflow eval-infra-nightly.yml --branch main --limit 100 \
+            --json databaseId,createdAt --jq '.[] | select(.createdAt | startswith("'"$today"'")) | .databaseId' \
+            > artifacts/harbor-history/run-ids.txt
+          if [ "$(wc -l < artifacts/harbor-history/run-ids.txt)" -ge 100 ]; then
+            echo "Same-day run history reached the query limit; refusing to bypass the Harbor spend ceiling."
+            exit 1
           fi
-          : > artifacts/harbor-history/run-ids.txt
-          branch_index=0
-          for branch in "${branches[@]}"; do
-            branch_runs="artifacts/harbor-history/run-ids-$branch_index.txt"
-            branch_index=$((branch_index + 1))
-            gh run list --workflow eval-infra-nightly.yml --branch "$branch" --limit 100 \
-              --json databaseId,createdAt --jq '.[] | select(.createdAt | startswith("'"$today"'")) | .databaseId' \
-              > "$branch_runs"
-            if [ "$(wc -l < "$branch_runs")" -ge 100 ]; then
-              echo "Same-day run history reached the query limit; refusing to bypass the Harbor spend ceiling."
-              exit 1
-            fi
-            cat "$branch_runs" >> artifacts/harbor-history/run-ids.txt
-          done
-          sort -u artifacts/harbor-history/run-ids.txt -o artifacts/harbor-history/run-ids.txt
           while IFS= read -r run_id; do
             [ -n "$run_id" ] || continue
             [ "$run_id" = '${{ github.run_id }}' ] && continue
@@ -166,13 +154,19 @@ jobs:
           cp scripts/harbor_e2e/*.py "$RUNNER_TEMP/harbor-e2e/"
           python3 scripts/harbor_e2e/generate_tasks.py "$RUNNER_TEMP/harbor-e2e/jobs"
           python3 scripts/harbor_e2e/prepare_catalog_tasks.py "$RUNNER_TEMP/harbor-e2e/catalog-tasks"
-      - name: Install bounded Harbor provider credential
+      - name: Run bounded Harbor live matrix
         env:
           OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
-          HARBOR_E2E_CREDS: /dev/shm/harbor-e2e-${{ github.run_id }}
+          HARBOR_E2E_ROOT: ${{ runner.temp }}/harbor-e2e
+          HARBOR_CATALOG_TASKS: ${{ runner.temp }}/harbor-e2e/catalog-tasks
+          HARBOR_BIN: ${{ runner.temp }}/harbor-venv/bin/harbor
+          HARBOR_E2E_SHA: ${{ github.sha }}
+          HARBOR_E2E_RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          python3 - "$HARBOR_E2E_CREDS/provider-secrets.json" <<'PY'
+          export HARBOR_E2E_CREDS="/dev/shm/harbor-e2e-$GITHUB_RUN_ID"
+          trap 'rm -f "$HARBOR_E2E_CREDS/provider-secrets.json" "$HARBOR_E2E_CREDS/router-token"' EXIT
+          python3 - "$HARBOR_E2E_CREDS/provider-secrets.json" "$RUNNER_TEMP/harbor-budget.json" <<'PY'
           import json, os, pathlib, sys
           keys = {"openai": os.environ["OPENAI_API_KEY"]}
           if not keys["openai"]:
@@ -182,17 +176,6 @@ jobs:
           with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
               json.dump(keys, stream)
           PY
-      - name: Run bounded Harbor live matrix
-        env:
-          HARBOR_E2E_ROOT: ${{ runner.temp }}/harbor-e2e
-          HARBOR_CATALOG_TASKS: ${{ runner.temp }}/harbor-e2e/catalog-tasks
-          HARBOR_BIN: ${{ runner.temp }}/harbor-venv/bin/harbor
-          HARBOR_E2E_CREDS: /dev/shm/harbor-e2e-${{ github.run_id }}
-          HARBOR_E2E_SHA: ${{ github.sha }}
-          HARBOR_E2E_RUN_ID: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          trap 'rm -f "$HARBOR_E2E_CREDS/provider-secrets.json" "$HARBOR_E2E_CREDS/router-token"' EXIT
           export HARBOR_MAX_RESERVE_USD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["remaining_usd"])' "$RUNNER_TEMP/harbor-budget.json")"
           printf %s "harbor-openai-responses-gpt" > "$HARBOR_E2E_CREDS/router-token"
           chmod 600 "$HARBOR_E2E_CREDS/router-token"
@@ -209,8 +192,3 @@ jobs:
             ${{ runner.temp }}/harbor-e2e/preflight.json
           if-no-files-found: warn
           retention-days: 90
-      - name: Remove Harbor credentials
-        if: always()
-        env:
-          HARBOR_E2E_CREDS: /dev/shm/harbor-e2e-${{ github.run_id }}
-        run: rm -f "$HARBOR_E2E_CREDS/provider-secrets.json" "$HARBOR_E2E_CREDS/router-token"

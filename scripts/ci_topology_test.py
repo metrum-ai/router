@@ -379,6 +379,14 @@ def assert_arc_runners() -> None:
                 require("environment: evaluation" in body and "if: always() && github.ref == 'refs/heads/main'" in body,
                         "the hosted Harbor exception must remain main-only and protected")
                 continue
+            if path.name == "ci.yml" and name == "harbor-task-images":
+                # Docker builds require a daemon unavailable on the ARC runner.
+                # This credential-free job only builds and smokes fixed local images.
+                require(re.search(r"(?m)^    runs-on: ubuntu-latest$", body) is not None,
+                        "Harbor task image smoke tests require the Docker VM runner")
+                require("scripts/harbor_e2e/test_nonroot_images.sh" in body and "secrets." not in body,
+                        "the Docker VM exception must remain limited to secret-free image checks")
+                continue
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
                     (path.name in ("agent-chain-nightly.yml", "hierarchy-matrix.yml") and
                      name in ("codex-chain-sandbox", "codex-chain")) or
@@ -468,7 +476,7 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "tls-acme", "admin-authz-advisories", "engine-advisory-gate", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "harbor-task-images", "k8s-security", "parallel-tools", "tls-acme", "admin-authz-advisories", "engine-advisory-gate", "ci"}, "fanout lane inventory drifted")
     advisory = lanes["admin-authz-advisories"]
     require("runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}" in advisory
             and "GOMAXPROCS: '2'" in advisory and "GOMEMLIMIT: 8GiB" in advisory,
@@ -547,6 +555,10 @@ def assert_consolidated_ci() -> None:
                    "anchore/sbom-action@", "anchore/scan-action@", "severity-cutoff: high", "fail-build: true",
                    "actions/upload-artifact@"):
         require(marker in sbom, f"required SBOM lane lost {marker}")
+    harbor_images = lanes["harbor-task-images"]
+    require("runs-on: ubuntu-latest" in harbor_images
+            and "scripts/harbor_e2e/test_nonroot_images.sh" in harbor_images,
+            "Harbor task images must be built and smoke-tested in CI")
     security = lanes["k8s-security"]
     require("if: github.event_name != 'push'" in security
             and "scripts/render_k8s_security.sh" in security
@@ -554,11 +566,11 @@ def assert_consolidated_ci() -> None:
             and "scan-type: config" in security
             and "scan-ref: ${{ runner.temp }}/security-rendered" in security
             and "trivyignores: .github/trivy-k8s-ignore.yaml" in security
-            and "severity: HIGH,CRITICAL" in security and "exit-code: '1'" in security,
+            and "severity: MEDIUM,HIGH,CRITICAL" in security and "exit-code: '1'" in security,
             "rendered-manifest security scan must gate every PR and merge group")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm, harbor-task-images, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate]" in aggregate, "required ci aggregator drifted")
     parallel = lanes["parallel-tools"]
     require("if: github.event_name != 'push'" in parallel
             and "go test ./internal/stream -run '^TestParallelThreeStreamTranslations$'" in parallel
@@ -567,9 +579,9 @@ def assert_consolidated_ci() -> None:
             "parallel tool-call fixtures must run on every PR and merge group")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT", "ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT", "ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
     for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
-        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
+        expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
                          and event != "push" or n == "WARM_RESULT" and event == "push"
                          or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
                          or n in ("ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
