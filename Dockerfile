@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS build
 
 WORKDIR /src
 RUN apk add --no-cache nodejs npm
@@ -24,13 +24,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$GO_BUILD_TA
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$GO_BUILD_TAGS" -ldflags "-X github.com/metrum-ai/router/internal/buildinfo.Version=$VERSION -X github.com/metrum-ai/router/internal/buildinfo.Commit=$COMMIT -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$BUILD_DATE" -o /out/metrum-ai-router-migrate ./cmd/metrum-ai-router-migrate
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags "$GO_BUILD_TAGS" -ldflags "-X github.com/metrum-ai/router/internal/buildinfo.Version=$VERSION -X github.com/metrum-ai/router/internal/buildinfo.Commit=$COMMIT -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$BUILD_DATE" -o /out/metrum-ai-routerctl ./cmd/metrum-ai-routerctl
 
-FROM --platform=$BUILDPLATFORM alpine:3.22 AS certs
-RUN apk add --no-cache ca-certificates
-
-FROM scratch
+FROM cgr.dev/chainguard/static:latest@sha256:fc42af33e643f20d08baf03cddcc1c02ba57052dfb02edb0d79f3fc47bcea8d9
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
-COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /src/LICENSE /LICENSE
 COPY --from=build /src/NOTICE /NOTICE
 COPY --from=build /src/THIRD_PARTY_NOTICES.md /THIRD_PARTY_NOTICES.md

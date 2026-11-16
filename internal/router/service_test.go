@@ -4402,6 +4402,9 @@ func TestVersionAndHealthEndpointsExposeBuildInfo(t *testing.T) {
 					t.Fatalf("%s missing %s: %#v", path, key, body)
 				}
 			}
+			if digest, ok := body["binary_sha256"].(string); !ok || len(digest) != 64 {
+				t.Fatalf("%s binary_sha256=%#v, want a 64-character digest", path, body["binary_sha256"])
+			}
 		} else if body["ok"] != true {
 			t.Fatalf("%s ok field=%#v body=%#v", path, body["ok"], body)
 		}

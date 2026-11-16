@@ -189,7 +189,7 @@ Expected results:
 
 - `/readyz` returns success only when required runtime checks pass.
 - `/docs/` serves the embedded product documentation from the running binary.
-- `/version` returns safe release metadata.
+- `/version` returns safe release metadata, including the running router binary's `binary_sha256` digest.
 - `/v1/models` returns only model groups allowed for the caller token.
 
 For request-level diagnostics after installation, use [Troubleshooting Requests](../troubleshooting/requests).
