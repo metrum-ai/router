@@ -23,6 +23,35 @@ func mcpPIIFilter(cfg *Config, modelGroup string) PIIFilterConfig {
 	return group.PIIFilter
 }
 
+func resolveMCPModelGroup(cfg *Config, caller *callerRuntime, requested string) (string, error) {
+	if cfg == nil || caller == nil {
+		return "", errors.New("MCP model group unavailable")
+	}
+	group := strings.TrimSpace(requested)
+	if group == "" {
+		group = strings.TrimSpace(cfg.Server.DefaultModelGroup)
+	}
+	if group == "" && len(caller.allow) == 1 {
+		for allowed := range caller.allow {
+			group = allowed
+		}
+	}
+	if group != "" {
+		return group, nil
+	}
+	governanceConfigured := strings.TrimSpace(cfg.Server.ToolFirewall.Mode) != "" && !strings.EqualFold(strings.TrimSpace(cfg.Server.ToolFirewall.Mode), toolFirewallOff)
+	for _, model := range cfg.Models {
+		if model.PIIFilter.Enabled {
+			governanceConfigured = true
+			break
+		}
+	}
+	if governanceConfigured {
+		return "", errors.New("MCP model group is required to apply configured PII or firewall policy")
+	}
+	return "", nil
+}
+
 func newMCPPIIRedactionState(cfg PIIFilterConfig) (*piiRedactionState, normalizedPIIApplyTo, error) {
 	apply := normalizePIIApplyTo(cfg.ApplyTo)
 	result := &piiFilterResult{RuleCounts: map[string]int{}, Mode: normalizePIIFilterMode(cfg)}
@@ -133,8 +162,7 @@ func (s *Service) mcpFirewallDecision(cfg *Config, caller *callerRuntime, modelG
 	return nil, false
 }
 
-func mcpRedactMCPToolInput(cfg *Config, modelGroup string, arguments map[string]any) (map[string]any, error) {
-	filter := mcpPIIFilter(cfg, modelGroup)
+func mcpRedactMCPToolInput(filter PIIFilterConfig, arguments map[string]any) (map[string]any, error) {
 	state, apply, err := newMCPPIIRedactionState(filter)
 	if err != nil {
 		return nil, errors.New("invalid MCP PII filter")
@@ -153,8 +181,7 @@ func mcpRedactMCPToolInput(cfg *Config, modelGroup string, arguments map[string]
 	return redactedArguments, nil
 }
 
-func mcpRedactToolResult(cfg *Config, modelGroup string, result any) (any, error) {
-	filter := mcpPIIFilter(cfg, modelGroup)
+func mcpRedactToolResult(filter PIIFilterConfig, result any) (any, error) {
 	state, apply, err := newMCPPIIRedactionState(filter)
 	if err != nil {
 		return nil, errors.New("invalid MCP PII filter")

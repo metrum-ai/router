@@ -55,7 +55,7 @@ func (i firewallToolCallInspector) inspectStreamToolCalls(calls []IRToolCall) (t
 		approvalID, approvalState = i.service.toolApprovals.lookup(fingerprint)
 	}
 	outcome := i.service.inspectToolCallsForFirewall(i.callerID, i.request, calls, false, approvalState == "release")
-	disposition := i.service.resolveToolFirewallDecision(i.rc, i.callerID, fingerprint, approvalID, approvalState, outcome)
+	disposition := i.service.resolveToolFirewallDecision(i.rc, i.callerID, fingerprint, approvalID, approvalState, outcome, i.service.cfg.Server.ToolFirewall)
 	if disposition.pending {
 		text, _ := json.Marshal(map[string]string{"status": "approval_pending", "approval_id": disposition.approvalID, "message": "Retry this request after approval."})
 		return toolCallInspectionResult{Action: toolCallInspectionResultText, Text: string(text)}, nil

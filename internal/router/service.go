@@ -2659,7 +2659,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				approvalID, approvalState = s.toolApprovals.lookup(fingerprint)
 			}
 			outcome := s.inspectToolCallsForFirewall(callerID, req, calls, truncated, approvalState == "release")
-			disposition := s.resolveToolFirewallDecision(rc, callerID, fingerprint, approvalID, approvalState, outcome)
+			disposition := s.resolveToolFirewallDecision(rc, callerID, fingerprint, approvalID, approvalState, outcome, s.cfg.Server.ToolFirewall)
 			if disposition.pending {
 				resp.RawResponse = false
 				resp.ToolCalls = nil

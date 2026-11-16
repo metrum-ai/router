@@ -289,7 +289,11 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeMCPHTTPError(w, request.ID, -32020, "MCP request headers do not match the JSON-RPC body")
 		return
 	}
-	modelGroup := strings.TrimSpace(r.Header.Get("X-Router-Model-Group"))
+	modelGroup, modelGroupErr := resolveMCPModelGroup(cfg, caller, r.Header.Get("X-Router-Model-Group"))
+	if modelGroupErr != nil {
+		writeMCPError(w, request.ID, -32003, modelGroupErr.Error())
+		return
+	}
 	modelGroupDenied := modelGroup != "" && !caller.allow[modelGroup]
 	if request.Method == "initialize" {
 		var params struct {
@@ -316,44 +320,21 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited policy unavailable")
 		return
 	}
+	piiFilter := mcpPIIFilter(cfg, modelGroup)
 	if hierarchyPolicy != nil {
 		if modelGroup == "" || !hierarchyPolicyAllowsGroup(hierarchyPolicy, modelGroup) {
 			modelGroupDenied = true
 		}
+		filter, filterErr := mergeHierarchyPIIFilters(piiFilter, hierarchyPolicy.PIIFilter)
+		if filterErr != nil {
+			writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited policy invalid")
+			return
+		}
+		piiFilter = filter
 		if request.Method == "tools/call" {
 			if !hierarchyPolicyAllowsTools(hierarchyPolicy, []map[string]any{{"name": callParams.Name}}) {
 				writeMCPError(w, request.ID, -32003, "tool denied by inherited policy")
 				return
-			}
-			localFilter := PIIFilterConfig{}
-			if group, ok := cfg.Models[modelGroup]; ok {
-				localFilter = group.PIIFilter
-			}
-			filter, filterErr := mergeHierarchyPIIFilters(localFilter, hierarchyPolicy.PIIFilter)
-			if filterErr != nil {
-				writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited policy invalid")
-				return
-			}
-			if filter.Enabled {
-				arguments, marshalErr := json.Marshal(callParams.Arguments)
-				if marshalErr != nil {
-					writeMCPError(w, request.ID, -32602, "invalid tools/call parameters")
-					return
-				}
-				ir := &IRRequest{Messages: []IRMessage{{Role: "user", Content: string(arguments)}}}
-				if _, filterErr = applyPIIFilter(ir, filter, "openai-chat"); filterErr != nil {
-					var blocked piiFilterBlockedError
-					if errors.As(filterErr, &blocked) {
-						writeMCPError(w, request.ID, -32003, "request denied by inherited PII policy")
-					} else {
-						writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited PII policy invalid")
-					}
-					return
-				}
-				if err := json.Unmarshal([]byte(ir.Messages[0].Content), &callParams.Arguments); err != nil {
-					writeMCPError(w, request.ID, -32602, "invalid tools/call parameters")
-					return
-				}
 			}
 		}
 	}
@@ -428,6 +409,18 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 			writeMCPError(w, request.ID, -32003, "tool denied by policy")
 			return
 		}
+		if firewallResult, handled := s.mcpFirewallDecision(cfg, caller, modelGroup, callParams.Name, callParams.Arguments); handled {
+			result = firewallResult
+			resultStatus := "approval_pending"
+			if mcpToolResultIsError(result) {
+				resultStatus = "denied"
+			}
+			if auditErr := s.finishMCPToolAudit(auditID, started, resultStatus); auditErr != nil {
+				writeMCPError(w, request.ID, -32000, "MCP audit store unavailable")
+				return
+			}
+			break
+		}
 		limitAdmission := s.quota.AdmitMCPTool(caller.cfg.ID, callParams.Name, matchingMCPToolLimits(cfg.MCP.Limits, caller.cfg.ID, callParams.Name))
 		if !limitAdmission.OK {
 			if auditErr := s.finishMCPToolAudit(auditID, started, "limited"); auditErr != nil {
@@ -444,19 +437,7 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 			writeMCPAdmissionError(w, request.ID, limitAdmission.Status, message)
 			return
 		}
-		if firewallResult, handled := s.mcpFirewallDecision(cfg, caller, modelGroup, callParams.Name, callParams.Arguments); handled {
-			result = firewallResult
-			resultStatus := "approval_pending"
-			if mcpToolResultIsError(result) {
-				resultStatus = "denied"
-			}
-			if auditErr := s.finishMCPToolAudit(auditID, started, resultStatus); auditErr != nil {
-				writeMCPError(w, request.ID, -32000, "MCP audit store unavailable")
-				return
-			}
-			break
-		}
-		arguments, redactErr := mcpRedactMCPToolInput(cfg, modelGroup, callParams.Arguments)
+		arguments, redactErr := mcpRedactMCPToolInput(piiFilter, callParams.Arguments)
 		if redactErr != nil {
 			resultStatus := "error"
 			var blocked piiFilterBlockedError
@@ -476,7 +457,7 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err = s.mcpCallTool(r.Context(), cfg, callParams.Name, arguments)
 		if err == nil {
-			filteredResult, redactErr := mcpRedactToolResult(cfg, modelGroup, result)
+			filteredResult, redactErr := mcpRedactToolResult(piiFilter, result)
 			if redactErr != nil {
 				resultStatus := "error"
 				var blocked piiFilterBlockedError

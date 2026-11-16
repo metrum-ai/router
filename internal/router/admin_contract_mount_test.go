@@ -361,6 +361,58 @@ func TestToolApprovalRouteRequiresDedicatedResolveGrant(t *testing.T) {
 	}
 }
 
+func TestMCPApprovalAndAuditExportRoutesUseAuthorization(t *testing.T) {
+	harness := newAdminV1Harness(t)
+	operations := append(AdminV1Operations(), adminAuditExportOperationSpecs()...)
+	registry, err := NewAdminV1Registry(operations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness.registry = registry
+	var approvals, exports int
+	harness.mountWithExtra(t, map[string]http.HandlerFunc{
+		"tool.approvals.resolve": func(w http.ResponseWriter, _ *http.Request) {
+			approvals++
+			writeJSON(w, http.StatusOK, map[string]any{"resolved": true})
+		},
+		"admin.audit.export": func(w http.ResponseWriter, _ *http.Request) {
+			exports++
+			writeJSON(w, http.StatusOK, map[string]any{"items": []any{}})
+		},
+	})
+	for _, route := range []struct {
+		name, method, path string
+		body               any
+		object, action     string
+		count              *int
+	}{
+		{name: "approval", method: http.MethodPost, path: "/admin/v1/tool-approvals/approval_0123456789abcdef0123456789abcdef", body: map[string]any{"decision": "deny"}, object: authzObjectToolApprovals, action: authzActionResolve, count: &approvals},
+		{name: "audit export", method: http.MethodGet, path: "/admin/v1/audit-events/export", object: "admin:audit", action: authzActionRead, count: &exports},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			harness.authorize.reset()
+			before := *route.count
+			allowed := harness.do(t, route.method, route.path, route.body, nil)
+			if allowed.Code != http.StatusOK || *route.count != before+1 {
+				t.Fatalf("authorized route status=%d calls=%d body=%s", allowed.Code, *route.count-before, allowed.Body.String())
+			}
+			decisions := harness.authorize.snapshot()
+			if len(decisions) != 1 || decisions[0].Object != route.object || decisions[0].Action != route.action {
+				t.Fatalf("route authorization=%+v, want %s/%s", decisions, route.object, route.action)
+			}
+			harness.authorize.deny[decisions[0].Domain+"|"+route.object+"|"+route.action] = true
+			harness.authorize.reset()
+			denied := harness.do(t, route.method, route.path, route.body, nil)
+			if denied.Code != http.StatusForbidden || *route.count != before+1 {
+				t.Fatalf("denied route status=%d calls=%d body=%s", denied.Code, *route.count-before-1, denied.Body.String())
+			}
+			if decisions := harness.authorize.snapshot(); len(decisions) != 1 || decisions[0].Object != route.object || decisions[0].Action != route.action {
+				t.Fatalf("denied route authorization=%+v", decisions)
+			}
+		})
+	}
+}
+
 // TestAdminV1SingleDecisionPoint proves every operation takes exactly the decisions it
 // declares, that each decision was taken in the operation's resolved domain, and that the
 // handler-decided surfaces (reports, the caller listing) take no contract-layer gate.

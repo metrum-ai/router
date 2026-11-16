@@ -89,12 +89,16 @@ func (s *Service) finishMCPToolAudit(id string, started time.Time, status string
 		// Mirror only identifiers, outcome, and the keyed argument digest into the
 		// existing hash-chained audit export. Raw arguments and results stay out.
 		eventID := "mcp-audit-" + strings.TrimPrefix(row.ID, "mcp-")
+		detail, _ := json.Marshal(struct {
+			Tool      string `json:"tool"`
+			LatencyMS int64  `json:"latency_ms"`
+		}{Tool: row.Tool, LatencyMS: latency})
 		audit := AdminAuditRecord{
 			EventID: eventID, At: time.Now().UTC(), PrincipalSubject: row.CallerID,
 			PrincipalKind: "router-caller", Domain: string(AdminDomainCredential),
 			Object: "mcp:tool", Action: "call", OperationID: "mcp.tools.call",
 			RequestID: row.ID, Outcome: status, ReasonCode: "mcp-tool-invocation",
-			RequestHash: row.ArgumentsSHA256, Detail: row.Tool,
+			RequestHash: row.ArgumentsSHA256, Detail: "mcp:v1:" + string(detail),
 		}
 		if err := insertAdminAuditUsageTx(tx, audit); err != nil {
 			return fmt.Errorf("export MCP audit result: %w", err)

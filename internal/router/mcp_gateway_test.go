@@ -125,6 +125,27 @@ func TestMCPGatewayPolicyReferences(t *testing.T) {
 	}
 }
 
+func TestMCPModelGroupResolutionUsesServerDefaultOrOnlyCallerGroup(t *testing.T) {
+	caller := &callerRuntime{allow: map[string]bool{"default": true, "other": true}}
+	cfg := &Config{Models: map[string]ModelGroup{"default": {PIIFilter: PIIFilterConfig{Enabled: true}}, "other": {}}}
+	if _, err := resolveMCPModelGroup(cfg, caller, ""); err == nil || !strings.Contains(err.Error(), "model group is required") {
+		t.Fatalf("unresolved group with governance did not fail closed: %v", err)
+	}
+	cfg.Server.DefaultModelGroup = "default"
+	if got, err := resolveMCPModelGroup(cfg, caller, ""); err != nil || got != "default" {
+		t.Fatalf("server default resolution got=%q err=%v", got, err)
+	}
+	if got, err := resolveMCPModelGroup(cfg, caller, "other"); err != nil || got != "other" {
+		t.Fatalf("header resolution got=%q err=%v", got, err)
+	}
+	cfg.Server.DefaultModelGroup = ""
+	cfg.Models["default"] = ModelGroup{PIIFilter: PIIFilterConfig{Enabled: true}}
+	caller.allow = map[string]bool{"default": true}
+	if got, err := resolveMCPModelGroup(cfg, caller, ""); err != nil || got != "default" {
+		t.Fatalf("single allowed group fallback got=%q err=%v", got, err)
+	}
+}
+
 func TestMCPProjectPolicyUsesAccountSlugNormalization(t *testing.T) {
 	caller := &callerRuntime{cfg: CallerConfig{ID: "alice"}, project: "mixed-project"}
 	cfg := &Config{MCP: MCPGatewayConfig{Enabled: true, Policies: []MCPPolicyConfig{{Project: "Mixed_Project", Tools: []string{"server/read"}, DenyByDefault: true}}}}
@@ -398,12 +419,12 @@ func TestMCPGatewayMasksToolArgumentsResultsAndExportsAudit(t *testing.T) {
 	defer upstream.Close()
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "mcp-mask.sqlite"))
-	group := cfg.Models["default"]
-	group.PIIFilter = PIIFilterConfig{
+	inheritedFilter := PIIFilterConfig{
 		Enabled: true, SecretsEnabled: true, Mode: "redact_only",
 		Rules: []PIIFilterRule{{Name: "email", Expression: `[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`, PlaceholderPrefix: "EMAIL"}},
 	}
-	cfg.Models["default"] = group
+	cfg.Server.DefaultModelGroup = ""
+	cfg.Callers[0].Allow = []string{"default"}
 	cfg.MCP = MCPGatewayConfig{
 		Enabled:  true,
 		Servers:  []MCPServerConfig{{Name: "demo", URL: upstream.URL, AllowHosts: []string{"127.0.0.1"}}},
@@ -414,11 +435,14 @@ func TestMCPGatewayMasksToolArgumentsResultsAndExportsAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	svc.hierarchyPolicy.Store(&hierarchyPolicyRuntime{
+		ttl: time.Minute, fetchedAt: time.Now(),
+		policy: HierarchyPolicy{AllowedGroups: []string{"default"}, PIIFilter: inheritedFilter},
+	})
 	call := func(text string) *httptest.ResponseRecorder {
 		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"demo/read","arguments":{"text":%q}}}`, text)
 		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+testToken)
-		req.Header.Set("X-Router-Model-Group", "default")
 		w := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(w, req)
 		return w
@@ -447,15 +471,16 @@ func TestMCPGatewayMasksToolArgumentsResultsAndExportsAudit(t *testing.T) {
 	if err := VerifyAdminAuditExport(strings.NewReader(exportResponse.Body.String())); err != nil {
 		t.Fatalf("verify MCP audit export: %v", err)
 	}
-	if len(exported.Items) != 1 || exported.Items[0].PrincipalSubject != "alice" || exported.Items[0].Object != "mcp:tool" || exported.Items[0].Detail != "demo/read" || exported.Items[0].Outcome != "success" {
+	if len(exported.Items) != 1 || exported.Items[0].PrincipalSubject != "alice" || exported.Items[0].Object != "mcp:tool" || exported.Items[0].Detail != "demo/read" || exported.Items[0].Outcome != "success" || exported.Items[0].LatencyMS == nil || *exported.Items[0].LatencyMS < 0 {
 		t.Fatalf("export omitted safe MCP invocation metadata: %+v", exported.Items)
 	}
 	if strings.Contains(exportResponse.Body.String(), apiKey) || strings.Contains(exportResponse.Body.String(), "user@example.test") {
 		t.Fatal("audit export contains an unmasked tool payload")
 	}
-	group = cfg.Models["default"]
-	group.PIIFilter.Mode = "fail_on_match"
-	cfg.Models["default"] = group
+	inheritedFilter.Mode = "fail_on_match"
+	inheritedFilter.FailOnMatch = true
+	runtimePolicy := svc.hierarchyPolicy.Load()
+	runtimePolicy.policy.PIIFilter = inheritedFilter
 	blockedInput := call(apiKey + " user@example.test")
 	if blockedInput.Code != http.StatusOK || !strings.Contains(blockedInput.Body.String(), "tool call blocked by router policy") || strings.Contains(blockedInput.Body.String(), apiKey) || upstreamCalls != 1 {
 		t.Fatalf("fail_on_match did not block MCP input before forwarding: status=%d calls=%d body=%s", blockedInput.Code, upstreamCalls, blockedInput.Body.String())
@@ -503,12 +528,15 @@ func TestMCPGatewayToolFirewallApprovalReleaseAndTimeout(t *testing.T) {
 		Enabled:  true,
 		Servers:  []MCPServerConfig{{Name: "demo", URL: upstream.URL, AllowHosts: []string{"127.0.0.1"}}},
 		Policies: []MCPPolicyConfig{{Caller: "alice", Tools: []string{"demo/read", "demo/write"}, DenyByDefault: true}},
+		Limits:   []MCPToolLimitConfig{{Caller: "alice", Tool: "demo/write", RPM: 10, CostPerCallUSD: 0.01, HourlyUSD: 1, DailyUSD: 2}},
 	}
 	svc, err := newService(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	adminHarness := newAdminV1Harness(t)
+	adminHarness.mountWithExtra(t, map[string]http.HandlerFunc{"tool.approvals.resolve": svc.handleToolApprovalResolution})
 	approvalNow := time.Now().UTC()
 	svc.toolApprovals.now = func() time.Time { return approvalNow }
 	call := func(name, text string) *httptest.ResponseRecorder {
@@ -527,6 +555,19 @@ func TestMCPGatewayToolFirewallApprovalReleaseAndTimeout(t *testing.T) {
 	if pending.Code != http.StatusOK || !strings.Contains(pending.Body.String(), "approval_pending") {
 		t.Fatalf("risky MCP call was not held: status=%d body=%s", pending.Code, pending.Body.String())
 	}
+	assertMCPWriteCharges := func(wantRequests int, wantSpend float64) {
+		t.Helper()
+		svc.quota.mu.Lock()
+		defer svc.quota.mu.Unlock()
+		state := svc.quota.state.MCPToolLimits["alice\x00demo/write"]
+		if wantRequests == 0 && state == nil {
+			return
+		}
+		if state == nil || len(state.RequestTimes) != wantRequests || state.HourlyUSD != wantSpend {
+			t.Fatalf("MCP write quota state=%+v, want requests=%d spend=%v", state, wantRequests, wantSpend)
+		}
+	}
+	assertMCPWriteCharges(0, 0)
 	var pendingEnvelope struct {
 		Result struct {
 			Content []struct {
@@ -543,12 +584,17 @@ func TestMCPGatewayToolFirewallApprovalReleaseAndTimeout(t *testing.T) {
 	if err := json.Unmarshal([]byte(pendingEnvelope.Result.Content[0].Text), &approval); err != nil || approval.ApprovalID == "" {
 		t.Fatalf("approval id missing: %v text=%s", err, pendingEnvelope.Result.Content[0].Text)
 	}
-	if !svc.toolApprovals.resolve(approval.ApprovalID, "release") {
-		t.Fatal("approval release failed")
+	releaseResponse := adminHarness.do(t, http.MethodPost, "/admin/v1/tool-approvals/"+approval.ApprovalID, map[string]any{"decision": "release"}, nil)
+	if releaseResponse.Code != http.StatusOK || !strings.Contains(releaseResponse.Body.String(), `"decision":"release"`) {
+		t.Fatalf("approval route release status=%d body=%s", releaseResponse.Code, releaseResponse.Body.String())
+	}
+	if got := adminHarness.authorize.snapshot(); len(got) != 1 || got[0].Object != authzObjectToolApprovals || got[0].Action != authzActionResolve {
+		t.Fatalf("approval route did not take its declared authorization decision: %+v", got)
 	}
 	if got := call("demo/write", "send account 17"); got.Code != http.StatusOK || strings.Contains(got.Body.String(), "approval_pending") {
 		t.Fatalf("released MCP call did not continue: status=%d body=%s", got.Code, got.Body.String())
 	}
+	assertMCPWriteCharges(1, 0.01)
 	if got := call("demo/read", "account 22"); got.Code != http.StatusOK {
 		t.Fatalf("second sequence first call status=%d body=%s", got.Code, got.Body.String())
 	}
@@ -556,13 +602,48 @@ func TestMCPGatewayToolFirewallApprovalReleaseAndTimeout(t *testing.T) {
 	if !strings.Contains(timeoutPending.Body.String(), "approval_pending") {
 		t.Fatalf("timeout fixture was not held: %s", timeoutPending.Body.String())
 	}
+	var deniedApproval struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(timeoutPending.Body.Bytes(), &deniedApproval); err != nil || len(deniedApproval.Result.Content) != 1 {
+		t.Fatalf("decode second approval response: %v body=%s", err, timeoutPending.Body.String())
+	}
+	var deniedID struct {
+		ApprovalID string `json:"approval_id"`
+	}
+	if err := json.Unmarshal([]byte(deniedApproval.Result.Content[0].Text), &deniedID); err != nil || deniedID.ApprovalID == "" {
+		t.Fatalf("second approval ID missing: %v", err)
+	}
+	denyResponse := adminHarness.do(t, http.MethodPost, "/admin/v1/tool-approvals/"+deniedID.ApprovalID, map[string]any{"decision": "deny"}, nil)
+	if denyResponse.Code != http.StatusOK || !strings.Contains(denyResponse.Body.String(), `"decision":"deny"`) {
+		t.Fatalf("approval route deny status=%d body=%s", denyResponse.Code, denyResponse.Body.String())
+	}
+	deniedCall := call("demo/write", "send account 22")
+	if !strings.Contains(deniedCall.Body.String(), `"isError":true`) || strings.Contains(deniedCall.Body.String(), "approval_pending") {
+		t.Fatalf("MCP call was not denied after admin approval decision: %s", deniedCall.Body.String())
+	}
+	assertMCPWriteCharges(1, 0.01)
+	if got := adminHarness.authorize.snapshot(); len(got) != 2 || got[1].Object != authzObjectToolApprovals || got[1].Action != authzActionResolve {
+		t.Fatalf("approval deny route did not take its declared authorization decision: %+v", got)
+	}
+	if got := call("demo/read", "account 33"); got.Code != http.StatusOK {
+		t.Fatalf("third sequence first call status=%d body=%s", got.Code, got.Body.String())
+	}
+	timeoutPending = call("demo/write", "send account 33")
+	if !strings.Contains(timeoutPending.Body.String(), "approval_pending") {
+		t.Fatalf("timeout fixture was not held: %s", timeoutPending.Body.String())
+	}
 	approvalNow = approvalNow.Add(2 * time.Second)
-	timedOut := call("demo/write", "send account 22")
+	timedOut := call("demo/write", "send account 33")
 	if timedOut.Code != http.StatusOK || !strings.Contains(timedOut.Body.String(), `"isError":true`) || strings.Contains(timedOut.Body.String(), "approval_pending") {
 		t.Fatalf("expired approval was not denied: status=%d body=%s", timedOut.Code, timedOut.Body.String())
 	}
-	if upstreamCalls != 3 {
-		t.Fatalf("upstream tool calls=%d, want initial read, approved write, and second read only", upstreamCalls)
+	if upstreamCalls != 4 {
+		t.Fatalf("upstream tool calls=%d, want two reads, approved write, and third read only", upstreamCalls)
 	}
 }
 
@@ -574,10 +655,10 @@ func TestMCPGatewayRedactionBoundsFailClosed(t *testing.T) {
 	for range maxFirewallArgumentDepth + 2 {
 		deep = map[string]any{"nested": deep}
 	}
-	if _, err := mcpRedactMCPToolInput(cfg, "default", map[string]any{"value": deep}); !errors.Is(err, errMCPRedactionBounds) {
+	if _, err := mcpRedactMCPToolInput(mcpPIIFilter(cfg, "default"), map[string]any{"value": deep}); !errors.Is(err, errMCPRedactionBounds) {
 		t.Fatalf("unbounded MCP input was accepted: %v", err)
 	}
-	if _, err := mcpRedactToolResult(cfg, "default", []any{deep}); !errors.Is(err, errMCPRedactionBounds) {
+	if _, err := mcpRedactToolResult(mcpPIIFilter(cfg, "default"), []any{deep}); !errors.Is(err, errMCPRedactionBounds) {
 		t.Fatalf("unbounded MCP result was accepted: %v", err)
 	}
 }

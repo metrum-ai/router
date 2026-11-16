@@ -38,6 +38,9 @@ models:
 
 # Firewall hold rules use the same qualified MCP tool names and approval API as
 # other tool calls. MCP sequence state is scoped to the authenticated caller.
+admin:
+  enabled: true
+
 server:
   tool_firewall:
     mode: enforce
