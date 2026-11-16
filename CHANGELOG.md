@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- **Live SDK tool-loop cells** (#769): add pinned OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK continuations to the bounded compatibility workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
-
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
