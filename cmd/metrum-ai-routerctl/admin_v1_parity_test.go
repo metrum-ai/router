@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,16 +11,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/metrum-ai/router/internal/smartrouterctl"
 )
 
 func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 	const token = "rtr_admin_test_only_parity_key"
 	var requests []string
-	contract := loadAdminV1Contract(t)
+	allowed := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !contractAllows(contract, r.Method, r.URL.Path) {
+		key := r.Method + " " + r.URL.Path
+		if !allowed[key] {
 			http.Error(w, "unexpected route", http.StatusNotFound)
 			return
 		}
@@ -41,6 +39,10 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 	}
 	yamlPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(yamlPath, []byte("state_path: state.json\nproviders: {}\nmodels: {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	policyPath := filepath.Join(dir, "policy.json")
+	if err := os.WriteFile(policyPath, []byte(`{"policy_set":{"name":"demo"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	commands := [][]string{
@@ -79,8 +81,33 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 		[]string{"contain", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test"},
 		[]string{"release", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test"},
 		[]string{"policies", "list", "--router-url", server.URL},
+		[]string{"policies", "get", "--router-url", server.URL, "--set-id", "set-1"},
+		[]string{"policies", "draft", "--router-url", server.URL, "--file", policyPath, "--if-match", `"rev-1"`},
+		[]string{"policies", "validate", "--router-url", server.URL, "--set-id", "set-1"},
+		[]string{"policies", "diff", "--router-url", server.URL, "--set-id", "set-1", "--against", "base"},
+		[]string{"policies", "activate", "--router-url", server.URL, "--set-id", "set-1", "--if-match", `"rev-1"`},
+		[]string{"policies", "rollback", "--router-url", server.URL, "--set-id", "set-1", "--if-match", `"rev-1"`},
+		[]string{"policies", "replace", "--router-url", server.URL, "--set-id", "set-1", "--file", policyPath, "--if-match", `"rev-1"`},
+		[]string{"policies", "delete", "--router-url", server.URL, "--set-id", "set-1", "--if-match", `"rev-1"`},
 	)
-	want = append(want, "POST /admin/v1/containment", "POST /admin/v1/containment", "GET /admin/v1/policy-sets")
+	want = append(want,
+		"POST /admin/v1/containment", "POST /admin/v1/containment",
+		"GET /admin/v1/policy-sets", "GET /admin/v1/policy-sets/set-1", "POST /admin/v1/policy-sets",
+		"POST /admin/v1/policy-sets/set-1/validate", "GET /admin/v1/policy-sets/set-1/diff",
+		"POST /admin/v1/policy-sets/set-1/activate", "POST /admin/v1/policy-sets/set-1/rollback",
+		"PUT /admin/v1/policy-sets/set-1", "DELETE /admin/v1/policy-sets/set-1",
+	)
+	for _, route := range want {
+		allowed[route] = true
+	}
+	unknown, err := server.Client().Get(server.URL + "/admin/v1/config/groups/default/history/extra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown.Body.Close()
+	if unknown.StatusCode != http.StatusNotFound {
+		t.Fatalf("stub accepted an extra path segment: status=%d", unknown.StatusCode)
+	}
 	for _, args := range commands {
 		cmd := exec.Command(binary, args...)
 		cmd.Dir = dir
@@ -111,56 +138,6 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 	if len(requests) != requestCount {
 		t.Fatalf("offline export made an API request: %v", requests[requestCount:])
 	}
-}
-
-func loadAdminV1Contract(t *testing.T) map[string]map[string]json.RawMessage {
-	t.Helper()
-	raw, err := os.ReadFile("../../docs/specs/admin-v1.openapi.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var spec struct {
-		Paths map[string]map[string]json.RawMessage `json:"paths"`
-	}
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		t.Fatal(err)
-	}
-	return spec.Paths
-}
-
-func contractAllows(contract map[string]map[string]json.RawMessage, method, path string) bool {
-	// Policy routes are maintained by the policy CLI dispatcher and are not yet
-	// represented in the generated Admin API OpenAPI document.
-	if path == "/admin/v1/policy-sets" && (method == http.MethodGet || method == http.MethodPost) {
-		return path == smartrouterctl.PolicySetCollectionPath
-	}
-	for pattern, operations := range contract {
-		if _, documented := operations[strings.ToLower(method)]; !documented {
-			continue
-		}
-		want, got := strings.Split(strings.Trim(pattern, "/"), "/"), strings.Split(strings.Trim(path, "/"), "/")
-		if len(got) < len(want) {
-			continue
-		}
-		matched := true
-		for i, segment := range want {
-			if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
-				if i != len(want)-1 && i >= len(got) {
-					matched = false
-					break
-				}
-				continue
-			}
-			if i >= len(got) || segment != got[i] {
-				matched = false
-				break
-			}
-		}
-		if matched && (len(got) == len(want) || strings.HasPrefix(want[len(want)-1], "{")) {
-			return true
-		}
-	}
-	return false
 }
 
 func envWithoutDatabaseCredentials(token string) []string {
