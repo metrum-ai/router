@@ -7,11 +7,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to build (for example v2.0.0). Build-only unless this run is already on that tag ref."
-        required: true
 
 permissions:
   contents: read
@@ -19,13 +14,11 @@ permissions:
 jobs:
   # Every hierarchy compatibility cell must pass before release packaging.
   hierarchy-matrix:
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/hierarchy-matrix.yml
     permissions:
       contents: read
 
   resolve:
-    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     needs: hierarchy-matrix
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     outputs:
@@ -41,26 +34,14 @@ jobs:
       - name: Resolve immutable build metadata
         id: metadata
         env:
-          RELEASE_EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG_INPUT: ${{ inputs.tag }}
-          RELEASE_REF_TYPE: ${{ github.ref_type }}
           RELEASE_REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [ "${RELEASE_EVENT_NAME}" = "workflow_dispatch" ]; then
-            candidate="${RELEASE_TAG_INPUT}"
-          else
-            candidate="${RELEASE_REF_NAME}"
-          fi
-          tag="$(python3 scripts/validate_release_tag.py "${candidate}")"
+          tag="$(python3 scripts/validate_release_tag.py "${RELEASE_REF_NAME}")"
           commit="$(git rev-parse HEAD)"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
-          if [ "${RELEASE_REF_TYPE}" = "tag" ]; then
-            previous_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${commit}^")"
-          else
-            previous_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${commit}")"
-          fi
+          previous_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${commit}^")"
           printf 'tag=%s\n' "${tag}" >> "${GITHUB_OUTPUT}"
           printf 'commit=%s\n' "${commit}" >> "${GITHUB_OUTPUT}"
           printf 'build_date=%s\n' "${build_date}" >> "${GITHUB_OUTPUT}"
