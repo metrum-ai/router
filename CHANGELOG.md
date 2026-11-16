@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container images and the CI runner image are built with Go 1.27.4, and source builds
   require at least Go 1.27.4.
 - Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
+- Add optional per-caller CIDR, ASN-prefix, and verified mTLS identity binding with off, report, and enforce modes. Enforced mismatches return the same generic 401 as invalid tokens; security events retain the specific reason.
 
 ## [4.8.0] - 2026-11-08
 

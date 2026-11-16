@@ -218,6 +218,7 @@ type requestContext struct {
 	bridgeSessionHeaders   map[string]string
 	via                    []string
 	securityRecorded       bool
+	securityReason         string
 	pacedUpstreamStream    bool
 	maxSSELineBytes        int
 	chatStreamIncludeUsage bool
@@ -301,7 +302,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS, tlsacme.ListenerServing, "server.tls")
+	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls")
 	if err != nil {
 		return nil, err
 	}
@@ -2436,7 +2437,20 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	}
 	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	securityReason := ""
+	if err == nil {
+		bindingIPConfig := s.cfg.Server.ClientIP
+		bindingIPConfig.StoreIP = nil
+		err = enforceCallerBinding(caller, r, resolveClientIP(r, bindingIPConfig), s.cfg.Server.ClientIP)
+	}
+	if err != nil {
+		var policyErr authPolicyError
+		if errors.As(err, &policyErr) {
+			securityReason = policyErr.securityReason
+		}
+	}
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.securityReason = securityReason
 	rc.caller = caller
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
@@ -2696,8 +2710,9 @@ func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, e
 }
 
 type authPolicyError struct {
-	status int
-	code   string
+	status         int
+	code           string
+	securityReason string
 }
 
 func (e authPolicyError) Error() string {
