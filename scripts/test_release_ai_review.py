@@ -344,7 +344,12 @@ class ReleaseAIReviewTest(unittest.TestCase):
                  patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen, \
                  patch("sys.argv", args), redirect_stderr(stderr):
                 self.assertEqual(review.main(), 2)
-            batches.assert_called_once_with("v4.8.0", "abc1234", max_bytes=review.INITIAL_DIFF_BYTES)
+            batches.assert_called_once_with(
+                "v4.8.0",
+                "abc1234",
+                max_bytes=review.INITIAL_DIFF_BYTES,
+                max_single_file_bytes=review.MAX_DIFF_BYTES,
+            )
             urlopen.assert_called_once()
             self.assertIn("stop_reason=refusal", stderr.getvalue())
             self.assertNotIn("splitting", stderr.getvalue())
