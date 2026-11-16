@@ -222,6 +222,21 @@ expects to start as its non-root user. Re-validate device access, model startup
 and runner registration in your own environment before adopting those examples;
 the offline checks in CI do not exercise a GPU or a runner image.
 
+## v5.0.0 admin resource API
+
+The versioned admin API adds provider and model-catalog reads, provider writes,
+project environments, project-environment memberships, project USD budgets and
+alert thresholds, caller quota updates,
+and retention policy writes. Mutations require
+database-backed configuration mode and a current `If-Match` revision. Provider
+API-key environment references and headers are write-only and do not appear in
+responses. Shortening retention requires the separate `config:force`
+permission. The existing config revision notifier and poller propagate changes
+to other serving replicas. No database migration is required for these routes.
+Project budget counters are per process and reset on restart; ceilings are
+approximate across replicas. Removing or raising a ceiling, or waiting for its
+UTC budget window to reset, restores admission after a trip.
+
 ## Compatibility and operations (v4.4.0)
 
 ### Authorization matching and tenant RBAC

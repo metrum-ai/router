@@ -107,6 +107,23 @@ func (h *configAdminHandler) adminConfigHandlerPatterns() []struct {
 		{"/config/sets/{set_id}/activate", "config.sets.activate", h.handleActivateSet},
 		{"/config/rollback", "config.sets.rollback", h.handleSetRollback},
 		{"/config/diff", "config.diff", h.handleConfigDiff},
+		{"/providers", "providers.list", h.handleListProviders},
+		{"/models", "models.list", h.handleListModelCatalog},
+		{"/providers/{provider}", "providers.get", h.handleGetProvider},
+		{"/providers/{provider}", "providers.put", h.handlePutProvider},
+		{"/providers/{provider}", "providers.disable", h.handleDisableProvider},
+		{"/providers/{provider}/validate", "providers.validate", h.handleValidateProvider},
+		{"/callers/{id}/quota", "callers.quota.read", h.handleGetCallerQuota},
+		{"/callers/{id}/quota", "callers.quota.update", h.handleUpdateCallerQuota},
+		{"/retention", "retention.put", h.handlePutRetention},
+		{"/projects", "projects.list", h.handleListProjects},
+		{"/projects/{project}", "projects.get", h.handleGetProject},
+		{"/projects/{project}", "projects.put", h.handlePutProject},
+		{"/projects/{project}", "projects.delete", h.handleDeleteProject},
+		{"/projects/{project}/environments/{environment}", "projects.environments.delete", h.handleDeleteProjectEnvironment},
+		{"/projects/{project}/environments/{environment}/memberships", "memberships.list", h.handleListMemberships},
+		{"/projects/{project}/environments/{environment}/memberships", "memberships.put", h.handlePutMembership},
+		{"/projects/{project}/environments/{environment}/memberships/{user_id}", "memberships.delete", h.handleDeleteMembership},
 	}
 }
 
@@ -142,8 +159,30 @@ func (h *configAdminHandler) register(handle func(pattern string, handler http.H
 		"config.sets.activate":          "POST",
 		"config.sets.rollback":          "POST",
 		"config.diff":                   "GET",
+		"providers.list":                "GET",
+		"models.list":                   "GET",
+		"providers.get":                 "GET",
+		"providers.put":                 "PUT",
+		"providers.disable":             "DELETE",
+		"providers.validate":            "POST",
+		"callers.quota.read":            "GET",
+		"callers.quota.update":          "POST",
+		"retention.put":                 "PUT",
+		"projects.list":                 "GET",
+		"projects.get":                  "GET",
+		"projects.put":                  "PUT",
+		"projects.delete":               "DELETE",
+		"projects.environments.delete":  "DELETE",
+		"memberships.list":              "GET",
+		"memberships.put":               "POST",
+		"memberships.delete":            "DELETE",
 	}
 	for _, entry := range h.adminConfigHandlerPatterns() {
+		// The v5 resource APIs are mounted only on the dedicated /admin/v1
+		// listener. Keep the legacy serving-port surface unchanged.
+		if strings.HasPrefix(entry.key, "providers.") || entry.key == "models.list" || strings.HasPrefix(entry.key, "callers.quota.") || entry.key == "retention.put" || strings.HasPrefix(entry.key, "projects.") || strings.HasPrefix(entry.key, "memberships.") {
+			continue
+		}
 		handle(methods[entry.key]+" "+prefix+entry.suffix, entry.handler)
 	}
 }
