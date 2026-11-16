@@ -292,7 +292,7 @@ jobs:
       COMMIT: ${{ needs.resolve.outputs.commit }}
       BUILD_DATE: ${{ needs.resolve.outputs.build_date }}
       SOURCE_DATE_EPOCH: ${{ needs.resolve.outputs.source_date_epoch }}
-      CRANE: ${{ runner.temp }}/crane
+      CRANE: ${{ github.workspace }}/crane
       IMAGE: ghcr.io/${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
