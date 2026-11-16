@@ -4,6 +4,10 @@
 
 ### Added
 
+- Governed per-domain fine-tuning operator workflow: opt-in encrypted capture,
+  DLP-filtered export, external training and preregistered gates, bounded shadow,
+  audited promotion, one-call rollback, and independent retention for copied
+  datasets.
 - Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
 
 - Define trusted W3C `traceparent` correlation across router chains, with a new
