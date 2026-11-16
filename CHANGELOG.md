@@ -4,7 +4,7 @@
 
 ### Added
 
-- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and signed HTTPS webhooks, with bounded asynchronous delivery and Prometheus queue/failure counters.
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and signed HTTPS webhooks, with bounded asynchronous delivery and Prometheus queue/failure counters. Caller quota exhaustion is emitted separately from provider spend-breaker events.
 
 ### Fixed
 

@@ -169,7 +169,7 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 		status, statusID = "Failure", 2
 	}
 	severityID := 1
-	if event.StatusCode == http.StatusUnauthorized || event.StatusCode == http.StatusForbidden || strings.Contains(strings.ToLower(event.EventType), "detector") {
+	if classUID == 2004 || event.StatusCode == http.StatusUnauthorized || event.StatusCode == http.StatusForbidden || strings.Contains(strings.ToLower(event.EventType), "detector") {
 		severityID = 3
 	}
 	uid := event.RequestID
@@ -225,7 +225,7 @@ func ocsfSecurityClass(eventType string) (classUID, categoryUID int, name string
 			activity = 2 // Logoff
 		}
 		return 3002, 3, "Authentication", activity
-	case "detector_signal", "dlp_hit", "firewall_block", "firewall_hold", "spend_breaker_trip", "provider_spend_breaker_trip", "provider_spend_breaker_reset", "honeytoken_use", "incident":
+	case "detector_signal", "dlp_hit", "firewall_block", "firewall_hold", "caller_quota_exhausted", "spend_breaker_trip", "provider_spend_breaker_trip", "provider_spend_breaker_reset", "honeytoken_use", "incident":
 		return 2004, 2, "Detection Finding", 1
 	default:
 		activity := 2

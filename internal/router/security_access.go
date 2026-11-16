@@ -55,11 +55,14 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 	if strings.HasSuffix(code, "-suspended") || code == "caller-suspended" {
 		eventType = "caller_suspended"
 	} else {
+		if rec.ErrorClass == "image_url_forbidden" {
+			eventType = "firewall_block"
+		}
 		switch code {
 		case "image_url_forbidden":
 			eventType = "firewall_block"
 		case "quota-exhausted":
-			eventType = "spend_breaker_trip"
+			eventType = "caller_quota_exhausted"
 		}
 	}
 	authSubject := ""

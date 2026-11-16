@@ -45,6 +45,7 @@ func TestOCSFSecurityEventClassesAndRequiredFields(t *testing.T) {
 		{"dlp_hit", 2004, 2, "Detection Finding"},
 		{"firewall_block", 2004, 2, "Detection Finding"},
 		{"firewall_hold", 2004, 2, "Detection Finding"},
+		{"caller_quota_exhausted", 2004, 2, "Detection Finding"},
 		{"spend_breaker_trip", 2004, 2, "Detection Finding"},
 		{"provider_spend_breaker_trip", 2004, 2, "Detection Finding"},
 		{"provider_spend_breaker_reset", 2004, 2, "Detection Finding"},
@@ -254,13 +255,18 @@ func TestProviderSpendBreakerEventsReachStreamWhenReportsAreOff(t *testing.T) {
 
 func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 	dir := filepath.Join("..", "..", "examples", "security-events")
-	tracesRaw := `{"class_uid":3002,"status_id":2}
-{"class_uid":2004,"severity_id":3}
-{"class_uid":6003,"activity_id":3}`
 	var traces []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(tracesRaw), "\n") {
+	for _, input := range []securityAccessEvent{
+		{TS: time.Unix(1, 0), RequestID: "auth-failure", EventType: "api_auth_failed", StatusCode: http.StatusUnauthorized},
+		{TS: time.Unix(2, 0), RequestID: "detection-finding", EventType: "dlp_hit", StatusCode: http.StatusBadRequest},
+		{TS: time.Unix(3, 0), RequestID: "containment-action", EventType: "caller_released", StatusCode: http.StatusOK},
+	} {
+		line, err := marshalOCSFSecurityEvent(input)
+		if err != nil {
+			t.Fatal(err)
+		}
 		var event map[string]any
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
 			t.Fatal(err)
 		}
 		traces = append(traces, event)
