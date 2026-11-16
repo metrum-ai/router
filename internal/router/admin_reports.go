@@ -817,6 +817,12 @@ type adminReportRequest struct {
 	Cache                           string  `json:"cache"`
 	Attempts                        int     `json:"attempts"`
 	Fallback                        bool    `json:"fallback"`
+	ToolCallCount                   int     `json:"toolCallCount,omitempty"`
+	ToolFirstFailureClass           string  `json:"toolFirstFailureClass,omitempty"`
+	ToolRetries                     int     `json:"toolRetries,omitempty"`
+	ToolEscalations                 int     `json:"toolEscalations,omitempty"`
+	ToolReliabilityBucket           string  `json:"toolReliabilityBucket,omitempty"`
+	ToolReliabilitySource           string  `json:"toolReliabilitySource,omitempty"`
 	LatencyMS                       int64   `json:"latencyMs"`
 	TTFBMS                          *int64  `json:"ttfbMs,omitempty"`
 	UpstreamMS                      *int64  `json:"upstreamMs,omitempty"`
@@ -5716,6 +5722,12 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 		Cache:                           row.Cache,
 		Attempts:                        row.Attempts,
 		Fallback:                        row.FallbackUsed,
+		ToolCallCount:                   row.ToolCallCount,
+		ToolFirstFailureClass:           row.ToolFirstFailureClass,
+		ToolRetries:                     row.ToolRetries,
+		ToolEscalations:                 row.ToolEscalations,
+		ToolReliabilityBucket:           row.ToolReliabilityBucket,
+		ToolReliabilitySource:           row.ToolReliabilitySource,
 		LatencyMS:                       row.LatencyMS,
 		TTFBMS:                          row.TTFBMS,
 		UpstreamMS:                      row.UpstreamMS,

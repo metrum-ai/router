@@ -345,7 +345,7 @@ func TestCachedInputPricingMigrationPreservesHistoricalNulls(t *testing.T) {
 	if db.Migrator().HasColumn(&usageRecord{}, "CachedInputTokens") {
 		t.Fatal("cached columns must not exist before migration")
 	}
-	if err := db.Omit("CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind", "Endpoint").Create(&usageRecord{RequestID: "hist", TS: "2026-09-01T00:00:00Z"}).Error; err != nil {
+	if err := db.Omit("CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind", "Endpoint", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(&usageRecord{RequestID: "hist", TS: "2026-09-01T00:00:00Z"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := applyUsageCachedInputPricingMigration(db); err != nil {
@@ -406,13 +406,13 @@ func TestResolveTargetInheritsCachedInputPrice(t *testing.T) {
 	}
 }
 
-func TestBuildScriptTargetsCarryCachedInputPrice(t *testing.T) {
+func TestBuildExternalPolicyTargetsCarryCachedInputPrice(t *testing.T) {
 	price := 0.3
-	targets := buildScriptTargets([]Target{{
+	targets := buildExternalPolicyTargets([]Target{{
 		Provider: "mock", Model: "m", Weight: 1, CachedInputPricePerMillionUSD: &price,
 	}}, map[string]ProviderConfig{"mock": {BaseURL: "https://example.test", Dialect: "openai-chat"}})
 	if len(targets) != 1 || targets[0].CachedInputPricePerMillionUSD == nil || *targets[0].CachedInputPricePerMillionUSD != 0.3 {
-		t.Fatalf("script target cached price: %#v", targets)
+		t.Fatalf("external policy target cached price: %#v", targets)
 	}
 }
 

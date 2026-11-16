@@ -24,8 +24,6 @@ metrum-ai-router-<version>-docker-linux-<arch>/
   config/
     config.example.yaml
     env.example.json
-    scripts/
-      router.ts
   images/
     metrum-ai-router-<version>-linux-<arch>.tar
   docs/
@@ -45,7 +43,6 @@ cd compose
 mkdir -p config state logs
 cp ../config/config.example.yaml config/config.yaml
 cp ../config/env.example.json config/env.json
-cp -R ../config/scripts config/scripts
 ```
 
 Review `.env` or copy `.env.example` to `.env` if needed. New SQLite installs require only `METRUM_AI_ROUTER_VERSION`, pinned to the exact package image tag; never use `latest`. The base profile has no database credential or TCP database egress.
@@ -98,7 +95,6 @@ Then set ownership and permissions for the container runtime user. The packaged 
 
 ```bash
 sudo chown -R 65532:65532 config state logs
-chmod 0700 config config/scripts state logs
 chmod 0400 config/env.json
 ```
 

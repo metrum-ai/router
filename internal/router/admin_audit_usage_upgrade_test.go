@@ -75,8 +75,19 @@ func loadV471UsageDatabase(t *testing.T, db *gorm.DB) {
 	if status.SchemaVersion != 12 || status.DataVersion != 1 || !status.Compatible || status.State != "pending" {
 		t.Fatalf("loaded database is not the released v4.7.1 shape: %+v", status)
 	}
-	if len(status.Pending) != 3 {
-		t.Fatalf("expected exactly the three v4.8.0 usage migrations pending, got %d", len(status.Pending))
+	pending := make(map[int]bool, len(status.Pending))
+	v480Pending := 0
+	for _, migration := range status.Pending {
+		pending[migration.ID] = true
+		if migration.ID == usageAdminAuditMigrationID || migration.ID == usageAdminDenialColumnsMigrationID || migration.ID == policyRuntimeMigrationID {
+			v480Pending++
+		}
+	}
+	if v480Pending != 3 {
+		t.Fatalf("expected exactly the three v4.8.0 usage migrations pending, got %d", v480Pending)
+	}
+	if !pending[toolRoutingUsageMigrationID] {
+		t.Fatalf("expected v5.0.0 tool usage migration %d to remain pending", toolRoutingUsageMigrationID)
 	}
 	if db.Migrator().HasIndex("security_access_events", usageAdminDenialColumnsIndex) {
 		t.Fatalf("the released v4.7.1 schema must not contain %s", usageAdminDenialColumnsIndex)

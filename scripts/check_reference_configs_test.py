@@ -58,7 +58,7 @@ class ReferenceConfigTests(unittest.TestCase):
 
     def test_lock_digest_must_match_compose(self) -> None:
         path = self.root / "amd-mi350p-datacenter" / "images.lock"
-        path.write_text(path.read_text(encoding="utf-8").replace("3b20f0a3", "4b20f0a3"), encoding="utf-8")
+        path.write_text(path.read_text(encoding="utf-8").replace("4fcd39b7", "5fcd39b7"), encoding="utf-8")
         result = run(self.root)
         self.assertEqual(result.returncode, 1)
         self.assertIn("digest disagrees with images.lock", result.stderr)
@@ -66,7 +66,7 @@ class ReferenceConfigTests(unittest.TestCase):
     def test_non_official_model_server_image_is_rejected(self) -> None:
         path = self.root / "amd-strix-halo-edge" / "compose.yaml"
         path.write_text(
-            path.read_text(encoding="utf-8").replace("rocm/vllm:", "someoneelse/vllm:", 1),
+            path.read_text(encoding="utf-8").replace("vllm/vllm-openai-rocm:", "someoneelse/vllm-openai-rocm:", 1),
             encoding="utf-8",
         )
         result = run(self.root)

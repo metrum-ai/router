@@ -163,10 +163,9 @@ safe per-chunk restoration.
 
 ### Routing Policy And Dynamic Affinity
 
-For `routing-policy-error`, identify whether the group uses `script` or
-`external`. Script decisions run in fresh isolated VMs with a per-group
-`script_max_concurrent` cap; queued decisions honor cancellation. External
-policy calls use a bounded per-group client and propagate caller cancellation.
+For `routing-policy-error`, inspect the group's external policy URL,
+reachability, response, and configured timeout. External policy calls use a
+bounded per-group client and propagate caller cancellation.
 Use `external_policy.mode: baseline` to stop policy calls, `shadow` to record
 recommendations without changing the target, and `enforce` only after shadow
 evidence passes. Policy output is always checked against the already eligible

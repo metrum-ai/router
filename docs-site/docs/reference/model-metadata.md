@@ -442,7 +442,7 @@ when a workload requires region-specific routing. The caller-facing
 `/v1/models` response describes allowed model groups and does not expose
 per-target region inventory.
 
-The field is also not supplied as an input to TypeScript or external routing
+The field is also not supplied as an input to external routing
 policies. A deployment that must select by processing location should encode
 that requirement through separate caller-authorized model groups or another
 explicit policy-visible, validated classification; it must not assume

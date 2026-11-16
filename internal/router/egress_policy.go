@@ -41,6 +41,9 @@ func validateEgressURL(u *url.URL, allowHosts []string, allowHTTP bool, label st
 	if u == nil || u.Hostname() == "" {
 		return &egressPolicyError{label: label, msg: "URL is invalid"}
 	}
+	if u.User != nil {
+		return &egressPolicyError{label: label, msg: "URL userinfo is not allowed"}
+	}
 	switch strings.ToLower(u.Scheme) {
 	case "https":
 		if err := validateEgressHost(u.Hostname(), allowHosts, label); err != nil {
@@ -61,7 +64,7 @@ func validateEgressURL(u *url.URL, allowHosts []string, allowHTTP bool, label st
 }
 
 func validateEgressHost(host string, allowHosts []string, label string) error {
-	if !scriptHostAllowed(host, allowHosts) {
+	if !externalPolicyHostAllowed(host, allowHosts) {
 		return &egressPolicyError{label: label, msg: fmt.Sprintf("host %s is not allowed", host)}
 	}
 	return nil
