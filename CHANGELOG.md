@@ -7,6 +7,13 @@
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 
+### Added
+
+- Add an opt-in CPU-first small-work model group to the hierarchy reference. It
+  uses the official pinned vLLM CPU image, limits the CPU candidate to 800
+  estimated input tokens and 128 requested output tokens, and falls back to the
+  frontier candidate on upstream failure or timeout.
+
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
