@@ -185,6 +185,8 @@ type routingEligibilityError struct {
 	CapabilityMismatch bool
 	MismatchCode       string
 	MismatchParam      string
+	ErrorCode          string
+	StatusCode         int
 }
 
 func (e routingEligibilityError) Error() string {
@@ -387,6 +389,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	s.configSnapshot.Store(cfg)
 	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	s.providerSpend.emit = s.recordProviderSpendEvent
 	// The operator's configured window applies at CONSTRUCTION, before the first
 	// control-plane reload: a file-config deployment, or any process that has not
 	// reloaded yet, must not silently run with the default.
@@ -2497,6 +2500,23 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	}
 }
 
+func (s *Service) recordProviderSpendEvent(provider, action, window string, ceiling float64) {
+	if !s.securityReportsEnabled() {
+		return
+	}
+	reason := "provider_spend_breaker_" + action + "_" + window
+	s.recordSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		EventType:    "provider_spend_breaker_" + action,
+		Surface:      "provider",
+		PathTemplate: "/providers/{provider}/spend-breaker",
+		StatusCode:   http.StatusOK,
+		Outcome:      "success",
+		ReasonCode:   reason,
+		ModelGroup:   provider,
+	})
+}
+
 func (s *Service) dispatchExternalPolicyFeedback(rc *requestContext) {
 	if s == nil || rc == nil || rc.rec.RequestKind == "count_tokens" || !strings.EqualFold(rc.rec.Strategy, "external") {
 		return
@@ -2776,7 +2796,17 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	targets, rejectedReasons := s.filterTargetsForRequest(rc, targets, req, callerDialect)
 	if len(targets) == 0 {
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
-		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
+		if hasFilterReason(rejectedReasons, "provider-spend-breaker") {
+			for _, target := range group.Targets {
+				breaker := s.cfg.Provider[target.Provider].SpendBreaker
+				if breaker.OnTrip == "stop" && !s.providerSpend.allow(target.Provider, breaker) {
+					err.ErrorCode = "provider_spend_breaker"
+					err.StatusCode = http.StatusServiceUnavailable
+					break
+				}
+			}
+		}
+		if err.ErrorCode == "" && len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
 			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, rejectedReasons, req, callerDialect)
 		}
@@ -5092,6 +5122,12 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 			code = "continuation_unsupported"
 			status = http.StatusBadRequest
 		}
+	}
+	if err.ErrorCode != "" {
+		code = err.ErrorCode
+	}
+	if err.StatusCode != 0 {
+		status = err.StatusCode
 	}
 	requestID := ""
 	if rc != nil {

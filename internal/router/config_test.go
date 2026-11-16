@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -488,6 +489,39 @@ func TestModelGroupContractValidation(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Validate() error=%v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestProviderSpendBreakerConfigValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		cfg  ProviderSpendBreakerConfig
+	}{
+		{name: "negative hourly", cfg: ProviderSpendBreakerConfig{HourlyUSD: -1}},
+		{name: "negative daily", cfg: ProviderSpendBreakerConfig{DailyUSD: -1}},
+		{name: "nan hourly", cfg: ProviderSpendBreakerConfig{HourlyUSD: math.NaN()}},
+		{name: "nan daily", cfg: ProviderSpendBreakerConfig{DailyUSD: math.NaN()}},
+		{name: "infinite hourly", cfg: ProviderSpendBreakerConfig{HourlyUSD: math.Inf(1)}},
+		{name: "infinite daily", cfg: ProviderSpendBreakerConfig{DailyUSD: math.Inf(-1)}},
+		{name: "unknown on trip", cfg: ProviderSpendBreakerConfig{HourlyUSD: 1, OnTrip: "ignore"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := minimalConfig(t)
+			provider := cfg.Provider["mock"]
+			provider.SpendBreaker = tt.cfg
+			cfg.Provider["mock"] = provider
+			data, err := yaml.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), "spend_breaker") {
+				t.Fatalf("LoadConfig() error=%v, want spend_breaker rejection", err)
 			}
 		})
 	}

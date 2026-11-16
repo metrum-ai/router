@@ -21,6 +21,7 @@ type providerSpendBreaker struct {
 	hourly  map[string]providerSpendWindow
 	daily   map[string]providerSpendWindow
 	nowFunc func() time.Time
+	emit    func(provider, action, window string, ceiling float64)
 }
 
 func newProviderSpendBreaker() *providerSpendBreaker {
@@ -58,11 +59,11 @@ func (b *providerSpendBreaker) add(provider string, cfg ProviderSpendBreakerConf
 	d.spent = roundUSD(d.spent + cost)
 	if cfg.HourlyUSD > 0 && !h.tripped && h.spent >= cfg.HourlyUSD {
 		h.tripped = true
-		log.Printf("provider spend breaker tripped provider=%q window=hour ceiling_usd=%.6f", provider, cfg.HourlyUSD)
+		b.event(provider, "trip", "hour", cfg.HourlyUSD)
 	}
 	if cfg.DailyUSD > 0 && !d.tripped && d.spent >= cfg.DailyUSD {
 		d.tripped = true
-		log.Printf("provider spend breaker tripped provider=%q window=day ceiling_usd=%.6f", provider, cfg.DailyUSD)
+		b.event(provider, "trip", "day", cfg.DailyUSD)
 	}
 	b.hourly[provider] = h
 	b.daily[provider] = d
@@ -74,9 +75,27 @@ func (b *providerSpendBreaker) windowLocked(windows map[string]providerSpendWind
 		return w
 	}
 	if w.key != "" && w.tripped {
-		log.Printf("provider spend breaker reset provider=%q window=%s", provider, label)
+		b.event(provider, "reset", label, 0)
 	}
 	return providerSpendWindow{key: key}
+}
+
+func (b *providerSpendBreaker) event(provider, action, window string, ceiling float64) {
+	log.Printf("event=provider_spend_breaker action=%s provider=%q window=%s ceiling_usd=%.6f", action, provider, window, ceiling)
+	if b.emit != nil {
+		b.emit(provider, action, window, ceiling)
+	}
+}
+
+func hasFilterReason(reasons [][]string, want string) bool {
+	for _, group := range reasons {
+		for _, reason := range group {
+			if reason == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (c ProviderSpendBreakerConfig) enabled() bool {
