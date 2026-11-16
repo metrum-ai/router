@@ -52,6 +52,64 @@ func TestDetectorRuntimeReplacementAppliesConfigReload(t *testing.T) {
 	}
 }
 
+func TestRequestCompletesWhenDetectorQueueIsFull(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"upstream","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+	started, gate := make(chan struct{}, 4), make(chan struct{})
+	detectorService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-gate
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer detectorService.Close()
+	dir := t.TempDir()
+	cfg := testConfig(t, upstream.URL, "provider-key", dir)
+	cfg.Server.Detectors = []DetectorConfig{{ID: "slow", URL: detectorService.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 5000, OnError: "fallback", SampleRate: 1}}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	defer close(gate)
+	routerServer := httptest.NewServer(svc.mux)
+	defer routerServer.Close()
+	event := detector.Event{SchemaVersion: detector.SchemaVersion, Kind: "request"}
+	for i := 0; i < 4; i++ {
+		svc.submitDetectorEvent(event, nil, false)
+	}
+	for i := 0; i < 4; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("detector workers did not fill")
+		}
+	}
+	for i := 0; i < 257; i++ {
+		svc.submitDetectorEvent(event, nil, false)
+	}
+	request, _ := http.NewRequest(http.MethodPost, routerServer.URL+"/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}]}`))
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 2 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("full detector queue delayed request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", response.StatusCode)
+	}
+	if svc.detectorDispatcher.Dropped() == 0 {
+		t.Fatal("full detector queue did not increment drop counter")
+	}
+}
+
 func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *testing.T) {
 	const promptMarker = "private prompt marker"
 	const segmentMarker = "selected tool result marker"
