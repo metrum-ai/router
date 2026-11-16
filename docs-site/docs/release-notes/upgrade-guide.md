@@ -106,6 +106,29 @@ before starting v5.0.0. The maintenance migration removes those two v4-only keys
 canonical documents and refreshes their content hashes. File-mode configurations need only have the
 keys removed before restart.
 
+## v5.0.0 routerctl Admin API changes
+
+The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
+listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
+`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`.
+
+| Command | v5 behavior and flags |
+| --- | --- |
+| `config diff` | `--api` selects `/admin/v1/config/diff`; it remains optional for local file comparison. |
+| `config import` | Online by default through `POST /admin/v1/config/sets`; `--offline` explicitly selects direct database access. `--yaml` and `--name` remain required. |
+| `config export` | Online by default through `/admin/v1/config/sets/{id}`; `--offline` explicitly selects direct database access. `--set-id` and `--out` remain optional. |
+| `config activate` | Online by default through `/admin/v1/config/sets/{id}/activate`; use `--offline` for direct database access. |
+| `config rollback` | Online by default through `/admin/v1/config/rollback`; use `--offline` for direct database access. |
+| `groups list`, `show`, `set-targets`, `add-target`, `remove-target`, `rollback`, `history`, `shadow start|status|promote|stop` | Use `/admin/v1/config/groups/...`; `--router-url` is optional when the listener is at its default. |
+| `contain`, `release` | Use `/admin/v1/containment`; `--router-url` is optional at the default listener. |
+| `policies list|get|draft|validate|diff|activate|rollback|replace|delete` | Use `/admin/v1/policy-sets`; `--router-url` is optional at the default listener. |
+| `reports cfo` | Uses `/admin/v1/reports`; `--reports-prefix` now defaults to `/admin/v1/reports`. The old `/admin/reports` value is rejected. |
+
+For config import/export/activate/rollback, the historical `--api` flag remains accepted as a
+redundant online-mode selector and cannot be combined with `--offline`. Add `--offline` only for
+deliberate direct database operations while the router is stopped.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
