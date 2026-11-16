@@ -9,24 +9,6 @@ For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
-## v5.0.0 Configuration Changes
-
-## TypeScript Routing Policy Removal
-
-The in-process `strategy: script` policy and its non-empty `script`,
-`script_max_concurrent`, and `script_http` settings are removed. User code
-never runs inside the router process. Configurations selecting `strategy:
-script` or setting non-empty legacy values fail during configuration loading
-with guidance to migrate to `strategy: external`. Empty legacy fields written
-by v4.8 are ignored and removed from canonical documents on import.
-
-Move the policy to a standalone service and configure `external_policy.url`,
-`allow_hosts`, and a bounded `timeout_ms`. The service receives safe derived
-request context by default. Enable `external_policy.include_request: true` only
-when the service is trusted to receive request content. The request-shape and
-PII-aware examples under `examples/typescript-request-shape/` and
-`examples/typescript-pii-policy/` show the external policy contract. Use
-`pii_filter` when request redaction is required before upstream calls.
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior
@@ -56,6 +38,25 @@ available otherwise.
 8. For v2.0.0+, inventory every install path, systemd unit, Compose service,
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
+
+## v5.0.0 Configuration Changes
+
+### TypeScript Routing Policy Removal
+
+The in-process `strategy: script` policy and its non-empty `script`,
+`script_max_concurrent`, and `script_http` settings are removed. User code
+never runs inside the router process. Configurations selecting `strategy:
+script` or setting non-empty legacy values fail during configuration loading
+with guidance to migrate to `strategy: external`. Empty legacy fields written
+by v4.8 are ignored and removed from canonical documents on import.
+
+Move the policy to a standalone service and configure `external_policy.url`,
+`allow_hosts`, and a bounded `timeout_ms`. The service receives safe derived
+request context by default. Enable `external_policy.include_request: true` only
+when the service is trusted to receive request content. The request-shape and
+PII-aware examples under `examples/typescript-request-shape/` and
+`examples/typescript-pii-policy/` show the external policy contract. Use
+`pii_filter` when request redaction is required before upstream calls.
 
 ## Compatibility and operations (v4.6.0)
 
