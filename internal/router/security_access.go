@@ -4,6 +4,7 @@
 package router
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -85,6 +86,25 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 		InputTokens:         rec.Usage.InputTokens,
 		OutputTokens:        rec.Usage.OutputTokens,
 		TotalTokens:         totalTokens(rec.Usage),
+	})
+}
+
+func (s *Service) recordToolFirewallApprovalEvent(rc *requestContext, approvalID, action string) {
+	if rc == nil || approvalID == "" || action == "" {
+		return
+	}
+	// The ID is opaque routing metadata, not a credential. It is the only value
+	// an approver needs to address the pending hold; tool names and arguments are
+	// intentionally absent from this live event.
+	log.Printf("event=tool_firewall_approval_%s approval_id=%s request_id=%s", action, approvalID, rc.id)
+	if !s.securityReportsEnabled() {
+		return
+	}
+	s.recordSecurityAccessEvent(securityAccessEvent{
+		TS: time.Now().UTC(), RequestID: rc.id,
+		EventType: "tool_firewall_approval_" + action, Surface: "tool_firewall",
+		HTTPMethod: rc.method, PathTemplate: "/v1/{endpoint}", StatusCode: http.StatusAccepted,
+		Outcome: action, ReasonCode: "approval_id:" + approvalID,
 	})
 }
 

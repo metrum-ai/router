@@ -108,6 +108,8 @@ type Service struct {
 	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
 	toolReliability    *toolReliabilityStore
+	toolFirewall       *toolFirewallRuntime
+	toolApprovals      *toolApprovalRuntime
 	affinity           *dynamicAffinityStore
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
@@ -376,6 +378,8 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		scripts:            map[string]*scriptStrategy{},
 		observations:       newDynamicObservationStore(),
 		toolReliability:    newToolReliabilityStore(),
+		toolFirewall:       newToolFirewallRuntime(),
+		toolApprovals:      newToolApprovalRuntime(cfg.Server.ToolFirewall.MaxPendingApprovals),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		providerSpend:      newProviderSpendBreaker(),
@@ -1895,6 +1899,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
 	}
+	if strings.EqualFold(s.cfg.Server.ToolFirewall.Mode, toolFirewallEnforce) && req.Stream && len(req.Tools) > 0 {
+		code := "tool_firewall_stream_inspection_required"
+		rc.trace("tool_firewall_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, code)
+		return
+	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)
 	s.captureRequestContent(rc, req, r.Header, captureDecision)
 	s.recordRequestShapeTelemetry(rc, req, dialect, len(body))
@@ -2011,7 +2021,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// PII normalization can collapse instruction boundaries that the selected
 	// provider receives distinctly. Until cache identity is target-bound,
 	// never read a response cached under a PII-enabled group.
-	if cacheable(req) && !group.PIIFilter.Enabled {
+	toolFirewallEnabled := !strings.EqualFold(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode), toolFirewallOff)
+	if cacheable(req) && !group.PIIFilter.Enabled && !toolFirewallEnabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
 			captureCached := *cached
@@ -2046,6 +2057,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		reason := cacheBypassReason(req)
 		if group.PIIFilter.Enabled && cacheable(req) {
 			reason = "cache-pii-filter"
+		} else if toolFirewallEnabled && cacheable(req) {
+			reason = "cache-tool-firewall"
 		}
 		s.recordCacheReasonTelemetry(rc, "bypass", reason, dec.Target)
 		rc.trace("cache_bypass", "", dec.Target, 0, 0, "", false, 0)
@@ -2149,6 +2162,50 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	if resp != nil {
+		if !resp.Streamed && !strings.EqualFold(s.cfg.Server.ToolFirewall.Mode, toolFirewallOff) {
+			callerID := ""
+			if rc.caller != nil {
+				callerID = rc.caller.cfg.ID
+			}
+			uploadDialect := dialect
+			if servedTarget, ok := selectedServingTarget(rc, dec); ok {
+				uploadDialect = targetDialect(s.cfg.Provider[servedTarget.Provider], servedTarget)
+			}
+			calls := firewallToolCalls(resp, dialect, uploadDialect, "openai-chat", "openai-responses", "anthropic")
+			outcome := s.toolFirewall.check(s.cfg.Server.ToolFirewall, callerID, req.Model, req, calls)
+			if outcome.Action != "" {
+				rc.trace("tool_firewall_decision", "", Target{}, 0, http.StatusOK, outcome.RuleCode, false, 0)
+				blocked := outcome.Mode == toolFirewallEnforce && outcome.Action == "deny"
+				if outcome.Mode == toolFirewallEnforce && outcome.Action == "hold" {
+					approvalID := "approval_" + strings.TrimPrefix(requestID(), "req_")
+					timeout := 60 * time.Second
+					if s.cfg.Server.ToolFirewall.ApprovalTimeoutMS > 0 {
+						timeout = time.Duration(s.cfg.Server.ToolFirewall.ApprovalTimeoutMS) * time.Millisecond
+					}
+					approval, released := s.toolApprovals.wait(r.Context(), approvalID, timeout, func() {
+						rc.trace("tool_firewall_approval_pending", "approval_id="+approvalID, Target{}, 0, 0, "approval_pending", false, 0)
+						s.recordToolFirewallApprovalEvent(rc, approvalID, "pending")
+					})
+					blocked = !released || approval != "release"
+					reason := "approval_denied"
+					if !released {
+						reason = "approval_timeout_or_unavailable"
+					} else if approval == "release" {
+						reason = "approval_released"
+					}
+					rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, 0, reason, false, 0)
+					s.recordToolFirewallApprovalEvent(rc, approvalID, strings.TrimPrefix(reason, "approval_"))
+				}
+				if blocked {
+					// The response includes tool calls only in Raw; switch to normalized
+					// encoding so no blocked arguments can be forwarded.
+					resp.RawResponse = false
+					resp.ToolCalls = nil
+					resp.Text = "Tool call blocked by router policy."
+					resp.StopReason = "end_turn"
+				}
+			}
+		}
 		ensureResponseID(resp)
 		if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
 			resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)
@@ -2211,7 +2268,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
-		if cacheable(req) && !group.PIIFilter.Enabled {
+		if cacheable(req) && !group.PIIFilter.Enabled && !toolFirewallEnabled {
 			putCaller, putProject := cacheCallerScope(rc)
 			s.cache.Put(targetCacheKey(req, s.cfg.Provider[served.Provider], served, putCaller, putProject, dialect), cacheResp)
 		}

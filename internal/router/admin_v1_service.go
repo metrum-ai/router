@@ -152,6 +152,7 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		return s.Authorize(ctx, principal, domain, object, action)
 	}
 	extra := map[string]http.HandlerFunc{
+		"tool.approvals.resolve":  s.handleToolApprovalResolution,
 		"training.export":         s.handleTrainingExport,
 		"training.outcomes.label": s.handleTrainingOutcome,
 		"metrics.scrape":          s.handleAdminPlaneMetrics,

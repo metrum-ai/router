@@ -68,6 +68,18 @@ server:
     # (for example big-coder) and redacts upstream names from caller errors.
     # Usage rows, attempt rows and admin reports keep the upstream either way.
     model_identity: upstream
+  # Tool-call firewall is off by default. Pending holds are process-local;
+  # route approvals to the replica that emitted the approval event.
+  tool_firewall:
+    mode: off
+    url_allow_hosts: []
+    approval_timeout_ms: 30000
+    max_pending_approvals: 100
+    # deny:
+    #   - {tool: bash, args_regex: '(?i)curl[^|]*\|\s*(ba)?sh'}
+    #   - {any_arg_contains: '169.254.169.254'}
+    # sequences:
+    #   - {first_tool: read_customer, first_args_regex: sensitive, then_tool: http_request, within_turns: 3, action: hold}
   identifiers:
     mode: rewrite
     transform:
