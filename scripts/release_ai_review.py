@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -24,6 +25,8 @@ MODEL = "claude-fable-5-2"
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
+INITIAL_DIFF_BYTES = 300_000
+REQUEST_TIMEOUT_SECONDS = 900.0
 MIN_DIFF_BYTES = 32 * 1024
 MAX_OUTPUT_TOKENS = 32_000
 MAX_REVIEW_BATCHES = 32
@@ -74,6 +77,10 @@ class MaxTokensStopError(RuntimeError):
     """The provider stopped a valid review response at its output-token limit."""
 
 
+class RequestTimeoutError(RuntimeError):
+    """The provider stream exceeded the per-request time limit."""
+
+
 def _high_entropy_credential(value: str) -> bool:
     if len(value) < 24:
         return False
@@ -98,11 +105,13 @@ def pack_diff_files(
     *,
     max_bytes: int = MAX_DIFF_BYTES,
     max_batches: int = MAX_REVIEW_BATCHES,
+    max_single_file_bytes: int | None = None,
 ) -> list[tuple[str, tuple[str, ...]]]:
     context_diffs = [(path, diff) for path, diff in file_diffs if path in REVIEW_CONTEXT_PATHS]
     context_paths = tuple(path for path, _ in context_diffs)
     context_bytes = sum(len(diff.encode("utf-8")) for _, diff in context_diffs)
-    if context_bytes > max_bytes:
+    hard_limit = max_single_file_bytes or max_bytes
+    if context_bytes > hard_limit:
         raise ValueError("release review context exceeds the per-request input limit")
     remaining_diffs = [(path, diff) for path, diff in file_diffs if path not in REVIEW_CONTEXT_PATHS]
     source_batches: list[tuple[list[str], list[str]]] = []
@@ -112,6 +121,14 @@ def pack_diff_files(
     for path, diff in remaining_diffs:
         diff_bytes = len(diff.encode("utf-8"))
         if context_bytes + diff_bytes > max_bytes:
+            if current_diffs:
+                source_batches.append((current_diffs, current_paths))
+                current_diffs = []
+                current_paths = []
+                current_bytes = 0
+            if max_single_file_bytes is not None and context_bytes + diff_bytes <= hard_limit:
+                source_batches.append(([diff], [path]))
+                continue
             raise ValueError(f"release diff for {path} exceeds the per-request review input limit")
         if current_diffs and context_bytes + current_bytes + diff_bytes > max_bytes:
             source_batches.append((current_diffs, current_paths))
@@ -144,6 +161,7 @@ def git_diff_batches(
     *,
     max_bytes: int = MAX_DIFF_BYTES,
     only_paths: set[str] | None = None,
+    max_single_file_bytes: int | None = None,
 ) -> list[tuple[str, tuple[str, ...]]]:
     names = subprocess.run(
         ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
@@ -166,7 +184,73 @@ def git_diff_batches(
         if not result.stdout:
             raise ValueError(f"listed release diff file {path} produced an empty diff")
         file_diffs.append((path, result.stdout))
-    return pack_diff_files(file_diffs, max_bytes=max_bytes)
+    return pack_diff_files(
+        file_diffs,
+        max_bytes=max_bytes,
+        max_single_file_bytes=max_single_file_bytes,
+    )
+
+
+def read_streaming_response(response: Any, *, timeout: float, started: float | None = None) -> tuple[str, str]:
+    if started is None:
+        started = time.monotonic()
+    event_name = ""
+    data_lines: list[str] = []
+    text_blocks: dict[int, list[str]] = {}
+    stop_reason: str | None = None
+    message_stopped = False
+
+    def dispatch_event() -> None:
+        nonlocal event_name, data_lines, stop_reason, message_stopped
+        if not data_lines:
+            event_name = ""
+            return
+        try:
+            payload = json.loads("\n".join(data_lines))
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("AI release review stream contained invalid event JSON") from exc
+        kind = event_name or (payload.get("type") if isinstance(payload, dict) else None)
+        if kind == "content_block_start" and isinstance(payload, dict):
+            block = payload.get("content_block")
+            index = payload.get("index")
+            if isinstance(block, dict) and block.get("type") == "text" and isinstance(index, int):
+                text_blocks.setdefault(index, []).append(str(block.get("text", "")))
+        elif kind == "content_block_delta" and isinstance(payload, dict):
+            index = payload.get("index")
+            delta = payload.get("delta")
+            if isinstance(index, int) and isinstance(delta, dict) and delta.get("type") == "text_delta":
+                text_blocks.setdefault(index, []).append(str(delta.get("text", "")))
+        elif kind == "message_delta" and isinstance(payload, dict):
+            delta = payload.get("delta")
+            if isinstance(delta, dict) and isinstance(delta.get("stop_reason"), str):
+                stop_reason = delta["stop_reason"]
+        elif kind == "message_stop":
+            message_stopped = True
+        elif kind == "error":
+            raise RuntimeError("AI release review stream returned an error event")
+        event_name = ""
+        data_lines = []
+
+    for raw_line in response:
+        if time.monotonic() - started >= timeout:
+            raise RequestTimeoutError(f"AI release review stream exceeded {timeout:g}-second request limit")
+        line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else str(raw_line)
+        line = line.rstrip("\r\n")
+        if not line:
+            dispatch_event()
+        elif line.startswith(":"):
+            continue
+        elif line.startswith("event:"):
+            event_name = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    dispatch_event()
+    if not message_stopped or stop_reason is None:
+        raise RuntimeError("AI release review stream ended before message_delta/message_stop")
+    if not text_blocks:
+        raise RuntimeError("AI release review response had no text block")
+    final_index = max(text_blocks)
+    return "".join(text_blocks[final_index]).strip(), stop_reason
 
 
 def call_model(
@@ -175,11 +259,12 @@ def call_model(
     *,
     batch_number: int = 1,
     batch_count: int = 1,
-    timeout: float = 300.0,
+    timeout: float = REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     body = json.dumps({
         "model": MODEL,
         "max_tokens": MAX_OUTPUT_TOKENS,
+        "stream": True,
         "output_config": {"format": {"type": "json_schema", "schema": REVIEW_OUTPUT_SCHEMA}},
         "system": REVIEW_SYSTEM,
         "messages": [{
@@ -197,17 +282,17 @@ def call_model(
         },
         method="POST",
     )
+    started = time.monotonic()
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            data = json.loads(response.read())
+            text, stop_reason = read_streaming_response(response, timeout=timeout, started=started)
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"AI release review request failed with HTTP status {exc.code}") from exc
-    except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
+            raise RequestTimeoutError(f"AI release review request timed out after {timeout:g} seconds") from exc
         # Do not include provider response text, request data, or credentials.
-        raise RuntimeError("AI release review request failed or timed out") from exc
-    if not isinstance(data, dict):
-        raise RuntimeError("AI release review returned an invalid report")
-    stop_reason = data.get("stop_reason")
+        raise RuntimeError("AI release review request failed") from exc
     if stop_reason != "end_turn":
         # Stop reasons are bounded provider metadata; never print response/request text.
         safe_reason = stop_reason if isinstance(stop_reason, str) and re.fullmatch(r"[a-z_]{1,40}", stop_reason) else "unknown"
@@ -215,12 +300,7 @@ def call_model(
         if safe_reason == "max_tokens":
             raise MaxTokensStopError(message)
         raise RuntimeError(message)
-    if not isinstance(data.get("content"), list):
-        raise RuntimeError("AI release review response had no content blocks")
-    text_blocks = [item.get("text", "") for item in data["content"] if isinstance(item, dict) and item.get("type") == "text"]
-    if not text_blocks:
-        raise RuntimeError("AI release review response had no text block")
-    text = text_blocks[-1].strip() if text_blocks else ""
+    text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
     try:
@@ -407,7 +487,7 @@ def main() -> int:
             if not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
-            diff_limit = MAX_DIFF_BYTES
+            diff_limit = INITIAL_DIFF_BYTES
             batches = git_diff_batches(args.base, args.head, max_bytes=diff_limit)
             findings_by_id: dict[str, dict[str, Any]] = {}
             batch_index = 0
@@ -422,10 +502,11 @@ def main() -> int:
                         api_key, diff, batch_number=batch_index + 1, batch_count=len(batches)
                     )
                     artifact_batch = build_artifact(batch_review, args.base, args.head, allowed_files=set(paths))
-                except MaxTokensStopError as exc:
+                except (MaxTokensStopError, RequestTimeoutError) as exc:
+                    failure_kind = "max_tokens" if isinstance(exc, MaxTokensStopError) else "timeout"
                     if diff_limit <= MIN_DIFF_BYTES:
-                        raise MaxTokensStopError(
-                            f"batch {batch_label} reached max_tokens at the {MIN_DIFF_BYTES}-byte minimum"
+                        raise type(exc)(
+                            f"batch {batch_label} reached {failure_kind} at the {MIN_DIFF_BYTES}-byte minimum"
                         ) from exc
                     next_limit = max(MIN_DIFF_BYTES, diff_limit // 2)
                     try:
@@ -434,19 +515,20 @@ def main() -> int:
                             args.head,
                             max_bytes=next_limit,
                             only_paths=set(paths),
+                            max_single_file_bytes=MAX_DIFF_BYTES,
                         )
                     except ValueError as split_error:
                         raise ValueError(f"batch {batch_label} could not be split further: {split_error}") from split_error
                     if smaller_batches == [(diff, paths)]:
-                        raise MaxTokensStopError(
-                            f"batch {batch_label} still exceeds max_tokens and cannot be split by file"
+                        raise type(exc)(
+                            f"batch {batch_label} still reaches {failure_kind} and cannot be split by file"
                         ) from exc
                     if len(batches) - 1 + len(smaller_batches) > MAX_REVIEW_BATCHES:
                         raise ValueError("release diff exceeds the maximum number of review batches after splitting") from exc
                     batches[batch_index:batch_index + 1] = smaller_batches
                     diff_limit = next_limit
                     print(
-                        f"AI release review batch {batch_label} stopped with max_tokens; split into {len(smaller_batches)} smaller batch(es) (limit={diff_limit} bytes)",
+                        f"AI release review batch {batch_label} stopped with {failure_kind}; split into {len(smaller_batches)} smaller batch(es) (limit={diff_limit} bytes)",
                         file=sys.stderr,
                     )
                     continue
