@@ -56,8 +56,8 @@ jobs:
             exit 1
           fi
           gh run list --workflow eval-infra-nightly.yml --branch main --limit 100 \
-            --json databaseId,createdAt --jq '.[] | select(.createdAt | startswith("'"$today"'") | not) | .databaseId' \
-            | head -n 30 > artifacts/history/rolling-run-ids.txt
+            --json databaseId,createdAt --jq '[.[] | select(.createdAt | startswith("'"$today"'") | not) | .databaseId] | .[:30][]' \
+            > artifacts/history/rolling-run-ids.txt
           cat artifacts/history/same-day-run-ids.txt artifacts/history/rolling-run-ids.txt \
             | sort -u > artifacts/history/run-ids.txt
           while IFS= read -r run_id; do
