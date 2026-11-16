@@ -28,6 +28,12 @@ type Event struct {
 	ObservedAt    string `json:"observed_at,omitempty"`
 	SourceIP      string `json:"source_ip,omitempty"`
 	KeyPrefix     string `json:"key_prefix,omitempty"`
+	// TinyRequest is a derived flag; request text is never included.
+	TinyRequest bool `json:"tiny_request,omitempty"`
+	// DeniedGroup is set only for a rejected model group.
+	DeniedGroup string `json:"denied_group,omitempty"`
+	// Tokens is a numeric usage count, never a token value.
+	Tokens int64 `json:"tokens,omitempty"`
 }
 
 // Signal reports one detector result. Key is a stable key identifier or prefix, never a credential.
@@ -131,10 +137,13 @@ func ValidateEvent(e Event) error {
 	if e.SchemaVersion != SchemaVersion || !safeLabel(e.Kind, 64) {
 		return errors.New("invalid detector event")
 	}
-	for _, value := range []string{e.RequestID, e.CallerID, e.KeyPrefix} {
+	for _, value := range []string{e.RequestID, e.CallerID, e.KeyPrefix, e.DeniedGroup} {
 		if value != "" && !safeLabel(value, 128) {
 			return errors.New("invalid detector event")
 		}
+	}
+	if e.Tokens < 0 || e.Tokens > 1_000_000_000 {
+		return errors.New("invalid detector event")
 	}
 	if e.SourceIP != "" && net.ParseIP(e.SourceIP) == nil {
 		return errors.New("invalid detector event")

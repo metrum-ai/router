@@ -4,30 +4,21 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/metrum-ai/router/pkg/detector"
 )
 
-type exampleDetector struct{}
-
-func (exampleDetector) Detect(_ context.Context, event detector.Event) ([]detector.Signal, error) {
-	if event.Kind != "example.match" {
-		return nil, nil
-	}
-	return []detector.Signal{{
-		SchemaVersion:      detector.SchemaVersion,
-		DetectorID:         "example",
-		Severity:           "medium",
-		Score:              0.75,
-		Key:                event.KeyPrefix,
-		EvidenceRequestIDs: []string{event.RequestID},
-	}}, nil
-}
-
 func main() {
-	server := &http.Server{Addr: ":8081", Handler: detector.Handler(exampleDetector{})}
+	server := &http.Server{
+		Addr:              ":8081",
+		Handler:           detector.Handler(newRuleDetector()),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       5 * time.Second,
+		WriteTimeout:      5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
 	log.Fatal(server.ListenAndServe())
 }

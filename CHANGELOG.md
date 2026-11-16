@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
 - Reject userinfo in external-policy and detector URLs, including redirect targets.
+- Add the example external detector's authentication-storm, validation-sweep, model-enumeration, and spend-spike rules.
 
 ### Fixed
 

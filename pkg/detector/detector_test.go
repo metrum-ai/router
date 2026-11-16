@@ -6,14 +6,22 @@ package detector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fixture struct{}
+
+type failingFixture struct{}
+
+func (failingFixture) Detect(context.Context, Event) ([]Signal, error) {
+	return nil, errors.New("private content should not be returned")
+}
 
 func (fixture) Detect(_ context.Context, event Event) ([]Signal, error) {
 	if event.Kind == "match" {
@@ -54,6 +62,15 @@ func TestHandlerRejectsContentInMetadata(t *testing.T) {
 	}
 }
 
+func TestHandlerHidesDetectorErrors(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/detect", strings.NewReader(`{"schema_version":"metrum.detector.v1","kind":"match"}`))
+	res := httptest.NewRecorder()
+	Handler(failingFixture{}).ServeHTTP(res, req)
+	if res.Code != http.StatusBadGateway || strings.Contains(res.Body.String(), "private content") {
+		t.Fatalf("status=%d body=%q", res.Code, res.Body.String())
+	}
+}
+
 func TestDecodeSignalsRejectsInvalidAndOversized(t *testing.T) {
 	for _, body := range []string{
 		`[{"schema_version":"metrum.detector.v1","detector_id":"x","severity":"high","score":1.1}]`,
@@ -74,24 +91,35 @@ func TestExternalContract(t *testing.T) {
 	if endpoint == "" {
 		t.Skip("set DETECTOR_URL to run the external detector contract test")
 	}
-	req, err := http.NewRequest(http.MethodPost, endpoint, stringsReader(`{"schema_version":"metrum.detector.v1","request_id":"contract-test","kind":"example.match"}`))
-	if err != nil {
-		t.Fatal("invalid DETECTOR_URL")
+	client := &http.Client{Timeout: 5 * time.Second}
+	var allSignals []Signal
+	for i := 0; i < 25; i++ {
+		body, _ := json.Marshal(Event{SchemaVersion: SchemaVersion, RequestID: "contract-test", Kind: "auth_failure", SourceIP: "203.0.113.5"})
+		req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(string(body)))
+		if err != nil {
+			t.Fatal("invalid DETECTOR_URL")
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal("detector request failed")
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			t.Fatalf("status=%d, want 200", resp.StatusCode)
+		}
+		var signals []Signal
+		if err := json.NewDecoder(resp.Body).Decode(&signals); err != nil {
+			resp.Body.Close()
+			t.Fatalf("invalid contract response: %v", err)
+		}
+		resp.Body.Close()
+		allSignals = append(allSignals, signals...)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal("detector request failed")
+	if len(allSignals) == 0 {
+		t.Fatal("service did not emit the synthetic auth-storm signal")
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status=%d, want 200", resp.StatusCode)
-	}
-	var signals []Signal
-	if err := json.NewDecoder(resp.Body).Decode(&signals); err != nil || len(signals) == 0 {
-		t.Fatalf("invalid contract response: err=%v", err)
-	}
-	for _, signal := range signals {
+	for _, signal := range allSignals {
 		if err := ValidateSignal(signal); err != nil {
 			t.Fatalf("invalid signal: %v", err)
 		}

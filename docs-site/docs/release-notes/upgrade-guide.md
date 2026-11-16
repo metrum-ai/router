@@ -16,6 +16,10 @@ configuration for service authentication. Do not configure custom code
 inside the router process; Go plugins, shared libraries, WASM, and scripts are
 not supported. See [External detectors](/docs/security-governance/detectors).
 
+The example rogue-agent detector reports four metadata-based rules. Its
+in-memory rolling baselines reset on service restart, and spend-spike detection
+remains inactive until five active usage minutes exist for a key.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## Pre-Upgrade Checklist
