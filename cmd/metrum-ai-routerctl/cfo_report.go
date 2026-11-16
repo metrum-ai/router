@@ -69,40 +69,21 @@ func runCFOReport(args []string, out io.Writer) error {
 	if base == "" {
 		base = strings.TrimSpace(os.Getenv("ROUTER_URL"))
 	}
-	parsedBase, err := url.Parse(base)
-	if err != nil || parsedBase.Host == "" || (parsedBase.Scheme != "http" && parsedBase.Scheme != "https") || parsedBase.RawQuery != "" || parsedBase.Fragment != "" {
-		return errors.New("invalid router URL")
-	}
-	if parsedBase.User != nil {
-		return errors.New("router URL must not contain credentials")
-	}
 	client, err := smartrouterctl.NewAdminAPIClient(base, *keyFile)
 	if err != nil {
 		return err
 	}
-	client.HTTP.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	requestPath := p + endpoint
 	if len(query) > 0 {
 		requestPath += "?" + query.Encode()
 	}
-	req, err := http.NewRequest(http.MethodGet, client.BaseURL+requestPath, nil)
-	if err != nil {
-		return errors.New("invalid report URL")
-	}
-	req.Header.Set("Authorization", "Bearer "+client.Token)
-	req.Header.Set("User-Agent", "metrum-ai-routerctl")
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return fmt.Errorf("report request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected report HTTP status %d", resp.StatusCode)
-	}
 	const maxReportBytes = 16 << 20
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxReportBytes+1))
+	data, status, _, err := client.DoWithHeadersLimit(http.MethodGet, requestPath, nil, nil, maxReportBytes)
 	if err != nil {
 		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("unexpected report HTTP status %d", status)
 	}
 	if len(data) > maxReportBytes {
 		return errors.New("report exceeds the 16 MiB client limit; narrow the range or filters")

@@ -5,15 +5,18 @@ doc_type: reference
 
 # Upgrade Guide
 
-## v5.0.0 tool-routing usage fields
+## v5.0.0 request trace correlation
 
-Usage schema 17 adds six scalar fields to `request_usage` for tool calls, first
-failure class, retries, escalations, per-request reliability outcome, and its
-source. Existing rows keep empty/default values. The migration is additive,
-online, and applied by the deployment migration job. Raw tool arguments,
-schemas, and outputs are not stored. Live outcomes are labelled `live`; the
-compatibility matrix currently has no provider/model outcome mapping, so it is
-not used to seed target reliability.
+Trace propagation is opt-in. Existing callers and deployments that do not
+configure a trusted parent continue to receive a new trace for every inbound
+request. To preserve a trace across routers, configure `server.trace.trusted_parent_cidrs`
+for the immediate parent network, or enable `trust_traceparent` only on an
+authenticated child-router caller. Schema 17 adds scalar trace, span, and
+parent-span columns to the usage table and an index on `trace_id`; existing rows
+remain valid with empty values. The migration is additive and is applied by the
+deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+for trust boundaries and examples.
+
 ## Security hardening
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
@@ -120,7 +123,12 @@ keys removed before restart.
 The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
 listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
 `ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
-`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`.
+`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
+no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
+the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
+`admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
+`admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
+and the admin credential setting; response bodies and credentials are not printed.
 
 | Command | v5 behavior and flags |
 | --- | --- |

@@ -111,7 +111,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	// 17 is the current usage head after the tool-routing usage migration.
+	// 17 is the current usage head after automatic containment and trace correlation.
 	if err != nil || status.SchemaVersion != 17 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
@@ -141,6 +141,9 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 	// Down: the disposable-database reverse step restores the v11 postcondition,
 	// removes local affinity metadata and leaves a database the earlier manifest
 	// accepts again.
+	if err := revertTraceCorrelationMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +187,7 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage head (17), including tool-routing usage.
+	// Fresh installs reach the current usage head (17), including trace metadata.
 	if err != nil || status.SchemaVersion != 17 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
@@ -273,7 +276,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	// 17 is the current usage head after the tool-routing usage migration.
+	// 17 is the current usage head after automatic containment and trace correlation.
 	if err != nil || after.SchemaVersion != 17 {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
@@ -301,6 +304,9 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("different tenant: %v", err)
 	}
 
+	if err := revertTraceCorrelationMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}

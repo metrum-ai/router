@@ -174,13 +174,7 @@ Tables use per-tab column schemas instead of first-row key discovery. Column ord
 
 Admin report API responses include a `pagination` object. Raw, event-like reports use cursor pagination when the router can page directly from indexed relational rows:
 
-- Request rows include the bounded tool-routing counters and classifications when present:
-`toolCallCount`, `toolFirstFailureClass`, `toolRetries`, `toolEscalations`,
-`toolReliabilityBucket`, and `toolReliabilitySource`. These fields contain outcome labels only;
-tool arguments, schemas, and outputs remain excluded. Request evidence bundles expose the same
-values under `evidenceBundle.toolRouting`.
-
-`/admin/reports/api/requests`
+- `/admin/reports/api/requests`
 - `/admin/reports/api/expensive-requests`
 - `/admin/reports/api/security/events`
 
