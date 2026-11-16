@@ -130,7 +130,7 @@ func TestTokenBreakdownLocalhostE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(markdown, "Cache Write Tokens") || !strings.Contains(markdown, "| reasoning | 20 | 2 | 60 | 2 | 0 | 0 | 3 | 3 | 2 |") {
+	if !strings.Contains(markdown, "Cache Write Tokens") || !strings.Contains(markdown, "| reasoning | 20 | 2 | 60 | 2 | 140 | 2 | 0 | 0 | 3 | 3 | 2 |") {
 		t.Fatalf("CLI coverage columns or sums missing: %s", markdown)
 	}
 	var raw adminReportResponse

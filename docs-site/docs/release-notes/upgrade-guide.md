@@ -84,6 +84,12 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 KV-cache routing and metering
+
+The additive usage-schema migration adds nullable `request_usage.recomputed_input_tokens` and scalar coverage fields to usage rollups. It backfills recomputed tokens only for historical rows with reported cached-token counts; rows without that evidence remain unknown. The router computes new values as `max(input_tokens - cached_input_tokens, 0)`. Reports now include cached and recomputed token totals and coverage.
+
+Existing routing config keeps its behavior unless a target sets `tiered_kv_cache: true` or a dynamic-score request supplies `metadata.session_id`. Tiered-cache preference applies at an estimated input length of 32,000 tokens and only among targets already eligible for the request. Dynamic-score affinity remains process-local and bounded; restarting clears pins. Remove the target attribute or restore the prior group config to roll back routing behavior. Schema rollback follows the restore-required migration contract.
+
 ## v5.0.0 trusted proxy client IP resolution
 
 When `server.client_ip.trusted_proxy_cidrs` is configured, the router now walks

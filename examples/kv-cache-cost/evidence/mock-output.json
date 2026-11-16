@@ -1,6 +1,24 @@
 {
   "mode": "mock",
-  "note": "Provider-reported cached tokens; configured-price usage is not an invoice. Mock cache is simulated; local costs exclude compute.",
+  "note": "Provider-reported cache usage and request TTFB; configured-price usage is not an invoice. Mock cache is simulated; local costs exclude compute.",
+  "summary": [
+    {
+      "arm": "pinned",
+      "requests": 4,
+      "cache_hit_rate": 0.75,
+      "ttfb_ms_mean": 6.75,
+      "recomputed_input_tokens": 16000,
+      "usage_cost_usd": 0.00504
+    },
+    {
+      "arm": "spread",
+      "requests": 4,
+      "cache_hit_rate": 0.5,
+      "ttfb_ms_mean": 2.25,
+      "recomputed_input_tokens": 24000,
+      "usage_cost_usd": 0.007392
+    }
+  ],
   "requests": [
     {
       "arm": "pinned",
@@ -8,8 +26,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
       "input_tokens": 10000,
       "cached_input_tokens": 0,
+      "recomputed_input_tokens": 10000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.003024
+      "usage_cost_usd": 0.003024,
+      "ttfb_ms": 20
     },
     {
       "arm": "pinned",
@@ -17,8 +37,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
       "input_tokens": 10000,
       "cached_input_tokens": 8000,
+      "recomputed_input_tokens": 2000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.000672
+      "usage_cost_usd": 0.000672,
+      "ttfb_ms": 3
     },
     {
       "arm": "pinned",
@@ -26,8 +48,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
       "input_tokens": 10000,
       "cached_input_tokens": 8000,
+      "recomputed_input_tokens": 2000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.000672
+      "usage_cost_usd": 0.000672,
+      "ttfb_ms": 2
     },
     {
       "arm": "pinned",
@@ -35,8 +59,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
       "input_tokens": 10000,
       "cached_input_tokens": 8000,
+      "recomputed_input_tokens": 2000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.000672
+      "usage_cost_usd": 0.000672,
+      "ttfb_ms": 2
     },
     {
       "arm": "spread",
@@ -44,8 +70,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
       "input_tokens": 10000,
       "cached_input_tokens": 0,
+      "recomputed_input_tokens": 10000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.003024
+      "usage_cost_usd": 0.003024,
+      "ttfb_ms": 2
     },
     {
       "arm": "spread",
@@ -53,8 +81,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash",
       "input_tokens": 10000,
       "cached_input_tokens": 0,
+      "recomputed_input_tokens": 10000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.003024
+      "usage_cost_usd": 0.003024,
+      "ttfb_ms": 2
     },
     {
       "arm": "spread",
@@ -62,8 +92,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash-1017",
       "input_tokens": 10000,
       "cached_input_tokens": 8000,
+      "recomputed_input_tokens": 2000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.000672
+      "usage_cost_usd": 0.000672,
+      "ttfb_ms": 3
     },
     {
       "arm": "spread",
@@ -71,8 +103,10 @@
       "model": "accounts/fireworks/models/deepseek-v4p1-flash",
       "input_tokens": 10000,
       "cached_input_tokens": 8000,
+      "recomputed_input_tokens": 2000,
       "output_tokens": 20,
-      "usage_cost_usd": 0.000672
+      "usage_cost_usd": 0.000672,
+      "ttfb_ms": 2
     }
   ]
 }

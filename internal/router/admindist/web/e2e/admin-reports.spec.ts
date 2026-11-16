@@ -192,7 +192,7 @@ test("reasoning and cache coverage, cost partitions and rollup source stay visib
   await page.route("**/api/summary*", route => {
     apiRequests.push(route.request().url());
     return route.fulfill({ json: {
-      summary: { requests: 4, inputTokens: 400, outputTokens: 160, reasoningTokens: 20, reasoningReportedRequests: 2, cachedInputTokens: 120, cachedInputReportedRequests: 3, cacheWriteInputTokens: 20, cacheWriteReportedRequests: 1, costComponentReportedRequests: 4, uncachedInputCostUsd: .0026, cachedInputCostUsd: .00024, cacheWriteCostUsd: .00025, visibleOutputCostUsd: .0028, reasoningOutputCostUsd: .0004, historySource: "finalized_daily_rollups", routingSavingsUsd: .004, promptCacheSavingsUsd: .00091, responseCacheSavingsUsd: 0 },
+      summary: { requests: 4, inputTokens: 400, outputTokens: 160, reasoningTokens: 20, reasoningReportedRequests: 2, cachedInputTokens: 120, cachedInputReportedRequests: 3, recomputedInputTokens: 280, recomputedInputReportedRequests: 3, cacheWriteInputTokens: 20, cacheWriteReportedRequests: 1, costComponentReportedRequests: 4, uncachedInputCostUsd: .0026, cachedInputCostUsd: .00024, cacheWriteCostUsd: .00025, visibleOutputCostUsd: .0028, reasoningOutputCostUsd: .0004, historySource: "finalized_daily_rollups", routingSavingsUsd: .004, promptCacheSavingsUsd: .00091, responseCacheSavingsUsd: 0 },
       byGroup: [{ key: "reasoning-model", requests: 4, reasoningTokens: 20, cachedInputTokens: 120, cacheWriteInputTokens: 20 }], charts: [], requests: [],
     } });
   });
