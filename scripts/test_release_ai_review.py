@@ -289,20 +289,24 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ("content_block_delta", {"index": 1, "delta": {"type": "text_delta", "text": '{"summary":"clean",' }}),
             ("content_block_delta", {"index": 1, "delta": {"type": "text_delta", "text": '"findings":[]}' }}),
             ("content_block_stop", {"index": 1}),
-            ("message_delta", {"delta": {"stop_reason": "end_turn"}}),
+            ("message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 4321}}),
             ("message_stop", {"type": "message_stop"}),
         ])
-        with patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr), patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen:
             parsed = review.call_model("test-key", "diff")
         request = urlopen.call_args.args[0]
         payload = json.loads(request.data)
-        self.assertEqual(payload["max_tokens"], 32000)
+        self.assertEqual(payload["max_tokens"], 64000)
         self.assertTrue(payload["stream"])
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 900)
         self.assertNotIn("temperature", payload)
+        self.assertNotIn("thinking", payload)
         self.assertEqual(payload["output_config"], {
+            "effort": "medium",
             "format": {"type": "json_schema", "schema": review.REVIEW_OUTPUT_SCHEMA},
         })
+        self.assertIn("batch 1/1 usage.output_tokens=4321", stderr.getvalue())
         self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["required"], ["summary", "findings"])
         self.assertFalse(review.REVIEW_OUTPUT_SCHEMA["additionalProperties"])
         self.assertIn("at most 600", review.REVIEW_OUTPUT_SCHEMA["properties"]["summary"]["description"])
