@@ -52,10 +52,15 @@ def usage_snapshot():
   cost,count=db.execute('select coalesce(sum(total_cost_usd),0),count(*) from request_usage').fetchone()
  return float(cost),int(count)
 if not SELFTEST:
+    mock_messages.Mock.calls = 0
     mock = mock_messages.start(HOST, 18082)
     try:
         (TMP / 'router-token').write_text('synthetic-replay')
-        replay = run('offline-replay', 'anthropic-messages', 'routed', 'claude', 18082, tasks / 'hello')
+        replay = run('offline-replay', 'openai-responses', 'routed', 'gpt', 18082, tasks / 'hello')
+        preflight = {"exit": replay["exit"], "reward_values": replay["values"],
+                     "mock_requests": mock_messages.Mock.calls}
+        (ROOT / 'preflight.json').write_text(json.dumps(preflight, indent=2) + '\n')
+        print(json.dumps({"offline_replay": preflight}), flush=True)
         if replay['exit'] != 0 or replay['values'] != ['1'] or mock_messages.Mock.calls != 2:
             raise RuntimeError('Harbor Docker/adapter mock replay failed')
     finally:

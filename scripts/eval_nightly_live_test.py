@@ -49,6 +49,10 @@ class NightlySafetyTest(unittest.TestCase):
             self.assertNotIn(probe["prompt"], serialized)
         self.assertNotIn("OPENAI_API_KEY", serialized)
         self.assertEqual(report["nightly_status"]["status"], "failed")
+        self.assertEqual(report["nightly_cost"]["cost_basis"], {
+            "router_usage_rows_usd": "measured request_usage rows",
+            "direct_provider_usage_estimate_usd": "list-rate estimate",
+        })
 
     def test_provider_timeout_is_bounded_and_failure_summary_is_sanitized(self):
         with tempfile.TemporaryDirectory() as directory:

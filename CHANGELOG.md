@@ -80,6 +80,9 @@
 - Record UTC issuance timestamps for generated and rotated caller keys; the
   security self-test warns when age is unknown and fails keys older than 90 days.
 
+- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
+- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
+
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
