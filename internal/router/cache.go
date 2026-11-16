@@ -138,16 +138,20 @@ func projectSharesCache(cfg *Config, project string) bool {
 	return false
 }
 
-func deriveTenantCacheSalt(key []byte, caller *callerRuntime) (string, error) {
+func deriveTenantCacheSalt(key []byte, caller *callerRuntime, shareWithinProject bool) (string, error) {
 	if len(key) < 32 || caller == nil {
 		return "", errors.New("tenant cache salt unavailable")
 	}
 	project := normalizeAccountID(caller.cfg.Project)
-	scope := "caller:" + normalizeAccountID(caller.cfg.ID)
-	if project != "" {
+	callerID := normalizeAccountID(caller.cfg.ID)
+	scope := "caller:" + callerID
+	if project != "" && callerID != "" {
+		scope = "caller:" + project + ":" + callerID
+	}
+	if project != "" && shareWithinProject {
 		scope = "project:" + project
 	}
-	if strings.HasSuffix(scope, ":") {
+	if callerID == "" || strings.HasSuffix(scope, ":") {
 		return "", errors.New("tenant cache scope unavailable")
 	}
 	mac := hmac.New(sha256.New, key)
@@ -155,19 +159,23 @@ func deriveTenantCacheSalt(key []byte, caller *callerRuntime) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-func injectTenantCacheSalt(body []byte, provider ProviderConfig, caller *callerRuntime, key []byte) ([]byte, error) {
-	if provider.UpstreamKind != "vllm" && provider.UpstreamKind != "sglang" {
+func injectTenantCacheSalt(body []byte, provider ProviderConfig, caller *callerRuntime, key []byte, shareWithinProject bool) ([]byte, error) {
+	if provider.UpstreamKind != "vllm" {
 		return body, nil
 	}
-	salt, err := deriveTenantCacheSalt(key, caller)
+	salt, err := deriveTenantCacheSalt(key, caller, shareWithinProject)
 	if err != nil {
 		return nil, errors.New("tenant cache salt unavailable")
 	}
-	var object map[string]any
+	var object map[string]json.RawMessage
 	if err := json.Unmarshal(body, &object); err != nil || object == nil {
 		return nil, errors.New("unable to encode upstream cache isolation")
 	}
-	object["cache_salt"] = salt
+	saltJSON, err := json.Marshal(salt)
+	if err != nil {
+		return nil, errors.New("unable to encode upstream cache isolation")
+	}
+	object["cache_salt"] = saltJSON
 	encoded, err := json.Marshal(object)
 	if err != nil {
 		return nil, errors.New("unable to encode upstream cache isolation")

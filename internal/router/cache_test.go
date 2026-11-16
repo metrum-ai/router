@@ -4,6 +4,7 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -212,25 +213,40 @@ func TestTenantCacheScopeSharingAndSalt(t *testing.T) {
 		t.Fatal("project sharing crossed tenant boundary")
 	}
 	secret := []byte(strings.Repeat("s", 32))
-	saltA, err := deriveTenantCacheSalt(secret, callerA)
+	saltA, err := deriveTenantCacheSalt(secret, callerA, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	saltB, err := deriveTenantCacheSalt(secret, callerB)
+	saltB, err := deriveTenantCacheSalt(secret, callerB, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	saltOther, err := deriveTenantCacheSalt(secret, callerOther)
+	saltOther, err := deriveTenantCacheSalt(secret, callerOther, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saltA != saltB || saltA == saltOther || strings.Contains(saltA, "alpha") {
-		t.Fatal("cache salts are not stable, tenant scoped opaque values")
+	if saltA == saltB || saltA == saltOther || strings.Contains(saltA, "alpha") {
+		t.Fatal("default prefix-cache salts are not caller-scoped opaque values")
+	}
+	sharedSaltA, err := deriveTenantCacheSalt(secret, callerA, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedSaltB, err := deriveTenantCacheSalt(secret, callerB, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedSaltOther, err := deriveTenantCacheSalt(secret, callerOther, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sharedSaltA != sharedSaltB || sharedSaltA == sharedSaltOther {
+		t.Fatal("project sharing did not produce a project-scoped prefix-cache salt")
 	}
 }
 
 func TestTenantCacheSaltInjectionOverridesClientValue(t *testing.T) {
-	body, err := injectTenantCacheSalt([]byte(`{"model":"g","cache_salt":"attacker"}`), ProviderConfig{UpstreamKind: "vllm"}, &callerRuntime{cfg: CallerConfig{ID: "caller", Project: "alpha"}}, []byte(strings.Repeat("k", 32)))
+	body, err := injectTenantCacheSalt([]byte(`{"model":"g","cache_salt":"attacker"}`), ProviderConfig{UpstreamKind: "vllm"}, &callerRuntime{cfg: CallerConfig{ID: "caller", Project: "alpha"}}, []byte(strings.Repeat("k", 32)), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,8 +257,17 @@ func TestTenantCacheSaltInjectionOverridesClientValue(t *testing.T) {
 	if decoded["cache_salt"] == "attacker" || decoded["cache_salt"] == "" {
 		t.Fatal("tenant salt failed to replace caller-controlled value")
 	}
-	if _, err := injectTenantCacheSalt([]byte(`{}`), ProviderConfig{UpstreamKind: "sglang"}, &callerRuntime{cfg: CallerConfig{ID: "caller"}}, nil); err == nil {
-		t.Fatal("missing key allowed unsalted upstream request")
+	largeInteger := []byte(`{"model":"g","seed":9007199254740993}`)
+	body, err = injectTenantCacheSalt(largeInteger, ProviderConfig{UpstreamKind: "vllm"}, &callerRuntime{cfg: CallerConfig{ID: "caller"}}, []byte(strings.Repeat("k", 32)), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(body, []byte(`"seed":9007199254740993`)) {
+		t.Fatalf("large integer changed during cache salt injection: %s", body)
+	}
+	unchanged, err := injectTenantCacheSalt([]byte(`{"model":"g"}`), ProviderConfig{UpstreamKind: "sglang"}, &callerRuntime{cfg: CallerConfig{ID: "caller"}}, nil, false)
+	if err != nil || string(unchanged) != `{"model":"g"}` {
+		t.Fatalf("unsupported SGLang cache field was unexpectedly modified: body=%s err=%v", unchanged, err)
 	}
 }
 
@@ -256,6 +281,11 @@ func TestTenantCacheSaltKeyConfiguration(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("valid vLLM salt config rejected: %v", err)
 	}
+	cfg.Provider["mock"] = ProviderConfig{BaseURL: "http://127.0.0.1:1", Dialect: "openai-chat", UpstreamKind: "sglang"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "vllm only") {
+		t.Fatalf("SGLang accepted for unsupported prefix-cache isolation: %v", err)
+	}
+	cfg.Provider["mock"] = ProviderConfig{BaseURL: "http://127.0.0.1:1", Dialect: "openai-chat", UpstreamKind: "vllm"}
 	for _, tc := range []struct {
 		name    string
 		lookup  func(string) (string, bool)

@@ -3551,11 +3551,14 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "endpoint_error", Message: err.Error(), Err: err}
 	}
 	s.recordTranslationShapeTelemetry(rc, req, target, provider, outDialect, endpoint, attemptIndex, upReqBody)
-	if provider.UpstreamKind == "vllm" || provider.UpstreamKind == "sglang" {
+	if provider.UpstreamKind == "vllm" {
 		if outDialect != "openai-chat" && outDialect != "openai-responses" {
-			return nil, attempt, upstreamError{Class: "encode_error", Message: "upstream cache isolation requires an OpenAI-compatible request"}
+			attempt.ErrorClass = "encode_error"
+			attempt.ErrorMessage = "upstream cache isolation requires an OpenAI-compatible request"
+			return nil, attempt, upstreamError{Class: attempt.ErrorClass, Message: attempt.ErrorMessage}
 		}
-		upReqBody, err = injectTenantCacheSalt(upReqBody, provider, rc.caller, s.cacheSaltKey)
+		shareWithinProject := projectSharesCache(s.cfg, callerProject(rc.caller.cfg))
+		upReqBody, err = injectTenantCacheSalt(upReqBody, provider, rc.caller, s.cacheSaltKey, shareWithinProject)
 		if err != nil {
 			attempt.ErrorClass = "encode_error"
 			attempt.ErrorMessage = "upstream cache isolation unavailable"

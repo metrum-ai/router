@@ -32,7 +32,7 @@ digest-pinned official vLLM v0.33.0 images, matching the reference
 configurations. Update copied examples from older releases before deploying them.
 ### Tenant cache isolation
 
-Response-cache entries remain isolated by caller and project by default. Project-level cache sharing is opt-in with `projects[].share_cache_within_project`. Self-hosted vLLM or SGLang providers can receive per-tenant prefix-cache salts by setting `providers[].upstream_kind` and `server.cache.upstream_salt_key_env`; provide the environment key through the deployment secret manager on every router replica. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
+Response-cache entries and vLLM prefix-cache salts remain isolated by caller and project by default. Project-level sharing is opt-in with `projects[].share_cache_within_project`; enabling it lets callers in that project share response entries and vLLM prefix-cache entries. Self-hosted vLLM providers receive salts when `providers[].upstream_kind: vllm` and `server.cache.upstream_salt_key_env` are configured; provide the environment key through the deployment secret manager on every router replica. SGLang prefix-cache isolation is not supported in v5.0.0. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 

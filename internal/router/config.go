@@ -2093,6 +2093,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	cacheSaltProviderConfigured := false
+	unsupportedCacheSaltProviderConfigured := false
 	for name, p := range c.Provider {
 		breaker := p.SpendBreaker
 		if breaker.HourlyUSD < 0 || breaker.DailyUSD < 0 || math.IsNaN(breaker.HourlyUSD) || math.IsNaN(breaker.DailyUSD) || math.IsInf(breaker.HourlyUSD, 0) || math.IsInf(breaker.DailyUSD, 0) {
@@ -2110,12 +2111,15 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if p.UpstreamKind != "" && p.UpstreamKind != "router" && p.UpstreamKind != "vllm" && p.UpstreamKind != "sglang" {
 			return fmt.Errorf("provider %s has unsupported upstream_kind %q", name, p.UpstreamKind)
 		}
-		if p.UpstreamKind == "vllm" || p.UpstreamKind == "sglang" {
+		if p.UpstreamKind == "vllm" {
 			cacheSaltProviderConfigured = true
 			dialect := normalizeDialect(p.Dialect)
 			if dialect != "openai-chat" && dialect != "openai-responses" {
 				return fmt.Errorf("provider %s cache salting requires an OpenAI-compatible dialect", name)
 			}
+		}
+		if p.UpstreamKind == "sglang" {
+			unsupportedCacheSaltProviderConfigured = true
 		}
 		if p.UpstreamKind == "router" && isBedrock(p) {
 			return fmt.Errorf("provider %s cannot use upstream_kind router with bedrock", name)
@@ -2189,8 +2193,11 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			}
 		}
 	}
+	if unsupportedCacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" {
+		return fmt.Errorf("server.cache.upstream_salt_key_env supports vllm only; SGLang prefix-cache isolation is not supported")
+	}
 	if cacheSaltProviderConfigured && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
-		return fmt.Errorf("server.cache.upstream_salt_key_env is required for vllm/sglang providers")
+		return fmt.Errorf("server.cache.upstream_salt_key_env is required for vllm providers")
 	}
 	if !cacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
 		return fmt.Errorf("server.cache.upstream_salt_key_env must name an environment variable")

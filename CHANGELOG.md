@@ -33,7 +33,7 @@
 - Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
 ### Security
 
-- Partition response-cache entries by caller and project by default, add opt-in sharing inside a project, and forward stable per-tenant prefix-cache salts to explicitly configured vLLM/SGLang providers.
+- Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
 
 ### Fixed
 

@@ -62,17 +62,24 @@ func TestTenantCacheIsolationEndToEnd(t *testing.T) {
 	cfg.Provider["mock"] = provider
 	cfg.Callers[0].Project = "tenant-a"
 	other := cfg.Callers[0]
-	other.ID, other.User, other.Project = "bob", "bob", "tenant-b"
+	other.ID, other.User, other.Project = "bob", "bob", "tenant-a"
 	other.TokenID = "rtr_bob_test"
 	otherToken := "bob-test-token"
 	sum := sha256.Sum256([]byte(otherToken))
 	other.TokenSHA256 = hex.EncodeToString(sum[:])
 	cfg.Callers = append(cfg.Callers, other)
+	cfg.Users = []UserConfig{{ID: "alice"}, {ID: "bob"}}
+	cfg.Projects = []ProjectConfig{{ID: "tenant-a"}}
+	cfg.ProjectMemberships = []ProjectMembershipConfig{{UserID: "alice", Project: "tenant-a"}, {UserID: "bob", Project: "tenant-a"}}
 	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer svc.Close()
+	defer func() {
+		if svc != nil {
+			svc.Close()
+		}
+	}()
 	call := func(token, prompt string, ctx context.Context) *httptest.ResponseRecorder {
 		body := `{"model":"default","temperature":0,"messages":[{"role":"user","content":"` + prompt + `"}]}`
 		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)).WithContext(ctx)
@@ -121,5 +128,22 @@ func TestTenantCacheIsolationEndToEnd(t *testing.T) {
 	logText := string(logBytes)
 	if strings.Contains(logText, "TENANT_PROMPT_SENTINEL") || strings.Contains(logText, "FAIL_SENTINEL") || strings.Contains(logText, "TIMEOUT_SENTINEL") || strings.Contains(logText, gotSalts[0]) || strings.Contains(logText, gotSalts[1]) {
 		t.Fatal("prompt or cache salt appeared in router logs")
+	}
+	svc.Close()
+	cfg.Projects[0].ShareCacheWithinProject = true
+	cfg.Server.Cache.Enabled = false // Force both callers through to the engine to compare their salts.
+	svc, err = newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedFirst := call(testToken, "SHARED_PROMPT_A", context.Background())
+	sharedSecond := call(otherToken, "SHARED_PROMPT_B", context.Background())
+	if sharedFirst.Code != http.StatusOK || sharedSecond.Code != http.StatusOK {
+		t.Fatalf("shared-project engine requests failed: statuses=%d/%d", sharedFirst.Code, sharedSecond.Code)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(salts) != 4 || salts[2] == "" || salts[2] != salts[3] {
+		t.Fatalf("share_cache_within_project did not share the vLLM salt: %v", salts)
 	}
 }
