@@ -174,7 +174,7 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 	}
 	if caller == "anthropic" && out != "anthropic" {
 		clean, err := foreignReasoningHistory(req, caller, out)
-		if err != nil || unknownAnthropicBlocks(clean.Raw["messages"]) || unknownAnthropicBlocks(clean.Raw["system"]) {
+		if err != nil || unknownAnthropicBlocks(clean.Raw["messages"], false) || unknownAnthropicBlocks(clean.Raw["system"], false) {
 			return "unsupported_block"
 		}
 	}
@@ -212,11 +212,15 @@ func (s *Service) mediaAdmission(group ModelGroup, req *IRRequest, caller string
 		provider := s.cfg.Provider[target.Provider]
 		out := targetDialect(provider, target)
 		reason := ""
-		// Converse cannot represent opaque Anthropic blocks. Preserve the
-		// pre-bridge unsupported_block response rather than sanitizing them.
-		if caller == "anthropic" && isBedrock(provider) && req != nil && (unknownAnthropicBlocks(req.Raw["messages"]) || unknownAnthropicBlocks(req.Raw["system"])) {
-			reason = "unsupported_block"
-		} else {
+		// Converse Claude supports signed reasoning history; other opaque blocks
+		// retain the fail-closed pre-bridge response.
+		if caller == "anthropic" && isBedrock(provider) && req != nil {
+			allowReasoning := isBedrockClaudeModel(target.Model)
+			if unknownAnthropicBlocks(req.Raw["messages"], allowReasoning) || unknownAnthropicBlocks(req.Raw["system"], allowReasoning) {
+				reason = "unsupported_block"
+			}
+		}
+		if reason == "" {
 			reason = mediaTargetReason(target, req, caller, out)
 		}
 		if reason == "" {
@@ -229,7 +233,7 @@ func (s *Service) mediaAdmission(group ModelGroup, req *IRRequest, caller string
 	return first
 }
 
-func unknownAnthropicBlocks(v any) bool {
+func unknownAnthropicBlocks(v any, allowReasoning bool) bool {
 	for _, item := range valueAsSlice(v) {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -238,10 +242,14 @@ func unknownAnthropicBlocks(v any) bool {
 		typ := stringValue(m["type"])
 		switch typ {
 		case "", "text", "image", "document", "tool_use", "tool_result":
+		case "thinking", "redacted_thinking":
+			if !allowReasoning {
+				return true
+			}
 		default:
 			return true
 		}
-		if unknownAnthropicBlocks(m["content"]) {
+		if unknownAnthropicBlocks(m["content"], allowReasoning) {
 			return true
 		}
 	}

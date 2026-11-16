@@ -24,7 +24,7 @@ func TestToolResultMixedMedia672(t *testing.T) {
 			target.Bridges.ChatToResponses = DialectBridgeSupport{Enabled: true, Tools: true, Images: true}
 			var raw []byte
 			if tc.caller == "anthropic" {
-				raw, err = encodeAnthropicToolsBridge("m", req, target, tc.out)
+				raw, err = encodeAnthropicToolsBridge("m", req, target, tc.out, ProviderConfig{})
 			} else {
 				raw, err = encodeChatToResponsesBridge("m", req, target, "")
 			}

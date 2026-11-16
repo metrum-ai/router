@@ -150,6 +150,20 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 Bedrock reasoning history
+
+Anthropic Messages requests routed through Bedrock Converse now forward the
+`thinking` request option for supported Claude models and retain signed
+`thinking` and `redacted_thinking` history through unary and streaming tool
+continuations. No router configuration change is required; callers opt in with
+their normal Anthropic `thinking` object. The router rejects missing thinking
+signatures and malformed redacted data before dispatch. Opaque signatures are
+returned in Anthropic continuation blocks for provider validation, are excluded
+from usage rows and request logs, and are not returned in OpenAI Chat responses.
+Bedrock still validates signature authenticity, and opaque signatures may be
+scoped to a provider account. Keep reasoning history on the same Bedrock target
+and account; cross-provider and cross-account replay is unsupported.
+
 ## v5.0.0 secret DLP
 
 Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
