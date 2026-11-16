@@ -7,12 +7,15 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"hash/crc32"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const tokenPrefixName = "rtr_metrum"
+const tokenV2Marker = "_v2_"
 
 // Caller token hash formats accepted by TokenGenerateOptions.HashFormat.
 const (
@@ -88,23 +91,26 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 	}
 	secret := base64.RawURLEncoding.EncodeToString(secretRaw)
 	tokenID := strings.Join([]string{tokenPrefixName, user, project, environment, keySlug}, "_")
-	token := tokenID + "_" + secret
+	body := tokenID + "_" + secret
+	token := body + tokenV2Marker + fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(body)))
 	allow := append([]string(nil), opts.Allow...)
 	if len(allow) == 0 {
 		return GeneratedToken{}, fmt.Errorf("at least one allowed model group is required")
 	}
 	callerID := strings.Join([]string{user, project, environment}, "-")
 	caller := CallerConfig{
-		ID:          callerID,
-		OwnerUser:   user,
-		Project:     project,
-		Environment: environment,
-		Status:      accountStatusActive,
-		TokenID:     tokenID,
-		Allow:       allow,
-		Rate:        RateConfig{RPM: 120, TPM: 200000, Concurrent: 8},
-		Quota:       QuotaConfig{Day: BudgetConfig{Requests: 5000, Tokens: 20000000}, Month: BudgetConfig{Tokens: 400000000}, SoftPct: 80},
-		Key:         KeyConfig{LifetimeTokens: 2000000000, SoftPct: 90, OnExhaust: "disable"},
+		ID:                 callerID,
+		OwnerUser:          user,
+		Project:            project,
+		Environment:        environment,
+		Status:             accountStatusActive,
+		TokenID:            tokenID,
+		TokenFormatVersion: 2,
+		TokenEntropyBits:   256,
+		Allow:              allow,
+		Rate:               RateConfig{RPM: 120, TPM: 200000, Concurrent: 8},
+		Quota:              QuotaConfig{Day: BudgetConfig{Requests: 5000, Tokens: 20000000}, Month: BudgetConfig{Tokens: 400000000}, SoftPct: 80},
+		Key:                KeyConfig{LifetimeTokens: 2000000000, SoftPct: 90, OnExhaust: "disable"},
 	}
 	if hashFormat == TokenHashFormatLegacySHA256 {
 		caller.TokenSHA256 = legacyCallerTokenSHA256Hex(token)
@@ -127,6 +133,9 @@ func CallerTokenIDFromToken(token string) (tokenID string, ok bool) {
 	if !strings.HasPrefix(token, tokenPrefixName+"_") {
 		return "", false
 	}
+	if !validCallerTokenChecksum(token) {
+		return "", false
+	}
 	tokenID = publicTokenID(token)
 	if tokenID == token || len(token) <= len(tokenID)+1 || !strings.HasPrefix(token, tokenID+"_") {
 		return "", false
@@ -140,10 +149,62 @@ func publicTokenID(v string) string {
 		return v
 	}
 	parts := strings.Split(v, "_")
-	if len(parts) <= 6 {
+	limit := 6
+	if len(parts) <= limit {
 		return v
 	}
-	return strings.Join(parts[:6], "_")
+	return strings.Join(parts[:limit], "_")
+}
+
+func isDevelopmentCallerEnvironment(environment string) bool {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "dev", "development", "test", "testing":
+		return true
+	default:
+		return false
+	}
+}
+
+func callerHasDevelopmentToken(c CallerConfig) bool {
+	if isDevelopmentCallerEnvironment(c.Environment) {
+		return true
+	}
+	parts := strings.Split(c.TokenID, "_")
+	return len(parts) >= 6 && parts[0] == "rtr" && parts[1] == "metrum" && isDevelopmentCallerEnvironment(parts[4])
+}
+
+func validCallerTokenChecksum(token string) bool {
+	if !hasCallerTokenChecksumShape(token) {
+		return true
+	}
+	marker := strings.LastIndex(token, tokenV2Marker)
+	if marker <= 0 || len(token)-marker-len(tokenV2Marker) != 8 {
+		return false
+	}
+	body := token[:marker]
+	secretSep := strings.LastIndexByte(body, '_')
+	if secretSep <= len(tokenPrefixName) || len(body)-secretSep-1 != 43 {
+		return false
+	}
+	supplied, err := strconv.ParseUint(token[marker+len(tokenV2Marker):], 16, 32)
+	if err != nil {
+		return false
+	}
+	return uint32(supplied) == crc32.ChecksumIEEE([]byte(body))
+}
+
+func hasCallerTokenChecksumShape(token string) bool {
+	if !strings.HasPrefix(token, tokenPrefixName+"_") {
+		return false
+	}
+	if strings.Contains(token, tokenV2Marker) {
+		return true
+	}
+	parts := strings.Split(token, "_")
+	if len(parts) < 8 {
+		return false
+	}
+	return len(parts[len(parts)-3]) == 43 || len(parts[len(parts)-2]) == 43
 }
 
 func slugify(in string) string {

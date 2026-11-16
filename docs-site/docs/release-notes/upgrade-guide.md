@@ -9,6 +9,17 @@ For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 caller-token hygiene
+
+Newly generated caller tokens append a `v2` marker and checksum to the existing
+`rtr_metrum_` format.
+Previously issued tokens continue to authenticate. Config load warns when token
+entropy is unknown or a caller uses a development environment. Rotate old keys
+before setting `security.key_hygiene.enforce: true`; enforcement rejects both
+conditions. A leaked token can revoke itself through
+`POST /v1/security/leaked-keys`. That endpoint requires persistent quota state
+and audit storage; it returns `503` when either cannot record the revocation.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.

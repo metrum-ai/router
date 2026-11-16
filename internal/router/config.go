@@ -36,8 +36,9 @@ func (c EligibilityConfig) implicitEnabled() bool {
 }
 
 type Config struct {
-	Eligibility EligibilityConfig `yaml:"eligibility"`
-	Server      ServerConfig      `yaml:"server"`
+	Eligibility EligibilityConfig    `yaml:"eligibility"`
+	Security    RouterSecurityConfig `yaml:"security" json:"security,omitempty"`
+	Server      ServerConfig         `yaml:"server"`
 	// Admin is the control plane's own listener (#809). An absent or disabled
 	// block keeps the v4.7 surface: no second listener, legacy /admin/* and
 	// /metrics on the serving port.
@@ -54,6 +55,15 @@ type Config struct {
 	// config (${NAME} references and env.json keys) so later errors can be
 	// redacted by name. See secret_redaction.go.
 	secretEnvRefs []string
+}
+
+type RouterSecurityConfig struct {
+	KeyHygiene KeyHygieneConfig `yaml:"key_hygiene" json:"keyHygiene,omitempty"`
+}
+
+type KeyHygieneConfig struct {
+	MinEntropyBits int  `yaml:"min_entropy_bits" json:"minEntropyBits,omitempty"`
+	Enforce        bool `yaml:"enforce" json:"enforce,omitempty"`
 }
 
 const defaultMaxSSELineBytes = 8 << 20
@@ -1097,12 +1107,14 @@ type CallerConfig struct {
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
 	// TokenSHA256 is the deprecated unsalted SHA-256 hex of the caller token.
 	// It is still accepted, with a startup warning; use TokenHash instead.
-	TokenSHA256    string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
-	TokenID        string               `yaml:"token_id" json:"token_id"`
-	Allow          []string             `yaml:"allow" json:"allow"`
-	MetricsAdmin   bool                 `yaml:"metrics_admin" json:"metrics_admin"`
-	ContentAdmin   bool                 `yaml:"content_admin" json:"content_admin"`
-	ContentCapture ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
+	TokenSHA256        string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
+	TokenID            string               `yaml:"token_id" json:"token_id"`
+	TokenFormatVersion int                  `yaml:"token_format_version,omitempty" json:"token_format_version,omitempty"`
+	TokenEntropyBits   int                  `yaml:"token_entropy_bits,omitempty" json:"token_entropy_bits,omitempty"`
+	Allow              []string             `yaml:"allow" json:"allow"`
+	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
+	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
 	SpendCeiling SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling"`
 	Rate         RateConfig         `yaml:"rate" json:"rate"`
@@ -1597,6 +1609,13 @@ func (c *Config) ValidateForImport() error {
 }
 
 func (c *Config) validate(requireAdminKeyEnv bool) error {
+	if c.Security.KeyHygiene.MinEntropyBits < 0 || c.Security.KeyHygiene.MinEntropyBits > 256 {
+		return fmt.Errorf("security.key_hygiene.min_entropy_bits must be between 1 and 256")
+	}
+	entropyFloor := c.Security.KeyHygiene.MinEntropyBits
+	if entropyFloor == 0 {
+		entropyFloor = 128
+	}
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
 	}
@@ -2041,6 +2060,32 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("duplicate caller id %q for callers %s and %s", caller.ID, previousCallerID, caller.ID)
 		}
 		callerIDs[caller.ID] = caller.ID
+		entropyBits := caller.TokenEntropyBits
+		if caller.TokenFormatVersion < 0 || caller.TokenFormatVersion > 2 {
+			return fmt.Errorf("caller %s token_format_version must be 2 when set", caller.ID)
+		}
+		if entropyBits < 0 || entropyBits > 256 {
+			return fmt.Errorf("caller %s token_entropy_bits must be between 1 and 256", caller.ID)
+		}
+		if caller.TokenFormatVersion == 2 && !strings.HasPrefix(caller.TokenID, tokenPrefixName+"_") {
+			return fmt.Errorf("caller %s token_format_version requires a structured token_id", caller.ID)
+		}
+		if entropyBits > 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_entropy_bits requires token_format_version 2", caller.ID)
+		}
+		devKey := callerHasDevelopmentToken(caller)
+		if entropyBits < entropyFloor {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s token entropy is below security.key_hygiene.min_entropy_bits", caller.ID)
+			}
+			log.Printf("WARNING: caller %q token entropy is unknown or below configured floor; rotate to a checksummed v2 token with at least %d bits", caller.ID, entropyFloor)
+		}
+		if devKey {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s uses a development environment token", caller.ID)
+			}
+			log.Printf("WARNING: caller %q uses a development environment token", caller.ID)
+		}
 		if ownerUser == "" && (caller.Project != "" || caller.User != "" || caller.OwnerUser != "") {
 			return fmt.Errorf("caller %s has invalid owner_user", caller.ID)
 		}

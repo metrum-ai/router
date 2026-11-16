@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -506,6 +507,26 @@ func (q *quotaStore) stateFor(id string, now time.Time) *callerState {
 		q.state.Callers[id] = st
 	}
 	return st
+}
+
+func (q *quotaStore) disableCaller(caller *callerRuntime) error {
+	if q == nil || caller == nil || strings.TrimSpace(caller.cfg.ID) == "" || q.path == "" {
+		return errQuotaStatePersist
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	state := q.stateFor(caller.cfg.ID, time.Now().UTC())
+	if state.Disabled {
+		return nil
+	}
+	state.Disabled = true
+	if err := q.saveLocked(); err != nil {
+		state.Disabled = false
+		q.markPersistenceUnhealthyLocked()
+		return fmt.Errorf("%w: %v", errQuotaStatePersist, err)
+	}
+	q.state.PersistenceUnhealthy = false
+	return nil
 }
 
 func (q *quotaStore) resetWindows(st *callerState, now time.Time) {

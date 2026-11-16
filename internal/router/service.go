@@ -817,6 +817,7 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
+	s.mux.HandleFunc("POST /v1/security/leaked-keys", s.handleLeakedKeySelfRevoke)
 	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
 	// authorization until the admin listener serves it. Moving it earlier would
 	// leave monitoring with no exposition, so validation refuses that config.
@@ -2289,6 +2290,8 @@ func usageEndpoint(r *http.Request) string {
 	switch r.Method {
 	case http.MethodPost:
 		switch path {
+		case "/v1/security/leaked-keys":
+			return "security.leaked_keys"
 		case "/v1/chat/completions":
 			return "chat.completions"
 		case "/v1/responses":

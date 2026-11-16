@@ -147,6 +147,9 @@ func (st *callerAuthState) lookup(token string) (*callerRuntime, string) {
 	if token == "" || len(token) > maxCallerTokenBytes {
 		return nil, ""
 	}
+	if hasCallerTokenChecksumShape(token) && !validCallerTokenChecksum(token) {
+		return nil, ""
+	}
 	idx := st.index.Load()
 	if entry := idx.candidate(token); entry != nil && st.verify(entry, token) {
 		return entry.caller, publicTokenID(entry.caller.cfg.TokenID)
