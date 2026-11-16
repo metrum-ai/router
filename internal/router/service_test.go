@@ -7485,7 +7485,7 @@ func TestUsageAndLogsIncludeCallerMetadata(t *testing.T) {
 	if !rec.CacheEnabled || rec.CacheMaxBytes <= 0 {
 		t.Fatalf("cache snapshot missing: enabled=%v max=%d", rec.CacheEnabled, rec.CacheMaxBytes)
 	}
-	if rec.CallerIP != "203.0.113.10" {
+	if rec.CallerIP != "10.0.0.2" {
 		t.Fatalf("caller ip = %q", rec.CallerIP)
 	}
 	if rec.InputPricePerMillionUSD != 2.5 || rec.OutputPricePerMillionUSD != 7.5 ||
