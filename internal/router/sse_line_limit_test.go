@@ -132,6 +132,55 @@ func TestNativeSSEBudgetHoldsConcurrentUnframedLines(t *testing.T) {
 	}
 }
 
+func TestNativeSSEBudgetHoldsConcurrentUnframedShortLines(t *testing.T) {
+	const (
+		streams = 32
+		limit   = 1 << 20
+	)
+	budget := newLineBufferBudget(limit, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Each line fits in bufio.Reader's buffer and therefore needs no scratch
+	// line reservation. The unfinished SSE frame still retains every line.
+	wire := strings.Repeat("data: "+strings.Repeat("x", 1024)+"\n", 96)
+	var rejected atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < streams; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rc := &requestContext{start: time.Now(), lineBufferBudget: budget, maxSSELineBytes: 1 << 20}
+			_, err := proxyNativeSSE(ctx, httptest.NewRecorder(), newPrefixWaitReader(wire, ctx, nil), "openai-chat", "m", 0, rc)
+			var upstream upstreamError
+			if errors.As(err, &upstream) && upstream.Class == "upstream_stream_buffer_limit" {
+				rejected.Add(1)
+			}
+		}()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for rejected.Load() == 0 || budget.Used() == 0 {
+		if time.Now().After(deadline) {
+			cancel()
+			wg.Wait()
+			t.Fatalf("did not account for concurrent unframed short lines: reserved=%d rejected=%d", budget.Used(), rejected.Load())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if used := budget.Used(); used <= 0 || used > limit {
+		cancel()
+		wg.Wait()
+		t.Fatalf("reserved unframed frame capacity=%d, want (0,%d]", used, limit)
+	}
+	cancel()
+	wg.Wait()
+	if used := budget.Used(); used != 0 {
+		t.Fatalf("reserved capacity after cancellation=%d, want 0", used)
+	}
+	if rejected.Load() == 0 {
+		t.Fatal("no streams were rejected after short lines filled the shared budget")
+	}
+}
+
 func TestSSELineBufferBudgetFallbackExhaustionAndCommit(t *testing.T) {
 	for _, mode := range []string{"fallback", "exhausted", "committed"} {
 		t.Run(mode, func(t *testing.T) {

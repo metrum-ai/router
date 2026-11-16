@@ -121,6 +121,15 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if maxBytes > 0 && result.Bytes > maxBytes {
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit", Committed: result.Committed, ResponseLen: result.Bytes}
 			}
+			// A small line can be returned directly from bufio.Reader without a
+			// line-buffer reservation. The frame retains a copy of every appended
+			// line, so reserve that growth separately and hold it until emission.
+			if budget := rc.sseLineBudget(); budget != nil {
+				if !budget.TryAcquire(int64(len(line))) {
+					return result, upstreamError{Class: "upstream_stream_buffer_limit", Message: "process-wide SSE line buffer budget exhausted", Retryable: !result.Committed, Committed: result.Committed}
+				}
+				frameReserved += int64(len(line))
+			}
 			_, _ = frame.Write(line)
 		}
 		frameComplete := isSSEBlankLine(line)
