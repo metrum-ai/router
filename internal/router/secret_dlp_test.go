@@ -332,9 +332,9 @@ func assertStreamMatchesUnarySecretBoundary(t *testing.T, seed []byte) {
 	}
 	input, secrets, choose := differentialSecretInput(seed)
 	unary := newState().redact(input)
-	for _, secret := range secrets {
+	for index, secret := range secrets {
 		if strings.Contains(unary, secret) {
-			t.Fatalf("unary redactor did not redact generated secret %q", secret)
+			t.Fatalf("unary redactor did not redact generated secret index %d", index)
 		}
 	}
 
@@ -361,9 +361,9 @@ func assertStreamMatchesUnarySecretBoundary(t *testing.T, seed []byte) {
 		}
 	}
 	output := released.String()
-	for _, secret := range secrets {
+	for index, secret := range secrets {
 		if strings.Contains(output, secret) {
-			t.Fatalf("stream released a secret detected by unary redaction: %q", secret)
+			t.Fatalf("stream released generated secret index %d detected by unary redaction", index)
 		}
 	}
 }
@@ -1011,7 +1011,7 @@ func TestSecretDLPStreamJWTResumesInsideInvalidCandidate(t *testing.T) {
 	}
 	released.WriteString(safe)
 	if strings.Contains(released.String(), token) {
-		t.Fatalf("stream released JWT after malformed candidate: %q", released.String())
+		t.Fatalf("stream released JWT after malformed candidate (released bytes=%d)", released.Len())
 	}
 	assertNoSecretFragment(t, released.String(), token, 12)
 }
