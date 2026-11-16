@@ -36,6 +36,8 @@ class ReleasePayloadTest(unittest.TestCase):
         for arch in ("amd64", "arm64"):
             name = f"metrum-ai-router-{version}-linux-{arch}-image.spdx.json"
             (root / name).write_text(json.dumps({"spdxVersion": "SPDX-2.3", "packages": [{"name": name}]}), encoding="utf-8")
+        for name in {path.name for path in root.glob("*.spdx.json")}:
+            (root / (name + ".sigstore.json")).write_text(json.dumps({"bundle": True}), encoding="utf-8")
         platforms = {
             arch: {
                 "ref": f"ghcr.io/metrum-ai/router:{version}-linux-{arch}",
@@ -50,7 +52,20 @@ class ReleasePayloadTest(unittest.TestCase):
             "base": BASE_IMAGE, "index": {"ref": f"ghcr.io/metrum-ai/router:{version}", "digest": "sha256:" + "d" * 64},
             "platforms": platforms,
         }), encoding="utf-8")
-        (root / "AI-release-review.md").write_text("- Decision: **PASS**\n", encoding="utf-8")
+        review_artifact = {
+            "schema": "metrum-ai-router-release-review-artifact/v1",
+            "base": "v4.8.0",
+            "head": "0123456789abcdef",
+            "summary": "No findings.",
+            "findings": [],
+        }
+        review_artifact["artifact_digest"] = hashlib.sha256(json.dumps(
+            review_artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")).hexdigest()
+        (root / "release-review-artifact.json").write_text(json.dumps(review_artifact), encoding="utf-8")
+        (root / "AI-release-review.md").write_text(
+            f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n- Decision: **PASS**\n", encoding="utf-8"
+        )
 
     def test_accepts_complete_release_payload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -67,6 +82,19 @@ class ReleasePayloadTest(unittest.TestCase):
             errors = validate(root, "v5.0.0")
             self.assertTrue(any("missing release assets" in error for error in errors))
             self.assertTrue(any("passing decision" in error for error in errors))
+
+    def test_rejects_missing_sbom_signature_and_tampered_review_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_payload(root)
+            (root / "metrum-ai-router-v5.0.0-linux-amd64-image.spdx.json.sigstore.json").unlink()
+            artifact_path = root / "release-review-artifact.json"
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+            artifact["summary"] = "Changed after review."
+            artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+            errors = validate(root, "v5.0.0")
+            self.assertTrue(any("missing release assets" in error for error in errors))
+            self.assertTrue(any("artifact digest is invalid" in error for error in errors))
 
     def test_rejects_missing_image_manifest_or_digest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

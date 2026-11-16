@@ -39,10 +39,25 @@ def validate(dist: Path, layout: Path, version: str, commit: str, previous: str)
     except (OSError, json.JSONDecodeError, ValueError, AttributeError, TypeError) as exc:
         errors.append(f"binary inventory or checksums are invalid: {exc}")
 
+    review_artifact_digest = None
+    try:
+        artifact = json.loads((dist / "release-review-artifact.json").read_text(encoding="utf-8"))
+        digest = artifact.pop("artifact_digest")
+        expected = hashlib.sha256(json.dumps(artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
+        if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v1" or artifact.get("base") != previous or artifact.get("head") != commit:
+            errors.append("AI review artifact does not match the requested production range")
+        if not re.fullmatch(r"[0-9a-f]{64}", digest) or digest != expected:
+            errors.append("AI review artifact digest is invalid")
+        review_artifact_digest = digest
+    except (OSError, json.JSONDecodeError, ValueError, AttributeError, TypeError, KeyError):
+        errors.append("AI review artifact is missing or invalid")
+
     try:
         report = (dist / "AI-release-review.md").read_text(encoding="utf-8")
         if "- Decision: **PASS**" not in report or f"- Reviewed range: `{previous}..{commit}`" not in report:
             errors.append("AI review does not pass for the requested production range")
+        elif review_artifact_digest and f"Review artifact SHA-256: `{review_artifact_digest}`" not in report:
+            errors.append("AI review report does not match the stored artifact digest")
     except OSError:
         errors.append("AI release review report is missing")
 

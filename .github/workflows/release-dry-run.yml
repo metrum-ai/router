@@ -128,7 +128,7 @@ jobs:
           commit="$(git rev-parse HEAD)"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
-          previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft,publishedAt | python3 scripts/select_previous_release.py --current "${VERSION}")"
+          previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft | python3 scripts/select_previous_release.py --current "${VERSION}")"
           printf 'COMMIT=%s\n' "${commit}" >> "${GITHUB_ENV}"
           printf 'SOURCE_DATE_EPOCH=%s\n' "${source_date_epoch}" >> "${GITHUB_ENV}"
           printf 'BUILD_DATE=%s\n' "${build_date}" >> "${GITHUB_ENV}"
@@ -181,16 +181,37 @@ jobs:
           cp "${RUNNER_TEMP}/upgrade-rollback-results.json" dist/upgrade-rollback-results.json
       - name: Load current maintainer responses
         run: git show origin/main:docs/release-review-responses.json > "${RUNNER_TEMP}/release-review-responses.json"
+      - name: Derive immutable review artifact name
+        id: review-range
+        run: |
+          set -euo pipefail
+          key="$(python3 scripts/release_review_artifact_key.py --base "${PREVIOUS_TAG}" --head "${COMMIT}")"
+          printf 'artifact_name=release-review-%s\n' "${key}" >> "${GITHUB_OUTPUT}"
+      - name: Restore review artifact for this commit range
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ steps.review-range.outputs.artifact_name }}
+          path: ${{ runner.temp }}/review-cache
+          if-no-files-found: ignore
       - name: Review the previous production release through main
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        id: review
         run: |
           set -euo pipefail
           mkdir -p dist
           python3 scripts/release_ai_review.py --base "${PREVIOUS_TAG}" --head "${COMMIT}" \
             --tag "${VERSION}" --responses "${RUNNER_TEMP}/release-review-responses.json" \
+            --artifact-cache "${RUNNER_TEMP}/review-cache/review.json" \
+            --artifact-output dist/release-review-artifact.json \
             --output dist/AI-release-review.md
           rg -q '^- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
+      - name: Store review artifact for reruns of this commit range
+        if: always() && steps.review.outputs.cache_hit != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.review-range.outputs.artifact_name }}
+          path: dist/release-review-artifact.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Install pinned Crane
         run: bash scripts/install_crane.sh "${CRANE}"
       - name: Assemble images in a local multi-architecture OCI layout
@@ -233,6 +254,7 @@ jobs:
           name: release-dry-run-evidence
           path: |
             dist/AI-release-review.md
+            dist/release-review-artifact.json
             ${{ runner.temp }}/upgrade-rollback-results.json
             dist/SHA256SUMS
             dist/release-artifacts.json

@@ -43,7 +43,7 @@ jobs:
           commit="$(git rev-parse HEAD)"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
-          previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft,publishedAt | python3 scripts/select_previous_release.py --current "${tag}")"
+          previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft | python3 scripts/select_previous_release.py --current "${tag}")"
           printf 'tag=%s\n' "${tag}" >> "${GITHUB_OUTPUT}"
           printf 'commit=%s\n' "${commit}" >> "${GITHUB_OUTPUT}"
           printf 'build_date=%s\n' "${build_date}" >> "${GITHUB_OUTPUT}"
@@ -193,6 +193,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 10
+    environment: release-review
     permissions:
       contents: read
     steps:
@@ -205,7 +206,23 @@ jobs:
           set -euo pipefail
           git fetch origin main
           git show origin/main:docs/release-review-responses.json > "${RUNNER_TEMP}/release-review-responses.json"
+      - name: Derive immutable review artifact name
+        id: review-range
+        env:
+          REVIEW_BASE: ${{ needs.resolve.outputs.previous_tag }}
+          REVIEW_HEAD: ${{ needs.resolve.outputs.commit }}
+        run: |
+          set -euo pipefail
+          key="$(python3 scripts/release_review_artifact_key.py --base "${REVIEW_BASE}" --head "${REVIEW_HEAD}")"
+          printf 'artifact_name=release-review-%s\n' "${key}" >> "${GITHUB_OUTPUT}"
+      - name: Restore review artifact for this commit range
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ steps.review-range.outputs.artifact_name }}
+          path: ${{ runner.temp }}/review-cache
+          if-no-files-found: ignore
       - name: Review release diff and documentation
+        id: review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REVIEW_BASE: ${{ needs.resolve.outputs.previous_tag }}
@@ -219,12 +236,24 @@ jobs:
             --head "${REVIEW_HEAD}" \
             --tag "${RELEASE_TAG}" \
             --responses "${RUNNER_TEMP}/release-review-responses.json" \
-            --output dist/AI-release-review.md
+            --artifact-cache "${RUNNER_TEMP}/review-cache/review.json" \
+            --artifact-output "${RUNNER_TEMP}/review-output/review.json" \
+            --output "${RUNNER_TEMP}/review-output/AI-release-review.md"
+      - name: Store review artifact for reruns of this commit range
+        if: always() && steps.review.outputs.cache_hit != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.review-range.outputs.artifact_name }}
+          path: ${{ runner.temp }}/review-output/review.json
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-ai-review
-          path: dist/AI-release-review.md
+          path: |
+            ${{ runner.temp }}/review-output/AI-release-review.md
+            ${{ runner.temp }}/review-output/review.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -304,8 +333,10 @@ jobs:
         run: |
           set -euo pipefail
           test -s "${RUNNER_TEMP}/release-review/AI-release-review.md"
+          test -s "${RUNNER_TEMP}/release-review/review.json"
           rg -q '^\- Decision: \*\*PASS\*\*$' "${RUNNER_TEMP}/release-review/AI-release-review.md"
           cp "${RUNNER_TEMP}/release-review/AI-release-review.md" dist/AI-release-review.md
+          cp "${RUNNER_TEMP}/release-review/review.json" dist/release-review-artifact.json
       - name: Validate binary inventory
         run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
       - name: Install pinned Crane
@@ -414,6 +445,19 @@ jobs:
             "${SYFT_COMMAND}" "$ref" -o spdx-json > "$sbom"
             cosign attach sbom --sbom "$sbom" "$ref"
           done
+      - name: Sign and verify SPDX SBOM assets
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${VERSION}"
+          shopt -s nullglob
+          sboms=(dist/*.spdx.json)
+          test "${#sboms[@]}" -eq 6
+          for sbom in "${sboms[@]}"; do
+            cosign sign-blob --yes --bundle "${sbom}.sigstore.json" "${sbom}" >/dev/null
+            cosign verify-blob --bundle "${sbom}.sigstore.json" \
+              --certificate-identity "${identity}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com "${sbom}" >/dev/null
+          done
       - name: Sign images keylessly
         run: |
           set -euo pipefail
@@ -442,6 +486,9 @@ jobs:
             dist/upgrade-rollback-results.json
             dist/SHA256SUMS
             dist/release-artifacts.json
+            dist/release-images.json
+            dist/AI-release-review.md
+            dist/release-review-artifact.json
       - name: Attest OCI image index
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -476,6 +523,11 @@ jobs:
           gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-index-digest.txt")" --repo "${GITHUB_REPOSITORY}" \
             --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
             --source-ref "refs/tags/${VERSION}" >/dev/null
+          for asset in dist/release-images.json dist/AI-release-review.md dist/release-review-artifact.json; do
+            gh attestation verify "${asset}" --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --source-ref "refs/tags/${VERSION}" >/dev/null
+          done
           python3 scripts/check_release_payload.py --dist-dir dist --version "${VERSION}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -485,6 +537,7 @@ jobs:
             dist/SHA256SUMS
             dist/release-artifacts.json
             dist/release-images.json
+            dist/release-review-artifact.json
             dist/upgrade-rollback-results.json
             dist/AI-release-review.md
           if-no-files-found: error
@@ -492,8 +545,8 @@ jobs:
       - name: Confirm payload and publish immutable release
         run: |
           set -euo pipefail
-          mapfile -t ASSETS < <(find dist -maxdepth 1 -type f             \( -name 'metrum-ai-router-*' -o -name upgrade-rollback-results.json -o -name AI-release-review.md -o -name SHA256SUMS -o -name release-artifacts.json -o -name release-images.json \) | sort)
-          test "${#ASSETS[@]}" -eq 19
+          mapfile -t ASSETS < <(find dist -maxdepth 1 -type f             \( -name 'metrum-ai-router-*' -o -name upgrade-rollback-results.json -o -name AI-release-review.md -o -name release-review-artifact.json -o -name SHA256SUMS -o -name release-artifacts.json -o -name release-images.json \) | sort)
+          test "${#ASSETS[@]}" -eq 26
           if gh release view "${VERSION}" >/dev/null 2>&1; then echo "GitHub Release ${VERSION} already exists; releases are immutable" >&2; exit 1; fi
           NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
           git tag -l --format='%(contents)' "${VERSION}" > "$NOTES_FILE"

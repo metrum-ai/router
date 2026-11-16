@@ -5,6 +5,7 @@
 ### Added
 
 - Added a release checklist and a bounded package upgrade-and-rollback check.
+- Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 
 ### Security
 

@@ -25,6 +25,11 @@ class ReleaseImageLayerTest(unittest.TestCase):
         self.assertEqual(len(digest), 64)
         self.assertEqual(f"cgr.dev/chainguard/static:latest@sha256:{digest}", BASE_IMAGE)
 
+    def test_golang_build_stage_is_pinned_by_digest(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        match = re.search(r"(?m)^FROM --platform=\$BUILDPLATFORM (golang:1\.27\.4-alpine@sha256:([0-9a-f]{64})) AS build$", dockerfile)
+        self.assertIsNotNone(match, "the Go build stage must use the verified digest-pinned official image")
+
     def make_package(self, root: Path, omit: str | None = None) -> tuple[Path, dict[str, bytes]]:
         package = root / "package.tar.gz"
         files = {f"pkg/bin/{name}": f"binary:{name}".encode() for name in BINARIES}

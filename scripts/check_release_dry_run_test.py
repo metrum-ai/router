@@ -65,8 +65,20 @@ class CheckReleaseDryRunTest(unittest.TestCase):
             for name in names:
                 checksums.append(f"{hashlib.sha256((dist / name).read_bytes()).hexdigest()}  {name}")
             (dist / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8")
+            review_artifact = {
+                "schema": "metrum-ai-router-release-review-artifact/v1",
+                "base": previous,
+                "head": commit,
+                "summary": "No findings.",
+                "findings": [],
+            }
+            review_artifact["artifact_digest"] = hashlib.sha256(json.dumps(
+                review_artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+            ).encode("utf-8")).hexdigest()
+            (dist / "release-review-artifact.json").write_text(json.dumps(review_artifact), encoding="utf-8")
             (dist / "AI-release-review.md").write_text(
-                f"- Decision: **PASS**\n- Reviewed range: `{previous}..{commit}`\n", encoding="utf-8")
+                f"- Decision: **PASS**\n- Reviewed range: `{previous}..{commit}`\n"
+                f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n", encoding="utf-8")
             (dist / "upgrade-rollback-results.json").write_text(json.dumps({
                 "schema": "router.release-upgrade-rollback/v1", "previous_version": previous,
                 "candidate_version": version, "candidate_commit": commit,

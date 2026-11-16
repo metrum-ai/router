@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -29,9 +30,10 @@ def validate(dist: Path, version: str) -> list[str]:
         f"metrum-ai-router-{version}-linux-amd64-image.spdx.json",
         f"metrum-ai-router-{version}-linux-arm64-image.spdx.json",
     }
-    expected_bundles = {name + ".sigstore.json" for name in expected_archives}
+    expected_bundles = {name + ".sigstore.json" for name in expected_archives | expected_sboms}
     expected_names = expected_archives | expected_sboms | expected_bundles | {
-        "SHA256SUMS", "release-artifacts.json", "release-images.json", "upgrade-rollback-results.json", "AI-release-review.md"
+        "SHA256SUMS", "release-artifacts.json", "release-images.json", "release-review-artifact.json",
+        "upgrade-rollback-results.json", "AI-release-review.md"
     }
     if not dist.is_dir():
         return ["release payload directory is missing"]
@@ -107,10 +109,28 @@ def validate(dist: Path, version: str) -> list[str]:
             errors.append("invalid multi-architecture image index digest")
     except (OSError, json.JSONDecodeError, AttributeError, TypeError):
         errors.append("release image manifest is missing or malformed")
+    review_artifact_digest = None
+    try:
+        review_artifact = json.loads((dist / "release-review-artifact.json").read_text(encoding="utf-8"))
+        digest = review_artifact.pop("artifact_digest")
+        expected_digest = hashlib.sha256(
+            json.dumps(review_artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        if review_artifact.get("schema") != "metrum-ai-router-release-review-artifact/v1":
+            errors.append("AI release review artifact has an unknown schema")
+        if not re.fullmatch(r"[0-9a-f]{64}", digest) or digest != expected_digest:
+            errors.append("AI release review artifact digest is invalid")
+        review_artifact_digest = digest
+        if not review_artifact.get("base") or not review_artifact.get("head") or not isinstance(review_artifact.get("findings"), list):
+            errors.append("AI release review artifact does not identify a commit range and findings")
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        errors.append("AI release review artifact is missing or malformed")
     try:
         report = (dist / "AI-release-review.md").read_text(encoding="utf-8")
         if not PASS.search(report):
             errors.append("AI release review is missing a passing decision")
+        elif review_artifact_digest and f"Review artifact SHA-256: `{review_artifact_digest}`" not in report:
+            errors.append("AI release review report does not match the recorded artifact digest")
     except OSError:
         errors.append("AI release review is missing")
     return errors
@@ -125,7 +145,7 @@ def main() -> int:
     if errors:
         print("release payload check failed: " + "; ".join(errors), file=sys.stderr)
         return 1
-    print("release payload has four binary packages, archive and image SPDX SBOMs, Cosign bundles, checksums, image manifest and AI review")
+    print("release payload has four binary packages, signed archive and image SPDX SBOMs, checksums, manifests and digest-bound AI review")
     return 0
 
 

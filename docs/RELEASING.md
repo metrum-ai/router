@@ -96,9 +96,13 @@ digest-pinned Chainguard base, then creates a multi-architecture index in
 The job verifies the image binaries against the release packages, runs the
 amd64 image binary's version and `/healthz` smoke checks without a container
 daemon, signs the images keylessly, and attaches GitHub provenance and SPDX
-SBOMs. The four binary packages each carry an SPDX JSON SBOM, a keyless Cosign
-signature bundle and GitHub build provenance. The AI review report and
-`release-images.json` digest manifest are attached to the release.
+SBOMs. All six archive and image SPDX JSON SBOMs receive keyless Cosign
+signature bundles. The four binary packages each carry an SPDX JSON SBOM,
+signature bundle and GitHub build provenance. The AI review report, its
+digest-bound findings artifact and `release-images.json` digest manifest are
+attached to the release and attested.
+The upgrade check and AI review select the preceding stable tag by numeric
+semantic version order; release publication time does not affect the baseline.
 
 Publishing, registry writes, signing, attestations, SBOM attachment and GitHub
 release creation run only through the protected `release` environment. That
@@ -106,15 +110,20 @@ environment must require a reviewer and allow only `v*` tags; the workflow
 checks both conditions before publishing. A retry resumes already-pushed
 version tags only when their digests match the rebuilt packages; a mismatch
 fails closed and requires maintainer investigation before another publish.
+The AI review job uses the separate `release-review` environment, which allows
+only `v*` tags and provides no reviewer gate. The Anthropic API key is scoped
+to that environment and is not a repository secret.
 
-If the AI review report lists a blocking finding, the tag run fails before
-publish and retains the report as a workflow artifact. A maintainer can answer
-it by adding the finding ID and a short resolution under `responses` in
-`docs/release-review-responses.json` on `main`, then rerunning the same tag
-workflow. A finding ID is derived from the reviewed release range, rule
-category, and source file/line locations, so model wording changes do not
-invalidate an existing answer for the same finding. Unanswered blockers, a missing API credential, a review timeout, or
-an invalid model response block publication.
+The review artifact records the findings and a SHA-256 digest for the exact
+base and head commits. It is retained as a workflow artifact keyed to that
+range, so rerunning the same workflow run reuses the stored result instead of
+calling the model again. If a blocking finding needs an acceptance, add a
+short acceptance under that artifact digest in the `acceptances` object in
+`docs/release-review-responses.json` on `main`, then rerun the same tag
+workflow. The acceptance applies only to the exact reviewed artifact; a new
+commit range produces a new model review and digest. Unanswered blockers, a
+missing API credential, a review timeout, or an invalid model response block
+publication.
 
 Verify one downloaded package asset and its signature and provenance:
 

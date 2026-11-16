@@ -19,6 +19,9 @@ SUBJECTS = {
     "dist/metrum-ai-router-*.tar.gz",
     "dist/metrum-ai-router-*.zip",
     "dist/upgrade-rollback-results.json",
+    "dist/release-images.json",
+    "dist/AI-release-review.md",
+    "dist/release-review-artifact.json",
 }
 
 
@@ -29,8 +32,15 @@ def validate(workflow):
     assert triggers["push"]["tags"] == ["v*"]
     ai_review = jobs["ai-release-review"]
     assert ai_review["permissions"] == {"contents": "read"}
+    assert ai_review.get("environment") == "release-review"
     ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Review release diff and documentation")
     assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
+    assert ai_step["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+    assert "--artifact-cache" in ai_step["run"] and "--artifact-output" in ai_step["run"]
+    assert any(step.get("name") == "Restore review artifact for this commit range" for step in ai_review["steps"])
+    assert any(step.get("name") == "Store review artifact for reruns of this commit range" for step in ai_review["steps"])
+    review_key = next(step["run"] for step in ai_review["steps"] if step.get("name") == "Derive immutable review artifact name")
+    assert "release_review_artifact_key.py" in review_key
     resolve_run = next(step["run"] for step in jobs["resolve"]["steps"] if step.get("name") == "Resolve immutable build metadata")
     assert "select_previous_release.py" in resolve_run and "git describe" not in resolve_run
     upgrade = jobs["upgrade-and-rollback"]
@@ -53,13 +63,14 @@ def validate(workflow):
     assemble = names.index("Assemble and publish multi-architecture image from release packages")
     smoke = names.index("Smoke the Crane-built image without a daemon")
     sbom = names.index("Generate image SPDX SBOMs and attach them")
+    sbom_sign = names.index("Sign and verify SPDX SBOM assets")
     sign = names.index("Sign images keylessly")
     archives = names.index("Sign release archives with Cosign")
     image_attest = names.index("Attest OCI image index")
     arch_attest = [names.index("Attest linux/amd64 image"), names.index("Attest linux/arm64 image")]
     verify = names.index("Verify attestations and require complete payload")
     publish_release = names.index("Confirm payload and publish immutable release")
-    assert environment < assemble < smoke < sbom < sign < archives < image_attest < verify < publish_release
+    assert environment < assemble < smoke < sbom < sbom_sign < sign < archives < image_attest < verify < publish_release
     assert all(image_attest < index < verify for index in arch_attest)
     assert steps[image_attest]["uses"] == f"actions/attest-build-provenance@{PIN}"
     assert steps[image_attest]["with"].get("push-to-registry") is True
@@ -75,6 +86,7 @@ def validate(workflow):
     all_runs = "\n".join(step.get("run", "") for step in steps)
     assert "cosign sign --yes" in all_runs and 'gh attestation verify "oci://' in all_runs
     assert "cosign attach sbom" in all_runs
+    assert "cosign sign-blob" in steps[sbom_sign]["run"] and "cosign verify-blob" in steps[sbom_sign]["run"]
     assert "docker.sock" not in all_runs and "docker build" not in all_runs
     assert "install_crane.sh" in all_runs
     assert "upgrade-rollback-results.json" in all_runs
@@ -90,6 +102,11 @@ def validate(workflow):
     assert verify.count("--signer-workflow") >= 3 and verify.count("--source-ref") >= 3
     assert "dist/SHA256SUMS" in steps[archive_attest]["with"]["subject-path"]
     assert "dist/release-artifacts.json" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/release-images.json" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/AI-release-review.md" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/release-review-artifact.json" in steps[archive_attest]["with"]["subject-path"]
+    assert "release-review-artifact.json" in steps[names.index("Confirm payload and publish immutable release")]["run"]
+    assert "-eq 26" in steps[names.index("Confirm payload and publish immutable release")]["run"]
     assert 'ref="${IMAGE}@${digest}"' in steps[sign].get("run", "")
 
 
@@ -159,6 +176,8 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertNotIn("crane push", all_runs)
         self.assertNotIn("cosign", all_runs)
         self.assertNotIn("gh release create", all_runs)
+        self.assertNotIn("secrets.ANTHROPIC_API_KEY", DRY_RUN_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn("release_review_artifact_key.py", all_runs)
         for job in jobs.values():
             self.assertEqual(job.get("if"), "github.ref == 'refs/heads/main' && inputs.dry_run")
             self.assertEqual(job.get("permissions"), {"contents": "read"})
@@ -176,6 +195,32 @@ class ProvenanceWorkflowTest(unittest.TestCase):
                 for step in job.get("steps", []):
                     if step.get("uses", "").startswith("actions/checkout@"):
                         assert step.get("with", {}).get("ref") == "main"
+
+    def test_release_and_dry_run_validation_steps_do_not_drift(self):
+        release_runs = "\n".join(
+            step.get("run", "")
+            for job in self.workflow["jobs"].values()
+            for step in job.get("steps", [])
+        )
+        dry_runs = "\n".join(
+            step.get("run", "")
+            for job in self.dry_run_workflow["jobs"].values()
+            for step in job.get("steps", [])
+        )
+        shared_validation_steps = {
+            "make package",
+            "release_artifact_inventory.py",
+            "compare_release_checksums.py",
+            "release_upgrade_rollback.py",
+            "release_ai_review.py",
+            "release_image_layer.py",
+            "verify_release_image_binaries.py",
+            "release_image_smoke.py",
+        }
+        for command in shared_validation_steps:
+            with self.subTest(command=command):
+                self.assertIn(command, release_runs)
+                self.assertIn(command, dry_runs)
 
 
 if __name__ == "__main__":
