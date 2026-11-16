@@ -79,6 +79,8 @@ This section is generated from the router usage and content-capture schema used 
 | `trace_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `span_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `parent_span_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
+| `organization_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
+| `team_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `ts` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `2026-06-29T12:34:56Z` |
 | `caller_id` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `caller_user` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |

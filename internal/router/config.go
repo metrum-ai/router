@@ -182,6 +182,7 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+	Hierarchy         HierarchyConfig         `yaml:"hierarchy" json:"hierarchy,omitempty"`
 }
 
 // TraceConfig controls which immediate network peers may establish inbound
@@ -2182,6 +2183,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
 		return err
 	}
+	if err := validateHierarchyConfig(c.Server.Hierarchy); err != nil {
+		return err
+	}
 	if err := validateTraceConfig(c.Server.Trace); err != nil {
 		return err
 	}
@@ -2664,6 +2668,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if err := validateSpendCeiling("caller "+caller.ID+" spend_ceiling", caller.SpendCeiling, knownTiers); err != nil {
 			return err
 		}
+	}
+	if err := validateHierarchyCallers(c.Server.Hierarchy, c.Callers); err != nil {
+		return err
 	}
 	return nil
 }
