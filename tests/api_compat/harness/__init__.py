@@ -5,8 +5,10 @@
 
 from .constants import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     DENIED_CALLER,
+    DENIED_CALLER_ID,
     DENIED_CALLER_DIGEST,
     FORBIDDEN_ARTIFACT_VALUES,
     PROMPT_CANARY,
@@ -15,8 +17,10 @@ from .constants import (
 
 __all__ = [
     "CALLER",
+    "CALLER_ID",
     "CALLER_DIGEST",
     "DENIED_CALLER",
+    "DENIED_CALLER_ID",
     "DENIED_CALLER_DIGEST",
     "FORBIDDEN_ARTIFACT_VALUES",
     "PROMPT_CANARY",

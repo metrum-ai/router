@@ -868,6 +868,9 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 	if err := validateRemovedScriptConfig(cleaned); err != nil {
 		return "", configAdminError(400, "config-invalid-request", err.Error())
 	}
+	if err := validateRemovedCallerTokenSHA256(cleaned); err != nil {
+		return "", configAdminError(400, "config-invalid-request", err.Error())
+	}
 	cleaned, err = stripEmptyRemovedScriptFields(cleaned)
 	if err != nil {
 		return "", configAdminError(400, "config-invalid-request", "the document is not valid YAML")

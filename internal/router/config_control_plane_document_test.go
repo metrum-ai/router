@@ -4,6 +4,8 @@
 package router
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -77,7 +79,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `
@@ -208,7 +211,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `,
@@ -231,7 +235,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `,
@@ -254,7 +259,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `,
@@ -295,7 +301,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `
@@ -337,6 +344,38 @@ func TestLoadActiveCanonicalYAMLReturnsActiveDocument(t *testing.T) {
 	}
 	if string(loaded) != testCanonicalYAML {
 		t.Fatalf("active document mismatch:\nimported:\n%s\nloaded:\n%s", testCanonicalYAML, string(loaded))
+	}
+}
+
+func TestStartupRejectsLegacyCallerVerifierInStoredCanonicalDocument(t *testing.T) {
+	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = closeDB() }()
+	applyConfigControlPlaneMigrationsThroughPhase6ForTest(t, r)
+	token := "rtr_metrum_alice_test_dev_k1_existing-secret"
+	digest := sha256.Sum256([]byte(token))
+	legacy := strings.Replace(testCanonicalYAML,
+		"token_hash: \"pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"",
+		"token_sha256: "+hex.EncodeToString(digest[:]), 1)
+	setID, err := ImportCanonicalYAML(r.db, "staging", "seed", []byte(testCanonicalYAML), "test-actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte(legacy))
+	if err := r.db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, legacy, hex.EncodeToString(hash[:]), setID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_sets SET status = 'active' WHERE id = ?`, setID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_runtime SET active_set_id = ? WHERE runtime_scope = ?`, setID, "staging").Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadActiveCanonicalConfig(r.db, "staging")
+	if err == nil || !strings.Contains(err.Error(), "callers migrate-legacy") {
+		t.Fatalf("stored legacy verifier startup error = %v, want migration command", err)
 	}
 }
 
@@ -403,7 +442,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `

@@ -221,7 +221,7 @@ callers:
     project: local
     environment: dev
     status: active
-    token_sha256: ` + strings.Repeat("a", 64) + `
+    token_hash: "pbkdf2-sha3-512:i=10000:c3RhcnR1cC10ZXN0LXNhbHQxNg:w9K-aqgc1Dil4f71Pwhzu4Ui9AhbKY42pZq1ZVnJji5V0164n8bY3SpZYNqRE4L_M_6OZ2ywFpPqtZ1TlQjMtw"
     token_id: rtr_metrum_op_local_dev_k1
     allow: [local-chat]
 `
@@ -286,7 +286,7 @@ callers:
     project: local
     environment: dev
     status: active
-    token_sha256: ` + strings.Repeat("b", 64) + `
+    token_hash: "pbkdf2-sha3-512:i=10000:c3RhcnR1cC10ZXN0LXNhbHQxNg:w9K-aqgc1Dil4f71Pwhzu4Ui9AhbKY42pZq1ZVnJji5V0164n8bY3SpZYNqRE4L_M_6OZ2ywFpPqtZ1TlQjMtw"
     token_id: rtr_metrum_op_local_dev_k1
     allow: [g1]
 `

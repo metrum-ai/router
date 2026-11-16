@@ -2,7 +2,9 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 """Loopback-only paired load-driver smoke with the real d3 adapter and fake d3."""
+import base64
 import hashlib
+import secrets
 import importlib.util
 import json
 import os
@@ -20,7 +22,7 @@ from urllib.request import urlopen
 from test_load import Upstream
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-TOKEN = "synthetic-decision-smoke-token"
+TOKEN = "rtr_decision_smoke_secret"
 D3_KEY = "synthetic-decision-model-token"
 
 
@@ -93,6 +95,11 @@ def main():
                                 "url": f"http://127.0.0.1:{adapter_port}/route", "allow_hosts": ["127.0.0.1"],
                                 "timeout_ms": 5000, "max_response_bytes": 65536,
                                 "include_request": True, "mode": mode, "on_error": "fail_closed"}}
+                        token_id = TOKEN.rsplit("_", 1)[0]
+                        salt = secrets.token_bytes(32)
+                        derived = hashlib.pbkdf2_hmac("sha3_512", TOKEN.encode(), salt, 20000, 64)
+                        encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+                        token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
                         config = {"server": {"listen": f"127.0.0.1:{port}", "default_model_group": "chat",
                                              "cache": {"enabled": False}, "logging": {"path": str(work / "requests.jsonl")},
                                              "identifiers": {"mode": "passthrough"}, "decision_telemetry": {"enabled": True},
@@ -100,7 +107,7 @@ def main():
                                   "state_path": str(work / "state.json"),
                                   "providers": {"mock": {"base_url": f"http://127.0.0.1:{backend.server_port}/v1", "dialect": "openai-chat"}},
                                   "models": {"chat": group},
-                                  "callers": [{"id": "decision-smoke", "token_sha256": hashlib.sha256(TOKEN.encode()).hexdigest(),
+                                  "callers": [{"id": "decision-smoke", "token_hash": token_hash, "token_id": token_id,
                                                "allow": ["chat"], "rate": {"rpm": 2400, "tpm": 100000000, "concurrent": 160}}]}
                         (work / "config.json").write_text(json.dumps(config), encoding="utf-8")
                         (work / "config.json").chmod(0o600)

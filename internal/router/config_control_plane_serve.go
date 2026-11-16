@@ -47,6 +47,9 @@ func loadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, redactor *secre
 	if err := validateRemovedScriptConfig(cleaned); err != nil {
 		return nil, err
 	}
+	if err := validateRemovedCallerTokenSHA256(cleaned); err != nil {
+		return nil, err
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, fmt.Errorf("parse active canonical YAML: %w", err)

@@ -287,7 +287,7 @@ func TestTrafficShapeInputTokensRejectsBeforeUpstreamAndPersistsTelemetry(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(rawLog), testToken) || strings.Contains(string(rawLog), cfg.Callers[0].TokenSHA256) || strings.Contains(string(rawLog), "provider-key") {
+	if strings.Contains(string(rawLog), testToken) || strings.Contains(string(rawLog), cfg.Callers[0].TokenHash) || strings.Contains(string(rawLog), "provider-key") {
 		t.Fatalf("traffic shape log leaked secret material: %s", rawLog)
 	}
 	if !strings.Contains(string(rawLog), `"traffic_shape_decision":"rejected"`) {

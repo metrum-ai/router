@@ -10,6 +10,7 @@ package router
 // active.
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -109,10 +110,13 @@ func TestContainmentWebhookMountAdminV1ReloadsAndRefusesCaller(t *testing.T) {
 const serveAuthToken = "rtr_serve_e2e_harness_token"
 
 // serveAuthCanonicalYAML returns the canonical YAML used by the e2e tests.
-// The caller block carries the SHA-256 of serveAuthToken so the relational
-// projection and the runtime authenticate map share one source of truth.
+// The caller block carries a salted verifier for serveAuthToken so the
+// relational projection and runtime authenticate map share one source of truth.
 func serveAuthCanonicalYAML() string {
-	sum := sha256.Sum256([]byte(serveAuthToken))
+	tokenHash, err := HashCallerToken(serveAuthToken, bytes.NewReader(make([]byte, callerTokenHashSaltBytes)), callerTokenHashMinIterations)
+	if err != nil {
+		panic(err)
+	}
 	return `server:
   identifiers:
     mode: passthrough
@@ -133,7 +137,7 @@ callers:
     project: search
     environment: dev
     status: active
-    token_sha256: "` + hex.EncodeToString(sum[:]) + `"
+    token_hash: "` + tokenHash + `"
     token_id: rtr_serve_e2e_harness
     allow:
       - default

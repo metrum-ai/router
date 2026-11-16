@@ -23,6 +23,7 @@ Required env: OPENAI_API_KEY, FIREWORKS_API_KEY, GEMINI_API_KEY, OPENROUTER_API_
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -190,7 +191,11 @@ def migrate_config_db(bins: dict, db_path: Path, pg_scoped_env: str = ""):
 
 
 def write_canonical_config(path: Path, caller_token: str, admin_hashes: dict, usage_path: Path):
-    caller_sha = hashlib.sha256(caller_token.encode()).hexdigest()
+    caller_id = "rtr_e2e_caller"
+    salt = pysecrets.token_bytes(32)
+    derived = hashlib.pbkdf2_hmac("sha3_512", caller_token.encode(), salt, 20000, 64)
+    encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+    caller_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
     key_entries = []
     for key_id, (env_name, perms) in admin_hashes.items():
         perms_yaml = "\n".join(f"          - {p}" for p in perms)
@@ -379,8 +384,8 @@ callers:
     project: admin-api
     environment: test
     status: active
-    token_sha256: "{caller_sha}"
-    token_id: rtr_e2e_caller
+    token_hash: "{caller_hash}"
+    token_id: {caller_id}
     allow: [agent-default, agent-shapes, agent-tools]
     rate:
       rpm: 1000000

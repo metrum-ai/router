@@ -83,7 +83,7 @@ func minimalProjectionConfig() *Config {
 				Project:     "demo",
 				Environment: "staging",
 				Status:      "active",
-				TokenSHA256: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+				TokenHash:   configAdminTestTokenHash(),
 				TokenID:     "tok-1",
 				Allow:       []string{"default"},
 				Rate:        RateConfig{RPM: 10, TPM: 1000, Concurrent: 2},
@@ -178,7 +178,7 @@ func TestProjectConfigToRelationalWritesServerProviderGroupAndCallerRows(t *test
 	if err := db.Table("router_config_callers").Where("config_set_id = ? AND caller_id = ?", "set-1", "caller-1").First(&caller).Error; err != nil {
 		t.Fatal(err)
 	}
-	if caller.TokenSHA256 != "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" || caller.TokenID != "tok-1" || caller.RPM != 10 || caller.TPM != 1000 || caller.Concurrent != 2 {
+	if caller.TokenVerifier != configAdminTestTokenHash() || caller.TokenID != "tok-1" || caller.RPM != 10 || caller.TPM != 1000 || caller.Concurrent != 2 {
 		t.Fatalf("caller projection mismatch: %+v", caller)
 	}
 	var allowedGroup string
@@ -388,7 +388,7 @@ func TestProjectConfigToRelationalRoundTripsThroughLoader(t *testing.T) {
 	if target := loaded.Models["default"].Targets[0]; target.Provider != "mock" || target.ModelRef != "small" || target.Weight != 100 {
 		t.Fatalf("round-trip target mismatch: %+v", target)
 	}
-	if len(loaded.Callers) != 1 || loaded.Callers[0].TokenSHA256 != "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" {
+	if len(loaded.Callers) != 1 || loaded.Callers[0].TokenHash != configAdminTestTokenHash() {
 		t.Fatalf("round-trip caller mismatch: %+v", loaded.Callers)
 	}
 }
@@ -404,7 +404,7 @@ func TestProjectConfigToRelationalRoundTripsTokenHashCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := minimalProjectionConfig()
-	cfg.Callers[0].TokenSHA256 = ""
+	cfg.Callers[0].TokenHash = ""
 	cfg.Callers[0].TokenHash = tokenHash
 	if err := ProjectConfigToRelational(db, "set-1", cfg); err != nil {
 		t.Fatal(err)
@@ -423,7 +423,31 @@ func TestProjectConfigToRelationalRoundTripsTokenHashCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(loaded.Callers) != 1 || loaded.Callers[0].TokenHash != tokenHash || loaded.Callers[0].TokenSHA256 != "" {
-		t.Fatalf("round-trip token_hash caller mismatch: hash=%v legacy=%q", loaded.Callers[0].TokenHash == tokenHash, loaded.Callers[0].TokenSHA256)
+	if len(loaded.Callers) != 1 || loaded.Callers[0].TokenHash != tokenHash {
+		t.Fatalf("round-trip token_hash caller mismatch: hash=%v legacy=%q", loaded.Callers[0].TokenHash == tokenHash, loaded.Callers[0].TokenHash)
+	}
+}
+
+func TestLoadActiveConfigFromDBRejectsRemovedCallerSHA256Verifier(t *testing.T) {
+	t.Setenv("MOCK_API_KEY", "test-only-projection-provider-key")
+	r, closeDB := newRelationalProjectionTestDB(t, "set-legacy")
+	defer func() { _ = closeDB() }()
+	cfg := minimalProjectionConfig()
+	if err := ProjectConfigToRelational(r.db, "set-legacy", cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_sets SET status = ?, validation_status = ? WHERE id = ?`, "active", "valid", "set-legacy").Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy := strings.Repeat("a", 64)
+	if err := r.db.Exec(`UPDATE router_config_callers SET token_sha256 = ? WHERE config_set_id = ? AND caller_id = ?`, legacy, "set-legacy", cfg.Callers[0].ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadActiveConfigFromDB(r.db, "staging", IdentifierConfig{Mode: "passthrough"})
+	if err == nil || !strings.Contains(err.Error(), "caller "+cfg.Callers[0].ID) || !strings.Contains(err.Error(), "callers migrate-legacy") {
+		t.Fatalf("legacy stored verifier error = %v, want caller migration guidance", err)
+	}
+	if strings.Contains(err.Error(), legacy) {
+		t.Fatal("DB-load migration error leaked the legacy verifier")
 	}
 }

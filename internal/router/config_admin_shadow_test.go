@@ -193,7 +193,7 @@ func TestServeE2EShadowSamplePromote(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeDB() })
 	applyConfigControlPlaneMigrationsForTest(t, r)
-	setID, err := ImportCanonicalYAML(r.db, "prod", "initial", []byte(adminSwapE2ECanonicalYAML(upstream.URL)), "test-seed")
+	setID, err := ImportCanonicalYAML(r.db, "prod", "initial", []byte(adminSwapE2ECanonicalYAML(t, upstream.URL)), "test-seed")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,6 +17,27 @@ import (
 // LoadConfigRaw reads router YAML without expanding environment expressions so
 // ${ENV} placeholders survive file-owned edits.
 func LoadConfigRaw(path string) (*router.Config, error) {
+	cfg, err := loadConfigRaw(path)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := router.ValidateCallerTokenConfigCompatibility(raw); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// LoadConfigRawForCallerMigration decodes a legacy caller verifier so callers
+// rotate/migrate-legacy can replace it before the router reloads the config.
+func LoadConfigRawForCallerMigration(path string) (*router.Config, error) {
+	return loadConfigRaw(path)
+}
+
+func loadConfigRaw(path string) (*router.Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("config is required")
 	}
@@ -38,7 +59,8 @@ func LoadConfigRaw(path string) (*router.Config, error) {
 }
 
 // WriteConfigAtomic writes cfg to path after a timestamped sibling backup, then
-// validates YAML types with LoadConfigRaw, without expanding environment expressions.
+// validates YAML types without expanding environment expressions. The migration
+// decoder allows other legacy caller rows to remain until each is migrated.
 func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("config is required")
@@ -78,7 +100,7 @@ func WriteConfigAtomic(path string, cfg *router.Config) (backupPath string, err 
 	// Re-parse without env expansion so ${ENV} placeholders remain intact.
 	// Full router.LoadConfig validation remains the `config validate` gate once
 	// adjacent env.json and concrete token hashes are present.
-	if _, err := LoadConfigRaw(path); err != nil {
+	if _, err := LoadConfigRawForCallerMigration(path); err != nil {
 		return backupPath, fmt.Errorf("written config failed parse: %w", err)
 	}
 	return backupPath, nil
@@ -237,18 +259,7 @@ func RevokeCaller(cfg *router.Config, callerID string) error {
 	return fmt.Errorf("caller %q not found", callerID)
 }
 
-// RotateCallerHash replaces token_sha256 and token_id for an existing caller.
-//
-// Deprecated: use RotateCallerTokenHash, which writes token_hash.
-func RotateCallerHash(cfg *router.Config, callerID, tokenSHA256, tokenID string) error {
-	if len(tokenSHA256) != 64 {
-		return fmt.Errorf("token_sha256 must be 64 hex characters")
-	}
-	return rotateCallerVerifier(cfg, callerID, "", tokenSHA256, tokenID)
-}
-
-// RotateCallerTokenHash replaces token_hash and token_id for an existing
-// caller and clears any deprecated token_sha256.
+// RotateCallerTokenHash replaces token_hash and token_id for an existing caller.
 func RotateCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID string) error {
 	if err := router.ValidateCallerTokenHash(tokenHash); err != nil {
 		return fmt.Errorf("invalid token_hash: %w", err)
@@ -256,10 +267,6 @@ func RotateCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID stri
 	if strings.TrimSpace(tokenID) == "" {
 		return fmt.Errorf("token_hash requires token_id")
 	}
-	return rotateCallerVerifier(cfg, callerID, tokenHash, "", tokenID)
-}
-
-func rotateCallerVerifier(cfg *router.Config, callerID, tokenHash, tokenSHA256, tokenID string) error {
 	callerID = strings.TrimSpace(callerID)
 	if callerID == "" {
 		return fmt.Errorf("caller id is required")
@@ -267,7 +274,7 @@ func rotateCallerVerifier(cfg *router.Config, callerID, tokenHash, tokenSHA256, 
 	for i, existing := range cfg.Callers {
 		if existing.ID == callerID {
 			cfg.Callers[i].TokenHash = tokenHash
-			cfg.Callers[i].TokenSHA256 = tokenSHA256
+			cfg.Callers[i].TokenSHA256 = ""
 			if strings.TrimSpace(tokenID) != "" {
 				cfg.Callers[i].TokenID = tokenID
 			}

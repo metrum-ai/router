@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -1261,6 +1259,9 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if err := validateRemovedScriptConfig(cleaned); err != nil {
 		return nil, err
 	}
+	if err := validateRemovedCallerTokenSHA256(cleaned); err != nil {
+		return nil, err
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
@@ -1303,6 +1304,38 @@ func validateRemovedScriptConfig(raw []byte) error {
 		}
 	}
 	return nil
+}
+
+// ValidateCallerTokenConfigCompatibility rejects removed caller-token fields
+// before local tooling decodes a configuration that the router cannot load.
+func ValidateCallerTokenConfigCompatibility(raw []byte) error {
+	return validateRemovedCallerTokenSHA256(raw)
+}
+
+func validateRemovedCallerTokenSHA256(raw []byte) error {
+	// Decode into typed values so YAML aliases and merge keys are included.
+	var decoded struct {
+		Callers []struct {
+			ID          string `yaml:"id"`
+			TokenSHA256 string `yaml:"token_sha256"`
+		} `yaml:"callers"`
+	}
+	if err := yaml.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	for _, caller := range decoded.Callers {
+		if strings.TrimSpace(caller.TokenSHA256) != "" {
+			return removedCallerTokenSHA256Error(caller.ID)
+		}
+	}
+	return nil
+}
+
+func removedCallerTokenSHA256Error(callerID string) error {
+	if strings.TrimSpace(callerID) == "" {
+		callerID = "<unknown>"
+	}
+	return fmt.Errorf("caller %s uses removed callers[].token_sha256; migrate it with `metrum-ai-routerctl callers migrate-legacy --config <config.yaml> --id <caller-id> --token-file <private-file>` or rotate it with `metrum-ai-routerctl callers rotate --config <config.yaml> --id <caller-id> --token-out <private-file>`", callerID)
 }
 
 func yamlNodeHasNonZeroValue(node *yaml.Node) bool {
@@ -2217,8 +2250,8 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("caller %s has invalid status %q", caller.ID, caller.Status)
 		}
 		if strings.TrimSpace(caller.TokenHash) != "" {
-			if caller.TokenSHA256 != "" {
-				return fmt.Errorf("caller %s sets both token_hash and deprecated token_sha256; keep only token_hash", caller.ID)
+			if strings.TrimSpace(caller.TokenSHA256) != "" {
+				return removedCallerTokenSHA256Error(caller.ID)
 			}
 			if err := ValidateCallerTokenHash(caller.TokenHash); err != nil {
 				return fmt.Errorf("caller %s has invalid token_hash: %w", caller.ID, err)
@@ -2239,17 +2272,10 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			}
 			callerTokenHashes[tokenHashKey] = caller.ID
 		} else {
-			if caller.TokenSHA256 == "" || len(caller.TokenSHA256) != sha256.Size*2 {
-				return fmt.Errorf("caller %s has invalid token_sha256", caller.ID)
+			if strings.TrimSpace(caller.TokenSHA256) != "" {
+				return removedCallerTokenSHA256Error(caller.ID)
 			}
-			if _, err := hex.DecodeString(caller.TokenSHA256); err != nil {
-				return fmt.Errorf("caller %s has invalid token_sha256: %w", caller.ID, err)
-			}
-			tokenHashKey := strings.ToLower(caller.TokenSHA256)
-			if previousCallerID, ok := callerTokenHashes[tokenHashKey]; ok {
-				return fmt.Errorf("duplicate caller token_sha256 for callers %s and %s", previousCallerID, caller.ID)
-			}
-			callerTokenHashes[tokenHashKey] = caller.ID
+			return fmt.Errorf("caller %s requires token_hash", caller.ID)
 		}
 		if caller.TokenID != "" {
 			if previousCallerID, ok := callerTokenIDs[caller.TokenID]; ok {

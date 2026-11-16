@@ -14,14 +14,7 @@ import (
 
 const tokenPrefixName = "rtr_metrum"
 
-// Caller token hash formats accepted by TokenGenerateOptions.HashFormat.
-const (
-	// TokenHashFormatPBKDF2SHA3 writes callers[].token_hash (the default).
-	TokenHashFormatPBKDF2SHA3 = CallerTokenHashScheme
-	// TokenHashFormatLegacySHA256 writes the deprecated callers[].token_sha256
-	// for routers that predate token_hash support.
-	TokenHashFormatLegacySHA256 = "legacy-sha256"
-)
+const TokenHashFormatPBKDF2SHA3 = CallerTokenHashScheme
 
 type TokenGenerateOptions struct {
 	User        string
@@ -32,18 +25,15 @@ type TokenGenerateOptions struct {
 	Allow       []string
 	Reader      io.Reader
 	Now         time.Time
-	// HashFormat selects the stored verifier; empty means token_hash.
-	HashFormat string
 	// HashIterations overrides the token_hash PBKDF2 iteration count.
 	HashIterations int
 }
 
 type GeneratedToken struct {
-	Token       string       `json:"token"`
-	TokenID     string       `json:"token_id"`
-	TokenHash   string       `json:"token_hash,omitempty"`
-	TokenSHA256 string       `json:"token_sha256,omitempty"`
-	Caller      CallerConfig `json:"caller"`
+	Token     string       `json:"token"`
+	TokenID   string       `json:"token_id"`
+	TokenHash string       `json:"token_hash,omitempty"`
+	Caller    CallerConfig `json:"caller"`
 }
 
 func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
@@ -69,14 +59,6 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 			now = time.Now().UTC()
 		}
 		keySlug = "k" + now.Format("20060102")
-	}
-	hashFormat := strings.ToLower(strings.TrimSpace(opts.HashFormat))
-	switch hashFormat {
-	case "", TokenHashFormatPBKDF2SHA3:
-		hashFormat = TokenHashFormatPBKDF2SHA3
-	case TokenHashFormatLegacySHA256:
-	default:
-		return GeneratedToken{}, fmt.Errorf("unsupported token hash format %q; use %s or %s", opts.HashFormat, TokenHashFormatPBKDF2SHA3, TokenHashFormatLegacySHA256)
 	}
 	reader := opts.Reader
 	if reader == nil {
@@ -106,16 +88,12 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 		Quota:       QuotaConfig{Day: BudgetConfig{Requests: 5000, Tokens: 20000000}, Month: BudgetConfig{Tokens: 400000000}, SoftPct: 80},
 		Key:         KeyConfig{LifetimeTokens: 2000000000, SoftPct: 90, OnExhaust: "disable"},
 	}
-	if hashFormat == TokenHashFormatLegacySHA256 {
-		caller.TokenSHA256 = legacyCallerTokenSHA256Hex(token)
-	} else {
-		tokenHash, err := HashCallerToken(token, reader, opts.HashIterations)
-		if err != nil {
-			return GeneratedToken{}, err
-		}
-		caller.TokenHash = tokenHash
+	tokenHash, err := HashCallerToken(token, reader, opts.HashIterations)
+	if err != nil {
+		return GeneratedToken{}, err
 	}
-	return GeneratedToken{Token: token, TokenID: tokenID, TokenHash: caller.TokenHash, TokenSHA256: caller.TokenSHA256, Caller: caller}, nil
+	caller.TokenHash = tokenHash
+	return GeneratedToken{Token: token, TokenID: tokenID, TokenHash: caller.TokenHash, Caller: caller}, nil
 }
 
 // CallerTokenIDFromToken returns the public token_id of a structured

@@ -5,7 +5,6 @@ package router
 
 import (
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -30,14 +29,10 @@ type cfoBudgetRow struct {
 // cfoUsageTokenID mirrors the authentication path for internal exact filtering.
 // It must never be serialized: legacy IDs can contain credentials.
 func cfoUsageTokenID(c CallerConfig) string {
-	if c.TokenID != "" {
-		return publicTokenID(c.TokenID)
+	if c.TokenID == "" {
+		return ""
 	}
-	hash := strings.ToLower(strings.TrimSpace(c.TokenSHA256))
-	if len(hash) == 64 {
-		return "sha256:" + hash[:12]
-	}
-	return ""
+	return publicTokenID(c.TokenID)
 }
 
 func (s *Service) cfoBudgets(subject adminAuthSubject, global bool, opts UsageReportOptions) cfoBudgetSnapshot {

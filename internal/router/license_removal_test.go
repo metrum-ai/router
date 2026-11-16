@@ -5,8 +5,6 @@ package router
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -124,8 +122,7 @@ func TestL004StrategiesServeWithoutLicenseGate(t *testing.T) {
 			MinObservations: 20,
 		}}},
 	}
-	sum := sha256.Sum256([]byte(testToken))
-	cfg.Callers[0].TokenSHA256 = hex.EncodeToString(sum[:])
+	cfg.Callers[0].TokenHash = mustCallerTokenHashForTest(t, testToken)
 	cfg.Callers[0].Allow = []string{"default", "static", "weighted", "failover", "dynamic"}
 	svc, err := New(cfg)
 	if err != nil {
@@ -239,7 +236,6 @@ func TestL008NoLicenseErrorCodesReachable(t *testing.T) {
 
 func writeMinimalYAMLConfig(t *testing.T, path, serverExtra string) {
 	t.Helper()
-	sum := sha256.Sum256([]byte(testToken))
 	content := `server:
   listen: ":0"
   identifiers:
@@ -268,7 +264,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: ` + hex.EncodeToString(sum[:]) + `
+    token_hash: ` + configAdminTestTokenHash() + `
+    token_id: rtr_admin_api_test_harness
     allow: [default]
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

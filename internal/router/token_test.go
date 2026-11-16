@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -32,9 +30,6 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	}
 	if strings.Contains(generated.TokenID, generated.Token[strings.LastIndex(generated.Token, "_")+1:]) {
 		t.Fatal("token id contains secret")
-	}
-	if generated.TokenSHA256 != "" || generated.Caller.TokenSHA256 != "" {
-		t.Fatalf("default generation must not emit deprecated token_sha256: %#v", generated)
 	}
 	if !strings.HasPrefix(generated.TokenHash, "pbkdf2-sha3-512:i=20000:") || generated.Caller.TokenHash != generated.TokenHash {
 		t.Fatalf("token_hash format mismatch: %q", generated.TokenHash)
@@ -130,22 +125,20 @@ func TestPublicTokenIDStripsSecretSuffix(t *testing.T) {
 	}
 }
 
-func TestGenerateCallerTokenLegacySHA256Format(t *testing.T) {
+func TestGenerateCallerTokenAlwaysUsesSaltedHash(t *testing.T) {
 	generated, err := GenerateCallerToken(TokenGenerateOptions{
-		OwnerUser:  "alice",
-		Project:    "search",
-		Allow:      []string{"default"},
-		HashFormat: TokenHashFormatLegacySHA256,
+		OwnerUser: "alice",
+		Project:   "search",
+		Allow:     []string{"default"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum := sha256.Sum256([]byte(generated.Token))
-	if generated.TokenHash != "" || generated.TokenSHA256 != hex.EncodeToString(sum[:]) || generated.Caller.TokenSHA256 != generated.TokenSHA256 {
-		t.Fatalf("legacy format mismatch: %#v", generated)
+	if generated.TokenHash == "" || generated.Caller.TokenHash != generated.TokenHash || generated.Caller.TokenID == "" {
+		t.Fatalf("salted token hash missing: %#v", generated)
 	}
-	if _, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "alice", Project: "search", Allow: []string{"default"}, HashFormat: "md5"}); err == nil {
-		t.Fatal("unknown hash format must be rejected")
+	if ok, err := VerifyCallerTokenHash(generated.TokenHash, generated.Token); err != nil || !ok {
+		t.Fatalf("generated token hash verification = %v, %v", ok, err)
 	}
 }
 

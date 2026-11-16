@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from conftest import CALLER, CALLER_DIGEST, PROMPT_CANARY, TOOL_CANARY, spawn_router, stop_router
+from conftest import CALLER, CALLER_ID, CALLER_DIGEST, PROMPT_CANARY, TOOL_CANARY, spawn_router, stop_router
 from harness.oracles import json_dumps
 from harness.scripted_upstream import FakeUpstream, ScriptedScenario
 from harness.sse import sse_events
@@ -67,7 +67,8 @@ models:
         request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [anth-plain, anth-think, anth-vision, anth-text-only, anth-bridge]
 '''
     handle = spawn_router(router, work, config)

@@ -16,8 +16,10 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     DENIED_CALLER,
+    DENIED_CALLER_ID,
     DENIED_CALLER_DIGEST,
     PROMPT_CANARY,
     TOOL_CANARY,
@@ -65,10 +67,12 @@ models:
   messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, tool_support: {{anthropic_messages: [client_tools]}}, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat, responses, messages]
   - id: synthetic-denied
-    token_sha256: {DENIED_CALLER_DIGEST}
+    token_hash: {DENIED_CALLER_DIGEST}
+    token_id: {DENIED_CALLER_ID}
     allow: [chat]
 '''
     config_path = work / "config.yaml"

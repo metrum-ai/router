@@ -5,6 +5,7 @@ uv run --with bcrypt --with jsonschema python local.py --binary /path/router --t
 All generated state, credentials and traces stay outside Git. Stops its router.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -34,12 +35,17 @@ def config(out, env):
     callers, users, projects, memberships = [], [], [], []
     for team, variable in [('support', 'TRACE_SUPPORT_KEY'), ('it', 'TRACE_IT_KEY')]:
         project = 'acme-' + team
-        env[variable] = secrets.token_urlsafe(32)
+        token_id = 'rtr_' + project
+        env[variable] = token_id + '_' + secrets.token_urlsafe(32)
+        salt = secrets.token_bytes(32)
+        derived = hashlib.pbkdf2_hmac('sha3_512', env[variable].encode(), salt, 20000, 64)
+        encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip('=')
+        token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
         users.append({'id': project, 'type': 'service_account', 'status': 'active'})
         projects.append({'id': project, 'status': 'active'})
         memberships.append({'user_id': project, 'project': project, 'role': 'developer', 'status': 'active'})
         caller = {'id': project + '-prod', 'owner_user': project, 'project': project, 'environment': 'test',
-                  'token_id': 'rtr_' + project, 'token_sha256': hashlib.sha256(env[variable].encode()).hexdigest(),
+                  'token_id': token_id, 'token_hash': token_hash,
                   'allow': ['support-agent'], 'rate': dict(TEST_RATE),
                   'quota': json.loads(json.dumps(TEST_QUOTA))}
         if team == 'support':

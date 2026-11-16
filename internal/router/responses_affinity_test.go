@@ -8,8 +8,6 @@ package router
 // default; the disabled test proves request and response behavior is unchanged.
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +22,7 @@ import (
 
 const (
 	affinityTestToken       = testToken
-	affinityTestSecondToken = "test-token-bob"
+	affinityTestSecondToken = "rtr_bob_test_secretfixture"
 )
 
 func affinityKeyMaterial() string { return strings.Repeat("ab", 32) }
@@ -131,11 +129,11 @@ func (u *affinityUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(append(encoded, '\n'))
 }
 
-func affinityCaller(token, id string) CallerConfig {
-	sum := sha256.Sum256([]byte(token))
+func affinityCaller(t *testing.T, token, id string) CallerConfig {
+	t.Helper()
 	return CallerConfig{
 		ID: id, User: id, Project: "affinity-project", Environment: "test",
-		TokenSHA256: hex.EncodeToString(sum[:]), TokenID: "rtr_" + id,
+		TokenHash: mustCallerTokenHashForTest(t, token), TokenID: "rtr_" + id,
 		Allow: []string{"default", "other", "stored"},
 		Rate:  RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 	}
@@ -156,7 +154,7 @@ func affinityTestService(t *testing.T, upstreamURL, dir string, mutate func(*Con
 		{Provider: "native", Model: "resp-model"},
 	}}
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "stored", "pinned")
-	cfg.Callers = append(cfg.Callers, affinityCaller(affinityTestSecondToken, "bob"))
+	cfg.Callers = append(cfg.Callers, affinityCaller(t, affinityTestSecondToken, "bob"))
 	if mutate != nil {
 		mutate(cfg)
 	}

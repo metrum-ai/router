@@ -266,30 +266,6 @@ def public_token_id(token: str) -> str:
     return "_".join(parts[:6])
 
 
-def token_sha256(caller_token: str) -> str:
-    """Return the router caller lookup digest for a bearer token.
-
-    The router indexes callers by SHA-256 of the raw token bytes (same as
-    `sha256sum` over the token). This is caller lookup, not password storage.
-    """
-    try:
-        completed = subprocess.run(
-            ["sha256sum"],
-            input=caller_token.strip().encode("utf-8"),
-            capture_output=True,
-            check=True,
-        )
-    except FileNotFoundError:
-        die("sha256sum is required to fingerprint the local caller token")
-    except subprocess.CalledProcessError as err:
-        detail = (err.stderr or err.stdout or b"").decode("utf-8", errors="replace").strip()
-        die(f"sha256sum failed: {detail or err.returncode}")
-    digest = completed.stdout.decode("ascii", errors="replace").split()
-    if not digest:
-        die("sha256sum produced empty output")
-    return digest[0]
-
-
 CALLER_TOKEN_HASH_ITERATIONS = 20000
 
 
@@ -314,14 +290,12 @@ def caller_token_hash(caller_token: str) -> str:
 def caller_token_fields(caller_token: str) -> dict[str, str]:
     """Return the caller verifier and token_id config fields for a token.
 
-    Structured rtr_metrum_ tokens get token_hash, which the router finds by
-    its public token_id prefix. Any other token keeps the deprecated
-    token_sha256 field, because token_hash lookup needs that prefix.
+    The router requires the public token_id prefix to look up a salted verifier.
     """
     token_id = public_token_id(caller_token)
-    if token_id != caller_token.strip() and caller_token.strip().startswith(token_id + "_"):
-        return {"token_hash": caller_token_hash(caller_token), "token_id": token_id}
-    return {"token_sha256": token_sha256(caller_token), "token_id": token_id}
+    if token_id == caller_token.strip() or not caller_token.strip().startswith(token_id + "_"):
+        die("caller token must use the <token_id>_<secret> shape; rotate it with routerctl callers rotate")
+    return {"token_hash": caller_token_hash(caller_token), "token_id": token_id}
 
 
 def resolve_existing_token(out_dir: Path, source_env: dict[str, str]) -> str:

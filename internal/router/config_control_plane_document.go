@@ -108,6 +108,9 @@ func ImportCanonicalYAML(db *gorm.DB, runtimeScope, name string, yamlBytes []byt
 	if err := validateRemovedScriptConfig(cleaned); err != nil {
 		return "", err
 	}
+	if err := validateRemovedCallerTokenSHA256(cleaned); err != nil {
+		return "", err
+	}
 	cleaned, err = stripEmptyRemovedScriptFields(cleaned)
 	if err != nil {
 		return "", fmt.Errorf("parse canonical YAML: %w", err)
