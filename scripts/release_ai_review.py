@@ -253,10 +253,11 @@ def read_streaming_response(response: Any, *, timeout: float, started: float | N
     dispatch_event()
     if not message_stopped or stop_reason is None:
         raise RuntimeError("AI release review stream ended before message_delta/message_stop")
-    if not text_blocks:
-        raise RuntimeError("AI release review response had no text block")
-    final_index = max(text_blocks)
-    return "".join(text_blocks[final_index]).strip(), stop_reason
+    final_text = ""
+    if text_blocks:
+        final_index = max(text_blocks)
+        final_text = "".join(text_blocks[final_index]).strip()
+    return final_text, stop_reason
 
 
 def call_model(
@@ -306,6 +307,8 @@ def call_model(
         if safe_reason == "max_tokens":
             raise MaxTokensStopError(message)
         raise RuntimeError(message)
+    if not text:
+        raise RuntimeError("AI release review response had no text block (stop_reason=end_turn)")
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)

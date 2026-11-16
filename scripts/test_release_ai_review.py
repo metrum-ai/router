@@ -327,6 +327,24 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 review.call_model("test-key", "diff")
         self.assertNotIn("private partial report", str(raised.exception))
 
+    def test_model_handles_max_tokens_before_requiring_text_block(self) -> None:
+        response = sse_response([
+            ("message_delta", {"delta": {"stop_reason": "max_tokens"}}),
+            ("message_stop", {"type": "message_stop"}),
+        ])
+        with patch.object(review.urllib.request, "urlopen", return_value=response):
+            with self.assertRaisesRegex(review.MaxTokensStopError, "stop_reason=max_tokens"):
+                review.call_model("test-key", "diff")
+
+    def test_empty_end_turn_reports_safe_stop_reason(self) -> None:
+        response = sse_response([
+            ("message_delta", {"delta": {"stop_reason": "end_turn"}}),
+            ("message_stop", {"type": "message_stop"}),
+        ])
+        with patch.object(review.urllib.request, "urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "no text block \\(stop_reason=end_turn\\)"):
+                review.call_model("test-key", "diff")
+
     def test_refusal_fails_closed_without_splitting_or_retrying(self) -> None:
         response = sse_response([
             ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
