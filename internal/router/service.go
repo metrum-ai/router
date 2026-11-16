@@ -532,6 +532,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		s.securityEventStream = stream
 	}
 	s.routes()
+	s.registerAdminReportsContainmentRoute()
 	s.initAdminPlane()
 	// Admin v1 is mounted only after machine auth has been initialized. A
 	// listener with no configured authenticator remains health-only and fails
@@ -2268,7 +2269,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && responseScopeEnabled && !resp.Streamed {
 			before := piiResult.Replacements
 			redactPIIResponse(resp, piiResult.state, responseApply)
-			if piiResult.Replacements > before && (normalizePIIFilterMode(group.PIIFilter) == "fail_on_match" || group.PIIFilter.FailOnMatch) {
+			if piiResult.LimitExceeded || piiResult.Replacements > before && (normalizePIIFilterMode(group.PIIFilter) == "fail_on_match" || group.PIIFilter.FailOnMatch) {
 				ensureResponseID(resp)
 				if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
 					resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)

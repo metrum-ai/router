@@ -13,8 +13,13 @@ git tag -a vX.Y.Z -m "Metrum AI Router vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-A `workflow_dispatch` run on a non-tag ref is build-only; a dispatch on a
-matching tag ref can publish a release. Do not use a real tag as a dry run.
+The `release-dry-run.yml` `workflow_dispatch` dry run is limited to `main`. It builds release
+packages, compares a clean rebuild, exercises the upgrade/rollback path from
+the latest published non-prerelease release, reviews that production range,
+and assembles and smoke-tests the multi-architecture image in a local OCI
+layout. It does not publish artifacts, push images, or enter the protected
+`release` environment. Tag pushes run the same validation and publish only
+after approval in that environment.
 
 ## Required hierarchy compatibility matrix (#434)
 
@@ -79,6 +84,72 @@ The `attestation` command set needs GitHub CLI 2.49.0 or newer; older releases
 fail with `unknown command "attestation" for "gh"`.
 Attestations apply to releases built after this workflow is deployed; they do
 not retroactively cover earlier releases.
+
+## Verifiable v5.0.0 release
+
+The tag workflow builds four binary packages from the tagged commit and fixed
+source timestamp. A clean runner rebuilds them and publication is blocked
+unless their checksums match. On the protected release job, Crane assembles
+linux/amd64 and linux/arm64 OCI images from those exact package binaries on a
+digest-pinned Chainguard base, then creates a multi-architecture index in
+`ghcr.io/metrum-ai/router`. The Dockerfile remains available for local builds.
+The job verifies the image binaries against the release packages, runs the
+amd64 image binary's version and `/healthz` smoke checks without a container
+daemon, signs the images keylessly, and attaches GitHub provenance and SPDX
+SBOMs. All six archive and image SPDX JSON SBOMs receive keyless Cosign
+signature bundles. The four binary packages each carry an SPDX JSON SBOM,
+signature bundle and GitHub build provenance. The AI review report, its
+digest-bound findings artifact and `release-images.json` digest manifest are
+attached to the release and attested.
+The upgrade check and AI review select the preceding stable tag by numeric
+semantic version order; release publication time does not affect the baseline.
+
+Publishing, registry writes, signing, attestations, SBOM attachment and GitHub
+release creation run only through the protected `release` environment. That
+environment must require a reviewer and allow only `v*` tags; the workflow
+checks both conditions before publishing. A retry resumes already-pushed
+version tags only when their digests match the rebuilt packages; a mismatch
+fails closed and requires maintainer investigation before another publish.
+The AI review job uses the separate `release-review` environment, which allows
+only `v*` tags and provides no reviewer gate. The Anthropic API key is scoped
+to that environment and is not a repository secret.
+
+The review artifact records the findings and a SHA-256 digest for the exact
+base and head commits. It is retained as a workflow artifact keyed to that
+range, so rerunning the same workflow run reuses the stored result instead of
+calling the model again. If a blocking finding needs an acceptance, add a
+short acceptance under that artifact digest in the `acceptances` object in
+`docs/release-review-responses.json` on `main`, then rerun the same tag
+workflow. The acceptance applies only to the exact reviewed artifact; a new
+commit range produces a new model review and digest. Unanswered blockers, a
+missing API credential, a review timeout, or an invalid model response block
+publication.
+
+Verify one downloaded package asset and its signature and provenance:
+
+```sh
+cosign verify-blob \
+  --bundle metrum-ai-router-v5.0.0-linux-amd64.tar.gz.sigstore.json \
+  --certificate-identity 'https://github.com/metrum-ai/router/.github/workflows/release.yml@refs/tags/v5.0.0' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  metrum-ai-router-v5.0.0-linux-amd64.tar.gz
+gh attestation verify metrum-ai-router-v5.0.0-linux-amd64.tar.gz -R metrum-ai/router
+```
+
+To compare an installed router executable with the signed package for the
+current platform, install `cosign` and GitHub CLI, then run:
+
+```sh
+metrum-ai-routerctl verify --release v5.0.0 --binary /usr/local/bin/metrum-ai-router
+```
+
+If `--binary` is omitted, the command looks for `metrum-ai-router` beside
+`metrum-ai-routerctl`, then on `PATH`.
+
+The command verifies the release archive's Cosign bundle and GitHub provenance,
+then compares the archive's router binary to the selected local executable.
+It fails closed if an asset, signature, provenance record, or matching binary
+is missing or differs.
 
 ## Optional Windows Authenticode signing
 

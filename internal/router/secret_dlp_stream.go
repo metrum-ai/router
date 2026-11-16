@@ -9,34 +9,67 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/metrum-ai/router/internal/stream"
 )
 
 const (
-	// Keep at least the maximum built-in credential candidate pending. The
-	// longest JWT detector is three bounded 1000-byte segments plus separators.
-	secretStreamTailBytes = 3*1000 + 2
+	// Ordinary bounded credential patterns fit in this rolling tail. Longer JWT
+	// and PEM candidates are held from their start by format-specific scanners.
+	secretStreamTailBytes = 512
 	secretStreamPEMMax    = 64 << 10
 )
 
 var errSecretStreamWindowExceeded = errors.New("secret DLP stream inspection window exceeded")
 
-var secretStreamOversizeCandidate = regexp.MustCompile(`(?i)(?:\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|sk-proj-|sk-svcacct-|sk-ant-api03-|sk-or-v1-|sk-|gsk_|AIza|rtr_metrum_)[A-Za-z0-9_-]{257}|\beyJ[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{257}|\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{257})`)
+var secretStreamOversizeCandidate = regexp.MustCompile(`(?i)(?:\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|sk-proj-|sk-svcacct-|sk-ant-api03-|sk-or-v1-|sk-|gsk_|AIza|rtr_metrum_)[A-Za-z0-9_-]{257}|\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{257}|\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{257})`)
+
+var secretStreamMatcherOnce sync.Once
+var secretStreamMatcher *regexp.Regexp
+
+func compiledSecretStreamMatcher() *regexp.Regexp {
+	secretStreamMatcherOnce.Do(func() {
+		var alternatives []string
+		for _, rule := range builtinSecretRules() {
+			if rule.Name == "jwt" || rule.Name == "private_key" {
+				continue // Their longer candidates have dedicated bounded scanners.
+			}
+			alternatives = append(alternatives, "(?:"+rule.Expression+")")
+		}
+		secretStreamMatcher = regexp.MustCompile(strings.Join(alternatives, "|"))
+		secretStreamMatcher.Longest()
+	})
+	return secretStreamMatcher
+}
 
 // secretStreamDLP is request-local state shared by stream text and held tool
 // call inspection. A holder invokes redactCandidate only after the complete
 // candidate is available and before releasing it downstream.
 type secretStreamDLP struct {
-	state       *piiRedactionState
-	mode        string
-	failOnMatch bool
-	pending     string
-	lastEvent   stream.Event
-	lastKind    string
-	sequenceAdd int
+	state             *piiRedactionState
+	mode              string
+	failOnMatch       bool
+	pending           string
+	lastEvent         stream.Event
+	lastKind          string
+	sequenceAdd       int
+	chatChoices       map[int]*secretChatChoiceState
+	anthropicThinking map[int]*secretAnthropicThinkingState
+}
+
+type secretChatChoiceState struct {
+	pending   map[string]string
+	lastEvent stream.Event
+	choice    map[string]any
+}
+
+type secretAnthropicThinkingState struct {
+	pending   string
+	lastEvent stream.Event
 }
 
 func (d *secretStreamDLP) redactCandidate(value string) (string, error) {
@@ -74,6 +107,12 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 	var payload map[string]any
 	if json.Unmarshal(event.Data, &payload) != nil {
 		if strings.TrimSpace(string(event.Data)) == "[DONE]" {
+			if out, ok, err := d.flushAnthropicThinkingAll(event); ok || err != nil {
+				return out, err
+			}
+			if out, ok, err := d.flushChatBefore(event); ok || err != nil {
+				return out, err
+			}
 			return d.flushBefore(event, nil)
 		}
 		return []stream.Event{event}, nil
@@ -81,6 +120,21 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 	eventType := event.Type
 	if eventType == "" {
 		eventType = stringValue(payload["type"])
+	}
+	if eventType == "content_block_delta" {
+		delta, _ := payload["delta"].(map[string]any)
+		if delta != nil && stringValue(delta["type"]) == "thinking_delta" {
+			return d.filterAnthropicThinkingDelta(event, payload)
+		}
+	}
+	if eventType == "" || eventType == "chat.completion.chunk" {
+		if _, ok := payload["choices"].([]any); ok {
+			return d.filterChatEvent(event, payload)
+		}
+	}
+	thinkingPrefix, flushThinking, thinkingErr := d.flushAnthropicThinkingForTerminal(event, payload, eventType)
+	if thinkingErr != nil {
+		return nil, thinkingErr
 	}
 	kind, delta, ok := secretStreamTextDelta(payload, eventType)
 	if ok {
@@ -106,7 +160,7 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 		}
 	}
 	snapshot := eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed"
-	terminal := event.Name == "message_stop" || event.Name == "content_block_stop" && d.lastKind == "anthropic" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" || secretStreamChatTerminal(payload)
+	terminal := event.Name == "message_stop" || event.Name == "content_block_stop" && strings.HasPrefix(d.lastKind, "anthropic") || flushThinking || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" || secretStreamChatTerminal(payload)
 	chatContentAndFinish := ok && secretStreamChatTerminal(payload)
 	if snapshot {
 		before := d.state.result.Replacements
@@ -120,7 +174,7 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 	}
 	if terminal || snapshot {
 		if terminal && !snapshot && d.pending == "" {
-			return []stream.Event{event}, nil
+			return append(thinkingPrefix, event), nil
 		}
 		if chatContentAndFinish {
 			// The held suffix belongs before finish_reason. Keep the saved content
@@ -144,7 +198,7 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 		if err != nil {
 			return nil, err
 		}
-		return out, nil
+		return append(thinkingPrefix, out...), nil
 	}
 	if event.Data == nil {
 		return nil, nil
@@ -159,6 +213,308 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 	}
 	event.Data = encoded
 	return []stream.Event{event}, nil
+}
+
+func (d *secretStreamDLP) filterAnthropicThinkingDelta(event stream.Event, payload map[string]any) ([]stream.Event, error) {
+	delta, _ := payload["delta"].(map[string]any)
+	value, _ := delta["thinking"].(string)
+	index, _ := numberAsInt(payload["index"])
+	if d.anthropicThinking == nil {
+		d.anthropicThinking = make(map[int]*secretAnthropicThinkingState)
+	}
+	state := d.anthropicThinking[index]
+	if state == nil {
+		state = &secretAnthropicThinkingState{}
+		d.anthropicThinking[index] = state
+	}
+	before := d.state.result.Replacements
+	safe, pending, err := redactSecretStreamChunk(d.state, state.pending, value, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.failIfMatched(before); err != nil {
+		return nil, err
+	}
+	state.pending, state.lastEvent = pending, event
+	if safe == "" {
+		return nil, nil
+	}
+	delta["thinking"] = safe
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	event.Data = encoded
+	return []stream.Event{event}, nil
+}
+
+func (d *secretStreamDLP) flushAnthropicThinkingForTerminal(event stream.Event, payload map[string]any, eventType string) ([]stream.Event, bool, error) {
+	if len(d.anthropicThinking) == 0 {
+		return nil, false, nil
+	}
+	all := event.Name == "message_stop" || eventType == "message_stop"
+	if !all && event.Name != "content_block_stop" && eventType != "content_block_stop" {
+		return nil, false, nil
+	}
+	var indices []int
+	if all {
+		for index := range d.anthropicThinking {
+			indices = append(indices, index)
+		}
+	} else if index, ok := numberAsInt(payload["index"]); ok {
+		if _, exists := d.anthropicThinking[index]; exists {
+			indices = append(indices, index)
+		}
+	}
+	sort.Ints(indices)
+	out := make([]stream.Event, 0, len(indices))
+	for _, index := range indices {
+		state := d.anthropicThinking[index]
+		before := d.state.result.Replacements
+		tail, _, err := redactSecretStreamChunk(d.state, state.pending, "", true)
+		if err != nil {
+			return nil, true, err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return nil, true, err
+		}
+		if tail != "" {
+			var p map[string]any
+			if json.Unmarshal(state.lastEvent.Data, &p) == nil {
+				if delta, ok := p["delta"].(map[string]any); ok {
+					delta["thinking"] = tail
+					if b, marshalErr := json.Marshal(p); marshalErr == nil {
+						e := state.lastEvent
+						e.Data = b
+						out = append(out, e)
+					}
+				}
+			}
+		}
+		delete(d.anthropicThinking, index)
+	}
+	return out, true, nil
+}
+
+func (d *secretStreamDLP) flushAnthropicThinkingAll(event stream.Event) ([]stream.Event, bool, error) {
+	if len(d.anthropicThinking) == 0 {
+		return nil, false, nil
+	}
+	indices := make([]int, 0, len(d.anthropicThinking))
+	for index := range d.anthropicThinking {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	var out []stream.Event
+	for _, index := range indices {
+		state := d.anthropicThinking[index]
+		before := d.state.result.Replacements
+		tail, _, err := redactSecretStreamChunk(d.state, state.pending, "", true)
+		if err != nil {
+			return nil, true, err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return nil, true, err
+		}
+		if tail != "" {
+			var p map[string]any
+			if json.Unmarshal(state.lastEvent.Data, &p) == nil {
+				if delta, ok := p["delta"].(map[string]any); ok {
+					delta["thinking"] = tail
+					if b, marshalErr := json.Marshal(p); marshalErr == nil {
+						e := state.lastEvent
+						e.Data = b
+						out = append(out, e)
+					}
+				}
+			}
+		}
+		delete(d.anthropicThinking, index)
+	}
+	return append(out, event), true, nil
+}
+
+// filterChatEvent keeps independent rolling windows for every choice and each
+// text-bearing channel. Chat chunks with multiple choices are split into one
+// output chunk per choice so one choice cannot release another choice's tail.
+func (d *secretStreamDLP) filterChatEvent(event stream.Event, payload map[string]any) ([]stream.Event, error) {
+	choices, _ := payload["choices"].([]any)
+	if len(choices) == 0 {
+		return []stream.Event{event}, nil
+	}
+	if d.chatChoices == nil {
+		d.chatChoices = make(map[int]*secretChatChoiceState)
+	}
+	var out []stream.Event
+	for position, raw := range choices {
+		choice, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		choiceIndex := position
+		if index, ok := numberAsInt(choice["index"]); ok {
+			choiceIndex = index
+		}
+		choiceState := d.chatChoices[choiceIndex]
+		if choiceState == nil {
+			choiceState = &secretChatChoiceState{pending: make(map[string]string)}
+			d.chatChoices[choiceIndex] = choiceState
+		}
+		choiceState.lastEvent = event
+		choiceState.choice = cloneSecretStreamMap(choice)
+		delta, _ := choice["delta"].(map[string]any)
+		if delta == nil {
+			delta = make(map[string]any)
+			choice["delta"] = delta
+		}
+		for _, field := range []string{"content", "reasoning_content", "thinking"} {
+			value, exists := delta[field].(string)
+			if !exists {
+				continue
+			}
+			before := d.state.result.Replacements
+			safe, pending, err := redactSecretStreamChunk(d.state, choiceState.pending[field], value, false)
+			if err != nil {
+				return nil, err
+			}
+			if err := d.failIfMatched(before); err != nil {
+				return nil, err
+			}
+			choiceState.pending[field] = pending
+			if safe == "" {
+				delete(delta, field)
+			} else {
+				delta[field] = safe
+			}
+		}
+		finishReason := choice["finish_reason"]
+		terminal := finishReason != nil && strings.TrimSpace(stringValue(finishReason)) != ""
+		if terminal {
+			for _, field := range []string{"content", "reasoning_content", "thinking"} {
+				pending := choiceState.pending[field]
+				if pending == "" {
+					continue
+				}
+				before := d.state.result.Replacements
+				tail, _, err := redactSecretStreamChunk(d.state, pending, "", true)
+				if err != nil {
+					return nil, err
+				}
+				if err := d.failIfMatched(before); err != nil {
+					return nil, err
+				}
+				current, _ := delta[field].(string)
+				delta[field] = current + tail
+				delete(choiceState.pending, field)
+			}
+			contentChoice := cloneSecretStreamMap(choice)
+			contentChoice["finish_reason"] = nil
+			contentDelta, _ := contentChoice["delta"].(map[string]any)
+			if len(contentDelta) > 0 {
+				if encoded, err := secretChatChoiceEvent(event, payload, contentChoice); err != nil {
+					return nil, err
+				} else {
+					out = append(out, encoded)
+				}
+			}
+			terminalChoice := cloneSecretStreamMap(choice)
+			terminalChoice["delta"] = map[string]any{}
+			if encoded, err := secretChatChoiceEvent(event, payload, terminalChoice); err != nil {
+				return nil, err
+			} else {
+				out = append(out, encoded)
+			}
+			delete(d.chatChoices, choiceIndex)
+			continue
+		}
+		if len(delta) > 0 {
+			if encoded, err := secretChatChoiceEvent(event, payload, choice); err != nil {
+				return nil, err
+			} else {
+				out = append(out, encoded)
+			}
+		}
+		choiceState.choice = cloneSecretStreamMap(choice)
+	}
+	return out, nil
+}
+
+func (d *secretStreamDLP) flushChatBefore(event stream.Event) ([]stream.Event, bool, error) {
+	if len(d.chatChoices) == 0 {
+		return nil, false, nil
+	}
+	indices := make([]int, 0, len(d.chatChoices))
+	for index := range d.chatChoices {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	var out []stream.Event
+	for _, index := range indices {
+		choiceState := d.chatChoices[index]
+		choice := cloneSecretStreamMap(choiceState.choice)
+		delta := make(map[string]any)
+		for _, field := range []string{"content", "reasoning_content", "thinking"} {
+			pending := choiceState.pending[field]
+			if pending == "" {
+				continue
+			}
+			before := d.state.result.Replacements
+			tail, _, err := redactSecretStreamChunk(d.state, pending, "", true)
+			if err != nil {
+				return nil, true, err
+			}
+			if err := d.failIfMatched(before); err != nil {
+				return nil, true, err
+			}
+			delta[field] = tail
+		}
+		if len(delta) > 0 {
+			choice["delta"] = delta
+			choice["finish_reason"] = nil
+			encoded, err := secretChatChoiceEvent(choiceState.lastEvent, nil, choice)
+			if err != nil {
+				return nil, true, err
+			}
+			out = append(out, encoded)
+		}
+	}
+	d.chatChoices = nil
+	if len(out) > 0 {
+		out = append(out, event)
+		return out, true, nil
+	}
+	return nil, false, nil
+}
+
+func secretChatChoiceEvent(event stream.Event, source map[string]any, choice map[string]any) (stream.Event, error) {
+	var payload map[string]any
+	if source != nil {
+		payload = cloneSecretStreamMap(source)
+	} else if json.Unmarshal(event.Data, &payload) != nil {
+		return stream.Event{}, errors.New("invalid held Chat stream event")
+	}
+	payload["choices"] = []any{choice}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return stream.Event{}, err
+	}
+	event.Data = data
+	return event, nil
+}
+
+func cloneSecretStreamMap(source map[string]any) map[string]any {
+	if source == nil {
+		return map[string]any{}
+	}
+	data, err := json.Marshal(source)
+	if err != nil {
+		return map[string]any{}
+	}
+	var copy map[string]any
+	if json.Unmarshal(data, &copy) != nil || copy == nil {
+		return map[string]any{}
+	}
+	return copy
 }
 
 func clearSecretStreamChatFinish(payload map[string]any) {
@@ -247,9 +603,15 @@ func secretStreamTextDelta(payload map[string]any, eventType string) (kind, valu
 		return "responses", value, ok
 	case "content_block_delta":
 		delta, _ := payload["delta"].(map[string]any)
-		if delta != nil && stringValue(delta["type"]) == "text_delta" {
-			value, ok = delta["text"].(string)
-			return "anthropic", value, ok
+		if delta != nil {
+			switch stringValue(delta["type"]) {
+			case "text_delta":
+				value, ok = delta["text"].(string)
+				return "anthropic", value, ok
+			case "thinking_delta":
+				value, ok = delta["thinking"].(string)
+				return "anthropic_thinking", value, ok
+			}
 		}
 	case "", "chat.completion.chunk":
 		choices, _ := payload["choices"].([]any)
@@ -269,9 +631,13 @@ func setSecretStreamTextDelta(payload map[string]any, kind, value string) {
 	switch kind {
 	case "responses":
 		payload["delta"] = value
-	case "anthropic":
+	case "anthropic", "anthropic_thinking":
 		if delta, ok := payload["delta"].(map[string]any); ok {
-			delta["text"] = value
+			if kind == "anthropic_thinking" {
+				delta["thinking"] = value
+			} else {
+				delta["text"] = value
+			}
 		}
 	case "chat":
 		if choices, ok := payload["choices"].([]any); ok && len(choices) > 0 {
@@ -409,61 +775,173 @@ func redactSecretStreamChunk(state *piiRedactionState, pending, chunk string, fi
 		return "", "", errSecretStreamWindowExceeded
 	}
 	if final {
-		return state.redact(combined), "", nil
-	}
-	if begin := strings.Index(combined, "-----BEGIN "); begin >= 0 {
-		end := strings.Index(combined[begin:], "-----END ")
-		if end < 0 {
-			if len(combined)-begin > secretStreamPEMMax {
-				return "", "", errSecretStreamWindowExceeded
-			}
-			boundary := utf8SafeBoundary(combined, begin)
-			return state.redact(combined[:boundary]), combined[boundary:], nil
+		if _, err := secretStreamPEMReleaseBoundary(combined, len(combined), true); err != nil {
+			return "", "", err
 		}
-		end += begin
-		endLabel := end + len("-----END ")
-		endLine := strings.Index(combined[endLabel:], "-----")
-		if endLine < 0 {
-			if len(combined)-begin > secretStreamPEMMax {
-				return "", "", errSecretStreamWindowExceeded
-			}
-			boundary := utf8SafeBoundary(combined, begin)
-			return state.redact(combined[:boundary]), combined[boundary:], nil
-		}
-		pemEnd := endLabel + endLine + len("-----")
-		if pemEnd-begin > secretStreamPEMMax {
-			return "", "", errSecretStreamWindowExceeded
-		}
-		if boundary := len(combined) - secretStreamTailBytes; begin < boundary && boundary < pemEnd {
-			boundary = utf8SafeBoundary(combined, begin)
-			return state.redact(combined[:boundary]), combined[boundary:], nil
-		}
+		return redactSecretStreamPrefix(state, combined), "", nil
 	}
 	boundary := len(combined) - secretStreamTailBytes
+	boundary, err = secretStreamJWTReleaseBoundary(combined, boundary)
+	if err != nil {
+		return "", "", err
+	}
+	boundary, err = secretStreamPEMReleaseBoundary(combined, boundary, false)
+	if err != nil {
+		return "", "", err
+	}
 	if boundary <= 0 {
 		return "", combined, nil
 	}
 	// The tail size bounds ordinary candidates, but some provider formats have
 	// longer valid matches. Never split a full detector match at the release
 	// edge: move the cut back to that match's start and inspect it as one value.
-	for _, rule := range state.rules {
-		for _, span := range rule.re.FindAllStringIndex(combined, -1) {
-			if span[0] < boundary && boundary < span[1] {
-				boundary = span[0]
-			}
+	var matches = compiledSecretStreamMatcher().FindAllStringIndex(combined, -1)
+	for _, span := range matches {
+		if span[0] < boundary && boundary < span[1] {
+			boundary = span[0]
 		}
 	}
 	boundary = utf8SafeBoundary(combined, boundary)
-	return state.redact(combined[:boundary]), combined[boundary:], nil
+	safe = combined[:boundary]
+	if strings.Contains(safe, "eyJ") || strings.Contains(safe, "-----BEGIN ") {
+		safe = state.redact(safe)
+	} else {
+		for _, span := range matches {
+			if span[1] <= boundary {
+				safe = state.redact(safe)
+				break
+			}
+		}
+	}
+	return safe, combined[boundary:], nil
+}
+
+func redactSecretStreamPrefix(state *piiRedactionState, value string) string {
+	if value == "" || compiledSecretStreamMatcher().FindStringIndex(value) == nil && !strings.Contains(value, "eyJ") && !strings.Contains(value, "-----BEGIN ") {
+		return value
+	}
+	return state.redact(value)
+}
+
+// secretStreamJWTReleaseBoundary holds a plausible multi-segment JWT from its
+// eyJ start until a separator proves the candidate complete or invalid. This
+// supports long Azure identity claims without retaining a 12 KiB tail for
+// every ordinary text delta.
+func secretStreamJWTReleaseBoundary(value string, boundary int) (int, error) {
+	for search := 0; ; {
+		rel := strings.Index(value[search:], "eyJ")
+		if rel < 0 {
+			return boundary, nil
+		}
+		start := search + rel
+		if start > 0 && isJWTSegmentByte(value[start-1]) {
+			search = start + 3
+			continue
+		}
+		cursor := start
+		valid := true
+		for segment := 0; segment < 3; segment++ {
+			segmentStart := cursor
+			if segment == 0 {
+				cursor += 3 // The first segment begins with eyJ.
+			}
+			for cursor < len(value) && isJWTSegmentByte(value[cursor]) {
+				cursor++
+			}
+			segmentLength := cursor - segmentStart
+			if segmentLength > 4096 {
+				return 0, errSecretStreamWindowExceeded
+			}
+			minimum := 8
+			if segment == 0 {
+				minimum = 11
+			}
+			if segmentLength < minimum {
+				valid = false
+			}
+			if cursor == len(value) {
+				if valid && start < boundary {
+					boundary = start
+				}
+				return boundary, nil
+			}
+			if segment < 2 && value[cursor] == '.' {
+				cursor++
+				continue
+			}
+			if segment < 2 {
+				valid = false
+			}
+			break
+		}
+		if valid {
+			if cursor == len(value) && start < boundary {
+				boundary = start
+			} else if start < boundary && boundary < cursor {
+				boundary = start
+			}
+		}
+		search = max(start+3, cursor+1)
+		if search > len(value) {
+			return boundary, nil
+		}
+	}
+}
+
+// secretStreamPEMReleaseBoundary scans all BEGIN markers, including markers
+// after an already completed certificate. The earliest unresolved block stays
+// held; an unterminated or oversized block fails closed and is never released.
+func secretStreamPEMReleaseBoundary(combined string, boundary int, final bool) (int, error) {
+	for search := 0; ; {
+		beginRel := strings.Index(combined[search:], "-----BEGIN ")
+		if beginRel < 0 {
+			break
+		}
+		begin := search + beginRel
+		endRel := strings.Index(combined[begin+len("-----BEGIN "):], "-----END ")
+		if endRel < 0 {
+			if final || len(combined)-begin >= secretStreamPEMMax {
+				return 0, errSecretStreamWindowExceeded
+			}
+			if begin < boundary {
+				boundary = begin
+			}
+			break
+		}
+		end := begin + len("-----BEGIN ") + endRel
+		endLabel := end + len("-----END ")
+		closeRel := strings.Index(combined[endLabel:], "-----")
+		if closeRel < 0 {
+			if final || len(combined)-begin >= secretStreamPEMMax {
+				return 0, errSecretStreamWindowExceeded
+			}
+			if begin < boundary {
+				boundary = begin
+			}
+			break
+		}
+		pemEnd := endLabel + closeRel + len("-----")
+		if pemEnd-begin > secretStreamPEMMax {
+			return 0, errSecretStreamWindowExceeded
+		}
+		if begin < boundary && boundary < pemEnd {
+			boundary = begin
+		}
+		search = pemEnd
+		if search >= len(combined) {
+			break
+		}
+	}
+	return boundary, nil
 }
 
 func hasSecretStreamOversizeCandidate(value string) bool {
 	for {
 		begin := strings.Index(value, "-----BEGIN ")
 		if begin < 0 {
-			return secretStreamOversizeCandidate.MatchString(value)
+			return secretStreamOversizeCandidate.MatchString(value) || hasOversizeJWT(value)
 		}
-		if secretStreamOversizeCandidate.MatchString(value[:begin]) {
+		if secretStreamOversizeCandidate.MatchString(value[:begin]) || hasOversizeJWT(value[:begin]) {
 			return true
 		}
 		end := strings.Index(value[begin:], "-----END ")
@@ -479,6 +957,68 @@ func hasSecretStreamOversizeCandidate(value string) bool {
 		pemEnd := endLabel + close + len("-----")
 		value = value[:begin] + value[pemEnd:]
 	}
+}
+
+func hasOversizeJWT(value string) bool {
+	for search := 0; ; {
+		rel := strings.Index(value[search:], "eyJ")
+		if rel < 0 {
+			return false
+		}
+		start := search + rel
+		if start > 0 && isJWTSegmentByte(value[start-1]) {
+			search = start + 3
+			continue
+		}
+		firstDot := start + 3
+		for firstDot < len(value) && isJWTSegmentByte(value[firstDot]) {
+			firstDot++
+		}
+		if firstDot >= len(value) || value[firstDot] != '.' {
+			if firstDot >= len(value) {
+				return false
+			}
+			search = max(start+3, firstDot+1)
+			continue
+		}
+		secondDot := firstDot + 1
+		for secondDot < len(value) && isJWTSegmentByte(value[secondDot]) {
+			secondDot++
+		}
+		if secondDot >= len(value) || value[secondDot] != '.' {
+			if secondDot >= len(value) {
+				return false
+			}
+			search = max(start+3, secondDot+1)
+			continue
+		}
+		end := secondDot + 1
+		for end < len(value) && isJWTSegmentByte(value[end]) {
+			end++
+		}
+		segments := []string{value[start:firstDot], value[firstDot+1 : secondDot], value[secondDot+1 : end]}
+		valid := true
+		for _, segment := range segments {
+			if len(segment) < 8 {
+				valid = false
+				break
+			}
+			for i := 0; i < len(segment); i++ {
+				if !isJWTSegmentByte(segment[i]) {
+					valid = false
+					break
+				}
+			}
+		}
+		if valid && (len(segments[0]) > 4096 || len(segments[1]) > 4096 || len(segments[2]) > 4096) {
+			return true
+		}
+		search = start + 3
+	}
+}
+
+func isJWTSegmentByte(value byte) bool {
+	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z' || value >= '0' && value <= '9' || value == '_' || value == '-'
 }
 
 func utf8SafeBoundary(value string, boundary int) int {

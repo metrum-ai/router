@@ -202,6 +202,9 @@ func (s *Service) applyAutomaticContainmentResult(result detect.Result) {
 	if created {
 		if matched.Action == "suspend" {
 			if err := s.applyAutomaticContainmentSuspension(result.CallerID, result.DetectorID, matched.TTLMS); err != nil {
+				if rollbackErr := s.usage.rollbackAutomaticContainment(row); rollbackErr != nil {
+					log.Printf("automatic containment suspend rollback failed: storage-error")
+				}
 				log.Printf("automatic containment suspend failed: control-plane-error")
 				return
 			}
@@ -219,10 +222,23 @@ func (s *Service) syncAutomaticContainment() {
 	if s == nil || s.usage == nil || s.usage.db == nil || s.quota == nil {
 		return
 	}
-	rows, err := s.usage.activeAutomaticContainments(time.Now().UTC())
+	now := time.Now().UTC()
+	rows, err := s.usage.activeAutomaticContainments(now)
 	if err != nil {
 		log.Printf("automatic containment state refresh failed: storage-error")
 		return
+	}
+	cfg := s.cfg
+	if s.configSnapshot != nil {
+		if snapshot := s.configSnapshot.Load(); snapshot != nil {
+			cfg = snapshot
+		}
+	}
+	exempt := make(map[string]struct{})
+	if cfg != nil {
+		for _, callerID := range cfg.Server.AutoContainment.ExemptCallers {
+			exempt[callerID] = struct{}{}
+		}
 	}
 	active := make(map[string]*automaticContainmentState, len(rows))
 	for _, row := range rows {
@@ -232,11 +248,11 @@ func (s *Service) syncAutomaticContainment() {
 		}
 		// Suspensions are authoritative in the #883 canonical config plane so
 		// containment and admin resume paths can clear them. Only throttles live
-		// in this usage-store projection.
+		// in this usage-store projection. Adding a caller to exempt_callers and
+		// refreshing config removes the active runtime throttle before its TTL.
 		if row.Action == "throttle" {
-			cfg := s.cfg
-			if s.configSnapshot != nil && s.configSnapshot.Load() != nil {
-				cfg = s.configSnapshot.Load()
+			if _, isExempt := exempt[row.CallerID]; isExempt {
+				continue
 			}
 			unlimitedLimit := 0
 			if cfg != nil {
@@ -306,6 +322,37 @@ func (u *usageStore) applyAutomaticContainment(row automaticContainmentActionRec
 		return nil
 	})
 	return created, err
+}
+
+func (u *usageStore) rollbackAutomaticContainment(row automaticContainmentActionRecord) error {
+	if u == nil || u.db == nil {
+		return errors.New("automatic containment storage unavailable")
+	}
+	return u.db.Transaction(func(tx *gorm.DB) error {
+		var guard automaticContainmentGuardRecord
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
+			return err
+		}
+		createdAt := strings.TrimSpace(row.CreatedAt)
+		if err := tx.Where("caller_id = ? AND created_at = ?", row.CallerID, createdAt).Delete(&automaticContainmentActionRecord{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("caller_id = ? AND detector_id = ? AND action = ? AND created_at = ?", row.CallerID, row.DetectorID, row.Action, createdAt).Delete(&automaticContainmentEventRecord{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Table(usageAdminAuditTable).
+			Where("principal_subject = ? AND principal_kind = ? AND operation_id = ? AND action = ? AND detail = ?", row.DetectorID, "detector", "detector_containment", row.Action, row.Evidence+";expires_at="+row.ExpiresAt).
+			Updates(map[string]any{"outcome": "failed", "reason_code": "automatic_suspend_failed"}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&automaticContainmentGuardRecord{}).Where("id = 1").UpdateColumn("revision", gorm.Expr("revision + 1")).Error; err != nil {
+			return err
+		}
+		if tx.Dialector.Name() == "postgres" {
+			queueAutomaticContainmentNotification(tx)
+		}
+		return nil
+	})
 }
 
 func (u *usageStore) recordAutomaticContainmentShadow(row automaticContainmentActionRecord, cap int, now time.Time) (bool, error) {

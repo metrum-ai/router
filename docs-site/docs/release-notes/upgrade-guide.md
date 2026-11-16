@@ -9,6 +9,13 @@ doc_type: reference
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
 
+## v5.0.0 Security Console
+
+The admin reports UI adds a Security Console to the Security events report. It ranks caller risk using detector results and caller authentication failures, and shows detector, authentication, and containment access events in the timeline. It links events to request evidence and provides JSON and Markdown incident bundles using the selected time window. Users with the domain-scoped containment permission can suspend a caller from the reports UI; the request requires same-origin CSRF protection and an audit reason. Release remains on the admin control plane and is shown as a `routerctl release` command and `/admin/v1/containment` request only for a caller suspended by containment. No new configuration is required.
+
+The console only displays signals returned by the selected time range and report page. A missing signal does not prove that a caller is safe. Request evidence remains subject to the existing report drilldown permissions.
+
+
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned
@@ -64,10 +71,11 @@ fail_on_match` rejects matching requests before upstream dispatch and blocks
 matching buffered responses. The detector uses bounded RE2 patterns, so
 operators should validate it against their traffic. Existing `pii_filter`
 rules and replacement limits continue to apply. Configure
-`apply_to.tool_results` for tool-result coverage. Streamed text retains the
-longest built-in candidate (3002 bytes); private-key blocks are held through
-their end marker, up to 64 KiB; an overlong provider-token or credential
-assignment candidate fails closed. Response redaction requires
+`apply_to.tool_results` for tool-result coverage. Streamed text uses a 512-byte
+ordinary rolling tail, extends the hold from the start of plausible JWTs
+(bounded to 4,096 bytes per segment), and holds PEM blocks through their end
+marker up to 64 KiB. Overlong JWT, provider-token, or credential-assignment
+candidates fail closed. Response redaction requires
 `secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep their prior
 response behavior.
 

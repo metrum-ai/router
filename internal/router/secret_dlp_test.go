@@ -4,7 +4,12 @@
 package router
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -24,6 +29,9 @@ func fakeAWSAccessKey() string { return "AKIA" + strings.Repeat("1", 16) }
 func fakeJWTToken() string {
 	return "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0." + "signaturevalue123456"
 }
+func fakeLongJWTToken() string {
+	return "eyJ" + strings.Repeat("h", 1200) + "." + strings.Repeat("p", 1300) + "." + strings.Repeat("s", 1400)
+}
 func fakeCredentialAssignment() string {
 	return "api_key=" + strings.Repeat("a", 16) + "Q7r9W2x4"
 }
@@ -36,6 +44,7 @@ func fakePrivateKeyBlock() string {
 
 func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	key := fakeGitHubToken()
+	jwt := fakeLongJWTToken()
 	toolResultKey := fakeAWSAccessKey()
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,11 +54,11 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		serialized, _ := json.Marshal(body["messages"])
-		if strings.Contains(string(serialized), key) || strings.Contains(string(serialized), toolResultKey) ||
-			!strings.Contains(string(serialized), "[SECRET_GITHUB_1]") || !strings.Contains(string(serialized), "[SECRET_AWS_1]") {
+		if strings.Contains(string(serialized), key) || strings.Contains(string(serialized), jwt) || strings.Contains(string(serialized), toolResultKey) ||
+			!strings.Contains(string(serialized), "[SECRET_GITHUB_1]") || !strings.Contains(string(serialized), "[SECRET_JWT_1]") || !strings.Contains(string(serialized), "[SECRET_AWS_1]") {
 			t.Errorf("upstream prompt or tool result did not redact credentials: %s", serialized)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"id": "secret-dlp", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "returned " + key}}}, "usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
+		writeJSON(w, http.StatusOK, map[string]any{"id": "secret-dlp", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "returned " + key + " " + jwt}}}, "usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
 	}))
 	defer upstream.Close()
 
@@ -69,7 +78,7 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	const promptSuffix = "-private-prompt-marker-after"
 	const toolResultPrefix = "private-tool-result-marker-before-"
 	const toolResultSuffix = "-private-tool-result-marker-after"
-	body := `{"model":"default","messages":[{"role":"user","content":"` + promptPrefix + key + promptSuffix + `"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_secret","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"` + toolResultPrefix + toolResultKey + toolResultSuffix + `"}]}`
+	body := `{"model":"default","messages":[{"role":"user","content":"` + promptPrefix + key + " " + jwt + promptSuffix + `"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_secret","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"` + toolResultPrefix + toolResultKey + toolResultSuffix + `"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	response := httptest.NewRecorder()
@@ -77,14 +86,14 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	if response.Code != http.StatusOK || calls.Load() != 1 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), key) || !strings.Contains(response.Body.String(), "[SECRET_GITHUB_1]") {
+	if strings.Contains(response.Body.String(), key) || strings.Contains(response.Body.String(), jwt) || !strings.Contains(response.Body.String(), "[SECRET_GITHUB_1]") || !strings.Contains(response.Body.String(), "[SECRET_JWT_2]") {
 		t.Fatalf("caller response did not redact credential: %s", response.Body.String())
 	}
 	logData, err := os.ReadFile(cfg.Server.Logging.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sensitive := range []string{key, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
+	for _, sensitive := range []string{key, jwt, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
 		if strings.Contains(string(logData), sensitive) {
 			t.Fatalf("request log contains sensitive request data %q", sensitive)
 		}
@@ -107,10 +116,54 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sensitive := range []string{key, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
+	for _, sensitive := range []string{key, jwt, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
 		if strings.Contains(string(serializedRows), sensitive) {
 			t.Fatalf("usage database rows contain sensitive request data %q", sensitive)
 		}
+	}
+}
+
+func TestSecretDLPUnaryResponseReplacementLimitFailsClosed(t *testing.T) {
+	const replacementLimit = 200
+	responseSecret := "ghp_" + strings.Repeat("z", 36)
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeJSON(w, http.StatusOK, map[string]any{"id": "limit-response", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": responseSecret}}}, "usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	group.PIIFilter.MaxReplacementsPerRequest = replacementLimit
+	cfg.Models["default"] = group
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	var prompt strings.Builder
+	for i := 0; i < replacementLimit; i++ {
+		if i > 0 {
+			prompt.WriteByte(' ')
+		}
+		prompt.WriteString(fmt.Sprintf("ghp_%036x", i+1))
+	}
+	body, err := json.Marshal(map[string]any{"model": "default", "messages": []any{map[string]any{"role": "user", "content": prompt.String()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusBadGateway || calls.Load() != 1 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), responseSecret) || !strings.Contains(response.Body.String(), "pii-filter-blocked") {
+		t.Fatalf("replacement-limit response leaked or used wrong error: %s", response.Body.String())
 	}
 }
 
@@ -230,13 +283,15 @@ func BenchmarkSecretStreamWindow(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	input := strings.Repeat("ordinary streamed response text ", 80) + fakeGitHubToken() + strings.Repeat(" tail text", 80)
+	input := strings.Repeat("ordinary streamed response text ", 1024) + fakeGitHubToken() + strings.Repeat(" tail text", 128)
+	totalBytes := len(input)
 	fragments := make([]string, 0, len(input)/128+1)
 	for len(input) > 128 {
 		fragments = append(fragments, input[:128])
 		input = input[128:]
 	}
 	fragments = append(fragments, input)
+	b.SetBytes(int64(totalBytes))
 	result := &piiFilterResult{RuleCounts: map[string]int{}}
 	state := &piiRedactionState{rules: rules, limit: 200, result: result, placeholderFor: map[string]string{}}
 	b.ResetTimer()
@@ -672,7 +727,7 @@ func TestSecretDLPStreamWindowLongPrefixSplitOffsets(t *testing.T) {
 						t.Fatal(feedErr)
 					}
 					if strings.Contains(safe, secret) {
-						t.Fatalf("raw secret released before completion: %q", safe)
+						t.Fatalf("raw secret released before completion %q: %q", secret, safe)
 					}
 					assertNoSecretFragment(t, safe, secret, 8)
 					output.WriteString(safe)
@@ -694,6 +749,107 @@ func TestSecretDLPStreamWindowLongPrefixSplitOffsets(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestSecretDLPStreamReleaseEdgeProperty(t *testing.T) {
+	secrets := []struct {
+		name  string
+		value string
+	}{
+		{"aws", fakeAWSAccessKey()},
+		{"github", fakeGitHubToken()},
+		{"slack", "xoxb-" + strings.Repeat("a", 24)},
+		{"stripe", "sk_live_" + strings.Repeat("a", 20)},
+		{"openai_project", "sk-proj-" + strings.Repeat("a", 32)},
+		{"openai_legacy", "sk-" + strings.Repeat("b", 40)},
+		{"groq", "gsk_" + strings.Repeat("c", 40)},
+		{"openrouter", "sk-or-v1-" + strings.Repeat("d", 64)},
+		{"anthropic", "sk-ant-api03-" + strings.Repeat("a", 32)},
+		{"google", "AIza" + strings.Repeat("a", 35)},
+		{"router", "rtr_metrum_alice_search_dev_k20260101_secretsecret"},
+		{"jwt", fakeLongJWTToken()},
+		{"bearer", "Authorization: Bearer " + strings.Repeat("q", 120)},
+		{"credential", fakeCredentialAssignment()},
+		{"password", fakePasswordAssignment()},
+		{"private_key", fakePrivateKeyBlock()},
+		{"encrypted_private_key", "-----BEGIN ENCRYPTED PRIVATE KEY-----\n" + strings.Repeat("E", 128) + "\n-----END ENCRYPTED PRIVATE KEY-----"},
+	}
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range secrets {
+		for _, edge := range []int{-4, 0, 4} {
+			t.Run(fmt.Sprintf("%s/edge_%d", tc.name, edge), func(t *testing.T) {
+				state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+				prefix := strings.Repeat("P", secretStreamTailBytes+edge-1) + " "
+				var pending string
+				var output strings.Builder
+				feed := func(fragment string) {
+					t.Helper()
+					safe, next, feedErr := redactSecretStreamChunk(state, pending, fragment, false)
+					if feedErr != nil {
+						t.Fatal(feedErr)
+					}
+					assertNoSecretFragment(t, safe, tc.value, 12)
+					output.WriteString(safe)
+					pending = next
+				}
+				feed(prefix)
+				split := len(tc.value) / 2
+				feed(tc.value[:split])
+				feed(tc.value[split:])
+				safe, _, err := redactSecretStreamChunk(state, pending, "", true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				output.WriteString(safe)
+				if strings.Contains(output.String(), tc.value) || !strings.Contains(output.String(), "[SECRET_") {
+					t.Fatalf("release-edge stream retained secret %s: output tail=%q", tc.name, output.String()[max(0, len(output.String())-200):])
+				}
+				assertNoSecretFragment(t, output.String(), tc.value, 12)
+			})
+		}
+	}
+}
+
+func TestSecretDLPStreamCertificateThenRSA4096KeyIn16ByteChunks(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+	certificate := "-----BEGIN CERTIFICATE-----\n" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("certificate", 20))) + "\n-----END CERTIFICATE-----\n"
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(rsaKey)}))
+	if len(key) < 3000 || len(key) > 4000 {
+		t.Fatalf("generated 4096-bit RSA PEM size=%d, want about 3.3 KiB", len(key))
+	}
+	input := "before\n" + certificate + key + "\nafter"
+	var pending string
+	var output strings.Builder
+	for start := 0; start < len(input); start += 16 {
+		end := min(start+16, len(input))
+		safe, next, err := redactSecretStreamChunk(state, pending, input[start:end], false)
+		if err != nil {
+			t.Fatalf("feed bytes [%d:%d]: %v", start, end, err)
+		}
+		assertNoSecretFragment(t, safe, key, 16)
+		output.WriteString(safe)
+		pending = next
+	}
+	safe, _, err := redactSecretStreamChunk(state, pending, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output.WriteString(safe)
+	if strings.Contains(output.String(), key) || strings.Contains(output.String(), "BEGIN RSA PRIVATE KEY") || !strings.Contains(output.String(), "[SECRET_PRIVATE_KEY_1]") {
+		t.Fatalf("certificate-then-key stream leaked the RSA key: output len=%d tail=%q", output.Len(), output.String()[max(0, output.Len()-250):])
+	}
+	assertNoSecretFragment(t, output.String(), key, 16)
 }
 
 func assertNoSecretFragment(t testing.TB, output, secret string, fragmentBytes int) {
@@ -749,12 +905,16 @@ func TestSecretDLPStreamWindowHoldsAndBoundsPrivateKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
-	first, pending, err := redactSecretStreamChunk(state, "", "before "+"-----BEGIN PRIVATE KEY-----\n"+strings.Repeat("k", 800), false)
-	if err != nil || first != "before " || strings.Contains(first, "BEGIN") || len(pending) < 800 {
+	prefix := "before " + strings.Repeat("x", secretStreamTailBytes+32)
+	first, pending, err := redactSecretStreamChunk(state, "", prefix+"-----BEGIN PRIVATE KEY-----\n"+strings.Repeat("k", 800), false)
+	if err != nil || len(first) == 0 || strings.Contains(first, "BEGIN") || len(pending) < 800 {
 		t.Fatalf("private-key block was not held: first=%q pending=%d err=%v", first, len(pending), err)
 	}
 	if _, _, err := redactSecretStreamChunk(state, pending, strings.Repeat("k", secretStreamPEMMax), false); !errors.Is(err, errSecretStreamWindowExceeded) {
 		t.Fatalf("oversized unterminated key error=%v", err)
+	}
+	if _, _, err := redactSecretStreamChunk(state, "", "-----BEGIN PRIVATE KEY-----\nunfinished", true); !errors.Is(err, errSecretStreamWindowExceeded) {
+		t.Fatalf("unterminated key at stream finish error=%v", err)
 	}
 	if _, _, err := redactSecretStreamChunk(state, "", "ghp_"+strings.Repeat("x", 257), true); !errors.Is(err, errSecretStreamWindowExceeded) {
 		t.Fatalf("overlong provider token candidate error=%v", err)
@@ -828,6 +988,85 @@ func TestSecretDLPStreamEventFailsOnSplitMatch(t *testing.T) {
 	}
 }
 
+func TestSecretDLPChatChoicesAndReasoningChannelsAreInspectedIndependently(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}, mode: "redact_only"}
+	github := fakeGitHubToken()
+	aws := fakeAWSAccessKey()
+	jwt := fakeLongJWTToken()
+	bearer := "Authorization: Bearer " + strings.Repeat("q", 120)
+	makeChatEvent := func(choices ...map[string]any) stream.Event {
+		data, marshalErr := json.Marshal(map[string]any{"object": "chat.completion.chunk", "choices": choices})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return stream.Event{Data: data}
+	}
+	first, err := dlp.filterEvent(makeChatEvent(
+		map[string]any{"index": 0, "delta": map[string]any{"content": github[:len(github)/2], "reasoning_content": jwt[:len(jwt)/2]}, "finish_reason": nil},
+		map[string]any{"index": 1, "delta": map[string]any{"content": aws[:len(aws)/2], "reasoning_content": bearer[:len(bearer)/2]}, "finish_reason": nil},
+	))
+	if err != nil || len(first) != 0 {
+		t.Fatalf("partial multi-choice secrets emitted early: %#v err=%v", first, err)
+	}
+	last, err := dlp.filterEvent(makeChatEvent(
+		map[string]any{"index": 0, "delta": map[string]any{"content": github[len(github)/2:], "reasoning_content": jwt[len(jwt)/2:]}, "finish_reason": "stop"},
+		map[string]any{"index": 1, "delta": map[string]any{"content": aws[len(aws)/2:], "reasoning_content": bearer[len(bearer)/2:]}, "finish_reason": "stop"},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	for _, event := range append(first, last...) {
+		var payload map[string]any
+		if err := json.Unmarshal(event.Data, &payload); err != nil {
+			t.Fatal(err)
+		}
+		choices, _ := payload["choices"].([]any)
+		if len(choices) != 1 {
+			t.Fatalf("expected independent one-choice event, got %#v", payload["choices"])
+		}
+		output.Write(event.Data)
+	}
+	for _, secret := range []string{github, aws, jwt, bearer} {
+		if strings.Contains(output.String(), secret) {
+			t.Fatalf("Chat stream leaked secret %q", secret[:min(24, len(secret))])
+		}
+	}
+	for _, placeholder := range []string{"[SECRET_GITHUB_1]", "[SECRET_AWS_1]", "[SECRET_JWT_1]", "[SECRET_BEARER_1]"} {
+		if !strings.Contains(output.String(), placeholder) {
+			t.Fatalf("Chat stream did not redact a choice/reasoning secret %s: %s", placeholder, output.String())
+		}
+	}
+}
+
+func TestSecretDLPAnthropicThinkingDeltaIsInspected(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
+	secret := fakeGitHubToken()
+	for _, fragment := range []string{secret[:len(secret)/2], secret[len(secret)/2:]} {
+		data, _ := json.Marshal(map[string]any{"type": "content_block_delta", "index": 3, "delta": map[string]any{"type": "thinking_delta", "thinking": fragment}})
+		out, err := dlp.filterEvent(stream.Event{Name: "content_block_delta", Data: data})
+		if err != nil || len(out) != 0 {
+			t.Fatalf("Anthropic thinking leaked before block stop: %#v err=%v", out, err)
+		}
+	}
+	stop, _ := json.Marshal(map[string]any{"type": "content_block_stop", "index": 3})
+	out, err := dlp.filterEvent(stream.Event{Name: "content_block_stop", Data: stop})
+	if err != nil || len(out) != 2 {
+		t.Fatalf("thinking flush=%#v err=%v", out, err)
+	}
+	if strings.Contains(string(out[0].Data), secret) || !strings.Contains(string(out[0].Data), "[SECRET_GITHUB_1]") || out[1].Name != "content_block_stop" {
+		t.Fatalf("thinking output leaked or reordered: %#v", out)
+	}
+}
+
 func TestSecretDLPTranslatedStreamRedactsAndSequencesFlush(t *testing.T) {
 	rules, err := compilePIIRules(builtinSecretRules())
 	if err != nil {
@@ -881,7 +1120,7 @@ func TestSecretDLPNativeStreamPreservesSSEMetadataWhenRewriting(t *testing.T) {
 		t.Fatal(err)
 	}
 	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
-	payload := map[string]any{"object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"content": strings.Repeat("safe text ", 500)}, "finish_reason": nil}}}
+	payload := map[string]any{"object": "chat.completion.chunk", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"content": strings.Repeat("safe text ", 1800)}, "finish_reason": nil}}}
 	data, _ := json.Marshal(payload)
 	frame := append([]byte("id: event-17\nretry: 1000\nevent: message\ndata: "), data...)
 	frame = append(frame, []byte("\n\n")...)

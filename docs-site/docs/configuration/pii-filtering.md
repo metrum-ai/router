@@ -9,31 +9,36 @@ Model groups can redact configured text patterns before the router sends a reque
 
 PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples. Set `secrets_enabled: true` to add the bounded built-in detector pack for private-key blocks, common AWS/GitHub/Slack/Stripe, OpenAI, Anthropic and Google provider credentials, router tokens, JWTs, bearer authorization values, and credential assignments. Built-in matches use the same `mode`, `apply_to`, and replacement limit as configured rules. This pack is heuristic and does not replace a full DLP product.
 
-The local deterministic matcher benchmark measured about 0.30 ms per 2.7 KiB
-benign request (`BenchmarkSecretMatcher`, Go benchmark, one run). This is a
-microbenchmark, not an end-to-end latency guarantee; actual cost depends on
-request size and the configured custom rules.
+The added DLP processing cost was measured with deterministic Go microbenchmarks
+(`-benchtime=200ms -count=3`) on Go 1.27.4 and an AMD EPYC 9R14 CPU. Values are
+the median of three runs:
 
-The stream-window microbenchmark measured 0.392 ms per 3.4 KiB response split
-into 128-byte deltas (`BenchmarkSecretStreamWindow`, Go 1.27.4, AMD EPYC 9R14,
-one local run). This measures router CPU only; first-token delay also includes
-the 3002-byte maximum built-in credential candidate or any held private-key
-block, up to 64 KiB.
+| Path | Input | Measured CPU time |
+| --- | --- | ---: |
+| Request matcher (`BenchmarkSecretMatcher`) | 2.75 KiB benign request | 0.749 ms/request |
+| Stream window (`BenchmarkSecretStreamWindow`) | 33.3 KiB response in 128-byte deltas | 46.0 ms/stream |
 
-With `secrets_enabled`, text-only streams that use only the built-in rules use a rolling inspection tail so
-credentials split across adjacent SSE chunks are redacted before release. A
-private-key block is held through its matching end marker, up to 64 KiB. A
-single provider-token or credential-assignment candidate longer than the
-256-byte token window fails the stream closed rather than releasing a partial
-match. A stream request with tools fails closed with HTTP 400
+These are local microbenchmarks, not end-to-end latency guarantees. The stream
+measurement includes scanning a complete 33.3 KiB response. First-token delay
+also includes the ordinary 512-byte rolling tail, a plausible JWT held from its
+start up to 12,290 bytes, or a PEM block held through its end marker up to 64 KiB.
+
+With `secrets_enabled`, text-only streams that use only the built-in rules use
+a rolling inspection tail so credentials split across adjacent SSE chunks are
+redacted before release. PEM blocks are held through their matching end marker,
+up to 64 KiB. A plausible JWT is held from its `eyJ` marker while its bounded
+segments are inspected; segments over 4,096 bytes fail closed. A single
+provider-token or credential-assignment candidate longer than the 256-byte
+token window fails the stream closed rather than releasing a partial match. A
+stream request with tools fails closed with HTTP 400
 `secret-dlp-stream-inspection-required` as an interim limit until the #929
 bounded tool-call inspection integration lands. Enable `secrets_enabled` only
 on groups that need this protection; the 400 applies to those DLP-enabled
 groups. Use a non-streaming request or remove tools while the interim gate is
 in place. Streams with custom rules also fail closed because those expressions
-do not declare a maximum match length. Text streaming retains the longest
-built-in candidate (3002 bytes); private-key blocks add their full size (up to
-64 KiB) to the time to first token. Response redaction runs only when
+do not declare a maximum match length. The 512-byte ordinary rolling tail is
+extended from the start of any unresolved JWT or PEM candidate. Response
+redaction runs only when
 `secrets_enabled` is active and `apply_to.messages` is enabled; custom-only PII
 configurations keep their existing response behavior.
 

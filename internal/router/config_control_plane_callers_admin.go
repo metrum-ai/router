@@ -162,6 +162,9 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 			return errCallerAdminNotFound
 		}
 		callerDomain := authzDomainForProjectEnvironment(rows[0].Project, rows[0].Environment)
+		if h.deps.AuthorizeDomain != nil && !h.deps.AuthorizeDomain(r, callerDomain, authzObjectAdminContainment, authzActionContain) {
+			return errCallerAdminForbidden
+		}
 		fullCallerWrite := h.deps.CallerWriteAuthorized != nil && h.deps.CallerWriteAuthorized(r, callerDomain)
 		source = "containment"
 		if fullCallerWrite {
@@ -253,6 +256,10 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 			writeCallerAdminError(w, http.StatusNotFound, "containment-caller-not-found")
 			return
 		}
+		if errors.Is(err, errCallerAdminForbidden) {
+			writeCallerAdminError(w, http.StatusForbidden, "containment-forbidden")
+			return
+		}
 		if errors.Is(err, errCallerAdminConflict) {
 			writeCallerAdminError(w, http.StatusConflict, "containment-state-conflict")
 			return
@@ -315,6 +322,7 @@ type callerAdminHandler struct {
 
 var errCallerAdminConflict = errors.New("caller already exists")
 var errCallerAdminNotFound = errors.New("caller not found")
+var errCallerAdminForbidden = errors.New("caller operation forbidden")
 var errContainmentNonceReplay = errors.New("containment nonce replay")
 var errContainmentNonceStore = errors.New("containment nonce store unavailable")
 
