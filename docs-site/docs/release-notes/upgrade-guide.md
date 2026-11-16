@@ -7,6 +7,8 @@ doc_type: reference
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
+Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## Security dependency update
@@ -36,6 +38,21 @@ The additive usage-schema migration adds nullable `request_usage.recomputed_inpu
 
 Existing routing config keeps its behavior unless a target sets `tiered_kv_cache: true` or a dynamic-score request supplies `metadata.session_id`. Tiered-cache preference applies at an estimated input length of 32,000 tokens and only among targets already eligible for the request. Dynamic-score affinity remains process-local and bounded; restarting clears pins. Remove the target attribute or restore the prior group config to roll back routing behavior. Schema rollback follows the restore-required migration contract.
 
+## v5.0.0 trusted proxy client IP resolution
+
+When `server.client_ip.trusted_proxy_cidrs` is configured, the router now walks
+`X-Forwarded-For` from the socket peer toward the client and chooses the first
+untrusted hop. A client-supplied leftmost value no longer overrides the address
+appended by a trusted proxy. If the socket peer is not in a trusted CIDR, the
+router ignores `X-Forwarded-For` and uses the socket peer. If every forwarded
+hop is trusted, the router uses the leftmost address. `X-Real-IP` keeps its
+existing single-value behavior.
+
+This can change client addresses recorded in security access events and used by
+admin OIDC rate limiting for proxied deployments. Review the trusted proxy
+CIDRs and verify that each proxy appends its connecting peer to
+`X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
@@ -48,6 +65,25 @@ Existing routing config keeps its behavior unless a target sets `tiered_kv_cache
 8. For v2.0.0+, inventory every install path, systemd unit, Compose service,
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
+
+## v5.0.0 Configuration Changes
+
+### TypeScript Routing Policy Removal
+
+The in-process `strategy: script` policy and its non-empty `script`,
+`script_max_concurrent`, and `script_http` settings are removed. User code
+never runs inside the router process. Configurations selecting `strategy:
+script` or setting non-empty legacy values fail during configuration loading
+with guidance to migrate to `strategy: external`. Empty legacy fields written
+by v4.8 are ignored and removed from canonical documents on import.
+
+Move the policy to a standalone service and configure `external_policy.url`,
+`allow_hosts`, and a bounded `timeout_ms`. The service receives safe derived
+request context by default. Enable `external_policy.include_request: true` only
+when the service is trusted to receive request content. The request-shape and
+PII-aware examples under `examples/typescript-request-shape/` and
+`examples/typescript-pii-policy/` show the external policy contract. Use
+`pii_filter` when request redaction is required before upstream calls.
 
 ## Compatibility and operations (v4.6.0)
 

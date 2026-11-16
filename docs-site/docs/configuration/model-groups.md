@@ -84,4 +84,4 @@ Roll back by restoring the prior target list, reducing or removing a bad target'
 
 ## Related
 
-See [Routing Overview](../routing/overview), [Customer-Controlled Routing](../routing/customer-controlled-routing), [Model Group Contracts](./model-group-contracts), [Dynamic Score Routing](./dynamic-score-routing), [TypeScript Routing](./routing-typescript), [External Routing Policy](./external-routing-policy), and [Router Configuration](./router-config).
+See [Routing Overview](../routing/overview), [Customer-Controlled Routing](../routing/customer-controlled-routing), [Model Group Contracts](./model-group-contracts), [Dynamic Score Routing](./dynamic-score-routing), [TypeScript Routing Migration](./routing-typescript), [External Routing Policy](./external-routing-policy), and [Router Configuration](./router-config).

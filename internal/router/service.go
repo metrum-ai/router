@@ -105,7 +105,6 @@ type Service struct {
 	adminIdempotency   atomic.Value
 	trafficShape       *trafficShapeManager
 	bridgeSessions     *bridgeSessionBackends
-	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
 	toolReliability    *toolReliabilityStore
 	affinity           *dynamicAffinityStore
@@ -373,7 +372,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		metrics:            newMetricsStore(),
 		trafficShape:       newTrafficShapeManager(),
 		bridgeSessions:     bridgeSessions,
-		scripts:            map[string]*scriptStrategy{},
 		observations:       newDynamicObservationStore(),
 		toolReliability:    newToolReliabilityStore(),
 		affinity:           newDynamicAffinityStore(),
@@ -442,13 +440,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 			bridgeSessions.Close()
 			return nil, err
 		}
-	}
-	if err := s.loadScripts(); err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
 	}
 	s.loadExternalPolicies()
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers))
@@ -2832,7 +2823,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 			ContractReason:  defaultString(contractResult.reason, "contract-quality-floor"),
 		}
 	}
-	strategy := strings.ToLower(group.Strategy)
+	strategy := normalizeModelStrategy(group.Strategy)
+	if strategy == "" {
+		return decision{}, fmt.Errorf("unknown strategy %s", strings.ToLower(strings.TrimSpace(group.Strategy)))
+	}
 	var label *string
 	switch strategy {
 	case "static", "failover":
@@ -2893,19 +2887,6 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		targets = s.orderToolAwareTargets(groupName, group.ToolRouting, targets, len(req.Tools) > 0)
 	case "dynamic_score":
 		return s.pickDynamicScore(rc, groupName, group, req, callerDialect, caller, targets)
-	case "script":
-		strat := s.scripts[groupName]
-		if strat == nil {
-			err := fmt.Errorf("script strategy %s not loaded", groupName)
-			return decision{}, policyFailure(groupName, "script", "typescript", "load_error", err, 0, len(targets), len(group.Targets))
-		}
-		start := time.Now()
-		dec, err := strat.Pick(requestContextOrBackground(rc), groupName, req, group.Contract, targets, s.cfg.Provider, caller, tokenID)
-		if err != nil {
-			return decision{}, policyFailure(groupName, "script", "typescript", "", err, time.Since(start).Milliseconds(), len(targets), len(group.Targets))
-		}
-		dec.DynamicScoreTerms = append(dec.DynamicScoreTerms, policyOutputRankingTelemetry(dec.Strategy, dec.Target, dec.Fallbacks, s.cfg.Provider)...)
-		return dec, nil
 	case "external":
 		strat := s.externalPolicies[groupName]
 		if strat == nil {
@@ -2980,20 +2961,6 @@ func preferTieredKVTargets(targets []Target, req *IRRequest) []Target {
 		}
 	}
 	return ordered
-}
-
-func (s *Service) loadScripts() error {
-	for name, group := range s.cfg.Models {
-		if !strings.EqualFold(group.Strategy, "script") {
-			continue
-		}
-		strat, err := loadScriptStrategy(s.cfg.baseDir, group.Script, group.ScriptMaxConcurrent, group.ScriptHTTP)
-		if err != nil {
-			return fmt.Errorf("load script for model group %s: %w", name, err)
-		}
-		s.scripts[name] = strat
-	}
-	return nil
 }
 
 func (s *Service) loadExternalPolicies() {
@@ -3268,6 +3235,33 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
 	}
 	req = cleanReq
+	var droppedSamplingFields []string
+	for _, field := range []string{"temperature", "top_p"} {
+		if !supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, field) || req == nil {
+			continue
+		}
+		if field == "temperature" && req.Temperature == nil || field == "top_p" && req.TopP == nil {
+			continue
+		}
+		copyReq := *req
+		copyReq.Raw = make(map[string]any, len(req.Raw))
+		for key, value := range req.Raw {
+			copyReq.Raw[key] = value
+		}
+		if field == "temperature" {
+			copyReq.Temperature = nil
+			delete(copyReq.Raw, field)
+		} else {
+			copyReq.TopP = nil
+			delete(copyReq.Raw, field)
+		}
+		req = &copyReq
+		droppedSamplingFields = append(droppedSamplingFields, field)
+		attempt.ErrorDetails = append(attempt.ErrorDetails, upstreamErrorDetailLogRecord{
+			Seq: len(attempt.ErrorDetails) + 1, TS: attempt.TS, AttemptIndex: attemptIndex, ErrorClass: "request_field_dropped",
+			FieldName: "dropped_field", FieldValue: field, Source: "target_capability",
+		})
+	}
 	// Opaque reasoning provenance (#622): unwrap history minted for this target
 	// and drop it for every other target. Off by default, so nothing changes
 	// unless an operator enables observe or enforce.
@@ -3370,6 +3364,15 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 				chatBody["store"] = false
 			}
 			upReqBody, err = json.Marshal(chatBody)
+		}
+	}
+	if err == nil && len(droppedSamplingFields) > 0 {
+		var body map[string]any
+		if err = json.Unmarshal(upReqBody, &body); err == nil {
+			for _, field := range droppedSamplingFields {
+				delete(body, field)
+			}
+			upReqBody, err = json.Marshal(body)
 		}
 	}
 	attempt.RequestBytes = int64(len(upReqBody))
@@ -3557,6 +3560,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			upErr.Message = "trusted upstream router rate limited the request"
 		}
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
+		upErr.Details = append(upErr.Details, attempt.ErrorDetails...)
+		for i := range upErr.Details {
+			upErr.Details[i].Seq = i + 1
+		}
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
 		attempt.ErrorClass = upErr.Class
@@ -3575,6 +3582,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		upErr := classifyUpstreamStatus(httpResp.StatusCode, raw)
 		upErr.RetryAfter = parseRetryAfterHeader(httpResp.Header.Get("Retry-After"), time.Now().UTC())
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
+		upErr.Details = append(upErr.Details, attempt.ErrorDetails...)
+		for i := range upErr.Details {
+			upErr.Details[i].Seq = i + 1
+		}
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
 		attempt.ErrorClass = upErr.Class
@@ -3996,7 +4007,7 @@ func classifyUpstreamStatus(status int, raw []byte) upstreamError {
 		Message:      upstreamStatusMessage(status, raw, class),
 		StatusCode:   status,
 		Retryable:    class == "upstream_quota_exhausted" || class == "upstream_rate_limited" || class == "upstream_timeout" || (status >= 500 && status != http.StatusLoopDetected),
-		Fallbackable: upstreamAccessFailureFallbackable(class),
+		Fallbackable: upstreamAccessFailureFallbackable(class) || class == "upstream_unsupported_field",
 	}
 }
 
@@ -4014,6 +4025,8 @@ func statusErrorClass(status int, raw []byte) string {
 		return "upstream_model_access_denied"
 	case upstreamBodyIndicatesEntitlementFailure(status, raw):
 		return "upstream_entitlement_failed"
+	case (status == http.StatusBadRequest || status == http.StatusUnprocessableEntity) && upstreamBodyIndicatesUnsupportedSamplingField(raw):
+		return "upstream_unsupported_field"
 	case status == http.StatusUnauthorized:
 		return "upstream_auth_failed"
 	case status == http.StatusForbidden:
@@ -4031,6 +4044,27 @@ func statusErrorClass(status int, raw []byte) string {
 	default:
 		return "upstream_status"
 	}
+}
+
+func upstreamBodyIndicatesUnsupportedSamplingField(raw []byte) bool {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return false
+	}
+	var providerErr map[string]json.RawMessage
+	if err := json.Unmarshal(payload["error"], &providerErr); err != nil {
+		// Some OpenAI-compatible providers put the error fields at the root.
+		providerErr = payload
+	}
+	var param, code string
+	_ = json.Unmarshal(providerErr["param"], &param)
+	_ = json.Unmarshal(providerErr["code"], &code)
+	param = strings.ToLower(strings.TrimSpace(param))
+	if param != "temperature" && param != "top_p" {
+		return false
+	}
+	code = strings.ToLower(strings.TrimSpace(code))
+	return code == "" || code == "unsupported_value" || code == "unsupported_parameter" || code == "unsupported_field" || code == "unknown_parameter"
 }
 
 func upstreamAccessFailureFallbackable(class string) bool {
