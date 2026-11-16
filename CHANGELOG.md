@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
+
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
