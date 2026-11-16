@@ -335,6 +335,10 @@ test("admin reports shell renders every tab with mocked report APIs", async ({ p
     await expect(page.locator("main canvas:visible, main table:visible").first()).toBeVisible();
   }
 
+  await reportNav.locator('[data-report-tab="security-events"]').click();
+  await expect(page.getByRole("region", { name: "Latest security posture self-test" })).toContainText("caller-key-age");
+  await expect(page.getByRole("region", { name: "Latest security posture self-test" })).toContainText("warn");
+
   expect(consoleErrors).toEqual([]);
 });
 
@@ -844,6 +848,14 @@ function responseForRoute(route: Route) {
         },
       ],
     }, cursorPagination(url, 1, 1, false));
+  }
+  if (endpoint === "security/posture/latest") {
+    return {
+      schema: "metrum.ai/router-security-posture-summary/v1",
+      generated_at: "2026-11-16T06:00:00Z",
+      outcome: "warn",
+      findings: [{ check: "caller-key-age", status: "warn", severity: "medium" }],
+    };
   }
   if (endpoint === "savings") {
     return {

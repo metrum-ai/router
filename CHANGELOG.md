@@ -51,6 +51,15 @@
   digest-pinned official vLLM v0.33.0 images after scanning the full deployment tree.
 - Move the AMD reference and edge images to the digest-pinned upstream vLLM
   ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
+- Add `metrum-ai-routerctl doctor --security` with bounded probes, JSON output,
+  configurable failure thresholds, and findings for admin exposure, caller limits,
+  key format and recorded entropy, sensitive-group DLP, and serving-port metrics
+  authorization. Engine pins use the release advisory snapshot; offline operation
+  never executes config-adjacent scripts or makes advisory network calls.
+- Add opt-in latest posture summary reporting through the authenticated admin
+  security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
+- Record UTC issuance timestamps for generated and rotated caller keys; the
+  security self-test warns when age is unknown and fails keys older than 90 days.
 
 All notable changes to Metrum AI Router are documented in this file.
 

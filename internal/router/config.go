@@ -1234,6 +1234,8 @@ type CallerConfig struct {
 	Quota        QuotaConfig         `yaml:"quota" json:"quota"`
 	Key          KeyConfig           `yaml:"key" json:"key"`
 	Binding      CallerBindingConfig `yaml:"binding,omitempty" json:"binding,omitempty"`
+	// TokenIssuedAt is the UTC RFC3339 issuance time used by posture checks.
+	TokenIssuedAt string `yaml:"token_issued_at,omitempty" json:"token_issued_at,omitempty"`
 }
 
 type UserConfig struct {

@@ -31,6 +31,9 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	if generated.TokenID != "rtr_metrum_alice_example-project_dev_key-1" {
 		t.Fatalf("token id=%q", generated.TokenID)
 	}
+	if generated.Caller.TokenIssuedAt != "2026-06-13T00:00:00Z" {
+		t.Fatalf("token issuance timestamp=%q", generated.Caller.TokenIssuedAt)
+	}
 	if strings.Contains(generated.TokenID, generated.Token[strings.LastIndex(generated.Token, "_")+1:]) {
 		t.Fatal("token id contains secret")
 	}

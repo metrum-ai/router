@@ -129,15 +129,12 @@ def validate_metadata(version: str, commit: str, build_date: str) -> None:
         raise ValueError("build date is not canonical")
 
 
-def run_content_validator(paths: list[Path], allowlist: Path) -> None:
+def run_content_validator(paths: list[Path], allowlist: Path, require_advisory_snapshot: bool = False) -> None:
+    command = [sys.executable, str(ROOT / "scripts/validate_package_contents.py"), "--allowlist", str(allowlist)]
+    if require_advisory_snapshot:
+        command.append("--advisories-snapshot")
     subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts/validate_package_contents.py"),
-            "--allowlist",
-            str(allowlist),
-            *[str(path) for path in paths],
-        ],
+        [*command, *[str(path) for path in paths]],
         cwd=ROOT,
         check=True,
     )
@@ -151,6 +148,7 @@ def create_inventory(
     allowlist: Path,
     release_url: str | None,
     artifact_set: str = "full",
+    require_advisory_snapshot: bool = False,
 ) -> tuple[dict[str, object], str]:
     validate_metadata(version, commit, build_date)
     try:
@@ -158,7 +156,7 @@ def create_inventory(
     except KeyError as exc:
         raise ValueError(f"unknown artifact set: {artifact_set}") from exc
     selected = select_complete_set(dist_dir, version, required=required)
-    run_content_validator([path for path, _, _, _, _ in selected], allowlist)
+    run_content_validator([path for path, _, _, _, _ in selected], allowlist, require_advisory_snapshot)
     artifacts: list[dict[str, object]] = []
     checksum_lines: list[str] = []
     for path, kind, os_name, arch, archive_format in selected:
@@ -216,6 +214,7 @@ def main() -> int:
         default=os.environ.get("RELEASE_ARTIFACT_SET", "full"),
         help="full = binary+docker (local handoff); binary = GitHub Actions self-hosted release",
     )
+    parser.add_argument("--advisories-snapshot", action="store_true", help="require the engine advisory snapshot in every binary release package")
     parser.add_argument("--allowlist", type=Path, default=ROOT / "scripts/package_docs_allowlist.txt")
     parser.add_argument("--release-url", help="Optional public asset URL prefix; omit before publication")
     parser.add_argument("--inventory", type=Path)
@@ -234,6 +233,7 @@ def main() -> int:
             args.allowlist,
             args.release_url,
             artifact_set=args.artifact_set,
+            require_advisory_snapshot=args.advisories_snapshot,
         )
     except (ValueError, subprocess.CalledProcessError) as exc:
         print(f"release artifact inventory failed: {exc}", file=sys.stderr)

@@ -569,6 +569,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				ContentAdmin:       row.ContentAdmin,
 				Rate:               rate,
 			}
+			newCaller.TokenIssuedAt = caller.TokenIssuedAt
 			return append(callers, newCaller), nil
 		}); err != nil {
 			return err
@@ -676,6 +677,7 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 				if c.ID == callerID {
 					callers[i].TokenHash = generated.TokenHash
 					callers[i].TokenSHA256 = generated.TokenSHA256
+					callers[i].TokenIssuedAt = generated.Caller.TokenIssuedAt
 					callers[i].TokenID = generated.TokenID
 					callers[i].TokenFormatVersion = generated.Caller.TokenFormatVersion
 					callers[i].TokenEntropyBits = generated.Caller.TokenEntropyBits

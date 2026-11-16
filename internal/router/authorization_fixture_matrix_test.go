@@ -36,6 +36,14 @@ func TestV47AuthorizationFixtureMatrix(t *testing.T) {
 		}
 		permissions = append(permissions, permission)
 	}
+	// This report permission was added after v4.7 and is outside its frozen oracle.
+	for i := 0; i < len(permissions); {
+		if permissions[i] == "admin:security_reports:write" {
+			permissions = append(permissions[:i], permissions[i+1:]...)
+			continue
+		}
+		i++
+	}
 	sort.Strings(permissions)
 	var rows []row
 	count := 0

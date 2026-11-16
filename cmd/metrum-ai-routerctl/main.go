@@ -71,6 +71,10 @@ func main() {
 		blueprintCommand(os.Args[2:])
 	case "emergency":
 		emergencyCommand(os.Args[2:])
+	case "doctor":
+		if code := securityDoctorCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
+			os.Exit(code)
+		}
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
