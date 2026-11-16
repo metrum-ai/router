@@ -5,6 +5,16 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Governed fine-tuning workflow
+
+Training capture remains disabled unless an operator explicitly enables it for
+an approved caller, group, or server scope. Captured content passes the DLP
+filter before encrypted storage. Review the
+[domain fine-tuning operator guide](../operations/domain-fine-tuning) before
+enabling capture or training export. Exported datasets and trained artifacts
+have retention independent from router capture deletion. Use bounded shadow
+and audited promotion; retain the previous group set for one-call rollback.
+
 ## v5.0.0 request trace correlation
 
 Inbound trace acceptance is opt-in. Existing callers and deployments that do not
