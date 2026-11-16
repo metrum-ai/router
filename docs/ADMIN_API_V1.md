@@ -247,7 +247,10 @@ the background monitor emits one durable expiry-warning event per credential
 and exports `metrum_ai_router_admin_credentials_expiring_30d` on the admin listener's `/metrics` endpoint.
 It emits one durable unused-warning event for active credentials that have
 never been used after they have been registered for 24 hours, and exports the
-unused-credential gauge.
+unused-credential gauge. Access-review credentials are marked unused only after
+24 hours without a successful use. The endpoint returns
+`503 admin-client-review-unavailable` if the authorizer is unavailable or
+effective grants cannot be resolved.
 
 ## Resource configuration
 

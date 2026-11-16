@@ -162,9 +162,27 @@ func TestAdminClientRecoveryReRegistersFixedIdentity(t *testing.T) {
 	if err := store.registerCredential(context.Background(), "recover", cred); err != nil {
 		t.Fatalf("re-register fixed identity: %v", err)
 	}
+	mismatchedIdentity := cred
+	mismatchedIdentity.Identity = "client_id:other"
+	if err := store.registerCredential(context.Background(), "recover", mismatchedIdentity); !errors.Is(err, errAdminClientConflict) {
+		t.Fatalf("same ID with different identity error=%v, want conflict", err)
+	}
 	ok, err := store.authenticate(context.Background(), Principal{Kind: "oauth", CredentialID: cred.ID, Subject: cred.Subject})
 	if err != nil || !ok {
 		t.Fatalf("recovered credential allowed=%v err=%v", ok, err)
+	}
+}
+
+func TestAdminClientAccessReviewGrantErrorReturnsUnavailable(t *testing.T) {
+	now := time.Now().UTC()
+	clients := []adminClient{{ID: "review-error", Status: "active", Credentials: []adminClientCredential{{ID: "key", Kind: "adminkey", Subject: "admin", Status: "active", ExpiresAt: now.Add(time.Hour)}}}}
+	request := httptest.NewRequest(http.MethodGet, "/admin/v1/clients/access-review", nil)
+	response := httptest.NewRecorder()
+	writeAdminClientAccessReview(response, request, clients, now, func(string) ([][]string, error) {
+		return nil, errors.New("grant lookup failed")
+	})
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "admin-client-review-unavailable") {
+		t.Fatalf("review grant error status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -190,6 +208,24 @@ func TestAdminClientUnusedCredentialWarningAndGauge(t *testing.T) {
 	if err := store.registerCredential(context.Background(), "unused", adminClientCredential{ID: "never-used", Kind: "oauth", Identity: "client", Subject: "subject", ExpiresAt: now.Add(72 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
+	count, err := store.unusedCount(context.Background())
+	if err != nil || count != 0 {
+		t.Fatalf("new credential counted unused before 24 hours: count=%d err=%v", count, err)
+	}
+	clients, err := store.list(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := httptest.NewRecorder()
+	writeAdminClientAccessReview(review, httptest.NewRequest(http.MethodGet, "/admin/v1/clients/access-review", nil), clients, now, func(string) ([][]string, error) { return [][]string{}, nil })
+	if review.Code != http.StatusOK || strings.Contains(review.Body.String(), `"unused":true`) {
+		t.Fatalf("new credential review should not be unused: status=%d body=%s", review.Code, review.Body.String())
+	}
+	svc := &Service{adminClients: store}
+	svc.monitorAdminClientCredentials()
+	if !strings.Contains(svc.adminMetrics().Prometheus(nil), "metrum_ai_router_admin_client_credentials_unused 0") {
+		t.Fatal("unused monitor counted a newly registered credential before 24 hours")
+	}
 	if err := store.emitUnusedWarnings(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -197,13 +233,21 @@ func TestAdminClientUnusedCredentialWarningAndGauge(t *testing.T) {
 		t.Fatalf("unused warning fired at registration: %d", events)
 	}
 	now = now.Add(25 * time.Hour)
-	svc := &Service{adminClients: store}
+	clients, err = store.list(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	review = httptest.NewRecorder()
+	writeAdminClientAccessReview(review, httptest.NewRequest(http.MethodGet, "/admin/v1/clients/access-review", nil), clients, now, func(string) ([][]string, error) { return [][]string{}, nil })
+	if review.Code != http.StatusOK || !strings.Contains(review.Body.String(), `"unused":true`) {
+		t.Fatalf("credential review should mark unused after 24 hours: status=%d body=%s", review.Code, review.Body.String())
+	}
 	svc.monitorAdminClientCredentials()
 	svc.monitorAdminClientCredentials()
 	if events != 1 {
 		t.Fatalf("unused warnings=%d want one", events)
 	}
-	count, err := store.unusedCount(context.Background())
+	count, err = store.unusedCount(context.Background())
 	if err != nil || count != 1 {
 		t.Fatalf("unused count=%d err=%v", count, err)
 	}

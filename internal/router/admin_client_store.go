@@ -31,6 +31,7 @@ type adminClientCredential struct {
 	Identity        string     `json:"identity"`
 	Subject         string     `json:"subject"`
 	ExpiresAt       time.Time  `json:"expiresAt"`
+	CreatedAt       time.Time  `json:"-" gorm:"column:created_at"`
 	LastUsedAt      *time.Time `json:"lastUsedAt,omitempty"`
 	Status          string     `json:"status"`
 	EffectiveGrants [][]string `json:"effectiveGrants,omitempty" gorm:"-"`
@@ -96,7 +97,7 @@ func (a *adminClientBindingAuthenticator) Authenticate(ctx context.Context, r *h
 }
 
 func adminClientMigrationDefinition(previous, schemaVersion int) MigrationDefinition {
-	return FinalizeMigrationDefinition(MigrationDefinition{ID: 2026111605, Scope: configControlPlaneScope,
+	return FinalizeMigrationDefinition(MigrationDefinition{ID: 2026111610, Scope: configControlPlaneScope,
 		Name: "admin client identities and credential metadata", Release: "v5.0.0",
 		Checksum: MigrationChecksum("router-config.phase17.admin-clients.v1"), SchemaVersion: schemaVersion,
 		Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
@@ -162,7 +163,7 @@ func (s *adminClientStore) list(ctx context.Context) ([]adminClient, error) {
 		// Active bindings are the first-class access-review set. Keep them ahead
 		// of the bounded revoked-history tail so old rows cannot hide a working
 		// credential from operators.
-		if err := s.db.WithContext(ctx).Raw("SELECT id,kind,identity,subject,expires_at,last_used_at,status FROM "+adminClientCredentialTable+" WHERE client_id = ? ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END,id LIMIT ?", rows[i].ID, adminClientMaxCredentials*2).Scan(&creds).Error; err != nil {
+		if err := s.db.WithContext(ctx).Raw("SELECT id,kind,identity,subject,expires_at,created_at,last_used_at,status FROM "+adminClientCredentialTable+" WHERE client_id = ? ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END,id LIMIT ?", rows[i].ID, adminClientMaxCredentials*2).Scan(&creds).Error; err != nil {
 			return nil, err
 		}
 		rows[i].Credentials = creds
@@ -182,7 +183,7 @@ func (s *adminClientStore) get(ctx context.Context, id string) (adminClient, err
 		return adminClient{}, errAdminClientNotFound
 	}
 	row.Credentials = []adminClientCredential{}
-	if err := s.db.WithContext(ctx).Raw("SELECT id,kind,identity,subject,expires_at,last_used_at,status FROM "+adminClientCredentialTable+" WHERE client_id=? ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END,id LIMIT ?", id, adminClientMaxCredentials*2).Scan(&row.Credentials).Error; err != nil {
+	if err := s.db.WithContext(ctx).Raw("SELECT id,kind,identity,subject,expires_at,created_at,last_used_at,status FROM "+adminClientCredentialTable+" WHERE client_id=? ORDER BY CASE WHEN status='active' THEN 0 ELSE 1 END,id LIMIT ?", id, adminClientMaxCredentials*2).Scan(&row.Credentials).Error; err != nil {
 		return adminClient{}, err
 	}
 	return row, nil
@@ -325,7 +326,8 @@ func (s *adminClientStore) unusedCount(ctx context.Context) (int64, error) {
 		return 0, errors.New("admin client store unavailable")
 	}
 	var count int64
-	err := s.db.WithContext(ctx).Raw("SELECT COUNT(*) FROM "+adminClientCredentialTable+" x JOIN "+adminClientTable+" c ON c.id=x.client_id WHERE x.status='active' AND c.status='active' AND x.expires_at>? AND x.last_used_at IS NULL", s.now().UTC()).Scan(&count).Error
+	now := s.now().UTC()
+	err := s.db.WithContext(ctx).Raw("SELECT COUNT(*) FROM "+adminClientCredentialTable+" x JOIN "+adminClientTable+" c ON c.id=x.client_id WHERE x.status='active' AND c.status='active' AND x.expires_at>? AND x.created_at<? AND x.last_used_at IS NULL", now, now.Add(-24*time.Hour)).Scan(&count).Error
 	return count, err
 }
 
@@ -387,7 +389,11 @@ func (s *adminClientStore) registerCredentialWithAudit(ctx context.Context, clie
 		if count >= adminClientMaxCredentials {
 			return errAdminClientConflict
 		}
-		if err := tx.Exec("INSERT INTO "+adminClientCredentialTable+" (id,client_id,kind,identity,subject,expires_at,created_at,status) VALUES (?,?,?,?,?,?,?,'active') ON CONFLICT(id,kind) DO UPDATE SET client_id=excluded.client_id,identity=excluded.identity,subject=excluded.subject,expires_at=excluded.expires_at,created_at=excluded.created_at,last_used_at=NULL,warning_emitted_at=NULL,unused_warning_emitted_at=NULL,status='active' WHERE "+adminClientCredentialTable+".client_id=excluded.client_id AND "+adminClientCredentialTable+".identity=excluded.identity", credential.ID, clientID, credential.Kind, credential.Identity, credential.Subject, credential.ExpiresAt.UTC(), s.now().UTC()).Error; err != nil {
+		upsert := tx.Exec("INSERT INTO "+adminClientCredentialTable+" (id,client_id,kind,identity,subject,expires_at,created_at,status) VALUES (?,?,?,?,?,?,?,'active') ON CONFLICT(id,kind) DO UPDATE SET client_id=excluded.client_id,identity=excluded.identity,subject=excluded.subject,expires_at=excluded.expires_at,created_at=excluded.created_at,last_used_at=NULL,warning_emitted_at=NULL,unused_warning_emitted_at=NULL,status='active' WHERE "+adminClientCredentialTable+".client_id=excluded.client_id AND "+adminClientCredentialTable+".identity=excluded.identity", credential.ID, clientID, credential.Kind, credential.Identity, credential.Subject, credential.ExpiresAt.UTC(), s.now().UTC())
+		if upsert.Error != nil {
+			return errAdminClientConflict
+		}
+		if upsert.RowsAffected == 0 {
 			return errAdminClientConflict
 		}
 		var active int64

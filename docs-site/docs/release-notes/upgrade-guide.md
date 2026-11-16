@@ -1095,8 +1095,8 @@ credentials registered to that subject authenticate; all unregistered credential
 for it are refused from that point onward, including before disable, revoke, or
 expiry. Ensure registration leaves at least one usable global administrator.
 
-The router-config control-plane schema 17 migration adds the admin client and credential-binding
-tables and extends credential lifecycle audit records with client ID and actor. Apply it with the
+The router-config migration `2026111610` advances schema 16 to 17 and adds the admin client and
+credential-binding tables and extends credential lifecycle audit records with client ID and actor. Apply it with the
 packaged non-serving migration job before starting serving replicas; follow the backup, apply,
 verify, and status steps in [Data Migrations](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md). Client endpoints return
 unavailable until the migration is applied. Bindings are checked against the active configured

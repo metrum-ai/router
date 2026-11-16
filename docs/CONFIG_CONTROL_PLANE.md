@@ -155,9 +155,7 @@ operators authorized to handle them.
 
 ## v5.0.0 machine-client registry
 
-The machine-client API adds online migration `2026111605` (schema 17), after
-the stored-config cleanup and caller-token metadata migrations. It creates the shared client and credential
-metadata tables used by per-request revocation and expiry checks. Database-mode
+The machine-client API adds online migration `2026111610` (schema 17), after the schema-16 admin operations migration (`2026111606`) and the caller-token migrations. It creates the shared client and credential metadata tables used by per-request revocation and expiry checks. Database-mode
 deployments apply it with the online prefix using
 `router-migrate --scope router-config --action apply`; no maintenance window or
 backup-evidence reference is needed for this migration. The migration stores
