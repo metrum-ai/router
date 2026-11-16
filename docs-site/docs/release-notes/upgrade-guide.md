@@ -58,6 +58,8 @@ verifier remains refused.
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
 
+Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
+
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior
@@ -828,5 +830,3 @@ administrator or by legacy configuration require all caller write permissions
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
-
-Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
