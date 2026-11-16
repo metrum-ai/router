@@ -21,6 +21,7 @@ const (
 	toolFirewallEnforce             = "enforce"
 	defaultFirewallMaxConversations = 10000
 	defaultFirewallConversationTTL  = 30 * time.Minute
+	toolFirewallCacheSweepPerCall   = 32
 )
 
 type compiledToolFirewallRule struct {
@@ -394,12 +395,24 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key string, 
 	if max <= 0 {
 		max = defaultFirewallMaxConversations
 	}
+	// Keep request work independent of the configured cache maximum. A bounded
+	// map sample reclaims expired entries over time; if capacity is still full,
+	// the caller fails closed instead of evicting live sequence history.
+	scanned := 0
 	for existing, entry := range s.conversations {
+		if scanned >= toolFirewallCacheSweepPerCall {
+			break
+		}
+		scanned++
 		if !entry.expires.After(now) {
 			delete(s.conversations, existing)
 		}
 	}
 	entry := s.conversations[key]
+	if entry != nil && !entry.expires.After(now) {
+		delete(s.conversations, key)
+		entry = nil
+	}
 	if entry == nil {
 		if len(s.conversations) >= max {
 			// Evicting another conversation would silently forget the first half

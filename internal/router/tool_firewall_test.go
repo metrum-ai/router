@@ -89,6 +89,25 @@ func TestToolFirewallSequenceCapacityFailsClosed(t *testing.T) {
 	}
 }
 
+func TestToolFirewallSequenceCacheReclaimsExpiredEntry(t *testing.T) {
+	runtime := newToolFirewallRuntime()
+	now := time.Unix(100, 0).UTC()
+	runtime.now = func() time.Time { return now }
+	cfg := ToolFirewallConfig{
+		Mode: toolFirewallEnforce, MaxConversations: 1, ConversationTTLSeconds: 1,
+		Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}},
+	}
+	first := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation one"}}}
+	if got := runtime.check(cfg, "caller", "group", first, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("first conversation unexpectedly blocked: %+v", got)
+	}
+	now = now.Add(2 * time.Second)
+	second := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation two"}}}
+	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("expired cache entry was not reclaimed: %+v", got)
+	}
+}
+
 func TestToolFirewallSequenceRequiresConversationIdentity(t *testing.T) {
 	cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}}}
 	got := newToolFirewallRuntime().check(cfg, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}})
