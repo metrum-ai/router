@@ -949,6 +949,25 @@ func prepareAdminAuditFixture(t *testing.T, harness *adminAuditHarness, op Opera
 		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
 			t.Fatalf("preparing membership: %d (%s)", recorder.Code, recorder.Body.String())
 		}
+	case "deleteProject":
+		recorder := write(http.MethodPut, "/admin/v1/projects/audit-unused", map[string]any{"name": "Unused", "status": "active", "environments": []any{map[string]any{"id": "prod", "name": "Production", "status": "active"}}}, "pre-delete-project")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing deleteProject: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "deleteProjectEnvironment":
+		recorder := write(http.MethodPut, "/admin/v1/projects/audit-unused", map[string]any{"name": "Unused", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}, map[string]any{"id": "prod", "name": "Production", "status": "active"}}}, "pre-delete-environment")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing deleteProjectEnvironment: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "deleteProjectEnvironmentMembership":
+		recorder := write(http.MethodPut, "/admin/v1/projects/audit-unused", map[string]any{"name": "Unused", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}, "pre-delete-membership-project")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing membership-delete project: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+		recorder = write(http.MethodPost, "/admin/v1/projects/audit-unused/environments/dev/memberships", map[string]any{"user_id": "alice", "role": "member", "status": "active"}, "pre-delete-membership")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing membership delete: %d (%s)", recorder.Code, recorder.Body.String())
+		}
 	}
 }
 
@@ -1005,6 +1024,12 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 		body = map[string]any{"user_id": "alice", "role": "member", "status": "active"}
 	case "putProject":
 		body = map[string]any{"name": "Search", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}
+	case "deleteProject":
+		target = strings.ReplaceAll(op.Path, "{project}", "audit-unused")
+	case "deleteProjectEnvironment":
+		target = strings.ReplaceAll(strings.ReplaceAll(op.Path, "{project}", "audit-unused"), "{environment}", "dev")
+	case "deleteProjectEnvironmentMembership":
+		target = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(op.Path, "{project}", "audit-unused"), "{environment}", "dev"), "{user_id}", "alice")
 	}
 	return op.Method, target, body
 }
