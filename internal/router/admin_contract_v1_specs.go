@@ -70,7 +70,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "getConfigGroup", Method: "GET", Path: "/admin/v1/config/groups/{group}", LegacyPath: "/admin/config/groups/{group}",
 		Summary: "Read one model group",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
-		Response:  adminOpenObject{Members: []string{"group", "strategy", "targets", "contract", "set_id", "revision"}},
+		Response:  adminOpenObject{Members: []string{"group", "strategy", "targets", "contract", "virtual_model", "set_id", "revision"}},
 		Errors:    []int{404, 409},
 		RateClass: AdminRateClassRead, HandlerKey: "config.group.get",
 	},

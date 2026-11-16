@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -855,5 +856,115 @@ func TestConfigAdminValidateEndpointIsSideEffectFree(t *testing.T) {
 		map[string]any{"targets": []map[string]any{{"provider": "ghost", "model_ref": "g-1"}}}, admin)
 	if rr.Code != http.StatusUnprocessableEntity {
 		t.Fatalf(":validate ineligible status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestVirtualModelVectorRefreshAndThresholdChangeAreCopyOnWrite(t *testing.T) {
+	runner, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "virtual.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeDB() })
+	applyConfigControlPlaneMigrationsForTest(t, runner)
+	seed := `server:
+  listen: ':8080'
+  identifiers:
+    mode: passthrough
+providers:
+  alpha:
+    base_url: https://alpha.example/v1
+    dialect: openai
+    api_key_env: ALPHA_API_KEY
+    models:
+      a-one:
+        model: alpha-model-1
+models:
+  virtual-coding:
+    strategy: failover
+    virtual_model:
+      task_family: coding
+      min_quality_score: 0.8
+      min_context_tokens: 100
+    targets:
+      - provider: alpha
+        model_ref: a-one
+        timeout_ms: 2500
+        context_tokens: 4096
+        request_shape_support:
+          max_estimated_input_tokens: 2048
+`
+	setID, err := ImportCanonicalYAML(runner.db, "prod", "virtual-seed", []byte(seed), "test-seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateConfigSet(runner.db, "prod", setID, "test-seed"); err != nil {
+		t.Fatal(err)
+	}
+	mux := configAdminTestMux(t, runner.db, nil)
+	admin := adminHeaders("adminkey:ops", "config:read", "config:write")
+	get := func() map[string]any {
+		t.Helper()
+		rr := configAdminRequest(t, mux, http.MethodGet, "/admin/config/groups/virtual-coding", nil, admin)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("GET group status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body
+	}
+	initial := get()
+	initialTarget := initial["targets"].([]any)[0].(map[string]any)
+	if initialTarget["member"] != false || initialTarget["exclusion_reason"] != "virtual-model-no-eval-vector" {
+		t.Fatalf("initial target membership=%#v", initialTarget)
+	}
+	reliability := 0.9
+	vector := TargetCapabilityVector{QualityScore: 0.9, ToolReliability: &reliability, ContextTokens: 1000, P95LatencyMS: 200, MeanCostUSD: 0.01, EvalRunID: "run-1", EvalReportSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", TaskFamily: "coding", MeasuredAt: "2026-11-16"}
+	spec := GroupTargetSpec{Provider: "alpha", ModelRef: "a-one", Validation: &GroupTargetValidationSpec{Status: "passed", Workload: "eval-infra", ValidatedAt: "2026-11-16", Harness: "eval-infra", Notes: "Imported report sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Capabilities: map[string]TargetCapabilityVector{"coding": vector}}}
+	writeHeaders := map[string]string{"X-Test-Admin-Subject": "adminkey:ops", "X-Test-Admin-Perms": "config:read,config:write", "If-Match": `"1"`, "Idempotency-Key": "virtual-eval-1"}
+	write := configAdminRequest(t, mux, http.MethodPut, "/admin/config/groups/virtual-coding/targets", map[string]any{"targets": []GroupTargetSpec{spec}, "reason": "import reproducible eval report"}, writeHeaders)
+	if write.Code != http.StatusOK {
+		t.Fatalf("refresh status=%d body=%s", write.Code, write.Body.String())
+	}
+	refreshed := get()
+	refreshedTarget := refreshed["targets"].([]any)[0].(map[string]any)
+	if refreshedTarget["member"] != true {
+		t.Fatalf("refreshed target did not enter membership: %#v", refreshedTarget)
+	}
+	validationView := refreshedTarget["validation"].(map[string]any)
+	vectorView := validationView["capabilities"].(map[string]any)["coding"].(map[string]any)
+	if vectorView["qualityScore"] != 0.9 || vectorView["evalRunId"] != "run-1" {
+		t.Fatalf("group API omitted imported vector provenance: %#v", vectorView)
+	}
+	var active *Config
+	active, err = LoadActiveCanonicalConfig(runner.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Models["virtual-coding"].Targets[0].TimeoutMS != 2500 || active.Models["virtual-coding"].Targets[0].ContextTokens != 4096 || active.Models["virtual-coding"].Targets[0].RequestShapeSupport.MaxEstimatedInputTokens != 2048 {
+		t.Fatalf("eval refresh changed unrelated target config: %#v", active.Models["virtual-coding"].Targets[0])
+	}
+	tooHigh := 0.95
+	virtual := *active.Models["virtual-coding"].VirtualModel
+	virtual.MinQualityScore = &tooHigh
+	group := active.Models["virtual-coding"]
+	group.VirtualModel = &virtual
+	active.Models["virtual-coding"] = group
+	changedYAML, err := yaml.Marshal(&active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thresholdSet, err := ImportCanonicalYAML(runner.db, "prod", "threshold-change", changedYAML, "test-seed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateConfigSet(runner.db, "prod", thresholdSet, "test-seed"); err != nil {
+		t.Fatal(err)
+	}
+	changed := get()
+	changedTarget := changed["targets"].([]any)[0].(map[string]any)
+	if changedTarget["member"] != false || changedTarget["exclusion_reason"] != "virtual-model-quality-floor" {
+		t.Fatalf("threshold change did not recompute membership: %#v", changedTarget)
 	}
 }

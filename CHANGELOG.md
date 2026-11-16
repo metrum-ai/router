@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Governed per-domain fine-tuning operator workflow: opt-in encrypted capture,
+  audited export, external training and preregistered gates, bounded shadow,
+  audited promotion, one-call rollback, and independent retention for copied
+  datasets. Capture must pass the #890 DLP policy before this workflow is
+  enabled in a release.
+
+### Added
+
+- Add virtual model groups whose eligible targets are selected from per-family
+  capability vectors imported from reproducible eval reports. The config Admin
+  API and `routerctl groups` show vectors, membership and exclusion reasons.
+
 ### Fixed
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
