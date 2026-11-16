@@ -82,6 +82,9 @@ func TestProjectBudgetHTTPEnforcementE2E(t *testing.T) {
 	if !strings.Contains(logOutput.String(), "event=project_budget action=threshold project=\"local\"") || !strings.Contains(logOutput.String(), "action=trip project=\"local\"") {
 		t.Fatalf("missing budget threshold/trip events: %s", logOutput.String())
 	}
+	if strings.Contains(logOutput.String(), "budget-test-key") || strings.Contains(logOutput.String(), "hello") {
+		t.Fatal("budget events included provider credentials or prompt text")
+	}
 }
 
 func TestProjectBudgetValidation(t *testing.T) {
