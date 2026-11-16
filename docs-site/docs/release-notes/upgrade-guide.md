@@ -127,8 +127,6 @@ The opt-in `security.token_exchange` feature adds the `POST /oauth/token` route 
 
 Usage schema version 19 adds `task_id` and `human_owner` columns. With the default deployment-job migration policy, run the usage migration plan, apply and serving verification steps before starting v5.0.0. Keep the database backup and rollback procedure in the [data migration runbook](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md) available for the upgrade window.
 
-Usage schema version 21 adds `organization_id` and `team_id` for hierarchy audit attribution after schema 20 recomputed-input accounting. Migration `2026111622` depends on `usageRecomputedInputMigrationID` (`2026111614`). The migration is restore-required for rollback; keep a database restore available.
-
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## v5.0.0 bounded tool-call streaming hold
@@ -154,6 +152,26 @@ group list/show API now reports each target's measured vector, membership and
 exclusion reason. Missing or ambiguous report data fails without changing the
 active config. Reported context tokens are the maximum observed in the eval
 workload, not a model's theoretical context limit.
+
+## CPU-first small-work reference group
+
+The hierarchy reference now includes an optional `agent-small` model group,
+backed by the official vLLM CPU image and `Qwen/Qwen2.5-0.5B-Instruct`. The
+reference caller can request this group explicitly. Its CPU candidate is
+eligible only when estimated input is at most 800 tokens and the requested
+output cap is at most 128 tokens; other requests use the configured frontier
+target. The full CPU attempt has a 15-second timeout sized for the 128-token
+output cap; `thresholds.max_ttfb_ms: 1000` supplies the dynamic latency budget,
+and CPU errors/timeouts retry the frontier before a response begins. Configure
+`CPU_BASE_URL`, `CPU_MODEL`, and the vLLM
+CPU resource settings in the hierarchy `.env` file. Existing groups and
+existing caller behavior are unchanged.
+
+This is reference configuration only. Operators should establish workload
+quality and saturation limits on their own CPU hardware before granting callers
+access to `agent-small`. The edge and datacenter hierarchy reference configs set
+`admin.enabled: false` because each router uses one listener; deployments that
+need the authenticated admin listener should enable and configure it explicitly.
 
 ## v5.0.0 caller-token hygiene
 
@@ -208,12 +226,14 @@ available otherwise.
 Anthropic Messages requests routed through Bedrock Converse now forward the
 `thinking` request option for supported Claude models and retain signed
 `thinking` and `redacted_thinking` history through unary and streaming tool
-continuations. Keep the complete continuation on the same supported Bedrock
-Claude target and account; cross-provider or cross-account signature replay is
-not supported. Signatures are preserved and returned in Anthropic continuation
-blocks for provider validation, are excluded from usage rows and request logs,
-and are not returned in OpenAI Chat responses. Bedrock validates signature
-authenticity, and opaque signatures may be scoped to a provider account.
+continuations. No router configuration change is required; callers opt in with
+their normal Anthropic `thinking` object. The router rejects missing thinking
+signatures and malformed redacted data before dispatch. Opaque signatures are
+returned in Anthropic continuation blocks for provider validation, are excluded
+from usage rows and request logs, and are not returned in OpenAI Chat responses.
+Bedrock still validates signature authenticity, and opaque signatures may be
+scoped to a provider account. Keep reasoning history on the same Bedrock target
+and account; cross-provider and cross-account replay is unsupported.
 
 ## v5.0.0 hierarchy governance
 
@@ -243,6 +263,9 @@ separately validated. On parent outage, the child serves its last validated
 policy through the configured TTL and for at most 30 additional seconds. After
 that grace period, it returns HTTP 503 before inference. Restore parent
 reachability or correct the child's credential/URL to recover.
+
+
+Usage schema version 21 adds `organization_id` and `team_id` for hierarchy audit attribution after schema 20 recomputed-input accounting. Migration `2026111622` depends on `usageRecomputedInputMigrationID` (`2026111614`). The migration is restore-required for rollback; keep a database restore available.
 
 ## v5.0.0 secret DLP
 

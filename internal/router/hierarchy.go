@@ -6,6 +6,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -98,7 +99,7 @@ func validateHierarchyConfig(cfg HierarchyConfig) error {
 			return fmt.Errorf("%s id must be unique and valid", prefix)
 		}
 		seenIDs[child.ID] = true
-		if !validAdminKeyID(child.CallerID) || seenCallers[child.CallerID] || !validAdminKeyID(child.OrganizationID) || !validAdminKeyID(child.TeamID) {
+		if !safeDetectorID(child.CallerID) || seenCallers[child.CallerID] || !validAdminKeyID(child.OrganizationID) || !validAdminKeyID(child.TeamID) {
 			return fmt.Errorf("%s must name a unique valid caller, organization, and team", prefix)
 		}
 		seenCallers[child.CallerID] = true
@@ -283,18 +284,33 @@ func (s *Service) handleHierarchyPolicy(w http.ResponseWriter, r *http.Request) 
 	if rawDepth := strings.TrimSpace(r.Header.Get(hierarchyPolicyDepthHeader)); rawDepth != "" {
 		parsed, parseErr := strconv.Atoi(rawDepth)
 		if parseErr != nil || parsed < 1 || parsed > hierarchyPolicyMaxDepth {
+			s.finish(rc, http.StatusBadRequest, nil)
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_hierarchy_depth"})
 			return
 		}
 		depth = parsed
 	}
+	mapped := false
+	for _, child := range cfg.Server.Hierarchy.Parent.Children {
+		if child.CallerID == rc.caller.cfg.ID {
+			mapped = true
+			break
+		}
+	}
+	if !mapped {
+		s.finish(rc, http.StatusForbidden, nil)
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "hierarchy_child_not_configured"})
+		return
+	}
 	ctx := context.WithValue(r.Context(), hierarchyDepthContextKey{}, depth)
 	policy, err := s.effectiveHierarchyPolicy(ctx, rc.caller)
 	if err != nil {
+		s.finish(rc, http.StatusServiceUnavailable, nil)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "policy_unavailable"})
 		return
 	}
 	if policy == nil {
+		s.finish(rc, http.StatusForbidden, nil)
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "hierarchy_child_not_configured"})
 		return
 	}
@@ -519,6 +535,10 @@ func mergeHierarchyPIIFilters(local, inherited PIIFilterConfig) (PIIFilterConfig
 }
 
 func (r *hierarchyPolicyRuntime) refresh(ctx context.Context, now time.Time) (HierarchyPolicy, error) {
+	depth, _ := ctx.Value(hierarchyDepthContextKey{}).(int)
+	if depth >= hierarchyPolicyMaxDepth {
+		return HierarchyPolicy{}, fmt.Errorf("hierarchy policy depth exceeded")
+	}
 	r.mu.Lock()
 	if !r.fetchedAt.IsZero() && now.Sub(r.fetchedAt) < r.ttl {
 		policy := cloneHierarchyPolicy(r.policy)
@@ -536,7 +556,7 @@ func (r *hierarchyPolicyRuntime) refresh(ctx context.Context, now time.Time) (Hi
 	}
 	r.mu.Unlock()
 	result := r.refreshes.DoChan("policy", func() (any, error) {
-		return r.fetch(ctx, now)
+		return r.fetch(context.WithoutCancel(ctx), now)
 	})
 	select {
 	case <-ctx.Done():
@@ -564,7 +584,7 @@ func (r *hierarchyPolicyRuntime) stalePolicyLocked(now time.Time) (HierarchyPoli
 func (r *hierarchyPolicyRuntime) fetch(ctx context.Context, now time.Time) (HierarchyPolicy, error) {
 	depth, _ := ctx.Value(hierarchyDepthContextKey{}).(int)
 	if depth >= hierarchyPolicyMaxDepth {
-		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("hierarchy policy depth exceeded"))
+		return HierarchyPolicy{}, fmt.Errorf("hierarchy policy depth exceeded")
 	}
 	endpoint := strings.TrimRight(strings.TrimSpace(r.child.ParentURL), "/") + hierarchyPolicyPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -575,6 +595,9 @@ func (r *hierarchyPolicyRuntime) fetch(ctx context.Context, now time.Time) (Hier
 	req.Header.Set(hierarchyPolicyDepthHeader, strconv.Itoa(depth+1))
 	resp, err := r.client.Do(req)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return HierarchyPolicy{}, err
+		}
 		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("hierarchy parent unavailable"))
 	}
 	defer resp.Body.Close()

@@ -6,6 +6,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,11 +19,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metrum-ai/router/pkg/detector"
 	"gopkg.in/yaml.v3"
 )
 
 func TestHierarchyParentPublishesCallerBoundPolicy(t *testing.T) {
 	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
+	events := make(chan detector.Event, 4)
+	detectorServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var event detector.Event
+		if err := json.NewDecoder(r.Body).Decode(&event); err == nil {
+			events <- event
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"signals":[]}`))
+	}))
+	defer detectorServer.Close()
+	cfg.Server.Detectors = []DetectorConfig{{ID: "hierarchy-test", URL: detectorServer.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 1000}}
 	cfg.Callers[0].Binding = CallerBindingConfig{Mode: "enforce", AllowedCIDRs: []string{"192.0.2.0/24"}}
 	addTokenHashTestCaller(t, cfg)
 	cfg.Server.Hierarchy.Parent.Children = []HierarchyChildPolicyConfig{{
@@ -61,6 +74,24 @@ func TestHierarchyParentPublishesCallerBoundPolicy(t *testing.T) {
 	if response.Code != http.StatusUnauthorized || response.Header().Get("Cache-Control") != "no-store" || strings.Contains(response.Body.String(), cfg.Callers[0].ID) {
 		t.Fatalf("unauthorized policy status=%d body=%s", response.Code, response.Body.String())
 	}
+	deadline := time.After(time.Second)
+	seenAuthFailure := false
+	for {
+		select {
+		case event := <-events:
+			if event.Kind == "auth_failure" {
+				seenAuthFailure = true
+			}
+		case <-deadline:
+			if !seenAuthFailure {
+				t.Fatal("policy endpoint did not emit auth_failure")
+			}
+			break
+		}
+		if seenAuthFailure {
+			break
+		}
+	}
 	request = httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
 	request.Header.Set("Authorization", "Bearer "+tokenHashTestToken)
 	response = httptest.NewRecorder()
@@ -78,6 +109,42 @@ func TestHierarchyParentPublishesCallerBoundPolicy(t *testing.T) {
 	}
 }
 
+func TestHierarchyMiddleRouterPolicyEndpointRefusesUnmappedCaller(t *testing.T) {
+	t.Setenv("HIERARCHY_MIDDLE_CREDENTIAL", "middle-test-credential")
+	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
+	addTokenHashTestCaller(t, cfg)
+	cfg.Server.Hierarchy = HierarchyConfig{
+		Parent: HierarchyParentConfig{Children: []HierarchyChildPolicyConfig{{
+			ID: "team-a", CallerID: "alice", OrganizationID: "org-a", TeamID: "team-a", AllowedGroups: []string{"default"},
+		}}},
+		Child: HierarchyChildConfig{ID: "middle", ParentURL: "https://parent.example.test", CredentialEnv: "HIERARCHY_MIDDLE_CREDENTIAL", CacheTTL: "30s"},
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	request := httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
+	request.Header.Set("Authorization", "Bearer "+tokenHashTestToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("unmapped middle-router caller got policy: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestHierarchyCallerMappingAcceptsSafeDetectorID(t *testing.T) {
+	hierarchy := HierarchyConfig{Parent: HierarchyParentConfig{Children: []HierarchyChildPolicyConfig{{
+		ID: "team-a", CallerID: "Team_A.bot", OrganizationID: "org-a", TeamID: "team-a",
+	}}}}
+	if err := validateHierarchyConfig(hierarchy); err != nil {
+		t.Fatalf("safe caller ID was rejected: %v", err)
+	}
+	if err := validateHierarchyCallers(hierarchy, []CallerConfig{{ID: "Team_A.bot", Status: "active"}}); err != nil {
+		t.Fatalf("safe caller mapping was rejected: %v", err)
+	}
+}
+
 func TestHierarchyPolicyEndpointIsAbsentWhenDisabled(t *testing.T) {
 	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
 	svc, err := New(cfg)
@@ -90,6 +157,111 @@ func TestHierarchyPolicyEndpointIsAbsentWhenDisabled(t *testing.T) {
 	svc.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("disabled hierarchy endpoint status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestHierarchyPolicyNarrowsResponsesAndCountTokenGroups(t *testing.T) {
+	t.Setenv("HIERARCHY_COUNT_CREDENTIAL", "count-test-credential")
+	var providerCalls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		providerCalls.Add(1)
+		writeJSON(w, http.StatusOK, map[string]any{"input_tokens": 1})
+	}))
+	defer provider.Close()
+	parent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		policy := HierarchyPolicy{Version: 1, ChildID: "app", OrganizationID: "org-a", TeamID: "team-a", AllowedGroups: []string{"default"}, PIIFilter: PIIFilterConfig{Enabled: true, Mode: "fail_on_match", ApplyTo: PIIFilterApplyTo{Messages: boolPtr(true)}, Rules: []PIIFilterRule{{Name: "parent-email", Expression: `@example[.]test`, PlaceholderPrefix: "EMAIL"}}}}
+		_ = json.NewEncoder(w).Encode(policy)
+	}))
+	defer parent.Close()
+	cfg := testConfig(t, provider.URL, "provider-key", t.TempDir())
+	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "restricted")
+	cfg.Models["restricted"] = cfg.Models["default"]
+	cfg.Server.Hierarchy.Child = HierarchyChildConfig{ID: "app", ParentURL: parent.URL, CredentialEnv: "HIERARCHY_COUNT_CREDENTIAL", CacheTTL: "30s"}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	for _, tc := range []struct{ path, body string }{
+		{"/v1/responses/input_tokens", `{"model":"restricted","input":"hello"}`},
+		{"/v1/messages/count_tokens", `{"model":"restricted","messages":[{"role":"user","content":"hello"}]}`},
+		{"/v1/responses/input_tokens", `{"model":"default","input":"alice@example.test"}`},
+		{"/v1/messages/count_tokens", `{"model":"default","messages":[{"role":"user","content":"alice@example.test"}]}`},
+	} {
+		request := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		response := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(response, request)
+		if response.Code == http.StatusOK {
+			t.Errorf("%s escaped inherited group/PII policy: status=%d body=%s", tc.path, response.Code, response.Body.String())
+		}
+	}
+	if providerCalls.Load() != 0 {
+		t.Fatalf("inherited group denials reached provider %d times", providerCalls.Load())
+	}
+}
+
+func TestHierarchyMCPFiltersToolsAndBlocksInheritedPII(t *testing.T) {
+	t.Setenv("HIERARCHY_MCP_CREDENTIAL", "mcp-policy-test-credential")
+	t.Setenv("ROUTER_MCP_HIERARCHY_UPSTREAM", "mcp-upstream-test-credential")
+	var toolCalls atomic.Int32
+	mcpUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Method string `json:"method"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&request)
+		switch request.Method {
+		case "initialize":
+			writeJSON(w, http.StatusOK, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"protocolVersion": mcpVersionLegacy, "capabilities": map[string]any{}, "serverInfo": map[string]any{"name": "test", "version": "1"}}})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			writeJSON(w, http.StatusOK, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"tools": []any{map[string]any{"name": "read"}, map[string]any{"name": "write"}}}})
+		case "tools/call":
+			toolCalls.Add(1)
+			writeJSON(w, http.StatusOK, map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{"content": []any{}}})
+		default:
+			http.Error(w, "unexpected MCP method", http.StatusBadRequest)
+		}
+	}))
+	defer mcpUpstream.Close()
+	parent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		policy := HierarchyPolicy{Version: 1, ChildID: "app", OrganizationID: "org-a", TeamID: "team-a", AllowedGroups: []string{"default"}, ToolAllowList: []string{"demo/read"}, PIIFilter: PIIFilterConfig{Enabled: true, Mode: "fail_on_match", ApplyTo: PIIFilterApplyTo{Messages: boolPtr(true)}, Rules: []PIIFilterRule{{Name: "parent-email", Expression: `@example[.]test`, PlaceholderPrefix: "EMAIL"}}}}
+		_ = json.NewEncoder(w).Encode(policy)
+	}))
+	defer parent.Close()
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "hierarchy-mcp-usage.db"))
+	cfg.MCP = MCPGatewayConfig{Enabled: true, Path: "/mcp", Servers: []MCPServerConfig{{Name: "demo", URL: mcpUpstream.URL, CredentialEnv: "ROUTER_MCP_HIERARCHY_UPSTREAM", AllowHosts: []string{"127.0.0.1"}}}, Policies: []MCPPolicyConfig{{Caller: "alice", Tools: []string{"demo/read", "demo/write"}, DenyByDefault: true}}}
+	cfg.Server.Hierarchy.Child = HierarchyChildConfig{ID: "app", ParentURL: parent.URL, CredentialEnv: "HIERARCHY_MCP_CREDENTIAL", CacheTTL: "30s"}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	call := func(method, name, argument string) *httptest.ResponseRecorder {
+		params := `{"name":"` + name + `","arguments":{"text":"` + argument + `"}}`
+		if method == "tools/list" {
+			params = `{}`
+		}
+		request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":`+params+`}`))
+		request.Header.Set("Authorization", "Bearer "+testToken)
+		request.Header.Set("X-Router-Model-Group", "default")
+		response := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(response, request)
+		return response
+	}
+	listed := call("tools/list", "", "")
+	if listed.Code != http.StatusOK || strings.Contains(listed.Body.String(), `"name":"demo/write"`) || !strings.Contains(listed.Body.String(), `"name":"demo/read"`) {
+		t.Fatalf("MCP inherited tool list=%d %s", listed.Code, listed.Body.String())
+	}
+	denied := call("tools/call", "demo/write", "ok")
+	if denied.Code != http.StatusOK || !strings.Contains(denied.Body.String(), "tool denied") || toolCalls.Load() != 0 {
+		t.Fatalf("MCP inherited tool denial=%d calls=%d body=%s", denied.Code, toolCalls.Load(), denied.Body.String())
+	}
+	pii := call("tools/call", "demo/read", "alice@example.test")
+	if pii.Code != http.StatusOK || !strings.Contains(pii.Body.String(), "PII policy") || toolCalls.Load() != 0 {
+		t.Fatalf("MCP inherited PII denial=%d calls=%d body=%s", pii.Code, toolCalls.Load(), pii.Body.String())
 	}
 }
 
@@ -209,6 +381,65 @@ func TestHierarchyPolicyRefreshUsesSingleflight(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("concurrent refreshes made %d parent requests, want 1", got)
+	}
+}
+
+func TestHierarchyPolicyRefreshSurvivesCanceledFirstRequester(t *testing.T) {
+	t.Setenv("HIERARCHY_CANCEL_CREDENTIAL", "cancel-test-credential")
+	started, release := make(chan struct{}), make(chan struct{})
+	parent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		_ = json.NewEncoder(w).Encode(HierarchyPolicy{Version: 1, ChildID: "team-a", OrganizationID: "org-a", TeamID: "team-a"})
+	}))
+	defer parent.Close()
+	runtime, err := newHierarchyPolicyRuntime(HierarchyChildConfig{ID: "team-a", ParentURL: parent.URL, CredentialEnv: "HIERARCHY_CANCEL_CREDENTIAL", CacheTTL: "30s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() { _, err := runtime.refresh(ctx, time.Now()); first <- err }()
+	<-started
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first requester error=%v, want canceled", err)
+	}
+	second := make(chan error, 1)
+	go func() {
+		policy, err := runtime.refresh(context.Background(), time.Now())
+		if err == nil && policy.ChildID != "team-a" {
+			err = fmt.Errorf("unexpected policy child %q", policy.ChildID)
+		}
+		second <- err
+	}()
+	close(release)
+	if err := <-second; err != nil {
+		t.Fatalf("shared refresh failed after first requester canceled: %v", err)
+	}
+	if policy, err := runtime.refresh(context.Background(), time.Now()); err != nil || policy.ChildID != "team-a" {
+		t.Fatalf("successful shared fetch was not cached: policy=%#v err=%v", policy, err)
+	}
+}
+
+func TestHierarchyPolicyDepthRejectedBeforeRefresh(t *testing.T) {
+	t.Setenv("HIERARCHY_CANCEL_CREDENTIAL", "cancel-test-credential")
+	var calls atomic.Int32
+	parent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer parent.Close()
+	runtime, err := newHierarchyPolicyRuntime(HierarchyChildConfig{ID: "team-a", ParentURL: parent.URL, CredentialEnv: "HIERARCHY_CANCEL_CREDENTIAL", CacheTTL: "30s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.WithValue(context.Background(), hierarchyDepthContextKey{}, hierarchyPolicyMaxDepth)
+	if _, err := runtime.refresh(ctx, time.Now()); err == nil || err.Error() != "hierarchy policy depth exceeded" {
+		t.Fatalf("depth result err=%v", err)
+	}
+	if calls.Load() != 0 || !runtime.failedAt.IsZero() {
+		t.Fatalf("depth rejection joined/fetched or cached a failure: calls=%d failed_at=%v", calls.Load(), runtime.failedAt)
 	}
 }
 
@@ -464,17 +695,33 @@ func TestHierarchyPolicyNarrowingAndPIIUnion(t *testing.T) {
 
 func TestHierarchySuspendedCallerMappingSurvivesReloadAndRejectsRequests(t *testing.T) {
 	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
-	cfg.Callers[0].Status = "suspended"
 	cfg.Server.Hierarchy.Parent.Children = []HierarchyChildPolicyConfig{{
 		ID: "team-a", CallerID: "alice", OrganizationID: "org-a", TeamID: "team-a", AllowedGroups: []string{"default"},
 	}}
 	svc, err := New(cfg)
 	if err != nil {
-		t.Fatalf("reload rejected suspended mapped caller: %v", err)
+		t.Fatalf("initial active config rejected: %v", err)
 	}
 	defer svc.Close()
-	if _, _, err := svc.authenticate("Bearer "+testToken, ""); err == nil {
-		t.Fatal("suspended mapped caller authenticated at request time")
+	cfg.Callers[0].Status = "suspended"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("reload rejected suspended mapped caller: %v", err)
+	}
+	callers, err := prepareQuotaCallers(cfg)
+	if err != nil {
+		t.Fatalf("prepare reload callers: %v", err)
+	}
+	if err := svc.publishMachinePlane(func(machinePlaneSnapshot) (*machinePlanePublication, error) {
+		return &machinePlanePublication{Config: cfg, Callers: callers}, nil
+	}); err != nil {
+		t.Fatalf("publish suspended caller reload: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("suspended mapped caller was not refused after reload: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
