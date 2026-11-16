@@ -363,6 +363,28 @@
         ],
         "type": "object"
       },
+      "callerContainmentRequest": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "caller_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "caller_id",
+          "action",
+          "reason"
+        ],
+        "type": "object"
+      },
       "configAdminAddTargetRequest": {
         "properties": {
           "dry_run": {
@@ -2720,6 +2742,163 @@
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
         "x-admin-object": "admin:config"
+      }
+    },
+    "/admin/v1/containment": {
+      "post": {
+        "description": "The containment permission can suspend and resume caller keys. It cannot issue, rotate, or grant access.",
+        "operationId": "containCaller",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/callerContainmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: caller_id, status, expires_at.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Suspend or resume a caller key",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "contain",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "store",
+        "x-admin-object": "admin:containment"
+      }
+    },
+    "/admin/v1/containment/webhook": {
+      "post": {
+        "operationId": "containCallerWebhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/callerContainmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: caller_id, status, expires_at.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Suspend a caller key from a signed SOAR or EDR webhook",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "contain",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:containment"
       }
     },
     "/admin/v1/content-captures/purge-expired": {

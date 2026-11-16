@@ -45,6 +45,7 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 	if authenticate == nil || authorize == nil {
 		return errors.New("admin v1 mount requires the authentication and authorization seams")
 	}
+	authenticate = s.withContainmentWebhook(authenticate)
 	s.adminAuthorizeFn = authorize
 	registry, err := s.adminV1ProductionRegistry()
 	if err != nil {
@@ -177,6 +178,13 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		AdminV1CallerAdminDeps(CallerAdminDeps{
 			DB:           s.configControlPlane,
 			RuntimeScope: s.cfg.Server.ConfigSource.RuntimeScope,
+			ClaimWebhookNonce: func(tx *gorm.DB, principal Principal) error {
+				err := s.claimContainmentNonce(tx, principal.containmentNonce, principal.containmentBodyHash, principal.containmentRetention, s.adminNow())
+				if err != nil && strings.Contains(err.Error(), "already claimed") {
+					return errContainmentNonceReplay
+				}
+				return err
+			},
 			AfterMutate: func(r *http.Request, callerID string) error {
 				_ = callerID
 				return s.reloadActiveConfigFromDB()
@@ -344,11 +352,50 @@ func (s *Service) StartAdminAuditJanitors() chan struct{} {
 	if s.configControlPlane != nil {
 		s.adminAuditJanitorDone = append(s.adminAuditJanitorDone, StartAdminAuditJanitor(s.configControlPlane, time.Hour, retentionDays, stop))
 	}
+	if store, ok := s.adminIdempotencyStore(); ok {
+		s.adminAuditJanitorDone = append(s.adminAuditJanitorDone, StartAdminIdempotencyJanitor(store, time.Hour, stop))
+	}
 	if s.usage != nil && s.usage.db != nil {
 		s.adminAuditJanitorDone = append(s.adminAuditJanitorDone, StartAdminAuditJanitor(s.usage.db, time.Hour, retentionDays, stop))
 	}
 	s.adminAuditJanitorStop = stop
 	return stop
+}
+
+// StartAdminIdempotencyJanitor prunes expired idempotency and webhook nonce
+// records in bounded batches immediately and then on the supplied interval.
+func StartAdminIdempotencyJanitor(store AdminIdempotencyKeyStore, interval time.Duration, stop <-chan struct{}) <-chan struct{} {
+	done := make(chan struct{})
+	if store == nil {
+		close(done)
+		return done
+	}
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	prune := func() {
+		for i := 0; i < 20; i++ {
+			n, err := store.PruneExpired(time.Now().UTC())
+			if err != nil || n == 0 {
+				return
+			}
+		}
+	}
+	go func() {
+		defer close(done)
+		prune()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				prune()
+			}
+		}
+	}()
+	return done
 }
 
 // StartAdminAuditJanitor starts the retention purge for the admin audit tables in db. It runs

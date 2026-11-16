@@ -513,12 +513,14 @@ func TestAdminAuthenticationEvents(t *testing.T) {
 		"config.group.history":       func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"config.group.shadow.status": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"callers.list":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"callers.containment":        func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"containment.webhook":        func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 	})
 	for _, key := range []string{"config.diff", "config.sets.import", "config.sets.activate", "config.sets.rollback",
 		"config.group.targets.replace", "config.group.targets.add", "config.group.targets.remove",
 		"config.group.targets.validate", "config.group.rollback", "config.group.shadow.start",
 		"config.group.shadow.promote", "config.group.shadow.stop", "callers.issue", "callers.rotate", "callers.revoke",
-		"tool.approvals.resolve",
+		"tool.approvals.resolve", "containment.webhook",
 		"training.export", "training.outcomes.label", "metrics.scrape", "content.captures.delete", "content.captures.purge"} {
 		handlers[key] = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) }
 	}
@@ -656,9 +658,13 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 		if op.Method == "GET" || op.ID == "exportTrainingData" {
 			continue
 		}
-		// Tool approval resolution only mutates process-local pending calls. Its
-		// durable audit record is a security-access event, not a config change.
+		// Tool approval resolution is audited as a security-access event, not a config change.
 		if op.ID == "resolveToolApproval" {
+			continue
+		}
+		if op.ID == "containCallerWebhook" {
+			// The webhook credential path has dedicated HMAC and replay tests; this
+			// generic registry loop uses only the ordinary admin authenticator.
 			continue
 		}
 		mutations++
@@ -956,6 +962,8 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 	case "rotateCaller", "revokeCaller":
 		// The seeded caller exists in the harness configuration.
 		target = strings.ReplaceAll(op.Path, "{id}", "alice")
+	case "containCaller":
+		body = map[string]any{"caller_id": "alice", "action": "suspend", "reason": "security_test"}
 	case "replaceConfigGroupTargets", "validateConfigGroupTargets":
 		body = map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}}, "dry_run": op.ID == "validateConfigGroupTargets"}
 	case "addConfigGroupTarget":

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+
 ### Fixed
 
 - Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
