@@ -77,6 +77,20 @@ PII-aware examples under `examples/typescript-request-shape/` and
 `examples/typescript-pii-policy/` show the external policy contract. Use
 `pii_filter` when request redaction is required before upstream calls.
 
+## v5.0.0 caller binding
+
+Caller binding is opt-in; existing callers keep `binding.mode: off`. To enable
+enforcement, add `callers[].binding` and validate client network paths first.
+CIDR and ASN allow lists can be enforced behind an ingress. ASN checks require
+an operator-maintained `server.client_ip.asn_prefixes` map. For mTLS identity,
+terminate TLS at the router or pass TLS through unchanged, then configure
+`server.tls.client_auth: optional` (or `require`) and `server.tls.client_ca_file`. The router
+does not accept forwarded certificate headers. Config validation rejects
+enforced mTLS binding without verified client-certificate TLS or the client-auth
+extended key usage. Enforced binding failures return the same generic HTTP 401
+response as invalid tokens; the security event retains the specific failure
+reason.
+
 ## Compatibility and operations (v4.6.0)
 
 ### No usage-database migration

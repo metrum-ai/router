@@ -21,8 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/metrum-ai/router/internal/tlsacme"
-
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
@@ -97,7 +95,7 @@ type ServerConfig struct {
 	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ListenerTLSConfig  `yaml:"tls,omitempty"`
+	TLS          ServerTLSConfig    `yaml:"tls,omitempty"`
 	AdminReports AdminReportsConfig `yaml:"admin_reports"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
@@ -202,9 +200,23 @@ type AdminSecurityReportsConfig struct {
 }
 
 type ClientIPConfig struct {
-	TrustedProxyCIDRs []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
-	HeaderOrder       []string `yaml:"header_order" json:"header_order"`
-	StoreIP           *bool    `yaml:"store_ip" json:"store_ip"`
+	TrustedProxyCIDRs []string          `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
+	HeaderOrder       []string          `yaml:"header_order" json:"header_order"`
+	StoreIP           *bool             `yaml:"store_ip" json:"store_ip"`
+	ASNPrefixes       []ASNPrefixConfig `yaml:"asn_prefixes,omitempty" json:"asn_prefixes,omitempty"`
+}
+
+type ASNPrefixConfig struct {
+	CIDR string `yaml:"cidr" json:"cidr"`
+	ASN  uint32 `yaml:"asn" json:"asn"`
+}
+
+type CallerBindingConfig struct {
+	Mode         string   `yaml:"mode,omitempty" json:"mode,omitempty"`
+	AllowedCIDRs []string `yaml:"allowed_cidrs,omitempty" json:"allowed_cidrs,omitempty"`
+	AllowedASNs  []uint32 `yaml:"allowed_asns,omitempty" json:"allowed_asns,omitempty"`
+	MTLSSPIFFEID string   `yaml:"mtls_spiffe_id,omitempty" json:"mtls_spiffe_id,omitempty"`
+	MTLSSubject  string   `yaml:"mtls_subject,omitempty" json:"mtls_subject,omitempty"`
 }
 
 type AdminReportBaselineConfig struct {
@@ -1111,11 +1123,12 @@ type CallerConfig struct {
 	ContentAdmin   bool                 `yaml:"content_admin" json:"content_admin"`
 	ContentCapture ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
-	SpendCeiling SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling"`
-	Rate         RateConfig         `yaml:"rate" json:"rate"`
-	TrafficShape TrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
-	Quota        QuotaConfig        `yaml:"quota" json:"quota"`
-	Key          KeyConfig          `yaml:"key" json:"key"`
+	SpendCeiling SpendCeilingConfig  `yaml:"spend_ceiling" json:"spend_ceiling"`
+	Rate         RateConfig          `yaml:"rate" json:"rate"`
+	TrafficShape TrafficShapeConfig  `yaml:"traffic_shape" json:"traffic_shape"`
+	Quota        QuotaConfig         `yaml:"quota" json:"quota"`
+	Key          KeyConfig           `yaml:"key" json:"key"`
+	Binding      CallerBindingConfig `yaml:"binding,omitempty" json:"binding,omitempty"`
 }
 
 type UserConfig struct {
@@ -1775,7 +1788,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateConfigSource(c.Server.ConfigSource); err != nil {
 		return err
 	}
-	if err := ValidateListenerTLS(c.Server.TLS, tlsacme.ListenerServing, "server.tls"); err != nil {
+	if err := validateServerTLS(c.Server.TLS); err != nil {
 		return err
 	}
 	if err := validateAdminAuthMode(c.Server.AdminAuth, c.Server.UsageDB, requireAdminKeyEnv); err != nil {
@@ -1794,6 +1807,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
+		return err
+	}
+	if err := validateASNPrefixes(c.Server.ClientIP.ASNPrefixes); err != nil {
 		return err
 	}
 	if err := validateContentCapture("server content_capture", c.Server.ContentCapture); err != nil {
@@ -2133,6 +2149,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	for _, caller := range c.Callers {
 		if caller.ID == "" {
 			return fmt.Errorf("caller missing id")
+		}
+		if err := validateCallerBinding(caller.Binding, caller.ID, c.Server.TLS, c.Server.ClientIP); err != nil {
+			return err
 		}
 		ownerUser, err := callerOwnerUser(caller)
 		if err != nil {

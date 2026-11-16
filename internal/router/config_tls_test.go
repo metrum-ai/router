@@ -311,13 +311,13 @@ func TestServerTLSFilesSourceServesTLS(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "key", dir)
 	cfg.Callers[0].MetricsAdmin = true
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	cfg.Server.TLS = ListenerTLSConfig{
+	cfg.Server.TLS = ServerTLSConfig{ListenerTLSConfig: ListenerTLSConfig{
 		Mode:              "router",
 		CertificateSource: "files",
 		CertFile:          certPath,
 		KeyFile:           keyPath,
 		ACME:              TLSACMEServerConfig{Domains: []string{"router.example.com"}},
-	}
+	}}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
@@ -588,7 +588,7 @@ func TestTLSCredentialSentinelNeverLeavesTheConfig(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "key", dir)
 	cfg.Callers[0].MetricsAdmin = true
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	cfg.Server.TLS = ListenerTLSConfig{
+	cfg.Server.TLS = ServerTLSConfig{ListenerTLSConfig: ListenerTLSConfig{
 		Mode:              "router",
 		CertificateSource: "acme",
 		ACME: TLSACMEServerConfig{
@@ -602,7 +602,7 @@ func TestTLSCredentialSentinelNeverLeavesTheConfig(t *testing.T) {
 				Credentials: TLSDNSCredentialsConfig{TokenEnv: envName},
 			},
 		},
-	}
+	}}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
