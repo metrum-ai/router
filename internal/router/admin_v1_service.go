@@ -45,6 +45,7 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 	if authenticate == nil || authorize == nil {
 		return errors.New("admin v1 mount requires the authentication and authorization seams")
 	}
+	authenticate = s.withContainmentWebhook(authenticate)
 	s.adminAuthorizeFn = authorize
 	registry, err := s.adminV1ProductionRegistry()
 	if err != nil {

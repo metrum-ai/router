@@ -11,11 +11,13 @@ package router
 // non-secret public token identifier are stored.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -25,19 +27,21 @@ import (
 )
 
 const (
-	authzObjectAdminCallers = "admin:callers"
-	authzActionList         = "list"
-	authzActionIssue        = "issue"
-	authzActionRotate       = "rotate"
-	authzActionRevoke       = "revoke"
+	authzObjectAdminCallers     = "admin:callers"
+	authzActionList             = "list"
+	authzActionIssue            = "issue"
+	authzActionRotate           = "rotate"
+	authzActionRevoke           = "revoke"
+	authzObjectAdminContainment = "admin:containment"
+	authzActionContain          = "contain"
+	authzRoleContainment        = "role:containment"
 )
 
 // CallerAdminDeps carries the collaborators the caller directory admin
-// endpoints need. Authorize is intentionally a plain callback so the route
-// registration stays decoupled from the Casbin wiring inside Service; the
-// service passes a closure that resolves the authenticated admin subject and
-// enforces the admin:callers policy. AfterMutate is invoked once after every
-// successful mutation so the runtime can bump its configuration revision and
+// endpoints need. Authorize is intentionally a plain callback so route
+// registration stays decoupled from Casbin wiring; the service resolves the
+// authenticated subject and enforces the operation's declared policy.
+// AfterMutate is invoked once after every successful mutation so the runtime can bump its configuration revision and
 // schedule a reload; it is called outside the database transaction. If
 // AfterMutate returns an error, the mutation is rolled back.
 type CallerAdminDeps struct {
@@ -83,12 +87,161 @@ func (h *callerAdminHandler) callerAdminPatterns() []struct {
 	}
 }
 
+func (h *callerAdminHandler) handleWebhookContainment(w http.ResponseWriter, r *http.Request) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	var req callerContainmentRequest
+	if err := json.Unmarshal(raw, &req); err != nil || strings.TrimSpace(req.Action) != "suspend" {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	h.handleContainment(w, r)
+}
+
+type callerContainmentRequest struct {
+	CallerID string `json:"caller_id"`
+	Action   string `json:"action"`
+	Reason   string `json:"reason"`
+	TTL      string `json:"ttl,omitempty"`
+}
+
+func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Request) {
+	if !h.authorizeContainment(w, r) {
+		return
+	}
+	var req callerContainmentRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	req.CallerID = strings.TrimSpace(req.CallerID)
+	req.Action = strings.TrimSpace(req.Action)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.CallerID == "" || !validContainmentReason(req.Reason) || (req.Action != "suspend" && req.Action != "resume") {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	status, expiry := accountStatusActive, ""
+	if req.Action == "suspend" {
+		status = accountStatusSuspended
+		if req.TTL != "" {
+			ttl, err := time.ParseDuration(req.TTL)
+			if err != nil || ttl <= 0 || ttl > 30*24*time.Hour {
+				writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-ttl")
+				return
+			}
+			expiry = h.now().Add(ttl).UTC().Format(time.RFC3339Nano)
+		}
+	} else if req.TTL != "" {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	set, err := h.activeConfigSet()
+	if err != nil {
+		writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-config-set-unavailable")
+		return
+	}
+	err = h.deps.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		var rows []callerRow
+		if err := tx.Where("config_set_id = ? AND caller_id = ?", set.ID, req.CallerID).Limit(1).Find(&rows).Error; err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			return errCallerAdminNotFound
+		}
+		currentStatus := rows[0].Status
+		if currentStatus == accountStatusSuspended && req.Action == "suspend" {
+			var doc configControlPlaneDocumentRow
+			if err := tx.Where("config_set_id = ?", set.ID).First(&doc).Error; err != nil {
+				return err
+			}
+			var config Config
+			if err := yaml.Unmarshal([]byte(doc.CanonicalYAML), &config); err != nil {
+				return err
+			}
+			for _, caller := range config.Callers {
+				if caller.ID == req.CallerID {
+					if expiry, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(caller.ContainmentExpiresAt)); err == nil && !h.now().Before(expiry) {
+						currentStatus = accountStatusActive
+					}
+					break
+				}
+			}
+		}
+		if req.Action == "suspend" && currentStatus != accountStatusActive {
+			return errCallerAdminConflict
+		}
+		if req.Action == "resume" && currentStatus != accountStatusSuspended {
+			return errCallerAdminConflict
+		}
+		if err := tx.Exec(`UPDATE router_config_callers SET status = ? WHERE config_set_id = ? AND caller_id = ?`, status, set.ID, req.CallerID).Error; err != nil {
+			return err
+		}
+		if err := h.syncCanonicalDocument(tx, set.ID, func(callers []CallerConfig) ([]CallerConfig, error) {
+			for i := range callers {
+				if callers[i].ID == req.CallerID {
+					callers[i].Status = status
+					callers[i].ContainmentExpiresAt = expiry
+					return callers, nil
+				}
+			}
+			return nil, errCallerAdminNotFound
+		}); err != nil {
+			return err
+		}
+		meta, err := adminAuditMetaForWrite(r, adminAuthSubject{subject: h.actor(r)}, authzObjectAdminContainment, authzActionContain)
+		if err != nil {
+			return err
+		}
+		meta.Ticket = safeAdminTicket(req.Reason)
+		_, err = bumpConfigRevision(tx, h.deps.RuntimeScope, set.ID, "caller_containment_"+req.Action, h.actor(r), meta, req.Action, req.CallerID)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, errCallerAdminNotFound) {
+			writeCallerAdminError(w, http.StatusNotFound, "containment-caller-not-found")
+			return
+		}
+		if errors.Is(err, errCallerAdminConflict) {
+			writeCallerAdminError(w, http.StatusConflict, "containment-state-conflict")
+			return
+		}
+		writeCallerAdminError(w, http.StatusInternalServerError, "containment-mutation-failed")
+		return
+	}
+	if h.deps.AfterMutate != nil {
+		if err := h.deps.AfterMutate(r, req.CallerID); err != nil {
+			writeCallerAdminError(w, http.StatusInternalServerError, "containment-reload-failed")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"caller_id": req.CallerID, "status": status, "expires_at": expiry})
+}
+
+func validContainmentReason(reason string) bool {
+	if len(reason) == 0 || len(reason) > 64 {
+		return false
+	}
+	for _, r := range reason {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)) {
+			return false
+		}
+	}
+	return true
+}
+
 // handlerKeys maps each caller handler to the registry's HandlerKey.
 func (h *callerAdminHandler) handlerKeys() map[string]http.HandlerFunc {
 	out := map[string]http.HandlerFunc{}
 	for _, entry := range h.callerAdminPatterns() {
 		out[entry.key] = entry.handler
 	}
+	out["callers.containment"] = h.handleContainment
+	out["containment.webhook"] = h.handleWebhookContainment
 	return out
 }
 
@@ -120,6 +273,14 @@ func writeCallerAdminError(w http.ResponseWriter, status int, errType string) {
 func (h *callerAdminHandler) authorize(w http.ResponseWriter, r *http.Request, action string) bool {
 	if h.deps.Authorize == nil || !h.deps.Authorize(r, authzObjectAdminCallers, action) {
 		writeCallerAdminError(w, http.StatusForbidden, "callers-forbidden")
+		return false
+	}
+	return true
+}
+
+func (h *callerAdminHandler) authorizeContainment(w http.ResponseWriter, r *http.Request) bool {
+	if h.deps.Authorize == nil || !h.deps.Authorize(r, authzObjectAdminContainment, authzActionContain) {
+		writeCallerAdminError(w, http.StatusForbidden, "containment-forbidden")
 		return false
 	}
 	return true

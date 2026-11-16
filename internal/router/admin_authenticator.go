@@ -215,7 +215,7 @@ func validMachinePrincipal(p Principal) bool {
 		return false
 	}
 	switch p.Kind {
-	case "mtls", "oauth", "federated", "adminkey", "emergency":
+	case "mtls", "oauth", "federated", "adminkey", "emergency", "webhook":
 		return true
 	}
 	return false

@@ -7,6 +7,21 @@ doc_type: reference
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 caller containment
+
+The new caller containment endpoints require the `admin:containment` / `contain`
+Casbin grant in the global `*` domain. Add that narrow grant to the SecOps identity that needs to suspend
+or resume keys. Supply a short reason code, not free text. Do not combine this
+grant with caller issue, rotation, or revoke unless
+the same identity needs those separate operations. The optional signed webhook
+is off by default and requires `admin.enabled: true` with
+`server.config_source.mode: database`. To enable it, configure
+`server.containment_webhook.enabled` and `secret_env`, then provide a 32-byte-or-longer secret through the named
+environment variable. See [Admin Authentication](/docs/configuration/admin-authentication)
+for headers, signing input, timestamp bounds, and CLI examples. A suspended
+caller with a TTL becomes active when the TTL expires; no database migration is
+required.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
