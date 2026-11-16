@@ -7,6 +7,12 @@ on:
   schedule:
     - cron: '23 4 * * *'
   workflow_dispatch:
+    inputs:
+      docker_probe:
+        description: "Run the branch-only Docker availability probe"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,7 +22,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  docker-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.docker_probe
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'aws-pub-8c' }}
+    timeout-minutes: 5
+    steps:
+      - name: Check Docker availability
+        run: docker info
+
   mock-chain-matrix:
+    if: github.event_name != 'workflow_dispatch' || !inputs.docker_probe
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 30
     steps:
@@ -48,6 +63,7 @@ jobs:
           retention-days: 14
 
   codex-chain-sandbox:
+    if: github.event_name != 'workflow_dispatch' || !inputs.docker_probe
     # The workspace sandbox needs unprivileged user namespaces unavailable on ARC.
     runs-on: ubuntu-22.04
     timeout-minutes: 20
