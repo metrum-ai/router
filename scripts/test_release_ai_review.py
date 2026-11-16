@@ -237,10 +237,14 @@ class ReleaseAIReviewTest(unittest.TestCase):
         })
         self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["required"], ["summary", "findings"])
         self.assertFalse(review.REVIEW_OUTPUT_SCHEMA["additionalProperties"])
-        self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["properties"]["summary"]["maxLength"], 600)
+        self.assertIn("at most 600", review.REVIEW_OUTPUT_SCHEMA["properties"]["summary"]["description"])
         finding_schema = review.REVIEW_OUTPUT_SCHEMA["properties"]["findings"]["items"]
-        self.assertEqual(finding_schema["properties"]["title"]["minLength"], 1)
-        self.assertEqual(finding_schema["properties"]["locations"]["items"]["properties"]["line"]["minimum"], 1)
+        self.assertIn("Non-empty", finding_schema["properties"]["title"]["description"])
+        line_schema = finding_schema["properties"]["locations"]["items"]["properties"]["line"]
+        self.assertIn("Positive", line_schema["description"])
+        self.assertNotIn("minLength", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
+        self.assertNotIn("maxLength", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
+        self.assertNotIn("minimum", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
         self.assertEqual(parsed, {"summary": "clean", "findings": []})
 
     def test_model_rejects_truncated_response_by_stop_reason_without_logging_content(self) -> None:

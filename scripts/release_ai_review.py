@@ -27,7 +27,7 @@ REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-gu
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string", "minLength": 1, "maxLength": 600},
+        "summary": {"type": "string", "description": "Non-empty text of at most 600 characters."},
         "findings": {
             "type": "array",
             "items": {
@@ -35,15 +35,15 @@ REVIEW_OUTPUT_SCHEMA = {
                 "properties": {
                     "severity": {"type": "string", "enum": ["blocking", "informational"]},
                     "category": {"type": "string", "enum": ["security", "correctness", "compatibility", "release-integrity"]},
-                    "title": {"type": "string", "minLength": 1, "maxLength": 600},
-                    "rationale": {"type": "string", "minLength": 1, "maxLength": 600},
+                    "title": {"type": "string", "description": "Non-empty text of at most 600 characters."},
+                    "rationale": {"type": "string", "description": "Non-empty text of at most 600 characters."},
                     "locations": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "file": {"type": "string", "minLength": 1},
-                                "line": {"type": "integer", "minimum": 1},
+                                "file": {"type": "string", "description": "Repository-relative path included in this review batch."},
+                                "line": {"type": "integer", "description": "Positive source line number."},
                             },
                             "required": ["file", "line"],
                             "additionalProperties": False,
