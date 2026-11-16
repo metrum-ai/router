@@ -24,6 +24,9 @@ allowlisted hostname and a bounded timeout. The router rejects unlisted
 redirects, URL userinfo, and malformed or oversized responses. Detector events
 carry metadata by default. Text segments are sent only when an operator opts in
 per detector with `include_segments`; prompts and user messages are never sent.
+Configured detectors default to `mode: report`; set `mode: off` explicitly to
+disable one. The example service's rule thresholds are configurable flags with
+documented defaults.
 See [External detectors](/docs/security-governance/detectors).
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
