@@ -94,6 +94,7 @@ type ServerConfig struct {
 	DefaultModelGroup   string                    `yaml:"default_model_group"`
 	OpenAICompatibility OpenAICompatibilityConfig `yaml:"openai_compatibility" json:"openai_compatibility"`
 	AdminAuth           AdminAuthConfig           `yaml:"admin_auth"`
+	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
 	TLS          ListenerTLSConfig  `yaml:"tls,omitempty"`
@@ -123,6 +124,13 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+}
+
+// ContainmentWebhookConfig enables signed SOAR/EDR containment requests.
+type ContainmentWebhookConfig struct {
+	Enabled         bool   `yaml:"enabled" json:"enabled,omitempty"`
+	SecretEnv       string `yaml:"secret_env" json:"secretEnv,omitempty"`
+	TimestampWindow string `yaml:"timestamp_window" json:"timestampWindow,omitempty"`
 }
 
 // ReasoningProvenanceConfig controls opaque reasoning provenance binding.
@@ -1095,12 +1103,14 @@ type TargetValidation struct {
 }
 
 type CallerConfig struct {
-	ID          string `yaml:"id" json:"id"`
-	OwnerUser   string `yaml:"owner_user" json:"owner_user"`
-	User        string `yaml:"user" json:"user"`
-	Project     string `yaml:"project" json:"project"`
-	Environment string `yaml:"environment" json:"environment"`
-	Status      string `yaml:"status" json:"status"`
+	ID                   string `yaml:"id" json:"id"`
+	OwnerUser            string `yaml:"owner_user" json:"owner_user"`
+	User                 string `yaml:"user" json:"user"`
+	Project              string `yaml:"project" json:"project"`
+	Environment          string `yaml:"environment" json:"environment"`
+	Status               string `yaml:"status" json:"status"`
+	ContainmentExpiresAt string `yaml:"containment_expires_at,omitempty" json:"containment_expires_at,omitempty"`
+	ContainmentSource    string `yaml:"containment_source,omitempty" json:"containment_source,omitempty"`
 	// TokenHash is the caller token verifier,
 	// "pbkdf2-sha3-512:i=<iterations>:<salt>:<key>". It requires TokenID.
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
@@ -1679,6 +1689,15 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if err := validateAdminAuthMode(c.Server.AdminAuth, c.Server.UsageDB, requireAdminKeyEnv); err != nil {
 		return err
+	}
+	if err := validateContainmentWebhook(c.Server.ContainmentWebhook); err != nil {
+		return err
+	}
+	if c.Server.ContainmentWebhook.Enabled && !c.Admin.Enabled {
+		return fmt.Errorf("server containment_webhook requires admin.enabled")
+	}
+	if c.Server.ContainmentWebhook.Enabled && !strings.EqualFold(strings.TrimSpace(c.Server.ConfigSource.Mode), "database") {
+		return fmt.Errorf("server containment_webhook requires server.config_source.mode database")
 	}
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
@@ -2304,6 +2323,30 @@ func trafficBackoffEnabled(cfg TrafficBackoffConfig) bool {
 
 func validateAdminAuth(cfg AdminAuthConfig, usage UsageDBConfig) error {
 	return validateAdminAuthMode(cfg, usage, true)
+}
+
+func validateContainmentWebhook(cfg ContainmentWebhookConfig) error {
+	if !cfg.Enabled {
+		if strings.TrimSpace(cfg.SecretEnv) != "" || strings.TrimSpace(cfg.TimestampWindow) != "" {
+			return fmt.Errorf("server containment_webhook settings require enabled")
+		}
+		return nil
+	}
+	envName := strings.TrimSpace(cfg.SecretEnv)
+	if !validEnvName(envName) {
+		return fmt.Errorf("server containment_webhook secret_env is required and must be a valid environment variable name")
+	}
+	secret, ok := os.LookupEnv(envName)
+	if !ok || len(secret) < 32 {
+		return fmt.Errorf("server containment_webhook secret_env %s must contain at least 32 bytes", envName)
+	}
+	if cfg.TimestampWindow != "" {
+		window, err := time.ParseDuration(strings.TrimSpace(cfg.TimestampWindow))
+		if err != nil || window <= 0 || window > 10*time.Minute {
+			return fmt.Errorf("server containment_webhook timestamp_window must be greater than zero and at most 10m")
+		}
+	}
+	return nil
 }
 
 func validateAdminAuthMode(cfg AdminAuthConfig, usage UsageDBConfig, requireAdminKeyEnv bool) error {

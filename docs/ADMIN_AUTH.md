@@ -19,6 +19,45 @@ Automation should use the dedicated **admin API keys** instead of browser creden
 
 `/metrics` remains protected by caller tokens. Existing `metrics_admin: true` callers are converted to equivalent Casbin grants at startup, and browser-admin authentication does not grant metrics access.
 
+## Caller containment
+
+Grant the `admin:containment` object with the `contain` action to a dedicated
+SecOps identity. That grant suspends and resumes caller keys; it does not grant
+caller issue, rotation, or revoke permissions. The signed webhook identity is
+`role:containment` in the `*` domain. The example policy in
+`config/authz/policy.example.csv` shows both role binding and the narrow policy.
+
+`POST /admin/v1/containment` accepts `caller_id`, `action` (`suspend` or
+`resume`), a short `reason` code containing letters, digits, `.`, `_`, or `-`,
+and optional `ttl` for suspension. TTL uses Go duration
+syntax and is limited to 30 days. The record stores whether the suspension came
+from an administrator or containment; the containment role can resume only
+containment-originated suspensions. Administrator or legacy suspensions require
+an identity authorized for all caller write actions (issue, rotate, and revoke)
+to resume them. Suspension updates the active caller record
+and takes effect after the local config reload; an expired TTL restores caller
+access automatically. `routerctl contain --caller-id ID --reason edr-alert
+[--ttl 4h]` and `routerctl release --caller-id ID --reason resumed` use the same
+endpoint.
+
+The signed webhook requires `admin.enabled: true` and
+`server.config_source.mode: database`. SOAR/EDR systems can post a `suspend` request to
+`POST /admin/v1/containment/webhook` when `server.containment_webhook.enabled`
+is true. Store a secret of at least 32 bytes in the environment variable named
+by `secret_env`. Send `X-Containment-Timestamp` as Unix seconds,
+`X-Containment-Nonce` as a unique 16–128 character value, and
+`X-Containment-Signature` as `sha256=` followed by lowercase hex HMAC-SHA256
+of `timestamp + newline + nonce + newline + exact request body`. Timestamps
+must be within the configured window (default 5 minutes, maximum 10 minutes).
+Webhook requests do not require `If-Match` or `Idempotency-Key`; the signed
+nonce is claimed in the mutation transaction after authorization and request
+validation. Nonces remain reserved for at least twice the timestamp window,
+even when the general idempotency retention is shorter. Expired nonce and
+idempotency rows are pruned hourly in bounded batches. Every accepted action is
+recorded by the existing admin audit path. Keep
+secrets and prompts out of the reason code; audit storage redacts known secret
+patterns as a second safeguard.
+
 ## Configure
 
 Generate a bcrypt hash on an admin workstation or deployment host:
