@@ -329,6 +329,15 @@ callers: []
 	if err != nil || revokedCfg.Callers[0].Status != "disabled" || revokedCfg.Callers[0].RevokedTokenHash != hex.EncodeToString(legacyDigest[:]) || revokedCfg.Callers[0].TokenHash != "" {
 		t.Fatalf("revoked caller was re-enabled or lost its marker: cfg=%+v err=%v", revokedCfg, err)
 	}
+	rotatedRevokedToken := filepath.Join(dir, "revoked-rotated.token")
+	out, err = exec.Command("go", "run", ".", "callers", "rotate", "--config", revokedLegacyPath, "--id", "op-local-dev", "--token-out", rotatedRevokedToken).CombinedOutput()
+	if err != nil {
+		t.Fatalf("rotate revoked legacy caller: %v: %s", err, out)
+	}
+	rotatedRevokedCfg, err := router.LoadConfig(revokedLegacyPath)
+	if err != nil || rotatedRevokedCfg.Callers[0].Status != "disabled" || rotatedRevokedCfg.Callers[0].RevokedTokenHash != hex.EncodeToString(legacyDigest[:]) || rotatedRevokedCfg.Callers[0].TokenHash == "" {
+		t.Fatalf("rotation re-enabled revoked caller or cleared its marker: cfg=%+v err=%v", rotatedRevokedCfg, err)
+	}
 
 	// A token without the <token_id>_<secret> shape cannot be found by
 	// token_hash lookup, so hash refuses it instead of locking the caller out.
