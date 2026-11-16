@@ -80,9 +80,10 @@ class ClientCellTest(unittest.TestCase):
         cells = client_cells_for_set("release")
         self.assertEqual([cell[0] for cell in cells], ["openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"])
         with tempfile.TemporaryDirectory() as directory:
-            config_path, _ = router_config(Path(directory), "openai-key", "anthropic-key")
-            import yaml
-            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            yaml_stub = types.SimpleNamespace(safe_dump=json.dumps, safe_load=json.loads)
+            with patch.dict(sys.modules, {"yaml": yaml_stub}):
+                config_path, _ = router_config(Path(directory), "openai-key", "anthropic-key")
+            config = json.loads(config_path.read_text(encoding="utf-8"))
         for group in ("openai-chat-sdk", "openai-responses-sdk"):
             self.assertEqual({target["provider"] for target in config["models"][group]["targets"]}, {"openai"})
         self.assertEqual({target["provider"] for target in config["models"]["anthropic-messages-sdk"]["targets"]}, {"anthropic"})
