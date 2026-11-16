@@ -124,7 +124,9 @@ class RequiredAggregateTests(unittest.TestCase):
             lanes.update(WARM_RESULT="success" if event == "push" else "skipped", SBOM_RESULT="success" if event in ("merge_group", "workflow_dispatch") else "skipped")
             for result in ("success", "failure", "cancelled", "skipped"):
                 with self.subTest(event=event, result=result):
-                    run = subprocess.run(["bash", "-e", "-c", script], env=dict(lanes, CI_EVENT=event, ADVISORY_RESULT=result), capture_output=True, text=True)
+                    run = subprocess.run(["bash", "-e", "-c", script], env=dict(
+                        lanes, CI_EVENT=event, ADVISORY_RESULT=result, ENGINE_ADVISORY_RESULT="success"
+                    ), capture_output=True, text=True)
                     self.assertEqual(run.returncode == 0, result == "success", run.stderr)
 
 

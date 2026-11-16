@@ -4,7 +4,7 @@
 # Reference configuration: AMD MI350P datacenter
 
 One AMD Instinct MI350P (144 GB HBM3E) running a tiny slot, a 32B chat model and
-a sparse coder model on the official ROCm vLLM image, with the router in front
+a sparse coder model on the official upstream vLLM ROCm image, with the router in front
 and an escalation group off the box.
 
 ## Hardware
@@ -14,10 +14,10 @@ and an escalation group off the box.
 | GPU | 1× AMD Instinct MI350P, 144 GB HBM3E, PCIe dual-slot (gfx950) |
 | Host | x86_64, ≥ 32 vCPU, ≥ 256 GB RAM, PCIe 4.0 x16 slot with adequate airflow |
 | Disk | ≥ 300 GB free for the checkpoint downloads, the images and the weight cache (`hf-cache` volume) |
-| Driver | `amdgpu` kernel driver with ROCm kernel support for gfx950, `/dev/kfd` and `/dev/dri` present |
+| Driver | `amdgpu` kernel driver compatible with the container's ROCm runtime for gfx950; `/dev/kfd` and `/dev/dri` present |
 | Runtime | Docker Engine 27+ and Compose v2; the container gets `/dev/kfd`, `/dev/dri`, and the `video` and `render` groups |
 | Network | Outbound HTTPS to `huggingface.co` and the escalation endpoint; inbound only to the router port |
-| OS | Tested target: Ubuntu 24.04 LTS with ROCm 7.13 userspace |
+| OS | Target: Ubuntu 24.04 LTS |
 
 Bill of materials: the MI350P card, a host with a free dual-slot PCIe position
 and the power/cooling budget for it, and one NVMe drive. This is a PCIe card, not
@@ -27,14 +27,12 @@ an OAM platform: there is no 8-GPU fabric assumption anywhere in this tier.
 
 | Role | Image | Digest |
 |---|---|---|
-| Model server (all three slots) | `rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1` | `sha256:3b20f0a32530aefa2416aa30f64011fdcab00c44676a915044b9a17379342fcc` |
+| Model server (all three slots) | `vllm/vllm-openai-rocm:v0.33.0` | `sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba` |
 | Router | operator-supplied `metrum-ai-router:<version>-linux-amd64` | digest of the release you deploy |
 
-This is AMD's official ROCm vLLM image for gfx950. The architecture is part of
-the tag, so the pin cannot silently resolve to a build for a different GPU
-family. The vLLM version in this image (0.19.1) is older than the NVIDIA tier's
-0.33.0; that is a property of AMD's published tag list, not a choice, and it is
-noted again under Limits.
+This official upstream image carries vLLM 0.33.0 and is outside the affected
+range of GHSA-v97p-wpxp-px84. Its pin moved from v0.25.0 for security
+advisories; this tier has not been hardware-validated.
 
 | Slot | Model | Revision |
 |---|---|---|
@@ -63,8 +61,7 @@ cp config.yaml config/config.yaml
 # The runtime image runs as uid/gid 65532, so the directories it writes must
 # belong to that identity (see DOCKER_COMPOSE_INSTALL.md).
 sudo chown -R 65532:65532 config state logs
-# The pinned ROCm image has no `render` group in its /etc/group, so the container
-# needs the numeric host GIDs of the device nodes rather than group names.
+# Numeric host GIDs keep device access aligned with the host device-node owners.
 export RENDER_GID="$(stat -c %g /dev/dri/renderD128)"
 export VIDEO_GID="$(stat -c %g /dev/dri/card0)"
 
@@ -162,9 +159,7 @@ outstanding. No cost is claimed before it is known.
   moved to v5.0.0 as
   [#785](https://github.com/metrum-ai/router/issues/785) and this line stays until it
   lands.
-- The pinned ROCm image carries vLLM 0.19.1 while the NVIDIA tier pins 0.33.0.
-  Feature differences between those versions apply here; this tier does not claim
-  parity with the NVIDIA tier's vLLM features.
+- The AMD tier now uses the official upstream vLLM 0.33.0 image, moved for security advisories; hardware validation remains pending.
 - FP8 weights make three slots fit on one card. `VLLM_QUANTIZATION=` (empty)
   switches to BF16 and no longer fits this memory plan.
 - One card is one bandwidth budget: the per-slot concurrency estimates do not
@@ -178,6 +173,8 @@ outstanding. No cost is claimed before it is known.
   scope until that is validated on this card.
 - Multi-card scale-out, MI350X/MI355X OAM platforms and llm-d are out of scope for
   this tier.
+- The vLLM 0.33.0 image has not been validated on this card yet. The host needs an
+  AMDGPU kernel driver compatible with the container's ROCm runtime.
 - Digest pins were resolved on the date in `images.lock` and are not updated
   automatically.
 
