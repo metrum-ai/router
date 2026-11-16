@@ -65,27 +65,13 @@ The config and routing script are packaged together so this command works after 
 bin/metrum-ai-router --config config/config.yaml
 ```
 
-`config/config.yaml` can keep `script: scripts/router.ts` because script paths are resolved relative to the config file.
+Custom routing logic runs in a separately deployed external policy service. The router does not load user scripts or install policy dependencies.
 
-If `router.ts` imports local helpers, place those files under `config/scripts/` and include them in the release package. If it imports third-party packages, install and lock them before packaging and ship either the resolved dependency tree needed by esbuild or a pre-bundled script artifact. The router bundles from the deployment filesystem at startup and does not run `npm install` on the host.
-
-External TypeScript policy calls are disabled unless a script model group enables `script_http` in `config.yaml`. Configure exact `allow_hosts`, a small `timeout_ms`, and `max_response_bytes`; scripts call these services through `router.fetchJSON`, not unrestricted browser `fetch`. HTTPS is the default for non-local services. Plain HTTP is allowed only for loopback hosts or when `script_http.allow_http: true` is set for trusted internal infrastructure. Redirects are revalidated at every hop against the same scheme and exact-host rules. Put policy-service auth in `script_http.headers` with env-expanded values such as `${ROUTING_POLICY_AUTH_HEADER}` instead of hardcoding secrets in script source.
-
-Each script decision runs in a fresh isolated VM. Keep the per-group
-`script_max_concurrent` at its default `16` until load evidence justifies a
-change; accepted values are `0`/unset through `256`, where zero means the
-default. Requests queued for a VM slot honor cancellation. Increasing the cap
-increases simultaneous script CPU/memory work inside the serving process, so
-roll back by restoring the prior cap or strategy rather than bypassing the
-limit. The cap does not impose an execution timeout after a VM starts:
-unbounded pure JavaScript can hold its slot and request goroutine indefinitely.
-`router.fetchJSON` has a separate bounded HTTP timeout, but it does not preempt
-other script execution. Review scripts for bounded loops and roll back a stuck
-policy by restoring the previous artifact and restarting affected instances.
+External routing policy calls are configured per model group with `external_policy`, exact `allow_hosts`, a small `timeout_ms`, and `max_response_bytes`. HTTPS is the default for non-local services. Plain HTTP is allowed only for loopback hosts or when `external_policy.allow_http: true` is set for trusted infrastructure. Redirects are revalidated at every hop against the same scheme and exact-host rules. Put policy-service authentication in `external_policy.headers` with environment-expanded values such as `${ROUTING_POLICY_AUTH_HEADER}`. User code never runs inside the router process.
 
 Quota state files are tamper-evident runtime state. Keep the state directory private, copy state files through normal backup/restore procedures, and do not edit JSON counters or disabled flags by hand; integrity failures are treated as serving errors until a trusted backup restores state. Legacy unsigned quota-state import requires an explicit one-time start with `METRUM_AI_ROUTER_ALLOW_UNSIGNED_STATE_MIGRATION=1` (legacy alias `SMART_LLMROUTER_ALLOW_UNSIGNED_STATE_MIGRATION=1` still accepted), then a restart without that flag after signed state is written.
 
-For PII-aware script routing, mark private backing targets with deployment-owned metadata such as `tier: private` or `display_name: Private sensitive target`, and test that likely PII requests select only those targets for both primary routing and retry fallbacks. The example in `examples/typescript-pii-policy/` returns safe class labels only, does not log or return matched text, and fails closed when no sensitive/private target is eligible. Script routing does not redact outbound content; use model-group `pii_filter` for router-managed redaction, restoration, or fail-on-match controls.
+For PII-aware external routing, mark private backing targets with deployment-owned metadata such as `tier: private` or `display_name: Private sensitive target`, and test that likely PII requests select only those targets for both primary routing and retry fallbacks. The example in `examples/typescript-pii-policy/` returns safe class labels only, does not log or return matched text, and fails closed when no sensitive/private target is eligible. Routing does not redact outbound content; use model-group `pii_filter` for router-managed redaction or fail-on-match controls.
 
 For standalone policy services, prefer `strategy: external` with
 `external_policy.url`, exact `allow_hosts`, low `timeout_ms`, response-size
@@ -112,7 +98,7 @@ the label is not inferred or enforced. Before rollout, plan/apply usage
 migration `2026090901`, validate YAML, smoke both the primary and a forced
 successful fallback, and confirm `request_usage.target_region` and safe
 selected-target telemetry identify the target that actually served. The value
-is not exposed to callers, TypeScript policy, or external-policy input. Roll
+is not exposed to callers or external-policy input. Roll
 back by removing the config field and preserving the additive column; a
 package downgrade follows the migration contract and may require restoring
 the approved pre-migration database.

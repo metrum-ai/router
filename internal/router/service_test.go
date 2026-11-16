@@ -28,7 +28,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1166,7 +1165,7 @@ func TestAdminReportsRequireBasicAndCasbinAuthorization(t *testing.T) {
 		RoutingDecisions:      []routingDecisionLogRecord{{Seq: 1, Strategy: "dynamic_score", SelectedCandidateIndex: 0, Provider: "mock", Model: "mock-model", Dialect: "openai", FallbackCount: 1}},
 		RoutingSignals:        []routingSignalLogRecord{{Seq: 1, Strategy: "dynamic_score", SignalName: "observed_performance", Source: "dynamic_score", BoolValue: true}},
 		DynamicScoreTerms:     []dynamicScoreTermLogRecord{{Seq: 1, CandidateIndex: 0, Rank: 1, Provider: "mock", Model: "mock-model", Dialect: "openai", TermName: "default", ScoreName: "latency_score", Weight: 0.5, Value: 0.8, Contribution: 0.4, FinalScore: 0.7, ObservationCount: 3, Selected: true}},
-		PolicyExecutions:      []policyExecutionLogRecord{{Seq: 1, Strategy: "script", PolicyKind: "typescript", Outcome: "selected", DurationMS: 12, EligibleTargetCount: 1, SelectedCandidateIndex: 0}},
+		PolicyExecutions:      []policyExecutionLogRecord{{Seq: 1, Strategy: "external", PolicyKind: "external", Outcome: "selected", DurationMS: 12, EligibleTargetCount: 1, SelectedCandidateIndex: 0}},
 		CacheReasons:          []cacheReasonLogRecord{{Seq: 1, Status: "bypass", Reason: "cache-tool-request", CandidateIndex: 0, Provider: "mock", Model: "mock-model", Dialect: "openai"}},
 	})
 	emitUsageForTest(t, svc, logRecord{
@@ -4421,10 +4420,8 @@ func TestReadyzDoesNotLeakValidationDetail(t *testing.T) {
 
 	// Mutate runtime config so Validate() fails with a detailed message that must not leak.
 	leakCallerID := "alice"
-	leakPath := "/tmp/secret-config-path.yaml"
 	svc.cfg.Models["default"] = ModelGroup{
-		Strategy: "script",
-		Script:   leakPath,
+		Strategy: "static",
 		Targets:  []Target{{Provider: "mock", Model: "mock-model"}},
 	}
 	svc.cfg.Callers[0].Allow = []string{"missing-group-for-" + leakCallerID}
@@ -4437,9 +4434,8 @@ func TestReadyzDoesNotLeakValidationDetail(t *testing.T) {
 	if !strings.Contains(detail, leakCallerID) {
 		t.Fatalf("Validate() error=%q does not include caller id %q; adjust mutation", detail, leakCallerID)
 	}
-	if !strings.Contains(detail, "missing-group-for-"+leakCallerID) && !strings.Contains(detail, leakPath) {
-		// Prefer either the allow-list group detail or script path in the validation text.
-		t.Fatalf("Validate() error=%q missing expected detail markers", detail)
+	if !strings.Contains(detail, "missing-group-for-"+leakCallerID) {
+		t.Fatalf("Validate() error=%q missing invalid caller group", detail)
 	}
 
 	ready := httptest.NewRecorder()
@@ -4463,9 +4459,6 @@ func TestReadyzDoesNotLeakValidationDetail(t *testing.T) {
 	}
 	if strings.Contains(raw, leakCallerID) {
 		t.Fatalf("/readyz leaked caller id %q in body=%s", leakCallerID, raw)
-	}
-	if strings.Contains(raw, leakPath) {
-		t.Fatalf("/readyz leaked path %q in body=%s", leakPath, raw)
 	}
 	if strings.Contains(raw, "missing-group-for-") {
 		t.Fatalf("/readyz leaked allow-list detail in body=%s", raw)
@@ -8036,734 +8029,6 @@ func TestReplicateProviderAdapter(t *testing.T) {
 	}
 }
 
-func TestTypeScriptRoutingStrategy(t *testing.T) {
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		gotModel, _ = body["model"].(string)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "script_1",
-			"choices": []map[string]any{{
-				"message": map[string]any{"role": "assistant", "content": "script routed"},
-			}},
-			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-		})
-	}))
-	defer upstream.Close()
-
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "router.ts")
-	if err := os.WriteFile(scriptPath, []byte(`
-type Target = {
-  provider: string;
-  model: string;
-  tier?: string;
-  weight: number;
-  keyConfigured: boolean;
-};
-
-type RouteContext = {
-  text: string;
-  targets: Target[];
-};
-
-export function route(ctx: RouteContext) {
-  const eligible = ctx.targets
-    .map((target, index) => ({ target, index }))
-    .filter((entry) => entry.target.keyConfigured && entry.target.weight > 0);
-
-  if (eligible.length === 0) {
-    return { targetIndex: 0, classLabel: "prompt-size:no-eligible-targets" };
-  }
-
-  const preferredTier = ctx.text.length > 8000 ? "heavy" : "cheap";
-  const preferred = eligible.find((entry) => entry.target.tier === preferredTier) || eligible[0];
-
-  return {
-    targetIndex: preferred.index,
-    fallbackIndexes: eligible
-      .filter((entry) => entry.index !== preferred.index)
-      .map((entry) => entry.index),
-    classLabel: "prompt-size:" + preferredTier,
-  };
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["scripted"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		Targets: []Target{
-			{Provider: "mock", Model: "cheap-model", Tier: "cheap", Weight: 70},
-			{Provider: "mock", Model: "heavy-model", Tier: "heavy", Weight: 30},
-		},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "scripted")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-	dec, err := svc.pick(nil, "scripted", cfg.Models["scripted"], &IRRequest{
-		Model:    "scripted",
-		Messages: []IRMessage{{Role: "user", Content: "short question"}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("short script pick: %v", err)
-	}
-	if dec.Target.Model != "cheap-model" {
-		t.Fatalf("short script pick selected %q", dec.Target.Model)
-	}
-	if dec.ClassLabel == nil || *dec.ClassLabel != "prompt-size:cheap" {
-		t.Fatalf("short script class label=%v", dec.ClassLabel)
-	}
-	if len(dec.Fallbacks) == 0 || dec.Fallbacks[0].Model != "heavy-model" {
-		t.Fatalf("short script fallbacks=%#v", dec.Fallbacks)
-	}
-
-	dec, err = svc.pick(nil, "scripted", cfg.Models["scripted"], &IRRequest{
-		Model:    "scripted",
-		Messages: []IRMessage{{Role: "user", Content: strings.Repeat("large prompt ", 900)}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("long script pick: %v", err)
-	}
-	if dec.Target.Model != "heavy-model" {
-		t.Fatalf("long script pick selected %q", dec.Target.Model)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"scripted","messages":[{"role":"user","content":"`+strings.Repeat("large prompt ", 900)+`"}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if gotModel != "heavy-model" {
-		t.Fatalf("script selected model %q", gotModel)
-	}
-}
-
-func TestTypeScriptRoutingContextRawIsRedactedForNonToolChat(t *testing.T) {
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		gotModel, _ = body["model"].(string)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "script_pii_raw_1",
-			"choices": []map[string]any{{
-				"message": map[string]any{"role": "assistant", "content": "script redacted raw"},
-			}},
-			"usage": map[string]any{"prompt_tokens": 4, "completion_tokens": 3, "total_tokens": 7},
-		})
-	}))
-	defer upstream.Close()
-
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "router.ts")
-	if err := os.WriteFile(scriptPath, []byte(`
-type RouteContext = {
-  request: {
-    raw?: unknown;
-  };
-};
-
-export function route(ctx: RouteContext) {
-  const raw = JSON.stringify(ctx.request.raw || {});
-  if (raw.includes("jane.doe@example.com")) {
-    throw new Error("script raw context leaked original PII");
-  }
-  if (!raw.includes("[EMAIL_1]")) {
-    throw new Error("script raw context missing redacted placeholder: " + raw);
-  }
-  return { targetIndex: 0, classLabel: "script-pii-redacted" };
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["scripted-pii"] = ModelGroup{
-		Strategy:  "script",
-		Script:    scriptPath,
-		PIIFilter: testPIIFilterConfig("redact_only"),
-		Targets:   []Target{{Provider: "mock", Model: "script-pii-model"}},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "scripted-pii")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"scripted-pii","messages":[{"role":"user","content":"Email jane.doe@example.com"}],"max_tokens":16}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if gotModel != "script-pii-model" {
-		t.Fatalf("script selected model %q", gotModel)
-	}
-}
-
-func TestTypeScriptRoutingCanUseCallerTokenRegex(t *testing.T) {
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		gotModel, _ = body["model"].(string)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "script_key_1",
-			"choices": []map[string]any{{
-				"message": map[string]any{"role": "assistant", "content": "script key routed"},
-			}},
-			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-		})
-	}))
-	defer upstream.Close()
-
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "router.ts")
-	if err := os.WriteFile(scriptPath, []byte(`
-type Ctx = { caller?: { tokenId: string; user: string; project: string }; targets: Array<{ model: string }> };
-export function route(ctx: Ctx) {
-  if (/^rtr_alice_/.test(ctx.caller?.tokenId || "") && /^metrum-/.test(ctx.caller?.project || "")) {
-    return { targetIndex: 1, classLabel: "key-regex:" + ctx.caller?.user };
-  }
-  return { targetIndex: 0, classLabel: "key-regex:fallback" };
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["keyed"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		Targets: []Target{
-			{Provider: "mock", Model: "default-key-model"},
-			{Provider: "mock", Model: "alice-key-model"},
-		},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "keyed")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"keyed","messages":[{"role":"user","content":"hi"}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if gotModel != "alice-key-model" {
-		t.Fatalf("script selected model %q", gotModel)
-	}
-}
-
-func TestTypeScriptRequestShapeExampleRoutesBySafeContext(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime caller unavailable")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	scriptPath := filepath.Join(repoRoot, "examples", "typescript-request-shape", "router.ts")
-
-	cfg := testConfig(t, "http://example.invalid", "provider-key", t.TempDir())
-	cfg.Models["script-request-shape"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		Targets: []Target{
-			{Provider: "mock", Model: "cheap-model", Tier: "cheap", Weight: 70, ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}},
-			{Provider: "mock", Model: "heavy-model", Tier: "heavy", Weight: 20, ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
-			{Provider: "mock", Model: "tool-model", Tier: "tool", Weight: 10, ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}},
-			{Provider: "mock", Model: "vision-model", Tier: "vision", Weight: 5, InputModalities: []string{"text", "image"}, ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}},
-			{Provider: "mock", Model: "reasoning-model", Tier: "reasoning", Weight: 5, ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
-		},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "script-request-shape")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	short, err := svc.pick(nil, "script-request-shape", cfg.Models["script-request-shape"], &IRRequest{
-		Model:    "script-request-shape",
-		Messages: []IRMessage{{Role: "user", Content: "short question"}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("short request-shape pick: %v", err)
-	}
-	if short.Target.Model != "cheap-model" {
-		t.Fatalf("short request-shape selected %q", short.Target.Model)
-	}
-	if short.ClassLabel == nil || *short.ClassLabel != "request-shape:chat" {
-		t.Fatalf("short class label=%v", short.ClassLabel)
-	}
-
-	long, err := svc.pick(nil, "script-request-shape", cfg.Models["script-request-shape"], &IRRequest{
-		Model:    "script-request-shape",
-		Messages: []IRMessage{{Role: "user", Content: strings.Repeat("large prompt ", 900)}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("long request-shape pick: %v", err)
-	}
-	if long.Target.Model != "heavy-model" {
-		t.Fatalf("long request-shape selected %q", long.Target.Model)
-	}
-	if long.ClassLabel == nil || *long.ClassLabel != "request-shape:long-context" {
-		t.Fatalf("long class label=%v", long.ClassLabel)
-	}
-
-	tools, err := svc.pick(nil, "script-request-shape", cfg.Models["script-request-shape"], &IRRequest{
-		Model:    "script-request-shape",
-		Messages: []IRMessage{{Role: "user", Content: "use a tool"}},
-		Tools: []map[string]any{
-			{"type": "function", "function": map[string]any{"name": "lookup"}},
-		},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("tools request-shape pick: %v", err)
-	}
-	if tools.Target.Model != "tool-model" {
-		t.Fatalf("tools request-shape selected %q", tools.Target.Model)
-	}
-	if tools.ClassLabel == nil || *tools.ClassLabel != "request-shape:tools" {
-		t.Fatalf("tools class label=%v", tools.ClassLabel)
-	}
-
-	reasoning, err := svc.pick(nil, "script-request-shape", cfg.Models["script-request-shape"], &IRRequest{
-		Model:     "script-request-shape",
-		Messages:  []IRMessage{{Role: "user", Content: "think carefully"}},
-		Reasoning: ReasoningIntent{Requested: true, Kind: "effort", Effort: "medium", Source: "openai_chat.reasoning_effort"},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("reasoning request-shape pick: %v", err)
-	}
-	if reasoning.Target.Model != "reasoning-model" {
-		t.Fatalf("reasoning request-shape selected %q", reasoning.Target.Model)
-	}
-	if reasoning.ClassLabel == nil || *reasoning.ClassLabel != "request-shape:reasoning" {
-		t.Fatalf("reasoning class label=%v", reasoning.ClassLabel)
-	}
-}
-
-func TestTypeScriptPIIPolicyExampleRoutesSensitiveWithoutLeakingPII(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime caller unavailable")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	scriptPath := filepath.Join(repoRoot, "examples", "typescript-pii-policy", "router.ts")
-
-	cfg := testConfig(t, "http://example.invalid", "provider-key", t.TempDir())
-	cfg.Models["pii-aware"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		Targets: []Target{
-			{Provider: "mock", Model: "normal-model", DisplayName: "Normal target", Tier: "normal", Weight: 90},
-			{Provider: "mock", Model: "private-model", DisplayName: "Private sensitive target", Tier: "private", Weight: 10},
-			{Provider: "mock", Model: "sensitive-fallback-model", DisplayName: "Sensitive fallback target", Tier: "sensitive", Weight: 5},
-		},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "pii-aware")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	piiText := "Please summarize the account note for Jane Patient. Email jane.patient@example.com and SSN 123-45-6789 are in the record."
-	dec, err := svc.pick(nil, "pii-aware", cfg.Models["pii-aware"], &IRRequest{
-		Model:    "pii-aware",
-		Messages: []IRMessage{{Role: "user", Content: piiText}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("pii script pick: %v", err)
-	}
-	if dec.Target.Model != "private-model" {
-		t.Fatalf("pii script pick selected %q", dec.Target.Model)
-	}
-	if len(dec.Fallbacks) != 1 || dec.Fallbacks[0].Model != "sensitive-fallback-model" {
-		t.Fatalf("pii script fallbacks=%#v, want only sensitive fallback target", dec.Fallbacks)
-	}
-	if dec.ClassLabel == nil || *dec.ClassLabel != "pii-detected:sensitive-route" {
-		t.Fatalf("pii script class label=%v", dec.ClassLabel)
-	}
-	rawDecision, err := json.Marshal(dec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"jane.patient@example.com", "123-45-6789", "Jane Patient"} {
-		if strings.Contains(string(rawDecision), forbidden) {
-			t.Fatalf("script decision leaked raw pii %q: %s", forbidden, rawDecision)
-		}
-	}
-
-	dec, err = svc.pick(nil, "pii-aware", cfg.Models["pii-aware"], &IRRequest{
-		Model:    "pii-aware",
-		Messages: []IRMessage{{Role: "user", Content: "Summarize this public release note in one sentence."}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err != nil {
-		t.Fatalf("non-pii script pick: %v", err)
-	}
-	if dec.Target.Model != "normal-model" {
-		t.Fatalf("non-pii script pick selected %q", dec.Target.Model)
-	}
-	if len(dec.Fallbacks) != 2 {
-		t.Fatalf("non-pii script fallbacks=%#v, want remaining eligible targets", dec.Fallbacks)
-	}
-	if dec.ClassLabel == nil || *dec.ClassLabel != "pii-detected:none" {
-		t.Fatalf("non-pii script class label=%v", dec.ClassLabel)
-	}
-}
-
-func TestTypeScriptPIIPolicyExampleFailsClosedWithoutSensitiveTarget(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime caller unavailable")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	scriptPath := filepath.Join(repoRoot, "examples", "typescript-pii-policy", "router.ts")
-
-	cfg := testConfig(t, "http://example.invalid", "provider-key", t.TempDir())
-	cfg.Models["pii-aware"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		Targets: []Target{
-			{Provider: "mock", Model: "normal-model", DisplayName: "Normal target", Tier: "normal", Weight: 90},
-			{Provider: "mock", Model: "public-fallback-model", DisplayName: "Public fallback target", Tier: "normal", Weight: 10},
-		},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "pii-aware")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	_, err = svc.pick(nil, "pii-aware", cfg.Models["pii-aware"], &IRRequest{
-		Model:    "pii-aware",
-		Messages: []IRMessage{{Role: "user", Content: "Contact Jane Patient at jane.patient@example.com."}},
-	}, "openai-chat", svc.quota.callers["alice"], "rtr_alice_test")
-	if err == nil {
-		t.Fatal("pii script pick succeeded without a sensitive target")
-	}
-	var policyErr routingPolicyError
-	if !errors.As(err, &policyErr) || policyErr.Err == nil || !strings.Contains(policyErr.Err.Error(), "pii-detected:no-sensitive-target") {
-		t.Fatalf("pii script error=%v, want fail-closed no-sensitive-target error", err)
-	}
-}
-
-func TestTypeScriptRoutingCanUseBundledImportsAndAllowedHTTP(t *testing.T) {
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		gotModel, _ = body["model"].(string)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id": "script_http_1",
-			"choices": []map[string]any{{
-				"message": map[string]any{"role": "assistant", "content": "script http routed"},
-			}},
-			"usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-		})
-	}))
-	defer upstream.Close()
-	policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer policy-secret" {
-			t.Fatalf("missing policy auth header %q", r.Header.Get("Authorization"))
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"tier": "heavy"})
-	}))
-	defer policy.Close()
-	policyURL, err := url.Parse(policy.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "policy.ts"), []byte(`
-export function chooseTier(text: string) {
-  return text.includes("force") ? "heavy" : "cheap";
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	scriptPath := filepath.Join(dir, "router.ts")
-	if err := os.WriteFile(scriptPath, []byte(`
-import { chooseTier } from "./policy";
-
-type RouteContext = {
-  text: string;
-  targets: Array<{ tier?: string; keyConfigured: boolean; weight: number }>;
-};
-
-export function route(ctx: RouteContext) {
-  const response = router.fetchJSON("`+policy.URL+`/route", {
-    method: "POST",
-    body: { hint: chooseTier(ctx.text) },
-  });
-  const tier = response.ok ? response.body.tier : chooseTier(ctx.text);
-  const targetIndex = ctx.targets.findIndex((target) =>
-    target.keyConfigured && target.weight > 0 && target.tier === tier
-  );
-  return { targetIndex: targetIndex >= 0 ? targetIndex : 0, classLabel: "external-policy:" + tier };
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["script-http"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		ScriptHTTP: ScriptHTTPConfig{
-			Enabled:          true,
-			AllowHosts:       []string{policyURL.Hostname()},
-			TimeoutMS:        500,
-			MaxResponseBytes: 4096,
-			Headers:          map[string]string{"Authorization": "Bearer policy-secret"},
-		},
-		Targets: []Target{
-			{Provider: "mock", Model: "cheap-model", Tier: "cheap", Weight: 50},
-			{Provider: "mock", Model: "heavy-model", Tier: "heavy", Weight: 50},
-		},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "script-http")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"script-http","messages":[{"role":"user","content":"force external policy"}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if gotModel != "heavy-model" {
-		t.Fatalf("script selected model %q", gotModel)
-	}
-}
-
-func TestTypeScriptRoutingRejectsHTTPHostOutsideAllowlist(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("upstream should not be called when script policy fails")
-	}))
-	defer upstream.Close()
-	policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"tier": "heavy"})
-	}))
-	defer policy.Close()
-
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "router.ts")
-	if err := os.WriteFile(scriptPath, []byte(`
-export function route() {
-  router.fetchJSON("`+policy.URL+`/route");
-  return { targetIndex: 0 };
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["script-http-blocked"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		ScriptHTTP: ScriptHTTPConfig{
-			Enabled:    true,
-			AllowHosts: []string{"policy.internal.example"},
-			TimeoutMS:  500,
-		},
-		Targets: []Target{{Provider: "mock", Model: "cheap-model", Weight: 1}},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "script-http-blocked")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"script-http-blocked","messages":[{"role":"user","content":"hi"}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadGateway {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "routing-policy-error") {
-		t.Fatalf("unexpected body=%s", rr.Body.String())
-	}
-}
-
-func TestTypeScriptRoutingRejectsHTTPRedirectOutsideAllowlist(t *testing.T) {
-	for _, tt := range []struct {
-		name        string
-		redirectTo  func(targetURL string) string
-		wantBlocked string
-	}{
-		{
-			name:        "loopback IP",
-			redirectTo:  func(targetURL string) string { return targetURL + "/secret" },
-			wantBlocked: "host 127.0.0.1 is not allowed",
-		},
-		{
-			name:        "public host",
-			redirectTo:  func(string) string { return "https://example.com/secret" },
-			wantBlocked: "host example.com is not allowed",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			var redirectedReached atomic.Bool
-			redirected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				redirectedReached.Store(true)
-				writeJSON(w, http.StatusOK, map[string]any{"tier": "heavy"})
-			}))
-			defer redirected.Close()
-			policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				http.Redirect(w, r, tt.redirectTo(redirected.URL), http.StatusFound)
-			}))
-			defer policy.Close()
-			policyURL := testURLWithHostname(t, policy.URL, "localhost")
-
-			dir := t.TempDir()
-			scriptPath := filepath.Join(dir, "router.ts")
-			if err := os.WriteFile(scriptPath, []byte(`
-export function route() {
-  router.fetchJSON("`+policyURL+`/route");
-  return { targetIndex: 0 };
-}
-`), 0600); err != nil {
-				t.Fatal(err)
-			}
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Fatal("upstream should not be called when script policy redirect is blocked")
-			}))
-			defer upstream.Close()
-			cfg := testConfig(t, upstream.URL, "provider-key", dir)
-			cfg.Models["script-http-redirect-blocked"] = ModelGroup{
-				Strategy: "script",
-				Script:   scriptPath,
-				ScriptHTTP: ScriptHTTPConfig{
-					Enabled:    true,
-					AllowHosts: []string{"localhost"},
-					TimeoutMS:  500,
-				},
-				Targets: []Target{{Provider: "mock", Model: "cheap-model", Weight: 1}},
-			}
-			cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "script-http-redirect-blocked")
-			svc, err := New(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer svc.Close()
-
-			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"script-http-redirect-blocked","messages":[{"role":"user","content":"hi"}]}`))
-			req.Header.Set("Authorization", "Bearer "+testToken)
-			rr := httptest.NewRecorder()
-			svc.Handler().ServeHTTP(rr, req)
-			if rr.Code != http.StatusBadGateway {
-				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-			}
-			if !strings.Contains(rr.Body.String(), "routing-policy-error") {
-				t.Fatalf("unexpected body=%s", rr.Body.String())
-			}
-			if strings.Contains(rr.Body.String(), "/secret") {
-				t.Fatalf("redirect error leaked URL path: %s", rr.Body.String())
-			}
-			if redirectedReached.Load() {
-				t.Fatal("redirected server was reached")
-			}
-		})
-	}
-}
-
-func TestTypeScriptRoutingAllowsHTTPRedirectToAllowedHost(t *testing.T) {
-	var gotModel string
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatal(err)
-		}
-		gotModel, _ = body["model"].(string)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"id":      "script_http_redirect_allowed",
-			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "ok"}}},
-			"usage":   map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-		})
-	}))
-	defer upstream.Close()
-	policy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/route" {
-			http.Redirect(w, r, "/final", http.StatusFound)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"targetIndex": 0})
-	}))
-	defer policy.Close()
-	policyURL := testURLWithHostname(t, policy.URL, "localhost")
-
-	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "router.ts")
-	if err := os.WriteFile(scriptPath, []byte(`
-export function route() {
-  const response = router.fetchJSON("`+policyURL+`/route");
-  return { targetIndex: response.body.targetIndex };
-}
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg := testConfig(t, upstream.URL, "provider-key", dir)
-	cfg.Models["script-http-redirect-allowed"] = ModelGroup{
-		Strategy: "script",
-		Script:   scriptPath,
-		ScriptHTTP: ScriptHTTPConfig{
-			Enabled:    true,
-			AllowHosts: []string{"localhost"},
-			TimeoutMS:  500,
-		},
-		Targets: []Target{{Provider: "mock", Model: "cheap-model", Weight: 1}},
-	}
-	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "script-http-redirect-allowed")
-	svc, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer svc.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"script-http-redirect-allowed","messages":[{"role":"user","content":"hi"}]}`))
-	req.Header.Set("Authorization", "Bearer "+testToken)
-	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
-	}
-	if gotModel != "cheap-model" {
-		t.Fatalf("selected model %q", gotModel)
-	}
-}
-
 func TestExternalRoutingPolicyStrategy(t *testing.T) {
 	var gotModel string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -10387,7 +9652,7 @@ func TestPIIFilterImageURLsRedactedOnlyWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestScriptTargetsIncludeProviderMetadataWithoutRawKeys(t *testing.T) {
+func TestExternalPolicyTargetsIncludeProviderMetadataWithoutRawKeys(t *testing.T) {
 	targets := []Target{{
 		Provider:    "mock",
 		ModelRef:    "small",
@@ -10413,11 +9678,11 @@ func TestScriptTargetsIncludeProviderMetadataWithoutRawKeys(t *testing.T) {
 			KeyID:     "mock-key",
 		},
 	}
-	scriptTargets := buildScriptTargets(targets, providers)
-	if len(scriptTargets) != 1 {
-		t.Fatalf("script target count=%d", len(scriptTargets))
+	policyTargets := buildExternalPolicyTargets(targets, providers)
+	if len(policyTargets) != 1 {
+		t.Fatalf("external policy target count=%d", len(policyTargets))
 	}
-	got := scriptTargets[0]
+	got := policyTargets[0]
 	if got.Model != "mock-small" || got.ModelRef != "small" || got.BaseURL != "https://mock.example/v1" || got.Dialect != "openai-responses" {
 		t.Fatalf("metadata not populated: %#v", got)
 	}
@@ -10427,16 +9692,16 @@ func TestScriptTargetsIncludeProviderMetadataWithoutRawKeys(t *testing.T) {
 	if !got.Reasoning.Supported || got.Reasoning.Mode != reasoningModeOptIn || got.Reasoning.Control != reasoningControlEffortEnum {
 		t.Fatalf("reasoning metadata not populated: %#v", got.Reasoning)
 	}
-	raw, err := json.Marshal(scriptTargets)
+	raw, err := json.Marshal(policyTargets)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "raw-secret-key") {
-		t.Fatalf("raw API key leaked into script context: %s", raw)
+		t.Fatalf("raw API key leaked into external policy context: %s", raw)
 	}
 }
 
-func TestScriptCallerMetadataExcludesSecrets(t *testing.T) {
+func TestExternalPolicyCallerMetadataExcludesSecrets(t *testing.T) {
 	sum := sha256.Sum256([]byte(testToken))
 	caller := &callerRuntime{cfg: CallerConfig{
 		ID:          "alice",
@@ -10448,16 +9713,16 @@ func TestScriptCallerMetadataExcludesSecrets(t *testing.T) {
 		Allow:       []string{"default"},
 	}, keyStatus: "active", membershipRole: "developer"}
 
-	scriptCaller := buildScriptCaller(caller, caller.cfg.TokenID)
-	if scriptCaller == nil || scriptCaller.TokenID != caller.cfg.TokenID || scriptCaller.User != "alice" || scriptCaller.OwnerUser != "alice" || scriptCaller.Username != "alice" || scriptCaller.Project != "metrum-insights" || scriptCaller.Environment != "prod" || scriptCaller.MembershipRole != "developer" || scriptCaller.KeyStatus != "active" {
-		t.Fatalf("caller metadata not populated: %#v", scriptCaller)
+	policyCaller := buildExternalPolicyCaller(caller, caller.cfg.TokenID)
+	if policyCaller == nil || policyCaller.TokenID != caller.cfg.TokenID || policyCaller.User != "alice" || policyCaller.OwnerUser != "alice" || policyCaller.Username != "alice" || policyCaller.Project != "metrum-insights" || policyCaller.Environment != "prod" || policyCaller.MembershipRole != "developer" || policyCaller.KeyStatus != "active" {
+		t.Fatalf("caller metadata not populated: %#v", policyCaller)
 	}
-	raw, err := json.Marshal(scriptCaller)
+	raw, err := json.Marshal(policyCaller)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), testToken) || strings.Contains(string(raw), caller.cfg.TokenSHA256) {
-		t.Fatalf("caller secret leaked into script context: %s", raw)
+		t.Fatalf("caller secret leaked into external policy context: %s", raw)
 	}
 }
 

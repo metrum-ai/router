@@ -105,6 +105,9 @@ func ImportCanonicalYAML(db *gorm.DB, runtimeScope, name string, yamlBytes []byt
 	if hadDeprecatedLicense {
 		return "", fmt.Errorf("config key server.license is rejected in 4.0.0; remove the server.license block")
 	}
+	if err := validateRemovedScriptConfig(cleaned); err != nil {
+		return "", err
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return "", fmt.Errorf("parse canonical YAML: %w", err)

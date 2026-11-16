@@ -51,6 +51,28 @@ func TestUsageDBMigrationPolicyValidation(t *testing.T) {
 	}
 }
 
+func TestRemovedScriptConfigFailsAtLoadWithMigration(t *testing.T) {
+	for _, legacy := range []string{
+		"    strategy: script\n",
+		"    script: router.ts\n",
+		"    script_max_concurrent: 4\n",
+		"    script_http:\n      enabled: true\n",
+	} {
+		key := strings.TrimSpace(strings.SplitN(strings.TrimSpace(legacy), ":", 2)[0])
+		t.Run(key, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			raw := "models:\n  group:\n" + legacy
+			if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadConfig(path)
+			if err == nil || !strings.Contains(err.Error(), "v5.0.0") || !strings.Contains(err.Error(), "strategy: external") {
+				t.Fatalf("LoadConfig error = %v, want external-policy migration guidance", err)
+			}
+		})
+	}
+}
+
 func TestResponsesModelIdentityValidation(t *testing.T) {
 	for _, tc := range []struct {
 		value   string

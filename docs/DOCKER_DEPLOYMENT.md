@@ -232,7 +232,7 @@ chmod 0400 compose/config/env.json
 
 The router container runs as UID/GID `65532`. The config directory must be traversable by that ID, `env.json` must be readable by that ID, and the state/log bind mounts must be writable by that ID.
 
-If the TypeScript routing script imports local helpers, copy those files into `compose/config/scripts/` as well. If it imports third-party packages, build and lock those dependencies before packaging and deploy either the required dependency tree under `compose/config/scripts/` or a pre-bundled script artifact. The container bundles scripts at router startup; it does not install npm packages at runtime.
+Deploy external routing policy services separately from the router container; the router does not execute user code.
 
 ## Routing Policy Design Checklist
 
@@ -251,19 +251,11 @@ Before exposing a deployment model group to users:
 
 The public customer-facing version of this ownership model is `docs-site/docs/routing/customer-controlled-routing.md`.
 
-External routing-policy calls are opt-in per script model group with `script_http.enabled: true`, exact `allow_hosts`, `timeout_ms`, and `max_response_bytes`. Scripts call allowlisted services with `router.fetchJSON`; unrestricted `fetch`, runtime package installation, provider keys, and raw router tokens are not exposed to scripts. HTTPS is required for non-local services unless `script_http.allow_http: true` is explicitly approved; loopback HTTP is allowed for local demos and sidecars. Redirects must keep an allowed scheme and exact allowlisted hostname. Put policy-service auth in env-expanded `script_http.headers`, not in script source.
+Configure external routing-policy calls with `external_policy`, exact `allow_hosts`, bounded timeouts, and environment-expanded authentication headers. HTTPS is required by default for non-local services; redirects are revalidated against the allowlist. User code never runs inside the router process.
 
-Each script decision uses a fresh VM. `script_max_concurrent` defaults to `16`
-per script group and accepts values through `256`; requests waiting for a slot
-honor cancellation. Start with the default, load-test the intended request
-shape, and raise it only with CPU/memory evidence. Roll back by restoring the
-previous cap or strategy. This cap is admission control, not a VM execution
-timeout: once admitted, unbounded pure JavaScript can hold its slot and request
-goroutine indefinitely. `router.fetchJSON` has a separate HTTP timeout. Keep
-scripts bounded, and restart affected containers after restoring a stuck
-policy.
+External policy calls have bounded timeouts and propagate caller cancellation. Roll back by setting `external_policy.mode: baseline`.
 
-For PII-aware script routing, package the policy file under `compose/config/scripts/`, mark private backing targets with deployment-owned metadata such as `tier: private` or `display_name: Private sensitive target`, and smoke-test that likely PII prompts select only those targets for primary routing and retry fallbacks. The `examples/typescript-pii-policy/` demo returns safe labels only, fails closed when no sensitive/private target is eligible, and does not redact outbound content. Use model-group `pii_filter` when the router must redact, restore, or fail requests before provider calls.
+For PII-aware external routing, deploy the policy service separately, mark private backing targets with deployment-owned metadata such as `tier: private` or `display_name: Private sensitive target`, and smoke-test that likely PII prompts select only those targets for primary routing and retry fallbacks. The `examples/typescript-pii-policy/` service returns safe labels only, fails closed when no sensitive/private target is eligible, and does not redact outbound content. Use model-group `pii_filter` when the router must redact, restore, or fail requests before provider calls.
 
 For standalone policy services, configure `strategy: external` with `external_policy.url`, exact `allow_hosts`, low `timeout_ms`, `max_response_bytes`, and config-owned auth headers. Use HTTPS unless the service is loopback-local or `external_policy.allow_http: true` is approved for a trusted internal endpoint. Redirects are blocked when any hop changes to a non-allowlisted hostname. The service receives safe routing context and eligible target metadata, then returns the selected target decision. The router reuses one HTTP client per group and propagates caller cancellation. Start new policies with `external_policy.mode: shadow`, promote to `enforce` only after evidence review, and roll back policy calls immediately with `mode: baseline`.
 

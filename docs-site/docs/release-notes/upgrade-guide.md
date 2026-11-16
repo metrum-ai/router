@@ -7,6 +7,25 @@ doc_type: reference
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+
+## v5.0.0 Configuration Changes
+
+## TypeScript Routing Policy Removal
+
+The in-process `strategy: script` policy and its `script`,
+`script_max_concurrent`, and `script_http` settings are removed. User code never
+runs inside the router process. Existing configurations that use these keys
+fail during configuration loading with guidance to migrate to
+`strategy: external`.
+
+Move the policy to a standalone service and configure `external_policy.url`,
+`allow_hosts`, and a bounded `timeout_ms`. The service receives safe derived
+request context by default. Enable `external_policy.include_request: true` only
+when the service is trusted to receive request content. The request-shape and
+PII-aware examples under `examples/typescript-request-shape/` and
+`examples/typescript-pii-policy/` show the external policy contract. Use
+`pii_filter` when request redaction is required before upstream calls.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
