@@ -9,6 +9,7 @@
 ### Security
 
 - Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
 
 ### Fixed
 
