@@ -378,20 +378,32 @@ func (h *configAdminHandler) loadedRevision() (int64, string, time.Time) {
 }
 
 type configAdminTargetJSON struct {
-	Provider         string `json:"provider"`
-	Model            string `json:"model,omitempty"`
-	ModelRef         string `json:"model_ref,omitempty"`
-	Weight           int    `json:"weight,omitempty"`
-	Region           string `json:"region,omitempty"`
-	ValidationStatus string `json:"validation_status,omitempty"`
+	Provider         string                     `json:"provider"`
+	Model            string                     `json:"model,omitempty"`
+	ModelRef         string                     `json:"model_ref,omitempty"`
+	Weight           int                        `json:"weight,omitempty"`
+	Region           string                     `json:"region,omitempty"`
+	Tags             []string                   `json:"tags,omitempty"`
+	ValidationStatus string                     `json:"validation_status,omitempty"`
+	Validation       *GroupTargetValidationSpec `json:"validation,omitempty"`
+	Member           *bool                      `json:"member,omitempty"`
+	ExclusionReason  string                     `json:"exclusion_reason,omitempty"`
 }
 
 func configAdminTargetViews(group ModelGroup) []configAdminTargetJSON {
 	out := make([]configAdminTargetJSON, 0, len(group.Targets))
 	for _, target := range group.Targets {
-		view := configAdminTargetJSON{Provider: target.Provider, Model: target.Model, ModelRef: target.ModelRef, Weight: target.Weight, Region: target.Region}
+		view := configAdminTargetJSON{Provider: target.Provider, Model: target.Model, ModelRef: target.ModelRef, Weight: target.Weight, Region: target.Region, Tags: append([]string(nil), target.Tags...)}
 		if target.Validation != nil {
 			view.ValidationStatus = target.Validation.Status
+			view.Validation = groupTargetValidationFromTarget(target.Validation)
+		}
+		if group.VirtualModel != nil {
+			member := virtualModelTargetReason(group.VirtualModel, target) == ""
+			view.Member = &member
+			if !member {
+				view.ExclusionReason = virtualModelTargetReason(group.VirtualModel, target)
+			}
 		}
 		out = append(out, view)
 	}
@@ -406,6 +418,14 @@ func contractSummaryJSON(contract *ModelGroupContract) map[string]any {
 		"supported_api_shapes": append([]string(nil), contract.SupportedAPIShapes...),
 		"intended_workloads":   append([]string(nil), contract.IntendedWorkloads...),
 	}
+}
+
+func virtualModelSummaryJSON(config *VirtualModelConfig) *VirtualModelConfig {
+	if config == nil {
+		return nil
+	}
+	copy := *config
+	return &copy
 }
 
 func (h *configAdminHandler) handleListGroups(w http.ResponseWriter, r *http.Request) {
@@ -429,10 +449,11 @@ func (h *configAdminHandler) handleListGroups(w http.ResponseWriter, r *http.Req
 	for _, name := range sortedGroupNames(cfg.Models) {
 		group := cfg.Models[name]
 		groups = append(groups, map[string]any{
-			"name":     name,
-			"strategy": group.Strategy,
-			"targets":  configAdminTargetViews(group),
-			"contract": contractSummaryJSON(group.Contract),
+			"name":          name,
+			"strategy":      group.Strategy,
+			"targets":       configAdminTargetViews(group),
+			"contract":      contractSummaryJSON(group.Contract),
+			"virtual_model": virtualModelSummaryJSON(group.VirtualModel),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -474,6 +495,7 @@ func (h *configAdminHandler) handleGetGroup(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name": groupName, "strategy": group.Strategy, "targets": configAdminTargetViews(group),
 		"contract": contractSummaryJSON(group.Contract), "set_id": setID, "revision": revision,
+		"virtual_model":           virtualModelSummaryJSON(group.VirtualModel),
 		"eligible_catalog_models": catalog,
 	})
 }
