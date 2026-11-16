@@ -5,6 +5,7 @@ package router
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net"
 	"net/url"
@@ -34,9 +35,11 @@ type compiledToolFirewallSequence struct {
 }
 
 type toolFirewallRuntime struct {
-	mu            sync.Mutex
-	conversations map[string]*toolFirewallConversation
-	now           func() time.Time
+	mu                     sync.Mutex
+	conversations          map[string]*toolFirewallConversation
+	sequenceFingerprint    [32]byte
+	hasSequenceFingerprint bool
+	now                    func() time.Time
 }
 
 type toolApprovalRuntime struct {
@@ -244,11 +247,24 @@ func (s *toolApprovalRuntime) resolve(id, decision string) bool {
 	return true
 }
 
+func (s *toolApprovalRuntime) denyAll() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, result := range s.pending {
+		delete(s.pending, id)
+		result <- "deny"
+	}
+}
+
 func (s *toolFirewallRuntime) check(cfg ToolFirewallConfig, callerID, group string, req *IRRequest, calls []IRToolCall) toolFirewallOutcome {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		mode = toolFirewallOff
 	}
+	s.syncPolicy(cfg)
 	out := toolFirewallOutcome{Mode: mode}
 	if mode == toolFirewallOff {
 		return out
@@ -287,6 +303,34 @@ func (s *toolFirewallRuntime) check(cfg ToolFirewallConfig, callerID, group stri
 		out.Action = "shadow"
 	}
 	return out
+}
+
+func (s *toolFirewallRuntime) syncPolicy(cfg ToolFirewallConfig) bool {
+	if s == nil {
+		return false
+	}
+	var fingerprintInput strings.Builder
+	fmt.Fprintf(&fingerprintInput, "mode=%q\n", strings.ToLower(strings.TrimSpace(cfg.Mode)))
+	for _, host := range cfg.URLAllowHosts {
+		fmt.Fprintf(&fingerprintInput, "host=%q\n", host)
+	}
+	for _, rule := range cfg.Deny {
+		fmt.Fprintf(&fingerprintInput, "deny=%q/%q/%q/%q\n", rule.Tool, rule.ToolRegex, rule.ArgsRegex, rule.AnyArgContains)
+	}
+	for _, rule := range cfg.Sequences {
+		fmt.Fprintf(&fingerprintInput, "%q/%q/%q/%d/%q\n", rule.FirstTool, rule.FirstArgsRegex, rule.ThenTool, rule.WithinTurns, rule.Action)
+	}
+	fmt.Fprintf(&fingerprintInput, "approval=%d/%d/conversation=%d/%d\n", cfg.ApprovalTimeoutMS, cfg.MaxPendingApprovals, cfg.ConversationTTLSeconds, cfg.MaxConversations)
+	fingerprint := sha256.Sum256([]byte(fingerprintInput.String()))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.hasSequenceFingerprint || s.sequenceFingerprint != fingerprint {
+		s.conversations = map[string]*toolFirewallConversation{}
+		s.sequenceFingerprint = fingerprint
+		s.hasSequenceFingerprint = true
+		return true
+	}
+	return false
 }
 
 func ruleMatchesToolCall(rule compiledToolFirewallRule, call IRToolCall) bool {

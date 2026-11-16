@@ -97,6 +97,19 @@ func TestToolFirewallSequenceRequiresConversationIdentity(t *testing.T) {
 	}
 }
 
+func TestToolFirewallSequenceStateResetsWhenRulesChange(t *testing.T) {
+	runtime := newToolFirewallRuntime()
+	conversation := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation"}}}
+	oldRules := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}}}
+	if got := runtime.check(oldRules, "caller", "group", conversation, []IRToolCall{{Name: "read_customer", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("first step unexpectedly blocked: %+v", got)
+	}
+	newRules := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_internal", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}}}
+	if got := runtime.check(newRules, "caller", "group", conversation, []IRToolCall{{Name: "http_request", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("old sequence state survived a rule update: %+v", got)
+	}
+}
+
 func TestValidateToolFirewallConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -198,6 +211,49 @@ func TestToolApprovalPendingCapacityFailsClosed(t *testing.T) {
 	}
 	if decision := <-result; decision != "release" {
 		t.Fatalf("decision=%q, want release", decision)
+	}
+}
+
+func TestToolFirewallPolicyChangeDeniesPendingApprovals(t *testing.T) {
+	oldPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"api.example"}}
+	newPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"safe.example"}}
+	runtime := newToolFirewallRuntime()
+	runtime.syncPolicy(oldPolicy)
+	approvals := newToolApprovalRuntime(1)
+	const id = "approval_0123456789abcdef0123456789abcdef"
+	result := make(chan string, 1)
+	go func() {
+		decision, ok := approvals.wait(context.Background(), id, time.Second)
+		if !ok {
+			result <- "timeout"
+			return
+		}
+		result <- decision
+	}()
+	deadline := time.Now().Add(time.Second)
+	registered := false
+	for time.Now().Before(deadline) {
+		approvals.mu.Lock()
+		pending := len(approvals.pending)
+		approvals.mu.Unlock()
+		if pending == 1 {
+			registered = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !registered {
+		t.Fatal("pending approval was not registered")
+	}
+	if !runtime.syncPolicy(newPolicy) {
+		t.Fatal("changed policy fingerprint was not detected")
+	}
+	approvals.denyAll()
+	if decision := <-result; decision != "deny" {
+		t.Fatalf("stale approval resolved as %q, want deny", decision)
+	}
+	if approvals.resolve(id, "release") {
+		t.Fatal("approval remained resolvable after policy change")
 	}
 }
 

@@ -1701,6 +1701,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	if !s.prepareRouterVia(w, r, rc) {
 		return
 	}
+	if s.toolFirewall.syncPolicy(s.cfg.Server.ToolFirewall) && s.toolApprovals != nil {
+		// A held call was approved under the previous policy. On any firewall
+		// config change, wake it as denied so an approver cannot release stale work.
+		s.toolApprovals.denyAll()
+	}
 	// Bound concurrent body buffering before ReadAll. Full request-count Admit
 	// and request admission stay after validation / traffic-shape queue
 	// waits so invalid bodies and queued shaping do not burn quota volume or
