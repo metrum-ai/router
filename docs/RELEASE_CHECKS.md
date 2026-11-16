@@ -11,4 +11,4 @@ Every release candidate must pass the checks below. Attach their result files to
 - Run `routerctl doctor --security --format json --fail-on warn` against the reference configurations.
 - Confirm the previous release's performance gate configuration is unchanged.
 
-The upgrade-and-rollback check runs when migration code or migration CLI output changes, and for every release candidate. Its report records versions, commit, check outcomes, and measured elapsed time. It contains no database contents or command output.
+The upgrade-and-rollback check runs when migration code or migration CLI output changes, and for every release candidate. Its report records versions, commit, check outcomes, and measured upgrade and rollback downtime. It contains no database contents or command output.

@@ -115,7 +115,14 @@ def main() -> int:
         previous_migrate = find_binary(previous_root, "metrum-ai-router-migrate")
         candidate_migrate = find_binary(candidate_root, "metrum-ai-router-migrate")
         database = work / "usage.sqlite"
-        run_as(args.service_user, [str(previous_migrate), "--action=apply", "--driver=sqlite", "--db=" + str(database)])
+        old_result = run_as(args.service_user, [str(previous_migrate), "--action=apply", "--driver=sqlite",
+                                                 "--db=" + str(database), "--json"])
+        try:
+            json.loads(old_result.stdout)
+            old_json_valid = True
+        except json.JSONDecodeError:
+            old_json_valid = False
+        checks.append({"check": "previous-release-json", "strict_json": old_json_valid})
         run_as(args.service_user, [str(previous_migrate), "--action=resume", "--job=historical-usage-validation-v1",
                                    "--checkpoint-ordinal=0", "--driver=sqlite", "--db=" + str(database)])
         backup = work / "usage.sqlite.backup"
@@ -123,16 +130,6 @@ def main() -> int:
         owner = run(["id", "-u", args.service_user], timeout=5).stdout.strip()
         group = run(["id", "-g", args.service_user], timeout=5).stdout.strip()
         os.chown(backup, int(owner), int(group))
-
-        # The previous production release may exhibit the known stdout defect.
-        # Record whether its output is strict JSON; the candidate must pass.
-        old_result = run_as(args.service_user, [str(previous_migrate), "--action=apply", "--driver=sqlite", "--db=" + str(database), "--json"])
-        try:
-            json.loads(old_result.stdout)
-            old_json_valid = True
-        except json.JSONDecodeError:
-            old_json_valid = False
-        checks.append({"check": "previous-release-json", "strict_json": old_json_valid})
 
         previous_router = find_binary(previous_root, "metrum-ai-router")
         previous_commit = package_commit(previous_router, args.service_user)
@@ -142,23 +139,27 @@ def main() -> int:
         for action in ("plan", "apply"):
             status = strict_json(candidate_migrate, action, database, args.service_user)
             checks.append({"check": "candidate-" + action, "strict_json": True,
-                           "compatible": status.get("compatible")})
+                           "compatible": status.get("Compatible", status.get("compatible"))})
         status = strict_json(candidate_migrate, "resume", database, args.service_user,
                              "--job=historical-usage-validation-v1", "--checkpoint-ordinal=0")
-        checks.append({"check": "candidate-resume", "strict_json": True, "compatible": status.get("compatible")})
+        checks.append({"check": "candidate-resume", "strict_json": True,
+                       "compatible": status.get("Compatible", status.get("compatible"))})
         status = strict_json(candidate_migrate, "verify-serving", database, args.service_user)
-        checks.append({"check": "candidate-verify-serving", "strict_json": True, "compatible": status.get("compatible")})
+        checks.append({"check": "candidate-verify-serving", "strict_json": True,
+                       "compatible": status.get("Compatible", status.get("compatible"))})
         smoke(candidate_root, args.candidate_version, args.candidate_commit, evidence / "candidate-smoke.json", args.service_user, database)
         checks.append({"check": "candidate-serving-smoke", "passed": True})
-        downtime_seconds = round(time.monotonic() - gate_started, 3)
+        upgrade_downtime_seconds = round(time.monotonic() - gate_started, 3)
 
         # Rollback restores both the previous package and its matching database snapshot.
+        rollback_started = time.monotonic()
         shutil.copy2(backup, database)
         os.chown(database, int(owner), int(group))
         previous_status = run_as(args.service_user, [str(previous_migrate), "--action=status", "--driver=sqlite", "--db=" + str(database), "--json"])
         json.loads(previous_status.stdout)
         smoke(previous_root, args.previous_version, previous_commit, evidence / "rollback-smoke.json", args.service_user, database)
         checks.append({"check": "rollback-serving-smoke", "passed": True})
+        rollback_downtime_seconds = round(time.monotonic() - rollback_started, 3)
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps({
@@ -167,7 +168,9 @@ def main() -> int:
         "previous_version": args.previous_version,
         "candidate_version": args.candidate_version,
         "candidate_commit": args.candidate_commit,
-        "measured_upgrade_and_rollback_seconds": downtime_seconds,
+        "upgrade_downtime_seconds": upgrade_downtime_seconds,
+        "rollback_downtime_seconds": rollback_downtime_seconds,
+        "total_upgrade_rollback_seconds": round(time.monotonic() - started, 3),
         "checks": checks,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
