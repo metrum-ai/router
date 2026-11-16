@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
+
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
