@@ -24,7 +24,6 @@ _PACKAGE_BINARY_PATHS = {f"bin/{name}" for name in product.PACKAGE_BINARIES}
 BINARY_PACKAGE_FILES = _PACKAGE_BINARY_PATHS | {
     "config/config.example.yaml",
     "config/env.example.json",
-    "config/scripts/router.ts",
     "caddy/Caddyfile",
     "LICENSE",
     "NOTICE",
@@ -39,7 +38,6 @@ DOCKER_PACKAGE_FILES = {
     "compose/.env",
     "config/config.example.yaml",
     "config/env.example.json",
-    "config/scripts/router.ts",
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.md",
@@ -123,7 +121,7 @@ FORBIDDEN_TEXT_PATTERNS = [
         "live production compose/config/env path",
         re.compile(
             r"/opt/smart-llmrouter/compose/(?:"
-            r"config/(?:config\.yaml|env\.json|scripts/router\.ts)|"
+            r"config/(?:config\.yaml|env\.json)|"
             r"ROUTER_TOKEN[^\s'\"`]*|"
             r"\.env|"
             r"state/router-state\.json|"
