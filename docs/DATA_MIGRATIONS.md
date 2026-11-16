@@ -1,6 +1,6 @@
 # Data migration framework
 
-This is the canonical operator runbook for durable usage-data migrations. `router-migrate` is the non-serving entrypoint for inspecting migration state and applying reviewed work. It opens the selected usage database without starting the router and emits only safe scalar metadata. Routine deployment guidance links here rather than reproducing a second migration procedure.
+This is the canonical operator runbook for durable usage-data migrations. `router-migrate` is the non-serving entrypoint for inspecting migration state and applying reviewed work. It opens the selected usage database without starting the router and emits only safe scalar metadata. With `--json`, stdout contains one JSON document; database diagnostics use stderr. Routine deployment guidance links here rather than reproducing a second migration procedure.
 
 ## Operator visibility and release contract
 
