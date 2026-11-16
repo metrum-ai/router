@@ -20,6 +20,7 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     PROMPT_CANARY,
     TOOL_CANARY,
@@ -187,7 +188,8 @@ models:
         tool_support: {{openai_chat: [tools, tool_choice]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [vision-chat, vision-responses, vision-messages, vision-mix]
 '''
     config_path = work / "config.yaml"

@@ -25,6 +25,7 @@ Copyright 2026 Metrum AI.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import importlib.util
 import json
@@ -245,8 +246,13 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
                                     cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
             if result.returncode:
                 raise HarnessError("router_build_failed")
-        token, d3_key, provider_key = (secrets.token_urlsafe(32) for _ in range(3))
-        token_digest = hashlib.sha256(token.encode()).hexdigest()
+        token_id = "rtr_metrum_d3_e2e_test"
+        token = token_id + "_" + secrets.token_urlsafe(32)
+        d3_key, provider_key = (secrets.token_urlsafe(32) for _ in range(2))
+        salt = secrets.token_bytes(32)
+        derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), salt, 20000, 64)
+        encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+        token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
         upstream = upstream_server(stack)
         d3_ok = fake.start_in_thread(api_key=d3_key)
         d3_reject = fake.start_in_thread(api_key=d3_key, mode="http422")
@@ -300,8 +306,8 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
             "usage_db": {"enabled": True, "driver": "sqlite", "path": str(db), "migration_policy": "auto-safe"}},
             "state_path": str(temp / "state.json"), "providers": providers, "models": models,
             "callers": [{"id": "d3-e2e-caller", "user": "test-user", "project": "test-project",
-                         "environment": "test", "status": "active", "token_sha256": token_digest,
-                         "token_id": "rtr_metrum_d3_e2e_test", "allow": list(GROUPS),
+                         "environment": "test", "status": "active", "token_hash": token_hash,
+                         "token_id": token_id, "allow": list(GROUPS),
                          "rate": {"rpm": 100000, "tpm": 100000000, "concurrent": 8}}]}
         (temp / "router.json").write_text(json.dumps(config), encoding="utf-8")
         (temp / "router.json").chmod(0o600)
@@ -397,7 +403,7 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
         evidence["fake_d3_calls"] = d3_ok.calls + d3_reject.calls
         # Stop the router to flush its logs and close SQLite. Adapter logs are unbuffered.
         stop(router)
-        forbidden = [token, d3_key, provider_key, token_digest, *MARKERS]
+        forbidden = [token, d3_key, provider_key, token_hash, *MARKERS]
         ok = privacy_ok(db, forbidden, logs)
         ok = ok and not any(s in json.dumps(checks) for s in forbidden)
         record("D09-privacy-no-content-or-credentials", ok)

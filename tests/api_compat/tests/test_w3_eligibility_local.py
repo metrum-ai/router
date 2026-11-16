@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """W3 localhost proof. Run directly with router and routerctl binary paths."""
+import base64
 import hashlib
 import json
 import subprocess
@@ -42,7 +43,8 @@ def run(router, ctl):
     server = ThreadingHTTPServer(('127.0.0.1', 18891), Upstream)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    token = 'synthetic-w3-local'
+    token_id = 'rtr_w3_local'
+    token = token_id + '_secret'
     with tempfile.TemporaryDirectory(prefix='w3-e2e-') as d:
         work = Path(d)
         config = f'''server:
@@ -66,7 +68,8 @@ models:
       - {{provider: anth, model: reasoning, reasoning: {{supported: true, mode: opt_in, control: token_budget}}}}
 callers:
   - id: local
-    token_sha256: {hashlib.sha256(token.encode()).hexdigest()}
+    token_hash: {"pbkdf2-sha3-512:i=10000:" + base64.urlsafe_b64encode(b"api-compat-w3-local").decode().rstrip("=") + ":" + base64.urlsafe_b64encode(hashlib.pbkdf2_hmac("sha3_512", token.encode(), b"api-compat-w3-local", 10000)).decode().rstrip("=")}
+    token_id: {token_id}
     allow: [plain, think]
 '''
         path = work / 'config.yaml'

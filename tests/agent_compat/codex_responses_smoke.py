@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import urlopen
 
-from run_chat_smoke import DIGEST, ROOT, TOKEN, free_port
+from run_chat_smoke import DIGEST, ROOT, TOKEN, TOKEN_ID, free_port
 
 CODEX = ROOT / "tests/agent_compat/node_modules/.bin/codex"
 
@@ -136,7 +136,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{openai_responses: [function, tool_choice]}}, reasoning: {{supported: true, mode: opt_in, control: effort_enum}}}}]}}
 callers:
   - id: agent-compat
-    token_sha256: "{DIGEST}"
+    token_hash: "{DIGEST}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

@@ -16,7 +16,6 @@ Safety rules enforced here:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -37,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # The gate always mints its own router caller: the default local token for a
 # developer run, or the value a CI job supplies through PARALLEL_LIVE_TOKEN so a
 # dedicated rotating token can be used without ever committing its hash.
-TOKEN = os.environ.get("PARALLEL_LIVE_TOKEN") or "live-parallel-gate-token"
+TOKEN = os.environ.get("PARALLEL_LIVE_TOKEN") or "rtr_metrum_parallel_gate_local_k1_localsecret"
 MAX_OUTPUT = 256
 MARKERS = {"a": "GATE-A-7731", "b": "GATE-B-4192", "c": "GATE-C-6605"}
 
@@ -272,7 +271,8 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
     if anthropic_key:
         providers["anthropic"] = {"base_url": "https://api.anthropic.com", "dialect": "anthropic", "api_key": "${ANTHROPIC_API_KEY}", "api_key_env": "ANTHROPIC_API_KEY"}
         targets.append({"provider": "anthropic", "model": "claude-haiku-4-5", "input_price_per_million_usd": 1, "output_price_per_million_usd": 5, "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["anthropic", "openai-chat", "openai-responses"], "validation_status": "passed"}, "tool_support": {"anthropic_messages": ["client_tools", "tool_choice"], "openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"]}})
-    token_sha = hashlib.sha256(TOKEN.encode()).hexdigest()
+    from caller_token import verifier
+    token_hash, token_id = verifier(TOKEN)
     config = {
         "server": {"listen": f"127.0.0.1:{port}", "identifiers": {"mode": "passthrough"}, "default_model_group": "gate", "cache": {"enabled": False}, "usage_db": {"enabled": True, "driver": "sqlite", "path": str(temp / "usage.sqlite"), "migration_policy": "auto-safe"}, "logging": {"path": str(temp / "requests.jsonl")}},
         "state_path": str(temp / "state.json"),
@@ -282,7 +282,7 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
             "gate-chat-to-messages": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
             "gate-messages-to-chat": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
         },
-        "callers": [{"id": "live-gate", "token_sha256": token_sha, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
+        "callers": [{"id": "live-gate", "token_hash": token_hash, "token_id": token_id, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
     }
     path = temp / "config.yaml"
     import yaml  # noqa: PLC0415 - optional dependency for this harness only

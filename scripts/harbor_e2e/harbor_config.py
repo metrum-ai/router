@@ -8,7 +8,9 @@ from the operator config; the relay and the router do the metering.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import secrets
 from pathlib import Path
 
 GPT_MODEL = "gpt-4.1-mini"
@@ -17,16 +19,21 @@ CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
 def caller_tokens() -> dict[tuple[str, str], str]:
     """Per-lane caller tokens; the adapter writes one into the tmpfs file per job."""
-    return {(style, group): f"harbor-{style}-{group}" for style in ("openai-responses", "anthropic-messages") for group in ("gpt", "claude")}
+    return {(style, group): f"rtr_harbor_{style}_{group}_secret" for style in ("openai-responses", "anthropic-messages") for group in ("gpt", "claude")}
 
 
 def make_config(work: Path, router_port: int, relay_port: int, relay_host: str = "172.17.0.1", upstream_base: str | None = None) -> str:
     callers = []
     for (style, group), token in caller_tokens().items():
-        digest = hashlib.sha256(token.encode()).hexdigest()
+        token_id = token.rsplit("_", 1)[0]
+        salt = secrets.token_bytes(32)
+        derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), salt, 20000, 64)
+        encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+        verifier = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
         callers.append(
             f"  - id: {style}-{group}\n"
-            f'    token_sha256: "{digest}"\n'
+            f'    token_hash: "{verifier}"\n'
+            f'    token_id: "{token_id}"\n'
             "    allow: [gpt, claude]\n"
             "    rate: {rpm: 2400, tpm: 100000000, concurrent: 10}\n"
             "    quota: {day: {requests: 500, tokens: 2000000}, month: {tokens: 4000000}}\n"
