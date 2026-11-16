@@ -39,9 +39,6 @@
 
 ### Fixed
 
-- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
-- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
-
 - Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
 - Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
@@ -70,6 +67,9 @@
 - Record UTC issuance timestamps for generated and rotated caller keys; the
   security self-test warns when age is unknown and fails keys older than the configured
   maximum age (90 days by default; set `security.key_hygiene.max_age_days`).
+
+- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
+- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
 
 All notable changes to Metrum AI Router are documented in this file.
 
