@@ -23,8 +23,9 @@ API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
 MAX_REVIEW_BATCHES = 8
+REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md")
 SENSITIVE = re.compile(r"(?i)(?:sk-[a-z0-9_-]{12,}|bearer\s+\S+|api[_ -]?key\s*[:=]|token\s*[:=]|password\s*[:=])")
-REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release, CHANGELOG.md changes, and v5.0.0 upgrade-guide changes. The input may be one of several bounded batches from the same range; review only findings supported by the supplied batch and do not assume that omitted hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
+REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
 
 def pack_diff_files(
@@ -33,26 +34,38 @@ def pack_diff_files(
     max_bytes: int = MAX_DIFF_BYTES,
     max_batches: int = MAX_REVIEW_BATCHES,
 ) -> list[tuple[str, tuple[str, ...]]]:
-    batches: list[tuple[str, tuple[str, ...]]] = []
+    context_diffs = [(path, diff) for path, diff in file_diffs if path in REVIEW_CONTEXT_PATHS]
+    context_paths = tuple(path for path, _ in context_diffs)
+    context_bytes = sum(len(diff.encode("utf-8")) for _, diff in context_diffs)
+    if context_bytes > max_bytes:
+        raise ValueError("release review context exceeds the per-request input limit")
+    remaining_diffs = [(path, diff) for path, diff in file_diffs if path not in REVIEW_CONTEXT_PATHS]
+    source_batches: list[tuple[list[str], list[str]]] = []
     current_diffs: list[str] = []
     current_paths: list[str] = []
     current_bytes = 0
-    for path, diff in file_diffs:
+    for path, diff in remaining_diffs:
         diff_bytes = len(diff.encode("utf-8"))
-        if diff_bytes > max_bytes:
+        if context_bytes + diff_bytes > max_bytes:
             raise ValueError(f"release diff for {path} exceeds the per-request review input limit")
-        if current_diffs and current_bytes + diff_bytes > max_bytes:
-            batches.append(("".join(current_diffs), tuple(current_paths)))
+        if current_diffs and context_bytes + current_bytes + diff_bytes > max_bytes:
+            source_batches.append((current_diffs, current_paths))
             current_diffs = []
             current_paths = []
             current_bytes = 0
-            if len(batches) >= max_batches:
+            if len(source_batches) >= max_batches:
                 raise ValueError("release diff exceeds the maximum number of review batches")
         current_diffs.append(diff)
         current_paths.append(path)
         current_bytes += diff_bytes
     if current_diffs:
-        batches.append(("".join(current_diffs), tuple(current_paths)))
+        source_batches.append((current_diffs, current_paths))
+    if not source_batches and context_diffs:
+        source_batches.append(([], []))
+    batches = [
+        ("".join(diff for _, diff in context_diffs) + "".join(diffs), context_paths + tuple(paths))
+        for diffs, paths in source_batches
+    ]
     if not batches:
         raise ValueError("release diff is empty")
     if len(batches) > max_batches:
@@ -62,7 +75,7 @@ def pack_diff_files(
 
 def git_diff_batches(base: str, head: str) -> list[tuple[str, tuple[str, ...]]]:
     names = subprocess.run(
-        ["git", "diff", "--name-only", "-z", f"{base}..{head}"],
+        ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -71,14 +84,15 @@ def git_diff_batches(base: str, head: str) -> list[tuple[str, tuple[str, ...]]]:
     file_diffs: list[tuple[str, str]] = []
     for path in paths:
         result = subprocess.run(
-            ["git", "diff", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path],
+            ["git", "--literal-pathspecs", "diff", "--no-renames", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
         )
-        if result.stdout:
-            file_diffs.append((path, result.stdout))
+        if not result.stdout:
+            raise ValueError(f"listed release diff file {path} produced an empty diff")
+        file_diffs.append((path, result.stdout))
     return pack_diff_files(file_diffs)
 
 
@@ -88,12 +102,11 @@ def call_model(
     *,
     batch_number: int = 1,
     batch_count: int = 1,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> dict[str, Any]:
     body = json.dumps({
         "model": MODEL,
-        "max_tokens": 4096,
-        "temperature": 0,
+        "max_tokens": 16000,
         "system": REVIEW_SYSTEM,
         "messages": [{
             "role": "user",
@@ -119,7 +132,7 @@ def call_model(
     if not isinstance(data, dict) or not isinstance(data.get("content"), list):
         raise RuntimeError("AI release review returned an invalid report")
     text_blocks = [item.get("text", "") for item in data["content"] if isinstance(item, dict) and item.get("type") == "text"]
-    text = "\n".join(text_blocks).strip()
+    text = text_blocks[-1].strip() if text_blocks else ""
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
     try:
@@ -140,7 +153,13 @@ def safe_text(value: object, field: str) -> str:
     return value
 
 
-def build_artifact(review: dict[str, Any], base: str, head: str) -> dict[str, Any]:
+def build_artifact(
+    review: dict[str, Any],
+    base: str,
+    head: str,
+    *,
+    allowed_files: set[str] | frozenset[str] | None = None,
+) -> dict[str, Any]:
     if not isinstance(base, str) or not base or not isinstance(head, str) or not head:
         raise ValueError("AI release review range is invalid")
     summary = safe_text(review.get("summary"), "summary")
@@ -178,6 +197,8 @@ def build_artifact(review: dict[str, Any], base: str, head: str) -> dict[str, An
                 or line < 1
             ):
                 raise ValueError("AI release review finding contains an invalid location")
+            if allowed_files is not None and file_path not in allowed_files:
+                raise ValueError("AI release review finding refers to a file outside its batch")
             locations.add((file_path, line))
         ordered_locations = sorted(locations)
         identity = json.dumps({
@@ -299,18 +320,15 @@ def main() -> int:
             if not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
-            batch_reviews = [
-                call_model(api_key, diff, batch_number=index, batch_count=len(batches))
-                for index, (diff, _paths) in enumerate(batches, start=1)
-            ]
             findings_by_id: dict[str, dict[str, Any]] = {}
-            for batch_review in batch_reviews:
-                artifact_batch = build_artifact(batch_review, args.base, args.head)
+            for index, (diff, paths) in enumerate(batches, start=1):
+                batch_review = call_model(api_key, diff, batch_number=index, batch_count=len(batches))
+                artifact_batch = build_artifact(batch_review, args.base, args.head, allowed_files=set(paths))
                 for finding in artifact_batch["findings"]:
                     existing = findings_by_id.get(finding["id"])
                     if existing is None or finding["severity"] == "blocking":
                         findings_by_id[finding["id"]] = finding
-            changed_files = sum(len(paths) for _diff, paths in batches)
+            changed_files = len({path for _diff, paths in batches for path in paths})
             artifact = build_artifact({
                 "summary": f"Reviewed {changed_files} changed files across {len(batches)} bounded batches.",
                 "findings": list(findings_by_id.values()),

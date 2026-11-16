@@ -39,6 +39,23 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 max_batches=2,
             )
 
+    def test_release_document_diffs_are_repeated_in_every_batch(self) -> None:
+        upgrade = "docs-site/docs/release-notes/upgrade-guide.md"
+        file_diffs = [
+            ("CHANGELOG.md", "changelog context\n"),
+            (upgrade, "upgrade context\n"),
+            ("first.go", "a" * 60),
+            ("second.go", "b" * 60),
+        ]
+        batches = review.pack_diff_files(file_diffs, max_bytes=100)
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(batches[0][1], ("CHANGELOG.md", upgrade, "first.go"))
+        self.assertEqual(batches[1][1], ("CHANGELOG.md", upgrade, "second.go"))
+        for diff, _paths in batches:
+            self.assertIn("changelog context", diff)
+            self.assertIn("upgrade context", diff)
+        self.assertTrue(all(len(diff.encode("utf-8")) <= 100 for diff, _paths in batches))
+
     def test_git_diff_batches_reads_and_separates_real_file_diffs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -63,6 +80,18 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 os.chdir(original_cwd)
         self.assertEqual([paths for _diff, paths in batches], [("first.go",), ("second.go",)])
         self.assertTrue(all(len(diff.encode("utf-8")) <= review.MAX_DIFF_BYTES for diff, _paths in batches))
+
+    def test_git_diff_batches_uses_literal_paths_and_rejects_empty_file_diff(self) -> None:
+        first = type("Result", (), {"stdout": b"literal[1].go\0"})()
+        second = type("Result", (), {"stdout": ""})()
+        with patch.object(review.subprocess, "run", side_effect=[first, second]) as run:
+            with self.assertRaisesRegex(ValueError, "listed release diff file .* empty diff"):
+                review.git_diff_batches("base", "head")
+        for call_args in run.call_args_list:
+            command = call_args.args[0]
+            self.assertIn("--literal-pathspecs", command)
+            self.assertIn("--no-renames", command)
+        self.assertEqual(run.call_args_list[1].args[0][-1], "literal[1].go")
 
     def test_unanswered_blocker_blocks_and_answered_blocker_is_recorded(self) -> None:
         candidate = {
@@ -112,6 +141,18 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertNotEqual(baseline["findings"][0]["id"], changed["findings"][0]["id"])
         new_range, _ = review.evaluate(candidate, {}, "v4.8.0", "def5678")
         self.assertNotEqual(baseline["findings"][0]["id"], new_range["findings"][0]["id"])
+
+    def test_batch_finding_must_reference_a_file_in_that_batch(self) -> None:
+        candidate = {
+            "summary": "One issue.",
+            "findings": [{
+                "severity": "blocking", "category": "security", "title": "Unsafe verification",
+                "rationale": "The verifier accepts an unexpected signer.",
+                "locations": [{"file": "outside.go", "line": 1}],
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "outside its batch"):
+            review.build_artifact(candidate, "v4.8.0", "abc1234", allowed_files={"inside.go"})
 
     def test_clean_review_and_sensitive_output(self) -> None:
         report, unanswered = review.evaluate({"summary": "No release blockers found.", "findings": []}, {}, "v4.8.0", "abc1234")
@@ -172,19 +213,26 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertIn(artifact["artifact_digest"], output.read_text(encoding="utf-8"))
             self.assertEqual(json.loads(artifact_output.read_text(encoding="utf-8")), artifact)
 
-    def test_model_request_uses_zero_temperature(self) -> None:
+    def test_model_request_uses_supported_limits_and_final_text_block(self) -> None:
         class Response:
             def __enter__(self):
                 return self
             def __exit__(self, *_args):
                 return False
             def read(self):
-                return json.dumps({"content": [{"type": "text", "text": '{"summary":"clean","findings":[]}'}]}).encode()
+                return json.dumps({"content": [
+                    {"type": "text", "text": "not the final answer"},
+                    {"type": "thinking", "thinking": "private reasoning"},
+                    {"type": "text", "text": '{"summary":"clean","findings":[]}'},
+                ]}).encode()
 
         with patch.object(review.urllib.request, "urlopen", return_value=Response()) as urlopen:
-            review.call_model("test-key", "diff")
+            parsed = review.call_model("test-key", "diff")
         request = urlopen.call_args.args[0]
-        self.assertEqual(json.loads(request.data)["temperature"], 0)
+        payload = json.loads(request.data)
+        self.assertEqual(payload["max_tokens"], 16000)
+        self.assertNotIn("temperature", payload)
+        self.assertEqual(parsed, {"summary": "clean", "findings": []})
 
     def test_uncached_changed_range_calls_model_once(self) -> None:
         candidate = {"summary": "No blocking findings.", "findings": []}
@@ -242,6 +290,33 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertEqual(len(artifact["findings"]), 1)
             self.assertEqual(artifact["findings"][0]["severity"], "blocking")
             self.assertIn("Decision: **BLOCK**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
+
+    def test_uncached_review_stops_and_fails_when_batch_two_of_three_fails(self) -> None:
+        clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
+                "--artifact-output", str(root / "review-output" / "review.json"),
+                "--output", str(root / "review-output" / "AI-release-review.md"),
+            ]
+            (root / "responses.json").write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            batches = [
+                ("diff batch one", ("one.go",)),
+                ("diff batch two", ("two.go",)),
+                ("diff batch three", ("three.go",)),
+            ]
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", return_value=batches), \
+                 patch.object(review, "call_model", side_effect=[clean_batch, RuntimeError("AI release review request failed")]) as call_model, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 2)
+            self.assertEqual(call_model.call_count, 2)
+            self.assertFalse((root / "review-output" / "review.json").exists())
+            self.assertFalse((root / "review-output" / "AI-release-review.md").exists())
 
 
 if __name__ == "__main__":
