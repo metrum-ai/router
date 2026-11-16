@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
+- Reject userinfo in external-policy and detector URLs, including redirect targets.
+
 ### Fixed
 
 - Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
