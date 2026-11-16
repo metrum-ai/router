@@ -253,10 +253,10 @@ def assert_eval_infra_nightly_workflow() -> None:
             "evaluation nightly needs scheduled and manual triggers")
     require(all(f"{event}:" not in triggers for event in ("pull_request", "push", "merge_group")),
             "paid evaluation nightly must not run on PR, push or merge-group events")
-    require("$1.00 per workflow run and per UTC night" in text,
+    require("$1.50 total per workflow run and per UTC night" in text,
             "evaluation nightly must document its workflow and daily spend ceiling")
     workflow_jobs = jobs(text)
-    require(set(workflow_jobs) == {"nightly"}, "evaluation nightly must remain a single bounded job")
+    require(set(workflow_jobs) == {"nightly", "harbor"}, "evaluation nightly must split Docker Harbor from non-Docker cells")
     job = workflow_jobs["nightly"]
     require("if: github.ref == 'refs/heads/main'" in job,
             "evaluation nightly must run only from main")
@@ -266,14 +266,22 @@ def assert_eval_infra_nightly_workflow() -> None:
             "evaluation nightly must be bounded and cannot cancel a live run")
     require("contents: read" in text and "actions: read" in text,
             "evaluation nightly permissions must stay read-only")
-    secret_refs = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", text))
-    require(secret_refs == {"COMPAT_MATRIX_OPENAI_API_KEY", "COMPAT_MATRIX_CALLER_TOKEN"},
-            "evaluation nightly must expose only the two required environment secrets")
+    secret_refs = set(re.findall(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", text))
+    require(secret_refs == {"COMPAT_MATRIX_OPENAI_API_KEY", "COMPAT_MATRIX_CALLER_TOKEN",
+                            "COMPAT_MATRIX_ANTHROPIC_API_KEY"},
+            "evaluation nightly must expose only the three required environment secrets")
     require("artifacts/run-report.json" in text and "artifacts/rolling-aggregate.json" in text
             and "artifacts/history" not in text.split("      - name: Publish sanitized evaluation reports", 1)[1],
             "evaluation nightly artifacts must contain only the current report and aggregate")
     require("gh run download" in text and "refusing to bypass the nightly spend ceiling" in text,
             "same-day cost history must fail closed when reports cannot be retrieved")
+    harbor_job = workflow_jobs["harbor"]
+    require("runs-on: ubuntu-latest" in harbor_job and "docker info" in harbor_job,
+            "Harbor live job must use the Docker-capable hosted runner")
+    require("needs: nightly" in harbor_job and "environment: evaluation" in harbor_job,
+            "Docker Harbor job must run after non-Docker work in the protected environment")
+    require("HARBOR_MAX_RESERVE_USD" in harbor_job and "eval-harbor-${{ github.run_id }}" in harbor_job,
+            "Docker Harbor job must enforce and publish its bounded daily reservation")
 
 
 def assert_hierarchy_release_gate() -> None:
@@ -326,6 +334,15 @@ def assert_arc_runners() -> None:
                     "pikachu cache maintenance must stay on its original host")
             continue
         for name, body in jobs(text).items():
+            if path.name == "eval-infra-nightly.yml" and name == "harbor":
+                # Docker is part of the paid Harbor job's declared runtime;
+                # keep that one job on the hosted runner with main-only,
+                # protected-environment boundaries asserted separately.
+                require(re.search(r"(?m)^    runs-on: ubuntu-latest$", body) is not None,
+                        "the paid Harbor Docker job must use the hosted runner")
+                require("environment: evaluation" in body and "if: github.ref == 'refs/heads/main'" in body,
+                        "the hosted Harbor exception must remain main-only and protected")
+                continue
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
                     (path.name in ("agent-chain-nightly.yml", "hierarchy-matrix.yml") and
                      name in ("codex-chain-sandbox", "codex-chain"))):

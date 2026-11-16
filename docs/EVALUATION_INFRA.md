@@ -85,31 +85,39 @@ cannot silently become certification.
 ### Bounded nightly run (#762)
 
 `.github/workflows/eval-infra-nightly.yml` runs on a daily schedule or manual
-dispatch, with its job restricted to `main` and protected by the existing
-`evaluation` environment. It has no pull-request trigger. The only secrets
-passed to the paid step are `COMPAT_MATRIX_OPENAI_API_KEY` and
-`COMPAT_MATRIX_CALLER_TOKEN`; both stay in the environment-scoped secret store.
-No repository-wide secret is used. The workflow currently runs the four
-preregistered differential-canary rows supported without Docker. The three
-Humaneval rows remain explicitly missing in the aggregate until their live
-evaluation runtime is available; missing cells never become passing or
-certified. Harbor live cells after HARBOR-01 are tracked separately below.
+dispatch, with both jobs restricted to `main` and protected by the existing
+`evaluation` environment. It has no pull-request trigger. The non-Docker job
+uses `COMPAT_MATRIX_OPENAI_API_KEY` and `COMPAT_MATRIX_CALLER_TOKEN`; the
+separate Docker-backed Harbor job also uses
+`COMPAT_MATRIX_ANTHROPIC_API_KEY`. All three stay in the environment-scoped
+secret store. No repository-wide secret is used. The non-Docker job runs the
+four preregistered differential-canary rows. The three Humaneval rows remain
+explicitly missing in the aggregate until their live evaluation runtime is
+available; missing cells never become passing or certified. The hosted Docker
+job runs the existing Harbor adapter matrix on five fixed synthetic tasks, with
+its own rolling reservation check and sanitized result artifact. That adapter
+matrix is not evidence for the HARBOR-02…18 catalog cells; those catalog cells
+remain missing until a live Harbor task mapping and verifier run are published.
 
-The enforced ceiling is **$1.00 per workflow run and $1.00 total per UTC night**.
-Before the first provider request the runner reserves a conservative bound for
-all direct and router calls, pinned and current-stable, and adds reservations
-from earlier same-day runs. Same-day history is downloaded from sanitized
-workflow artifacts; a missing or malformed prior report fails closed. Each
-canary invocation also has a $0.50 guard. The report records router charges
-from the local usage database and direct-provider token usage priced at the
-recorded list rates; direct charges are estimates and are not invoice
-reconciled. The rolling artifact reports task attempts, passes, Wilson 95%
-intervals, paired outcomes, missing/under-sampled cells, violations and cost
-totals. It is evidence only, not a certification claim.
+The enforced ceiling is **$1.50 total per workflow run and per UTC night**:
+$1.00 for the non-Docker canary and $0.50 for Harbor. Before the first provider
+request, the canary reserves a conservative bound for all direct and router
+calls, pinned and current-stable, and adds reservations from earlier same-day
+runs. Harbor runs after the canary, sums earlier same-day Harbor reservations,
+and sets the relay's reservation cap to the remaining portion of its $0.50
+allowance. Same-day history is downloaded from sanitized workflow artifacts; a
+missing or malformed prior report fails closed. Each canary invocation also
+has a $0.50 guard. The canary report records router charges from the local
+usage database and direct-provider token usage priced at the recorded list
+rates; direct charges are estimates and are not invoice reconciled. The rolling
+artifact reports task attempts, passes, Wilson 95% intervals, paired outcomes,
+missing/under-sampled cells, violations and cost totals. It is evidence only,
+not a certification claim.
 
-The workflow retains only schema reports and the rolling aggregate for 14 days.
-Prompts, raw provider responses, credentials, router logs and temporary usage
-databases are not uploaded. Key rotation is performed on the existing
+The workflow retains only schema reports, the rolling aggregate, and the
+sanitized Harbor result summary for 14 days. Prompts, raw provider responses,
+credentials, router logs and temporary usage databases are not uploaded. Key
+rotation is performed on the existing
 `evaluation` environment secrets, one provider at a time, then checked with a
 manual main-branch run. Break glass is to remove or disable the affected
 environment secret and let the run fail closed; do not copy the key to a
@@ -182,8 +190,9 @@ validating the merged report with the same schema and gates.
   (ARCH-05) are recorded by the nightly workflow and accumulate toward the
   preregistered sample size.
 - Real-client runs with images and reasoning (AGENT-06).
-- Live Harbor coverage beyond HARBOR-01 (HARBOR-02…HARBOR-18); it needs a
-  Docker-capable runner.
+- Live Harbor coverage for the HARBOR-02…HARBOR-18 catalog cells. The hosted
+  Harbor adapter matrix currently runs synthetic adapter tasks, not those
+  catalog cells.
 
 Cells without a supported live runtime remain explicit as missing or blocked;
 they are never counted as passing or certified.

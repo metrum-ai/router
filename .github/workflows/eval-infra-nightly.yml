@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: Evaluation infrastructure nightly
-# Paid evaluation ceiling: $1.00 per workflow run and per UTC night. Details in
-# docs/EVALUATION_INFRA.md; the runner enforces the reservation before requests.
+# Paid evaluation ceiling: $1.50 total per workflow run and per UTC night ($1.00
+# non-Docker canary plus $0.50 Harbor). Details and enforcement are documented
+# in docs/EVALUATION_INFRA.md.
 
 on:
   schedule:
@@ -86,4 +87,96 @@ jobs:
             artifacts/run-report.json
             artifacts/rolling-aggregate.json
           if-no-files-found: warn
+          retention-days: 14
+
+  harbor:
+    if: github.ref == 'refs/heads/main'
+    needs: nightly
+    environment: evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned Harbor runner
+        run: |
+          python3 -m venv "$RUNNER_TEMP/harbor-venv"
+          "$RUNNER_TEMP/harbor-venv/bin/pip" install 'harbor==0.25.0'
+          docker info
+      - name: Fetch same-day Harbor cost reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/harbor-history
+          today="$(date -u +%F)"
+          gh run list --workflow eval-infra-nightly.yml --branch main --limit 100 \
+            --json databaseId,createdAt --jq '.[] | select(.createdAt | startswith("'"$today"'")) | .databaseId' \
+            > artifacts/harbor-history/run-ids.txt
+          if [ "$(wc -l < artifacts/harbor-history/run-ids.txt)" -ge 100 ]; then
+            echo "Same-day run history reached the query limit; refusing to bypass the Harbor spend ceiling."
+            exit 1
+          fi
+          while IFS= read -r run_id; do
+            [ -n "$run_id" ] || continue
+            [ "$run_id" = '${{ github.run_id }}' ] && continue
+            harbor_job="$(gh run view "$run_id" --json jobs --jq '.jobs[] | select(.name == "harbor") | .name')"
+            [ -n "$harbor_job" ] || continue
+            gh run download "$run_id" --name "eval-harbor-$run_id" --dir "artifacts/harbor-history/$run_id" || {
+              echo "A same-day Harbor cost report could not be downloaded; refusing to bypass the spend ceiling."
+              exit 1
+            }
+          done < artifacts/harbor-history/run-ids.txt
+          mapfile -t reports < <(find artifacts/harbor-history -name result.json -type f -print | sort)
+          python3 scripts/harbor_nightly_budget.py --out "$RUNNER_TEMP/harbor-budget.json" "${reports[@]}"
+      - name: Build router and prepare Harbor workspace
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/harbor-e2e/jobs" "/dev/shm/harbor-e2e-$GITHUB_RUN_ID"
+          test "$(findmnt -no FSTYPE --target "/dev/shm/harbor-e2e-$GITHUB_RUN_ID")" = tmpfs
+          go build -buildvcs=false -o "$RUNNER_TEMP/harbor-e2e/router" ./cmd/metrum-ai-router
+          cp scripts/harbor_e2e/*.py "$RUNNER_TEMP/harbor-e2e/"
+          python3 scripts/harbor_e2e/generate_tasks.py "$RUNNER_TEMP/harbor-e2e/jobs"
+      - name: Run bounded Harbor live matrix
+        env:
+          OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.COMPAT_MATRIX_ANTHROPIC_API_KEY }}
+          HARBOR_E2E_ROOT: ${{ runner.temp }}/harbor-e2e
+          HARBOR_BIN: ${{ runner.temp }}/harbor-venv/bin/harbor
+          HARBOR_E2E_SHA: ${{ github.sha }}
+          HARBOR_E2E_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          export HARBOR_E2E_CREDS="/dev/shm/harbor-e2e-$GITHUB_RUN_ID"
+          trap 'rm -f "$HARBOR_E2E_CREDS/provider-secrets.json" "$HARBOR_E2E_CREDS/router-token"' EXIT
+          python3 - "$HARBOR_E2E_CREDS/provider-secrets.json" "$RUNNER_TEMP/harbor-budget.json" <<'PY'
+          import json, os, pathlib, sys
+          keys = {"openai": os.environ["OPENAI_API_KEY"], "anthropic": os.environ["ANTHROPIC_API_KEY"]}
+          if not all(keys.values()):
+              raise SystemExit("required evaluation credentials are unavailable")
+          target = pathlib.Path(sys.argv[1])
+          target.write_text(json.dumps(keys))
+          target.chmod(0o600)
+          PY
+          export HARBOR_MAX_RESERVE_USD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["remaining_usd"])' "$RUNNER_TEMP/harbor-budget.json")"
+          printf %s "harbor-openai-responses-gpt" > "$HARBOR_E2E_CREDS/router-token"
+          chmod 600 "$HARBOR_E2E_CREDS/router-token"
+          export PATH="$RUNNER_TEMP/harbor-venv/bin:$PATH"
+          export PYTHONPATH="$HARBOR_E2E_ROOT"
+          python3 "$HARBOR_E2E_ROOT/run_matrix.py"
+      - name: Upload sanitized Harbor result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-harbor-${{ github.run_id }}
+          path: ${{ runner.temp }}/harbor-e2e/result.json
+          if-no-files-found: error
           retention-days: 14

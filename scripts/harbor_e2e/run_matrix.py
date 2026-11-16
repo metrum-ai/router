@@ -24,6 +24,7 @@ ROOT=pathlib.Path(os.environ.get('HARBOR_E2E_ROOT','/root/harbor-e2e'))
 TMP=pathlib.Path(os.environ.get('HARBOR_E2E_CREDS','/run/harbor-e2e'))
 HOST=os.environ.get('HARBOR_E2E_HOST','172.17.0.1')
 SHA=os.environ.get('HARBOR_E2E_SHA','')
+RUN_ID=os.environ.get('HARBOR_E2E_RUN_ID','local')
 SELFTEST=os.environ.get('HARBOR_E2E_SELFTEST')=='1'
 if not SELFTEST and subprocess.check_output(['findmnt','-no','FSTYPE','--target',str(TMP)],text=True).strip()!='tmpfs':raise SystemExit('credential directory not tmpfs')
 if (ROOT/'started').exists():raise SystemExit('already started; no repeat')
@@ -55,7 +56,7 @@ print('OFFLINE REPLAY PASSED; provider calls not yet made',flush=True)
 # Binding per lane is what made a repeat attempt fail with "Address already in
 # use"; both are started once here and torn down once in the finally block.
 relay = guarded_relay.http.server.ThreadingHTTPServer((HOST, 18081), guarded_relay.Relay)
-relay.budget = guarded_relay.Budget(max_calls=80, max_reserve=1.5)
+relay.budget = guarded_relay.Budget(max_calls=80, max_reserve=float(os.environ.get('HARBOR_MAX_RESERVE_USD', '0.50')))
 relay.secrets_path = TMP / 'provider-secrets.json'
 relay.records_path = ROOT / 'provider-usage.jsonl'
 threading.Thread(target=relay.serve_forever, daemon=True).start()
@@ -106,13 +107,13 @@ try:
                     response.read()
                 results[name] = {'exit': 0 if status == 200 else 1, 'values': ['1'] * 5 if status == 200 else ['0'] * 5}
                 print(json.dumps({'lane': name, 'status': status, 'selftest': True}), flush=True)
-            (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'jobs': results, 'selftest': True}, indent=2) + '\n')
+            (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'run_id': RUN_ID, 'jobs': results, 'selftest': True}, indent=2) + '\n')
         else:
             for mode, style, group in lanes:
                 (TMP / 'router-token').write_text(tokens[(style, group)])
                 name = mode + '-' + group
                 results[name] = run(name, style, mode, group, 18081 if mode == 'direct' else 18080, tasks)
-                (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'jobs': results, 'reserved_upper_usd': relay.budget.reserved, 'requests': relay.budget.calls}, indent=2) + '\n')
+                (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'run_id': RUN_ID, 'jobs': results, 'reserved_upper_usd': relay.budget.reserved, 'requests': relay.budget.calls}, indent=2) + '\n')
                 if len(results[name]['values']) != 5 or results[name]['exit'] != 0:
                     raise RuntimeError('incomplete Harbor job ' + name)
             for group in ('gpt', 'claude'):
