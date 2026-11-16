@@ -41,7 +41,7 @@ func usageMigrationRunnerWithoutPostureReport(cfg UsageDBConfig) (*migrationRunn
 		}
 		definitions = append(definitions, definition)
 	}
-	runner, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 20, MinData: 0, MaxData: 1}, definitions, usageDataJobDefinitions)
+	runner, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 21, MinData: 0, MaxData: 1}, definitions, usageDataJobDefinitions)
 	if err != nil {
 		if sqlDB, dbErr := db.DB(); dbErr == nil {
 			_ = sqlDB.Close()
