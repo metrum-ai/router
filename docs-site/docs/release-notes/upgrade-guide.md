@@ -478,12 +478,22 @@ metrum-ai-routerctl config activate --offline --db <config-db> --scope prod --se
 ```
 
 Repeat migration for every active legacy caller before running verify, import,
-review, and activation. Run these `--offline` commands only while every router
-replica is stopped. Use the v5 binary for each step. For PostgreSQL, add
+review, and activation. Run offline mutations only while every router replica is
+stopped; read-only config export uses a shared lock and may run while routers
+serve. Use the v5 binary for each step. For PostgreSQL, add
 `--driver postgres --dsn-env <environment-variable>` to each `--offline`
 database command. Review the
 imported set and diff before activation; retain the exported original and
 database backup for rollback.
+
+Offline import, activate, rollback, emergency activation/deactivation, and
+backup/restore refuse while a v5 router holds the database runtime lock; stop
+every replica first, including for emergency operations. Offline maintenance
+locking is unavailable on Windows. A v4.8 router does not take this lock, so a
+mixed v4.8/v5 fleet is not protected; upgrade every replica before relying on
+offline exclusion. The next serving startup consumes operation markers into
+the admin audit. PostgreSQL session advisory locks require session pooling and
+do not protect operations through PgBouncer transaction pooling.
 
 The load error names `callers migrate-legacy`; use `callers rotate` when no
 usable raw token is available.
@@ -1271,3 +1281,15 @@ unavailable until the migration is applied. Bindings are checked against the act
 admin identity, including its subject and stable mTLS SAN or SPIFFE identity. Disabled/deleted
 clients and revoked/expired credentials lose access. Re-register replacement credentials to restore
 a disabled client; deleted IDs cannot be re-enabled, so create a new ID.
+
+Offline config maintenance uses migration `2026111627` (router-config schema 19); usage backup
+and restore use the same migration ID in usage schema 23 after hierarchy audit schema 22. Apply both database scopes with the
+non-serving migration job before relying on offline maintenance. Offline config export is read-only
+and may run while routers serve; offline mutations and backup/restore require all routers sharing
+the database to stop. A v4.8 replica does not honor the runtime lock, so upgrade every replica first.
+
+Stored admin audit chains use migration `2026111628`: usage schema 24 follows
+offline-operation markers in schema 23 (migration `2026111627`), and router-config schema 20
+follows offline-operation markers in schema 19. Apply both scopes with the non-serving migration job before
+serving. Retention prunes expired rows, including delete markers, and advances the checkpoint so
+the remaining audit chain can be verified offline.

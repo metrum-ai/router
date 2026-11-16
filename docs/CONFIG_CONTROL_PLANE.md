@@ -363,3 +363,8 @@ same as config writes) and are audited as `shadow_start`, `shadow_stop`, and
 `shadow_promote` change events; promotion goes through the copy-on-write
 group write path and its event links the run via `detail=shadow_run=<id>`.
 The migration is online, transactional, and idempotent, matching phase 8.
+
+Migration `2026111627` adds bounded offline-operation markers at router-config
+schema 19. The serving startup consumes config markers into the control-plane
+audit, including markers for a scope that has no config set (recorded as
+`aborted`).

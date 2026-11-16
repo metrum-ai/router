@@ -17,9 +17,10 @@ import (
 // production registry. The private policy table is added here, once, so the
 // published contract, the mount and the handlers cannot drift.
 func adminV1RegistryWithPolicy() (*AdminV1Registry, error) {
-	specs := make([]Operation, 0, len(adminV1OperationSpecs)+len(policyOperationSpecs()))
+	specs := make([]Operation, 0, len(adminV1OperationSpecs)+len(policyOperationSpecs())+len(adminAuditExportOperationSpecs()))
 	specs = append(specs, adminV1OperationSpecs...)
 	specs = append(specs, policyOperationSpecs()...)
+	specs = append(specs, adminAuditExportOperationSpecs()...)
 	return NewAdminV1Registry(specs)
 }
 

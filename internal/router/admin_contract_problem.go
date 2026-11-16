@@ -79,8 +79,10 @@ var (
 		"authentication-throttled": {
 			http.StatusTooManyRequests, "Too many authentication failures",
 		},
-		"unavailable":    {http.StatusServiceUnavailable, "Service unavailable"},
-		"internal-error": {http.StatusInternalServerError, "Internal error"},
+		"unavailable":            {http.StatusServiceUnavailable, "Service unavailable"},
+		"audit-chain-invalid":    {http.StatusServiceUnavailable, "Audit chain invalid"},
+		"audit-marker-protected": {http.StatusConflict, "Audit deletion marker cannot be removed"},
+		"internal-error":         {http.StatusInternalServerError, "Internal error"},
 
 		// Authentication codes owned by #814 (carried verbatim).
 		"authentication_required":    {http.StatusUnauthorized, "Authentication required"},

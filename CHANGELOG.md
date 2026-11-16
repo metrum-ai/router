@@ -124,6 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Route every config, usage, and credential audit writer through append-only chained inserts; serialize SQLite chain appends, backfill legacy chains in bounded batches, protect deletion markers from deletion/pruning, export complete fields, and verify ordered export pages offline. The checkpoint remains in the database and is not externally signed in v5.0.0.
+
 ### Changed
 
 - Direct `model` targets inherit catalog capabilities (reasoning, tools, modalities, and request-shape/bridge support) for matching model IDs while retaining their configured dialect, pricing, and routing values. Ambiguous model IDs across dialects do not inherit capabilities unless one catalog entry matches the target dialect. Mixed reasoning rejections identify the caller field (such as `reasoning_effort` for Chat Completions) when the error parameter is otherwise unset.
@@ -181,6 +185,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `2026111607` | `usage` | 19 | add mission task and owner attribution | online | none | `restore-required` |
 | `2026111610` | `router-config` | 17 | add admin client and credential registry, lifecycle audit fields, and deduplicated unused-warning state | online | none | `restore-required` |
 | `2026111614` | `usage` | 20 | record recomputed prompt tokens and rollup coverage | online | none | `restore-required` |
+| `2026111627` | `router-config` | 19 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111627` | `usage` | 23 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111628` | `router-config` | 20 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
+| `2026111628` | `usage` | 24 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
 
 ### Fixed
 
@@ -215,6 +223,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require at least Go 1.27.4.
 - Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
 - Add optional per-caller CIDR, ASN-prefix, and verified mTLS identity binding with off, report, and enforce modes. Enforced mismatches return the same generic 401 as invalid tokens; security events retain the specific reason.
+
+### Admin audit and policy
+
+- Add domain-scoped, hash-chained admin audit export and separately authorized usage-audit deletion. Apply configured audit retention to control-plane change events.
+- Add candidate policy simulation in the authenticated caller's own domain. Responses include the decision and policy revision, with a generic explanation that does not expose matched rule fields or policy rules.
 
 ### Breaking
 

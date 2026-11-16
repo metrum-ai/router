@@ -124,12 +124,13 @@ func activateConfigSetWithAction(db *gorm.DB, runtimeScope, configSetID, actor, 
 			return fmt.Errorf("read runtime revision: %w", err)
 		}
 
-		eventID := newConfigChangeEventID()
-		if err := tx.Exec(
-			`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			eventID, runtimeScope, configSetID, action, actor, now, revision,
-		).Error; err != nil {
-			return fmt.Errorf("append change event: %w", err)
+		if err := insertChainedConfigChangeEventTx(tx, chainedConfigChangeEvent{
+			EventID: newConfigChangeEventID(), RuntimeScope: runtimeScope, ConfigSetID: configSetID,
+			Action: action, Actor: actor, At: now, ConfigRevision: revision, ActorKind: "system",
+			AuthzDomain: string(AdminDomainGlobal), Object: "admin:config", AuthzAction: "write",
+			OperationID: action + "ConfigSet", Outcome: "committed",
+		}); err != nil {
+			return fmt.Errorf("append chained change event: %w", err)
 		}
 		queueConfigRevisionNotification(tx, runtimeScope)
 		return nil

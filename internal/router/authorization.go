@@ -359,6 +359,13 @@ func (a *authorizer) enforce(subject authorizationSubject, object, action string
 	return err == nil && ok
 }
 
+func (a *authorizer) explain(subject, domain, object, action string) (bool, []string, error) {
+	if a == nil || a.enforcer == nil {
+		return false, nil, fmt.Errorf("authorization unavailable")
+	}
+	return a.enforcer.EnforceEx(subject, domain, object, action)
+}
+
 func authzSubjectForBasic(subject adminBasicRuntime) authorizationSubject {
 	return authorizationSubject{subject: subject.subject, domain: subject.domain, source: "basic"}
 }

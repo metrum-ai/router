@@ -22,6 +22,7 @@ import "net/http"
 //	AdminDomainCapturedRow   the captured row's originating caller domain, failing
 //	                         closed when it cannot be resolved
 //	AdminDomainHandler       the reports handler's own per-domain decision
+//	AdminDomainCredential    the authenticated credential's domain with contract-layer authorization
 //
 //	config-set import        admin:config / activate
 //	shadow promotion         admin:shadow / write AND admin:config / write
@@ -357,7 +358,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "getConfigStatus", Method: "GET", Path: "/admin/v1/config/status", LegacyPath: "/admin/config/status",
 		Summary: "Read control-plane and replica revision status",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
-		Response:  adminOpenObject{Members: []string{"mode", "runtime_scope", "driver", "revision", "active_set_id", "replica"}},
+		Response:  adminOpenObject{Members: []string{"mode", "runtime_scope", "driver", "revision", "active_set_id", "replica", "apply_modes"}},
 		RateClass: AdminRateClassRead, HandlerKey: "config.status",
 	},
 	{

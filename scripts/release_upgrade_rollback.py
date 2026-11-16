@@ -18,6 +18,8 @@ import tempfile
 import time
 from pathlib import Path
 
+ROUTER_CONFIG_SCHEMA_VERSION = 20
+
 
 def run(command: list[str], *, timeout: int, check: bool = True) -> subprocess.CompletedProcess[str]:
     try:
@@ -235,9 +237,9 @@ def main() -> int:
                            "scope_count": len(statuses),
                            "compatible": all(status.get("Compatible", status.get("compatible", True)) for status in statuses)})
         config_status = strict_json(candidate_migrate, "status", config_database, args.service_user, "--scope=router-config")
-        if config_status.get("SchemaVersion", config_status.get("schemaVersion")) != 18:
-            raise RuntimeError("Kubernetes migration Job did not apply router-config schema 18")
-        checks.append({"check": "kubernetes-migration-job-router-config-schema-18", "passed": True})
+        if config_status.get("SchemaVersion", config_status.get("schemaVersion")) != ROUTER_CONFIG_SCHEMA_VERSION:
+            raise RuntimeError(f"Kubernetes migration Job did not apply router-config schema {ROUTER_CONFIG_SCHEMA_VERSION}")
+        checks.append({"check": f"kubernetes-migration-job-router-config-schema-{ROUTER_CONFIG_SCHEMA_VERSION}", "passed": True})
         status = strict_json(candidate_migrate, "resume", database, args.service_user,
                              "--job=historical-usage-validation-v1", "--checkpoint-ordinal=0")
         checks.append({"check": "candidate-resume", "strict_json": True,

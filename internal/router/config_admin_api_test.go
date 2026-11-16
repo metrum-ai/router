@@ -818,10 +818,14 @@ func TestConfigAdminConcurrentWritesExactlyOneWins(t *testing.T) {
 	admin := adminHeaders("adminkey:ops", "config:read", "config:write")
 	status := configAdminRequest(t, mux, "GET", "/admin/config/status", nil, admin)
 	var statusBody struct {
-		Revision int64 `json:"revision"`
+		Revision   int64             `json:"revision"`
+		ApplyModes []ConfigApplyMode `json:"apply_modes"`
 	}
 	if err := json.Unmarshal(status.Body.Bytes(), &statusBody); err != nil {
 		t.Fatal(err)
+	}
+	if len(statusBody.ApplyModes) == 0 {
+		t.Fatal("config status omitted apply_modes inventory")
 	}
 	withMatch := func() map[string]string {
 		h := adminHeaders("adminkey:ops", "config:read", "config:write")

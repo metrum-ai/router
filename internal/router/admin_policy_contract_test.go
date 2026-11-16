@@ -9,8 +9,8 @@ import (
 
 func TestPolicyOperationContractHasCompleteBindingsAndSchemas(t *testing.T) {
 	specs := policyOperationSpecs()
-	if len(specs) != 19 {
-		t.Fatalf("policy operation inventory=%d want19", len(specs))
+	if len(specs) != 20 {
+		t.Fatalf("policy operation inventory=%d want20", len(specs))
 	}
 	composed := append(AdminV1Operations(), specs...)
 	registry, err := NewAdminV1Registry(composed)
