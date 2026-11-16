@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fixture struct{}
@@ -74,14 +75,28 @@ func TestExternalContract(t *testing.T) {
 	if endpoint == "" {
 		t.Skip("set DETECTOR_URL to run the external detector contract test")
 	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	badReq, err := http.NewRequest(http.MethodPost, endpoint, stringsReader(`{"schema_version":"metrum.detector.v1","kind":"benign","prompt":"private"}`))
+	if err != nil {
+		t.Fatal("invalid DETECTOR_URL")
+	}
+	badReq.Header.Set("Content-Type", "application/json")
+	badResp, err := client.Do(badReq)
+	if err != nil {
+		t.Fatalf("detector bad-event request failed: %v", err)
+	}
+	badResp.Body.Close()
+	if badResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad-event status=%d, want 400", badResp.StatusCode)
+	}
 	req, err := http.NewRequest(http.MethodPost, endpoint, stringsReader(`{"schema_version":"metrum.detector.v1","request_id":"contract-test","kind":"benign"}`))
 	if err != nil {
 		t.Fatal("invalid DETECTOR_URL")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
-		t.Fatal("detector request failed")
+		t.Fatalf("detector request failed: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {

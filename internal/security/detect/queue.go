@@ -19,10 +19,11 @@ import (
 type Dispatcher struct {
 	queue    chan job
 	sink     func(Result)
-	drops    atomic.Uint64
+	drops    *atomic.Uint64
 	closed   atomic.Bool
+	ctx      context.Context
+	cancel   context.CancelFunc
 	once     sync.Once
-	wg       sync.WaitGroup
 	randMu   sync.Mutex
 	submitMu sync.RWMutex
 }
@@ -57,12 +58,21 @@ type Result struct {
 
 // NewDispatcher starts workers. Queue capacity and worker count must be positive.
 func NewDispatcher(workers, capacity int, sink func(Result)) *Dispatcher {
+	return NewDispatcherWithDropCounter(workers, capacity, sink, &atomic.Uint64{})
+}
+
+// NewDispatcherWithDropCounter shares a monotonic drop counter across runtime
+// replacements. The caller owns the counter for the dispatchers' full lifetime.
+func NewDispatcherWithDropCounter(workers, capacity int, sink func(Result), drops *atomic.Uint64) *Dispatcher {
 	if workers < 1 || capacity < 1 {
 		panic("detector workers and capacity must be positive")
 	}
-	d := &Dispatcher{queue: make(chan job, capacity), sink: sink}
+	if drops == nil {
+		drops = &atomic.Uint64{}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	d := &Dispatcher{queue: make(chan job, capacity), sink: sink, drops: drops, ctx: ctx, cancel: cancel}
 	for range workers {
-		d.wg.Add(1)
 		go d.worker()
 	}
 	return d
@@ -116,29 +126,48 @@ func (d *Dispatcher) sample(rate float64) bool {
 func (d *Dispatcher) Dropped() uint64 { return d.drops.Load() }
 
 func (d *Dispatcher) worker() {
-	defer d.wg.Done()
-	for item := range d.queue {
-		ctx, cancel := context.WithTimeout(context.Background(), item.policy.Timeout)
-		signals, err := item.detector.Detect(ctx, item.event)
-		cancel()
-		if err == nil {
-			for i := range signals {
-				if signals[i].SchemaVersion == "" {
-					signals[i].SchemaVersion = detector.SchemaVersion
-				}
-				if detector.ValidateSignal(signals[i]) != nil {
-					err = errors.New("detector failed")
-					signals = nil
-					break
-				}
+	for {
+		select {
+		case <-d.ctx.Done():
+			return
+		case item, ok := <-d.queue:
+			if !ok {
+				return
+			}
+			if d.ctx.Err() != nil {
+				d.drops.Add(1)
+				return
+			}
+			d.run(item)
+		}
+	}
+}
+
+func (d *Dispatcher) run(item job) {
+	ctx, cancel := context.WithTimeout(d.ctx, item.policy.Timeout)
+	signals, err := item.detector.Detect(ctx, item.event)
+	cancel()
+	if d.ctx.Err() != nil {
+		d.drops.Add(1)
+		return
+	}
+	if err == nil {
+		for i := range signals {
+			if signals[i].SchemaVersion == "" {
+				signals[i].SchemaVersion = detector.SchemaVersion
+			}
+			if detector.ValidateSignal(signals[i]) != nil {
+				err = errors.New("detector failed")
+				signals = nil
+				break
 			}
 		}
-		if err != nil {
-			err = errors.New("detector failed")
-		}
-		if d.sink != nil {
-			d.sink(Result{DetectorID: item.detectorID, CallerID: item.callerID, Mode: item.policy.Mode, SampleRate: item.policy.SampleRate, Enforce: item.policy.Mode == "enforce", FailClosed: err != nil && item.policy.Mode == "enforce" && item.policy.OnError == "fail_closed", Signals: signals, Err: err})
-		}
+	}
+	if err != nil {
+		err = errors.New("detector failed")
+	}
+	if d.sink != nil {
+		d.sink(Result{DetectorID: item.detectorID, CallerID: item.callerID, Mode: item.policy.Mode, SampleRate: item.policy.SampleRate, Enforce: item.policy.Mode == "enforce", FailClosed: err != nil && item.policy.Mode == "enforce" && item.policy.OnError == "fail_closed", Signals: signals, Err: err})
 	}
 }
 
@@ -146,8 +175,21 @@ func (d *Dispatcher) Close() {
 	d.once.Do(func() {
 		d.submitMu.Lock()
 		d.closed.Store(true)
-		close(d.queue)
-		d.submitMu.Unlock()
-		d.wg.Wait()
+		d.cancel()
+		for {
+			select {
+			case _, ok := <-d.queue:
+				if !ok {
+					close(d.queue)
+					d.submitMu.Unlock()
+					return
+				}
+				d.drops.Add(1)
+			default:
+				close(d.queue)
+				d.submitMu.Unlock()
+				return
+			}
+		}
 	})
 }

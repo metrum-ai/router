@@ -115,6 +115,8 @@ type Service struct {
 	detectorDispatcher     *detect.Dispatcher
 	detectors              []detectorRuntime
 	detectorMu             sync.RWMutex
+	detectorDropped        atomic.Uint64
+	detectorMetricsEnabled atomic.Bool
 	detectorResultConsumer func(detect.Result)
 	shaping                *upstreamShapeManager
 	providerSpend          *providerSpendBreaker
@@ -221,7 +223,6 @@ type requestContext struct {
 	maxSSELineBytes        int
 	chatStreamIncludeUsage bool
 	detectorTinyRequest    bool
-	detectorDeniedGroup    string
 	traceSeq               int
 	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
 	wrapStreamFrame func([]byte) []byte
@@ -1359,11 +1360,8 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
-	s.detectorMu.RLock()
-	detectorDispatcher := s.detectorDispatcher
-	s.detectorMu.RUnlock()
-	if detectorDispatcher != nil {
-		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", detectorDispatcher.Dropped())
+	if s.detectorMetricsEnabled.Load() {
+		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", s.detectorDropped.Load())
 	}
 	if s.tlsManager != nil {
 		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
@@ -1718,7 +1716,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if exists {
 			reason = "model-not-allowed"
 		}
-		rc.detectorDeniedGroup = req.Model
 		s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.caller.cfg.ID, Kind: "model_denied", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), KeyID: opaqueDetectorKeyID(rc.rec.TokenID), DeniedGroup: req.Model, SourceIP: rc.clientIP.Address})
 		if dialect == "openai-chat" || dialect == "openai-responses" {
 			s.writeModelNotFound(w, rc, req.Model, reason)

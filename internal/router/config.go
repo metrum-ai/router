@@ -1205,12 +1205,16 @@ func LoadConfig(path string) (*Config, error) {
 		redactor.addConfig(cfg)
 		return cfg, redactConfigError(err, redactor)
 	}
-	for _, detector := range cfg.Server.Detectors {
-		if len(detector.IncludeSegments) != 0 && detector.Mode != "off" {
+	warnDetectorSegmentOptIn(cfg.Server.Detectors)
+	return cfg, nil
+}
+
+func warnDetectorSegmentOptIn(configs []DetectorConfig) {
+	for _, detector := range configs {
+		if len(detector.IncludeSegments) > 0 && detector.Mode != "off" {
 			log.Printf("WARNING: detector %s is configured to send only selected tool_result/document text to its allowlisted endpoint; prompts and user messages are never sent", detector.ID)
 		}
 	}
-	return cfg, nil
 }
 
 func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {

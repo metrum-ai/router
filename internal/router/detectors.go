@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	detect "github.com/metrum-ai/router/internal/security/detect"
@@ -21,7 +22,10 @@ type detectorRuntime struct {
 }
 
 func (s *Service) initDetectors() error {
-	dispatcher, runtimes, err := buildDetectorRuntimes(s.cfg.Server.Detectors, s.handleDetectorResult)
+	if len(s.cfg.Server.Detectors) > 0 {
+		s.detectorMetricsEnabled.Store(true)
+	}
+	dispatcher, runtimes, err := buildDetectorRuntimes(s.cfg.Server.Detectors, s.handleDetectorResult, &s.detectorDropped)
 	if err != nil {
 		return err
 	}
@@ -30,11 +34,11 @@ func (s *Service) initDetectors() error {
 	return nil
 }
 
-func buildDetectorRuntimes(configs []DetectorConfig, sink func(detect.Result)) (*detect.Dispatcher, []detectorRuntime, error) {
+func buildDetectorRuntimes(configs []DetectorConfig, sink func(detect.Result), drops *atomic.Uint64) (*detect.Dispatcher, []detectorRuntime, error) {
 	if len(configs) == 0 {
 		return nil, nil, nil
 	}
-	dispatcher := detect.NewDispatcher(4, 256, sink)
+	dispatcher := detect.NewDispatcherWithDropCounter(4, 256, sink, drops)
 	runtimes := make([]detectorRuntime, 0, len(configs))
 	for _, cfg := range configs {
 		var implementation detector.Detector
@@ -60,10 +64,13 @@ func buildDetectorRuntimes(configs []DetectorConfig, sink func(detect.Result)) (
 	return dispatcher, runtimes, nil
 }
 
-// replaceDetectorConfig installs a fully built runtime for a config reload,
-// then drains the previous worker pool after request dispatch has moved on.
+// replaceDetectorConfig installs the new runtime, then cancels the previous
+// worker pool without waiting for detector I/O to finish.
 func (s *Service) replaceDetectorConfig(configs []DetectorConfig) error {
-	dispatcher, runtimes, err := buildDetectorRuntimes(configs, s.handleDetectorResult)
+	if len(configs) > 0 {
+		s.detectorMetricsEnabled.Store(true)
+	}
+	dispatcher, runtimes, err := buildDetectorRuntimes(configs, s.handleDetectorResult, &s.detectorDropped)
 	if err != nil {
 		return err
 	}
@@ -160,6 +167,7 @@ func (s *Service) submitDetectorEvent(event detector.Event, segments []detector.
 }
 
 func (s *Service) handleDetectorResult(result detect.Result) {
+	consumer := s.currentDetectorResultConsumer()
 	if result.Err != nil {
 		outcome := "fallback"
 		if result.FailClosed {
@@ -169,8 +177,8 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 			TS: time.Now().UTC(), EventType: "security_detector_failure", Outcome: outcome,
 			ReasonCode: "detector_failed", CallerID: result.CallerID, RequestedModel: result.DetectorID,
 		})
-		if s.detectorResultConsumer != nil {
-			s.detectorResultConsumer(result)
+		if consumer != nil {
+			consumer(result)
 		}
 		return
 	}
@@ -188,8 +196,8 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 			ReasonCode: reason, CallerID: result.CallerID, RequestedModel: result.DetectorID, TokenID: signal.Key,
 		})
 	}
-	if s.detectorResultConsumer != nil {
-		s.detectorResultConsumer(result)
+	if consumer != nil {
+		consumer(result)
 	}
 }
 
@@ -198,8 +206,17 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 // Result.Enforce and Result.FailClosed; callers must never infer them from text.
 func (s *Service) SetDetectorResultConsumer(consumer func(detect.Result)) {
 	if s != nil {
+		s.detectorMu.Lock()
 		s.detectorResultConsumer = consumer
+		s.detectorMu.Unlock()
 	}
+}
+
+func (s *Service) currentDetectorResultConsumer() func(detect.Result) {
+	s.detectorMu.RLock()
+	consumer := s.detectorResultConsumer
+	s.detectorMu.RUnlock()
+	return consumer
 }
 
 func opaqueDetectorKeyID(tokenID string) string {

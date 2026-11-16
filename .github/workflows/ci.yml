@@ -116,6 +116,30 @@ jobs:
       - name: Other Go and Windows
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK make -k -j2 ci-go ci-windows
+      - name: External detector contract against example service
+        if: env.CI_RUN_GO == '1'
+        env:
+          DETECTOR_URL: http://127.0.0.1:18081/v1/detect
+        run: |
+          set -euo pipefail
+          test -n "$DETECTOR_URL"
+          go build -o "$RUNNER_TEMP/example-detector" ./examples/external-detector
+          "$RUNNER_TEMP/example-detector" --listen 127.0.0.1:18081 >"$RUNNER_TEMP/example-detector.log" 2>&1 &
+          detector_pid=$!
+          trap 'kill "$detector_pid" 2>/dev/null || true; wait "$detector_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for _ in $(seq 1 50); do
+            if curl --silent --show-error --max-time 1 --output /dev/null "$DETECTOR_URL"; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != true ]; then
+            cat "$RUNNER_TEMP/example-detector.log"
+            exit 1
+          fi
+          go test ./pkg/detector -run '^TestExternalContract$' -count=1
 
   other:
     name: Compatibility, Python and examples

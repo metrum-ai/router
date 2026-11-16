@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -109,6 +110,71 @@ func TestRequestCompletesWhenDetectorQueueIsFull(t *testing.T) {
 	if svc.detectorDispatcher.Dropped() == 0 {
 		t.Fatal("full detector queue did not increment drop counter")
 	}
+	dropsBeforeReload := svc.detectorDropped.Load()
+	reloadDone := make(chan error, 1)
+	go func() { reloadDone <- svc.replaceDetectorConfig(nil) }()
+	select {
+	case err := <-reloadDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reload waited for the hung detector")
+	}
+	if svc.detectorDropped.Load() < dropsBeforeReload+256 {
+		t.Fatalf("reload did not count queued jobs as drops: before=%d after=%d", dropsBeforeReload, svc.detectorDropped.Load())
+	}
+	if err := svc.replaceDetectorConfig(cfg.Server.Detectors); err != nil {
+		t.Fatal(err)
+	}
+	if svc.detectorDropped.Load() < dropsBeforeReload+256 {
+		t.Fatal("detector drop counter reset across reload")
+	}
+}
+
+func TestDetectorResultConsumerConcurrentWorkers(t *testing.T) {
+	svc := &Service{}
+	var delivered atomic.Int64
+	consumer := func(detect.Result) { delivered.Add(1) }
+	svc.SetDetectorResultConsumer(consumer)
+	dispatcher := detect.NewDispatcher(4, 512, svc.handleDetectorResult)
+	defer dispatcher.Close()
+	event := detector.Event{SchemaVersion: detector.SchemaVersion, Kind: "request"}
+	policy := detect.Policy{Mode: "enforce", Timeout: time.Second, OnError: "fallback", SampleRate: 1}
+	const count = 256
+	for i := 0; i < count; i++ {
+		if !dispatcher.Submit("fixture", "caller", detectorFunc(func(context.Context, detector.Event) ([]detector.Signal, error) {
+			return []detector.Signal{}, nil
+		}), event, policy) {
+			t.Fatalf("submit %d failed", i)
+		}
+	}
+	stopWriter := make(chan struct{})
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for {
+			select {
+			case <-stopWriter:
+				return
+			default:
+				svc.SetDetectorResultConsumer(consumer)
+			}
+		}
+	}()
+	deadline := time.After(2 * time.Second)
+	for delivered.Load() < count {
+		select {
+		case <-deadline:
+			close(stopWriter)
+			<-writerDone
+			t.Fatalf("delivered %d/%d results", delivered.Load(), count)
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
+	close(stopWriter)
+	<-writerDone
 }
 
 func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *testing.T) {

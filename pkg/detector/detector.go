@@ -46,7 +46,7 @@ type Segment struct {
 	Text  string `json:"text"`
 }
 
-// Signal reports one detector result. Key is a stable key identifier or prefix, never a credential.
+// Signal reports one detector result. Key is an opaque key identifier, never a credential.
 type Signal struct {
 	SchemaVersion      string   `json:"schema_version"`
 	DetectorID         string   `json:"detector_id"`
