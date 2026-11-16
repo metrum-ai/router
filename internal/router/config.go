@@ -121,6 +121,7 @@ type ServerConfig struct {
 	Retention         RetentionConfig          `yaml:"retention"`
 	DecisionTelemetry DecisionTelemetryConfig  `yaml:"decision_telemetry"`
 	TrafficShape      ServerTrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
+	Trace             TraceConfig              `yaml:"trace" json:"trace,omitempty"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -132,6 +133,13 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+	Hierarchy         HierarchyConfig         `yaml:"hierarchy" json:"hierarchy,omitempty"`
+}
+
+// TraceConfig controls which immediate network peers may establish a
+// distributed trace for a serving request.
+type TraceConfig struct {
+	TrustedParentCIDRs []string `yaml:"trusted_parent_cidrs" json:"trustedParentCidrs,omitempty"`
 }
 
 // ContainmentWebhookConfig enables signed SOAR/EDR containment requests.
@@ -1147,6 +1155,7 @@ type CallerConfig struct {
 	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
 	Allow              []string             `yaml:"allow" json:"allow"`
 	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	TrustTraceparent   bool                 `yaml:"trust_traceparent" json:"trustTraceparent,omitempty"`
 	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
 	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
@@ -1938,6 +1947,12 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
 		return err
 	}
+	if err := validateHierarchyConfig(c.Server.Hierarchy); err != nil {
+		return err
+	}
+	if err := validateTraceConfig(c.Server.Trace); err != nil {
+		return err
+	}
 	if err := validateASNPrefixes(c.Server.ClientIP.ASNPrefixes); err != nil {
 		return err
 	}
@@ -2390,6 +2405,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if err := validateSpendCeiling("caller "+caller.ID+" spend_ceiling", caller.SpendCeiling, knownTiers); err != nil {
 			return err
 		}
+	}
+	if err := validateHierarchyCallers(c.Server.Hierarchy, c.Callers); err != nil {
+		return err
 	}
 	return nil
 }
