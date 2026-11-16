@@ -216,7 +216,7 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	HandlerKey: "usage.response-affinity.apply.v1@applyResponseAffinityMigration", PostconditionKey: "usage.response-affinity.schema.v1@verifyResponseAffinityMigration",
 	Dependencies: []int{2026103001}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyResponseAffinityMigration, Verify: verifyResponseAffinityMigration,
-}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition(), AutomaticContainmentMigrationDefinition()}
+}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition(), MCPToolAuditMigrationDefinition(), AutomaticContainmentMigrationDefinition()}
 
 func init() {
 	for i := range usageMigrationDefinitions {

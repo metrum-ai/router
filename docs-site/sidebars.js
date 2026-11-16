@@ -48,6 +48,7 @@ const sidebars = {
         "operations/key-generation",
         "operations/customer-administration",
         "configuration/pii-filtering",
+        "configuration/mcp-gateway",
         "configuration/dynamic-score-routing",
         "configuration/routing-typescript",
         "configuration/external-routing-policy",

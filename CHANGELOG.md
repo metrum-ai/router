@@ -14,6 +14,7 @@
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
+- Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.

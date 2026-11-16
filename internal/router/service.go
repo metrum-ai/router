@@ -90,6 +90,7 @@ type Service struct {
 	policyFreshness          *policyFreshnessState
 	authorizationAudit       authorizationDecisionAudit
 	quota                    *quotaStore
+	mcpAuditKey              [32]byte
 	cache                    *responseCache
 	logger                   *requestLogger
 	usage                    *usageStore
@@ -427,6 +428,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		_ = usage.Close()
 		bridgeSessions.Close()
 		return nil, fmt.Errorf("generate admin report cursor key: %w", err)
+	}
+	if _, err := rand.Read(s.mcpAuditKey[:]); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("generate MCP audit key: %w", err)
 	}
 	s.adminAPIKeys = buildAdminAPIKeyRuntimes(cfg, os.LookupEnv)
 	s.authorizer, err = newAuthorizer(cfg.Server.AdminAuth.Authorization, quota.callers, usage, cfg.Server.AdminAuth)
@@ -867,6 +872,9 @@ func (s *Service) loadedConfigRevision() (int64, string, time.Time) {
 }
 
 func (s *Service) routes() {
+	// The handler checks the atomically published configuration on each request,
+	// so database config reloads can enable and disable MCP without restart.
+	s.mux.HandleFunc("POST /mcp", s.handleMCP)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, healthPayload(true, ""))
 	})

@@ -48,12 +48,54 @@ type Config struct {
 	Provider           map[string]ProviderConfig `yaml:"providers"`
 	Models             map[string]ModelGroup     `yaml:"models"`
 	Callers            []CallerConfig            `yaml:"callers"`
+	MCP                MCPGatewayConfig          `yaml:"mcp"`
 	StatePath          string                    `yaml:"state_path"`
 	baseDir            string
 	// secretEnvRefs names the environment variables expanded into this
 	// config (${NAME} references and env.json keys) so later errors can be
 	// redacted by name. See secret_redaction.go.
 	secretEnvRefs []string
+}
+
+// MCPGatewayConfig configures the caller-authenticated MCP gateway.
+type MCPGatewayConfig struct {
+	Enabled   bool                 `yaml:"enabled"`
+	Path      string               `yaml:"path"`
+	TimeoutMS int                  `yaml:"timeout_ms"`
+	RPM       int                  `yaml:"rpm"`
+	Servers   []MCPServerConfig    `yaml:"servers"`
+	Policies  []MCPPolicyConfig    `yaml:"policies"`
+	Limits    []MCPToolLimitConfig `yaml:"limits"`
+}
+
+// MCPServerConfig identifies one upstream MCP server and an optional static credential.
+type MCPServerConfig struct {
+	Name            string   `yaml:"name"`
+	URL             string   `yaml:"url"`
+	CredentialEnv   string   `yaml:"credential_env"`
+	AllowHosts      []string `yaml:"allow_hosts"`
+	AllowHTTP       bool     `yaml:"allow_http"`
+	ProtocolVersion string   `yaml:"protocol_version"`
+}
+
+// MCPPolicyConfig limits selected callers, projects, or model groups to named tools.
+type MCPPolicyConfig struct {
+	Caller        string   `yaml:"caller"`
+	Project       string   `yaml:"project"`
+	ModelGroup    string   `yaml:"model_group"`
+	Tools         []string `yaml:"tools"`
+	DenyByDefault bool     `yaml:"deny_by_default"`
+}
+
+// MCPToolLimitConfig caps requests and estimated spend for one caller. An
+// empty tool applies the spend ceiling to the caller across all MCP tools.
+type MCPToolLimitConfig struct {
+	Caller         string  `yaml:"caller"`
+	Tool           string  `yaml:"tool"`
+	RPM            int     `yaml:"rpm"`
+	HourlyUSD      float64 `yaml:"hourly_usd"`
+	DailyUSD       float64 `yaml:"daily_usd"`
+	CostPerCallUSD float64 `yaml:"cost_per_call_usd"`
 }
 
 type RouterSecurityConfig struct {
@@ -1859,6 +1901,9 @@ func (c *Config) setDefaults() {
 			})
 		}
 	}
+	if c.MCP.Enabled && c.MCP.RPM == 0 {
+		c.MCP.RPM = 60
+	}
 }
 
 func (c *Config) Validate() error {
@@ -1982,6 +2027,12 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
 	}
+	if err := validateMCPGateway(c.MCP, requireAdminKeyEnv); err != nil {
+		return err
+	}
+	if c.MCP.Enabled && c.Server.UsageDB.Enable != nil && !*c.Server.UsageDB.Enable {
+		return fmt.Errorf("mcp.enabled requires usage_db enabled for invocation audit")
+	}
 	if err := validateSecurityEvents(c.Server.Security.Events); err != nil {
 		return err
 	}
@@ -2034,6 +2085,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 	}
 	if _, err := c.validateAccounts(); err != nil {
+		return err
+	}
+	if err := validateMCPPolicyReferences(c.MCP, c.Callers, c.Projects, c.Models); err != nil {
 		return err
 	}
 	for name, p := range c.Provider {

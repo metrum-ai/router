@@ -1,5 +1,8 @@
 # Metrum AI Router
 
+MCP gateway configuration and policy behavior are documented in
+[`docs/MCP_GATEWAY.md`](docs/MCP_GATEWAY.md).
+
 Metrum website: [metrum.ai](https://www.metrum.ai). See the
 [Metrum AI Router product page](https://www.metrum.ai/router) for product
 information and enterprise inquiries.
