@@ -22,6 +22,12 @@
   a new trace. Outbound trace headers are on by default and can be disabled per
   provider; inbound `tracestate` is deliberately dropped.
 - Forward Anthropic `thinking` settings to supported Bedrock Claude models and preserve `thinking` and `redacted_thinking` history, signatures, ordering, and streamed reasoning blocks through Converse tool continuations. Malformed blocks fail before AWS dispatch.
+- Add per-request tool-routing counts, first failure class, retries, escalations,
+  outcome bucket, and reliability source to usage records and reports. Tool
+  reliability matrix v1 has an empty seed because it contains no
+  provider/model-attributed failure counts; routing starts neutral and learns
+  from live usage. The additive migration is schema 21, following main's schema-20
+  recomputed-input migration.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Add virtual model groups whose eligible targets are selected from per-family
   capability vectors imported from reproducible eval reports. The config Admin

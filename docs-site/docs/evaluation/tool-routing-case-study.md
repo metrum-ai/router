@@ -39,6 +39,28 @@ The strategy's recovery is defined on *detectable* failures: unparsable JSON, sc
 
 So the honest conclusion is: **no measured task-success or cost effect on this task set**, because the failure mode this feature targets did not occur. The mechanism itself is covered by deterministic tests (retry on the same target, escalation with the serving target identified, ceiling and deadline bounds, discarded-usage quota settlement), not by this run. A task set where models emit malformed JSON or omit required arguments would exercise it; that set is not BFCL v4 AST categories, and choosing a set because it makes the feature look good is exactly what the release rules forbid.
 
+No checked-in evaluation set currently has provider/model-attributed counts of these detectable tool-call failures, and the compatibility matrix records client, API-surface and path behavior rather than model outcomes. Do not infer target reliability from those matrix pass cells. The strategy remains unproven on measured tasks until a suitable task set and evidence source are available.
+
+## Compatibility reliability seed
+
+The router loads a versioned `compat-suite` seed manifest at startup. For
+compatibility matrix schema version 1, the manifest intentionally has no target
+records: the matrix contains no provider/model-attributed tool-failure counts.
+Tool-aware routing therefore starts in configured target order and learns from
+live per-request tool validation outcomes. Live observations stay separate from
+the seed; once a target has `min_samples` live outcomes, its live score replaces
+any seed score for routing.
+
+To add a future seed, first extend the compatibility matrix with real
+provider/model identity, valid and invalid tool-validation counts, and a stable
+evidence reference for each target. Then update
+`compatibilityToolReliabilitySeedJSON` in
+`internal/router/tool_reliability_seed.go` with those target records and the
+matrix schema version. The loader requires the `compat-suite` source label,
+explicit target identity, bounded non-zero outcome counts, and a matrix-cell
+evidence link. Never derive counts from client/path pass cells. The empty
+manifest remains the correct seed until that evidence exists.
+
 ## Limits
 
 - Single-turn AST categories only. BFCL's multi-turn and live categories need tool execution and state, and were not run; no claim is made about them.

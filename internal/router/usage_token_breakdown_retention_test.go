@@ -40,7 +40,7 @@ func pricedTokenBreakdownRecord(id, cache string, ts time.Time) logRecord {
 	return rec
 }
 func TestTokenBreakdownRollupRetentionParity(t *testing.T) {
-	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	store, err := OpenUsageStore(uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,9 +81,14 @@ func verifyTokenBreakdownRetentionParity(t *testing.T, store *usageStore) {
 	day := time.Now().UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
 	for i, cache := range []string{"miss", "hit"} {
 		rec := pricedTokenBreakdownRecord(string(rune('a'+i)), cache, day.Add(time.Hour))
+		rec.AttemptsDetail = []attemptLogRecord{{Selected: true, ToolValidation: &toolValidationLogRecord{Calls: 1, Valid: 1, Action: "observed"}}}
 		if err := store.db.Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	var persistedToolRows int64
+	if err := store.db.Model(&usageRecord{}).Where("tool_reliability_source = ?", "live").Count(&persistedToolRows).Error; err != nil || persistedToolRows != 2 {
+		t.Fatalf("persisted tool telemetry rows=%d err=%v", persistedToolRows, err)
 	}
 	baseline := adminSavingsBaselineDTO{BaselineID: "test", BaselineInputPricePerMillionUSD: 20, BaselineOutputPricePerMillionUSD: 30}
 	opts := UsageReportOptions{From: day, To: day.Add(24 * time.Hour)}
@@ -130,6 +135,9 @@ func verifyTokenBreakdownRetentionParity(t *testing.T, store *usageStore) {
 	}
 	if err := store.db.Where("1 = 1").Delete(&usageRecord{}).Error; err != nil {
 		t.Fatal(err)
+	}
+	if err := store.db.Model(&usageRecord{}).Where("tool_reliability_source = ?", "live").Count(&persistedToolRows).Error; err != nil || persistedToolRows != 0 {
+		t.Fatalf("retention left tool telemetry rows=%d err=%v", persistedToolRows, err)
 	}
 	retained, err := store.adminOverviewSQL(opts, baseline, 50)
 	if err != nil {

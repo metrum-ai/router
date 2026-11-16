@@ -4,9 +4,84 @@
 package router
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
+
+func TestCompatibilityToolReliabilitySeedIsEmptyAndNeutral(t *testing.T) {
+	manifest, err := loadCompatibilityToolReliabilitySeed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Source != compatibilityToolReliabilitySeedSource || manifest.MatrixSchemaVersion != compatibilityToolReliabilityMatrixSchema || manifest.MatrixEvidence != "tests/tool_compat/matrix.json" || len(manifest.Targets) != 0 {
+		t.Fatalf("unexpected compatibility seed manifest: %+v", manifest)
+	}
+
+	svc := toolReliabilityService(t)
+	group := svc.cfg.Models["grp"]
+	ordered := svc.orderToolAwareTargets("grp", group.ToolRouting, group.Targets, true)
+	if ordered[0].Model != "cheap" {
+		t.Fatalf("empty compatibility seed must keep configured weights, got %+v", ordered)
+	}
+}
+
+func TestCompatibilityToolReliabilitySeedRejectsUnattributedTarget(t *testing.T) {
+	data := []byte(`{"schema_version":1,"matrix_schema_version":1,"source":"compat-suite","matrix_evidence":"tests/tool_compat/matrix.json","targets":[{}]}`)
+	if _, err := parseCompatibilityToolReliabilitySeed(data); err == nil {
+		t.Fatal("unattributed target was accepted")
+	}
+}
+
+func TestCompatibilityToolReliabilitySeedRejectsInvalidManifestEvidenceAndCounts(t *testing.T) {
+	base := toolReliabilitySeedManifest{
+		SchemaVersion: 1, MatrixSchemaVersion: compatibilityToolReliabilityMatrixSchema,
+		Source: compatibilityToolReliabilitySeedSource, MatrixEvidence: "tests/tool_compat/matrix.json",
+		Targets: []toolReliabilitySeedTarget{{Group: "grp", Provider: "mock", Model: "model", Valid: 1, Evidence: "tests/tool_compat/matrix.json#pi-openai-chat"}},
+	}
+	maxInt := int(^uint(0) >> 1)
+	cases := []struct {
+		name   string
+		mutate func(*toolReliabilitySeedManifest)
+	}{
+		{"wrong source", func(m *toolReliabilitySeedManifest) { m.Source = "invented" }},
+		{"missing evidence link", func(m *toolReliabilitySeedManifest) { m.Targets[0].Evidence = "" }},
+		{"non-matrix evidence link", func(m *toolReliabilitySeedManifest) { m.Targets[0].Evidence = "tests/other.json#pi-openai-chat" }},
+		{"zero counts", func(m *toolReliabilitySeedManifest) { m.Targets[0].Valid, m.Targets[0].Invalid = 0, 0 }},
+		{"duplicate target", func(m *toolReliabilitySeedManifest) { m.Targets = append(m.Targets, m.Targets[0]) }},
+		{"overflow counts", func(m *toolReliabilitySeedManifest) { m.Targets[0].Valid, m.Targets[0].Invalid = maxInt, 1 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest := base
+			manifest.Targets = append([]toolReliabilitySeedTarget(nil), base.Targets...)
+			tc.mutate(&manifest)
+			data, err := json.Marshal(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := parseCompatibilityToolReliabilitySeed(data); err == nil {
+				t.Fatal("invalid seed manifest was accepted")
+			}
+		})
+	}
+}
+
+func TestToolReliabilitySeedIsReplacedByLiveAtMinSamples(t *testing.T) {
+	key := toolReliabilityKey("grp", "mock", "model")
+	now := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	store := newToolReliabilityStore(toolReliabilitySeedTarget{Group: "grp", Provider: "mock", Model: "model", Valid: 8, Invalid: 2})
+	store.observe(key, toolCallValidation{Calls: 1, Invalid: 1}, time.Hour, now)
+	seed := store.routingScore(key, 3, time.Hour, now)
+	if seed.Source != compatibilityToolReliabilitySeedSource || seed.Calls != 10 || seed.Valid != 8 || seed.Invalid != 2 {
+		t.Fatalf("below min_samples should use only seed: %+v", seed)
+	}
+	store.observe(key, toolCallValidation{Calls: 2, Valid: 2}, time.Hour, now)
+	live := store.routingScore(key, 3, time.Hour, now)
+	if live.Source != "live" || live.Calls != 3 || live.Valid != 2 || live.Invalid != 1 {
+		t.Fatalf("live counts must replace, not sum with, seed: %+v", live)
+	}
+}
 
 func TestWilsonLowerBoundRanksEvidence(t *testing.T) {
 	if got := wilsonLowerBound(0, 0); got != 0 {
@@ -163,5 +238,54 @@ func TestObserveModeFeedsReliabilityStore(t *testing.T) {
 	}
 	if record.Calls != 1 || record.Valid != 1 || record.Invalid != 0 {
 		t.Fatalf("unexpected counters: %+v", record)
+	}
+}
+
+func TestToolReliabilitySelectionSourceIsPersisted(t *testing.T) {
+	for _, source := range []string{compatibilityToolReliabilitySeedSource, "live"} {
+		t.Run(source, func(t *testing.T) {
+			upstream := toolRoutingUpstream(t, `{"path":"notes.txt"}`)
+			defer upstream.Close()
+			dir := t.TempDir()
+			cfg := toolRoutingConfig(t, upstream.URL, dir, ToolRoutingConfig{Mode: "observe", MinSamples: 3})
+			group := cfg.Models["agent-tools"]
+			group.Targets = append(group.Targets, Target{
+				Provider: "mock", Model: "tool-model-b", Weight: 5,
+				ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}},
+			})
+			cfg.Models["agent-tools"] = group
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keyA := toolReliabilityKey("agent-tools", "mock", "tool-model")
+			keyB := toolReliabilityKey("agent-tools", "mock", "tool-model-b")
+			if source == compatibilityToolReliabilitySeedSource {
+				svc.toolReliability = newToolReliabilityStore(
+					toolReliabilitySeedTarget{Group: "agent-tools", Provider: "mock", Model: "tool-model", Valid: 0, Invalid: 3},
+					toolReliabilitySeedTarget{Group: "agent-tools", Provider: "mock", Model: "tool-model-b", Valid: 3, Invalid: 0},
+				)
+			} else {
+				now := time.Now().UTC()
+				svc.toolReliability.observe(keyA, toolCallValidation{Calls: 3, Invalid: 3}, toolReliabilityWindow(group.ToolRouting), now)
+				svc.toolReliability.observe(keyB, toolCallValidation{Calls: 3, Valid: 3}, toolReliabilityWindow(group.ToolRouting), now)
+			}
+			response := serveToolRouting(t, svc, "agent-tools")
+			if response.Code != 200 {
+				svc.Close()
+				t.Fatalf("request status=%d body=%s", response.Code, response.Body.String())
+			}
+			flushUsageForTest(t, svc)
+			var persisted usageRecord
+			if err := svc.usage.db.Where("request_id = ?", response.Header().Get("X-Request-Id")).First(&persisted).Error; err != nil {
+				svc.Close()
+				t.Fatal(err)
+			}
+			if persisted.TargetModel != "tool-model-b" || persisted.ToolReliabilitySource != source {
+				svc.Close()
+				t.Fatalf("usage row did not record selected evidence source %q: %+v", source, persisted)
+			}
+			svc.Close()
+		})
 	}
 }

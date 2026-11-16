@@ -1130,7 +1130,7 @@ func TestUsageHistoricalValidationRequiresMultipleCheckpointsBeforeDeploymentJob
 	}
 	for i := 0; i < 101; i++ {
 		row := usageRecord{RequestID: fmt.Sprintf("historical-row-%03d", i), TS: "2026-08-05T00:00:00Z"}
-		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind", "Endpoint", "TraceID", "SpanID", "ParentSpanID", "RecomputedInputTokens").Create(&row).Error; err != nil {
+		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind", "Endpoint", "TraceID", "SpanID", "ParentSpanID", "RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(&row).Error; err != nil {
 			_ = store.Close()
 			t.Fatalf("create synthetic historical usage row %d: %v", i, err)
 		}

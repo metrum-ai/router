@@ -523,6 +523,8 @@ func exampleValue(table string, c columnDoc) string {
 		return "`affinity_hit`, `affinity_miss`, `affinity_expired`, `affinity_ineligible`, `affinity_disabled`, `shadow_recommended_candidate`"
 	case table == "request_policy_executions" && name == "outcome":
 		return "`success`, `fallback`, `shadow_recommended`, `baseline`, `error`"
+	case name == "tool_reliability_bucket":
+		return "`valid`, `partial`, `invalid`, `no_calls`, `unobserved`"
 	case name == "target_dialect":
 		return "`openai-chat`, `openai-responses`, `anthropic-messages`, `gemini-generate-content`, `replicate`"
 	case strings.Contains(name, "dialect"):
