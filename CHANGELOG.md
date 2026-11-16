@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **Live SDK tool-loop cells** (#769): add pinned OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK continuations to the bounded compatibility workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
+
 ### Fixed
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics

@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+"""Offline contract tests for the real SDK tool-loop cells."""
+
+from __future__ import annotations
+
+import json
+import sys
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from parallel_live_budget import Budget
+from parallel_tool_live import Gate
+
+
+class Response:
+    def __init__(self, data):
+        self.data = data
+        for key, value in data.items():
+            if key == "choices":
+                value = [types.SimpleNamespace(message=types.SimpleNamespace(**(choice["message"] | {"tool_calls": choice["message"].get("tool_calls")}))) for choice in value]
+            setattr(self, key, value)
+
+    def model_dump(self, mode="json"):
+        def plain(value):
+            if isinstance(value, dict):
+                return {key: plain(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [plain(item) for item in value]
+            if isinstance(value, types.SimpleNamespace):
+                if hasattr(value, "model_dump"):
+                    return plain(value.model_dump(mode="json"))
+                return plain(vars(value))
+            return value
+        return plain(self.data)
+
+
+class SDKClient:
+    def __init__(self, **_kwargs):
+        self.calls = 0
+        self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self.chat_create))
+        self.responses = types.SimpleNamespace(create=self.responses_create)
+        self.messages = types.SimpleNamespace(create=self.messages_create)
+
+    @staticmethod
+    def usage():
+        return {"prompt_tokens": 10, "completion_tokens": 5, "input_tokens": 10, "output_tokens": 5}
+
+    def chat_create(self, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            call = types.SimpleNamespace(id="call-1", function=types.SimpleNamespace(name="read_file", arguments='{"path":"notes/a.txt"}'))
+            msg = {"tool_calls": [call]}
+            return Response({"choices": [{"message": msg}], "usage": self.usage()})
+        return Response({"choices": [{"message": {"content": "LIVE-EVAL-MARKER-A"}}], "usage": self.usage()})
+
+    def responses_create(self, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            output = [types.SimpleNamespace(type="function_call", name="read_file", call_id="call-1", arguments='{"path":"notes/a.txt"}', model_dump=lambda mode="json": {"type": "function_call", "name": "read_file", "call_id": "call-1", "arguments": '{"path":"notes/a.txt"}'})]
+            return Response({"output": output, "output_text": "", "usage": {"input_tokens": 10, "output_tokens": 5}})
+        return Response({"output": [], "output_text": "LIVE-EVAL-MARKER-A", "usage": {"input_tokens": 10, "output_tokens": 5}})
+
+    def messages_create(self, **_kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            content = [types.SimpleNamespace(type="tool_use", id="call-1", name="read_file", input={"path": "notes/a.txt"}, model_dump=lambda mode="json": {"type": "tool_use", "id": "call-1", "name": "read_file", "input": {"path": "notes/a.txt"}})]
+            return Response({"content": content, "usage": {"input_tokens": 10, "output_tokens": 5}})
+        return Response({"content": [types.SimpleNamespace(type="text", text="LIVE-EVAL-MARKER-A")], "usage": {"input_tokens": 10, "output_tokens": 5}})
+
+
+class ClientCellTest(unittest.TestCase):
+    def test_chat_responses_and_messages_sdk_tool_loops(self):
+        fake_openai = types.SimpleNamespace(OpenAI=SDKClient)
+        fake_anthropic = types.SimpleNamespace(Anthropic=SDKClient)
+        with patch.dict(sys.modules, {"openai": fake_openai, "anthropic": fake_anthropic}):
+            for name, surface in (
+                ("openai-chat-sdk", "openai-chat"),
+                ("openai-responses-sdk", "openai-responses"),
+                ("anthropic-messages-sdk", "anthropic-messages"),
+            ):
+                gate = Gate(Budget(), Path("unused"))
+                gate.client_cell(name, surface, "http://127.0.0.1:1")
+                self.assertEqual(gate.cells[0]["problems"], [], name)
+                expected_cost = 0.00007 if surface == "anthropic-messages" else 0.000009
+                self.assertAlmostEqual(gate.cells[0]["cost_usd"], expected_cost, places=10, msg=name)
+
+    def test_missing_tool_result_is_a_sanitized_failure(self):
+        class BadClient(SDKClient):
+            def chat_create(self, **_kwargs):
+                return Response({"choices": [{"message": {"content": "no tool"}}], "usage": self.usage()})
+
+        with patch.dict(sys.modules, {"openai": types.SimpleNamespace(OpenAI=BadClient)}):
+            gate = Gate(Budget(), Path("unused"))
+            gate.client_cell("openai-chat-sdk", "openai-chat", "http://127.0.0.1:1")
+        self.assertEqual(gate.cells[0]["problems"], ["tool-call-mismatch"])
+        self.assertNotIn("LIVE-EVAL", json.dumps(gate.cells[0]))
+
+    def test_timeout_is_reported_without_exception_text(self):
+        class SlowClient(SDKClient):
+            def chat_create(self, **_kwargs):
+                raise TimeoutError("secret prompt and token must not escape")
+
+        with patch.dict(sys.modules, {"openai": types.SimpleNamespace(OpenAI=SlowClient)}):
+            gate = Gate(Budget(), Path("unused"))
+            gate.client_cell("openai-chat-sdk", "openai-chat", "http://127.0.0.1:1")
+        output = json.dumps(gate.cells[0])
+        self.assertIn("request-failed", gate.cells[0]["problems"])
+        self.assertNotIn("secret", output)
+        self.assertNotIn("prompt", output)
+        self.assertNotIn("token", output)
+
+
+if __name__ == "__main__":
+    unittest.main()
