@@ -9,6 +9,7 @@ Every release candidate must pass the checks below. Attach their result files to
 - Run the package upgrade-and-rollback check. It installs the prior production release as an unprivileged service user, strictly parses migration JSON, smoke-tests serving, restores the prior package and database snapshot, and records elapsed upgrade-and-rollback time.
 - Run `go test ./internal/router -run '^TestTenantCacheIsolationEndToEnd$' -count=1`. This two-tenant check uses identical prompts and includes requests without a caller identity.
 - Run `routerctl doctor --security --format json --fail-on warn` against the reference configurations.
+- Run the tool-call matrix with `cell_set=release` from the main-branch workflow dispatch and attach the report to the release record.
 - Confirm the previous release's performance gate configuration is unchanged.
 
 The upgrade-and-rollback check runs when migration code or migration CLI output changes, and for every release candidate. Its report records versions, commit, check outcomes, and measured upgrade and rollback downtime. It contains no database contents or command output.

@@ -38,13 +38,47 @@ def gate_report(**overrides):
 
 class ReportTest(unittest.TestCase):
     def test_every_gate_cell_maps_to_a_matrix_cell(self):
-        report = live.build_report(gate_report(), "2026-11-03", "abcdef123")
+        raw = gate_report()
+        raw["cells"].extend([
+            {"cell": "openai-chat-sdk", "problems": []},
+            {"cell": "openai-responses-sdk", "problems": []},
+            {"cell": "anthropic-messages-sdk", "problems": []},
+        ])
+        report = live.build_report(raw, "2026-11-03", "abcdef123", cell_set="release")
         self.assertEqual(report["schema_version"], 1)
         self.assertEqual(report["runner"], "agent-tool-compat-live")
+        self.assertEqual(report["cell_set"], "release")
         ids = {cell["id"] for cell in report["cells"]}
-        self.assertEqual(len(ids), 6)
+        self.assertEqual(len(ids), 9)
         self.assertIn("parallel-gate-chat-through-router", ids)
         self.assertIn("parallel-gate-messages-to-chat", ids)
+        self.assertIn("openai-sdk-chat-tool-loop", ids)
+        self.assertIn("openai-sdk-responses-tool-loop", ids)
+        self.assertIn("anthropic-sdk-messages-tool-loop", ids)
+
+    def test_release_report_requires_all_three_sdk_cells(self):
+        raw = gate_report()
+        raw["cells"].extend([
+            {"cell": "openai-chat-sdk", "problems": []},
+            {"cell": "openai-responses-sdk", "problems": []},
+            {"cell": "anthropic-messages-sdk", "problems": []},
+        ])
+        for missing in ("openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"):
+            partial = {**raw, "cells": [cell for cell in raw["cells"] if cell["cell"] != missing]}
+            with self.subTest(missing=missing), self.assertRaisesRegex(live.ReportError, "missing SDK cells"):
+                live.build_report(partial, "2026-11-03", "abcdef123", cell_set="release")
+
+    def test_detail_names_the_actual_run_type(self):
+        nightly = live.build_report(gate_report(), "2026-11-03", "abcdef123", cell_set="nightly")
+        self.assertEqual(nightly["cells"][0]["detail"], "nightly live gate")
+        raw = gate_report()
+        raw["cells"].extend([
+            {"cell": "openai-chat-sdk", "problems": []},
+            {"cell": "openai-responses-sdk", "problems": []},
+            {"cell": "anthropic-messages-sdk", "problems": []},
+        ])
+        release = live.build_report(raw, "2026-11-03", "abcdef123", cell_set="release")
+        self.assertEqual(release["cells"][0]["detail"], "release live gate")
 
     def test_cost_comes_from_router_rows_and_direct_cells_are_provider_invoiced(self):
         report = live.build_report(gate_report(), "2026-11-03", "abcdef123")

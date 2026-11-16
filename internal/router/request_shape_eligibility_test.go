@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -294,7 +292,6 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 	defer upstream.Close()
 
 	dir := t.TempDir()
-	sum := sha256.Sum256([]byte(testToken))
 	cfg := &Config{
 		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
@@ -320,7 +317,7 @@ func TestLargeCodingAgentPayloadSkipsSmallContextTargetAndPersistsSafeTelemetry(
 			User:        "alice",
 			Project:     "metrum-insights",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]),
+			TokenHash:   mustCallerTokenHashForTest(t, testToken),
 			TokenID:     "rtr_alice_test",
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 1000000, Concurrent: 4},

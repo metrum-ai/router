@@ -23,7 +23,7 @@ func TestAdminQuotaStatusAuthzAndFilters(t *testing.T) {
 		OwnerUser:   "bob",
 		Project:     "other-project",
 		Environment: "prod",
-		TokenSHA256: strings.Repeat("ab", 32),
+		TokenHash:   mustCallerTokenHashForTest(t, "rtr_bob_prod_secret"),
 		TokenID:     "rtr_bob_prod",
 		Allow:       []string{"default"},
 		Rate:        RateConfig{RPM: 10, TPM: 1000, Concurrent: 1},

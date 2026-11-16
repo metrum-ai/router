@@ -14,6 +14,7 @@ Synthetic embedding latency is wiring evidence, never real-ONNX performance.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import math
@@ -277,10 +278,15 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
         router_sock, policy_sock, admin_sock, down_sock = [reserved_port(stack) for _ in range(4)]
         router_port, policy_port, admin_port, down_port = [sock.getsockname()[1] for sock in
                                                          (router_sock, policy_sock, admin_sock, down_sock)]
-        token, auth, provider_key = [secrets.token_urlsafe(32) for _ in range(3)]
+        token_id = "rtr_metrum_lrp_e2e_test"
+        token = token_id + "_" + secrets.token_urlsafe(32)
+        auth, provider_key = [secrets.token_urlsafe(32) for _ in range(2)]
         upstream.policy_url = f"http://127.0.0.1:{policy_port}"
         upstream.policy_auth = auth
-        token_digest = hashlib.sha256(token.encode()).hexdigest()
+        salt = secrets.token_bytes(32)
+        derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), salt, 20000, 64)
+        encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+        token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
         db = temp / "usage.sqlite"
         service_config = {"groups": {group: {"quality_floor": .8, "explore_rate": 0,
                           "pin_ttl_s": 1800 if group == GROUPS[2] else 0, "min_train_rows": 200}
@@ -316,8 +322,8 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
             "usage_db": {"enabled": True, "driver": "sqlite", "path": str(db), "migration_policy": "auto-safe"}},
             "state_path": str(temp / "state.json"), "providers": providers, "models": models,
             "callers": [{"id": "lrp-e2e-test-caller", "user": "test-user", "project": "test-project",
-                         "environment": "test", "status": "active", "token_sha256": token_digest,
-                         "token_id": "rtr_metrum_lrp_e2e_test", "allow": list(GROUPS),
+                         "environment": "test", "status": "active", "token_hash": token_hash,
+                         "token_id": token_id, "allow": list(GROUPS),
                          "rate": {"rpm": 100000, "tpm": 100000000, "concurrent": 8}}]})
         # Do not pass operator provider credentials or proxy settings into test children.
         env = {key: os.environ[key] for key in ("PATH", "HOME", "TMPDIR", "SYSTEMROOT", "LD_LIBRARY_PATH")
@@ -338,7 +344,7 @@ def execute(args: argparse.Namespace, checks: list[dict[str, Any]]) -> dict[str,
         router = start(stack, [str(binary), "-config", str(temp / "router.json")], temp / "router.log", env, cpus)
         base = f"http://127.0.0.1:{router_port}"
         ready(base + "/readyz", router, "router")
-        sensitive = [token, auth, provider_key, token_digest, SHORT, LONG,
+        sensitive = [token, auth, provider_key, token_hash, SHORT, LONG,
                      "Review this multi-file code and identify the invariant."]
 
         def chat(group: str = GROUPS[0], text: str = SHORT,

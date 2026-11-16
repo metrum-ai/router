@@ -15,7 +15,7 @@ else
   OWNED_WORKDIR=1
 fi
 E2E_VOLUME_CLEANUP_MARKER="$WORKDIR/.smart-llmrouter-compose-e2e-disposable"
-TOKEN="${ROUTER_TOKEN:-rtr_compose_live_e2e_local}"
+TOKEN="${ROUTER_TOKEN:-rtr_metrum_compose_live_e2e_k1_localsecret}"
 GROUP="${COMPOSE_E2E_GROUP:-compose-live}"
 MODEL="${COMPOSE_E2E_MODEL:-deepseek/deepseek-v4-flash:nitro}"
 CODEX_TEXT_GROUP="${COMPOSE_E2E_CODEX_TEXT_GROUP:-codex-responses-smoke}"
@@ -161,14 +161,15 @@ cp deploy/docker-compose.yml "$WORKDIR/docker-compose.yml"
 cp deploy/Caddyfile.compose "$WORKDIR/Caddyfile.compose"
 cp scripts/router.ts "$WORKDIR/config/scripts/router.ts"
 
-python3 - "$TOKEN" "$WORKDIR" "$GROUP" "$MODEL" "$CODEX_TEXT_GROUP" "$CODEX_TEXT_MODEL" "$CODEX_TOOL_GROUP" "$CODEX_TOOL_MODEL" "$CLAUDE_TOOL_GROUP" "$CLAUDE_TOOL_MODEL" <<'PY'
-import hashlib
+ROUTER_CALLER_TOKEN="$TOKEN" python3 - "$WORKDIR" "$GROUP" "$MODEL" "$CODEX_TEXT_GROUP" "$CODEX_TEXT_MODEL" "$CODEX_TOOL_GROUP" "$CODEX_TOOL_MODEL" "$CLAUDE_TOOL_GROUP" "$CLAUDE_TOOL_MODEL" <<'PY'
+from caller_token import verifier
 import json
+import os
 import sys
 from pathlib import Path
 
-token, work, group, model, codex_text_group, codex_text_model, codex_tool_group, codex_tool_model, claude_group, claude_model = sys.argv[1], Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9], sys.argv[10]
-token_hash = hashlib.sha256(token.encode()).hexdigest()
+token, work, group, model, codex_text_group, codex_text_model, codex_tool_group, codex_tool_model, claude_group, claude_model = os.environ["ROUTER_CALLER_TOKEN"], Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9]
+token_hash, token_id = verifier(token)
 (work / "config/env.json").write_text(json.dumps({"OPENAI_API_KEY": "", "OPENROUTER_API_KEY": "", "MINIMAX_API_KEY": ""}, indent=2))
 (work / "config/config.yaml").write_text(f"""server:
   listen: ":8080"
@@ -251,8 +252,8 @@ models:
           - client_tools
 callers:
   - id: compose-live
-    token_sha256: "{token_hash}"
-    token_id: "rtr_compose_live_e2e"
+    token_hash: "{token_hash}"
+    token_id: "{token_id}"
     allow: ["{group}", "{codex_text_group}", "{codex_tool_group}", "{claude_group}"]
     rate: {{ rpm: 120, tpm: 1000000, concurrent: 4 }}
     quota:

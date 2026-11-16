@@ -14,7 +14,6 @@ Safe scalar evidence only: never prints provider keys, tokens, or prompts.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -29,6 +28,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from caller_token import verifier
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -108,10 +108,6 @@ def assistant_text(body: dict | str) -> str:
     message = choices[0].get("message") or {}
     content = message.get("content")
     return content if isinstance(content, str) else ""
-
-
-def token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def direct_chat_smoke(name: str, base_url: str, api_key: str, model: str, *, max_tokens: int = 16) -> dict:
@@ -211,7 +207,8 @@ def main() -> int:
         print("FAIL no usable fallback provider after direct smokes")
         return 1
 
-    token = "live-upstream-attribution-token"
+    token = "rtr_metrum_live_attr_local_k1_attributionsecret"
+    caller_hash, caller_token_id = verifier(token)
     router_port = free_port()
     primary = ThreadingHTTPServer(("127.0.0.1", 0), FlakyPrimaryHandler)
     threading.Thread(target=primary.serve_forever, daemon=True).start()
@@ -331,8 +328,8 @@ def main() -> int:
                     "project": "live-attr",
                     "environment": "local",
                     "status": "active",
-                    "token_sha256": token_hash(token),
-                    "token_id": "rtr_live_attr_k1",
+                    "token_hash": caller_hash,
+                    "token_id": caller_token_id,
                     "allow": ["attr-failover"],
                     "rate": {"rpm": 60, "tpm": 200000, "concurrent": 4},
                     "quota": {

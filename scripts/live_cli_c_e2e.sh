@@ -9,7 +9,7 @@ cd "$ROOT"
 WORKDIR="${LIVE_E2E_WORKDIR:-$(mktemp -d)}"
 PORT="${ROUTER_PORT:-18080}"
 BASE_URL="http://127.0.0.1:${PORT}"
-TOKEN="${ROUTER_TOKEN:-rtr_live_cli_c_e2e_local}"
+TOKEN="${ROUTER_TOKEN:-rtr_metrum_live_c_e2e_k1_localsecret}"
 TIMEOUT_SECONDS="${CLI_TIMEOUT_SECONDS:-240}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 CODEX_BIN="${CODEX_BIN:-codex}"
@@ -78,8 +78,10 @@ write_config() {
   local dialect="$4"
   local base_url="$5"
   local auth_scheme="${6:-}"
-  local token_hash
-  token_hash="$(hash_token)"
+  local token_meta token_hash token_id
+  token_meta="$(printf %s "$TOKEN" | python3 scripts/caller_token.py)"
+  token_hash="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_hash"])' <<<"$token_meta")"
+  token_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_id"])' <<<"$token_meta")"
 
   cat >"$WORKDIR/${group}.yaml" <<YAML
 server:
@@ -103,8 +105,8 @@ models:
       - { provider: ${provider}, model: "${model}" }
 callers:
   - id: live-e2e
-    token_sha256: "${token_hash}"
-    token_id: "rtr_live_e2e"
+    token_hash: "${token_hash}"
+    token_id: "${token_id}"
     allow: ["${group}"]
     rate: { rpm: 120, tpm: 200000, concurrent: 2 }
     quota:

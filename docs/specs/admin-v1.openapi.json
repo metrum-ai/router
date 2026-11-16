@@ -1134,9 +1134,6 @@
           },
           "token_id": {
             "type": "string"
-          },
-          "token_sha256": {
-            "type": "string"
           }
         },
         "required": [

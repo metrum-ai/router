@@ -216,7 +216,11 @@ def run_nightly(args: argparse.Namespace) -> dict[str, Any]:
                 "router_usage_rows_usd": float(router_cost),
                 "direct_provider_usage_estimate_usd": float(direct_cost),
                 "charged_usd": float(router_cost + direct_cost),
-                "source": "router usage rows plus direct provider response usage at pinned list rates",
+                "source": "measured router usage rows plus direct-provider list-rate estimate",
+                "cost_basis": {
+                    "router_usage_rows_usd": "measured request_usage rows",
+                    "direct_provider_usage_estimate_usd": "list-rate estimate",
+                },
                 "direct_cost_reconciled": False,
             }
             if report["nightly_cost"]["charged_usd"] > float(MAX_NIGHTLY_USD):
@@ -266,6 +270,10 @@ def failure_report(reason: str, reserved_usd: Decimal = Decimal("0")) -> dict[st
                          "direct_provider_usage_estimate_usd": 0, "charged_usd": 0,
                          "charge_status": "unknown_on_failure",
                          "source": "failure-path accounting unavailable; full preflight reservation retained",
+                         "cost_basis": {
+                             "router_usage_rows_usd": "measured request_usage rows",
+                             "direct_provider_usage_estimate_usd": "list-rate estimate",
+                         },
                          "direct_cost_reconciled": False},
     }
 

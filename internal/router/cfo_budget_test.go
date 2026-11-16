@@ -46,7 +46,6 @@ func TestCFOBudgetTokenFilteringWithoutDisclosure(t *testing.T) {
 	secret := "rtr_metrum_alice_finance_test_public_fake-secret"
 	store := &quotaStore{callers: map[string]*callerRuntime{
 		"structured": {cfg: CallerConfig{ID: "structured", TokenID: secret}},
-		"legacy":     {cfg: CallerConfig{ID: "legacy", TokenSHA256: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}},
 	}, state: persistentState{Callers: map[string]*callerState{}}}
 	svc := &Service{quota: store}
 	got := svc.cfoBudgets(adminAuthSubject{}, true, UsageReportOptions{TokenID: publicTokenID(secret)})
@@ -56,15 +55,6 @@ func TestCFOBudgetTokenFilteringWithoutDisclosure(t *testing.T) {
 	encoded, err := json.Marshal(got)
 	if err != nil || strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), publicTokenID(secret)) || strings.Contains(string(encoded), "tokenId") {
 		t.Fatal("quota snapshot disclosed a token ID")
-	}
-	legacy := svc.cfoBudgets(adminAuthSubject{}, true, UsageReportOptions{TokenID: "sha256:aaaaaaaaaaaa"})
-	if len(legacy.Rows) != 3 || legacy.Rows[0].CallerID != "legacy" {
-		t.Fatalf("wrong legacy fallback selection: %+v", legacy)
-	}
-	legacySecret := "plain-legacy-bearer-for-test"
-	hash := legacyCallerTokenSHA256Hex(legacySecret)
-	if cfoUsageTokenID(CallerConfig{TokenID: legacySecret, TokenSHA256: hash}) != legacySecret {
-		t.Fatal("legacy matching must mirror the stored usage label")
 	}
 	if prefix := svc.cfoBudgets(adminAuthSubject{}, true, UsageReportOptions{TokenIDPrefix: "%"}); prefix.Available || len(prefix.Rows) != 0 {
 		t.Fatalf("unsafe prefix filter: %+v", prefix)
