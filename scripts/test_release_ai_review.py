@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import json
+import io
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -158,16 +160,38 @@ class ReleaseAIReviewTest(unittest.TestCase):
         report, unanswered = review.evaluate({"summary": "No release blockers found.", "findings": []}, {}, "v4.8.0", "abc1234")
         self.assertEqual(report["decision"], "pass")
         self.assertEqual(unanswered, 0)
+        high_entropy_value = "".join(["Gh", "7k", "L2", "pQ", "9w", "R5", "tX", "3z", "Mv", "8c", "Hs", "4n"])
         with self.assertRaises(ValueError):
             review.evaluate({"summary": "No release blockers found.", "findings": [{
-                "severity": "informational", "category": "security", "title": "API key: sk-abcdefghijklmnop",
+                "severity": "informational", "category": "security", "title": f"API key: {high_entropy_value}",
                 "rationale": "A finding", "locations": [{"file": "docs/a.md", "line": 1}],
             }]}, {}, "v4.8.0", "abc1234")
+
+    def test_ordinary_credential_field_wording_is_allowed_but_high_entropy_secret_is_rejected(self) -> None:
+        ordinary = "This review uses api_key: to name a field and token= to describe an assignment."
+        self.assertEqual(review.safe_text(ordinary, "rationale"), ordinary)
+        high_entropy_value = "".join(["Gh", "7k", "L2", "pQ", "9w", "R5", "tX", "3z", "Mv", "8c", "Hs", "4n"])
+        with self.assertRaisesRegex(ValueError, "sensitive-looking"):
+            review.safe_text(f"api_key={high_entropy_value}", "rationale")
+
+    def test_anthropic_key_prefix_with_high_entropy_value_is_rejected(self) -> None:
+        high_entropy_value = "".join(["Gh", "7k", "L2", "pQ", "9w", "R5", "tX", "3z", "Mv", "8c", "Hs", "4n"])
+        with self.assertRaisesRegex(ValueError, "sensitive-looking"):
+            review.safe_text(f"credential sk-ant-api03-{high_entropy_value}", "rationale")
 
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
             with self.assertRaisesRegex(RuntimeError, "failed or timed out"):
                 review.call_model("not-a-real-key", "diff contents", timeout=0.001)
+
+    def test_model_http_error_reports_status_without_response_body(self) -> None:
+        failure = review.urllib.error.HTTPError(
+            review.API_URL, 400, "Bad request", {}, io.BytesIO(b"private provider body")
+        )
+        with patch.object(review.urllib.request, "urlopen", side_effect=failure):
+            with self.assertRaisesRegex(RuntimeError, "HTTP status 400") as raised:
+                review.call_model("test-key", "diff")
+        self.assertNotIn("private provider body", str(raised.exception))
 
     def test_cli_fails_closed_when_credential_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -220,7 +244,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             def __exit__(self, *_args):
                 return False
             def read(self):
-                return json.dumps({"content": [
+                return json.dumps({"stop_reason": "end_turn", "content": [
                     {"type": "text", "text": "not the final answer"},
                     {"type": "thinking", "thinking": "private reasoning"},
                     {"type": "text", "text": '{"summary":"clean","findings":[]}'},
@@ -230,14 +254,75 @@ class ReleaseAIReviewTest(unittest.TestCase):
             parsed = review.call_model("test-key", "diff")
         request = urlopen.call_args.args[0]
         payload = json.loads(request.data)
-        self.assertEqual(payload["max_tokens"], 16000)
+        self.assertEqual(payload["max_tokens"], 32000)
         self.assertNotIn("temperature", payload)
         self.assertEqual(payload["output_config"], {
             "format": {"type": "json_schema", "schema": review.REVIEW_OUTPUT_SCHEMA},
         })
         self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["required"], ["summary", "findings"])
         self.assertFalse(review.REVIEW_OUTPUT_SCHEMA["additionalProperties"])
+        self.assertIn("at most 600", review.REVIEW_OUTPUT_SCHEMA["properties"]["summary"]["description"])
+        finding_schema = review.REVIEW_OUTPUT_SCHEMA["properties"]["findings"]["items"]
+        self.assertIn("Non-empty", finding_schema["properties"]["title"]["description"])
+        line_schema = finding_schema["properties"]["locations"]["items"]["properties"]["line"]
+        self.assertIn("Positive", line_schema["description"])
+        self.assertNotIn("minLength", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
+        self.assertNotIn("maxLength", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
+        self.assertNotIn("minimum", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
         self.assertEqual(parsed, {"summary": "clean", "findings": []})
+
+    def test_model_rejects_truncated_response_by_stop_reason_without_logging_content(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def read(self):
+                return json.dumps({
+                    "stop_reason": "max_tokens",
+                    "content": [{"type": "text", "text": "private partial report"}],
+                }).encode()
+
+        with patch.object(review.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "stop_reason=max_tokens") as raised:
+                review.call_model("test-key", "diff")
+        self.assertNotIn("private partial report", str(raised.exception))
+
+    def test_refusal_fails_closed_without_splitting_or_retrying(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def read(self):
+                return json.dumps({
+                    "stop_reason": "refusal",
+                    "content": [{"type": "text", "text": "private refusal text"}],
+                }).encode()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
+                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
+            ]
+            stderr = io.StringIO()
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]) as batches, \
+                 patch.object(review.urllib.request, "urlopen", return_value=Response()) as urlopen, \
+                 patch("sys.argv", args), redirect_stderr(stderr):
+                self.assertEqual(review.main(), 2)
+            batches.assert_called_once_with("v4.8.0", "abc1234", max_bytes=review.MAX_DIFF_BYTES)
+            urlopen.assert_called_once()
+            self.assertIn("stop_reason=refusal", stderr.getvalue())
+            self.assertNotIn("splitting", stderr.getvalue())
+            self.assertNotIn("private refusal text", stderr.getvalue())
+            self.assertFalse((root / "artifact.json").exists())
 
     def test_uncached_changed_range_calls_model_once(self) -> None:
         candidate = {"summary": "No blocking findings.", "findings": []}
@@ -322,6 +407,78 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertEqual(call_model.call_count, 2)
             self.assertFalse((root / "review-output" / "review.json").exists())
             self.assertFalse((root / "review-output" / "AI-release-review.md").exists())
+
+    def test_max_tokens_splits_only_the_failed_batch(self) -> None:
+        clean_batch = {"summary": "No blockers found.", "findings": []}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
+                "--artifact-output", str(root / "review-output" / "review.json"),
+                "--output", str(root / "review-output" / "AI-release-review.md"),
+            ]
+            (root / "responses.json").write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            def batches(_base, _head, *, max_bytes, only_paths=None):
+                if only_paths is None:
+                    return [("passed diff", ("passed.go",)), ("large combined diff", ("two-a.go", "two-b.go"))]
+                self.assertEqual(only_paths, {"two-a.go", "two-b.go"})
+                self.assertEqual(max_bytes, review.MAX_DIFF_BYTES // 2)
+                return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", side_effect=batches) as git_diff_batches, \
+                 patch.object(review, "call_model", side_effect=[
+                     clean_batch,
+                     review.MaxTokensStopError("AI release review response ended with stop_reason=max_tokens"),
+                     clean_batch,
+                     clean_batch,
+                 ]) as call_model, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            self.assertEqual(git_diff_batches.call_count, 2)
+            self.assertEqual(git_diff_batches.call_args_list[1].kwargs["max_bytes"], review.MAX_DIFF_BYTES // 2)
+            self.assertEqual(call_model.call_args_list, [
+                call("test-key", "passed diff", batch_number=1, batch_count=2),
+                call("test-key", "large combined diff", batch_number=2, batch_count=2),
+                call("test-key", "smaller diff two-a", batch_number=2, batch_count=3),
+                call("test-key", "smaller diff two-b", batch_number=3, batch_count=3),
+            ])
+            self.assertIn("Decision: **PASS**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
+
+    def test_repeated_max_tokens_at_floor_fails_without_retry_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
+                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
+            ]
+            def batches(_base, _head, *, max_bytes, only_paths=None):
+                return [(f"diff limited to {max_bytes}", ("one.go",))]
+
+            stderr = io.StringIO()
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", side_effect=batches) as batch_builder, \
+                 patch.object(review, "call_model", side_effect=review.MaxTokensStopError(
+                     "AI release review response ended with stop_reason=max_tokens"
+                 )) as call_model, \
+                 patch("sys.argv", args), redirect_stderr(stderr):
+                self.assertEqual(review.main(), 2)
+            self.assertEqual(call_model.call_count, 6)
+            self.assertEqual(batch_builder.call_count, 6)
+            self.assertEqual(
+                [entry.kwargs["max_bytes"] for entry in batch_builder.call_args_list],
+                [1_000_000, 500_000, 250_000, 125_000, 62_500, 32_768],
+            )
+            self.assertIn("32768-byte minimum", stderr.getvalue())
+            self.assertEqual(stderr.getvalue().count("split into"), 5)
+            self.assertFalse((root / "artifact.json").exists())
 
 
 if __name__ == "__main__":
