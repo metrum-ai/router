@@ -354,10 +354,30 @@ func TestBedrockReasoningConverseStreamRoundTrip(t *testing.T) {
 }
 
 func TestBedrockAnthropicHandlerToolContinuation(t *testing.T) {
+	// The router-arc CI runner may inject AWS web-identity, container-credential,
+	// region, and endpoint variables. Keep this mock-only test on fixture creds
+	// and the fixed Bedrock endpoint so the SDK never consults ambient identity or
+	// routes around the injected HTTP transport.
+	t.Setenv("AWS_ROLE_ARN", "arn:aws:iam::123456789012:role/ci-fixture")
+	t.Setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/unused-bedrock-test-token")
+	t.Setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/credentials/unused-bedrock-test")
+	t.Setenv("AWS_REGION", "eu-west-1")
+	t.Setenv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", "https://example.invalid/unused")
+	for _, env := range os.Environ() {
+		name, _, _ := strings.Cut(env, "=")
+		if strings.HasPrefix(name, "AWS_") {
+			t.Setenv(name, "")
+		}
+	}
 	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
 	t.Setenv("AWS_SESSION_TOKEN", "")
 	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("AWS_DEFAULT_REGION", "us-east-1")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	t.Setenv("AWS_ENDPOINT_URL", "")
+	t.Setenv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", "https://bedrock-runtime.us-east-1.amazonaws.com")
 	calls := 0
 	target := anthropicToolTarget()
 	target.Model = "anthropic.claude-fixture"
@@ -372,7 +392,22 @@ func TestBedrockAnthropicHandlerToolContinuation(t *testing.T) {
 	response := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatalf("first status=%d body=%s", response.Code, response.Body.String())
+		var responseError struct {
+			RequestID string `json:"request_id"`
+		}
+		_ = json.Unmarshal(response.Body.Bytes(), &responseError)
+		flushUsageForTest(t, svc)
+		var attempts []requestAttemptRecord
+		if responseError.RequestID != "" && svc.usage != nil && svc.usage.db != nil {
+			if err := svc.usage.db.Where("request_id = ?", responseError.RequestID).Order("attempt_index asc").Find(&attempts).Error; err != nil {
+				t.Fatalf("first status=%d body=%s; read attempt diagnostics: %v", response.Code, response.Body.String(), err)
+			}
+		}
+		attemptErrors := make([]string, 0, len(attempts))
+		for _, attempt := range attempts {
+			attemptErrors = append(attemptErrors, fmt.Sprintf("attempt=%d status=%d class=%s message=%q", attempt.AttemptIndex, attempt.StatusCode, attempt.ErrorClass, sanitizePersistedDiagnosticText(attempt.ErrorMessage)))
+		}
+		t.Fatalf("first status=%d request_id=%s attempts=[%s] calls=%d body=%s", response.Code, responseError.RequestID, strings.Join(attemptErrors, "; "), calls, response.Body.String())
 	}
 	if !strings.Contains(response.Body.String(), "event: content_block_start") || !strings.Contains(response.Body.String(), `"type":"thinking"`) || !strings.Contains(response.Body.String(), `"type":"signature_delta"`) || !strings.Contains(response.Body.String(), `"type":"redacted_thinking"`) || !strings.Contains(response.Body.String(), `"type":"tool_use"`) {
 		t.Fatalf("first response lost reasoning/tool call: %s", response.Body.String())
