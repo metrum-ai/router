@@ -145,11 +145,13 @@ jobs:
           go build -buildvcs=false -o "$RUNNER_TEMP/harbor-e2e/router" ./cmd/metrum-ai-router
           cp scripts/harbor_e2e/*.py "$RUNNER_TEMP/harbor-e2e/"
           python3 scripts/harbor_e2e/generate_tasks.py "$RUNNER_TEMP/harbor-e2e/jobs"
+          python3 scripts/harbor_e2e/prepare_catalog_tasks.py "$RUNNER_TEMP/harbor-e2e/catalog-tasks"
       - name: Run bounded Harbor live matrix
         env:
           OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.COMPAT_MATRIX_ANTHROPIC_API_KEY }}
           HARBOR_E2E_ROOT: ${{ runner.temp }}/harbor-e2e
+          HARBOR_CATALOG_TASKS: ${{ runner.temp }}/harbor-e2e/catalog-tasks
           HARBOR_BIN: ${{ runner.temp }}/harbor-venv/bin/harbor
           HARBOR_E2E_SHA: ${{ github.sha }}
           HARBOR_E2E_RUN_ID: ${{ github.run_id }}

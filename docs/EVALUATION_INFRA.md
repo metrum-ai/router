@@ -94,10 +94,13 @@ secret store. No repository-wide secret is used. The non-Docker job runs the
 four preregistered differential-canary rows. The three Humaneval rows remain
 explicitly missing in the aggregate until their live evaluation runtime is
 available; missing cells never become passing or certified. The hosted Docker
-job runs the existing Harbor adapter matrix on five fixed synthetic tasks, with
-its own rolling reservation check and sanitized result artifact. That adapter
-matrix is not evidence for the HARBOR-02…18 catalog cells; those catalog cells
-remain missing until a live Harbor task mapping and verifier run are published.
+job runs the bespoke HARBOR-02…HARBOR-06 task trees live each night through the
+Router, using their independent task verifiers. HARBOR-07…HARBOR-18 remain
+offline fixture stubs in v5.0.0; their live task implementations move to v5.1
+and are tracked in [#999](https://github.com/metrum-ai/router/issues/999). The
+sanitized Harbor result records each cell's cost only from the Router's
+measured `request_usage` rows; a cell without usage rows has no cost value and
+fails the live job rather than substituting an estimate.
 
 The enforced ceiling is **$1.50 total per workflow run and per UTC night**:
 $1.00 for the non-Docker canary and $0.50 for Harbor. Before the first provider
@@ -113,6 +116,12 @@ rates; direct charges are estimates and are not invoice reconciled. The rolling
 artifact reports task attempts, passes, Wilson 95% intervals, paired outcomes,
 missing/under-sampled cells, violations and cost totals. It is evidence only,
 not a certification claim.
+
+Harbor's per-cell `charged_usd` values come from the Router usage rows created
+during that cell's single live trial. The first main-branch nightly run is the
+first source of measured live costs; before that, no Harbor cell cost is
+reported. The relay's $0.50 reservation cap is an upper-bound safety control,
+not a reported cell cost.
 
 The workflow retains only schema reports, the rolling aggregate, and the
 sanitized Harbor result summary for 14 days. Prompts, raw provider responses,
@@ -190,9 +199,8 @@ validating the merged report with the same schema and gates.
   (ARCH-05) are recorded by the nightly workflow and accumulate toward the
   preregistered sample size.
 - Real-client runs with images and reasoning (AGENT-06).
-- Live Harbor coverage for the HARBOR-02…HARBOR-18 catalog cells. The hosted
-  Harbor adapter matrix currently runs synthetic adapter tasks, not those
-  catalog cells.
+- Live task implementations and measurements for HARBOR-07…HARBOR-18, which
+  remain offline fixture stubs in v5.0.0 and move to v5.1 (#999).
 
 Cells without a supported live runtime remain explicit as missing or blocked;
 they are never counted as passing or certified.

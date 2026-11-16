@@ -284,6 +284,19 @@ def assert_eval_infra_nightly_workflow() -> None:
             "Docker Harbor job must enforce and publish its bounded daily reservation")
     require("harbor-venv/bin/python" in harbor_job,
             "Harbor runner must use the interpreter that installs the pinned Harbor package")
+    require("prepare_catalog_tasks.py" in harbor_job and "HARBOR_CATALOG_TASKS" in harbor_job,
+            "Harbor nightly must stage its bespoke live catalog tasks")
+    harbor_runner = read(ROOT / "scripts" / "harbor_e2e" / "run_matrix.py")
+    require(all(task_id in harbor_runner for task_id in
+                ("HARBOR-02", "HARBOR-03", "HARBOR-04", "HARBOR-05", "HARBOR-06")),
+            "Harbor nightly must include all bespoke v5.0.0 P0 task IDs")
+    require("charged_usd" in harbor_runner and "request_usage" in harbor_runner and
+            "missing_usage_rows" in harbor_runner,
+            "Harbor per-cell costs must come from measured usage rows and fail closed when absent")
+    require("HARBOR-02…HARBOR-06" in read(ROOT / "docs" / "EVALUATION_INFRA.md") and
+            "HARBOR-07…HARBOR-18" in read(ROOT / "docs" / "EVALUATION_INFRA.md") and "#999" in
+            read(ROOT / "docs" / "EVALUATION_INFRA.md"),
+            "Harbor documentation must distinguish v5.0 live cells from offline stubs")
 
 
 def assert_hierarchy_release_gate() -> None:
