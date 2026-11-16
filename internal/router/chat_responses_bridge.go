@@ -357,6 +357,7 @@ func decodeChatToResponsesBridgeResponse(raw []byte, model string) (*IRResponse,
 	}
 	chat := responsesToChatCompletion(m, model, resp)
 	resp.Raw = chat
+	resp.ToolCalls, resp.ToolCallsTruncated = truncatedToolCalls(toolCallsFromResponse("openai-chat", chat))
 	return resp, nil
 }
 
