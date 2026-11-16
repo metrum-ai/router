@@ -41,7 +41,7 @@ func applyUsageRecomputedInputMigration(db *gorm.DB) error {
 			}
 		}
 	}
-	if err := db.Exec(`UPDATE request_usage SET recomputed_input_tokens = CASE WHEN cached_input_tokens < 0 THEN input_tokens WHEN input_tokens >= cached_input_tokens THEN input_tokens - cached_input_tokens ELSE 0 END WHERE cached_input_tokens IS NOT NULL AND recomputed_input_tokens IS NULL`).Error; err != nil {
+	if err := db.Exec(`UPDATE request_usage SET recomputed_input_tokens = CASE WHEN input_tokens < 0 THEN NULL WHEN cached_input_tokens < 0 THEN input_tokens WHEN input_tokens >= cached_input_tokens THEN input_tokens - cached_input_tokens ELSE 0 END WHERE cached_input_tokens IS NOT NULL AND recomputed_input_tokens IS NULL`).Error; err != nil {
 		return fmt.Errorf("backfill recomputed input tokens: %w", err)
 	}
 	return verifyUsageRecomputedInputMigration(db)

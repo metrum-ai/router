@@ -30,6 +30,9 @@ func TestRecomputedInputTokensPreservesUnknownAndClamps(t *testing.T) {
 	if got := recomputedInputTokens(100, &negative); got == nil || *got != 100 {
 		t.Fatalf("recomputed=%v, want input clamped to 100", got)
 	}
+	if got := recomputedInputTokens(-1, &cached); got != nil {
+		t.Fatalf("negative input became known recompute: %v", *got)
+	}
 	if got := recomputedInputTokens(100, nil); got != nil {
 		t.Fatalf("missing cache evidence became known recompute: %v", *got)
 	}

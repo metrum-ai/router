@@ -102,9 +102,9 @@ Cold start is deterministic. Until `min_observations` is reached, targets are or
 
 ## Conversation Affinity
 
-Dynamic-score routing pins the first selected target for requests that share a conversation prefix. A non-empty request `metadata.session_id` takes precedence and keeps a changing multi-turn prompt on the same eligible target. The hashed affinity key includes caller ID and the caller's normalized project, so callers or projects with the same session ID do not share pins. Affinity expires after 600 seconds by default and is bounded to 10,000 process-local entries by default. Set `affinity.enabled: false` to disable it, or configure `ttl_seconds` and `max_entries`. Restart clears pins; each replica has its own store.
+Dynamic-score routing pins the target that actually served the request for later requests that share a conversation prefix. A non-empty request `metadata.session_id` takes precedence and keeps a changing multi-turn prompt on the same eligible target. The hashed affinity key includes caller ID and the caller's normalized project, so callers or projects with the same session ID do not share pins. Affinity expires after 600 seconds by default and is bounded to 10,000 process-local entries by default. Set `affinity.enabled: false` to disable it, or configure `ttl_seconds` and `max_entries`. Restart clears pins; each replica has its own store.
 
-For estimated prompts of at least 32,000 tokens, targets marked `tiered_kv_cache: true` are preferred within the already eligible target order. This is operator-declared capability metadata. It does not create eligibility or guarantee cache residency. See [KV-cache routing and metering](../operations/usage-reporting#kv-cache-routing-and-metering).
+For estimated prompts of at least 32,000 tokens, targets marked `tiered_kv_cache: true` are preferred within the already eligible target order. This preference is applied before affinity, so an eligible existing affinity pin takes precedence. This is operator-declared capability metadata. It does not create eligibility or guarantee cache residency. See [KV-cache routing and metering](../operations/usage-reporting#kv-cache-routing-and-metering).
 
 Mark only backends configured for tiered KV-cache offload:
 

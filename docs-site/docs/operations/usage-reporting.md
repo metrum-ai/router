@@ -470,9 +470,9 @@ For prompt-cache accounting, configure optional `cached_input_price_per_million_
 
 ## KV-cache routing and metering
 
-When upstream reports cached input tokens, each usage row also records recomputed input tokens as `max(input_tokens - cached_input_tokens, 0)`. Missing cache evidence stays unknown. Usage and cost reports expose cached and recomputed token totals and their reported-request counts by caller, key, model group, and provider/model. Router response-cache hits are excluded because they make no upstream request.
+When upstream reports cached input tokens and input token count is nonnegative, each usage row also records recomputed input tokens as `max(input_tokens - cached_input_tokens, 0)`. Missing cache evidence or a negative input count stays unknown. Usage and cost reports expose cached and recomputed token totals and their reported-request counts by caller, key, model group, and provider/model. Router response-cache hits are excluded because they make no upstream request.
 
-For long prompts, set `tiered_kv_cache: true` on targets whose backend supports CPU or SSD KV-cache offload. Requests with at least 32,000 estimated input tokens prefer those eligible targets while retaining load-balance fallback order. The value is operator supplied. It does not probe the backend. Dynamic-score affinity can pin a caller's `metadata.session_id`; otherwise, it uses the conversation prefix. Affinity is bounded and process-local, so replicas can make independent choices and restart clears pins.
+For long prompts, set `tiered_kv_cache: true` on targets whose backend supports CPU or SSD KV-cache offload. Requests with at least 32,000 estimated input tokens prefer those eligible targets while retaining load-balance fallback order. The value is operator supplied. It does not probe the backend. The tiered-target preference is applied before affinity; an eligible existing affinity pin takes precedence and pins the target that served the request. Affinity uses a caller's `metadata.session_id` when present, otherwise the conversation prefix. It is bounded and process-local, so replicas can make independent choices and restart clears pins.
 
 For a buyer-facing explanation of cost policy and cost allocation, see [Cost Governance](/docs/evaluation/cost-governance).
 
