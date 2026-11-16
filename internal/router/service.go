@@ -111,7 +111,6 @@ type Service struct {
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
 	providerSpend      *providerSpendBreaker
-	projectBudgets     *projectBudgetManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
 	tlsManager         *tlsacme.Manager
@@ -143,6 +142,7 @@ type Service struct {
 	adminCASource     AdminClientCASource
 	adminAuthMu       sync.Mutex
 	adminAuthenticate Authenticator
+	projectBudgets    *projectBudgetManager
 }
 
 // configLoadedState records which control-plane revision this replica
