@@ -4,6 +4,7 @@
 package router
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -47,6 +48,8 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	key := fakeGitHubToken()
 	jwt := fakeLongJWTToken()
 	toolResultKey := fakeAWSAccessKey()
+	toolArgumentCredential := strings.Repeat("c", 20) + "Q7r9W2x4"
+	objectToolArgumentCredential := strings.Repeat("z", 20) + "Q7r9W2x4"
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -55,9 +58,9 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 			t.Fatal(err)
 		}
 		serialized, _ := json.Marshal(body["messages"])
-		if strings.Contains(string(serialized), key) || strings.Contains(string(serialized), jwt) || strings.Contains(string(serialized), toolResultKey) ||
-			!strings.Contains(string(serialized), "[SECRET_GITHUB_1]") || !strings.Contains(string(serialized), "[SECRET_JWT_1]") || !strings.Contains(string(serialized), "[SECRET_AWS_1]") {
-			t.Errorf("upstream prompt or tool result did not redact credentials: %s", serialized)
+		if strings.Contains(string(serialized), key) || strings.Contains(string(serialized), jwt) || strings.Contains(string(serialized), toolResultKey) || strings.Contains(string(serialized), toolArgumentCredential) || strings.Contains(string(serialized), objectToolArgumentCredential) ||
+			!strings.Contains(string(serialized), "[SECRET_GITHUB_1]") || !strings.Contains(string(serialized), "[SECRET_JWT_1]") || !strings.Contains(string(serialized), "[SECRET_AWS_1]") || !strings.Contains(string(serialized), "[SECRET_CREDENTIAL_1]") {
+			t.Error("upstream prompt, tool argument, or tool result did not redact credentials")
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"id": "secret-dlp", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "returned " + key + " " + jwt}}}, "usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
 	}))
@@ -79,7 +82,15 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	const promptSuffix = "-private-prompt-marker-after"
 	const toolResultPrefix = "private-tool-result-marker-before-"
 	const toolResultSuffix = "-private-tool-result-marker-after"
-	body := `{"model":"default","messages":[{"role":"user","content":"` + promptPrefix + key + " " + jwt + promptSuffix + `"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_secret","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"` + toolResultPrefix + toolResultKey + toolResultSuffix + `"}]}`
+	toolArgumentsJSON, err := json.Marshal(map[string]string{"api_key": toolArgumentCredential})
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolArgumentsField, err := json.Marshal(string(toolArgumentsJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"model":"default","messages":[{"role":"user","content":"` + promptPrefix + key + " " + jwt + promptSuffix + `"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_secret","arguments":` + string(toolArgumentsField) + `}},{"id":"call_2","type":"function","function":{"name":"read_object","arguments":{"api_key":"` + objectToolArgumentCredential + `"}}}]},{"role":"tool","tool_call_id":"call_1","content":"` + toolResultPrefix + toolResultKey + toolResultSuffix + `"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	response := httptest.NewRecorder()
@@ -94,7 +105,7 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sensitive := range []string{key, jwt, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
+	for _, sensitive := range []string{key, jwt, toolResultKey, toolArgumentCredential, objectToolArgumentCredential, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
 		if strings.Contains(string(logData), sensitive) {
 			t.Fatalf("request log contains sensitive request data %q", sensitive)
 		}
@@ -117,10 +128,377 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sensitive := range []string{key, jwt, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
+	for _, sensitive := range []string{key, jwt, toolResultKey, toolArgumentCredential, objectToolArgumentCredential, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
 		if strings.Contains(string(serializedRows), sensitive) {
 			t.Fatalf("usage database rows contain sensitive request data %q", sensitive)
 		}
+	}
+}
+
+func TestSecretDLPToolArgumentJSONDecodesEscapedSecrets(t *testing.T) {
+	openRouterSecret := "sk-or-v1-" + strings.Repeat("a", 64)
+	bearer := "Authorization: Bearer " + strings.Repeat("b", 16) + "/" + strings.Repeat("c", 16)
+	credential := strings.Repeat("c", 20) + "Q7r9W2x4"
+	cases := []struct {
+		name        string
+		input       string
+		secret      string
+		placeholder string
+	}{
+		{
+			name:        "object key and value",
+			input:       `{"api_key":"` + credential + `"}`,
+			secret:      credential,
+			placeholder: "[SECRET_CREDENTIAL_1]",
+		},
+		{
+			name:        "unicode escaped hyphen",
+			input:       `{"opaque":"sk-or-v1\u002d` + openRouterSecret[len("sk-or-v1-"):] + `"}`,
+			secret:      openRouterSecret,
+			placeholder: "[SECRET_PROVIDER_1]",
+		},
+		{
+			name:        "escaped slash",
+			input:       `{"header":"Authorization: Bearer ` + strings.ReplaceAll(strings.TrimPrefix(bearer, "Authorization: Bearer "), "/", `\/`) + `"}`,
+			secret:      bearer,
+			placeholder: "[SECRET_BEARER_1]",
+		},
+		{
+			name:        "secret in object key",
+			input:       `{"` + fakeGitHubToken() + `":"ordinary"}`,
+			secret:      fakeGitHubToken(),
+			placeholder: "[SECRET_GITHUB_1]",
+		},
+		{
+			name:        "authorization object key",
+			input:       `{"Authorization":"Bearer ` + strings.Repeat("b", 20) + `"}`,
+			secret:      "Bearer " + strings.Repeat("b", 20),
+			placeholder: "[SECRET_BEARER_1]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rules, err := compilePIIRules(builtinSecretRules())
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+			redacted, changed, err := redactToolArgumentJSON(tc.input, state)
+			if err != nil || !changed || strings.Contains(redacted, tc.secret) || !strings.Contains(redacted, tc.placeholder) {
+				t.Fatalf("secret argument case %q changed=%t err=%v", tc.name, changed, err)
+			}
+			var decoded any
+			if err := json.Unmarshal([]byte(redacted), &decoded); err != nil {
+				t.Fatalf("redacted arguments are invalid JSON: %v", err)
+			}
+		})
+	}
+}
+
+func TestSecretDLPMalformedToolArgumentsRedactNormalizedCopy(t *testing.T) {
+	credential := strings.Repeat("h", 20) + "Q7r9W2x4"
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if strings.Contains(string(body), credential) || !strings.Contains(string(body), "[SECRET_CREDENTIAL_1]") {
+			t.Error("truncated argument secret was not redacted before upstream dispatch")
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "malformed-args"})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	truncated := `{"api_key":"` + credential
+	args, err := json.Marshal(truncated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"model":"default","messages":[{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"read","arguments":` + string(args) + `}}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("malformed redact-mode arguments status=%d calls=%d", response.Code, calls.Load())
+	}
+}
+
+func TestSecretDLPMalformedAuthorizationToolArguments(t *testing.T) {
+	token := strings.Repeat("j", 24) + "/" + strings.Repeat("k", 24)
+	for _, tc := range []struct {
+		name string
+		args string
+	}{
+		{name: "truncated", args: `{"Authorization":"Bearer ` + token},
+		{name: "trailing data", args: `{"Authorization":"Bearer ` + token + `"} trailing`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int64
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Error(err)
+				}
+				if strings.Contains(string(body), token) || !strings.Contains(string(body), "[SECRET_BEARER_1]") {
+					t.Error("malformed Authorization arguments were not redacted before upstream dispatch")
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"id": "malformed-header"})
+			}))
+			defer upstream.Close()
+			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+			group := cfg.Models["default"]
+			group.PIIFilter.Enabled = true
+			group.PIIFilter.SecretsEnabled = true
+			cfg.Models["default"] = group
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+			args, err := json.Marshal(tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := `{"model":"default","messages":[{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"read","arguments":` + string(args) + `}}]}]}`
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+			if response.Code != http.StatusOK || calls.Load() != 1 {
+				t.Fatalf("malformed Authorization arguments status=%d calls=%d", response.Code, calls.Load())
+			}
+		})
+	}
+}
+
+func TestSecretDLPMalformedMixedCredentialAndAuthorizationArguments(t *testing.T) {
+	apiCredential := strings.Repeat("q", 20) + "Q7r9W2x4"
+	bearer := strings.Repeat("m", 24) + "/" + strings.Repeat("n", 24)
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if strings.Contains(string(body), apiCredential) || strings.Contains(string(body), bearer) ||
+			!strings.Contains(string(body), "[SECRET_CREDENTIAL_1]") || !strings.Contains(string(body), "[SECRET_BEARER_1]") {
+			t.Error("mixed malformed tool arguments were not fully redacted before upstream dispatch")
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "mixed-malformed-args"})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	truncated := `{"api_key":"` + apiCredential + `","Authorization":"Bearer ` + bearer
+	args, err := json.Marshal(truncated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"model":"default","messages":[{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"read","arguments":` + string(args) + `}}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("mixed malformed tool arguments status=%d calls=%d", response.Code, calls.Load())
+	}
+}
+
+func TestSecretDLPResponsesSnapshotRedactsFunctionCallArguments(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
+	credential := strings.Repeat("c", 20) + "Q7r9W2x4"
+	customInputCredential := strings.Repeat("d", 20) + "Q7r9W2x4"
+	arguments, err := json.Marshal(map[string]string{"api_key": credential})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventData, err := json.Marshal(map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{"output": []any{
+			map[string]any{
+				"type":      "function_call",
+				"name":      "read_secret",
+				"arguments": string(arguments),
+			},
+			map[string]any{
+				"type":  "custom_tool_call",
+				"name":  "run",
+				"input": map[string]string{"api_key": customInputCredential},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := dlp.filterEvent(stream.Event{Type: "response.completed", Data: eventData})
+	if err != nil || len(out) != 1 {
+		t.Fatalf("snapshot events=%d err=%v", len(out), err)
+	}
+	if strings.Contains(string(out[0].Data), credential) || strings.Contains(string(out[0].Data), customInputCredential) || !strings.Contains(string(out[0].Data), "[SECRET_CREDENTIAL_1]") || !strings.Contains(string(out[0].Data), "[SECRET_CREDENTIAL_2]") {
+		t.Fatalf("Responses function-call snapshot leaked or failed to redact (event bytes=%d)", len(out[0].Data))
+	}
+}
+
+func TestSecretDLPMalformedToolArgumentsFailOnMatch(t *testing.T) {
+	credential := strings.Repeat("a", 20) + "Q7r9W2x4"
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeJSON(w, http.StatusOK, map[string]any{"id": "must-not-run"})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	group.PIIFilter.Mode = "fail_on_match"
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	truncated := `{"api_key":"` + credential
+	args, err := json.Marshal(truncated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"model":"default","messages":[{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"read","arguments":` + string(args) + `}}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "pii-filter-blocked") || calls.Load() != 0 {
+		t.Fatalf("malformed secret arguments status=%d calls=%d", response.Code, calls.Load())
+	}
+}
+
+func TestSecretDLPUnaryChatToolCallResponse(t *testing.T) {
+	credential := strings.Repeat("d", 20) + "Q7r9W2x4"
+	arguments, err := json.Marshal(map[string]string{"api_key": credential})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"id": "chat-tool-response", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"type": "function", "function": map[string]any{"name": "read", "arguments": string(arguments)}}}}}}, "usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), credential) || !strings.Contains(response.Body.String(), "[SECRET_CREDENTIAL_1]") {
+		t.Fatalf("unary tool-call response status=%d leaked=%t", response.Code, strings.Contains(response.Body.String(), credential))
+	}
+}
+
+func TestSecretDLPResponsesInputFunctionCallArguments(t *testing.T) {
+	credential := strings.Repeat("e", 20) + "Q7r9W2x4"
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if strings.Contains(string(body), credential) || !strings.Contains(string(body), "[SECRET_CREDENTIAL_1]") {
+			t.Error("Responses input function-call arguments were not redacted before upstream dispatch")
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "responses-tool-input", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}, "usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	responsesInput := true
+	group.PIIFilter.ApplyTo.ResponsesInput = &responsesInput
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+	group.Targets[0].ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true}
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	arguments, _ := json.Marshal(map[string]string{"api_key": credential})
+	body, _ := json.Marshal(map[string]any{"model": "default", "input": []any{map[string]any{"type": "function_call", "call_id": "call_1", "name": "read", "arguments": string(arguments)}}, "max_output_tokens": 64, "tools": []any{map[string]any{"type": "function", "name": "read", "parameters": map[string]any{"type": "object"}}}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("Responses input function-call status=%d calls=%d", response.Code, calls.Load())
+	}
+}
+
+func TestSecretDLPAnthropicToolUseInputRequestAndResponse(t *testing.T) {
+	requestSecret := strings.Repeat("f", 20) + "Q7r9W2x4"
+	responseSecret := strings.Repeat("g", 20) + "Q7r9W2x4"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		if strings.Contains(string(body), requestSecret) || !strings.Contains(string(body), "[SECRET_CREDENTIAL_1]") {
+			t.Error("Anthropic tool_use.input was not redacted before upstream dispatch")
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "msg-tool-use", "type": "message", "role": "assistant", "content": []any{map[string]any{"type": "tool_use", "id": "toolu_1", "name": "read", "input": map[string]string{"api_key": responseSecret}}}, "stop_reason": "tool_use", "usage": map[string]any{"input_tokens": 1, "output_tokens": 1}})
+	}))
+	defer upstream.Close()
+	svc := nativeStreamTestService(t, upstream.URL, "anthropic", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		messagesScope := true
+		responsesInputScope := false
+		group.PIIFilter.ApplyTo.Messages = &messagesScope
+		group.PIIFilter.ApplyTo.ResponsesInput = &responsesInputScope
+		cfg.Models["native-stream"] = group
+	})
+	input := `{"model":"native-stream","max_tokens":32,"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"read","input":{"api_key":"` + requestSecret + `"}}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(input))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), responseSecret) || !strings.Contains(response.Body.String(), "[SECRET_CREDENTIAL_") {
+		t.Fatalf("Anthropic tool_use input response status=%d leaked=%t placeholder=%t", response.Code, strings.Contains(response.Body.String(), responseSecret), strings.Contains(response.Body.String(), "[SECRET_CREDENTIAL_"))
 	}
 }
 
@@ -698,6 +1076,30 @@ func TestSecretDLPToolCallInspectorBlocksFailOnMatch(t *testing.T) {
 	}
 }
 
+func TestSecretDLPToolCallInspectorRedactsEscapedArguments(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &piiRedactionState{
+		rules: rules, limit: 20, result: &piiFilterResult{RuleCounts: map[string]int{}},
+		placeholderFor: map[string]string{},
+	}
+	inspector := secretDLPToolCallInspector{dlp: &secretStreamDLP{state: state, mode: "redact"}}
+	secretBody := strings.Repeat("a", 64)
+	arguments := `{"api_key":"sk-or-v1\u002d` + secretBody + `"}`
+	result, err := inspector.inspectStreamToolCalls([]IRToolCall{{Index: 0, ID: "call_1", Name: "lookup", Arguments: arguments}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != toolCallInspectionRedact || len(result.Calls) != 1 {
+		t.Fatalf("inspector action=%q calls=%d, want redaction of escaped argument", result.Action, len(result.Calls))
+	}
+	if strings.Contains(result.Calls[0].Arguments, secretBody) || !strings.Contains(result.Calls[0].Arguments, "[SECRET_PROVIDER_1]") {
+		t.Fatalf("inspector leaked or missed escaped credential body")
+	}
+}
+
 func TestSecretDLPRedactsHeldResponsesAndAnthropicToolCalls(t *testing.T) {
 	secret := fakeGitHubToken()
 	for _, tc := range []struct {
@@ -764,6 +1166,78 @@ func TestSecretDLPRedactsHeldResponsesAndAnthropicToolCalls(t *testing.T) {
 				t.Fatalf("aggregate budget after protocol DLP=%d, want 0", used)
 			}
 		})
+	}
+}
+
+func TestSecretDLPRedactsEscapedSecretSplitAcrossToolArgumentDeltas(t *testing.T) {
+	secret := "sk-or-v1-" + strings.Repeat("a", 64)
+	arguments := `{"api_key":"sk-or-v1\u002d` + strings.Repeat("a", 64) + `"}`
+	escape := strings.Index(arguments, `\u002d`)
+	if escape < 0 {
+		t.Fatal("test arguments have no escaped separator")
+	}
+	split := escape + 4 // Split the JSON unicode escape after `\u00`.
+	frame := func(eventType string, payload map[string]any) string {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return "event: " + eventType + "\n" + "data: " + string(raw) + "\n\n"
+	}
+	frames := []string{
+		frame("response.output_item.added", map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "lookup", "arguments": "", "status": "in_progress"}}),
+		frame("response.function_call_arguments.delta", map[string]any{"type": "response.function_call_arguments.delta", "output_index": 0, "delta": arguments[:split]}),
+		frame("response.function_call_arguments.delta", map[string]any{"type": "response.function_call_arguments.delta", "output_index": 0, "delta": arguments[split:]}),
+		frame("response.function_call_arguments.done", map[string]any{"type": "response.function_call_arguments.done", "output_index": 0, "arguments": arguments}),
+		frame("response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "lookup", "arguments": arguments, "status": "completed"}}),
+		frame("response.completed", map[string]any{"type": "response.completed", "response": map[string]any{"id": "resp_1", "status": "completed", "output": []any{map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "lookup", "arguments": arguments}}}}),
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, value := range frames {
+			_, _ = io.WriteString(w, value)
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	request := `{"model":"native-stream","stream":true,"input":"lookup","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(request))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	secretBody := strings.Repeat("a", 64)
+	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_PROVIDER_1]") {
+		t.Fatalf("status=%d streamed escaped tool argument leaked or missed redaction", response.Code)
+	}
+	var deltaCount, doneCount int
+	for _, frame := range strings.Split(body, "\n\n") {
+		if strings.Contains(frame, "event: response.function_call_arguments.delta") {
+			deltaCount++
+			if strings.Contains(frame, secretBody) {
+				t.Fatalf("streamed function_call_arguments.delta leaked the credential body")
+			}
+		}
+		if strings.Contains(frame, "event: response.function_call_arguments.done") {
+			doneCount++
+			if strings.Contains(frame, secretBody) {
+				t.Fatalf("streamed function_call_arguments.done leaked the credential body")
+			}
+		}
+		if strings.Contains(frame, secretBody) {
+			t.Fatalf("stream frame leaked the credential body")
+		}
+	}
+	if deltaCount != 2 || doneCount != 1 {
+		t.Fatalf("streamed argument frames: deltas=%d done=%d, want 2 deltas and 1 done", deltaCount, doneCount)
 	}
 }
 

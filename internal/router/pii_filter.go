@@ -4,7 +4,10 @@
 package router
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
@@ -339,16 +342,26 @@ func redactRawPayload(raw map[string]any, state *piiRedactionState, apply normal
 }
 
 type rawPIIContext struct {
-	key           string
-	inContent     bool
-	inToolResult  bool
-	inInstruction bool // Inside a system or developer message/item.
-	inInput       bool // Inside the caller's `input` array.
+	key             string
+	inContent       bool
+	inToolResult    bool
+	inToolArguments bool
+	inToolUse       bool
+	inInstruction   bool // Inside a system or developer message/item.
+	inInput         bool // Inside the caller's `input` array.
 }
 
 func redactRawValue(v any, ctx rawPIIContext, state *piiRedactionState, apply normalizedPIIApplyTo) any {
 	switch x := v.(type) {
 	case string:
+		if ctx.inToolArguments && ctx.key == "arguments" && shouldRedactToolArguments(ctx, apply) {
+			redacted, _, err := redactToolArgumentJSON(x, state)
+			if err != nil {
+				markPIIRedactionFailedClosed(state)
+				return x
+			}
+			return redacted
+		}
 		if shouldRedactRawString(ctx, apply) {
 			return state.redact(x)
 		}
@@ -379,16 +392,29 @@ func redactRawValue(v any, ctx rawPIIContext, state *piiRedactionState, apply no
 		}
 		return out
 	case map[string]any:
+		if ctx.inToolArguments && (ctx.key == "input" || ctx.key == "arguments") && shouldRedactToolArguments(ctx, apply) {
+			redacted, _ := redactToolArgumentValue(x, "", state)
+			if out, ok := redacted.(map[string]any); ok {
+				return out
+			}
+			return x
+		}
 		role := strings.ToLower(strings.TrimSpace(stringValue(x["role"])))
+		itemType := strings.ToLower(strings.TrimSpace(stringValue(x["type"])))
 		childToolResult := ctx.inToolResult || role == "tool"
 		childInstruction := ctx.inInstruction || role == "system" || role == "developer"
 		out := make(map[string]any, len(x))
 		for k, value := range x {
 			key := strings.ToLower(k)
 			child := rawPIIContext{
-				key:           key,
-				inContent:     ctx.inContent,
-				inToolResult:  childToolResult,
+				key:          key,
+				inContent:    ctx.inContent,
+				inToolResult: childToolResult,
+				inToolArguments: ctx.inToolArguments ||
+					(ctx.key == "tool_calls" && key == "function") ||
+					((ctx.key == "function_call" || itemType == "function_call") && key == "arguments") ||
+					((ctx.key == "tool_use" || itemType == "tool_use") && key == "input"),
+				inToolUse:     ctx.inToolUse || ctx.key == "tool_use" || itemType == "tool_use",
 				inInstruction: childInstruction || key == "system" || key == "instructions",
 				inInput:       ctx.inInput || key == "input",
 			}
@@ -428,6 +454,183 @@ func shouldRedactRawString(ctx rawPIIContext, apply normalizedPIIApplyTo) bool {
 		return ctx.inContent && (apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult) ||
 			(apply.system && ctx.inInstruction) || (apply.responsesInput && ctx.inInput))
 	}
+}
+
+func shouldRedactToolArguments(ctx rawPIIContext, apply normalizedPIIApplyTo) bool {
+	if ctx.inToolUse {
+		return apply.messages
+	}
+	if ctx.inInput {
+		return apply.responsesInput
+	}
+	return apply.messages
+}
+
+// redactToolArgumentJSON decodes a tool's JSON before matching so JSON
+// escaping cannot hide credential prefixes or punctuation. It checks each
+// string value with its object key in key=value form and scans keys directly.
+// If nothing changes, the original encoding and whitespace are retained.
+func redactToolArgumentJSON(value string, state *piiRedactionState) (string, bool, error) {
+	if value == "" || state == nil || state.result == nil {
+		return value, false, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return redactMalformedToolArgumentJSON(value, state)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return redactMalformedToolArgumentJSON(value, state)
+	}
+	redacted, changed := redactToolArgumentValue(decoded, "", state)
+	if !changed {
+		return value, false, nil
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	err := encoder.Encode(redacted)
+	if err != nil {
+		return value, false, err
+	}
+	return strings.TrimSuffix(encoded.String(), "\n"), true, nil
+}
+
+func redactMalformedToolArgumentJSON(value string, state *piiRedactionState) (string, bool, error) {
+	equalsForm := normalizeMalformedToolArgumentJSON(value)
+	afterEquals := state.redact(equalsForm)
+	equalsChanged := afterEquals != equalsForm
+	colonForm := normalizeMalformedToolArgumentJSONWithDelimiter(value, ": ")
+	if equalsChanged {
+		// Preserve replacements from the first pass, while changing the remaining
+		// property assignments to header form for rules that require a colon.
+		colonForm = malformedToolArgumentAuthorizationAssignment.ReplaceAllString(afterEquals, "$1: ")
+	}
+	redacted := state.redact(colonForm)
+	if redacted != colonForm {
+		return redacted, true, nil
+	}
+	if equalsChanged {
+		return afterEquals, true, nil
+	}
+	return value, false, nil
+}
+
+var malformedToolArgumentProperty = regexp.MustCompile(`"([^"\\]+)"\s*:\s*"`)
+var malformedToolArgumentAuthorizationAssignment = regexp.MustCompile(`(?i)(\bAuthorization\s*)=`)
+
+// normalizeMalformedToolArgumentJSON decodes each JSON string token it can,
+// even when the containing argument object is truncated, then turns property
+// boundaries into the key=value form expected by credential-assignment rules.
+func normalizeMalformedToolArgumentJSON(value string) string {
+	return normalizeMalformedToolArgumentJSONWithDelimiter(value, "=")
+}
+
+func normalizeMalformedToolArgumentJSONWithDelimiter(value, delimiter string) string {
+	var decoded strings.Builder
+	for i := 0; i < len(value); {
+		if value[i] != '"' {
+			decoded.WriteByte(value[i])
+			i++
+			continue
+		}
+		start := i
+		i++
+		closed := false
+		for i < len(value) {
+			if value[i] == '\\' {
+				if i+1 >= len(value) {
+					i++
+					break
+				}
+				i += 2
+				continue
+			}
+			if value[i] == '"' {
+				i++
+				closed = true
+				break
+			}
+			i++
+		}
+		quoted := value[start:i]
+		if !closed {
+			quoted += `"`
+		}
+		var text string
+		if err := json.Unmarshal([]byte(quoted), &text); err == nil {
+			decoded.WriteByte('"')
+			decoded.WriteString(text)
+			decoded.WriteByte('"')
+		} else {
+			decoded.WriteString(value[start:i])
+		}
+	}
+	return malformedToolArgumentProperty.ReplaceAllString(decoded.String(), "$1"+delimiter)
+}
+
+func redactToolArgumentValue(value any, parentKey string, state *piiRedactionState) (any, bool) {
+	switch v := value.(type) {
+	case string:
+		redacted := state.redact(v)
+		changed := redacted != v
+		if parentKey != "" {
+			for _, delimiter := range []string{"=", ": "} {
+				pair := parentKey + delimiter + redacted
+				redactedPair := state.redact(pair)
+				if redactedPair == pair {
+					continue
+				}
+				prefix := parentKey + delimiter
+				if strings.HasPrefix(redactedPair, prefix) {
+					redacted = strings.TrimPrefix(redactedPair, prefix)
+				} else if separator := strings.IndexByte(redactedPair, '='); separator >= 0 && !strings.Contains(parentKey, "=") {
+					redacted = redactedPair[separator+1:]
+				} else {
+					redacted = redactedPair
+				}
+				changed = true
+				break
+			}
+		}
+		return redacted, changed
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out := make(map[string]any, len(v))
+		changed := false
+		for _, key := range keys {
+			redactedKey := state.redact(key)
+			redactedValue, valueChanged := redactToolArgumentValue(v[key], key, state)
+			out[redactedKey] = redactedValue
+			changed = changed || redactedKey != key || valueChanged
+		}
+		return out, changed
+	case []any:
+		out := make([]any, len(v))
+		changed := false
+		for i, child := range v {
+			redacted, childChanged := redactToolArgumentValue(child, parentKey, state)
+			out[i] = redacted
+			changed = changed || childChanged
+		}
+		return out, changed
+	default:
+		return value, false
+	}
+}
+
+func markPIIRedactionFailedClosed(state *piiRedactionState) {
+	if state == nil || state.result == nil {
+		return
+	}
+	state.result.LimitExceeded = true
+	state.result.Warnings = appendWarning(state.result.Warnings, "pii-filter-tool-argument-encoding-failed")
 }
 
 func restorePIIText(text string, placeholders []piiPlaceholder) string {

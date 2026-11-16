@@ -228,7 +228,14 @@ BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
 provider-token or credential-assignment candidates fail closed. Unary response
 replacement-limit exhaustion also fails closed. Response redaction requires
 `secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
-their prior response behavior.
+their prior response behavior. JSON-encoded tool-call arguments are decoded
+before inspection, with string values checked alongside their property names as
+`key=value`; header-shaped values are also checked as `key: value`.
+JSON-escaped credential characters are normalized before matching. Object-valued
+Chat arguments and Anthropic `tool_use.input` objects receive the same key/value inspection.
+Malformed or truncated argument strings are scanned in best-effort `key=` and
+`key: ` forms so partial JSON cannot hide credentials. Responses function-call
+arguments and custom tool input are redacted in output snapshots.
 
 When tool routing enables `streaming.hold_until_validated`, streamed tool-call
 arguments are held until inspection completes. Secret matches are redacted in
@@ -236,6 +243,8 @@ arguments are held until inspection completes. Secret matches are redacted in
 bounded hold, tool-bearing streams on a DLP-enabled group fail with HTTP 400
 `secret-dlp-stream-inspection-required`. Streams with custom rules remain
 fail-closed because the rolling text filter cannot infer a safe match bound.
+Completed streamed arguments use the same JSON-aware inspection as buffered
+tool calls, including JSON-escaped credentials.
 
 ## v5.0.0 KV-cache routing and metering
 

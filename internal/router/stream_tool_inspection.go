@@ -41,19 +41,26 @@ type secretDLPToolCallInspector struct {
 }
 
 func (i secretDLPToolCallInspector) inspectStreamToolCalls(calls []IRToolCall) (toolCallInspectionResult, error) {
-	if i.dlp == nil {
+	if i.dlp == nil || i.dlp.state == nil || i.dlp.state.result == nil {
 		return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
 	}
 	updated := append([]IRToolCall(nil), calls...)
 	changed := false
 	for idx := range updated {
-		redacted, err := i.dlp.redactCandidate(updated[idx].Arguments)
+		if hasSecretStreamOversizeCandidate(updated[idx].Arguments) {
+			return toolCallInspectionResult{}, errSecretStreamWindowExceeded
+		}
+		before := i.dlp.state.result.Replacements
+		redacted, _, err := redactToolArgumentJSON(updated[idx].Arguments, i.dlp.state)
 		if err != nil {
 			var blocked piiFilterBlockedError
 			if errors.As(err, &blocked) {
 				return toolCallInspectionResult{Action: toolCallInspectionBlock}, nil
 			}
 			return toolCallInspectionResult{}, err
+		}
+		if err := i.dlp.failIfMatched(before); err != nil {
+			return toolCallInspectionResult{Action: toolCallInspectionBlock}, nil
 		}
 		if redacted != updated[idx].Arguments {
 			updated[idx].Arguments = redacted

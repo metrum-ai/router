@@ -682,6 +682,22 @@ func redactSecretStreamSnapshot(value any, state *piiRedactionState) (bool, erro
 	switch x := value.(type) {
 	case map[string]any:
 		for key, child := range x {
+			if key == "input" && strings.EqualFold(stringValue(x["type"]), "custom_tool_call") {
+				switch v := child.(type) {
+				case string:
+					redacted, inputChanged, err := redactToolArgumentJSON(v, state)
+					if err != nil {
+						return changed, err
+					}
+					x[key] = redacted
+					changed = changed || inputChanged
+				case map[string]any, []any:
+					redacted, inputChanged := redactToolArgumentValue(v, "", state)
+					x[key] = redacted
+					changed = changed || inputChanged
+				}
+				continue
+			}
 			switch v := child.(type) {
 			case string:
 				if key == "text" || key == "content" || key == "output_text" {
@@ -691,6 +707,13 @@ func redactSecretStreamSnapshot(value any, state *piiRedactionState) (bool, erro
 					}
 					x[key] = redacted
 					changed = changed || redacted != v
+				} else if key == "arguments" && strings.EqualFold(stringValue(x["type"]), "function_call") {
+					redacted, argumentChanged, err := redactToolArgumentJSON(v, state)
+					if err != nil {
+						return changed, err
+					}
+					x[key] = redacted
+					changed = changed || argumentChanged
 				}
 			default:
 				childChanged, err := redactSecretStreamSnapshot(child, state)
