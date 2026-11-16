@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
+- Sign binary and multi-architecture OCI releases with keyless Cosign, attach archive and image SPDX SBOMs plus GitHub build provenance, assemble images from the byte-identical release binaries without a Docker daemon, reproduce binary package checksums on a clean runner, and gate publication on maintainer and AI review.
+- Include the running router executable's SHA-256 digest in `/version` and add `routerctl verify --release` for signed-release comparison.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1
   server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries,

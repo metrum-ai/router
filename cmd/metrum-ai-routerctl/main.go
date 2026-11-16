@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	"github.com/metrum-ai/router/internal/releaseverify"
 	"github.com/metrum-ai/router/internal/router"
 	"github.com/metrum-ai/router/internal/smartrouterctl"
 	"gorm.io/gorm"
@@ -33,11 +34,13 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|verify|config|callers|contain|release|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(buildinfo.Text())
+	case "verify":
+		verifyReleaseCommand(os.Args[2:])
 	case "config":
 		configCommand(os.Args[2:])
 	case "callers":
@@ -68,6 +71,28 @@ func main() {
 		emergencyCommand(os.Args[2:])
 	default:
 		die("unsupported command %q", os.Args[1])
+	}
+}
+
+func verifyReleaseCommand(args []string) {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	release := fs.String("release", "", "release tag to verify, for example v5.0.0")
+	binary := fs.String("binary", "", "router executable to compare (default: sibling or PATH metrum-ai-router)")
+	_ = fs.Parse(args)
+	if fs.NArg() != 0 {
+		die("usage: metrum-ai-routerctl verify --release <tag> [--binary <path>]")
+	}
+	if strings.TrimSpace(*release) == "" {
+		die("verify requires --release <tag>")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	result, err := releaseverify.Verify(ctx, releaseverify.Options{Release: strings.TrimSpace(*release), Binary: *binary})
+	if err != nil {
+		die("release verification failed: %v", err)
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		die("write verification result: %v", err)
 	}
 }
 

@@ -118,6 +118,8 @@ def assert_make_tiers() -> None:
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
     require("scripts/release_provenance_test.py" in fast, "test-fast dropped the release provenance contract")
+    require("release_image_layer_test.py" in fast and "release_image_binary_test.py" in fast,
+            "test-fast dropped release image reproducibility and byte-identity tests")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")
@@ -262,7 +264,8 @@ def assert_hierarchy_release_gate() -> None:
     release = jobs(read(WORKFLOWS / "release.yml"))
     require("uses: ./.github/workflows/hierarchy-matrix.yml" in release.get("hierarchy-matrix", ""),
             "release workflow no longer calls the hierarchy matrix")
-    require("needs: hierarchy-matrix" in release.get("package", ""),
+    require("needs: hierarchy-matrix" in release.get("resolve", "")
+            and "needs: resolve" in release.get("package-binaries", ""),
             "release packaging must depend on the hierarchy matrix")
     compat = read(WORKFLOWS / "release-compat.yml")
     require("agent-chain-mock" not in compat,
@@ -324,9 +327,15 @@ def assert_arc_runners() -> None:
             require(pinned or configurable,
                     f"{path.name}/{name} must use {runner} or the {variable} variable")
         if "cache: false" in text:
-            require(path.name == "ci.yml" and "actions/cache/restore@" in text
-                    and "actions/cache/save@" in text,
-                    f"{path.name} must use explicit Actions caches, not warm host caches")
+            if path.name == "release.yml":
+                rebuild = jobs(text).get("reproducible-build", "")
+                require("cache: false" in rebuild and "make package" in rebuild
+                        and "compare_release_checksums.py" in rebuild,
+                        "the clean release rebuild must disable Go cache reuse and compare checksums")
+            else:
+                require(path.name == "ci.yml" and "actions/cache/restore@" in text
+                        and "actions/cache/save@" in text,
+                        f"{path.name} must use explicit Actions caches, not warm host caches")
         require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
 
 
@@ -494,6 +503,14 @@ def main() -> int:
     assert_provider_workflows()
     assert_agent_chain_workflow()
     assert_hierarchy_release_gate()
+    release = read(WORKFLOWS / "release.yml")
+    require("environment: release" in release, "release image publication must be protected by the release environment")
+    require("ROUTER_DOCKER_RUNNER" not in release and "docker-runner-preflight" not in release,
+            "release image publication must not require a Docker runner")
+    require("index append" in release and "mutate \"$base\" --append \"$layer\"" in release and "release_image_layer.py" in release,
+            "release images must be assembled daemonlessly from binary packages")
+    require("packages: write" in release and "cosign sign --yes" in release,
+            "protected release job must push and sign OCI images")
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")

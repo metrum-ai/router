@@ -33,6 +33,12 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
 
+## v5.0.0 release verification
+
+The router's `/version` response includes `binary_sha256` for the running executable. To check an installed binary against the signed release, install GitHub CLI and Cosign and run `metrum-ai-routerctl verify --release v5.0.0 --binary /path/to/metrum-ai-router`. Verification needs network access to GitHub release assets and fails if the package signature, GitHub provenance, or local binary digest does not match.
+
+The v5.0.0 OCI image is published as `ghcr.io/metrum-ai/router:v5.0.0` with linux/amd64 and linux/arm64 manifests. Its binaries are assembled from the same signed release packages. The release's `release-images.json` records the image digests and binary checksums; keyless Cosign signatures, image SBOMs, and GitHub provenance are attached to the registry objects.
+
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior
