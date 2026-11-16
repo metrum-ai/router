@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,6 +60,10 @@ func TestLeakedKeySelfRevocationLocalhostE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ActivateConfigSet(runner.db, "test", setID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	bootstrapPath := filepath.Join(dir, "bootstrap.yaml")
+	if err := os.WriteFile(bootstrapPath, canonical, 0600); err != nil {
 		t.Fatal(err)
 	}
 	svc, err := newServiceWithVerifiedFixture(cfg)
@@ -176,7 +181,11 @@ func TestLeakedKeySelfRevocationLocalhostE2E(t *testing.T) {
 	if revokedConfig.Callers[0].RevokedTokenHash == "" {
 		t.Fatal("revoked verifier did not persist in the caller store")
 	}
-	restartedRevoked, err := newServiceWithVerifiedFixture(revokedConfig)
+	restartConfig, err := LoadConfigForServe(bootstrapPath)
+	if err != nil {
+		t.Fatalf("load database-backed config after restart: %v", err)
+	}
+	restartedRevoked, err := newServiceWithVerifiedFixture(restartConfig)
 	if err != nil {
 		t.Fatalf("restart with revoked caller: %v", err)
 	}
