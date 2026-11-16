@@ -11,7 +11,6 @@ import json
 import os
 import pwd
 import re
-import re
 import shutil
 import subprocess
 import tarfile
@@ -63,6 +62,16 @@ def parse_single_json(output: str) -> dict[str, object]:
 
 def contains_sql_text(output: str) -> bool:
     return bool(re.search(r"\b(?:SELECT|INSERT|UPDATE|DELETE|PRAGMA|CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE)\b", output, re.IGNORECASE))
+
+
+def previous_json_status(version: str, output: str) -> bool:
+    try:
+        parse_single_json(output)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    if version == "v4.8.0":
+        raise RuntimeError("v4.8.0 did not reproduce the known migrate --json regression")
+    return True
 
 
 def strict_json(binary: Path, action: str, database: Path, user: str, *extra: str) -> dict[str, object]:
@@ -122,11 +131,7 @@ def main() -> int:
         database = work / "usage.sqlite"
         old_result = run_as(args.service_user, [str(previous_migrate), "--action=apply", "--driver=sqlite",
                                                  "--db=" + str(database), "--json"])
-        try:
-            json.loads(old_result.stdout)
-            old_json_valid = True
-        except json.JSONDecodeError:
-            old_json_valid = False
+        old_json_valid = previous_json_status(args.previous_version, old_result.stdout)
         checks.append({"check": "previous-release-json", "strict_json": old_json_valid})
         run_as(args.service_user, [str(previous_migrate), "--action=resume", "--job=historical-usage-validation-v1",
                                    "--checkpoint-ordinal=0", "--driver=sqlite", "--db=" + str(database)])

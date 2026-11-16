@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -1681,7 +1682,7 @@ func openUsageDB(cfg UsageDBConfig) (*gorm.DB, error) {
 		// plane contracts.  The SQLite driver applies this pragma to every
 		// connection opened through the DSN, rather than only to whichever
 		// connection happens to execute a one-time PRAGMA statement.
-		db, err := gorm.Open(sqlite.Open(sqliteDSNWithForeignKeys(cfg.Path)), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+		db, err := gorm.Open(sqlite.Open(sqliteDSNWithForeignKeys(cfg.Path)), &gorm.Config{Logger: migrationDBLogger()})
 		if err != nil {
 			return nil, err
 		}
@@ -1697,11 +1698,21 @@ func openUsageDB(cfg UsageDBConfig) (*gorm.DB, error) {
 		if cfg.DSN == "" {
 			return nil, errors.New("usage db dsn is required")
 		}
-		return gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+		return gorm.Open(postgres.Open(cfg.DSN), &gorm.Config{Logger: migrationDBLogger()})
 	default:
 		return nil, fmt.Errorf("unsupported usage db driver %q", cfg.Driver)
 	}
 }
+
+func migrationDBLogger() logger.Interface {
+	return silentMigrationLogger{Interface: logger.New(log.New(os.Stderr, "", log.LstdFlags), logger.Config{LogLevel: logger.Silent})}
+}
+
+// silentMigrationLogger prevents GORM's migrator Debug calls from escalating
+// the database logger. The CLI reports returned failures on stderr itself.
+type silentMigrationLogger struct{ logger.Interface }
+
+func (l silentMigrationLogger) LogMode(logger.LogLevel) logger.Interface { return l }
 
 func sqliteDSNWithForeignKeys(path string) string {
 	separator := "?"

@@ -125,21 +125,30 @@ func TestMigrationStatusJSONIncludesPendingMetadata(t *testing.T) {
 	}
 }
 
-// Regression test for the documented deployment-job gate: plan and status are
-// read while a migration is pending, and both must print a readable document.
+// Regression test for strict JSON output around GORM migrations, including the
+// SQLite migrator's internal Debug calls and the completed serving gate.
 func TestStatusJSONWithPendingMigration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and runs the migrate CLI")
 	}
 	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
-	for _, action := range []string{"plan", "status"} {
+	actions := []string{"plan", "status", "verify", "apply", "resume", "verify-serving"}
+	for _, action := range actions {
 		t.Run(action, func(t *testing.T) {
-			command := exec.Command("go", "run", ".", "--driver=sqlite", "--db="+dbPath, "--action="+action, "--json")
+			args := []string{"run", ".", "--driver=sqlite", "--db=" + dbPath, "--action=" + action}
+			if action == "resume" {
+				args = append(args, "--job=historical-usage-validation-v1", "--checkpoint-ordinal=0")
+			}
+			args = append(args, "--json")
+			command := exec.Command("go", args...)
 			var stdout, stderr strings.Builder
 			command.Stdout = &stdout
 			command.Stderr = &stderr
 			if err := command.Run(); err != nil {
 				t.Fatalf("migrate --action=%s --json failed: %v: %s", action, err, stderr.String())
+			}
+			if containsMigrationSQL(stderr.String()) {
+				t.Fatalf("migrate --action=%s --json wrote SQL to stderr: %s", action, stderr.String())
 			}
 			output := strings.TrimSpace(stdout.String())
 			if output == "" {
@@ -149,17 +158,45 @@ func TestStatusJSONWithPendingMigration(t *testing.T) {
 			if document.Scope != "usage" {
 				t.Fatalf("scope = %q, want usage", document.Scope)
 			}
-			if document.State != "pending" {
-				t.Fatalf("state = %q, want pending on a database with unapplied migrations", document.State)
-			}
-			if len(document.Pending) == 0 {
-				t.Fatalf("pending entries = 0, want the unapplied migrations: %s", output)
-			}
-			for _, pending := range document.Pending {
-				if pending.ID == 0 {
-					t.Fatalf("pending migration without an id: %s", output)
+			if action == "plan" || action == "status" || action == "verify" {
+				if document.State != "pending" || len(document.Pending) == 0 {
+					t.Fatalf("state/pending = %q/%d, want pending migrations: %s", document.State, len(document.Pending), output)
+				}
+				for _, pending := range document.Pending {
+					if pending.ID == 0 {
+						t.Fatalf("pending migration without an id: %s", output)
+					}
 				}
 			}
 		})
+	}
+}
+
+func containsMigrationSQL(output string) bool {
+	lower := strings.ToLower(output)
+	for _, statement := range []string{"select ", "insert into ", "update ", "delete from ", "pragma_", "create table ", "alter table ", "drop table "} {
+		if strings.Contains(lower, statement) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMigrationJSONFailureKeepsStdoutEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the migrate CLI")
+	}
+	command := exec.Command("go", "run", ".", "--driver=unsupported", "--action=status", "--json")
+	var stdout, stderr strings.Builder
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err == nil {
+		t.Fatal("migrate with unsupported driver succeeded")
+	}
+	if strings.TrimSpace(stdout.String()) != "" {
+		t.Fatalf("failed migration wrote to stdout: %q", stdout.String())
+	}
+	if strings.TrimSpace(stderr.String()) == "" {
+		t.Fatal("failed migration did not report its error on stderr")
 	}
 }

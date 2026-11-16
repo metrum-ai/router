@@ -111,6 +111,7 @@ type Service struct {
 	affinity           *dynamicAffinityStore
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
+	providerSpend      *providerSpendBreaker
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
 	tlsManager         *tlsacme.Manager
@@ -184,6 +185,8 @@ type routingEligibilityError struct {
 	CapabilityMismatch bool
 	MismatchCode       string
 	MismatchParam      string
+	ErrorCode          string
+	StatusCode         int
 }
 
 func (e routingEligibilityError) Error() string {
@@ -375,6 +378,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		toolReliability:    newToolReliabilityStore(),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
+		providerSpend:      newProviderSpendBreaker(),
 		contentCaptureKeys: contentCaptureKeys,
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
@@ -385,6 +389,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	s.configSnapshot.Store(cfg)
 	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
+	s.providerSpend.emit = s.recordProviderSpendEvent
 	// The operator's configured window applies at CONSTRUCTION, before the first
 	// control-plane reload: a file-config deployment, or any process that has not
 	// reloaded yet, must not silently run with the default.
@@ -2466,6 +2471,7 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.recordCacheStats(rc)
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
+	s.providerSpend.add(rc.rec.TargetProvider, s.cfg.Provider[rc.rec.TargetProvider].SpendBreaker, rc.rec.TotalCostUSD)
 	if rc.rec.Status == 0 {
 		rc.rec.Status = status
 	}
@@ -2492,6 +2498,22 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 		s.recordRequestSecurityAccess(rc, rc.rec.Status, codeText)
 		rc.securityRecorded = true
 	}
+}
+
+func (s *Service) recordProviderSpendEvent(provider, action, window string, ceiling float64) {
+	if !s.securityReportsEnabled() {
+		return
+	}
+	reason := "provider_spend_breaker_" + action + "_" + window + ":" + provider
+	s.recordSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		EventType:    "provider_spend_breaker_" + action,
+		Surface:      "provider",
+		PathTemplate: "/providers/{provider}/spend-breaker",
+		StatusCode:   http.StatusOK,
+		Outcome:      "success",
+		ReasonCode:   reason,
+	})
 }
 
 func (s *Service) dispatchExternalPolicyFeedback(rc *requestContext) {
@@ -2651,9 +2673,15 @@ func (c *callerRuntime) authPolicyError() error {
 	if c == nil {
 		return authPolicyError{status: http.StatusUnauthorized, code: "unauthorized"}
 	}
+	keyStatus := normalizeStatusDefault(c.keyStatus)
+	if keyStatus == accountStatusSuspended && strings.TrimSpace(c.cfg.ContainmentExpiresAt) != "" {
+		if expiresAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(c.cfg.ContainmentExpiresAt)); err == nil && !time.Now().UTC().Before(expiresAt) {
+			keyStatus = accountStatusActive
+		}
+	}
 	switch {
-	case normalizeStatusDefault(c.keyStatus) != accountStatusActive:
-		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("key", normalizeStatusDefault(c.keyStatus))}
+	case keyStatus != accountStatusActive:
+		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("key", keyStatus)}
 	case normalizeStatusDefault(c.ownerUserStatus) != accountStatusActive:
 		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("user", normalizeStatusDefault(c.ownerUserStatus))}
 	case normalizeStatusDefault(c.projectStatus) != accountStatusActive:
@@ -2773,7 +2801,17 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	targets, rejectedReasons := s.filterTargetsForRequest(rc, targets, req, callerDialect)
 	if len(targets) == 0 {
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
-		if len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
+		if hasFilterReason(rejectedReasons, "provider-spend-breaker") {
+			for _, target := range group.Targets {
+				breaker := s.cfg.Provider[target.Provider].SpendBreaker
+				if breaker.OnTrip == "stop" && !s.providerSpend.allow(target.Provider, breaker) {
+					err.ErrorCode = "provider_spend_breaker"
+					err.StatusCode = http.StatusServiceUnavailable
+					break
+				}
+			}
+		}
+		if err.ErrorCode == "" && len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
 			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, rejectedReasons, req, callerDialect)
 		}
@@ -4218,14 +4256,26 @@ func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, 
 	estimate := s.requestTokenEstimateForSelection(rc, req, callerDialect)
 	out := make([]Target, 0, len(targets))
 	var rejected [][]string
+	stopRouting := false
 	for _, target := range targets {
 		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
 		reasons := s.targetEligibilityReasons(target, req, callerDialect, outDialect, estimate)
-		if len(reasons) == 0 {
-			out = append(out, target)
-		} else {
+		if len(reasons) != 0 {
 			rejected = append(rejected, reasons)
+			continue
 		}
+		breaker := s.cfg.Provider[target.Provider].SpendBreaker
+		if !s.providerSpend.allow(target.Provider, breaker) {
+			rejected = append(rejected, []string{"provider-spend-breaker"})
+			if breaker.OnTrip == "stop" {
+				stopRouting = true
+			}
+			continue
+		}
+		out = append(out, target)
+	}
+	if stopRouting {
+		return nil, rejected
 	}
 	return out, rejected
 }
@@ -5077,6 +5127,12 @@ func (s *Service) writeRoutingEligibilityError(w http.ResponseWriter, rc *reques
 			code = "continuation_unsupported"
 			status = http.StatusBadRequest
 		}
+	}
+	if err.ErrorCode != "" {
+		code = err.ErrorCode
+	}
+	if err.StatusCode != 0 {
+		status = err.StatusCode
 	}
 	requestID := ""
 	if rc != nil {

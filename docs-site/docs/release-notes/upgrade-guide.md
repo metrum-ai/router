@@ -5,9 +5,47 @@ doc_type: reference
 
 # Upgrade Guide
 
+For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
+
 Release candidate validation includes the package upgrade-and-rollback procedure in the [release checks](https://github.com/metrum-ai/router/blob/main/docs/RELEASE_CHECKS.md).
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
+
+## Security dependency update
+
+The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
+
+## v5.0.0 provider spend breaker
+
+Provider `spend_breaker` is optional. Existing configurations keep their prior
+routing behavior. Set `hourly_usd` and/or `daily_usd` under a provider to cap
+estimated spend; each window resets at the next UTC boundary. The counters are
+in memory and reset on router restart, so configure ceilings with that limit
+in mind. Counters are per router process; with `N` replicas the effective
+ceiling can reach `N` times the configured value. The router records only safe
+scalar trip/reset events and does not write provider keys to logs, events or
+usage rows. With `on_trip: stop`, a request whose group includes the tripped
+provider returns HTTP 503 with error code `provider_spend_breaker`; the router
+does not fail over to another provider until the window resets. Use
+`on_trip: failover` to reroute to another eligible provider. Trip/reset records
+also enter security access events when
+`server.admin_reports.security.enabled` is true; structured log events remain
+available otherwise.
+
+## v5.0.0 trusted proxy client IP resolution
+
+When `server.client_ip.trusted_proxy_cidrs` is configured, the router now walks
+`X-Forwarded-For` from the socket peer toward the client and chooses the first
+untrusted hop. A client-supplied leftmost value no longer overrides the address
+appended by a trusted proxy. If the socket peer is not in a trusted CIDR, the
+router ignores `X-Forwarded-For` and uses the socket peer. If every forwarded
+hop is trusted, the router uses the leftmost address. `X-Real-IP` keeps its
+existing single-value behavior.
+
+This can change client addresses recorded in security access events and used by
+admin OIDC rate limiting for proxied deployments. Review the trusted proxy
+CIDRs and verify that each proxy appends its connecting peer to
+`X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
 
 ## Pre-Upgrade Checklist
 
@@ -662,3 +700,24 @@ v2.0.0 cutover, that is **v1.4.4** (`metrum-router-*` artifact and image names).
 Restore the prior service unit / Compose / Kubernetes references and any
 pre-upgrade config or usage DB backup required by the migration contract.
 Re-check `/readyz` and `/version` before closing the change.
+
+## v5.0.0 caller containment
+
+The new caller containment endpoints require the `admin:containment` / `contain`
+Casbin grant in the global `*` domain. Add that narrow grant to the SecOps identity that needs to suspend
+or resume keys. Supply a short reason code, not free text. Do not combine this
+grant with caller issue, rotation, or revoke unless
+the same identity needs those separate operations. The optional signed webhook
+is off by default and requires `admin.enabled: true` with
+`server.config_source.mode: database`. To enable it, configure
+`server.containment_webhook.enabled` and `secret_env`, then provide a 32-byte-or-longer secret through the named
+environment variable. See [Admin Authentication](/docs/configuration/admin-authentication)
+for headers, signing input, timestamp bounds, and CLI examples. A suspended
+caller with a TTL becomes active when the TTL expires; no database migration is
+required.
+The containment role can resume only keys it suspended; keys suspended by an
+administrator or by legacy configuration require all caller write permissions
+(issue, rotate, and revoke) to resume.
+Signed webhook callers do not need an ETag or idempotency header. Their nonce
+reservation is durable for at least twice the configured timestamp window and
+expired reservations are pruned hourly.
