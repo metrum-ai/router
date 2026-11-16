@@ -35,8 +35,6 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
-
 ## [Unreleased]
 
 ### Added
@@ -44,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 
 - Add versioned provider and model-catalog reads, provider validation and create/update/disable, project and environment lifecycle, project-environment membership CRUD, project USD budgets with alert thresholds, caller quota reads and updates, and retention policy writes. Writes use configuration revisions; retention changes that can delete more data require `admin:retention:force`, and provider credential references and headers never appear in responses.
+
+- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
 
 ### Security
 

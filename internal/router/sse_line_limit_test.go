@@ -5,6 +5,7 @@ package router
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +18,39 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+type prefixWaitReader struct {
+	prefix   *strings.Reader
+	ctx      context.Context
+	err      error
+	onWait   func()
+	waitOnce sync.Once
+}
+
+func newPrefixWaitReader(prefix string, ctx context.Context, err error) *prefixWaitReader {
+	return &prefixWaitReader{prefix: strings.NewReader(prefix), ctx: ctx, err: err}
+}
+
+func (r *prefixWaitReader) Read(p []byte) (int, error) {
+	if r.prefix.Len() > 0 {
+		return r.prefix.Read(p)
+	}
+	r.waitOnce.Do(func() {
+		if r.onWait != nil {
+			r.onWait()
+		}
+	})
+	if r.ctx != nil {
+		<-r.ctx.Done()
+		return 0, r.ctx.Err()
+	}
+	if r.err != nil {
+		return 0, r.err
+	}
+	return 0, io.EOF
+}
 
 func TestSSELineBufferBudgetBoundsConcurrentNativeLines(t *testing.T) {
 	const streams = 200
@@ -49,6 +82,53 @@ func TestSSELineBufferBudgetBoundsConcurrentNativeLines(t *testing.T) {
 	}
 	if used := budget.Used(); used != 0 {
 		t.Fatalf("reserved bytes after all streams finished = %d", used)
+	}
+}
+
+func TestNativeSSEBudgetHoldsConcurrentUnframedLines(t *testing.T) {
+	const (
+		streams = 32
+		limit   = 2 << 20
+	)
+	budget := newLineBufferBudget(limit, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wire := "data: " + strings.Repeat("x", 256<<10) + "\n"
+	var rejected atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < streams; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rc := &requestContext{start: time.Now(), lineBufferBudget: budget, maxSSELineBytes: 1 << 20}
+			_, err := proxyNativeSSE(ctx, httptest.NewRecorder(), newPrefixWaitReader(wire, ctx, nil), "openai-chat", "m", 0, rc)
+			var upstream upstreamError
+			if errors.As(err, &upstream) && upstream.Class == "upstream_stream_buffer_limit" {
+				rejected.Add(1)
+			}
+		}()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for rejected.Load() == 0 || budget.Used() == 0 {
+		if time.Now().After(deadline) {
+			cancel()
+			wg.Wait()
+			t.Fatalf("did not retain and reject concurrent unframed lines: reserved=%d rejected=%d", budget.Used(), rejected.Load())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if used := budget.Used(); used <= 0 || used > limit {
+		cancel()
+		wg.Wait()
+		t.Fatalf("reserved unframed capacity=%d, want (0,%d]", used, limit)
+	}
+	cancel()
+	wg.Wait()
+	if used := budget.Used(); used != 0 {
+		t.Fatalf("reserved capacity after cancellation=%d, want 0", used)
+	}
+	if rejected.Load() == 0 {
+		t.Fatal("no streams were rejected after the shared line-buffer budget filled")
 	}
 }
 

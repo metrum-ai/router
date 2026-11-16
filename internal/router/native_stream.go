@@ -95,6 +95,13 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 	}
 	reader := bufio.NewReaderSize(body, 64<<10)
 	var frame bytes.Buffer
+	// Reservations move from each parsed line to the in-progress frame. Keep
+	// them until the frame is emitted or discarded; every early return releases
+	// any still-owned frame capacity. A downstream hold such as #929 acquires
+	// its own reservation through stream.LineBufferBudget and releases it when
+	// held data is emitted or discarded on timeout, cancellation, or error.
+	var frameReserved int64
+	defer func() { rc.releaseSSELineBuffer(frameReserved) }()
 	for {
 		if err := ctx.Err(); err != nil {
 			upErr := classifyContextError(err)
@@ -108,15 +115,14 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 		if errors.Is(err, errNativeSSELineBudget) {
 			return result, upstreamError{Class: "upstream_stream_buffer_limit", Message: "process-wide SSE line buffer budget exhausted", Retryable: !result.Committed, Committed: result.Committed}
 		}
+		frameReserved += reserved
 		if len(line) > 0 {
 			result.Bytes += int64(len(line))
 			if maxBytes > 0 && result.Bytes > maxBytes {
-				rc.releaseSSELineBuffer(reserved)
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit", Committed: result.Committed, ResponseLen: result.Bytes}
 			}
 			_, _ = frame.Write(line)
 		}
-		rc.releaseSSELineBuffer(reserved)
 		frameComplete := isSSEBlankLine(line)
 		if frameComplete || (err == io.EOF && frame.Len() > 0) {
 			rawFrame := append([]byte(nil), frame.Bytes()...)
@@ -131,6 +137,8 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			// Meter upstream usage even when it was requested by the router, but
 			// do not expose the usage-only chunk unless the caller opted in.
 			if normalizeDialect(dialect) == "openai-chat" && rc != nil && !rc.chatStreamIncludeUsage && isChatUsageOnlyFrame(rawFrame) {
+				rc.releaseSSELineBuffer(frameReserved)
+				frameReserved = 0
 				continue
 			}
 			firstFrame := !result.Committed
@@ -153,6 +161,8 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}
+			rc.releaseSSELineBuffer(frameReserved)
+			frameReserved = 0
 			if firstFrame && rc != nil {
 				ttfb := durationMillis(time.Since(rc.start))
 				rc.rec.TTFBMS = &ttfb

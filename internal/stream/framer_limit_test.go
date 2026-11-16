@@ -45,11 +45,16 @@ func TestFramerLineBufferBudget(t *testing.T) {
 	budget.limit = 8192
 	f = NewFramer(strings.NewReader("data: "+strings.Repeat("y", 2048)+"\n\n"), 0, 4096)
 	f.SetLineBufferBudget(budget)
-	if event, err := f.Next(); err != nil || len(event.Data) != 2048 {
+	event, err := f.Next()
+	if err != nil || len(event.Data) != 2048 {
 		t.Fatalf("event bytes=%d err=%v", len(event.Data), err)
 	}
+	if budget.used == 0 {
+		t.Fatal("event did not retain its line-buffer reservation")
+	}
+	event.ReleaseLineBufferBudget()
 	if budget.used != 0 {
-		t.Fatalf("reservation after line consumed = %d", budget.used)
+		t.Fatalf("reservation after event release = %d", budget.used)
 	}
 }
 
