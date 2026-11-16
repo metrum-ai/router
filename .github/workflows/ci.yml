@@ -231,6 +231,8 @@ jobs:
           python3 -m unittest discover -s examples/typescript-request-shape -p 'test_*.py' -v
           python3 -m unittest discover -s examples/typescript-pii-policy -p 'test_*.py' -v
           python3 -m unittest discover -s examples/fine-tune-qwen3p8-27b/router-loop -p 'test_canary_policy.py' -v
+      - name: v4.8 caller verifier migration test
+        run: python3 -m unittest scripts.release_upgrade_rollback_test -v
 
   # The source SBOM is required on merge groups and manual dispatch, not PRs
   # or main-push cache warming.

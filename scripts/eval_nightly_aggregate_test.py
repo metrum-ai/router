@@ -67,6 +67,10 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(result["aggregate"]["certification"], "sample_complete_not_certified")
         self.assertTrue(result["aggregate"]["sample_complete"])
         self.assertEqual(result["aggregate"]["gate_violations"], [])
+        self.assertEqual(result["aggregate"]["cost_basis"], {
+            "router_usage_rows_usd": "measured request_usage rows",
+            "direct_provider_usage_estimate_usd": "list-rate estimate",
+        })
 
     def test_missing_cells_and_insufficient_samples_never_become_ready(self):
         partial_matrix = {"cells": [MATRIX["cells"][0]], "task_gates": {}}
@@ -89,6 +93,30 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(result["aggregate"]["missing_cells"], [])
         self.assertFalse(result["aggregate"]["sample_complete"])
         self.assertEqual(result["aggregate"]["gate_violations"], [])
+
+    def test_old_report_gate_violations_are_historical_not_current_failures(self):
+        old = report("old-run")
+        old["started_utc"] = "2020-01-01T00:00:00Z"
+        old["gate_violations"] = ["provider regression from old run"]
+        matrix = {"cells": MATRIX["cells"], "task_gates": {
+            "max_time_to_first_event_ms": 100,
+            "max_completion_latency_ms": 1,
+            "max_tool_turns": 10,
+            "max_cost_per_verified_task_usd": 1,
+        }}
+        result = aggregate_reports([old], matrix)
+        self.assertEqual(result["aggregate"]["gate_violations"], [])
+        self.assertTrue(any("provider regression from old run" in error
+                            for error in result["aggregate"]["historical_gate_violations"]))
+        self.assertTrue(any("completion latency" in error
+                            for error in result["aggregate"]["historical_gate_violations"]))
+        self.assertEqual(result["aggregate"]["historical_gate_violation_max_age_days"], 30)
+
+    def test_recent_gate_violations_still_fail(self):
+        current = report("current-run")
+        current["gate_violations"] = ["current provider regression"]
+        result = aggregate_reports([current], MATRIX)
+        self.assertIn("current-run: current provider regression", result["aggregate"]["gate_violations"])
 
     def test_unexpected_missing_cells_remain_gate_violations(self):
         partial_matrix = {"cells": [*MATRIX["cells"], {

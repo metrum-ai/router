@@ -7,9 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,7 +69,7 @@ func TestGovernanceLoadAuditExportPostgres(t *testing.T) {
 func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 	t.Helper()
 	const workers = 64
-	const secondToken = "synthetic-audit-second-token"
+	const secondToken = "rtr_audit_second_testtoken"
 	t.Setenv("GOVERNANCE_TEST_ADMIN_HASH", mustBcryptHash(t, "synthetic-password"))
 	var primaryCalls, fallbackCalls atomic.Int64
 	canceledUpstreams := make(chan struct{}, workers/4)
@@ -126,14 +124,20 @@ func runGovernanceLoadAuditExport(t *testing.T, usageCfg *UsageDBConfig) {
 	cfg.Callers[0].Rate = RateConfig{RPM: 10000, TPM: 10000000, Concurrent: workers + 10}
 	second := cfg.Callers[0]
 	second.ID, second.TokenID = "audit-second", "rtr_audit_second"
-	digest := sha256.Sum256([]byte(secondToken))
-	second.TokenSHA256 = hex.EncodeToString(digest[:])
+	second.TokenHash = mustCallerTokenHashForTest(t, secondToken)
 	cfg.Callers = append(cfg.Callers, second)
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	// Keep this load test focused on cancellation and audit throughput rather
+	// than making all workers perform the bounded first-use PBKDF2 in parallel.
+	for _, token := range []string{testToken, secondToken} {
+		if _, _, err := svc.authenticate("Bearer "+token, ""); err != nil {
+			t.Fatalf("warm caller verifier: %v", err)
+		}
+	}
 	router := httptest.NewServer(svc.Handler())
 	defer router.Close()
 	client := &http.Client{Timeout: 90 * time.Second}

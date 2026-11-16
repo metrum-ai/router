@@ -43,7 +43,7 @@ def valid_config() -> dict:
                 "path_prefix": "/admin/reports",
             },
         },
-        "callers": [{"id": "test", "token_sha256": "a" * 64}],
+        "callers": [{"id": "test", "token_hash": "pbkdf2-sha3-512:i=20000:" + "s" * 43 + ":" + "k" * 86, "token_id": "rtr_test_key"}],
     }
 
 
@@ -100,16 +100,17 @@ def main() -> int:
     assert failed.returncode == 1
     assert "missing trusted_proxy_cidrs entry 10.0.0.0/8" in failed.stderr
 
-    # token_hash (PBKDF2-SHA3-512) callers are accepted alongside legacy
-    # token_sha256 callers; malformed verifiers fail without being echoed.
+    # PBKDF2-SHA3-512 callers are accepted; legacy verifiers are rejected.
     good_hash = "pbkdf2-sha3-512:i=20000:" + "s" * 43 + ":" + "k" * 86
     hashed = valid_config()
-    hashed["callers"] = [
-        {"id": "new", "token_hash": good_hash, "token_id": "rtr_metrum_new_p_dev_k1"},
-        {"id": "legacy", "token_sha256": "a" * 64},
-    ]
+    hashed["callers"] = [{"id": "new", "token_hash": good_hash, "token_id": "rtr_metrum_new_p_dev_k1"}]
     passed = run_check(hashed)
     assert passed.returncode == 0, passed.stderr
+    legacy = valid_config()
+    legacy["callers"] = [{"id": "legacy", "token_sha256": "a" * 64}]
+    failed = run_check(legacy)
+    assert failed.returncode == 1
+    assert "missing valid token_hash" in failed.stderr
 
     for bad in (
         "pbkdf2-sha3-512$i=20000$" + "s" * 43 + "$" + "k" * 86,

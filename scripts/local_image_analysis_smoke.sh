@@ -8,7 +8,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 work=$(mktemp -d)
 port=${VLM_SMOKE_PORT:-18091}
-token=${VLM_SMOKE_TOKEN:-rtr_local_vlm_smoke}
+token=${VLM_SMOKE_TOKEN:-rtr_metrum_local_vlm_smoke_k1_secret}
 receipt=https://cdn.learnopencv.com/wp-content/uploads/2018/06/04100007/receipt.png
 pid=""
 cleanup() { [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true; rm -rf "$work"; }
@@ -17,7 +17,9 @@ trap cleanup EXIT
 for key in OPENAI_API_KEY XAI_API_KEY OPENROUTER_API_KEY MINIMAX_API_KEY; do
   test -n "${!key:-}" || { echo "$key is required" >&2; exit 2; }
 done
-hash=$(printf %s "$token" | sha256sum | awk '{print $1}')
+token_meta=$(printf %s "$token" | python3 scripts/caller_token.py)
+hash=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_hash"])' <<<"$token_meta")
+token_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_id"])' <<<"$token_meta")
 cat >"$work/config.yaml" <<YAML
 server:
   listen: ":${port}"
@@ -34,7 +36,8 @@ models:
   image-analysis-smoke-minimax-m3: {strategy: static, targets: [{provider: minimax, model_ref: m3, request_shape_support: {required_input_modalities: [image], supported_inbound_dialects: [openai-responses], min_requested_output_tokens: 512}}]}
 callers:
   - id: local-vlm-smoke
-    token_sha256: "$hash"
+    token_hash: "$hash"
+    token_id: "$token_id"
     allow: [image-analysis-smoke-gpt54, image-analysis-smoke-grok45, image-analysis-smoke-claude46, image-analysis-smoke-minimax-m3]
 YAML
 go run -tags dev_no_license ./cmd/metrum-ai-router -config "$work/config.yaml" >"$work/router.log" 2>&1 & pid=$!

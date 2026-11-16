@@ -70,7 +70,7 @@ func TestProjectBudgetHTTPEnforcementE2E(t *testing.T) {
 	cfg.Callers[0].Project = "local"
 	cfg.Callers[0].Environment = "prod"
 	cfg.Callers[0].OwnerUser = "alice"
-	cfg.Callers = append(cfg.Callers, CallerConfig{ID: "bob", OwnerUser: "bob", Project: "local", Environment: "prod", Status: "active", TokenSHA256: legacyCallerTokenSHA256Hex(projectBudgetQuotaToken), TokenID: "rtr_project_budget_quota_e2e", Allow: []string{"default"}})
+	cfg.Callers = append(cfg.Callers, CallerConfig{ID: "bob", OwnerUser: "bob", Project: "local", Environment: "prod", Status: "active", TokenHash: mustCallerTokenHashForTest(t, projectBudgetQuotaToken), TokenID: "rtr_project_budget_quota_e2e", Allow: []string{"default"}})
 	cfg.Users = []UserConfig{{ID: "alice", Status: "active", Type: "human"}}
 	cfg.Users = append(cfg.Users, UserConfig{ID: "bob", Status: "active", Type: "human"})
 	cfg.Projects = []ProjectConfig{{ID: "local", Status: "active", Environments: []ProjectEnvironmentConfig{{ID: "prod", Status: "active"}}}}

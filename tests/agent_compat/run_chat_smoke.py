@@ -10,6 +10,7 @@ not be inferred from this smoke.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -23,8 +24,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PI = ROOT / "tests/agent_compat/node_modules/.bin/pi"
-TOKEN = "agent-compat-local-test-token"
-DIGEST = hashlib.sha256(TOKEN.encode()).hexdigest()
+TOKEN_ID = "rtr_agent_compat_local_test"
+TOKEN = TOKEN_ID + "_secret"
+_SALT = b"agent-compat-test-salt16"
+_KEY = hashlib.pbkdf2_hmac("sha3_512", TOKEN.encode(), _SALT, 10000, 64)
+_b64 = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+DIGEST = f"pbkdf2-sha3-512:i=10000:{_b64(_SALT)}:{_b64(_KEY)}"
 
 
 def has_strict_json_schema(body: dict) -> bool:
@@ -187,7 +192,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{openai_chat: [tools, tool_choice, structured_outputs]}}}}]}}
 callers:
   - id: agent-compat
-    token_sha256: "{DIGEST}"
+    token_hash: "{DIGEST}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

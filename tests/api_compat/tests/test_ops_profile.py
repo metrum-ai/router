@@ -11,6 +11,7 @@ behavior each test programs directly. Metrum AI.
 from __future__ import annotations
 
 import contextlib
+import base64
 import hashlib
 import http.client
 import json
@@ -31,6 +32,7 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     PROMPT_CANARY,
     assert_generated_artifacts_redacted,
@@ -38,10 +40,14 @@ from conftest import (
     stop_router,
 )
 
-QUOTA_CALLER = "synthetic-api-compat-ops-quota"
-OTHER_CALLER = "synthetic-api-compat-ops-other"
-QUOTA_DIGEST = hashlib.sha256(QUOTA_CALLER.encode()).hexdigest()
-OTHER_DIGEST = hashlib.sha256(OTHER_CALLER.encode()).hexdigest()
+QUOTA_ID = "rtr_api_compat_ops_quota"
+QUOTA_CALLER = QUOTA_ID + "_secret"
+OTHER_ID = "rtr_api_compat_ops_other"
+OTHER_CALLER = OTHER_ID + "_secret"
+QUOTA_DIGEST = hashlib.pbkdf2_hmac("sha3_512", QUOTA_CALLER.encode(), b"api-compat-quota", 10000)
+OTHER_DIGEST = hashlib.pbkdf2_hmac("sha3_512", OTHER_CALLER.encode(), b"api-compat-other", 10000)
+QUOTA_DIGEST = "pbkdf2-sha3-512:i=10000:" + base64.urlsafe_b64encode(b"api-compat-quota").decode().rstrip("=") + ":" + base64.urlsafe_b64encode(QUOTA_DIGEST).decode().rstrip("=")
+OTHER_DIGEST = "pbkdf2-sha3-512:i=10000:" + base64.urlsafe_b64encode(b"api-compat-other").decode().rstrip("=") + ":" + base64.urlsafe_b64encode(OTHER_DIGEST).decode().rstrip("=")
 # Synthetic provider-side secret and host that must never reach the caller.
 UPSTREAM_SECRET_CANARY = "sk-ops-upstream-secret-canary-0000"
 UPSTREAM_HOST_CANARY = "internal-provider.ops-canary.invalid"
@@ -193,20 +199,23 @@ models:
   messages: {{strategy: static, targets: [{{provider: messages, model: ops-messages, input_price_per_million_usd: 2.0, output_price_per_million_usd: 4.0, cached_input_price_per_million_usd: 0.2, tool_support: {{anthropic_messages: [client_tools]}}, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: ops-main
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat, chat-fallback, chat-priced-fallback, chat-dead-first, chat-timeout, responses-fallback, messages-fallback, messages]
     # Infrastructure-only local capacity shared across allowed groups.
     rate: &local_rate {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: &local_quota {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
     key: &local_key {{lifetime_tokens: 40000000000}}
   - id: ops-other
-    token_sha256: {OTHER_DIGEST}
+    token_hash: {OTHER_DIGEST}
+    token_id: {OTHER_ID}
     allow: [chat]
     rate: *local_rate
     quota: *local_quota
     key: *local_key
   - id: ops-quota
-    token_sha256: {QUOTA_DIGEST}
+    token_hash: {QUOTA_DIGEST}
+    token_id: {QUOTA_ID}
     allow: [chat, chat-timeout]
     rate: *local_rate
     key: *local_key

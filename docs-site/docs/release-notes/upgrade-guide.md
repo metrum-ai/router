@@ -150,6 +150,27 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 secret DLP
+
+Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
+credential detector pack to inbound text, buffered responses, and streamed
+text. `mode: redact_only` replaces matches with placeholders; `mode:
+fail_on_match` blocks matching requests. Existing custom rules and replacement
+limits continue to apply. Configure `apply_to.tool_results` for tool-result
+coverage. Streamed text keeps a 512-byte ordinary rolling tail, holds plausible
+JWTs from their start (up to 4,096 bytes per segment), and tracks every PEM
+BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
+provider-token or credential-assignment candidates fail closed. Unary response
+replacement-limit exhaustion also fails closed. Response redaction requires
+`secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
+their prior response behavior.
+
+As an interim limit until the #929 bounded tool-call inspection integration
+lands, streams with advertised tools on a group with `secrets_enabled: true`
+fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
+requests or omit tools until that integration is available. This gate does not
+apply to groups without secret DLP enabled.
+
 ## v5.0.0 trusted proxy client IP resolution
 
 When `server.client_ip.trusted_proxy_cidrs` is configured, the router now walks
@@ -223,6 +244,81 @@ deliberate direct database operations while the router is stopped.
    or `metrum-genai-smartrouter-*` CLIs.
 
 ## v5.0.0 Configuration Changes
+
+### Caller token verifier removal
+
+v5 rejects a non-empty `callers[].token_sha256`; an empty value written by v4.8
+alongside `token_hash` is ignored. `callers migrate-legacy` is shipped only in
+the v5 `metrum-ai-routerctl`; run that v5 binary against a v4.8 config before
+upgrading the router. Back up the configuration and token files, then migrate
+every active legacy caller:
+
+```sh
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file <private-token-file>
+# Or pass the token on stdin without placing it in an argument:
+cat <private-token-file> | metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file -
+```
+
+The command verifies that the supplied token matches the stored SHA-256 value,
+derives the salted verifier, preserves the token, removes `token_sha256`, and
+keeps a configuration backup. The raw token is read from the private file; do
+not pass it as a command-line argument. If the token is unavailable or does not
+have the supported `<token_id>_<secret>` format, use
+`metrum-ai-routerctl callers rotate --config config.yaml --id <caller-id>
+--token-out <private-file>` and distribute the replacement once. Rotation
+preserves caller status and revocation metadata; add `--reactivate` only when
+you intend to restore access. For disabled or revoked legacy callers, use
+`migrate-legacy --remove-disabled`; this deletes the entire caller entry without
+issuing a token. v4.8 rejects a caller with neither verifier even when it is
+disabled, so do not leave a verifier-free caller entry in the file. The removed
+caller must be recreated explicitly if access is needed later. Run:
+
+```sh
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --remove-disabled
+```
+
+Migrate every active legacy caller before running `callers verify`; verify each
+token after all migrations are complete.
+`callers hash` only prints hash material; it does not edit a config and is not
+the migration command.
+
+The migrated active caller remains readable by v4.8 because it contains the
+supported salted `token_hash` field and no non-empty legacy verifier. Rotated
+callers also remain readable; revoked callers stay disabled after rotation.
+Disabled or revoked callers removed with `--remove-disabled` are absent from
+the migrated file. Retain the original backup and recreate removed callers only
+through a reviewed, explicit provisioning step.
+
+For database-backed config, export the active document, edit a local copy or
+run the CLI against the exported document to migrate each legacy caller, import
+the updated YAML as a new config set, review its diff, then activate that set.
+Test startup from the stored document before completing rollout. The recommended
+v4.8 DB migration is a maintenance-window procedure: stop every router replica
+before the `--offline` export, import, and activate commands below, keep them
+stopped through activation, then start all replicas on v4.8 and verify startup
+before upgrading. This avoids a mixed fleet reading incompatible config. For
+file-mode deployments, migrate a copy while v4.8 serves its unchanged file;
+replace the file and restart v4.8 to verify it before upgrading.
+
+For a SQLite control-plane database, the command sequence is:
+
+```sh
+metrum-ai-routerctl config export --offline --db <config-db> --scope prod --out config.yaml
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file <private-token-file>
+metrum-ai-routerctl config import --offline --db <config-db> --scope prod --name v5-caller-migration --yaml config.yaml
+metrum-ai-routerctl config activate --offline --db <config-db> --scope prod --set-id <imported-set-id>
+```
+
+Repeat migration for every active legacy caller before running verify, import,
+review, and activation. Run these `--offline` commands only while every router
+replica is stopped. Use the v5 binary for each step. For PostgreSQL, add
+`--driver postgres --dsn-env <environment-variable>` to each `--offline`
+database command. Review the
+imported set and diff before activation; retain the exported original and
+database backup for rollback.
+
+The load error names `callers migrate-legacy`; use `callers rotate` when no
+usable raw token is available.
 
 ### TypeScript Routing Policy Removal
 
@@ -757,8 +853,7 @@ plan the conversion now. No usage-database or control-plane schema migration.
 3. Check with `metrum-ai-routerctl callers verify --token-file <file>
    --config <config.yaml> --id <caller-id>` and restart the router.
 4. `metrum-ai-routerctl callers generate`, `metrum-ai-router-token-gen` and
-   the database-mode caller admin API now issue `token_hash` by default. Use
-   `--hash-format legacy-sha256` only when issuing tokens for older routers.
+   the database-mode caller admin API issue `token_hash` by default.
 
 Redis-backed bridge sessions move to a SHA3-512 key layout
 (`metrum-ai-router:bridge-session-v2:...`). For one session TTL plus one hour

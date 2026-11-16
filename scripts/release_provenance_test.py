@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 import yaml
+from release_image_smoke import smoke_caller_credentials
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release.yml"
@@ -248,6 +249,15 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, release_runs)
                 self.assertIn(command, dry_runs)
+
+    def test_release_image_smoke_uses_salted_caller_config(self):
+        token_hash, token_id = smoke_caller_credentials()
+        smoke_source = (ROOT / "scripts/release_image_smoke.py").read_text(encoding="utf-8")
+        self.assertTrue(token_hash.startswith("pbkdf2-sha3-512:i=20000:"))
+        self.assertEqual(token_id, "rtr_metrum_release_image_smoke_test")
+        self.assertIn('"    token_hash: {token_hash}\\n"', smoke_source)
+        self.assertIn('"    token_id: {token_id}\\n"', smoke_source)
+        self.assertNotIn('token_sha256:', smoke_source)
 
 
 if __name__ == "__main__":

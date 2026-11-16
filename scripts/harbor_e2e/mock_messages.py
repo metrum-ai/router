@@ -11,10 +11,22 @@ class Mock(http.server.BaseHTTPRequestHandler):
   if path not in ('/anthropic/v1/messages','/v1/messages','/v1/responses','/openai/v1/responses'):self.send_error(404);return
   if path in ('/v1/responses','/openai/v1/responses'):
    body=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))));Mock.calls+=1
+   function_result=any(item.get('type')=='function_call_output' for item in body.get('input',[]) if isinstance(item,dict))
+   call={'id':'fc_replay','type':'function_call','call_id':'call_replay','name':'write',
+         'arguments':json.dumps({'path':'/app/hello.txt','content':'Hello, Harbor!\n'})}
+   if function_result:
+    events=(('response.created',{'type':'response.created','response':{'id':'resp_replay','object':'response','status':'in_progress','output':[]}}),
+            ('response.output_text.delta',{'type':'response.output_text.delta','delta':'Done.'}),
+            ('response.completed',{'type':'response.completed','response':{'id':'resp_replay','object':'response','status':'completed','output':[{'type':'message','role':'assistant','content':[{'type':'output_text','text':'Done.'}]}],'output_text':'Done.','usage':{'input_tokens':3,'output_tokens':1,'total_tokens':4}}}))
+   else:
+    events=(('response.created',{'type':'response.created','response':{'id':'resp_replay','object':'response','status':'in_progress','output':[]}}),
+            ('response.output_item.added',{'type':'response.output_item.added','output_index':0,'item':{**call,'arguments':''}}),
+            ('response.function_call_arguments.delta',{'type':'response.function_call_arguments.delta','item_id':'fc_replay','output_index':0,'delta':call['arguments']}),
+            ('response.function_call_arguments.done',{'type':'response.function_call_arguments.done','item_id':'fc_replay','output_index':0,'arguments':call['arguments']}),
+            ('response.output_item.done',{'type':'response.output_item.done','output_index':0,'item':call}),
+            ('response.completed',{'type':'response.completed','response':{'id':'resp_replay','object':'response','status':'completed','output':[call],'usage':{'input_tokens':3,'output_tokens':1,'total_tokens':4}}}))
    self.send_response(200);self.send_header('Content-Type','text/event-stream');self.end_headers()
-   for name,event in (('response.created',{'type':'response.created','response':{'id':'resp_selftest','object':'response','status':'in_progress','output':[]}}),
-                      ('response.output_text.delta',{'type':'response.output_text.delta','delta':'ok'}),
-                      ('response.completed',{'type':'response.completed','response':{'id':'resp_selftest','object':'response','status':'completed','output':[],'usage':{'input_tokens':3,'output_tokens':1,'total_tokens':4}}})):
+   for name,event in events:
     self.wfile.write(('event: '+name+'\ndata: '+json.dumps(event)+'\n\n').encode());self.wfile.flush()
    return
   body=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))));Mock.calls+=1

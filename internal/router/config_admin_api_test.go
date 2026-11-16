@@ -67,7 +67,7 @@ callers:
     project: search
     environment: dev
     status: active
-    token_sha256: "` + configAdminTestTokenSHA256() + `"
+    token_hash: "` + configAdminTestTokenHash() + `"
     token_id: rtr_admin_api_test
     allow:
       - agent-default

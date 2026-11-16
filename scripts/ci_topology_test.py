@@ -300,6 +300,25 @@ def assert_eval_infra_nightly_workflow() -> None:
             "Harbor documentation must distinguish v5.0 live cells from offline stubs")
 
 
+def assert_tool_compat_live_workflow() -> None:
+    text = read(WORKFLOWS / "agent-tool-compat-live.yml")
+    triggers = text.split("permissions:", 1)[0]
+    require("schedule:" in triggers and "workflow_dispatch:" in triggers
+            and all(f"{event}:" not in triggers for event in ("pull_request", "push", "merge_group")),
+            "paid tool compatibility runs must be scheduled or manually dispatched only")
+    job = jobs(text)["live-matrix"]
+    require("if: github.ref == 'refs/heads/main'" in job and "environment: evaluation" in job
+            and "contents: read" in text,
+            "paid tool compatibility job must be main-only, protected, and least-privilege")
+    require("if: always() && steps.gate.outcome != 'skipped'" in text
+            and "if: always()" in text
+            and "FRESH_AFTER" in text
+            and "tmp/compat-matrix/gate.json" in text.split("      - name: Upload results", 1)[1],
+            "failed live cells must still convert, ingest, and upload only this run's sanitized gate report")
+    require("parallel_tool_live_router_test.py" in read(ROOT / "Makefile"),
+            "real SDK -> router -> scripted upstream smoke must run in CI")
+
+
 def assert_hierarchy_release_gate() -> None:
     matrix = read(WORKFLOWS / "hierarchy-matrix.yml")
     require("workflow_call:" in matrix and "workflow_dispatch:" in matrix,
@@ -573,6 +592,7 @@ def main() -> int:
     assert_provider_workflows()
     assert_agent_chain_workflow()
     assert_eval_infra_nightly_workflow()
+    assert_tool_compat_live_workflow()
     assert_hierarchy_release_gate()
     release = read(WORKFLOWS / "release.yml")
     require("environment: release" in release, "release image publication must be protected by the release environment")

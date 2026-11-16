@@ -5,7 +5,6 @@
 """Run pinned Claude Code through the local MCP gateway and a scripted model."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import signal
@@ -18,13 +17,11 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
-from run_chat_smoke import free_port
+from run_chat_smoke import DIGEST, TOKEN, TOKEN_ID, free_port
 
 ROOT = Path(__file__).resolve().parents[2]
 CLAUDE = ROOT / "tests/agent_compat/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs"
-TOKEN = "mcp-gateway-local-test-token"
 UPSTREAM_CREDENTIAL = "mcp-upstream-local-test-credential"
-DIGEST = hashlib.sha256(TOKEN.encode()).hexdigest()
 
 
 class Fixtures(BaseHTTPRequestHandler):
@@ -173,7 +170,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: synthetic, tool_support: {{anthropic_messages: [client_tools, tool_choice]}}, reasoning: {{supported: true, mode: opt_in, control: token_budget}}}}]}}
 callers:
   - id: agent
-    token_sha256: "{DIGEST}"
+    token_hash: "{DIGEST}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
 mcp:
   enabled: true

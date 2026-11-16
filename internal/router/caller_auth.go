@@ -17,9 +17,6 @@ package router
 //  3. On a digest miss the PBKDF2-HMAC-SHA3-512 verifier runs once, inside a
 //     small semaphore so a flood of wrong secrets for a known token_id can
 //     only use a bounded share of the CPU.
-//  4. Deprecated token_sha256 callers are checked last, by the original
-//     constant-time scan, only when such callers are configured.
-//
 // The verified-digest cache is bounded by construction: one slot per
 // token_hash caller, and only verified tokens are stored.
 
@@ -27,7 +24,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha3"
-	"crypto/subtle"
 	"hash"
 	"io"
 	"log"
@@ -52,10 +48,9 @@ type callerAuthEntry struct {
 // callerAuthIndex is immutable once built, apart from each entry's verified
 // digest slot. Config reloads build a new index and swap it in.
 type callerAuthIndex struct {
-	byTokenID      map[string]*callerAuthEntry
-	maxTokenIDLen  int
-	legacyBySHA256 map[string]*callerRuntime
-	revoked        map[string]struct{}
+	byTokenID     map[string]*callerAuthEntry
+	maxTokenIDLen int
+	revoked       map[string]struct{}
 }
 
 // callerAuthState holds the per-process secrets and limits shared by every
@@ -81,19 +76,17 @@ func newCallerAuthState() *callerAuthState {
 		slots = 1
 	}
 	st := &callerAuthState{digestKey: key, kdfSlots: make(chan struct{}, slots)}
-	st.index.Store(&callerAuthIndex{byTokenID: map[string]*callerAuthEntry{}, legacyBySHA256: map[string]*callerRuntime{}})
+	st.index.Store(&callerAuthIndex{byTokenID: map[string]*callerAuthEntry{}})
 	return st
 }
 
-// rebuild indexes callers and logs one deprecation warning per caller that
-// still uses token_sha256. Verified digests carry over for callers whose
+// rebuild indexes callers. Verified digests carry over for callers whose
 // token_id and token_hash did not change.
 func (st *callerAuthState) rebuild(callers []*callerRuntime, revoked ...map[string]struct{}) {
 	previous := st.index.Load()
 	next := &callerAuthIndex{
-		byTokenID:      make(map[string]*callerAuthEntry, len(callers)),
-		legacyBySHA256: map[string]*callerRuntime{},
-		revoked:        map[string]struct{}{},
+		byTokenID: make(map[string]*callerAuthEntry, len(callers)),
+		revoked:   map[string]struct{}{},
 	}
 	deniedTokens := map[string]struct{}(nil)
 	if len(revoked) != 0 {
@@ -101,10 +94,8 @@ func (st *callerAuthState) rebuild(callers []*callerRuntime, revoked ...map[stri
 	} else if previous != nil {
 		deniedTokens = previous.revoked
 	}
-	if deniedTokens != nil {
-		for verifier := range deniedTokens {
-			next.revoked[verifier] = struct{}{}
-		}
+	for verifier := range deniedTokens {
+		next.revoked[verifier] = struct{}{}
 	}
 	for _, rt := range callers {
 		if rt == nil {
@@ -129,10 +120,6 @@ func (st *callerAuthState) rebuild(callers []*callerRuntime, revoked ...map[stri
 				next.maxTokenIDLen = len(tokenID)
 			}
 			continue
-		}
-		if legacy := strings.TrimSpace(rt.cfg.TokenSHA256); legacy != "" {
-			next.legacyBySHA256[strings.ToLower(legacy)] = rt
-			log.Printf("caller %s uses deprecated token_sha256; rotate it to token_hash (%s) (see #281)", rt.cfg.ID, CallerTokenHashScheme)
 		}
 	}
 	st.index.Store(next)
@@ -169,22 +156,6 @@ func (st *callerAuthState) lookup(token string) (*callerRuntime, string) {
 			return nil, ""
 		}
 		return entry.caller, publicTokenID(entry.caller.cfg.TokenID)
-	}
-	if len(idx.legacyBySHA256) == 0 {
-		return nil, ""
-	}
-	sumHex := legacyCallerTokenSHA256Hex(token)
-	for configured, caller := range idx.legacyBySHA256 {
-		if subtle.ConstantTimeCompare([]byte(configured), []byte(sumHex)) == 1 {
-			if _, denied := idx.revoked[caller.cfg.TokenSHA256]; denied {
-				return nil, ""
-			}
-			label := "sha256:" + sumHex[:12]
-			if caller.cfg.TokenID != "" {
-				label = publicTokenID(caller.cfg.TokenID)
-			}
-			return caller, label
-		}
 	}
 	return nil, ""
 }

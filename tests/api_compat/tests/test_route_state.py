@@ -27,7 +27,7 @@ from conftest import (
     spawn_router,
     stop_router as _stop_router,
 )
-from harness import CALLER, CALLER_DIGEST, DENIED_CALLER, DENIED_CALLER_DIGEST
+from harness import CALLER, CALLER_ID, CALLER_DIGEST, DENIED_CALLER, DENIED_CALLER_DIGEST
 from harness.scripted_upstream import ScriptedScenario
 
 SESSION_HEADER = "X-Router-Session"
@@ -191,10 +191,12 @@ models:
 {sessions}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [stateful, other-stateful]
   - id: synthetic-second
-    token_sha256: {DENIED_CALLER_DIGEST}
+    token_hash: {DENIED_CALLER_DIGEST}
+    token_id: {DENIED_CALLER_ID}
     allow: [stateful]
 '''
 
@@ -585,7 +587,8 @@ models:
         responses_to_chat: {{enabled: true, text: true, function_tools: true, tool_choice: true, validation_status: passed}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [c2r, r2c]
 '''
 

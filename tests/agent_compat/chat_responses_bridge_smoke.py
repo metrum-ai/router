@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from codex_responses_smoke import Mock
-from run_chat_smoke import DIGEST, PI, ROOT, TOKEN, free_port, runtime_environment
+from run_chat_smoke import DIGEST, PI, ROOT, TOKEN, TOKEN_ID, free_port, runtime_environment
 
 
 def main():
@@ -61,7 +61,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: synthetic-responses, tool_support: {{openai_responses: [function, tool_choice]}}, bridges: {{chat_to_responses: {{enabled: true, text: true, tools: true, tool_choice: true}}}}}}]}}
 callers:
   - id: agent-compat
-    token_sha256: "{DIGEST}"
+    token_hash: "{DIGEST}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

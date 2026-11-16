@@ -56,9 +56,9 @@ EVAL_CI_REPORT_TIMESTAMP ?=
 EVAL_SAVE_CI_REPORT ?= false
 export EVAL_MODEL EVAL_BASE_URL EVAL_API EVAL_LIMIT EVAL_CONCURRENCY EVAL_TIMEOUT EVAL_LOG_ROOT EVAL_RUN_ID EVAL_LOG_DIR EVAL_REASONING EVAL_REQUIRE_REASONING_COVERAGE EVAL_REASONING_COVERAGE_FILE EVAL_USAGE_CONFIG_YAML EVAL_USAGE_CONFIG_FILE EVAL_USAGE_CALLER_ID EVAL_USAGE_CLIENT EVAL_USAGE_REPORT_BIN EVAL_USAGE_EXPORT_TIMEOUT EVAL_MODEL_KIND EVAL_SUITE EVAL_BASELINE_JSON EVAL_POLICY EVAL_INSPECT EVAL_CI_REPORT_DIR EVAL_CI_REPORT_TIMESTAMP EVAL_SAVE_CI_REPORT
 
-# Keep the repository's historical validation contract for bare `make` even
-# though the EKS help target appears earlier in this file.
-.DEFAULT_GOAL := test
+# CodeQL's Go autobuild invokes plain `make`; keep that compile-only so static
+# analysis does not execute the repository's full test suite.
+.DEFAULT_GOAL := build-package-binaries
 
 # Tenant discovery/network-policy helpers (not staging delivery).
 DOCKER ?= docker
@@ -368,8 +368,10 @@ test-reference-configs:
 	go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
 	for tier in $(REFERENCE_TIERS); do \
 	  echo "validating deploy/reference/$$tier/config.yaml"; \
+	  sed 's/REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH/pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/g' \
+	    "deploy/reference/$$tier/config.yaml" > "$$tmp/reference-config.yaml" || exit 1; \
 	  $(REFERENCE_CONFIG_ENV) "$$tmp/routerctl" config validate \
-	    --config "deploy/reference/$$tier/config.yaml" >/dev/null || exit 1; \
+	    --config "$$tmp/reference-config.yaml" >/dev/null || exit 1; \
 	done
 
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
@@ -483,6 +485,7 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/harbor_promotion_test.py
 	python3 scripts/harbor_nightly_budget_test.py
 	python3 scripts/harbor_e2e/prepare_catalog_tasks_test.py
+	python3 scripts/harbor_e2e/mock_messages_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/direct_provider_canary_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
@@ -495,6 +498,8 @@ ci-python: secret-contract capability-smoke-contracts
 	$(PYTHON) scripts/compat_results_test.py
 	$(PYTHON) scripts/tool_compat_matrix_test.py
 	$(PYTHON) scripts/tool_compat_live_matrix_test.py
+	$(PYTHON) scripts/parallel_tool_live_client_test.py
+	uv run --project tests/api_compat --locked python scripts/parallel_tool_live_router_test.py
 	$(PYTHON) scripts/ci_changes_test.py
 
 .PHONY: ci-examples
