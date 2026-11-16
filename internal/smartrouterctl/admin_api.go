@@ -10,6 +10,7 @@ package smartrouterctl
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -71,35 +72,54 @@ func ResolveAdminCredential(fileFlag string) (string, error) {
 // NewAdminAPIClient builds the client from --router-url / ROUTER_URL plus the
 // resolved admin credential.
 func NewAdminAPIClient(routerURL, keyFile string) (*AdminAPIClient, error) {
+	return NewAdminAPIClientWithSocket(routerURL, keyFile, "")
+}
+
+// NewAdminAPIClientWithSocket configures either TCP or Unix-domain transport.
+func NewAdminAPIClientWithSocket(routerURL, keyFile, socketPath string) (*AdminAPIClient, error) {
 	base := strings.TrimSpace(routerURL)
-	if base == "" {
+	socketPath = strings.TrimSpace(socketPath)
+	if base == "" && socketPath == "" {
 		base = strings.TrimSpace(os.Getenv("ROUTER_URL"))
 	}
-	if base == "" {
+	if base == "" && socketPath == "" {
 		base = "http://127.0.0.1:8081"
 	}
-	parsed, err := url.Parse(base)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, fmt.Errorf("invalid router URL")
+	if base != "" && socketPath != "" {
+		return nil, fmt.Errorf("choose either --router-url or --socket")
 	}
-	if parsed.Path != "" && parsed.Path != "/" {
-		return nil, fmt.Errorf("router URL must be an origin without a path")
-	}
-	if parsed.Scheme != "https" {
-		ip := net.ParseIP(parsed.Hostname())
-		if parsed.Scheme != "http" || (parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
-			return nil, fmt.Errorf("admin API endpoint requires HTTPS except on loopback")
+	if base != "" {
+		parsed, err := url.Parse(base)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("invalid router URL")
+		}
+		if parsed.Path != "" && parsed.Path != "/" {
+			return nil, fmt.Errorf("router URL must be an origin without a path")
+		}
+		if parsed.Scheme != "https" {
+			ip := net.ParseIP(parsed.Hostname())
+			if parsed.Scheme != "http" || (parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
+				return nil, fmt.Errorf("admin API endpoint requires HTTPS except on loopback")
+			}
 		}
 	}
 	token, err := ResolveAdminCredential(keyFile)
 	if err != nil {
 		return nil, err
 	}
-	return &AdminAPIClient{
+	client := &AdminAPIClient{
 		BaseURL: strings.TrimRight(base, "/"),
 		Token:   token,
 		HTTP:    &http.Client{Timeout: adminAPIRequestTimeout(), CheckRedirect: refuseAdminRedirect},
-	}, nil
+	}
+	if socketPath != "" {
+		client.BaseURL = "http://unix"
+		transport := &http.Transport{DisableKeepAlives: true, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}}
+		client.HTTP = &http.Client{Timeout: adminAPIRequestTimeout(), Transport: transport, CheckRedirect: refuseAdminRedirect}
+	}
+	return client, nil
 }
 
 func refuseAdminRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

@@ -8,12 +8,12 @@
 
 ### Added
 
+- Add an optional admin Unix socket with configurable owner/mode and `metrum-ai-routerctl --socket` transport; existing authentication and authorization stay in force.
 - Governed per-domain fine-tuning operator workflow: opt-in encrypted capture,
   DLP-filtered export, external training and preregistered gates, bounded shadow,
   audited promotion, one-call rollback, and independent retention for copied
   datasets.
 - Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
-
 - Add `routerctl honeytoken issue` and `routerctl honeytoken report`, plus caller-scoped canary model groups. Issued decoy keys return a canned local completion and canary use raises a security event without contacting an upstream. Database-backed callers use router-config migration `2026111611` (schema 18).
 - Define trusted W3C `traceparent` correlation across router chains, with a new
   span and request ID per hop and safe scalar usage fields for joining requests.

@@ -29,6 +29,7 @@ func runPoliciesCommand(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("policies "+operation, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	endpoint := fs.String("router-url", "", "dedicated admin API URL (or ROUTER_URL)")
+	socketPath := fs.String("socket", "", "admin Unix socket path")
 	keyFile := fs.String("admin-key-file", "", "regular mode-0600 admin credential file")
 	id := fs.String("set-id", "", "policy set ID")
 	file := fs.String("file", "", "JSON request file, or - for stdin")
@@ -66,7 +67,7 @@ func runPoliciesCommand(args []string, out io.Writer) error {
 		}
 		body = raw
 	}
-	client, err := smartrouterctl.NewPolicyAPIClient(*endpoint, *keyFile)
+	client, err := smartrouterctl.NewPolicyAPIClientWithSocket(*endpoint, *keyFile, *socketPath)
 	if err != nil {
 		return err
 	}
