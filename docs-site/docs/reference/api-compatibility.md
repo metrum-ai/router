@@ -327,6 +327,8 @@ Usage and diagnostics show both sides: `inbound_dialect = openai-responses`, `ta
 
 Same-dialect OpenAI Chat uses native passthrough, including tool-less text and streaming requests. Sampling controls (`seed`, `n`, `top_p`, penalties, `logprobs`, `top_logprobs`, `logit_bias`, and `user`) survive forwarding; every response choice, refusal, and finish reason is preserved. Routing model identity, persistence policy, and configured target encoding still apply. The IR is used for translation, not native upstream encoding. The optional deterministic text cache retains its normalized replay behavior; native multiple-choice, refusal, tool-call and logprob responses bypass that IR-only cache so replay cannot erase them.
 
+Targets can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`. The router then omits that sampling field for that target and records the dropped field on its attempt. Without that declaration, a pre-commit upstream `unsupported_field` refusal can fall back to the next eligible target for streaming and non-streaming requests. Other non-retryable 4xx errors still stop fallback; a committed stream is never replayed.
+
 For OpenAI Chat Completions, a present `max_tokens` must be an integer >= 1; otherwise the router returns HTTP 400 `invalid-request` before upstream, on both text and tools paths. There are no model-specific validation caps or silent truncation.
 
 For OpenAI Chat Completions requests, both `max_tokens` and `max_completion_tokens` are treated as explicit output caps. If a Chat request sends both fields, `max_tokens` takes precedence for router eligibility and normalized upstream forwarding.
