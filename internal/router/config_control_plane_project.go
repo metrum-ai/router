@@ -45,8 +45,8 @@ var ProjectConfigHook = ProjectConfigToRelational
 //     (HTTP-Referer, User-Agent, X-Title) are persisted; other headers are
 //     dropped to honor the database-level allowlist check.
 //   - Caller tokens: only the token verifier and token_id are stored; raw
-//     caller tokens are never represented. The token_sha256 column holds
-//     either a self-describing token_hash value or legacy SHA-256 hex.
+//     caller tokens are never represented. The historical token_sha256
+//     column holds only the salted token_hash verifier.
 //   - Users / projects / memberships: written only when the corresponding
 //     tables already exist. The current control-plane schema does not create
 //     them, so the projection skips that work rather than failing.

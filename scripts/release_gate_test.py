@@ -93,10 +93,12 @@ class HarborStageTest(unittest.TestCase):
             tokens = harbor_config.caller_tokens()
             self.assertEqual(len(tokens), 4)
             config = harbor_config.make_config(pathlib.Path("/tmp/matrix"), 18080, 18081)
-            self.assertEqual(config.count("token_sha256"), 4)
+            self.assertEqual(config.count("token_hash"), 4)
             self.assertIn("listen: \"0.0.0.0:18080\"", config)
-            for digest in (hashlib.sha256(t.encode()).hexdigest() for t in tokens.values()):
-                self.assertIn(digest, config)
+            self.assertEqual(config.count("token_id:"), 4)
+            self.assertIn("pbkdf2-sha3-512:i=20000:", config)
+            for token in tokens.values():
+                self.assertTrue(token.startswith("rtr_harbor_"))
         finally:
             sys.path.remove(str(release_gate.HARBOR_BUNDLE))
 

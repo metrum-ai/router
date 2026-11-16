@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import base64
 import json
 import os
+import secrets
 import socket
 import subprocess
 import tempfile
@@ -72,8 +74,16 @@ def request(base_url: str, path: str, *, token: str | None = None, payload: dict
         return exc.code, exc.read(), exc.headers.get("X-Request-Id", "")
 
 
+def token_identity(label: str) -> tuple[str, str]:
+    token_id = f"rtr_metrum_local_localproject_local_{label}"
+    return token_id, f"{token_id}_{hashlib.sha256(label.encode()).hexdigest()[:32]}"
+
+
 def token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
+    salt = secrets.token_bytes(16)
+    key = hashlib.pbkdf2_hmac("sha3_512", token.encode(), salt, 20000, 64)
+    enc = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+    return f"pbkdf2-sha3-512:i=20000:{enc(salt)}:{enc(key)}"
 
 
 def check_json(body: bytes, key: str, expected: object) -> bool:
@@ -91,8 +101,8 @@ def main() -> int:
     parser.add_argument("--usage-db", type=Path, help="use an existing migrated usage database")
     args = parser.parse_args()
 
-    allowed_token = "local-launch-smoke-allowed-token"
-    quota_token = "local-launch-smoke-quota-token"
+    allowed_id, allowed_token = token_identity("allowed")
+    quota_id, quota_token = token_identity("quota")
     upstream = ThreadingHTTPServer(("127.0.0.1", 0), UpstreamHandler)
     threading.Thread(target=upstream.serve_forever, daemon=True).start()
     router_port = free_port()
@@ -123,14 +133,14 @@ def main() -> int:
             "callers": [
                 {
                     "id": "local-allowed", "user": "local-user", "project": "local-project", "environment": "local",
-                    "status": "active", "token_sha256": token_hash(allowed_token), "token_id": "local_allowed_token_id",
+                    "status": "active", "token_hash": token_hash(allowed_token), "token_id": allowed_id,
                     "allow": ["local-smoke"], "rate": {"rpm": 100, "tpm": 100000, "concurrent": 4},
                     "quota": {"day": {"requests": 100, "tokens": 100000}, "month": {"tokens": 1000000}, "soft_pct": 80},
                     "key": {"lifetime_tokens": 1000000, "soft_pct": 90, "on_exhaust": "disable"},
                 },
                 {
                     "id": "local-quota", "user": "local-user", "project": "local-project", "environment": "local",
-                    "status": "active", "token_sha256": token_hash(quota_token), "token_id": "local_quota_token_id",
+                    "status": "active", "token_hash": token_hash(quota_token), "token_id": quota_id,
                     "allow": ["local-smoke"], "rate": {"rpm": 100, "tpm": 100000, "concurrent": 4},
                     "quota": {"day": {"requests": 100, "tokens": 20}, "month": {"tokens": 1000000}, "soft_pct": 80},
                     "key": {"lifetime_tokens": 1000000, "soft_pct": 90, "on_exhaust": "disable"},

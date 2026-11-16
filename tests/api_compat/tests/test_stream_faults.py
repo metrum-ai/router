@@ -18,6 +18,7 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     PROMPT_CANARY,
     assert_generated_artifacts_redacted,
@@ -411,7 +412,8 @@ models:
       - {{provider: fallback, model: synthetic-fallback, tool_support: {{openai_chat: [tools, tool_choice]}}}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat-fb]
 '''
     config_path = work / "config.yaml"

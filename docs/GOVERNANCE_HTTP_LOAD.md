@@ -16,7 +16,7 @@ Go 1.27.3 on Linux x86_64, 16 visible CPUs and an AMD Ryzen 7 7730U, ten
 race-detector repetitions passed; after adding client idle-connection cleanup,
 three further repetitions passed. Each scenario uses one valid synthetic caller
 credential; an invalid credential receives HTTP 401 without reaching the
-synthetic upstream. The fixture uses the legacy test `token_sha256` config,
+synthetic upstream. The fixture uses the salted `token_hash` test config,
 not a separate modern caller-token authentication test.
 
 For each of the day-token, month-token, lifetime-token and TPM limits, requests

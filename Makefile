@@ -368,8 +368,10 @@ test-reference-configs:
 	go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
 	for tier in $(REFERENCE_TIERS); do \
 	  echo "validating deploy/reference/$$tier/config.yaml"; \
+	  sed 's/REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH/pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/g' \
+	    "deploy/reference/$$tier/config.yaml" > "$$tmp/reference-config.yaml" || exit 1; \
 	  $(REFERENCE_CONFIG_ENV) "$$tmp/routerctl" config validate \
-	    --config "deploy/reference/$$tier/config.yaml" >/dev/null || exit 1; \
+	    --config "$$tmp/reference-config.yaml" >/dev/null || exit 1; \
 	done
 
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat

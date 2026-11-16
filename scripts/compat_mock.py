@@ -2,7 +2,9 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 """Build pinned testers, launch loopback mocks and compare mock-tier results."""
+import base64
 import hashlib
+import secrets
 import json
 import os
 from pathlib import Path
@@ -133,8 +135,12 @@ def main():
             for kind in TESTERS:
                 processes.append(subprocess.Popen([str(binaries[kind][1]), '-addr', f'127.0.0.1:{ports[kind]}'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
                 wait_listening(ports[kind], processes[-1])
-            token = 'local-compat-token'
-            digest = hashlib.sha256(token.encode()).hexdigest()
+            token_id = 'rtr_compat_synthetic'
+            token = token_id + '_secret'
+            salt = secrets.token_bytes(32)
+            key = hashlib.pbkdf2_hmac('sha3_512', token.encode(), salt, 20000, 64)
+            encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip('=')
+            token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(key)}"
             config = f'''admin:
   enabled: false
 server:
@@ -156,7 +162,8 @@ models:
   messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, structured_output: true, input_modalities: [text, image, document], reasoning: {{supported: true, mode: opt_in, control: token_budget, min_budget_tokens: 1024, max_budget_tokens: 4096, budget_must_be_less_than_max_tokens: true}}, tool_support: {{anthropic_messages: [client_tools]}}, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: synthetic
-    token_sha256: {digest}
+    token_hash: {token_hash}
+    token_id: {token_id}
     allow: [chat, responses, full, messages]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

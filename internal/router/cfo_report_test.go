@@ -256,7 +256,7 @@ func TestCFOReportAuthorizationAndScope(t *testing.T) {
 	}
 	svc.quota.mu.Lock()
 	// Historical finance usage may belong to a caller now in another domain.
-	svc.quota.callers["unsafe"] = &callerRuntime{cfg: CallerConfig{ID: "unsafe", TokenID: legacySecret, TokenSHA256: legacyCallerTokenSHA256Hex(legacySecret), Project: "engineering", Environment: "test"}}
+	svc.quota.callers["unsafe"] = &callerRuntime{cfg: CallerConfig{ID: "unsafe", TokenID: legacySecret, Project: "engineering", Environment: "test"}}
 	svc.quota.mu.Unlock()
 	for _, phase := range []string{"moved", "changed", "removed"} {
 		for _, path := range []string{"/admin/reports/api/cfo", "/admin/reports/cfo/export.csv", "/admin/reports/cfo/export.md"} {

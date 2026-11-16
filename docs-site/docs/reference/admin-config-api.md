@@ -169,11 +169,11 @@ Reports `mode`, `driver`, `runtime_scope`, `active_set_id`, the current `revisio
 
 ## File mode
 
-With `server.config_source.mode: file` (the default), all writes return `409 config_source_mode_file` and the read endpoints serve the live configuration. To enable writes, switch to database mode and import the current YAML:
+With `server.config_source.mode: file` (the default), all writes return `409 config_source_mode_file` and the read endpoints serve the live configuration. To enable writes, switch to database mode and import the current YAML. These examples use `--offline` direct database access, so stop the router before running them; for a running router, use the online Admin API instead.
 
 ```bash
-metrum-ai-routerctl config import --yaml config.yaml --name bootstrap --driver sqlite --db /var/lib/router/config.sqlite --scope prod
-metrum-ai-routerctl config activate --set-id <set-id> --driver sqlite --db /var/lib/router/config.sqlite --scope prod
+metrum-ai-routerctl config import --offline --yaml config.yaml --name bootstrap --driver sqlite --db /var/lib/router/config.sqlite --scope prod
+metrum-ai-routerctl config activate --offline --set-id <set-id> --driver sqlite --db /var/lib/router/config.sqlite --scope prod
 ```
 
 ## CLI

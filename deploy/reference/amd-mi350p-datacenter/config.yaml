@@ -193,7 +193,7 @@ callers:
     project: reference
     environment: demo
     status: active
-    token_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    token_hash: "REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH"
     token_id: rtr_metrum_reference_demo_k1
     allow:
       - local-tiny

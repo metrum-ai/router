@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -1080,7 +1078,6 @@ func TestProductionDerivedRouterTrafficShapeRejectionSkipsUpstream(t *testing.T)
 
 func productionDerivedHighRegressionConfig(t *testing.T, dir, upstreamURL string, fixture productionDerivedLargePayloadFixture) *Config {
 	t.Helper()
-	sum := sha256.Sum256([]byte(testToken))
 	providers := map[string]ProviderConfig{}
 	targets := make([]Target, 0, len(fixture.MustNotSelect)+len(fixture.AllowedSelectedTargets))
 	for _, denied := range fixture.MustNotSelect {
@@ -1125,7 +1122,7 @@ func productionDerivedHighRegressionConfig(t *testing.T, dir, upstreamURL string
 			User:        "alice",
 			Project:     "metrum-insights",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]),
+			TokenHash:   mustCallerTokenHashForTest(t, testToken),
 			TokenID:     "rtr_alice_test",
 			Allow:       []string{fixture.ModelGroup},
 			Rate:        RateConfig{RPM: 100, TPM: 1000000, Concurrent: 4},
@@ -1137,7 +1134,6 @@ func productionDerivedHighRegressionConfig(t *testing.T, dir, upstreamURL string
 
 func productionDerivedRegressionConfig(t *testing.T, dir, upstreamURL string) *Config {
 	t.Helper()
-	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
 		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
@@ -1176,7 +1172,7 @@ func productionDerivedRegressionConfig(t *testing.T, dir, upstreamURL string) *C
 			User:        "alice",
 			Project:     "metrum-insights",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]),
+			TokenHash:   mustCallerTokenHashForTest(t, testToken),
 			TokenID:     "rtr_alice_test",
 			Allow:       []string{"large-openai-chat-tools-smoke"},
 			Rate:        RateConfig{RPM: 100, TPM: 1000000, Concurrent: 4},
@@ -1188,7 +1184,6 @@ func productionDerivedRegressionConfig(t *testing.T, dir, upstreamURL string) *C
 
 func productionDerivedOpenCodeStreamOptionsConfig(t *testing.T, dir, upstreamURL string) *Config {
 	t.Helper()
-	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
 		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Listen:            ":0",
@@ -1243,7 +1238,7 @@ func productionDerivedOpenCodeStreamOptionsConfig(t *testing.T, dir, upstreamURL
 			User:        "alice",
 			Project:     "metrum-insights",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]),
+			TokenHash:   mustCallerTokenHashForTest(t, testToken),
 			TokenID:     "rtr_alice_test",
 			Allow:       []string{"big-coder-opencode-stream-options-smoke"},
 			Rate:        RateConfig{RPM: 100, TPM: 1000000, Concurrent: 4},

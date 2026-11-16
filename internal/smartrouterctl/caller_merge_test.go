@@ -42,6 +42,65 @@ func TestRotateCallerTokenHashWritesEnforcedMetadata(t *testing.T) {
 	}
 }
 
+func TestLegacyCallerMigrationPreservesDisabledAndRevokedState(t *testing.T) {
+	legacy := strings.Repeat("a", 64)
+	disabled := callerFixture("disabled-caller", "rtr_metrum_ops_p_run_k1")
+	disabled.Status = "disabled"
+	disabled.TokenHash = ""
+	disabled.TokenSHA256 = legacy
+	revoked := callerFixture("revoked-caller", "rtr_metrum_ops_p_run_k2")
+	revoked.TokenHash = ""
+	revoked.TokenSHA256 = legacy
+	revoked.RevokedTokenHash = legacy
+	cfg := &router.Config{Callers: []router.CallerConfig{disabled, revoked}}
+
+	for _, id := range []string{"disabled-caller", "revoked-caller"} {
+		if _, err := MigrateLegacyCallerTokenHash(cfg, id, "", ""); err == nil || !strings.Contains(err.Error(), "--remove-disabled") {
+			t.Fatalf("migration of %s must require explicit removal: %v", id, err)
+		}
+		if err := RemoveDisabledLegacyCaller(cfg, id); err != nil {
+			t.Fatalf("remove %s: %v", id, err)
+		}
+	}
+	if len(cfg.Callers) != 0 {
+		t.Fatalf("disabled/revoked callers remain after explicit removal: %+v", cfg.Callers)
+	}
+}
+
+func TestRotateCallerTokenHashPreservesStateUnlessExplicitlyReactivated(t *testing.T) {
+	legacy := strings.Repeat("b", 64)
+	caller := callerFixture("ops-p-run", "rtr_metrum_ops_p_run_k1")
+	caller.Status = "disabled"
+	caller.RevokedTokenHash = legacy
+	cfg := &router.Config{Callers: []router.CallerConfig{caller}}
+	rotated, err := router.GenerateCallerToken(router.TokenGenerateOptions{OwnerUser: "ops", Project: "p", Environment: "run", Allow: []string{"local-tiny"}, Reader: strings.NewReader(strings.Repeat("b", 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RotateCallerTokenHash(cfg, caller.ID, rotated.TokenHash, "rtr_metrum_ops_p_run_k2"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Callers[0]; got.Status != "disabled" || got.RevokedTokenHash != legacy {
+		t.Fatalf("rotation re-enabled or unrevoked caller: %+v", got)
+	}
+	if err := ReactivateCaller(cfg, caller.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Callers[0]; got.Status != "active" || got.RevokedTokenHash != "" {
+		t.Fatalf("explicit reactivation failed: %+v", got)
+	}
+
+	revoked := callerFixture("ops-p-revoked", "rtr_metrum_ops_p_run_k3")
+	revoked.RevokedTokenHash = legacy
+	revokedCfg := &router.Config{Callers: []router.CallerConfig{revoked}}
+	if err := RotateCallerTokenHash(revokedCfg, revoked.ID, rotated.TokenHash, "rtr_metrum_ops_p_run_k4"); err != nil {
+		t.Fatal(err)
+	}
+	if got := revokedCfg.Callers[0]; got.Status != "disabled" || got.RevokedTokenHash != legacy {
+		t.Fatalf("rotation enabled caller with a revocation marker: %+v", got)
+	}
+}
+
 // TestMergeCallerRefusesDuplicateID covers issue #755: minting a second caller
 // with the same derived id used to replace the first one silently, so its token
 // stopped authenticating. MergeCaller must refuse and leave the table untouched;
