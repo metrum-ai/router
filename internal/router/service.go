@@ -459,7 +459,12 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		s.Close()
 		return nil, err
 	}
-	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers))
+	revokedCallerTokens, err := loadRevokedCallerTokenHashes(s.configControlPlane)
+	if err != nil {
+		s.Close()
+		return nil, fmt.Errorf("load revoked caller tokens: %w", err)
+	}
+	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers), revokedCallerTokens)
 	for _, user := range cfg.Server.AdminAuth.Basic.Users {
 		subject := strings.TrimSpace(user.Subject)
 		if subject == "" {
@@ -683,6 +688,10 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if err := newCfg.Validate(); err != nil {
 		return fmt.Errorf("reload active config: validate: %w", err)
 	}
+	revokedCallerTokens, err := loadRevokedCallerTokenHashes(s.configControlPlane)
+	if err != nil {
+		return fmt.Errorf("reload active config: load revoked caller tokens: %w", err)
+	}
 	// Rebuild quota caller runtimes before swapping the config so any
 	// validation failure leaves the existing state untouched.
 	if s.quota == nil {
@@ -757,13 +766,14 @@ func (s *Service) reloadActiveConfigFromDB() error {
 			}
 		}
 		return &machinePlanePublication{
-			Generation:   generation,
-			Authorizer:   preparedPolicy.authorizer,
-			Config:       newCfg,
-			Callers:      preparedCallers,
-			APIKeys:      newAdminKeys,
-			MaxStaleness: maxStaleness,
-			Policy:       preparedPolicy.observation,
+			Generation:    generation,
+			Authorizer:    preparedPolicy.authorizer,
+			Config:        newCfg,
+			Callers:       preparedCallers,
+			RevokedTokens: revokedCallerTokens,
+			APIKeys:       newAdminKeys,
+			MaxStaleness:  maxStaleness,
+			Policy:        preparedPolicy.observation,
 		}, nil
 	}); err != nil {
 		return fmt.Errorf("reload active config: publish machine plane: %w", err)
@@ -850,6 +860,11 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
+	if s.configControlPlane != nil {
+		// Self-revocation is available only when caller credentials are stored in
+		// the shared configuration control plane and can propagate to replicas.
+		s.mux.HandleFunc("POST /v1/security/leaked-keys", s.handleLeakedKeySelfRevoke)
+	}
 	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
 	// authorization until the admin listener serves it. Moving it earlier would
 	// leave monitoring with no exposition, so validation refuses that config.
@@ -2335,6 +2350,8 @@ func usageEndpoint(r *http.Request) string {
 	switch r.Method {
 	case http.MethodPost:
 		switch path {
+		case "/v1/security/leaked-keys":
+			return "security.leaked_keys"
 		case "/v1/chat/completions":
 			return "chat.completions"
 		case "/v1/responses":

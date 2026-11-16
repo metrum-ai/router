@@ -7749,6 +7749,16 @@ func (s *usageStore) EmitSecurityAccessEvent(event securityAccessEvent) {
 	_ = s.db.Create(securityAccessRecordFromEvent(event)).Error
 }
 
+func (s *usageStore) RecordSecurityAccessEvent(event securityAccessEvent) error {
+	if s == nil || s.db == nil {
+		return errors.New("security access event store unavailable")
+	}
+	if event.TS.IsZero() {
+		event.TS = time.Now().UTC()
+	}
+	return s.db.Create(securityAccessRecordFromEvent(event)).Error
+}
+
 func (s *usageStore) PurgeSecurityAccessEventsBefore(cutoff time.Time) {
 	if s == nil || s.db == nil || cutoff.IsZero() {
 		return

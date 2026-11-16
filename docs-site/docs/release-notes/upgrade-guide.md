@@ -33,6 +33,27 @@ configurations. Update copied examples from older releases before deploying them
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 caller-token hygiene
+
+Newly generated caller tokens append a `v2` marker and checksum to the existing
+`rtr_metrum_` format.
+Previously issued tokens continue to authenticate. Config load warns when token
+entropy is unknown or a caller uses a development environment. The token
+generator defaults an omitted environment to `prod`. The
+`security.key_hygiene.min_entropy_bits` default is 128; `0` selects that default
+and explicit values must be 1–256. Rotate old keys before setting
+`security.key_hygiene.enforce: true`; enforcement rejects unknown or below-floor
+entropy and development-environment tokens. A leaked token can revoke itself
+through `POST /v1/security/leaked-keys` only in database-backed configuration
+mode. YAML-only/file mode has no shared revocation store, so the route is not
+mounted. The verifier is recorded in a separate token-hash denylist, independent
+of config sets and revisions, and checked during authentication on every
+serving endpoint. Rollback and YAML import do not clear the denylist. Database-
+backed replicas receive changes through the configuration revision reload path.
+The denylist write, revision notification, and audit records commit together.
+Rotate the caller token to issue a new verifier and restore access; then update
+clients with the new bearer token. Only rotation restores access; the old
+verifier remains refused.
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.

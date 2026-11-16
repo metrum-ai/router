@@ -55,6 +55,7 @@ type callerAuthIndex struct {
 	byTokenID      map[string]*callerAuthEntry
 	maxTokenIDLen  int
 	legacyBySHA256 map[string]*callerRuntime
+	revoked        map[string]struct{}
 }
 
 // callerAuthState holds the per-process secrets and limits shared by every
@@ -87,11 +88,23 @@ func newCallerAuthState() *callerAuthState {
 // rebuild indexes callers and logs one deprecation warning per caller that
 // still uses token_sha256. Verified digests carry over for callers whose
 // token_id and token_hash did not change.
-func (st *callerAuthState) rebuild(callers []*callerRuntime) {
+func (st *callerAuthState) rebuild(callers []*callerRuntime, revoked ...map[string]struct{}) {
 	previous := st.index.Load()
 	next := &callerAuthIndex{
 		byTokenID:      make(map[string]*callerAuthEntry, len(callers)),
 		legacyBySHA256: map[string]*callerRuntime{},
+		revoked:        map[string]struct{}{},
+	}
+	deniedTokens := map[string]struct{}(nil)
+	if len(revoked) != 0 {
+		deniedTokens = revoked[0]
+	} else if previous != nil {
+		deniedTokens = previous.revoked
+	}
+	if deniedTokens != nil {
+		for verifier := range deniedTokens {
+			next.revoked[verifier] = struct{}{}
+		}
 	}
 	for _, rt := range callers {
 		if rt == nil {
@@ -147,8 +160,14 @@ func (st *callerAuthState) lookup(token string) (*callerRuntime, string) {
 	if token == "" || len(token) > maxCallerTokenBytes {
 		return nil, ""
 	}
+	if hasCallerTokenChecksumShape(token) && !validCallerTokenChecksum(token) {
+		return nil, ""
+	}
 	idx := st.index.Load()
 	if entry := idx.candidate(token); entry != nil && st.verify(entry, token) {
+		if _, denied := idx.revoked[entry.tokenHash]; denied {
+			return nil, ""
+		}
 		return entry.caller, publicTokenID(entry.caller.cfg.TokenID)
 	}
 	if len(idx.legacyBySHA256) == 0 {
@@ -157,6 +176,9 @@ func (st *callerAuthState) lookup(token string) (*callerRuntime, string) {
 	sumHex := legacyCallerTokenSHA256Hex(token)
 	for configured, caller := range idx.legacyBySHA256 {
 		if subtle.ConstantTimeCompare([]byte(configured), []byte(sumHex)) == 1 {
+			if _, denied := idx.revoked[caller.cfg.TokenSHA256]; denied {
+				return nil, ""
+			}
 			label := "sha256:" + sumHex[:12]
 			if caller.cfg.TokenID != "" {
 				label = publicTokenID(caller.cfg.TokenID)
