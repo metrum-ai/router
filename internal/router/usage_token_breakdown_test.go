@@ -59,7 +59,7 @@ func TestTokenBreakdownCoverageAndRollups(t *testing.T) {
 	for _, row := range rows {
 		total.add(row)
 	}
-	want := UsageTokenBreakdown{CostComponentReportedRequests: 3, ReasoningTokens: 20, ReasoningReportedRequests: 2, CachedInputTokens: 60, CachedInputReportedRequests: 2}
+	want := UsageTokenBreakdown{CostComponentReportedRequests: 3, ReasoningTokens: 20, ReasoningReportedRequests: 2, CachedInputTokens: 60, CachedInputReportedRequests: 2, RecomputedInputTokens: 140, RecomputedInputReportedRequests: 2}
 	if total.UsageTokenBreakdown != want {
 		t.Fatalf("aggregate=%+v", total.UsageTokenBreakdown)
 	}
