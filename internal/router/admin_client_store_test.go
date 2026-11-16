@@ -272,6 +272,26 @@ func TestAdminClientCredentialRejectsInferenceTokenKinds(t *testing.T) {
 	}
 }
 
+func TestAdminClientCredentialRejectsReservedMetricDescriptors(t *testing.T) {
+	now := time.Now().UTC()
+	for _, field := range []string{"id", "identity", "subject"} {
+		t.Run(field, func(t *testing.T) {
+			credential := adminClientCredential{ID: "credential-id", Kind: "oauth", Identity: "oauth-client", Subject: "client:worker", ExpiresAt: now.Add(time.Hour)}
+			switch field {
+			case "id":
+				credential.ID = "rtr_metrum_descriptor"
+			case "identity":
+				credential.Identity = "rtr_metrum_descriptor"
+			case "subject":
+				credential.Subject = "rtr_metrum_descriptor"
+			}
+			if validAdminClientCredential(credential, now) {
+				t.Fatalf("accepted reserved descriptor in %s", field)
+			}
+		})
+	}
+}
+
 func TestAdminClientExpiryWarningIsDurableAndExportedAsMetric(t *testing.T) {
 	_, db := newAdminKeyStoreForTest(t)
 	if err := applyAdminClientSchema(db); err != nil {
