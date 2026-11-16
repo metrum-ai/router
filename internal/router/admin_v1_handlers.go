@@ -171,6 +171,18 @@ func AdminV1CallerAdminDeps(base CallerAdminDeps, principalOf func(*http.Request
 		// stored domain.
 		return authorize(r.Context(), principal, rowDomain, object, action) == nil
 	}
+	out.CallerWriteAuthorized = func(r *http.Request, domain string) bool {
+		principal, _, ok := principalOf(r)
+		if !ok || strings.TrimSpace(domain) == "" {
+			return false
+		}
+		for _, action := range []string{authzActionIssue, authzActionRotate, authzActionRevoke} {
+			if authorize(r.Context(), principal, domain, authzObjectAdminCallers, action) != nil {
+				return false
+			}
+		}
+		return true
+	}
 	return out
 }
 

@@ -50,10 +50,11 @@ type CallerAdminDeps struct {
 	Authorize    func(r *http.Request, object, action string) bool
 	// AuthorizeDomain takes a decision in an explicit domain, used to filter a
 	// caller-directory row by the domain stored on that row.
-	AuthorizeDomain   func(r *http.Request, domain, object, action string) bool
-	AfterMutate       func(r *http.Request, callerID string) error
-	Now               func() time.Time
-	ClaimWebhookNonce func(*gorm.DB, Principal) error
+	AuthorizeDomain       func(r *http.Request, domain, object, action string) bool
+	AfterMutate           func(r *http.Request, callerID string) error
+	Now                   func() time.Time
+	ClaimWebhookNonce     func(*gorm.DB, Principal) error
+	CallerWriteAuthorized func(r *http.Request, domain string) bool
 }
 
 // RegisterCallerDirectoryAdmin registers the admin caller directory endpoints on the
@@ -151,10 +152,7 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-nonce-store-unavailable")
 		return
 	}
-	source := "admin"
-	if principal.Subject == authzRoleContainment || principal.Kind == "webhook" {
-		source = "containment"
-	}
+	source := "containment"
 	err = h.deps.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		var rows []callerRow
 		if err := tx.Where("config_set_id = ? AND caller_id = ?", set.ID, req.CallerID).Limit(1).Find(&rows).Error; err != nil {
@@ -162,6 +160,12 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		}
 		if len(rows) == 0 {
 			return errCallerAdminNotFound
+		}
+		callerDomain := authzDomainForProjectEnvironment(rows[0].Project, rows[0].Environment)
+		fullCallerWrite := h.deps.CallerWriteAuthorized != nil && h.deps.CallerWriteAuthorized(r, callerDomain)
+		source = "containment"
+		if fullCallerWrite {
+			source = "admin"
 		}
 		currentStatus := rows[0].Status
 		if currentStatus == accountStatusSuspended && req.Action == "suspend" {
@@ -188,7 +192,7 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		if req.Action == "resume" && currentStatus != accountStatusSuspended {
 			return errCallerAdminConflict
 		}
-		if req.Action == "resume" && source == "containment" {
+		if req.Action == "resume" && !fullCallerWrite {
 			var doc configControlPlaneDocumentRow
 			if err := tx.Where("config_set_id = ?", set.ID).First(&doc).Error; err != nil {
 				return err

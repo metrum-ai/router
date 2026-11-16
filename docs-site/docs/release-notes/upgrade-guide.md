@@ -695,7 +695,8 @@ for headers, signing input, timestamp bounds, and CLI examples. A suspended
 caller with a TTL becomes active when the TTL expires; no database migration is
 required.
 The containment role can resume only keys it suspended; keys suspended by an
-administrator or by legacy configuration remain administrator-controlled.
+administrator or by legacy configuration require all caller write permissions
+(issue, rotate, and revoke) to resume.
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.

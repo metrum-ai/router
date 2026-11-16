@@ -33,7 +33,8 @@ and optional `ttl` for suspension. TTL uses Go duration
 syntax and is limited to 30 days. The record stores whether the suspension came
 from an administrator or containment; the containment role can resume only
 containment-originated suspensions. Administrator or legacy suspensions require
-an administrator to resume them. Suspension updates the active caller record
+an identity authorized for all caller write actions (issue, rotate, and revoke)
+to resume them. Suspension updates the active caller record
 and takes effect after the local config reload; an expired TTL restores caller
 access automatically. `routerctl contain --caller-id ID --reason edr-alert
 [--ttl 4h]` and `routerctl release --caller-id ID --reason resumed` use the same

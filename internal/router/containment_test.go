@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -227,15 +228,16 @@ func TestAdminIdempotencyJanitorPrunesOnTicker(t *testing.T) {
 	if err := db.Exec(`UPDATE router_admin_idempotency SET expires_at = ? WHERE idempotency_key = ?`, adminIdempotencyTime(time.Now().Add(-time.Second)), scope.Key).Error; err != nil {
 		t.Fatal(err)
 	}
+	counting := &countingPruneStore{AdminIdempotencyKeyStore: store}
 	stop := make(chan struct{})
-	done := StartAdminIdempotencyJanitor(store, 10*time.Millisecond, stop)
+	done := StartAdminIdempotencyJanitor(counting, 10*time.Millisecond, stop)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		var count int64
 		if err := db.Table(adminIdempotencyTable).Where("idempotency_key = ?", scope.Key).Count(&count).Error; err != nil {
 			t.Fatal(err)
 		}
-		if count == 0 {
+		if count == 0 && counting.calls.Load() >= 3 {
 			close(stop)
 			<-done
 			return
@@ -245,6 +247,16 @@ func TestAdminIdempotencyJanitorPrunesOnTicker(t *testing.T) {
 	close(stop)
 	<-done
 	t.Fatal("expired idempotency row was not pruned by the janitor")
+}
+
+type countingPruneStore struct {
+	AdminIdempotencyKeyStore
+	calls atomic.Int64
+}
+
+func (s *countingPruneStore) PruneExpired(now time.Time) (int64, error) {
+	s.calls.Add(1)
+	return s.AdminIdempotencyKeyStore.PruneExpired(now)
 }
 
 type testAuthenticator struct{}
@@ -265,7 +277,11 @@ func TestCallerContainmentHTTPFlow(t *testing.T) {
 	h := newCallerAdminHandler(CallerAdminDeps{
 		DB: db, RuntimeScope: "staging",
 		Authorize: func(_ *http.Request, _, _ string) bool { return allow },
-		Now:       func() time.Time { return fakeNow },
+		CallerWriteAuthorized: func(r *http.Request, _ string) bool {
+			p, ok := PrincipalFrom(r.Context())
+			return !ok || p.Subject != authzRoleContainment
+		},
+		Now: func() time.Time { return fakeNow },
 	})
 	issueBody, _ := json.Marshal(map[string]any{"owner_user": "Alice", "project": "Search", "allow": []string{"default"}})
 	issueRec := httptest.NewRecorder()
@@ -354,6 +370,102 @@ func TestCallerContainmentHTTPFlow(t *testing.T) {
 	if _, _, err := svc.authenticate("Bearer "+issued.Token, ""); err != nil {
 		t.Fatalf("resumed caller failed authentication: %v", err)
 	}
+}
+
+func TestContainmentSuspensionOwnershipUsesAuthorization(t *testing.T) {
+	db := callerAdminTestDB(t)
+	cfg := &Config{Server: ServerConfig{AdminAuth: AdminAuthConfig{APIKeys: []AdminAPIKeyConfig{
+		{KeyID: "secops", Subject: "adminkey:secops", Domain: "*", Status: "active"},
+		{KeyID: "full", Subject: "adminkey:full", Domain: "*", Status: "active"},
+	}}}}
+	authz, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{
+		"g, adminkey:secops, role:containment, *",
+		"p, role:containment, *, admin:containment, contain",
+		"g, adminkey:full, role:full-admin, *",
+		"p, role:full-admin, *, admin:containment, contain",
+		"p, role:full-admin, *, admin:callers, issue",
+		"p, role:full-admin, *, admin:callers, rotate",
+		"p, role:full-admin, *, admin:callers, revoke",
+	}}, nil, nil, cfg.Server.AdminAuth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{cfg: cfg}
+	svc.authorizerSnapshot.Store(authz)
+	principalOf := func(r *http.Request) (Principal, string, bool) {
+		p, ok := PrincipalFrom(r.Context())
+		return p, AdminGlobalDomain, ok
+	}
+	decision := func(ctx context.Context, p Principal, domain, object, action string) error {
+		return svc.Authorize(ctx, p, domain, object, action)
+	}
+	h := newCallerAdminHandler(AdminV1CallerAdminDeps(CallerAdminDeps{DB: db, RuntimeScope: "staging"}, principalOf, decision))
+	secops := Principal{Subject: "adminkey:secops", Kind: "adminkey", CredentialID: "secops"}
+	full := Principal{Subject: "adminkey:full", Kind: "adminkey", CredentialID: "full"}
+	contain := func(p Principal, callerID, action, reason string) *httptest.ResponseRecorder {
+		t.Helper()
+		body := `{"caller_id":"` + callerID + `","action":"` + action + `","reason":"` + reason + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/admin/containment", strings.NewReader(body)).WithContext(WithPrincipal(context.Background(), p))
+		rec := httptest.NewRecorder()
+		h.handleContainment(rec, req)
+		return rec
+	}
+	issue := func(owner string) string {
+		t.Helper()
+		body := `{"owner_user":"` + owner + `","project":"search","allow":["default"]}`
+		req := httptest.NewRequest(http.MethodPost, "/admin/callers/issue", strings.NewReader(body)).WithContext(WithPrincipal(context.Background(), full))
+		rec := httptest.NewRecorder()
+		h.handleIssue(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("full admin issue status = %d: %s", rec.Code, rec.Body.String())
+		}
+		var issued callerAdminIssueResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &issued); err != nil {
+			t.Fatal(err)
+		}
+		return issued.Caller.ID
+	}
+	adminSuspended, containmentSuspended := issue("alice"), issue("bob")
+	if rec := contain(full, adminSuspended, "suspend", "admin-review"); rec.Code != http.StatusOK {
+		t.Fatalf("full admin suspend status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := contain(secops, adminSuspended, "resume", "edr-cleared"); rec.Code != http.StatusConflict {
+		t.Fatalf("Casbin-mapped containment key resumed admin suspension: %d", rec.Code)
+	}
+	if rec := contain(secops, containmentSuspended, "suspend", "edr-alert"); rec.Code != http.StatusOK {
+		t.Fatalf("Casbin-mapped containment suspend status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := readContainmentSource(t, db, containmentSuspended); got != "containment" {
+		t.Fatalf("Casbin-mapped suspension source = %q", got)
+	}
+	if rec := contain(secops, containmentSuspended, "resume", "edr-cleared"); rec.Code != http.StatusOK {
+		t.Fatalf("Casbin-mapped containment resume status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := readContainmentSource(t, db, adminSuspended); got != "admin" {
+		t.Fatalf("full admin suspension source = %q", got)
+	}
+	if rec := contain(full, adminSuspended, "resume", "admin-cleared"); rec.Code != http.StatusOK {
+		t.Fatalf("full admin resume status = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func readContainmentSource(t *testing.T, db *gorm.DB, callerID string) string {
+	t.Helper()
+	var raw string
+	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	for _, caller := range cfg.Callers {
+		if caller.ID == callerID {
+			return caller.ContainmentSource
+		}
+	}
+	t.Fatalf("caller %q missing from canonical config", callerID)
+	return ""
 }
 
 func TestCallerContainmentAdminV1EndToEnd(t *testing.T) {
