@@ -159,6 +159,7 @@ const sidebars = {
       label: "Operations",
       collapsed: false,
       items: [
+        "operations/hierarchy-governance",
         "operations/deployment-patterns",
         "operations/production-promotion",
         "operations/observability",
