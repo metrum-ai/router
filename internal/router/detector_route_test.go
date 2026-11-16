@@ -85,13 +85,20 @@ func TestDeniedNamespacedModelReachesDetectorAsSafeLabel(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("namespaced unknown model status=%d, want 404", response.Code)
 	}
-	select {
-	case event := <-seen:
-		if event.Kind != "model_denied" || event.DeniedGroup == "org/model-name" || !strings.HasPrefix(event.DeniedGroup, "model-") {
-			t.Fatalf("unsafe or missing denied model detector event: %+v", event)
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case event := <-seen:
+			if event.Kind != "model_denied" {
+				continue
+			}
+			if event.DeniedGroup == "org/model-name" || !strings.HasPrefix(event.DeniedGroup, "model-") {
+				t.Fatalf("unsafe denied model detector label: %+v", event)
+			}
+			return
+		case <-deadline:
+			t.Fatal("model enumeration event was not delivered")
 		}
-	case <-time.After(time.Second):
-		t.Fatal("model enumeration event was not delivered")
 	}
 }
 
