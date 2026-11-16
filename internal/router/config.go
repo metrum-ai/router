@@ -1293,6 +1293,7 @@ func stripEmptyRemovedScriptFields(raw []byte) ([]byte, error) {
 	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
 		return raw, nil
 	}
+	changed := false
 	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
 		if root.Content[0].Content[i].Value != "models" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
 			continue
@@ -1305,12 +1306,16 @@ func stripEmptyRemovedScriptFields(raw []byte) ([]byte, error) {
 			for j := 0; j+1 < len(group.Content); j += 2 {
 				key, value := group.Content[j], group.Content[j+1]
 				if (key.Value == "script" || key.Value == "script_max_concurrent" || key.Value == "script_http") && !yamlNodeHasNonZeroValue(value) {
+					changed = true
 					continue
 				}
 				filtered = append(filtered, key, value)
 			}
 			group.Content = filtered
 		}
+	}
+	if !changed {
+		return raw, nil
 	}
 	cleaned, err := yaml.Marshal(&root)
 	if err != nil {
@@ -1919,7 +1924,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("model group %s missing strategy", name)
 		}
 		switch strings.ToLower(strings.TrimSpace(m.Strategy)) {
-		case "static", "weighted", "failover", "dynamic_score", "intelligent", "external":
+		case "static", "weighted", "failover", "dynamic_score", "intelligent", "tool_aware", "external":
 		case "script":
 			return fmt.Errorf("strategy: script was removed in v5.0.0; migrate to strategy: external and configure external_policy")
 		default:
