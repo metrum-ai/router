@@ -1,6 +1,6 @@
-<!-- Copyright 2026 Metrum AI -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
 ---
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
 title: Router v5 Security Threat Summary
 doc_type: reference
 ---
