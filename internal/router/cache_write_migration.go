@@ -20,5 +20,5 @@ func applyUsageCacheWriteMigration(db *gorm.DB) error {
 	return verifyUsageCacheWriteMigration(db)
 }
 func verifyUsageCacheWriteMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchemaExcept(db, mergeUsageColumnSets(usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageMissionAttributionColumns, usageRecomputedInputColumns))
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageColumnSets(usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageMissionAttributionColumns, usageRecomputedInputColumns, usageToolRoutingColumns))
 }

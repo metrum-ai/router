@@ -1794,8 +1794,14 @@ func TestRetentionUsageDetailRequiresFinalizedRollupBeforeFutureDelete(t *testin
 		Cache:          "miss",
 		Status:         200,
 		Attempts:       1,
+		ToolCallCount:  3, ToolFirstFailureClass: toolFailureMissingRequired, ToolRetries: 1,
+		ToolEscalations: 1, ToolReliabilityBucket: "valid", ToolReliabilitySource: "live",
 	})).Error; err != nil {
 		t.Fatal(err)
+	}
+	var toolRow usageRecord
+	if err := store.db.Where("request_id = ?", "req_usage_detail_old").First(&toolRow).Error; err != nil || toolRow.ToolCallCount != 3 || toolRow.ToolRetries != 1 {
+		t.Fatalf("retention fixture tool usage row=%+v err=%v", toolRow, err)
 	}
 	cfg := retentionTestConfig(retentionDataClassUsageDetail, 7)
 	blocked, err := store.runRetentionStatus(RetentionStatusOptions{Config: cfg, Now: now, RequestedBy: "unit-test"})

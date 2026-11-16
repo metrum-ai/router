@@ -187,20 +187,21 @@ type adminBasicRuntime struct {
 }
 
 type decision struct {
-	Target            Target
-	Fallbacks         []Target
-	ShadowRecommended *Target
-	ClassLabel        *string
-	Strategy          string
-	GroupName         string
-	TargetIndex       int
-	DecisionTrace     string
-	RoutingSignals    []routingSignalLogRecord
-	DynamicScoreTerms []dynamicScoreTermLogRecord
-	PolicyExecutions  []policyExecutionLogRecord
-	ConversationKey   string
-	AffinityKey       string
-	AffinityConfig    DynamicScoreAffinityConfig
+	Target                Target
+	Fallbacks             []Target
+	ShadowRecommended     *Target
+	ClassLabel            *string
+	Strategy              string
+	GroupName             string
+	TargetIndex           int
+	DecisionTrace         string
+	ToolReliabilitySource string
+	RoutingSignals        []routingSignalLogRecord
+	DynamicScoreTerms     []dynamicScoreTermLogRecord
+	PolicyExecutions      []policyExecutionLogRecord
+	ConversationKey       string
+	AffinityKey           string
+	AffinityConfig        DynamicScoreAffinityConfig
 }
 
 type routingEligibilityError struct {
@@ -336,6 +337,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err != nil {
 		return nil, err
 	}
+	reliabilitySeed, err := loadCompatibilityToolReliabilitySeed()
+	if err != nil {
+		return nil, fmt.Errorf("load compatibility tool reliability seed: %w", err)
+	}
 	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls")
 	if err != nil {
 		return nil, err
@@ -433,7 +438,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		trafficShape:       newTrafficShapeManager(),
 		bridgeSessions:     bridgeSessions,
 		observations:       newDynamicObservationStore(),
-		toolReliability:    newToolReliabilityStore(),
+		toolReliability:    newToolReliabilityStore(reliabilitySeed.Targets...),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		providerSpend:      newProviderSpendBreaker(),
@@ -2278,6 +2283,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	s.recordRoutingDecisionTelemetry(rc, dec)
 	rc.rec.ResolvedGroup = req.Model
 	rc.rec.Strategy = dec.Strategy
+	rc.rec.ToolReliabilitySource = dec.ToolReliabilitySource
 	rc.rec.ClassLabel = dec.ClassLabel
 	rc.conversationKey = dec.ConversationKey
 	rc.rec.InputHasImage = requestHasImages(req)
@@ -3433,6 +3439,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		return decision{}, fmt.Errorf("unknown strategy %s", strings.ToLower(strings.TrimSpace(group.Strategy)))
 	}
 	var label *string
+	toolReliabilitySource := ""
 	switch strategy {
 	case "static", "failover":
 	case "weighted":
@@ -3490,7 +3497,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		// Ordering is deterministic: the configured target order until a target
 		// has enough reliability evidence, then the best-scoring target first.
 		// A group that does not opt in never reaches this case.
-		targets = s.orderToolAwareTargets(groupName, group.ToolRouting, targets, len(req.Tools) > 0)
+		targets, toolReliabilitySource = s.orderToolAwareTargetsWithSource(groupName, group.ToolRouting, targets, len(req.Tools) > 0)
+		// The selected primary's evidence source is carried into request usage.
+		// A fallback still records its outcome as live while preserving the source
+		// that changed the original target order.
 	case "dynamic_score":
 		return s.pickDynamicScore(rc, groupName, group, req, callerDialect, caller, targets)
 	case "external":
@@ -3539,7 +3549,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		label = safePolicyClassLabel(*label)
 	}
 	targets = s.preferTieredKVTargets(groupName, targets, req)
-	return decision{Target: targets[0], Fallbacks: targets[1:], ClassLabel: label, Strategy: strategy, GroupName: groupName, DynamicScoreTerms: simpleStrategyRankingTelemetry(strategy, targets, s.cfg.Provider)}, nil
+	return decision{Target: targets[0], Fallbacks: targets[1:], ClassLabel: label, Strategy: strategy, GroupName: groupName, ToolReliabilitySource: toolReliabilitySource, DynamicScoreTerms: simpleStrategyRankingTelemetry(strategy, targets, s.cfg.Provider)}, nil
 }
 
 const longContextKVCacheThresholdTokens = 32000
