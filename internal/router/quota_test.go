@@ -61,6 +61,44 @@ func TestQuotaRecordTokensSaveFailureKeepsLiability(t *testing.T) {
 	}
 }
 
+func TestMCPQuotaEnforcesCallerRateAndToolSpendAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
+	path := filepath.Join(dir, "state.json")
+	store, err := newQuotaStore(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := store.callers["alice"]
+	first := store.AdmitMCP(caller, 1)
+	if !first.OK {
+		t.Fatalf("first MCP caller admission=%+v", first)
+	}
+	store.Release(caller)
+	second := store.AdmitMCP(caller, 1)
+	if second.OK || second.Status != http.StatusTooManyRequests || second.Reason != "rpm-exceeded" {
+		t.Fatalf("second MCP caller admission=%+v", second)
+	}
+	limits := []MCPToolLimitConfig{
+		{Caller: "alice", Tool: "", DailyUSD: .25, CostPerCallUSD: .15},
+		{Caller: "alice", Tool: "docs/read", RPM: 10, HourlyUSD: .50, CostPerCallUSD: .15},
+	}
+	if admission := store.AdmitMCPTool("alice", "docs/read", limits); !admission.OK {
+		t.Fatalf("first tool admission=%+v", admission)
+	}
+	blocked := store.AdmitMCPTool("alice", "docs/read", limits)
+	if blocked.OK || blocked.Status != http.StatusTooManyRequests || blocked.Reason != "mcp-tool-spend-exceeded" {
+		t.Fatalf("second tool admission=%+v, want spend limit", blocked)
+	}
+	reloaded, err := newQuotaStore(path, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted := reloaded.AdmitMCPTool("alice", "docs/read", limits); persisted.OK || persisted.Reason != "mcp-tool-spend-exceeded" {
+		t.Fatalf("persisted tool spend admission=%+v", persisted)
+	}
+}
+
 // QD-2: exhaust persist path fails closed when save fails.
 func TestQuotaExhaustSaveFailureFailsClosed(t *testing.T) {
 	dir := t.TempDir()

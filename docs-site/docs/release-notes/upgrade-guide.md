@@ -857,6 +857,17 @@ Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
 
+## MCP gateway
+
+MCP is disabled by default, so existing v4.8 configurations continue to load
+without changes. To enable it, add an `mcp` block, set each server's explicit
+`allow_hosts`, configure server-side credential environment variables with
+the `ROUTER_MCP_` prefix, and enable the usage database for durable tool
+invocation audit records. MCP has a per-caller request-rate limit and supports
+per-caller and per-tool request and estimated-spend limits. See the
+[MCP gateway guide](../configuration/mcp-gateway.md) for configuration fields
+and policy behavior.
+
 Automatic detector containment is a separate opt-in feature. It is off by
 default. Before setting `server.auto_containment.mode` to `shadow` or
 `enforce`, run `router-migrate` to create the automatic action tables. Start

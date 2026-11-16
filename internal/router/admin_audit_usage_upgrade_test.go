@@ -21,6 +21,24 @@ import (
 // tables, columns and indexes a customer upgrading from v4.7.1 has.
 const usageV471SchemaFile = "testdata/usage-v4.7.1-schema.sql"
 
+const (
+	usageV471SchemaVersion = 12
+	usageV480SchemaVersion = 15
+)
+
+// usageMigrationsPendingFromV471 derives the v4.7.1 upgrade expectation from
+// the v4.8.0 schema transition and every registered migration added after it.
+// This keeps these fixtures valid as later lanes add schema migrations.
+func usageMigrationsPendingFromV471() int {
+	expected := usageV480SchemaVersion - usageV471SchemaVersion
+	for _, migration := range usageMigrationDefinitions {
+		if migration.SchemaVersion > usageV480SchemaVersion {
+			expected++
+		}
+	}
+	return expected
+}
+
 func openUpgradeTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := openUsageDB(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "usage.sqlite")})
@@ -72,11 +90,11 @@ func loadV471UsageDatabase(t *testing.T, db *gorm.DB) {
 	if err != nil {
 		t.Fatalf("status of the loaded v4.7.1 database: %v", err)
 	}
-	if status.SchemaVersion != 12 || status.DataVersion != 1 || !status.Compatible || status.State != "pending" {
+	if status.SchemaVersion != usageV471SchemaVersion || status.DataVersion != 1 || !status.Compatible || status.State != "pending" {
 		t.Fatalf("loaded database is not the released v4.7.1 shape: %+v", status)
 	}
-	if len(status.Pending) != 4 {
-		t.Fatalf("expected the three v4.8.0 usage migrations plus the automatic-containment migration pending, got %d", len(status.Pending))
+	if len(status.Pending) != usageMigrationsPendingFromV471() {
+		t.Fatalf("expected %d pending usage migrations newer than the v4.7.1 schema, got %d", usageMigrationsPendingFromV471(), len(status.Pending))
 	}
 	if db.Migrator().HasIndex("security_access_events", usageAdminDenialColumnsIndex) {
 		t.Fatalf("the released v4.7.1 schema must not contain %s", usageAdminDenialColumnsIndex)

@@ -35,6 +35,7 @@ type egressHTTPClientOptions struct {
 	Label       string
 	LookupIP    egressLookupIPFunc
 	DialContext func(ctx context.Context, network, address string) (net.Conn, error)
+	Proxy       func(*http.Request) (*url.URL, error)
 }
 
 func validateEgressURL(u *url.URL, allowHosts []string, allowHTTP bool, label string) error {
@@ -121,8 +122,12 @@ func newEgressHTTPClientWithOptions(opts egressHTTPClientOptions) *http.Client {
 		var d net.Dialer
 		dial = d.DialContext
 	}
+	proxy := opts.Proxy
+	if proxy == nil {
+		proxy = http.ProxyFromEnvironment
+	}
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		Proxy: proxy,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {
