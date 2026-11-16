@@ -132,7 +132,7 @@ func TestStatusJSONWithPendingMigration(t *testing.T) {
 		t.Skip("builds and runs the migrate CLI")
 	}
 	dbPath := filepath.Join(t.TempDir(), "usage.sqlite")
-	for _, action := range []string{"plan", "status"} {
+	for _, action := range []string{"plan", "status", "verify"} {
 		t.Run(action, func(t *testing.T) {
 			command := exec.Command("go", "run", ".", "--driver=sqlite", "--db="+dbPath, "--action="+action, "--json")
 			var stdout, stderr strings.Builder
@@ -140,6 +140,9 @@ func TestStatusJSONWithPendingMigration(t *testing.T) {
 			command.Stderr = &stderr
 			if err := command.Run(); err != nil {
 				t.Fatalf("migrate --action=%s --json failed: %v: %s", action, err, stderr.String())
+			}
+			if strings.Contains(strings.ToLower(stderr.String()), "select ") || strings.Contains(strings.ToLower(stderr.String()), "pragma_") {
+				t.Fatalf("migrate --action=%s --json wrote SQL to stderr: %s", action, stderr.String())
 			}
 			output := strings.TrimSpace(stdout.String())
 			if output == "" {
@@ -161,5 +164,24 @@ func TestStatusJSONWithPendingMigration(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMigrationJSONFailureKeepsStdoutEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the migrate CLI")
+	}
+	command := exec.Command("go", "run", ".", "--driver=unsupported", "--action=status", "--json")
+	var stdout, stderr strings.Builder
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err == nil {
+		t.Fatal("migrate with unsupported driver succeeded")
+	}
+	if strings.TrimSpace(stdout.String()) != "" {
+		t.Fatalf("failed migration wrote to stdout: %q", stdout.String())
+	}
+	if strings.TrimSpace(stderr.String()) == "" {
+		t.Fatal("failed migration did not report its error on stderr")
 	}
 }
