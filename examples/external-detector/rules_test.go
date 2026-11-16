@@ -27,6 +27,40 @@ func TestAuthFailureStormTriggersAtThreshold(t *testing.T) {
 	assertRule(t, signals, "auth_fail_storm")
 }
 
+func TestAuthFailureStormSignalsOpaqueKeyAndIPScopes(t *testing.T) {
+	service := newRuleDetector()
+	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }
+	event := testEvent("auth_failure", 1, "")
+	var signals []detector.Signal
+	for i := 1; i <= authFailureLimit; i++ {
+		event.RequestID = fmt.Sprintf("scope-%02d", i)
+		got, err := service.Detect(context.Background(), event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signals = append(signals, got...)
+	}
+	var keySignal, ipSignal *detector.Signal
+	for i := range signals {
+		signal := &signals[i]
+		if signal.DetectorID != "auth_fail_storm" {
+			continue
+		}
+		if signal.Key == event.KeyID {
+			keySignal = signal
+		}
+		if signal.Key == "" {
+			ipSignal = signal
+		}
+	}
+	if keySignal == nil || ipSignal == nil {
+		t.Fatalf("expected opaque-key and empty-key IP signals, got %+v", signals)
+	}
+	if len(keySignal.EvidenceRequestIDs) != evidenceLimit || len(ipSignal.EvidenceRequestIDs) != evidenceLimit {
+		t.Fatalf("evidence lists are not bounded at %d: key=%+v ip=%+v", evidenceLimit, keySignal.EvidenceRequestIDs, ipSignal.EvidenceRequestIDs)
+	}
+}
+
 func TestValidationSweepTriggersAndBenignRequestsDoNot(t *testing.T) {
 	service := newRuleDetector()
 	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }
@@ -114,6 +148,62 @@ func TestBenignTrafficTriggersNothing(t *testing.T) {
 	}
 }
 
+func TestRealisticMixedBenignTrafficTriggersNothing(t *testing.T) {
+	service := newRuleDetector()
+	base := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	for i := 0; i < 15; i++ {
+		at := base.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano)
+		inputs := []detector.Event{testEvent("auth_failure", i, at)}
+		normal := testEvent("request", i, at)
+		normal.TinyRequest = false
+		inputs = append(inputs, normal)
+		if i < 5 {
+			tiny := testEvent("request", 100+i, at)
+			tiny.TinyRequest = true
+			inputs = append(inputs, tiny)
+		}
+		if i < deniedGroupLimit-1 {
+			denied := testEvent("model_denied", 200+i, at)
+			denied.DeniedGroup = fmt.Sprintf("group-%d", i)
+			inputs = append(inputs, denied)
+		}
+		usage := testEvent("usage", i, at)
+		usage.Tokens = 100
+		inputs = append(inputs, usage)
+		service.now = func() time.Time { return base.Add(time.Minute) }
+		for _, event := range inputs {
+			got, err := service.Detect(context.Background(), event)
+			if err != nil || len(got) != 0 {
+				t.Fatalf("benign mixed %s event signaled: %v err=%v", event.Kind, got, err)
+			}
+		}
+	}
+}
+
+func TestRuleKeyEvictionIsIsolated(t *testing.T) {
+	service := newRuleDetector()
+	service.maxKeys = 2
+	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }
+	for i := 0; i < 2; i++ {
+		event := testEvent("usage", i, "")
+		event.KeyID = fmt.Sprintf("%032x", i+1)
+		event.Tokens = 100
+		_, _ = service.Detect(context.Background(), event)
+	}
+	for i := 0; i < 3; i++ {
+		event := testEvent("model_denied", 100+i, "")
+		event.KeyID = fmt.Sprintf("%032x", i+10)
+		event.DeniedGroup = fmt.Sprintf("group-%d", i)
+		_, _ = service.Detect(context.Background(), event)
+	}
+	if len(service.states["spend_spike"].byKey) != 2 {
+		t.Fatalf("enumeration churn evicted spend state: %d keys remain", len(service.states["spend_spike"].byKey))
+	}
+	if len(service.states["model_enumeration"].byKey) != 2 {
+		t.Fatalf("enumeration LRU did not enforce its own cap: %d keys", len(service.states["model_enumeration"].byKey))
+	}
+}
+
 func testEvent(kind string, id int, observed string) detector.Event {
 	event := detector.Event{
 		SchemaVersion: detector.SchemaVersion,
@@ -133,6 +223,13 @@ func assertRule(t *testing.T, signals []detector.Signal, rule string) {
 		if signal.DetectorID == rule {
 			if signal.Severity == "" || signal.Key == "" || len(signal.EvidenceRequestIDs) == 0 {
 				t.Fatalf("incomplete %s signal: %+v", rule, signal)
+			}
+			wantSeverity := "high"
+			if rule == "model_enumeration" || rule == "spend_spike" {
+				wantSeverity = "medium"
+			}
+			if signal.Severity != wantSeverity {
+				t.Fatalf("%s severity=%q, want %q", rule, signal.Severity, wantSeverity)
 			}
 			return
 		}

@@ -54,6 +54,47 @@ func TestDetectorRuntimeReplacementAppliesConfigReload(t *testing.T) {
 	}
 }
 
+func TestDeniedModelDetectorLabelIsSafeAndOpaque(t *testing.T) {
+	raw := "org/model-name"
+	label := safeDetectorModelLabel(raw)
+	if label == raw || detector.ValidateEvent(detector.Event{SchemaVersion: detector.SchemaVersion, Kind: "model_denied", DeniedGroup: label}) != nil {
+		t.Fatalf("unsafe denied-model label %q from %q", label, raw)
+	}
+}
+
+func TestDeniedNamespacedModelReachesDetectorAsSafeLabel(t *testing.T) {
+	seen := make(chan detector.Event, 4)
+	detectorService := httptest.NewServer(detector.Handler(detectorFunc(func(_ context.Context, event detector.Event) ([]detector.Signal, error) {
+		seen <- event
+		return []detector.Signal{}, nil
+	})))
+	defer detectorService.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	cfg.Server.Detectors = []DetectorConfig{{ID: "capture", URL: detectorService.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 500, OnError: "fallback", SampleRate: 1}}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"org/model-name","messages":[{"role":"user","content":"probe"}]}`))
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("namespaced unknown model status=%d, want 404", response.Code)
+	}
+	select {
+	case event := <-seen:
+		if event.Kind != "model_denied" || event.DeniedGroup == "org/model-name" || !strings.HasPrefix(event.DeniedGroup, "model-") {
+			t.Fatalf("unsafe or missing denied model detector event: %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("model enumeration event was not delivered")
+	}
+}
+
 func TestRequestCompletesWhenDetectorQueueIsFull(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -196,7 +237,7 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 	detectorService := httptest.NewServer(detector.Handler(detectorFunc(func(_ context.Context, event detector.Event) ([]detector.Signal, error) {
 		events <- event
 		index := 0
-		return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "fixture", Severity: "high", Score: 0.75, Key: strings.Repeat("b", 32), EvidenceRequestIDs: []string{event.RequestID}, SegmentKind: "tool_result", SegmentIndex: &index}}, nil
+		return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "fixture", Severity: "high", Score: 0.75, Key: strings.Repeat("b", 32), EvidenceRequestIDs: []string{event.RequestID, "evidence-prior-2"}, SegmentKind: "tool_result", SegmentIndex: &index}}, nil
 	})))
 	defer detectorService.Close()
 	dir := t.TempDir()
@@ -271,6 +312,9 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 			t.Fatal(err)
 		}
 		if len(records) > 0 {
+			if records[0].RequestedModel != "fixture" || !strings.Contains(records[0].ReasonCode, "fixture:high") || !strings.Contains(records[0].ReasonCode, "evidence=") || !strings.Contains(records[0].ReasonCode, requestEvent.RequestID) || !strings.Contains(records[0].ReasonCode, "evidence-prior-2") {
+				t.Fatalf("security event omitted detector rule or evidence IDs: %+v", records[0])
+			}
 			recordBytes, _ := json.Marshal(records)
 			if strings.Contains(string(recordBytes), promptMarker) || strings.Contains(string(recordBytes), segmentMarker) || strings.Contains(string(recordBytes), testToken) || strings.Contains(string(recordBytes), providerKey) {
 				t.Fatal("security event carried prompt, segment, or credential text")

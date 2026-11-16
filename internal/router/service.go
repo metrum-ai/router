@@ -116,6 +116,7 @@ type Service struct {
 	detectors              []detectorRuntime
 	detectorMu             sync.RWMutex
 	detectorDropped        atomic.Uint64
+	detectorInvalidDropped atomic.Uint64
 	detectorMetricsEnabled atomic.Bool
 	securityEventStream    *securityEventStream
 	detectorResultConsumer func(detect.Result)
@@ -1419,6 +1420,7 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
 	if enabled, detectorDrops := s.detectorDropMetrics(); enabled {
 		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", detectorDrops)
+		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_invalid_dropped_total Detector events rejected before queueing because they failed contract validation.\n# TYPE metrum_ai_router_detector_invalid_dropped_total counter\nmetrum_ai_router_detector_invalid_dropped_total %d\n", s.detectorInvalidDropped.Load())
 	}
 	if s.tlsManager != nil {
 		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
@@ -1776,7 +1778,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if exists {
 			reason = "model-not-allowed"
 		}
-		s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.caller.cfg.ID, Kind: "model_denied", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), KeyID: opaqueDetectorKeyID(rc.rec.TokenID), DeniedGroup: req.Model, SourceIP: rc.clientIP.Address})
+		s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.caller.cfg.ID, Kind: "model_denied", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), KeyID: opaqueDetectorKeyID(rc.rec.TokenID), DeniedGroup: safeDetectorModelLabel(req.Model), SourceIP: rc.clientIP.Address})
 		if dialect == "openai-chat" || dialect == "openai-responses" {
 			s.writeModelNotFound(w, rc, req.Model, reason)
 		} else if dialect == "anthropic" {
