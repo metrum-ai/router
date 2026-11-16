@@ -527,10 +527,20 @@ type adminEvidenceBundleResponse struct {
 type adminRequestEvidenceBundle struct {
 	RequestSummary      adminReportRequest             `json:"requestSummary"`
 	CostAccounting      adminEvidenceCostAccounting    `json:"costAccounting"`
+	ToolRouting         adminEvidenceToolRouting       `json:"toolRouting"`
 	AdmissionAndShaping adminEvidenceAdmissionShaping  `json:"admissionAndShaping"`
 	TargetEligibility   adminEvidenceTargetEligibility `json:"targetEligibility"`
 	Completeness        adminEvidenceCompleteness      `json:"completeness"`
 	PrivacyBoundaries   []string                       `json:"privacyBoundaries"`
+}
+
+type adminEvidenceToolRouting struct {
+	Calls             int    `json:"calls"`
+	FirstFailureClass string `json:"firstFailureClass,omitempty"`
+	Retries           int    `json:"retries"`
+	Escalations       int    `json:"escalations"`
+	ReliabilityBucket string `json:"reliabilityBucket,omitempty"`
+	ReliabilitySource string `json:"reliabilitySource,omitempty"`
 }
 
 type adminEvidenceCostAccounting struct {
@@ -807,6 +817,12 @@ type adminReportRequest struct {
 	Cache                           string  `json:"cache"`
 	Attempts                        int     `json:"attempts"`
 	Fallback                        bool    `json:"fallback"`
+	ToolCallCount                   int     `json:"toolCallCount,omitempty"`
+	ToolFirstFailureClass           string  `json:"toolFirstFailureClass,omitempty"`
+	ToolRetries                     int     `json:"toolRetries,omitempty"`
+	ToolEscalations                 int     `json:"toolEscalations,omitempty"`
+	ToolReliabilityBucket           string  `json:"toolReliabilityBucket,omitempty"`
+	ToolReliabilitySource           string  `json:"toolReliabilitySource,omitempty"`
 	LatencyMS                       int64   `json:"latencyMs"`
 	TTFBMS                          *int64  `json:"ttfbMs,omitempty"`
 	UpstreamMS                      *int64  `json:"upstreamMs,omitempty"`
@@ -2217,6 +2233,14 @@ func adminEvidenceBundleFrom(row usageRow, request adminReportRequest, sections 
 			PricingUpdatedAt:                   row.PricingUpdatedAt,
 			StoredRequestTimeValues:            true,
 			UnknownPricing:                     unknownPricing,
+		},
+		ToolRouting: adminEvidenceToolRouting{
+			Calls:             row.ToolCallCount,
+			FirstFailureClass: row.ToolFirstFailureClass,
+			Retries:           row.ToolRetries,
+			Escalations:       row.ToolEscalations,
+			ReliabilityBucket: row.ToolReliabilityBucket,
+			ReliabilitySource: row.ToolReliabilitySource,
 		},
 		AdmissionAndShaping: adminEvidenceAdmissionShaping{
 			QuotaState:                       row.QuotaState,
@@ -5698,6 +5722,12 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 		Cache:                           row.Cache,
 		Attempts:                        row.Attempts,
 		Fallback:                        row.FallbackUsed,
+		ToolCallCount:                   row.ToolCallCount,
+		ToolFirstFailureClass:           row.ToolFirstFailureClass,
+		ToolRetries:                     row.ToolRetries,
+		ToolEscalations:                 row.ToolEscalations,
+		ToolReliabilityBucket:           row.ToolReliabilityBucket,
+		ToolReliabilitySource:           row.ToolReliabilitySource,
 		LatencyMS:                       row.LatencyMS,
 		TTFBMS:                          row.TTFBMS,
 		UpstreamMS:                      row.UpstreamMS,

@@ -41,5 +41,5 @@ func applyUsageTokenBreakdownMigration(db *gorm.DB) error {
 	return verifyUsageTokenBreakdownMigration(db)
 }
 func verifyUsageTokenBreakdownMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchemaExcept(db, usageEndpointColumns)
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns(usageEndpointColumns))
 }

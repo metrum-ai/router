@@ -91,6 +91,12 @@ This section is generated from the router usage and content-capture schema used 
 | `target_provider` | string | no | once per request at terminal request accounting | safe deployment metadata | `openrouter` |
 | `target_model` | string | no | once per request at terminal request accounting | safe deployment metadata | deployment-defined model or group label |
 | `target_dialect` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `openai-chat`, `openai-responses`, `anthropic-messages`, `gemini-generate-content`, `replicate` |
+| `tool_call_count` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `0` or positive integer |
+| `tool_first_failure_class` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
+| `tool_retries` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
+| `tool_escalations` | integer | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
+| `tool_reliability_bucket` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `none`, `small`, `large`, or deployment bucket |
+| `tool_reliability_source` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `target_region` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
 | `stream` | boolean | no | once per request at terminal request accounting | safe scalar diagnostics metadata | `true` or `false` |
 | `cache` | string | no | once per request at terminal request accounting | safe scalar diagnostics metadata | deployment-defined scalar value |
