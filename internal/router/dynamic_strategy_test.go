@@ -111,9 +111,11 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 	svc.cfg.Models["default"] = group
 	router := httptest.NewServer(svc.Handler())
 	defer router.Close()
+	callIndex := 0
 	call := func(maxTokens int) (int, string) {
 		t.Helper()
-		payload := fmt.Sprintf(`{"model":"default","max_tokens":%d,"messages":[{"role":"user","content":"classify receipt"}]}`, maxTokens)
+		callIndex++
+		payload := fmt.Sprintf(`{"model":"default","max_tokens":%d,"messages":[{"role":"user","content":"classify receipt %d"}]}`, maxTokens, callIndex)
 		req, _ := http.NewRequest(http.MethodPost, router.URL+"/v1/chat/completions", strings.NewReader(payload))
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		req.Header.Set("Content-Type", "application/json")
