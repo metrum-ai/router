@@ -40,6 +40,15 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN = os.environ.get("PARALLEL_LIVE_TOKEN") or "live-parallel-gate-token"
 MAX_OUTPUT = 256
 MARKERS = {"a": "GATE-A-7731", "b": "GATE-B-4192", "c": "GATE-C-6605"}
+RELEASE_CLIENT_CELLS = (
+    ("openai-chat-sdk", "openai-chat", "openai-chat-sdk"),
+    ("openai-responses-sdk", "openai-responses", "openai-responses-sdk"),
+    ("anthropic-messages-sdk", "anthropic-messages", "anthropic-messages-sdk"),
+)
+
+
+def client_cells_for_set(cell_set: str) -> tuple[tuple[str, str, str], ...]:
+    return RELEASE_CLIENT_CELLS if cell_set == "release" else ()
 
 
 def free_port() -> int:
@@ -261,9 +270,9 @@ class Gate:
         finally:
             self.cells.append(result)
 
-    def client_cell(self, name: str, surface: str, base_url: str, model: str = "gate") -> None:
+    def client_cell(self, name: str, surface: str, base_url: str, model: str = "gate", group: str | None = None) -> None:
         """Run one real SDK tool call and continuation against the local router."""
-        result = {"cell": name, "surface": surface, "client": name.split("-", 1)[0], "problems": [], "cost_usd": 0.0}
+        result = {"cell": name, "surface": surface, "client": name.split("-", 1)[0], "group": group or model, "problems": [], "cost_usd": 0.0}
         token = TOKEN
         tools = [{"name": "read_file", "description": "Read one fixed test file.", "parameters": {
             "type": "object", "properties": {"path": {"type": "string"}},
@@ -296,7 +305,7 @@ class Gate:
                 from openai import OpenAI
                 client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=90)
                 schema = [{"type": "function", "function": {**tools[0], "strict": False}}]
-                first_body = {"model": model, "max_tokens": MAX_OUTPUT, "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema}
+                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema}
                 first = invoke("openai-chat", first_body, lambda: client.chat.completions.create(**first_body))
                 calls = (first.choices[0].message.tool_calls if first and first.choices else None) or []
                 if len(calls) != 1 or calls[0].function.name != "read_file":
@@ -311,7 +320,7 @@ class Gate:
                     result["problems"].append("tool-arguments-mismatch")
                     return
                 follow = "Reply with the exact marker from the tool result."
-                second_body = {"model": model, "max_tokens": MAX_OUTPUT, "messages": [
+                second_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "messages": [
                     {"role": "user", "content": "Use read_file once for notes/a.txt."},
                     {"role": "assistant", "tool_calls": [{"id": calls[0].id, "type": "function", "function": {"name": "read_file", "arguments": calls[0].function.arguments}}]},
                     {"role": "tool", "tool_call_id": calls[0].id, "content": expected},
@@ -323,7 +332,7 @@ class Gate:
                 from openai import OpenAI
                 client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=90)
                 schema = [{"type": "function", **tools[0], "strict": False}]
-                first_body = {"model": model, "max_output_tokens": MAX_OUTPUT, "input": "Use read_file once for notes/a.txt.", "tools": schema}
+                first_body = {"model": group or model, "max_output_tokens": MAX_OUTPUT, "input": "Use read_file once for notes/a.txt.", "tools": schema}
                 first = invoke("openai-responses", first_body, lambda: client.responses.create(**first_body))
                 calls = [item for item in (first.output if first else []) if item.type == "function_call"]
                 if len(calls) != 1 or calls[0].name != "read_file":
@@ -337,7 +346,7 @@ class Gate:
                 if args.get("path") != "notes/a.txt":
                     result["problems"].append("tool-arguments-mismatch")
                     return
-                second_body = {"model": model, "max_output_tokens": MAX_OUTPUT, "input": [
+                second_body = {"model": group or model, "max_output_tokens": MAX_OUTPUT, "input": [
                     *first.output,
                     {"type": "function_call_output", "call_id": calls[0].call_id, "output": expected},
                     {"role": "user", "content": "Reply with the exact marker from the tool result."},
@@ -348,7 +357,7 @@ class Gate:
                 from anthropic import Anthropic
                 client = Anthropic(api_key=token, base_url=base_url, max_retries=0, timeout=90)
                 schema = [{"name": tools[0]["name"], "description": tools[0]["description"], "input_schema": tools[0]["parameters"]}]
-                first_body = {"model": model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema}
+                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema}
                 first = invoke("anthropic", first_body, lambda: client.messages.create(**first_body))
                 calls = [block for block in (first.content if first else []) if block.type == "tool_use"]
                 if len(calls) != 1 or calls[0].name != "read_file":
@@ -357,7 +366,7 @@ class Gate:
                 if calls[0].input.get("path") != "notes/a.txt":
                     result["problems"].append("tool-arguments-mismatch")
                     return
-                second_body = {"model": model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [
+                second_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [
                     {"role": "user", "content": "Use read_file once for notes/a.txt."},
                     {"role": "assistant", "content": [block.model_dump(mode="json") for block in first.content]},
                     {"role": "user", "content": [{"type": "tool_result", "tool_use_id": calls[0].id, "content": expected}, {"type": "text", "text": "Reply with the exact marker from the tool result."}]},
@@ -391,8 +400,11 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
             "gate": {"strategy": "static", "targets": targets},
             "gate-chat-to-messages": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
             "gate-messages-to-chat": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+            "openai-chat-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+            "openai-responses-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+            "anthropic-messages-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
         },
-        "callers": [{"id": "live-gate", "token_sha256": token_sha, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
+        "callers": [{"id": "live-gate", "token_sha256": token_sha, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat", "openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
     }
     path = temp / "config.yaml"
     import yaml  # noqa: PLC0415 - optional dependency for this harness only
@@ -450,11 +462,8 @@ def main() -> int:
                 # own dialect and the router translates to the other provider.
                 gate.cell("chat-caller-to-messages-target", "openai-chat", f"http://127.0.0.1:{port}", routed_headers_openai, True, "claude-haiku-4-5", "gate-chat-to-messages")
                 gate.cell("messages-caller-to-chat-target", "anthropic", f"http://127.0.0.1:{port}", routed_headers_anthropic, True, "gpt-4o-mini", "gate-messages-to-chat")
-            if openai_key:
-                gate.client_cell("openai-chat-sdk", "openai-chat", f"http://127.0.0.1:{port}")
-                gate.client_cell("openai-responses-sdk", "openai-responses", f"http://127.0.0.1:{port}")
-            if anthropic_key:
-                gate.client_cell("anthropic-messages-sdk", "anthropic-messages", f"http://127.0.0.1:{port}")
+            for name, surface, group in client_cells_for_set(args.cell_set):
+                gate.client_cell(name, surface, f"http://127.0.0.1:{port}", group=group)
         finally:
             process.terminate()
             try:

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add a release-only tool-call run with OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 
 ### Fixed

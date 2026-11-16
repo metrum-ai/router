@@ -89,7 +89,7 @@
     {
       "id": "anthropic-python-sdk",
       "name": "Anthropic Python SDK",
-      "version": "1.15.0",
+      "version": "2.3.0",
       "pin": "tests/api_compat/uv.lock",
       "surfaces": [
         "anthropic-messages"

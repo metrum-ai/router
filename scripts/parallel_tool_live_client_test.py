@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from parallel_live_budget import Budget
-from parallel_tool_live import Gate
+from parallel_tool_live import Gate, client_cells_for_set, router_config
 
 
 class Response:
@@ -74,18 +75,31 @@ class SDKClient:
 
 
 class ClientCellTest(unittest.TestCase):
+    def test_sdk_cells_are_release_only_and_provider_pinned(self):
+        self.assertEqual(client_cells_for_set("nightly"), ())
+        cells = client_cells_for_set("release")
+        self.assertEqual([cell[0] for cell in cells], ["openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"])
+        with tempfile.TemporaryDirectory() as directory:
+            config_path, _ = router_config(Path(directory), "openai-key", "anthropic-key")
+            import yaml
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        for group in ("openai-chat-sdk", "openai-responses-sdk"):
+            self.assertEqual({target["provider"] for target in config["models"][group]["targets"]}, {"openai"})
+        self.assertEqual({target["provider"] for target in config["models"]["anthropic-messages-sdk"]["targets"]}, {"anthropic"})
+
     def test_chat_responses_and_messages_sdk_tool_loops(self):
         fake_openai = types.SimpleNamespace(OpenAI=SDKClient)
         fake_anthropic = types.SimpleNamespace(Anthropic=SDKClient)
         with patch.dict(sys.modules, {"openai": fake_openai, "anthropic": fake_anthropic}):
-            for name, surface in (
-                ("openai-chat-sdk", "openai-chat"),
-                ("openai-responses-sdk", "openai-responses"),
-                ("anthropic-messages-sdk", "anthropic-messages"),
+            for name, surface, group in (
+                ("openai-chat-sdk", "openai-chat", "openai-chat-sdk"),
+                ("openai-responses-sdk", "openai-responses", "openai-responses-sdk"),
+                ("anthropic-messages-sdk", "anthropic-messages", "anthropic-messages-sdk"),
             ):
                 gate = Gate(Budget(), Path("unused"))
-                gate.client_cell(name, surface, "http://127.0.0.1:1")
+                gate.client_cell(name, surface, "http://127.0.0.1:1", group=group)
                 self.assertEqual(gate.cells[0]["problems"], [], name)
+                self.assertEqual(gate.cells[0]["group"], group)
                 expected_cost = 0.00007 if surface == "anthropic-messages" else 0.000009
                 self.assertAlmostEqual(gate.cells[0]["cost_usd"], expected_cost, places=10, msg=name)
 
