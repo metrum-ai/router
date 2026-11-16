@@ -11,7 +11,7 @@ Each audit row stores `previous_hash` and `row_hash` in the same transaction as 
 row_hash = hex(SHA256(previous_hash + "\n" + canonical_json_row))
 ```
 
-The first row for each source and domain starts at its stored anchor. Every later row links to the prior stored hash. The export carries per-source chain starts and heads, so the verifier detects edited fields, missing rows, inserted rows, and reordering. Retention keeps the newest expired row in each source and domain as a checkpoint and advances the stored start anchor to its predecessor; newer retained rows continue to link through that checkpoint. The checkpoint is stored in `router_admin_audit_chain_anchors` in the same database and is not externally signed in v5.0.0. Offline verification therefore trusts the exported checkpoint; deployments needing proof against a database administrator who can rewrite both events and anchors must preserve an external copy of the export/checkpoint.
+The first row for each source and domain starts at its stored anchor. Every later row links to the prior stored hash. The export carries per-source chain starts and heads, so the verifier detects edited fields, missing rows, inserted rows, and reordering. Retention prunes every expired row in bounded batches, including deletion markers, and advances the stored start anchor to the last pruned row hash. Newer retained rows continue to link through that checkpoint. The checkpoint is stored in `router_admin_audit_chain_anchors` in the same database and is not externally signed in v5.0.0. Offline verification therefore trusts the exported checkpoint; deployments needing proof against a database administrator who can rewrite both events and anchors must preserve an external copy of the export/checkpoint.
 
 Save an export and verify it offline:
 
@@ -21,6 +21,6 @@ metrum-ai-routerctl audit verify audit-export-page-1.json audit-export-page-2.js
 
 Verification checks each stored row hash, links adjacent rows in each source across every supplied page, checks page checksums, and checks the export against its chain-start and chain-head anchors. Supply pages in cursor order; verification rejects an incomplete sequence.
 
-Manual usage-audit deletion is limited to the oldest retained event in the caller's domain. It advances that domain's stored start anchor to the deleted row hash and writes a separate deletion marker in the global domain. Markers are excluded from manual deletion and retention pruning, including for callers authorized in the global domain.
+Manual usage-audit deletion is limited to the oldest retained event in the caller's domain. It advances that domain's stored start anchor to the deleted row hash and writes a separate deletion marker in the global domain. Markers are excluded from manual deletion, including for callers authorized in the global domain; retention may remove them after they expire.
 
 The real-upstream Admin API end-to-end suite, including audit export and retention cases, is documented at [`e2e/admin-api/README.md`](../e2e/admin-api/README.md). Run it with `python3 e2e/admin-api/run_e2e.py` after setting the four provider key environment variables listed there.
