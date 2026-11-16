@@ -17,7 +17,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 	defer closeDB()
 	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageMissionAttributionMigrationID {
+		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}
@@ -36,7 +36,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 	store := &usageStore{db: old.db}
 	// The baseline migration creates tables from current Go models on a fresh
 	// store, so remove the new columns to reproduce the deployed pre-migration shape.
-	for _, column := range []string{"TaskID", "HumanOwner"} {
+	for _, column := range []string{"TaskID", "HumanOwner", "RecomputedInputTokens"} {
 		if old.db.Migrator().HasColumn(&usageRecord{}, column) {
 			if err := old.db.Migrator().DropColumn(&usageRecord{}, column); err != nil {
 				t.Fatal(err)
@@ -44,10 +44,11 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		}
 	}
 	legacy := logRecord{RequestID: "before-mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker"}
-	if err := store.db.Omit("TaskID", "HumanOwner").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
+	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
 		t.Fatalf("write row before migration: %v", err)
 	}
-	currentRunner, err := newUsageMigrationRunner(store.db)
+	currentDefinitions := append(append([]MigrationDefinition(nil), priorDefinitions...), UsageMissionAttributionMigrationDefinition())
+	currentRunner, err := NewMigrationRunnerWithDataJobs(store.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: priorSchema + 1, MinData: 0, MaxData: 1}, currentDefinitions, usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := logRecord{RequestID: "mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker", TaskID: "task-7", HumanOwner: "team-ml"}
-	if err := store.db.Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
+	if err := store.db.Omit("RecomputedInputTokens").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
 		t.Fatal(err)
 	}
 	var stored usageRecord
