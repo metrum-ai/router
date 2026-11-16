@@ -25,6 +25,7 @@ func TestCallerTokenRevocationMigrationBackfillsLegacyHashes(t *testing.T) {
 		}
 		previousDefinitions = append(previousDefinitions, definition)
 	}
+
 	previousRunner, err := NewMigrationRunner(runner.db, configControlPlaneScope, previousCompatibility, previousDefinitions)
 	if err != nil {
 		t.Fatal(err)

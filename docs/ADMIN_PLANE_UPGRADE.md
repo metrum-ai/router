@@ -25,6 +25,17 @@ with its current login and is unaffected by this guide.
 A configuration without an `admin:` block starts the loopback admin listener by default. Set
 `admin.enabled: false` explicitly to keep a single listener.
 
+## v5.0.0 control-plane schema 17
+
+Schema 17 adds the admin client registry and credential bindings to the router-config control-plane
+database, and adds client ID and actor fields to credential lifecycle events. The migration is online
+and depends on schema 15. Use the packaged non-serving migration job and the backup, apply, verify,
+and status steps in [Data Migrations](DATA_MIGRATIONS.md); do not start serving replicas until the
+required migration contract is current. Client endpoints return unavailable until the client tables
+exist. Credential bindings match configured admin identities; disabled or deleted clients and
+revoked or expired bindings cannot authenticate. Re-register replacement credentials to restore a
+disabled client. A deleted client ID cannot be re-enabled; create a new client ID instead.
+
 ## 2. Exposure options
 
 **Loopback only (default).** `admin.enabled: true` with the default `127.0.0.1:8081`. Reach it from
@@ -133,7 +144,7 @@ without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
 Before enabling asynchronous operations, backups, or restores, apply the
-non-serving usage and router-config migrations through schema 16 using the
+non-serving usage and router-config migrations through schema 17 using the
 two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
 requires the separate `admin:restore:write` grant. It updates the configuration
 and usage databases sequentially; it is not an atomic cross-database operation.

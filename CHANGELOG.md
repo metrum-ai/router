@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add machine-client registration, credential metadata and revocation, effective-grant access review, and expiring and unused-credential warnings. Client credentials are checked against the shared control-plane store on authentication; credential secrets are not stored or returned.
 - Define trusted W3C `traceparent` correlation across router chains, with a new
   span and request ID per hop and safe scalar usage fields for joining requests.
   Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
@@ -49,6 +50,9 @@
 ### Fixed
 
 - Disable the unused admin listener on API compatibility test routers to avoid collisions when tests start several routers, and make plain `make` compile binaries without running the full test suite during CodeQL autobuild.
+- Generate OpenAPI concurrency and idempotency metadata from normalized runtime operations so the published contract omits `If-Match`, `Idempotency-Key`, and conflict responses for routes that do not enforce them.
+- Bind client credential metadata to configured identities; enforce client status, expiry and revocation across replicas; refuse lifecycle writes that remove the last policy administrator; exclude expired and revoked bindings from access-review grants.
+
 - Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
 - Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
@@ -135,6 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
 | --- | --- | --- | --- | --- | --- | --- |
 | `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+| `2026111605` | `router-config` | 17 | add admin client and credential registry, lifecycle audit fields, and deduplicated unused-warning state | online | none | `restore-required` |
 
 ### Fixed
 

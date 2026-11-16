@@ -17,7 +17,13 @@ import (
 // Kind is mtls, oauth, federated, adminkey, or emergency. Every kind, including
 // emergency, must pass through the admin Authorizer before an operation runs.
 type Principal struct {
-	Subject              string
+	Subject string
+	// Identity is the authenticator's immutable external identifier when it
+	// differs from CredentialID (for example a verified mTLS SAN).
+	Identity string
+	// Identities is a NUL-delimited list of every mapped immutable external
+	// identifier; Identity remains the primary value. NUL cannot occur in SANs.
+	Identities           string
 	Kind                 string
 	CredentialID         string
 	Issuer               string

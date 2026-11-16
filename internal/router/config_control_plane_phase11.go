@@ -160,33 +160,49 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 	// Failures collapse within one second and successes within five minutes, both keyed by
 	// lifecycle and outcome. The longer success window means a credential that scrapes
 	// constantly adds one counted row per window, not one per request.
-	window := time.Second
-	if event.Outcome == "success" {
-		window = adminCredentialSuccessWindow
+	if event.Lifecycle == "auth" || event.Lifecycle == "authenticate" {
+		window := time.Second
+		if event.Outcome == "success" {
+			window = adminCredentialSuccessWindow
+		}
+		collapsed := tx.Exec(
+			`UPDATE router_admin_credential_events SET count = count + 1 WHERE event_id = (SELECT event_id FROM router_admin_credential_events WHERE kind = ? AND credential_id = ? AND outcome = ? AND reason_code = ? AND client_ip_hash = ? AND lifecycle = ? AND at >= ? ORDER BY at DESC LIMIT 1)`,
+			adminAuditFieldValue(event.Kind), adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Outcome),
+			adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.ClientIPHash),
+			adminAuditFieldValue(event.Lifecycle),
+			adminCredentialEventTimestamp(event.At.Add(-window)),
+		)
+		if collapsed.Error != nil {
+			return fmt.Errorf("collapse credential event: %w", collapsed.Error)
+		}
+		if collapsed.RowsAffected > 0 {
+			return nil
+		}
 	}
-	collapsed := tx.Exec(
-		`UPDATE router_admin_credential_events SET count = count + 1 WHERE event_id = (SELECT event_id FROM router_admin_credential_events WHERE kind = ? AND credential_id = ? AND outcome = ? AND reason_code = ? AND client_ip_hash = ? AND lifecycle = ? AND at >= ? ORDER BY at DESC LIMIT 1)`,
-		adminAuditFieldValue(event.Kind), adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Outcome),
-		adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.ClientIPHash),
-		adminAuditFieldValue(event.Lifecycle),
-		event.At.Add(-window).UTC().Format(time.RFC3339Nano),
-	)
-	if collapsed.Error != nil {
-		return fmt.Errorf("collapse credential event: %w", collapsed.Error)
-	}
-	if collapsed.RowsAffected > 0 {
-		return nil
-	}
-	if err := tx.Exec(
-		`INSERT INTO router_admin_credential_events (event_id, at, kind, credential_id, subject, issuer, outcome, reason_code, request_id, client_ip_hash, lifecycle, count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) ON CONFLICT DO NOTHING`,
-		event.EventID, event.At.UTC().Format(time.RFC3339Nano), adminAuditFieldValue(event.Kind),
+	columns := []string{"event_id", "at", "kind", "credential_id", "subject", "issuer", "outcome", "reason_code", "request_id", "client_ip_hash", "lifecycle", "count"}
+	values := []any{
+		event.EventID, adminCredentialEventTimestamp(event.At), adminAuditFieldValue(event.Kind),
 		adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Subject), adminAuditFieldValue(event.Issuer),
 		adminAuditFieldValue(event.Outcome), adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.RequestID),
 		adminAuditFieldValue(event.ClientIPHash), adminAuditFieldValue(event.Lifecycle),
-	).Error; err != nil {
+		int64(1),
+	}
+	if tx.Migrator().HasColumn(adminCredentialEventsTable, "client_id") && tx.Migrator().HasColumn(adminCredentialEventsTable, "actor") {
+		columns = append(columns, "client_id", "actor")
+		values = append(values, adminAuditFieldValue(event.ClientID), adminAuditFieldValue(event.Actor))
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(columns)), ",")
+	if err := tx.Exec("INSERT INTO router_admin_credential_events ("+strings.Join(columns, ",")+") VALUES ("+placeholders+") ON CONFLICT DO NOTHING", values...).Error; err != nil {
 		return fmt.Errorf("append credential event: %w", err)
 	}
 	return nil
+}
+
+// adminCredentialEventTimestamp uses fixed precision because RFC3339Nano trims
+// trailing zeroes, which makes lexical ordering of timestamps with fractions
+// unreliable in the text column used by SQLite and PostgreSQL.
+func adminCredentialEventTimestamp(at time.Time) string {
+	return at.UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
 
 // PurgeAdminAuditEventsBefore removes audit records older than cutoff from both admin audit

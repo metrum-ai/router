@@ -29,7 +29,7 @@ Version-check the same packaged runner before this gate. Complete every data job
 [`deploy/kubernetes/examples/postgres-migration-plan-job.yaml`](../deploy/kubernetes/examples/postgres-migration-plan-job.yaml)
 is a non-serving Job that runs the packaged migration CLI against both the
 usage and router-config database DSNs from a Kubernetes Secret. It applies both
-scopes by default, including router-config schema 16, and requires an approved
+scopes by default, including router-config schema 17, and requires an approved
 backup evidence reference for the maintenance step. Set its image to the exact
 release digest and configure the Secret and evidence ConfigMap before applying:
 
@@ -201,15 +201,15 @@ authentication phases 12 and 13, which use the same control-plane scope.
   when it exists: a deployment without this step starts normally and answers `503`
   on the key lifecycle routes rather than advertising a store it does not have.
 
-The v5.0.0 `router-config` schema version 16 also includes
-`2026111605` (admin client identities) and `2026111606` (durable asynchronous
-admin operations). The latter creates `router_admin_operations`; it stores only
+The v5.0.0 `router-config` migration ledger reaches schema version 17 and includes
+`2026111605` (admin client identities; schema 17) and `2026111606` (durable asynchronous
+admin operations; schema 16). The latter creates `router_admin_operations`; it stores only
 operation kind/state, structured result, stable safe error code, and timestamps.
 It retains at most 500 rows, seven days, and 64 MiB of results. Apply the
 router-config scope with the non-serving migration CLI before enabling the new
 operation and backup API routes; serving startup and read-only migration status
 never create or upgrade the table. The packaged Kubernetes Job example plans
-or applies both scopes and verifies both resulting ledgers, including schema 16.
+or applies both scopes and verifies both resulting ledgers, including schema 17.
 
 ### Upgrading with `migration_policy: deployment-job`
 

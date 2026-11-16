@@ -33,7 +33,8 @@ type adminMachineRuntime struct {
 	replicas   int
 	// keys is the authoritative API-issued key store (#815). Nil on file-mode
 	// deployments, which have no issued keys at all.
-	keys *adminKeyStore
+	keys    *adminKeyStore
+	clients func() *adminClientStore
 }
 
 // initAdminMachineRuntime installs the runtime and its generation factory. It
@@ -44,7 +45,7 @@ func (s *Service) initAdminMachineRuntime() error {
 	if !s.cfg.Admin.Enabled {
 		return nil
 	}
-	runtime := &adminMachineRuntime{replay: newAdminDPoPReplayState(), emergencySlots: make(chan struct{}, 1), lookup: os.LookupEnv, replicas: 1, keys: s.adminKeys}
+	runtime := &adminMachineRuntime{replay: newAdminDPoPReplayState(), emergencySlots: make(chan struct{}, 1), lookup: os.LookupEnv, replicas: 1, keys: s.adminKeys, clients: func() *adminClientStore { return s.adminClients }}
 	if s.configControlPlane != nil && s.cfg.Admin.Enabled {
 		sink, err := newAdminMachineCredentialEventSink(s.adminCredentialEventSink())
 		if err != nil {
@@ -192,6 +193,9 @@ func (rt *adminMachineRuntime) prepare(cfg *Config, compatible *authorizer) (*ad
 	// wrapping a second copy of it, would run every mechanism twice (duplicate
 	// DPoP replay claims, doubled emergency Use writes, doubled PBKDF2).
 	g.auth = NewAuthenticatorChain(chain...)
+	if rt.clients != nil && rt.clients() != nil {
+		g.auth = &adminClientBindingAuthenticator{inner: g.auth, store: rt.clients}
+	}
 	if rt.events != nil {
 		g.auth = &adminMachineEventRecordingAuthenticator{inner: g.auth, events: rt.events}
 	}

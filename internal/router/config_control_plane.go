@@ -41,7 +41,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 16, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 17, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -142,7 +142,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration(), callerTokenMetadataMigrationDefinition(), callerTokenRevocationMigrationDefinition(), adminOperationsMigrationDefinition())
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration(), callerTokenMetadataMigrationDefinition(), callerTokenRevocationMigrationDefinition(), adminClientMigrationDefinition(callerTokenRevocationMigrationID, 17), adminOperationsMigrationDefinition())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}

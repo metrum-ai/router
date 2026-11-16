@@ -133,6 +133,7 @@ type adminOpenAPIGenerator struct {
 }
 
 func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) {
+	op = op.normalized()
 	item := map[string]any{
 		"operationId":         op.ID,
 		"summary":             op.Summary,

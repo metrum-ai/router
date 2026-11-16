@@ -170,6 +170,11 @@ mutation:
 paginated collection returns a `Link` cursor instead of an `ETag`; the two are
 never combined.
 
+Client registry mutations operate on dedicated client rows, not configuration
+revisions. They do not require or evaluate `If-Match`; each write is
+transactional, and policy-administrator lockout checks are serialized with
+other local policy mutations.
+
 ## Idempotency
 
 Mutating operations accept `Idempotency-Key` (128 bytes maximum). The scope is
@@ -209,6 +214,34 @@ Every configuration mutation accepts `dry_run: true` (and `?dry_run=true` on
 `/admin/v1`) and the `POST .../targets:validate` operation is a pure dry run. A
 dry run creates no configuration set, bumps no revision and writes no change
 event; its response body is identical to the legacy route's.
+
+## Machine clients
+
+Machine clients use `GET` and `POST /admin/v1/clients`, `GET` and `PUT
+/admin/v1/clients/{client}`, `POST /admin/v1/clients/{client}/disable` and
+`/enable`, and `DELETE /admin/v1/clients/{client}`. Register credential metadata
+with `POST /admin/v1/clients/{client}/credentials`; revoke one with `DELETE` at
+the credential path. Credential IDs and subjects must match the identity the
+machine authenticator returns. Supported kinds are `adminkey`, `mtls`, `oauth`,
+and `federated`. Registration accepts public identifiers only and stores no
+credential secret. mTLS bindings match the stable SAN/SPIFFE identity and
+subject, not a certificate fingerprint. Every accepted identity is checked
+against active client and credential rows on each admin request, so disable,
+delete, expiry, and credential revocation take effect across replicas without
+waiting for a cache. For OAuth and federated JWTs mapped from a `client_id`
+claim, the credential ID is `client_id:<claim-value>` (for example,
+`client_id:billing-worker`); register that exact ID and the mapped subject.
+Unregistered credentials of any kind that map to a managed client subject are
+refused after that client's binding is disabled, deleted, revoked, or expired.
+
+`GET /admin/v1/clients/access-review` exports client credential metadata,
+last-use state, and effective policy grants. Disabled clients and revoked or
+expired credentials have no effective grants. Unused credentials have no recorded
+successful use. Credentials within 30 days of expiry are exposed in the review;
+the background monitor emits one durable expiry-warning event per credential
+and exports `metrum_ai_router_admin_credentials_expiring_30d` on the admin listener's `/metrics` endpoint.
+It also emits one durable unused-warning event for active credentials that have
+never been used and exports the unused-credential gauge.
 
 ## Resource configuration
 
@@ -285,6 +318,9 @@ Backups are versioned, SHA-256 checked bundles of control-plane configuration
 sets/revisions, policy sets, admin key verifiers, and audit records. Restore
 accepts only a clean, already-migrated replica. Operation rows expire after
 seven days and the store retains at most 500 records.
+
+The CLI can call all versioned resource routes with `routerctl admin-resource METHOD --path
+/admin/v1/...` and JSON `--body` for writes.
 
 ## Route map (legacy → `/admin/v1`)
 
