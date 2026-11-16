@@ -488,7 +488,12 @@ def main() -> int:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
             diff_limit = INITIAL_DIFF_BYTES
-            batches = git_diff_batches(args.base, args.head, max_bytes=diff_limit)
+            batches = git_diff_batches(
+                args.base,
+                args.head,
+                max_bytes=diff_limit,
+                max_single_file_bytes=MAX_DIFF_BYTES,
+            )
             findings_by_id: dict[str, dict[str, Any]] = {}
             batch_index = 0
             while batch_index < len(batches):
