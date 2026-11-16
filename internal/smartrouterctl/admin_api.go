@@ -10,11 +10,13 @@ package smartrouterctl
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -56,26 +58,45 @@ func ResolveAdminCredential(fileFlag string) (string, error) {
 // NewAdminAPIClient builds the client from --router-url / ROUTER_URL plus the
 // resolved admin credential.
 func NewAdminAPIClient(routerURL, keyFile string) (*AdminAPIClient, error) {
+	return NewAdminAPIClientWithSocket(routerURL, keyFile, "")
+}
+
+// NewAdminAPIClientWithSocket configures either TCP or Unix-domain transport.
+func NewAdminAPIClientWithSocket(routerURL, keyFile, socketPath string) (*AdminAPIClient, error) {
 	base := strings.TrimSpace(routerURL)
-	if base == "" {
+	if base == "" && socketPath == "" {
 		base = strings.TrimSpace(os.Getenv("ROUTER_URL"))
 	}
-	if base == "" {
-		return nil, fmt.Errorf("router URL required: --router-url or ROUTER_URL")
+	socketPath = strings.TrimSpace(socketPath)
+	if base == "" && socketPath == "" {
+		return nil, fmt.Errorf("admin endpoint required: --router-url, ROUTER_URL, or --socket")
 	}
-	parsed, err := url.Parse(base)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("router URL %q is invalid", base)
+	if base != "" && socketPath != "" {
+		return nil, fmt.Errorf("choose either --router-url or --socket")
+	}
+	if base != "" {
+		parsed, err := url.Parse(base)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return nil, fmt.Errorf("router URL %q is invalid", base)
+		}
 	}
 	token, err := ResolveAdminCredential(keyFile)
 	if err != nil {
 		return nil, err
 	}
-	return &AdminAPIClient{
+	client := &AdminAPIClient{
 		BaseURL: strings.TrimRight(base, "/"),
 		Token:   token,
 		HTTP:    &http.Client{Timeout: 60 * time.Second},
-	}, nil
+	}
+	if socketPath != "" {
+		client.BaseURL = "http://unix"
+		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}}
+		client.HTTP = &http.Client{Timeout: 60 * time.Second, Transport: transport}
+	}
+	return client, nil
 }
 
 // AdminAPIError is one typed Admin API error response.

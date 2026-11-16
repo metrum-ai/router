@@ -493,6 +493,7 @@ func groupsShadowCommand(args []string) {
 // adminAPIFlags bundles the shared Admin API flags.
 type adminAPIFlags struct {
 	routerURL      *string
+	socketPath     *string
 	adminKeyFile   *string
 	ifMatch        *string
 	idempotencyKey *string
@@ -502,6 +503,7 @@ func addAdminAPIFlags(name string) (*flag.FlagSet, *adminAPIFlags) {
 	fs := flag.NewFlagSet(name, flag.ExitOnError)
 	api := &adminAPIFlags{
 		routerURL:      fs.String("router-url", "", "router base URL (or ROUTER_URL)"),
+		socketPath:     fs.String("socket", "", "admin Unix socket path"),
 		adminKeyFile:   fs.String("admin-key-file", "", "mode-0600 file holding the admin key (or ROUTER_ADMIN_KEY)"),
 		ifMatch:        fs.String("if-match", "", "If-Match runtime revision precondition"),
 		idempotencyKey: fs.String("idempotency-key", "", "idempotency key (default: generated for mutations)"),
@@ -524,7 +526,7 @@ func (f *adminAPIFlags) mutationHeaders() map[string]string {
 }
 
 func mustAdminAPIClient(api *adminAPIFlags) *smartrouterctl.AdminAPIClient {
-	client, err := smartrouterctl.NewAdminAPIClient(*api.routerURL, *api.adminKeyFile)
+	client, err := smartrouterctl.NewAdminAPIClientWithSocket(*api.routerURL, *api.adminKeyFile, *api.socketPath)
 	if err != nil {
 		die("%v", err)
 	}
@@ -594,6 +596,7 @@ func addAPIFlag(fs *flag.FlagSet) (*bool, *adminAPIFlags) {
 	useAPI := fs.Bool("api", false, "go through the Admin API over HTTP instead of opening the config database")
 	api := &adminAPIFlags{
 		routerURL:      fs.String("router-url", "", "router base URL (or ROUTER_URL)"),
+		socketPath:     fs.String("socket", "", "admin Unix socket path"),
 		adminKeyFile:   fs.String("admin-key-file", "", "mode-0600 file holding the admin key (or ROUTER_ADMIN_KEY)"),
 		ifMatch:        fs.String("if-match", "", "If-Match runtime revision precondition"),
 		idempotencyKey: fs.String("idempotency-key", "", "idempotency key (default: generated for mutations)"),

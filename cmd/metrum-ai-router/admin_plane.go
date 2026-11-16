@@ -39,7 +39,12 @@ func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride str
 	if err := plane.Start(); err != nil {
 		return nil, err
 	}
-	log.Printf("Metrum AI Router admin plane listening on %s", plane.Addr())
+	if addr := plane.Addr(); addr != "" {
+		log.Printf("Metrum AI Router admin plane listening on %s", addr)
+	}
+	if socket := strings.TrimSpace(cfg.Admin.UnixSocket.Path); socket != "" {
+		log.Printf("Metrum AI Router admin plane listening on Unix socket %s", socket)
+	}
 	if cfg.Admin.LegacyRoutesOnServingPort == nil || *cfg.Admin.LegacyRoutesOnServingPort {
 		log.Printf("WARNING: legacy /admin/* machine routes are still served on the serving port; they are deprecated in favour of /admin/v1 (Sunset %s). Set admin.legacy_routes_on_serving_port: false to remove them.",
 			strings.TrimSpace(cfg.Admin.LegacySunset))

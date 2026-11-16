@@ -120,6 +120,63 @@ func adminGet(t *testing.T, url string) (*http.Response, string) {
 	return resp, string(body)
 }
 
+func TestAdminUnixSocketServesSameAuthenticatedHandlerAndCleansUp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "admin.sock")
+	fixture := newAdminTestFixture(t, func(cfg *Config) {
+		cfg.Admin.Listen = ""
+		cfg.Admin.UnixSocket = AdminUnixSocketConfig{Path: path, Mode: "0600"}
+	})
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Fatalf("socket mode = %04o, want 0600", got)
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", path)
+	}}
+	client := &http.Client{Transport: transport}
+	resp, err := client.Get("http://unix/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("socket health status=%d", resp.StatusCode)
+	}
+	transport.CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := fixture.admin.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("socket path remains after shutdown: %v", err)
+	}
+}
+
+func TestAdminUnixSocketDoesNotBypassAuthentication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "admin.sock")
+	fixture := newAdminTestFixtureWithAuth(t, nil, func(cfg *Config) {
+		cfg.Admin.Listen = ""
+		cfg.Admin.UnixSocket = AdminUnixSocketConfig{Path: path, Mode: "0600"}
+	})
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", path)
+	}}
+	defer transport.CloseIdleConnections()
+	resp, err := (&http.Client{Transport: transport}).Get("http://unix/admin/v1/config/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated socket request status=%d, want 401", resp.StatusCode)
+	}
+	_ = fixture
+}
+
 func adminDo(t *testing.T, req *http.Request) (*http.Response, string) {
 	t.Helper()
 	resp, err := http.DefaultClient.Do(req)

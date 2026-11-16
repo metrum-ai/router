@@ -13,6 +13,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -340,6 +342,10 @@ func adminProxyGate(cfg *AdminPlaneConfig) func(http.Handler) http.Handler {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Context().Value(adminUnixSocketContextKey{}) == true {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ip := adminRemoteIP(r)
 			if ip == nil || !ip.IsLoopback() {
 				trustedPeer := false
@@ -362,6 +368,8 @@ func adminProxyGate(cfg *AdminPlaneConfig) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+type adminUnixSocketContextKey struct{}
 
 func adminRemoteIP(r *http.Request) net.IP {
 	if r == nil {
@@ -481,6 +489,10 @@ type AdminPlane struct {
 	mu       sync.Mutex
 	srv      *http.Server
 	ln       net.Listener
+	unixSrv  *http.Server
+	unixLn   *net.UnixListener
+	unixPath string
+	unixInfo os.FileInfo
 	err      chan error
 	reloadMu sync.Mutex
 	// Keep the original dynamic source's capability separately from the
@@ -527,6 +539,10 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler, opts ...AdminPla
 		return nil, fmt.Errorf("admin plane requires a handler")
 	}
 	local := AdminPlaneConfig(*cfg)
+	defaultAdminPlaneConfig(&local)
+	if err := validateAdminPlane(&local); err != nil {
+		return nil, err
+	}
 	p := &AdminPlane{
 		cfg:     local,
 		handler: handler,
@@ -591,7 +607,7 @@ func NewAdminPlane(cfg *AdminPlaneConfig, handler http.Handler, opts ...AdminPla
 			return nil, err
 		}
 	}
-	if strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
+	if strings.TrimSpace(local.Listen) != "" && strings.EqualFold(strings.TrimSpace(local.TLS.Mode), adminTLSModeOff) {
 		loopback, err := adminListenIsLoopback(local.Listen)
 		if err != nil {
 			return nil, err
@@ -715,8 +731,11 @@ func (p *AdminPlane) Start() error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.srv != nil {
+	if p.srv != nil || p.unixSrv != nil {
 		return fmt.Errorf("admin plane already started")
+	}
+	if strings.TrimSpace(p.cfg.Listen) == "" && strings.TrimSpace(p.cfg.UnixSocket.Path) == "" {
+		return fmt.Errorf("admin plane requires a TCP listener or Unix socket")
 	}
 	if p.tlsCfg != nil && strings.EqualFold(strings.TrimSpace(p.cfg.TLS.CertificateSource), adminCertificateSourceACME) {
 		p.certMu.Lock()
@@ -736,34 +755,108 @@ func (p *AdminPlane) Start() error {
 			return fmt.Errorf("admin listener: managed certificate unavailable: %s", adminSafeErrorText(err))
 		}
 	}
-	ln, err := net.Listen("tcp", p.cfg.Listen)
-	if err != nil {
-		return fmt.Errorf("admin listener: %w", err)
+	var ln net.Listener
+	var srv *http.Server
+	if strings.TrimSpace(p.cfg.Listen) != "" {
+		var err error
+		ln, err = net.Listen("tcp", p.cfg.Listen)
+		if err != nil {
+			return fmt.Errorf("admin listener: %w", err)
+		}
+		if p.tlsCfg != nil {
+			ln = tls.NewListener(ln, p.tlsCfg)
+		}
+		srv = p.newHTTPServer()
 	}
-	if p.tlsCfg != nil {
-		ln = tls.NewListener(ln, p.tlsCfg)
-	}
-	srv := &http.Server{
-		Handler:           p.handler,
-		ReadHeaderTimeout: adminLimitDuration(p.cfg.Limits.ReadHeaderTimeoutMS, defaultAdminReadHeaderTimeoutMS),
-		ReadTimeout:       adminLimitDuration(p.cfg.Limits.ReadTimeoutMS, defaultAdminReadTimeoutMS),
-		WriteTimeout:      adminLimitDuration(p.cfg.Limits.WriteTimeoutMS, defaultAdminWriteTimeoutMS),
-		IdleTimeout:       adminLimitDuration(p.cfg.Limits.IdleTimeoutMS, defaultAdminIdleTimeoutMS),
-		MaxHeaderBytes:    p.cfg.Limits.MaxHeaderBytes,
+	var unixLn *net.UnixListener
+	var unixSrv *http.Server
+	if path := strings.TrimSpace(p.cfg.UnixSocket.Path); path != "" {
+		raw, err := net.Listen("unix", path)
+		if err != nil {
+			if ln != nil {
+				_ = ln.Close()
+			}
+			return fmt.Errorf("admin unix socket: %w", err)
+		}
+		unixLn = raw.(*net.UnixListener)
+		unixLn.SetUnlinkOnClose(false)
+		createdInfo, statErr := os.Lstat(path)
+		if statErr != nil {
+			_ = unixLn.Close()
+			if ln != nil {
+				_ = ln.Close()
+			}
+			return statErr
+		}
+		cleanup := func() { _ = unixLn.Close(); removeUnixSocketIfSame(path, createdInfo) }
+		mode, parseErr := strconv.ParseUint(strings.TrimPrefix(strings.TrimSpace(p.cfg.UnixSocket.Mode), "0"), 8, 9)
+		if parseErr != nil {
+			cleanup()
+			if ln != nil {
+				_ = ln.Close()
+			}
+			return fmt.Errorf("admin.unix_socket.mode must be octal")
+		}
+		if err := os.Chmod(path, os.FileMode(mode)); err != nil {
+			cleanup()
+			if ln != nil {
+				_ = ln.Close()
+			}
+			return fmt.Errorf("set admin unix socket mode: %w", err)
+		}
+		if p.cfg.UnixSocket.Owner != nil {
+			if err := os.Chown(path, *p.cfg.UnixSocket.Owner, -1); err != nil {
+				cleanup()
+				if ln != nil {
+					_ = ln.Close()
+				}
+				return fmt.Errorf("set admin unix socket owner: %w", err)
+			}
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			cleanup()
+			if ln != nil {
+				_ = ln.Close()
+			}
+			return err
+		}
+		unixSrv = p.newHTTPServer()
+		unixSrv.ConnContext = func(ctx context.Context, _ net.Conn) context.Context {
+			return context.WithValue(ctx, adminUnixSocketContextKey{}, true)
+		}
+		p.unixPath, p.unixInfo = path, info
 	}
 	p.srv = srv
 	p.ln = ln
+	p.unixSrv, p.unixLn = unixSrv, unixLn
 	p.startManagedCertificateRenewal()
 	p.startClientCAReload()
-	go func() {
-		if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			select {
-			case p.err <- serveErr:
-			default:
+	if srv != nil {
+		go func() {
+			if serveErr := srv.Serve(ln); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+				select {
+				case p.err <- serveErr:
+				default:
+				}
 			}
-		}
-	}()
+		}()
+	}
+	if unixSrv != nil {
+		go func() {
+			if serveErr := unixSrv.Serve(unixLn); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+				select {
+				case p.err <- serveErr:
+				default:
+				}
+			}
+		}()
+	}
 	return nil
+}
+
+func (p *AdminPlane) newHTTPServer() *http.Server {
+	return &http.Server{Handler: p.handler, ReadHeaderTimeout: adminLimitDuration(p.cfg.Limits.ReadHeaderTimeoutMS, defaultAdminReadHeaderTimeoutMS), ReadTimeout: adminLimitDuration(p.cfg.Limits.ReadTimeoutMS, defaultAdminReadTimeoutMS), WriteTimeout: adminLimitDuration(p.cfg.Limits.WriteTimeoutMS, defaultAdminWriteTimeoutMS), IdleTimeout: adminLimitDuration(p.cfg.Limits.IdleTimeoutMS, defaultAdminIdleTimeoutMS), MaxHeaderBytes: p.cfg.Limits.MaxHeaderBytes}
 }
 
 func adminLimitDuration(ms, fallback int) time.Duration {
@@ -890,15 +983,38 @@ func (p *AdminPlane) Shutdown(ctx context.Context) error {
 	}
 	p.mu.Lock()
 	srv := p.srv
+	unixSrv := p.unixSrv
 	p.mu.Unlock()
 	if cancelReload != nil {
 		cancelReload()
 		p.reloadWG.Wait()
 	}
-	if srv == nil {
-		return nil
+	var errs []error
+	if srv != nil {
+		if err := srv.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+			_ = srv.Close()
+		}
 	}
-	return srv.Shutdown(ctx)
+	if unixSrv != nil {
+		if err := unixSrv.Shutdown(ctx); err != nil {
+			errs = append(errs, err)
+			_ = unixSrv.Close()
+		}
+	}
+	if p.unixPath != "" && p.unixInfo != nil {
+		removeUnixSocketIfSame(p.unixPath, p.unixInfo)
+	}
+	return errors.Join(errs...)
+}
+
+func removeUnixSocketIfSame(path string, expected os.FileInfo) {
+	if expected == nil {
+		return
+	}
+	if current, err := os.Lstat(path); err == nil && os.SameFile(current, expected) {
+		_ = os.Remove(path)
+	}
 }
 
 // ShutdownTimeout is the admin drain budget from config.

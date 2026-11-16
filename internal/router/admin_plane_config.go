@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -55,7 +57,8 @@ type AdminPlaneConfig struct {
 	// Listen is the admin listener address. Loopback by default; remote
 	// binding is an explicit opt-in that also needs TLS or the plaintext
 	// override below.
-	Listen string `yaml:"listen" json:"listen"`
+	Listen     string                `yaml:"listen" json:"listen"`
+	UnixSocket AdminUnixSocketConfig `yaml:"unix_socket" json:"unixSocket,omitempty"`
 	// AllowPlaintextNonLoopback permits a non-loopback bind without TLS. It
 	// exists for controlled test networks and logs a startup warning.
 	AllowPlaintextNonLoopback bool `yaml:"allow_plaintext_non_loopback" json:"allowPlaintextNonLoopback"`
@@ -76,6 +79,13 @@ type AdminPlaneConfig struct {
 	// whole plane configures in one place, and consumes the client-CA material
 	// for TLS handshake verification.
 	Authentication AdminAuthenticationConfig `yaml:"authentication" json:"authentication"`
+}
+
+// AdminUnixSocketConfig optionally exposes the same admin handler locally.
+type AdminUnixSocketConfig struct {
+	Path  string `yaml:"path" json:"path,omitempty"`
+	Owner *int   `yaml:"owner" json:"owner,omitempty"`
+	Mode  string `yaml:"mode" json:"mode,omitempty"`
 }
 
 // AdminTLSConfig configures how the admin listener terminates TLS. The
@@ -150,8 +160,11 @@ func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	if !cfg.Enabled {
 		return
 	}
-	if strings.TrimSpace(cfg.Listen) == "" {
+	if strings.TrimSpace(cfg.Listen) == "" && strings.TrimSpace(cfg.UnixSocket.Path) == "" {
 		cfg.Listen = defaultAdminListenAddr
+	}
+	if strings.TrimSpace(cfg.UnixSocket.Mode) == "" {
+		cfg.UnixSocket.Mode = "0600"
 	}
 	if strings.TrimSpace(cfg.TLS.Mode) == "" {
 		cfg.TLS.Mode = adminTLSModeOff
@@ -273,6 +286,19 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 	if cfg == nil {
 		return nil
 	}
+	if path := strings.TrimSpace(cfg.UnixSocket.Path); path != "" {
+		if !filepath.IsAbs(path) || len(path) > 100 {
+			return fmt.Errorf("admin.unix_socket.path must be an absolute path of at most 100 bytes")
+		}
+	}
+	if mode := strings.TrimSpace(cfg.UnixSocket.Mode); mode != "" {
+		if _, err := strconv.ParseUint(strings.TrimPrefix(mode, "0"), 8, 9); err != nil {
+			return fmt.Errorf("admin.unix_socket.mode must be an octal permission mode")
+		}
+	}
+	if cfg.UnixSocket.Owner != nil && *cfg.UnixSocket.Owner < 0 {
+		return fmt.Errorf("admin.unix_socket.owner must be a non-negative UID")
+	}
 	if cfg.Metrics.OnServingPort != nil && !*cfg.Metrics.OnServingPort {
 		// Never accept "moved" while the admin listener cannot serve /metrics:
 		// that combination would leave monitoring with no exposition at all.
@@ -284,9 +310,16 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 		}
 		return nil
 	}
-	loopback, err := adminListenIsLoopback(cfg.Listen)
-	if err != nil {
-		return err
+	if strings.TrimSpace(cfg.Listen) == "" && strings.TrimSpace(cfg.UnixSocket.Path) == "" {
+		return fmt.Errorf("admin.listen or admin.unix_socket.path must be configured")
+	}
+	loopback := true
+	if strings.TrimSpace(cfg.Listen) != "" {
+		var err error
+		loopback, err = adminListenIsLoopback(cfg.Listen)
+		if err != nil {
+			return err
+		}
 	}
 	if err := ValidateAdminListenerTLS(cfg.TLS.ListenerTLSConfig, "admin.tls"); err != nil {
 		return err
@@ -294,7 +327,7 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 	mode := strings.ToLower(strings.TrimSpace(cfg.TLS.Mode))
 	switch mode {
 	case adminTLSModeOff:
-		if !loopback && !cfg.AllowPlaintextNonLoopback {
+		if strings.TrimSpace(cfg.Listen) != "" && !loopback && !cfg.AllowPlaintextNonLoopback {
 			return fmt.Errorf("admin.listen %q is not loopback and admin.tls.mode is off; configure admin.tls.mode router or proxy, bind a loopback address, or set admin.allow_plaintext_non_loopback (not recommended)", cfg.Listen)
 		}
 	case adminTLSModeProxy:
@@ -436,6 +469,7 @@ func validateAdminTrustedProxyCIDR(raw string) error {
 func adminPlaneBlockLooksConfigured(cfg *AdminPlaneConfig) bool {
 	listen := strings.TrimSpace(cfg.Listen)
 	return (listen != "" && listen != defaultAdminListenAddr) ||
+		strings.TrimSpace(cfg.UnixSocket.Path) != "" ||
 		strings.TrimSpace(cfg.ExternalURL) != "" ||
 		strings.TrimSpace(cfg.TLS.Mode) != "" ||
 		strings.TrimSpace(cfg.TLS.CertFile) != "" ||

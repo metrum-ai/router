@@ -35,6 +35,16 @@ kubectl -n <namespace> port-forward deploy/<router-deployment> 8081:8081
 curl -fsS http://127.0.0.1:8081/healthz
 ```
 
+**Unix socket.** Add `admin.unix_socket.path` to expose the same authenticated control plane locally.
+When it is the only listener configured, the admin plane starts without a TCP listener; set
+`admin.listen` as well to retain TCP access.
+The default socket mode is `0600`; set `owner` to a numeric UID when the router must hand the socket
+to a local service account, and set `mode` to an octal permission string when needed. Filesystem
+permissions gate connection, while the same machine credential and authorization checks still gate
+each request. Use `metrum-ai-routerctl ... --socket /run/metrum/admin.sock --admin-key-file <file>`
+instead of `--router-url` for API-backed commands. Existing non-socket paths and permission errors
+fail startup; shutdown removes the socket created by that process.
+
 **Router-native TLS.** The router serves its own certificate. Mount the certificate and key from a
 Secret and point the listener at them:
 
