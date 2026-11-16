@@ -111,8 +111,9 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	// 18 is the current usage head after hierarchy audit attribution.
-	if err != nil || status.SchemaVersion != 19 {
+	// The current usage head includes mission attribution, hierarchy audit and
+	// security posture; pin the whole tail rather than an intermediate schema.
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -184,8 +185,10 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage head (18), including hierarchy audit attribution.
-	if err != nil || status.SchemaVersion != 19 || !status.Compatible {
+	// Fresh installs reach the current usage head, including MCP audit,
+	// automatic containment, admin audit, policy-runtime, security posture,
+	// trace correlation, mission attribution and hierarchy audit migrations.
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -273,8 +276,9 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	// 18 is the current usage head after hierarchy audit attribution.
-	if err != nil || after.SchemaVersion != 19 {
+	// The current usage head includes mission attribution and hierarchy audit,
+	// following the admin audit and policy-runtime migrations.
+	if err != nil || after.SchemaVersion != currentUsageSchemaVersion() {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {

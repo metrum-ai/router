@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -26,6 +28,8 @@ const (
 	hierarchyPolicyMaxTools    = 128
 	hierarchyPolicyMaxTTL      = 10 * time.Minute
 	hierarchyPolicyDefaultTTL  = 30 * time.Second
+	hierarchyPolicyFailureTTL  = 2 * time.Second
+	hierarchyPolicyStaleGrace  = 30 * time.Second
 	hierarchyPolicyMaxDepth    = 2
 	hierarchyPolicyDepthHeader = "X-Router-Hierarchy-Depth"
 )
@@ -109,7 +113,7 @@ func validateHierarchyConfig(cfg HierarchyConfig) error {
 		}
 		seenGroups := make(map[string]bool, len(child.AllowedGroups))
 		for groupIndex, group := range child.AllowedGroups {
-			if !validAdminKeyID(group) || seenGroups[group] {
+			if !validHierarchyModelGroupName(group) || seenGroups[group] {
 				return fmt.Errorf("%s allowed_model_groups[%d] is invalid or duplicated", prefix, groupIndex)
 			}
 			seenGroups[group] = true
@@ -149,11 +153,14 @@ func validateHierarchyCallers(hierarchy HierarchyConfig, callers []CallerConfig)
 	}
 	for _, child := range hierarchy.Parent.Children {
 		caller, ok := byID[child.CallerID]
-		if !ok || normalizeStatusDefault(caller.Status) != "active" {
-			return fmt.Errorf("hierarchy child %s must map to an active parent caller", child.ID)
+		if !ok {
+			return fmt.Errorf("hierarchy child %s maps to unknown parent caller %s", child.ID, child.CallerID)
 		}
 		allowed := make(map[string]bool, len(caller.Allow))
 		for _, group := range caller.Allow {
+			if !validHierarchyModelGroupName(group) {
+				return fmt.Errorf("parent caller %s has invalid model group name %q", caller.ID, group)
+			}
 			allowed[group] = true
 		}
 		for _, group := range child.AllowedGroups {
@@ -175,6 +182,26 @@ func hierarchyQuotaScopes(hierarchy HierarchyConfig) map[string]string {
 		scopes[child.CallerID] = "hierarchy-org:" + child.OrganizationID
 	}
 	return scopes
+}
+
+func validHierarchyModelGroupName(name string) bool {
+	if name == "" || len(name) > 128 {
+		return false
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("-_.:", r) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func hierarchyPolicyErrorCode(err error) string {
+	if err != nil && strings.HasPrefix(err.Error(), "hierarchy model group mismatch:") {
+		return "hierarchy-model-group-mismatch"
+	}
+	return "hierarchy-policy-unavailable"
 }
 
 func validateHierarchyTools(label string, tools []string) error {
@@ -200,6 +227,9 @@ type hierarchyPolicyRuntime struct {
 	mu         sync.Mutex
 	policy     HierarchyPolicy
 	fetchedAt  time.Time
+	failedAt   time.Time
+	lastErr    error
+	refreshes  singleflight.Group
 }
 
 func newHierarchyPolicyRuntime(child HierarchyChildConfig) (*hierarchyPolicyRuntime, error) {
@@ -245,9 +275,8 @@ func (s *Service) handleHierarchyPolicy(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	caller, _, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
-	if err != nil || caller == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+	rc, ok := s.begin(w, r, "hierarchy")
+	if !ok {
 		return
 	}
 	depth := 0
@@ -260,7 +289,7 @@ func (s *Service) handleHierarchyPolicy(w http.ResponseWriter, r *http.Request) 
 		depth = parsed
 	}
 	ctx := context.WithValue(r.Context(), hierarchyDepthContextKey{}, depth)
-	policy, err := s.effectiveHierarchyPolicy(ctx, caller)
+	policy, err := s.effectiveHierarchyPolicy(ctx, rc.caller)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "policy_unavailable"})
 		return
@@ -269,6 +298,7 @@ func (s *Service) handleHierarchyPolicy(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "hierarchy_child_not_configured"})
 		return
 	}
+	s.finish(rc, http.StatusOK, nil)
 	writeJSON(w, http.StatusOK, policy)
 }
 
@@ -351,6 +381,13 @@ func (s *Service) effectiveHierarchyPolicy(ctx context.Context, caller *callerRu
 	if err != nil {
 		return nil, err
 	}
+	if inherited != nil {
+		for _, group := range inherited.AllowedGroups {
+			if _, ok := s.cfg.Models[group]; !ok {
+				return nil, fmt.Errorf("hierarchy model group mismatch: parent allows %q, which is not configured on the child", group)
+			}
+		}
+	}
 	if local == nil {
 		if inherited == nil {
 			return nil, nil
@@ -430,13 +467,17 @@ func hierarchyPolicyAllowsTools(policy *HierarchyPolicy, tools []map[string]any)
 }
 
 func mergeHierarchyPIIFilters(local, inherited PIIFilterConfig) (PIIFilterConfig, error) {
+	secretsEnabled := local.SecretsEnabled || inherited.SecretsEnabled
 	if !inherited.Enabled {
+		local.SecretsEnabled = secretsEnabled
 		return local, nil
 	}
 	if !local.Enabled {
+		inherited.SecretsEnabled = secretsEnabled
 		return inherited, nil
 	}
 	out := local
+	out.SecretsEnabled = secretsEnabled
 	out.Enabled = true
 	out.FailOnMatch = local.FailOnMatch || inherited.FailOnMatch || normalizePIIFilterMode(local) == "fail_on_match" || normalizePIIFilterMode(inherited) == "fail_on_match"
 	if out.FailOnMatch {
@@ -479,48 +520,90 @@ func mergeHierarchyPIIFilters(local, inherited PIIFilterConfig) (PIIFilterConfig
 
 func (r *hierarchyPolicyRuntime) refresh(ctx context.Context, now time.Time) (HierarchyPolicy, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if !r.fetchedAt.IsZero() && now.Sub(r.fetchedAt) < r.ttl {
-		return cloneHierarchyPolicy(r.policy), nil
+		policy := cloneHierarchyPolicy(r.policy)
+		r.mu.Unlock()
+		return policy, nil
 	}
+	if !r.failedAt.IsZero() && now.Sub(r.failedAt) < hierarchyPolicyFailureTTL {
+		if policy, ok := r.stalePolicyLocked(now); ok {
+			r.mu.Unlock()
+			return policy, nil
+		}
+		err := r.lastErr
+		r.mu.Unlock()
+		return HierarchyPolicy{}, err
+	}
+	r.mu.Unlock()
+	result := r.refreshes.DoChan("policy", func() (any, error) {
+		return r.fetch(ctx, now)
+	})
+	select {
+	case <-ctx.Done():
+		return HierarchyPolicy{}, ctx.Err()
+	case fetched := <-result:
+		if fetched.Err != nil {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if policy, ok := r.stalePolicyLocked(now); ok {
+				return policy, nil
+			}
+			return HierarchyPolicy{}, fetched.Err
+		}
+		return cloneHierarchyPolicy(fetched.Val.(HierarchyPolicy)), nil
+	}
+}
+
+func (r *hierarchyPolicyRuntime) stalePolicyLocked(now time.Time) (HierarchyPolicy, bool) {
+	if r.fetchedAt.IsZero() || now.Sub(r.fetchedAt) >= r.ttl+hierarchyPolicyStaleGrace {
+		return HierarchyPolicy{}, false
+	}
+	return cloneHierarchyPolicy(r.policy), true
+}
+
+func (r *hierarchyPolicyRuntime) fetch(ctx context.Context, now time.Time) (HierarchyPolicy, error) {
 	depth, _ := ctx.Value(hierarchyDepthContextKey{}).(int)
 	if depth >= hierarchyPolicyMaxDepth {
-		return HierarchyPolicy{}, fmt.Errorf("hierarchy policy depth exceeded")
+		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("hierarchy policy depth exceeded"))
 	}
 	endpoint := strings.TrimRight(strings.TrimSpace(r.child.ParentURL), "/") + hierarchyPolicyPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return HierarchyPolicy{}, fmt.Errorf("invalid hierarchy parent request")
+		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("invalid hierarchy parent request"))
 	}
 	req.Header.Set("Authorization", "Bearer "+r.credential)
 	req.Header.Set(hierarchyPolicyDepthHeader, strconv.Itoa(depth+1))
 	resp, err := r.client.Do(req)
 	if err != nil {
-		if !r.fetchedAt.IsZero() && now.Sub(r.fetchedAt) < r.ttl {
-			return cloneHierarchyPolicy(r.policy), nil
-		}
-		return HierarchyPolicy{}, fmt.Errorf("hierarchy parent unavailable")
+		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("hierarchy parent unavailable"))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		if !r.fetchedAt.IsZero() && now.Sub(r.fetchedAt) < r.ttl {
-			return cloneHierarchyPolicy(r.policy), nil
-		}
-		return HierarchyPolicy{}, fmt.Errorf("hierarchy parent refused policy request")
+		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("hierarchy parent refused policy request"))
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, hierarchyPolicyMaxBytes+1))
 	if err != nil || len(body) > hierarchyPolicyMaxBytes {
-		return HierarchyPolicy{}, fmt.Errorf("invalid hierarchy policy response")
+		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("invalid hierarchy policy response"))
 	}
 	var policy HierarchyPolicy
 	if err := json.Unmarshal(body, &policy); err != nil || policy.Version != 1 || policy.ChildID != r.child.ID || !validAdminKeyID(policy.ChildID) || strings.TrimSpace(policy.OrganizationID) == "" || strings.TrimSpace(policy.TeamID) == "" {
-		return HierarchyPolicy{}, fmt.Errorf("invalid hierarchy policy response")
+		return HierarchyPolicy{}, r.markFailure(now, fmt.Errorf("invalid hierarchy policy response"))
 	}
 	if err := validateHierarchyPolicy(policy); err != nil {
-		return HierarchyPolicy{}, err
+		return HierarchyPolicy{}, r.markFailure(now, err)
 	}
+	r.mu.Lock()
 	r.policy, r.fetchedAt = cloneHierarchyPolicy(policy), now
+	r.failedAt, r.lastErr = time.Time{}, nil
+	r.mu.Unlock()
 	return cloneHierarchyPolicy(policy), nil
+}
+
+func (r *hierarchyPolicyRuntime) markFailure(now time.Time, err error) error {
+	r.mu.Lock()
+	r.failedAt, r.lastErr = now, err
+	r.mu.Unlock()
+	return err
 }
 
 func validateHierarchyPolicy(policy HierarchyPolicy) error {
@@ -538,7 +621,7 @@ func validateHierarchyPolicy(policy HierarchyPolicy) error {
 	}
 	seen := make(map[string]bool, len(policy.AllowedGroups))
 	for i, group := range policy.AllowedGroups {
-		if !validAdminKeyID(group) || seen[group] {
+		if !validHierarchyModelGroupName(group) || seen[group] {
 			return fmt.Errorf("hierarchy policy allowed_model_groups[%d] is invalid", i)
 		}
 		seen[group] = true

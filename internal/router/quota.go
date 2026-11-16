@@ -30,6 +30,15 @@ type quotaStore struct {
 	saveFault error
 }
 
+func (q *quotaStore) lookupCaller(id string) *callerRuntime {
+	if q == nil || id == "" {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.callers[id]
+}
+
 // rebuildCallers replaces the in-memory caller runtime map with runtimes built
 // from cfg.Callers. Existing caller state (day/month/lifetime counters) is
 // preserved for caller IDs that still exist in the new configuration. New
@@ -405,7 +414,9 @@ func (q *quotaStore) AcquireConcurrency(c *callerRuntime) admission {
 	q.resetWindows(st, now)
 	keySt := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(keySt, now)
-	keyState := q.keyState(c.cfg, keySt, c.inFlightReservedTokens)
+	// Concurrency admission must not turn temporary token estimates into
+	// lifetime usage. The full Admit/ReserveTokens path accounts for estimates.
+	keyState := q.keyState(c.cfg, keySt, 0)
 	if keySt.Disabled || keyState == "exhausted" {
 		if ad := q.persistExhaustedLocked(keySt); !ad.OK {
 			return ad

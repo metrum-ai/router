@@ -34,7 +34,7 @@ const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 const usageResponseAffinityMigrationID = 2026110201
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 19, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 20, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -216,13 +216,25 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	HandlerKey: "usage.response-affinity.apply.v1@applyResponseAffinityMigration", PostconditionKey: "usage.response-affinity.schema.v1@verifyResponseAffinityMigration",
 	Dependencies: []int{2026103001}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyResponseAffinityMigration, Verify: verifyResponseAffinityMigration,
-}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition(), MCPToolAuditMigrationDefinition(), AutomaticContainmentMigrationDefinition(), TraceCorrelationMigrationDefinition(), HierarchyAuditMigrationDefinition()}
+}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition(), MCPToolAuditMigrationDefinition(), AutomaticContainmentMigrationDefinition(), TraceCorrelationMigrationDefinition()}
 
 func init() {
-	usageMigrationDefinitions = append(usageMigrationDefinitions, SecurityPostureReportMigrationDefinition())
+	usageMigrationDefinitions = append(usageMigrationDefinitions, SecurityPostureReportMigrationDefinition(), UsageMissionAttributionMigrationDefinition(), HierarchyAuditMigrationDefinition())
 	for i := range usageMigrationDefinitions {
 		usageMigrationDefinitions[i] = FinalizeMigrationDefinition(usageMigrationDefinitions[i])
 	}
+}
+
+// currentUsageSchemaVersion derives the usage schema head from its migration
+// registry so upgrade tests do not need to be edited for each new migration.
+func currentUsageSchemaVersion() int {
+	version := 0
+	for _, definition := range usageMigrationDefinitions {
+		if definition.SchemaVersion > version {
+			version = definition.SchemaVersion
+		}
+	}
+	return version
 }
 
 // MigrationCompatibility declares the inclusive schema/data versions a binary

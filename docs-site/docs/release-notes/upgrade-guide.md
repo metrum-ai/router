@@ -5,6 +5,16 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Governed fine-tuning workflow
+
+Training capture remains disabled unless an operator explicitly enables it for
+an approved caller, group, or server scope. Captured content passes the DLP
+filter before encrypted storage. Review the
+[domain fine-tuning operator guide](../operations/domain-fine-tuning) before
+enabling capture or training export. Exported datasets and trained artifacts
+have retention independent from router capture deletion. Use bounded shadow
+and audited promotion; retain the previous group set for one-call rollback.
+
 ## v5.0.0 request trace correlation
 
 Inbound trace acceptance is opt-in. Existing callers and deployments that do not
@@ -87,6 +97,14 @@ configurations. Update copied examples from older releases before deploying them
 ### Tenant cache isolation
 
 Response-cache entries and vLLM prefix-cache salts remain isolated by caller and project by default. Project-level sharing is opt-in with `projects[].share_cache_within_project`; enabling it lets callers in that project share response entries and vLLM prefix-cache entries. Self-hosted vLLM providers receive salts when `providers[].upstream_kind: vllm` and `server.cache.upstream_salt_key_env` are configured; provide the environment key through the deployment secret manager on every router replica. SGLang prefix-cache isolation is not supported in v5.0.0. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
+
+### Workload token exchange
+
+The opt-in `security.token_exchange` feature adds the `POST /oauth/token` route and short-lived, scoped bearer tokens. Configure the issuer, audience and subject grants before enabling it, and provide `signing_key_env` through the deployment secret manager with at least 32 random bytes. Grant-wide cumulative limits reserve estimated tokens and spend atomically, allowing concurrent requests only when their combined reservations fit; re-exchanging a token does not reset the cap. Budgets persist per grant across token expiry and are pruned when a reload removes the grant. Exchange is limited to 30 requests per configured subject per minute. Budget and rate state is process-local, shared across tasks and token refreshes, persists until grant removal or process restart, and is not shared across replicas. Mission tokens are accepted only on the scoped chat, Responses, Messages, count-token, embeddings, and model list/detail routes; all other serving routes reject them with 401, including leaked-key revocation, content-capture operations, `/metrics`, `/v1/usage` and `/mcp`. Task attribution is optional: use issuer `task_claim` with a dotted JWT claim path or pin `task_id` on a subject grant; if neither is configured, exchange succeeds without task attribution. When `task_claim` is configured and no grant task is pinned, the claim must exist and be a string; a missing or invalid claim returns HTTP 401 from `/oauth/token`. This accepts stock Kubernetes service-account and SPIFFE JWT-SVID tokens without custom task claims. Subject tokens remain replayable until expiry. A mission token cannot revoke its parent caller key. Changing the HMAC signing key is a hard cutover that invalidates all outstanding mission tokens; all replicas must use the same new key. Successful exchanges produce Authentication audit events naming the caller and grant. Review [Workload token exchange](/docs/security-governance/token-exchange) for the request format, limits and rotation behavior. Static caller keys are rejected for projects with `forbid_long_lived_keys: true`.
+
+Usage schema version 19 adds `task_id` and `human_owner` columns. With the default deployment-job migration policy, run the usage migration plan, apply and serving verification steps before starting v5.0.0. Keep the database backup and rollback procedure in the [data migration runbook](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md) available for the upgrade window.
+
+Usage schema version 20 adds `organization_id` and `team_id` for hierarchy audit attribution. The hierarchy migration depends on the schema 19 mission-attribution migration and is reversible; keep a database restore available for rollback.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
@@ -173,13 +191,20 @@ model-group, tool and PII permissions, never widen them. Organization request
 and token budgets are shared across the parent and its mapped child callers;
 child-local quotas continue to apply separately.
 
+Use the same exact model-group names in the parent caller allow list, hierarchy
+mapping and child model configuration. A mismatch fails closed. Set
+`trust_traceparent: true` on parent callers whose credentials authenticate a
+child router to preserve one trace ID through the chain.
+
 Hierarchy audit rows add organization and team IDs to the existing trace/span
 join fields. Reports can filter by those IDs and include hop-level details.
-The default hierarchy cache is process-local, so use one parent replica unless
-shared quota storage has been separately validated. On parent outage, the child
-serves the last validated policy only until its TTL expires, then returns HTTP
-503 before inference. Restore parent reachability or correct the child's
-credential/URL to recover; no manual cache reset is needed.
+The child policy cache is process-local; reload or restart drops it and the
+next request fetches a new snapshot. The shared parent quota counter is also
+process-local, so use one parent replica unless shared quota storage has been
+separately validated. On parent outage, the child serves its last validated
+policy through the configured TTL and for at most 30 additional seconds. After
+that grace period, it returns HTTP 503 before inference. Restore parent
+reachability or correct the child's credential/URL to recover.
 
 ## v5.0.0 secret DLP
 

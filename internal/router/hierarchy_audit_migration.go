@@ -23,11 +23,11 @@ func HierarchyAuditMigrationDefinition() MigrationDefinition {
 	return FinalizeMigrationDefinition(MigrationDefinition{
 		ID: usageHierarchyAuditMigrationID, Scope: usageMigrationScope,
 		Name: "add hierarchy audit attribution", Release: "2026.11",
-		Checksum: MigrationChecksum("usage.hierarchy-audit.v1"), SchemaVersion: 19,
+		Checksum: MigrationChecksum("usage.hierarchy-audit.v1"), SchemaVersion: 20,
 		DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
 		HandlerKey:       "usage.hierarchy-audit.apply.v1@applyHierarchyAuditMigration",
 		PostconditionKey: "usage.hierarchy-audit.schema.v1@verifyHierarchyAuditMigration",
-		Dependencies:     []int{usageTraceCorrelationMigrationID}, ExecutionMode: "transactional",
+		Dependencies:     []int{usageMissionAttributionMigrationID}, ExecutionMode: "transactional",
 		LockClass: "online", TimeoutClass: "bounded",
 		Apply: applyHierarchyAuditMigration, Verify: verifyHierarchyAuditMigration,
 	})

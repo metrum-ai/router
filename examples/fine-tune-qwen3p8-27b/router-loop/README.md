@@ -141,6 +141,43 @@ replay remain separately registered; completion is not semantic correctness.
   request extensions and caller/provider credentials are not training fields.
   Operators must review tool schemas/results, consent, policy and retention.
 
+## External trainer and frozen gate fixture
+
+`external_trainer.py` is a dependency-free integration fixture for the consumer
+boundary. It verifies the exported train split against the manifest, reads the
+reviewed training outcomes, and emits only dataset and candidate hashes plus
+aggregate counts. Its candidate target is a configured synthetic stand-in; it
+creates no model weights and makes no quality claim. A production workflow
+replaces this process with the operator's trainer and serves its artifact at a
+registered target.
+
+Freeze a gate before training, then run the fixture outside the router process:
+
+```sh
+cat > /secure/preregistered-gate.json <<'JSON'
+{"id":"support-v1","minimum_train_rows":100,"minimum_train_success_rate":0.9}
+JSON
+python3 \
+  examples/fine-tune-qwen3p8-27b/router-loop/external_trainer.py \
+  --export-zip /secure/router-loop/dataset/dataset.zip \
+  --preregistered-gate /secure/preregistered-gate.json \
+  --out /secure/candidate.json \
+  --candidate-target ft-canary/candidate-v1
+```
+
+Do not register or shadow the candidate unless `candidate.json` records the
+frozen gate as passed. The service-level lifecycle test exercises explicit
+opt-in and opt-out, encrypted capture, labeling, frozen train/validation/test
+export, this external process, gate approval, bounded shadow, promotion, and
+one-call rollback against local mock endpoints:
+
+```sh
+GOFLAGS=-p=2 go test ./internal/router \
+  -run '^TestGovernedFineTuneCaptureExportExternalGateShadowPromoteRollbackE2E$' -count=1
+python3 -m unittest discover \
+  -s examples/fine-tune-qwen3p8-27b/router-loop -p 'test_external_trainer.py' -v
+```
+
 Capture deletion/expiry prevents subsequent export. It cannot recall previously
 downloaded datasets. Protect and expire copies separately. Legal holds preserve
 records; they do not grant training rights. Historical IR-only or unsupported

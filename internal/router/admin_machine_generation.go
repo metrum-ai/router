@@ -177,6 +177,9 @@ func (s *Service) publishMachinePlane(prepare func(machinePlaneSnapshot) (*machi
 	}
 	if pub.Config != nil {
 		s.cfg = pub.Config
+		if s.tokenExchange != nil {
+			s.tokenExchange.installIssuerConfig(pub.Config.Security.TokenExchange)
+		}
 		if s.configSnapshot != nil {
 			s.configSnapshot.Store(pub.Config)
 		}

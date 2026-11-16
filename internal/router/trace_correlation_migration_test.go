@@ -11,16 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func clearTraceCorrelationMigrationLedger(t *testing.T, db *gorm.DB) {
-	t.Helper()
-	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageTraceCorrelationMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageTraceCorrelationMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
-		t.Fatal(err)
-	}
-}
-
 func clearHierarchyAuditMigrationLedger(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageHierarchyAuditMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
@@ -31,26 +21,20 @@ func clearHierarchyAuditMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
+func TestHierarchyAuditSchema20SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Create(recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))).Error; err != nil {
+	legacy := recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-hierarchy-row", TS: time.Now().UTC().Format(time.RFC3339)}))
+	if err := store.db.Create(legacy).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := revertHierarchyAuditMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, store.db)
-	if err := revertTraceCorrelationMigration(store.db); err != nil {
-		t.Fatal(err)
-	}
-	clearTraceCorrelationMigrationLedger(t, store.db)
-	if err := verifySecurityPostureReportMigration(store.db); err != nil {
-		t.Fatalf("schema 17 postcondition: %v", err)
-	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -61,60 +45,48 @@ func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTr
 	}
 	defer closeDB()
 	before, err := runner.Status()
-	if err != nil || before.SchemaVersion != 17 {
-		t.Fatalf("before: %+v err=%v", before, err)
+	if err != nil || before.SchemaVersion != 19 || !before.Compatible {
+		t.Fatalf("before hierarchy migration: %+v err=%v", before, err)
 	}
-	if err := runner.ApplyPending("trace-correlation-schema-test"); err != nil {
+	if err := runner.ApplyPending("hierarchy-schema-test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyTraceCorrelationMigration(runner.db); err != nil {
+	if err := verifyHierarchyAuditMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
-	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 19 || !status.Compatible {
-		t.Fatalf("after: %+v err=%v", status, err)
+	after, err := runner.Status()
+	if err != nil || after.SchemaVersion != 20 || !after.Compatible {
+		t.Fatalf("after hierarchy migration: %+v err=%v", after, err)
 	}
-	var legacy usageRecord
-	if err := runner.db.First(&legacy, "request_id = ?", "legacy-trace-row").Error; err != nil || legacy.TraceID != "" || legacy.SpanID != "" || legacy.ParentSpanID != "" {
-		t.Fatalf("legacy row=%+v err=%v", legacy, err)
+	var oldRow usageRecord
+	if err := runner.db.First(&oldRow, "request_id = ?", "legacy-hierarchy-row").Error; err != nil || oldRow.OrganizationID != "" || oldRow.TeamID != "" {
+		t.Fatalf("legacy usage row=%+v err=%v", oldRow, err)
 	}
-	row := recordFromRow(rowFromRecord(logRecord{RequestID: "traced-row", TS: time.Now().UTC().Format(time.RFC3339), TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "a1b2c3d4e5f60718", ParentSpanID: "00f067aa0ba902b7"}))
-	if err := runner.db.Create(row).Error; err != nil {
+	newRow := recordFromRow(rowFromRecord(logRecord{
+		RequestID: "hierarchy-row", TS: time.Now().UTC().Format(time.RFC3339), OrganizationID: "org-a", TeamID: "team-a",
+	}))
+	if err := runner.db.Create(newRow).Error; err != nil {
 		t.Fatal(err)
 	}
-	var got usageRecord
-	if err := runner.db.First(&got, "request_id = ?", "traced-row").Error; err != nil || got.TraceID != row.TraceID || got.SpanID != row.SpanID || got.ParentSpanID != row.ParentSpanID {
-		t.Fatalf("trace row=%+v want=%+v err=%v", got, row, err)
+	var roundTrip usageRecord
+	if err := runner.db.First(&roundTrip, "request_id = ?", newRow.RequestID).Error; err != nil || roundTrip.OrganizationID != "org-a" || roundTrip.TeamID != "team-a" {
+		t.Fatalf("hierarchy row=%+v err=%v", roundTrip, err)
 	}
 
-	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
-	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageTraceCorrelationMigrationID && definition.ID != usageHierarchyAuditMigrationID {
-			previousDefinitions = append(previousDefinitions, definition)
-		}
-	}
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 17, MinData: 0, MaxData: 1}, previousDefinitions, usageDataJobDefinitions)
+	oldBinary, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 19, MinData: 0, MaxData: 1}, usageMigrationDefinitions, usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldStatus, err := old.Status()
+	oldStatus, err := oldBinary.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 17 binary should reject schema 19: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 19 binary should reject schema 20: %+v err=%v", oldStatus, err)
 	}
 	if err := revertHierarchyAuditMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, runner.db)
-	if err := revertTraceCorrelationMigration(runner.db); err != nil {
-		t.Fatal(err)
-	}
-	clearTraceCorrelationMigrationLedger(t, runner.db)
 	afterDown, err := runner.Status()
-	if err != nil || afterDown.SchemaVersion != 17 || !afterDown.Compatible {
+	if err != nil || afterDown.SchemaVersion != 19 || !afterDown.Compatible {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
-	}
-	oldStatus, err = old.Status()
-	if err != nil || !oldStatus.Compatible || oldStatus.SchemaVersion != 17 {
-		t.Fatalf("schema 17 binary should accept reversed database: %+v err=%v", oldStatus, err)
 	}
 }
