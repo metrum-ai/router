@@ -194,11 +194,13 @@ def migrate_config_db(bins: dict, db_path: Path, pg_scoped_env: str = ""):
 def write_canonical_config(path: Path, caller_token: str, admin_hashes: dict, usage_path: Path):
     caller_sha = hashlib.sha256(caller_token.encode()).hexdigest()
     key_entries = []
-    for key_id, (env_name, perms) in admin_hashes.items():
+    for key_id, definition in admin_hashes.items():
+        env_name, perms = definition[:2]
+        domain = definition[2] if len(definition) > 2 else "local/e2e"
         perms_yaml = "\n".join(f"          - {p}" for p in perms)
         key_entries.append(f"""      - key_id: {key_id}
         key_hash_env: {env_name}
-        domain: local/e2e
+        domain: {domain}
         permissions:
 {perms_yaml}""")
     admin_keys = "\n".join(key_entries)
@@ -496,15 +498,18 @@ def main():
 
     suite = Suite(workdir, evidence)
 
-    # Admin keys: full ops, read-only, and write-without-force/shadow.
+    # Admin keys: full ops, read-only, write-without-force/shadow, and a
+    # credential-domain auditor for the global credential-event export.
     admin_env = {}
     admin_defs = {
-        "e2e-ops": ("ROUTER_ADMIN_KEY_E2E_OPS_HASH", ["config:read", "config:write", "config:activate", "config:force", "shadow:write"]),
+        "e2e-ops": ("ROUTER_ADMIN_KEY_E2E_OPS_HASH", ["config:read", "config:write", "config:activate", "config:force", "shadow:write", "admin:audit:read", "admin:audit:delete"]),
         "e2e-readonly": ("ROUTER_ADMIN_KEY_E2E_RO_HASH", ["config:read"]),
         "e2e-writer": ("ROUTER_ADMIN_KEY_E2E_WRITER_HASH", ["config:read", "config:write", "config:activate"]),
+        "e2e-auditor": ("ROUTER_ADMIN_KEY_E2E_AUDITOR_HASH", ["admin:audit:read"], "credential"),
     }
     admin_key_files = {}
-    for key_id, (env_name, _) in admin_defs.items():
+    for key_id, definition in admin_defs.items():
+        env_name = definition[0]
         key_file = workdir / f"admin-{key_id}.key"
         out = subprocess.run([str(bins["routerctl"]), "adminkeys", "generate", "--key-id", key_id,
                               "--token-out", str(key_file)],
@@ -945,6 +950,55 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                        note="canonical YAML" if "providers:" in str(body) else "unexpected body")
     st, body, ms = admin(r1, ops, "GET", "/admin/v1/config/diff")
     ok &= suite.record("config diff (API)", "GET /admin/v1/config/diff", 200, st, latency_ms=ms)
+    # Audit export is a real mounted admin API request. Verify both the
+    # tenant-domain usage chain and the global credential-event chain offline.
+    st, audit_export, ms = admin(r1, ops, "GET", "/admin/v1/audit-events/export?limit=500")
+    usage_rows = [item for item in audit_export.get("items", []) if item.get("source") == "usage"] if isinstance(audit_export, dict) else []
+    ok &= suite.record("audit export (API)", "GET /admin/v1/audit-events/export", 200, st, latency_ms=ms,
+                       note=f"items={len(audit_export.get('items', [])) if isinstance(audit_export, dict) else 0}")
+    denied_audit_delete = 0
+    if usage_rows:
+        denied_audit_delete, _, _ = admin(r1, writer, "DELETE", "/admin/v1/audit-events/" + usage_rows[0]["event_id"])
+    ok &= suite.record("audit delete needs dedicated privilege", "DELETE audit event with config-only writer", 403,
+                       denied_audit_delete)
+    if isinstance(audit_export, dict):
+        audit_path = workdir / "audit-export.json"
+        audit_path.write_text(json.dumps(audit_export, sort_keys=True) + "\n")
+        verified = subprocess.run([str(bins["routerctl"]), "audit", "verify", str(audit_path)],
+                                  capture_output=True, text=True)
+        ok &= suite.record("audit export verifies offline", "routerctl audit verify audit-export.json", 0,
+                           verified.returncode, note=(verified.stdout + verified.stderr)[-200:])
+    deleted_status = 404
+    if usage_rows:
+        deleted_status, _, ms = admin(r1, ops, "DELETE", "/admin/v1/audit-events/" + usage_rows[0]["event_id"])
+    else:
+        ms = 0
+    ok &= suite.record("audit deletion advances prune checkpoint", "DELETE oldest retained usage event with admin:audit:delete",
+                       200, deleted_status, latency_ms=ms)
+    st, pruned_export, ms = admin(r1, ops, "GET", "/admin/v1/audit-events/export?limit=500")
+    if isinstance(pruned_export, dict):
+        audit_path = workdir / "audit-export-pruned.json"
+        audit_path.write_text(json.dumps(pruned_export, sort_keys=True) + "\n")
+        verified = subprocess.run([str(bins["routerctl"]), "audit", "verify", str(audit_path)],
+                                  capture_output=True, text=True)
+        ok &= suite.record("pruned audit export verifies offline", "routerctl audit verify audit-export-pruned.json",
+                           0, verified.returncode, note=(verified.stdout + verified.stderr)[-200:])
+    else:
+        ok &= suite.record("pruned audit export verifies offline", "GET export after checkpointed deletion", 200, st,
+                           latency_ms=ms)
+    st, credential_export, ms = admin(r1, {"Authorization": "Bearer " + admin_key_files["e2e-auditor"]},
+                                      "GET", "/admin/v1/audit-events/export?limit=500")
+    credential_rows = [item for item in credential_export.get("items", []) if item.get("source") == "credential"] if isinstance(credential_export, dict) else []
+    ok &= suite.record("credential audit export is scoped and present", "credential-domain auditor exports credential events",
+                       True, st == 200 and bool(credential_rows), latency_ms=ms,
+                       note=f"credential_items={len(credential_rows)}")
+    if isinstance(credential_export, dict):
+        credential_path = workdir / "credential-audit-export.json"
+        credential_path.write_text(json.dumps(credential_export, sort_keys=True) + "\n")
+        verified = subprocess.run([str(bins["routerctl"]), "audit", "verify", str(credential_path)],
+                                  capture_output=True, text=True)
+        ok &= suite.record("credential audit chain verifies offline", "routerctl audit verify credential-audit-export.json",
+                           0, verified.returncode, note=(verified.stdout + verified.stderr)[-200:])
     # CLI rollback reverts the last API change.
     prior = subprocess.run([str(bins["routerctl"]), "groups", "history",
                             "--router-url", r1.base, "agent-default"],

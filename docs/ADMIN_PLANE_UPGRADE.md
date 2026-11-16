@@ -25,6 +25,30 @@ with its current login and is unaffected by this guide.
 A configuration without an `admin:` block starts the loopback admin listener by default. Set
 `admin.enabled: false` explicitly to keep a single listener.
 
+## v5.0.0 admin audit and policy simulation
+
+The v5.0.0 admin API adds `GET /admin/v1/audit-events/export` for hash-chained, cursor-paginated
+audit export. It reads events from the control-plane change-audit and usage-audit stores, restricted
+to the authenticated credential domain. Continue with the signed `Link` cursor; each row includes
+its previous hash and hash so an offline verifier can check page order and detect changed or
+missing exported rows. Audit retention now prunes control-plane change events in bounded batches
+alongside credential and usage audit rows. Configure the existing
+`server.admin_api.audit.retention_days` field; its default is 90 days.
+
+Manual usage-audit deletion uses `DELETE /admin/v1/audit-events/{event_id}` and requires the
+separate `admin:audit` `delete` privilege. It can remove only the oldest retained event in the
+caller's domain, advancing the chain checkpoint; its deletion marker is written in the global domain.
+Grant export with `admin:audit` `read`.
+
+`POST /admin/v1/policy-sets/{set_id}/simulate` evaluates an object/action against a stored candidate
+policy in the authenticated caller's own domain. The API accepts no domain override and returns no
+policy rules. Example grants:
+
+```text
+p, audit_reader, example/prod, admin:audit, read
+p, audit_deleter, example/prod, admin:audit, delete
+```
+
 ## 2. Exposure options
 
 **Loopback only (default).** `admin.enabled: true` with the default `127.0.0.1:8081`. Reach it from

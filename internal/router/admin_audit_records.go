@@ -155,6 +155,8 @@ type AdminAuditRecord struct {
 	IdempotencyKey   string
 	RequestHash      string
 	Detail           string
+	PreviousHash     string
+	RowHash          string
 }
 
 // AdminAuditSink is the durable sink the write paths call. #816 supplies it; the
@@ -210,6 +212,9 @@ type AdminCredentialEvent struct {
 	// ClientIPHash is a salted digest of the source address, never the address itself.
 	ClientIPHash string
 	Lifecycle    string
+	Count        int64
+	PreviousHash string
+	RowHash      string
 }
 
 // adminClientIPHash returns a KEYED digest (HMAC-SHA256) of a source address for an audit

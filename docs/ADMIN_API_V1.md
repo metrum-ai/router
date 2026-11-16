@@ -356,6 +356,12 @@ into a counted row and one source can create at most ten failure rows per minute
 credential-guessing flood cannot grow the audit table. `admin.api.audit.retention_days`
 (default 90) governs how long admin audit rows are kept.
 
+`GET /admin/v1/audit-events/export` includes the complete redacted audit fields from these
+tables. Each row stores a SHA-256 link in its write transaction; retention preserves a
+checkpoint row at the prune boundary. Verify a saved export with
+`metrum-ai-routerctl audit verify <export.json>`. The canonical serialization and hash recipe
+are documented in [Admin audit exports](ADMIN_AUDIT.md).
+
 Admin-plane metrics are rendered only on an admin-plane scrape:
 
 ```

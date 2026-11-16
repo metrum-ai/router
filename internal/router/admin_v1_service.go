@@ -125,12 +125,16 @@ func (s *Service) adminV1ProductionRegistry() (*AdminV1Registry, error) {
 	}
 	policyMounted := s.usage != nil && s.usage.db != nil
 	keyStoreMounted := s.adminKeys != nil
-	if !policyMounted && !keyStoreMounted {
+	auditMounted := s.usageDBHandle() != nil || s.configControlPlane != nil
+	if !policyMounted && !keyStoreMounted && !auditMounted {
 		return AdminV1DefaultRegistry()
 	}
 	operations := AdminV1Operations()
 	if policyMounted {
 		operations = append(operations, policyOperationSpecs()...)
+	}
+	if auditMounted {
+		operations = append(operations, adminAuditExportOperationSpecs()...)
 	}
 	if keyStoreMounted {
 		operations = append(operations, adminKeyOperations()...)
@@ -160,6 +164,9 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		"metrics.scrape":          s.handleAdminPlaneMetrics,
 		"content.captures.delete": s.handleContentCaptureDelete,
 		"content.captures.purge":  s.handleContentCapturePurgeExpired,
+	}
+	for key, handler := range adminAuditExportHandlers(s.usageDBHandle(), s.configControlPlane) {
+		extra[key] = handler
 	}
 	handlers := AdminV1ServiceHandlers(
 		registry,
@@ -481,6 +488,10 @@ func StartAdminIdempotencyJanitor(store AdminIdempotencyKeyStore, interval time.
 // once immediately and then on the given interval, deleting in bounded batches so it never
 // issues one unbounded delete. The job stops when stop is closed.
 func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}) <-chan struct{} {
+	return startAdminAuditJanitor(db, interval, retentionDays, stop, time.Now)
+}
+
+func startAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}, now func() time.Time) <-chan struct{} {
 	done := make(chan struct{})
 	if db == nil {
 		close(done)
@@ -492,8 +503,11 @@ func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays i
 	if retentionDays <= 0 {
 		retentionDays = 90
 	}
+	if now == nil {
+		now = time.Now
+	}
 	purge := func() {
-		cutoff := time.Now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+		cutoff := now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
 		for i := 0; i < 20; i++ { // at most 20 bounded batches per tick
 			removed, err := PurgeAdminAuditEventsBefore(db, cutoff)
 			if err != nil || removed == 0 {

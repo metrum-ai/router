@@ -18,6 +18,8 @@ var updateAdminOpenAPI = flag.Bool("update-admin-openapi", false, "regenerate do
 func adminOpenAPIForTest(t *testing.T) []byte {
 	t.Helper()
 	operations := AdminV1Operations()
+	operations = append(operations, policyOperationSpecs()...)
+	operations = append(operations, adminAuditExportOperationSpecs()...)
 	document, err := GenerateAdminOpenAPI(operations)
 	if err != nil {
 		t.Fatalf("generate openapi: %v", err)

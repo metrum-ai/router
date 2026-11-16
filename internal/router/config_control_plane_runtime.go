@@ -117,16 +117,28 @@ func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor st
 	}
 
 	eventID := newConfigChangeEventID()
+	if err := lockAdminAuditChain(tx, audit.Domain); err != nil {
+		return 0, fmt.Errorf("lock config audit chain: %w", err)
+	}
+	previousHash := readAdminAuditChainHead(tx, "control", adminAuditFieldValue(audit.Domain), "router_config_change_events", "authz_domain")
+	chainRow := adminAuditExportRow{Source: "control", EventID: eventID, At: now, PrincipalSubject: actor, PrincipalKind: adminAuditFieldValue(audit.Kind), CredentialID: adminAuditFieldValue(audit.CredentialID), Domain: adminAuditFieldValue(audit.Domain), Object: adminAuditFieldValue(audit.Object), Action: adminAuditFieldValue(audit.Action), OperationID: adminAuditFieldValue(audit.OperationID), RequestID: adminAuditFieldValue(audit.RequestID), Outcome: "committed", RuntimeScope: runtimeScope, Issuer: adminAuditFieldValue(audit.Issuer), Ticket: adminAuditFieldValue(audit.Ticket), ConfigSetID: configSetID, ConfigRevision: revision, ControlAction: action}
+	rowHash, err := adminAuditChainHash(previousHash, chainRow)
+	if err != nil {
+		return 0, fmt.Errorf("hash config audit row: %w", err)
+	}
 	if err := tx.Exec(
-		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome, ticket) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome, ticket, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		eventID, runtimeScope, configSetID, action, actor, now, revision,
 		adminAuditFieldValue(audit.Kind), adminAuditFieldValue(audit.CredentialID),
 		adminAuditFieldValue(audit.Issuer), adminAuditFieldValue(audit.Domain),
 		adminAuditFieldValue(audit.Object), adminAuditFieldValue(audit.Action),
 		adminAuditFieldValue(audit.OperationID), adminAuditFieldValue(audit.RequestID), "committed",
-		adminAuditFieldValue(audit.Ticket),
+		adminAuditFieldValue(audit.Ticket), previousHash, rowHash,
 	).Error; err != nil {
 		return 0, fmt.Errorf("append change event: %w", err)
+	}
+	if err := updateAdminAuditChainHead(tx, "control", adminAuditFieldValue(audit.Domain), previousHash, rowHash); err != nil {
+		return 0, fmt.Errorf("update config audit chain anchor: %w", err)
 	}
 	// The credential lifecycle event commits with the credential change and records the
 	// AFFECTED credential (the actor's own identity stays in the change row's actor fields).

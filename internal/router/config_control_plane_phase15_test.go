@@ -16,7 +16,7 @@ func TestCallerTokenRevocationMigrationBackfillsLegacyHashes(t *testing.T) {
 	defer closeDB()
 	previousCompatibility := configControlPlaneCompatibility
 	previousCompatibility.MaxSchema = 14
-	previousDefinitions := configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-1]
+	previousDefinitions := configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-2]
 	previousRunner, err := NewMigrationRunner(runner.db, configControlPlaneScope, previousCompatibility, previousDefinitions)
 	if err != nil {
 		t.Fatal(err)

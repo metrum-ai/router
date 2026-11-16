@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Store admin audit hash-chain links at write time, retain a prune-boundary checkpoint, export complete control-plane, usage and credential-event rows, and provide `metrum-ai-routerctl audit verify` for offline verification.
+
 ### Changed
 
 - Direct `model` targets inherit catalog capabilities (reasoning, tools, modalities, and request-shape/bridge support) for matching model IDs while retaining their configured dialect, pricing, and routing values. Ambiguous model IDs across dialects do not inherit capabilities unless one catalog entry matches the target dialect. Mixed reasoning rejections identify the caller field (such as `reasoning_effort` for Chat Completions) when the error parameter is otherwise unset.
@@ -103,6 +107,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require at least Go 1.27.4.
 - Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
 - Add optional per-caller CIDR, ASN-prefix, and verified mTLS identity binding with off, report, and enforce modes. Enforced mismatches return the same generic 401 as invalid tokens; security events retain the specific reason.
+
+### Admin audit and policy
+
+- Add domain-scoped, hash-chained admin audit export and separately authorized usage-audit deletion. Apply configured audit retention to control-plane change events.
+- Add candidate policy simulation in the authenticated caller's own domain. Responses contain only the decision and policy revision.
 
 ## [4.8.0] - 2026-11-08
 

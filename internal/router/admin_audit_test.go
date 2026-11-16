@@ -1066,7 +1066,7 @@ func TestAdminForcedAuditFailureRollsBackMutation(t *testing.T) {
 // redacted durable event alongside its change row.
 func TestAdminCredentialLifecycleEvents(t *testing.T) {
 	harness := newAdminAuditHarness(t)
-	if err := harness.db.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+	if err := harness.db.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1, previous_hash TEXT NOT NULL DEFAULT '', row_hash TEXT NOT NULL DEFAULT '')").Error; err != nil {
 		t.Fatal(err)
 	}
 	body := map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "lifecycle", "allow": []string{"agent-default"}}
@@ -1237,7 +1237,7 @@ func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
 	old := time.Now().UTC().Add(-200 * 24 * time.Hour)
 	control := configAdminTestDB(t)
-	if err := control.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+	if err := control.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1, previous_hash TEXT NOT NULL DEFAULT '', row_hash TEXT NOT NULL DEFAULT '')").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := control.Exec(`INSERT INTO router_admin_credential_events (event_id, at, kind, outcome, lifecycle, count) VALUES ('old-event', ?, 'adminkey', 'success', 'auth', 1)`, old.Format(time.RFC3339Nano)).Error; err != nil {
@@ -1263,8 +1263,8 @@ func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
 	if err := usageStore.db.Table(usageAdminAuditTable).Count(&usageRows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if controlRows != 0 {
-		t.Fatalf("the control-plane janitor left %d expired credential rows", controlRows)
+	if controlRows != 1 {
+		t.Fatalf("the control-plane janitor did not retain one credential checkpoint (%d rows)", controlRows)
 	}
 	if usageRows != 1 {
 		t.Fatalf("the control-plane janitor touched the usage table (%d rows)", usageRows)
@@ -1275,8 +1275,8 @@ func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
 	if err := usageStore.db.Table(usageAdminAuditTable).Count(&usageRows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if usageRows != 0 {
-		t.Fatalf("the usage janitor left %d expired rows", usageRows)
+	if usageRows != 1 {
+		t.Fatalf("the usage janitor did not retain one usage checkpoint (%d rows)", usageRows)
 	}
 
 	// The scheduled entry point runs against a handle and its goroutine exits on close.

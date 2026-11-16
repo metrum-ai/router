@@ -43,6 +43,7 @@ func TestPolicyAdminMountedCreateReadAndPreconditions(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	err = RegisterAdminV1(mux, AdminV1Deps{Registry: registry, Authenticate: &fakeAuthenticator{principal: p}, Authorize: current.Authorize,
+		ResolveDomain: func(Principal) string { return "team/prod" },
 		PolicyCurrentETag: func(*http.Request) (string, int64, error) {
 			var r policyMutationRevision
 			e := s.db.First(&r, 1).Error
@@ -58,7 +59,7 @@ func TestPolicyAdminMountedCreateReadAndPreconditions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"id":"draft","name":"main","version":1,"rules":[{"subject_or_role":"root","domain":"*","object":"admin:policy","action":"read|write|activate"},{"subject_or_role":"root","domain":"*","object":"admin:reports","action":"read"}],"role_memberships":[{"subject":"root","role":"security-admin","domain":"*"}]}`
+	body := `{"id":"draft","name":"main","version":1,"rules":[{"subject_or_role":"root","domain":"*","object":"admin:policy","action":"read|write|activate"},{"subject_or_role":"root","domain":"team/prod","object":"admin:reports","action":"read"},{"subject_or_role":"root","domain":"other/prod","object":"admin:reports","action":"read"}],"role_memberships":[{"subject":"root","role":"security-admin","domain":"*"}]}`
 	request := func(method, path, tag, key string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(context.Background())
 		r.Header.Set("Content-Type", "application/json")
@@ -283,7 +284,8 @@ func newRealAuditPolicyMount(t *testing.T, configETag func(*http.Request) (strin
 	mux := http.NewServeMux()
 	if err := RegisterAdminV1(mux, AdminV1Deps{
 		Registry: registry, Authenticate: &fakeAuthenticator{principal: p}, Authorize: current.Authorize,
-		CurrentETag: configETag, PolicyCurrentETag: policyETag,
+		ResolveDomain: func(Principal) string { return "team/prod" },
+		CurrentETag:   configETag, PolicyCurrentETag: policyETag,
 		Denials: &recordingDenialSink{}, CredentialEvents: &recordingCredentialSink{},
 		IdempotencyOn: true, Idempotency: NewMemoryAdminIdempotencyStore(AdminIdempotencyConfig{}, 32),
 		CursorCodec: NewAdminCursorCodec([]byte("policy-audit-fixture-key-01234567")),
@@ -292,6 +294,40 @@ func newRealAuditPolicyMount(t *testing.T, configETag func(*http.Request) (strin
 		t.Fatal(err)
 	}
 	return mux, s, p
+}
+
+func TestPolicySimulationMountedUsesCallerDomain(t *testing.T) {
+	mux, _, _ := newRealAuditPolicyMount(t, nil)
+	createBody := `{"id":"simulation","name":"simulation","version":1,"rules":[{"subject_or_role":"root","domain":"*","object":"admin:policy","action":"read|write|activate"},{"subject_or_role":"root","domain":"other/prod","object":"admin:reports","action":"read"}],"role_memberships":[{"subject":"root","role":"security-admin","domain":"*"}]}`
+	create := httptest.NewRequest(http.MethodPost, "/admin/v1/policy-sets", strings.NewReader(createBody))
+	create.Header.Set("Content-Type", "application/json")
+	create.Header.Set("If-Match", `"rev-0"`)
+	create.Header.Set("Idempotency-Key", "simulation-create")
+	created := httptest.NewRecorder()
+	mux.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create=%d %s", created.Code, created.Body.String())
+	}
+	simulate := httptest.NewRequest(http.MethodPost, "/admin/v1/policy-sets/simulation/simulate", strings.NewReader(`{"object":"admin:reports","action":"read"}`))
+	simulate.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, simulate)
+	if w.Code != http.StatusOK {
+		t.Fatalf("simulate=%d %s", w.Code, w.Body.String())
+	}
+	var result policySimulationDocument
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Allowed || result.Decision != "deny" {
+		t.Fatalf("cross-domain policy affected simulation: %+v", result)
+	}
+	if !strings.Contains(result.Explanation, "no candidate rule matched") || !strings.Contains(result.Explanation, "admin:reports") || !strings.Contains(result.Explanation, "read") {
+		t.Fatalf("simulation explanation omits deciding rule context: %+v", result)
+	}
+	if strings.Contains(w.Body.String(), "other/prod") {
+		t.Fatalf("simulation response disclosed another domain: %s", w.Body.String())
+	}
 }
 
 // TestPolicyMountUsesThePolicyETagSourceInAComposedMount mounts configuration and

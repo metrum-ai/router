@@ -33,13 +33,15 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|audit|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(buildinfo.Text())
 	case "config":
 		configCommand(os.Args[2:])
+	case "audit":
+		auditCommand(os.Args[2:])
 	case "callers":
 		callersCommand(os.Args[2:])
 	case "contain":
@@ -71,6 +73,21 @@ func main() {
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
+}
+
+func auditCommand(args []string) {
+	if len(args) != 2 || args[0] != "verify" {
+		die("usage: metrum-ai-routerctl audit verify <export.json>")
+	}
+	f, err := os.Open(args[1])
+	if err != nil {
+		die("open audit export: %v", err)
+	}
+	defer f.Close()
+	if err := router.VerifyAdminAuditExport(f); err != nil {
+		die("audit export verification failed: %v", err)
+	}
+	fmt.Println("audit export verified")
 }
 
 // adminResourceCommand exposes the versioned resource API to operators without

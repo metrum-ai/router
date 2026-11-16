@@ -57,6 +57,8 @@ server:
         - p, content_admin, example/prod, content:capture, delete|purge
         - p, reports_admin, example/prod, admin:reports, read|export|drilldown
         - p, reports_admin, example/prod, admin:security_reports, read|export
+        - p, audit_admin, example/prod, admin:audit, read
+        - p, audit_deleter, example/prod, admin:audit, delete
 ```
 
 Policy files and inline policy must contain only safe identifiers. Never put raw router tokens, token hashes, provider keys, passwords, password hashes, raw prompts, raw images, raw tool outputs, or full production config values in policy.
@@ -146,6 +148,10 @@ p, content_admin, example/prod, content:capture, delete|purge
 ```
 
 `DELETE /v1/content-captures/<request_id>` checks action `delete`. The actor must be authorized in the captured row's caller `<project>/<environment>` domain before any row for that request ID is removed; knowing a request ID from another domain is not sufficient. `POST /v1/content-captures/purge-expired` checks action `purge`. Existing `callers[].content_admin: true` remains compatible through synthesized startup grants for the caller's own `<project>/<environment>` domain. Metrics-admin and reports-admin grants do not imply content maintenance access.
+
+## Admin Audit Export and Deletion
+
+`GET /admin/v1/audit-events/export` requires `admin:audit` `read`. It exports hash-chained pages from control-plane change-audit and usage-audit stores, restricted to the authenticated credential domain. Each row carries its previous hash and hash; use the signed cursor to verify continuity across pages. `DELETE /admin/v1/audit-events/{event_id}` requires the separate `admin:audit` `delete` action and only deletes a usage-audit row in the caller's domain. The deletion writes a new audit event. Automated expiry uses `server.admin_api.audit.retention_days` (90 days by default) and prunes bounded batches from the audit stores.
 
 ## Admin Reports
 
