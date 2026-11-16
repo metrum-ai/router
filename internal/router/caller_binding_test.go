@@ -23,10 +23,10 @@ import (
 )
 
 func TestCallerBindingCIDRASNReportAndEnforce(t *testing.T) {
-	config := ClientIPConfig{ASNPrefixes: []ASNPrefixConfig{{CIDR: "198.51.100.0/24", ASN: 64500}}}
-	caller := &callerRuntime{cfg: CallerConfig{ID: "worker", Binding: CallerBindingConfig{Mode: "enforce", AllowedCIDRs: []string{"198.51.100.0/24"}, AllowedASNs: []uint32{64500}}}}
+	config := ClientIPConfig{ASNPrefixes: []ASNPrefixConfig{{CIDR: "10.42.0.0/16", ASN: 64500}}}
+	caller := &callerRuntime{cfg: CallerConfig{ID: "worker", Binding: CallerBindingConfig{Mode: "enforce", AllowedCIDRs: []string{"10.42.0.0/16"}, AllowedASNs: []uint32{64500}}}}
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.RemoteAddr = "198.51.100.10:443"
+	r.RemoteAddr = "10.42.0.10:443"
 	ip := resolveClientIP(r, ClientIPConfig{})
 	if err := enforceCallerBinding(caller, r, ip, config); err != nil {
 		t.Fatalf("matching binding rejected: %v", err)
@@ -148,7 +148,11 @@ func TestCallerBindingEnforceEndToEndReportContinues(t *testing.T) {
 		t.Fatalf("report mismatch status=%d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
-	if strings.Contains(capturedLogs.String(), testToken) {
+	logs := capturedLogs.String()
+	if !strings.Contains(logs, `caller binding mismatch caller_id="alice" reason=cidr_mismatch`) {
+		t.Fatalf("report-mode mismatch log missing; logs=%q", logs)
+	}
+	if strings.Contains(logs, testToken) {
 		t.Fatal("report-mode binding logs contained the caller token")
 	}
 }
@@ -350,5 +354,82 @@ func TestCallerBindingMTLSRealTLSHandshakes(t *testing.T) {
 				t.Fatalf("missing optional certificate response status=%d body=%s, want same generic 401 as invalid token", missing.StatusCode, missingBody)
 			}
 		})
+	}
+}
+
+func TestCallerBindingExampleConfigAuthenticatesMatchingRequest(t *testing.T) {
+	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", mustBcryptHash(t, "admin"))
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"ok","choices":[{"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+
+	raw, err := os.ReadFile("../../config.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := replaceExampleCallerTokenHashes(t, string(raw))
+	text = strings.Replace(text, "token_id: rtr_metrum_standard_example-project_dev_kreplace", "token_id: rtr_example_standard", 1)
+	commentedBinding := "  # binding:\n  #   mode: enforce\n  #   allowed_cidrs: [10.42.0.0/16]\n  #   allowed_asns: [64500]\n  #   mtls_spiffe_id: spiffe://corp/ns/agents/sa/build-agent"
+	activeBinding := "  binding:\n    mode: enforce\n    allowed_cidrs: [10.42.0.0/16]\n    allowed_asns: [64500]"
+	if !strings.Contains(text, commentedBinding) {
+		t.Fatal("config.example.yaml caller-binding example changed; update this matching-request test")
+	}
+	text = strings.Replace(text, commentedBinding, activeBinding, 1)
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig(config.example.yaml): %v", err)
+	}
+
+	var exampleCaller *CallerConfig
+	for i := range cfg.Callers {
+		if cfg.Callers[i].ID == "standard-dev" {
+			exampleCaller = &cfg.Callers[i]
+			break
+		}
+	}
+	if exampleCaller == nil {
+		t.Fatal("config.example.yaml is missing standard-dev caller")
+	}
+	if len(cfg.Server.ClientIP.ASNPrefixes) != 1 || cfg.Server.ClientIP.ASNPrefixes[0] != (ASNPrefixConfig{CIDR: "10.42.0.0/16", ASN: 64500}) {
+		t.Fatalf("example ASN map = %#v, want 10.42.0.0/16 mapped to ASN 64500", cfg.Server.ClientIP.ASNPrefixes)
+	}
+	if exampleCaller.Binding.Mode != "enforce" || len(exampleCaller.Binding.AllowedCIDRs) != 1 || exampleCaller.Binding.AllowedCIDRs[0] != "10.42.0.0/16" || len(exampleCaller.Binding.AllowedASNs) != 1 || exampleCaller.Binding.AllowedASNs[0] != 64500 {
+		t.Fatalf("loaded example binding = %#v, want matching CIDR and ASN constraints", exampleCaller.Binding)
+	}
+
+	usageDisabled := false
+	cfg.Server.UsageDB.Enable = &usageDisabled
+	cfg.Server.AdminReports = AdminReportsConfig{}
+	cfg.Server.Listen = ":0"
+	cfg.Server.Logging.Path = filepath.Join(dir, "requests.jsonl")
+	cfg.StatePath = filepath.Join(dir, "state.json")
+	cfg.Provider = map[string]ProviderConfig{"mock": {BaseURL: upstream.URL + "/v1", Dialect: "openai", APIKey: "provider-key"}}
+	cfg.Models = map[string]ModelGroup{"default": {Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-model"}}}}
+	cfg.Server.DefaultModelGroup = "default"
+	configuredCaller := *exampleCaller
+	configuredCaller.Allow = []string{"default"}
+	cfg.Callers = []CallerConfig{configuredCaller}
+
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New(example config): %v", err)
+	}
+	defer svc.Close()
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}]}`))
+	request.RemoteAddr = "10.42.0.10:443"
+	request.Header.Set("Authorization", "Bearer rtr_example_standard_test")
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("matching configured example request status=%d body=%s, want 200", response.Code, response.Body.String())
 	}
 }

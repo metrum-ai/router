@@ -56,7 +56,7 @@ func validateServerTLS(cfg ServerTLSConfig) error {
 
 // ListenerTLSConfig is the certificate part of a listener's tls block.
 //
-// server.tls uses it directly. admin.tls (#809) embeds it inline and adds
+// The server.tls block uses this type directly. admin.tls (#809) embeds it inline and adds
 // proxy mode, client_ca_file, client_auth and trusted_proxy_cidrs, then calls
 // ValidateListenerTLS and NewListenerTLSManager with ListenerAdmin and
 // "admin.tls".

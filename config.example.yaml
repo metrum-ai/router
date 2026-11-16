@@ -304,7 +304,9 @@ server:
     store_ip: true
     # ASN checks use this operator-maintained longest-prefix map. Keep it
     # current when the allowed ASN policy depends on changing address space.
-    asn_prefixes: []
+    asn_prefixes:
+      - cidr: 10.42.0.0/16
+        asn: 64500
   # Governed content capture is disabled by default. Enabling it stores redacted
   # request/response/upstream-error content in separate relational tables keyed
   # by request_id. It is not diagnostics, metrics, or usage reporting. Delete

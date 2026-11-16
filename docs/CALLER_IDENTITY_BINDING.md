@@ -17,7 +17,7 @@ server:
   client_ip:
     trusted_proxy_cidrs: [10.0.0.0/8]
     asn_prefixes:
-      - cidr: 198.51.100.0/24
+      - cidr: 10.42.0.0/16
         asn: 64500
 callers:
   - id: build-agent
