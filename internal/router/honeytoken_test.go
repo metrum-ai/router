@@ -48,6 +48,9 @@ func TestHoneytokenAndCanaryNeverReachUpstream(t *testing.T) {
 	}
 	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	streamPath := filepath.Join(t.TempDir(), "security-events.jsonl")
+	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: streamPath}
+	cfg.Server.AdminReports.Security.Enabled = false
 	cfg.Models["canary"] = ModelGroup{Strategy: "static", Canary: &CanaryGroupConfig{Callers: []string{generated.Caller.ID}}}
 	for i := range cfg.Callers {
 		cfg.Callers[i].Allow = append(cfg.Callers[i].Allow, "canary")
@@ -191,6 +194,17 @@ func TestHoneytokenAndCanaryNeverReachUpstream(t *testing.T) {
 		t.Fatalf("upstream calls=%d, want 0", got)
 	}
 	svc.Close()
+	streamBody, err := os.ReadFile(streamPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streamText := string(streamBody)
+	if !strings.Contains(streamText, `"title":"security_honeytoken_used"`) || !strings.Contains(streamText, `"title":"security_canary_group_used"`) {
+		t.Fatalf("OCSF stream omitted honeytoken/canary source events: %s", streamText)
+	}
+	if strings.Contains(streamText, generated.Token) || strings.Contains(streamText, "secret prompt") || strings.Contains(streamText, `"probe"`) {
+		t.Fatalf("OCSF stream leaked token or prompt text: %s", streamText)
+	}
 	store, err := OpenUsageStore(cfg.Server.UsageDB)
 	if err != nil {
 		t.Fatal(err)

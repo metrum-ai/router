@@ -27,9 +27,7 @@ func (s *Service) recordSecurityAccessEvent(event securityAccessEvent) {
 	if event.Outcome == "" {
 		event.Outcome = securityOutcome(event.StatusCode)
 	}
-	if s.securityEventStream != nil && isSecurityStreamEvent(event.EventType) {
-		s.securityEventStream.record(event)
-	}
+	s.recordSecurityEventStream(event)
 	if !s.securityReportsEnabled() {
 		return
 	}
@@ -38,6 +36,12 @@ func (s *Service) recordSecurityAccessEvent(event securityAccessEvent) {
 		s.usage.PurgeSecurityAccessEventsBefore(event.TS.Add(-time.Duration(retentionDays) * 24 * time.Hour))
 	}
 	s.usage.EmitSecurityAccessEvent(event)
+}
+
+func (s *Service) recordSecurityEventStream(event securityAccessEvent) {
+	if s != nil && s.securityEventStream != nil && isSecurityStreamEvent(event.EventType) {
+		s.securityEventStream.record(event)
+	}
 }
 
 func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, code string) {
