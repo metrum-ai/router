@@ -181,8 +181,8 @@ When tool routing enables `streaming.hold_until_validated`, streamed tool-call
 arguments are held until inspection completes. Secret matches are redacted in
 `redact_only` mode and block the held call in `fail_on_match` mode. Without the
 bounded hold, tool-bearing streams on a DLP-enabled group fail with HTTP 400
-`secret-dlp-stream-inspection-required`. Custom-rule-only text streams remain
-fail-closed because their rolling text filter cannot infer a safe match bound.
+`secret-dlp-stream-inspection-required`. Streams with custom rules remain
+fail-closed because the rolling text filter cannot infer a safe match bound.
 
 ## v5.0.0 trusted proxy client IP resolution
 

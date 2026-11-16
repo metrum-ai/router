@@ -2022,11 +2022,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.secretStreamDLP = &secretStreamDLP{state: piiResult.state, mode: normalizePIIFilterMode(group.PIIFilter), failOnMatch: group.PIIFilter.FailOnMatch}
 	}
 	if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && req.Stream &&
-		((len(req.Tools) > 0 && !group.ToolRouting.Streaming.HoldUntilValidated) || (len(req.Tools) == 0 && len(group.PIIFilter.Rules) > 0)) {
+		((len(req.Tools) > 0 && !group.ToolRouting.Streaming.HoldUntilValidated) || len(group.PIIFilter.Rules) > 0) {
 		// Tool-bearing streams require the bounded #929 hold so complete
 		// arguments can be inspected before release. Custom expressions have no
-		// declared maximum match length, so they remain unsupported for rolling
-		// text streams.
+		// declared maximum match length, so custom-rule-enabled streams remain
+		// unsupported by the rolling text filter.
 		code := "secret-dlp-stream-inspection-required"
 		rc.trace("secret_dlp_stream_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
 		s.writeError(w, rc, http.StatusBadRequest, code)
