@@ -58,7 +58,7 @@ services:
   # Small-model CPU tier. The digest and model match the measured Intel CPU
   # reference run documented in README.md.
   cpu-small:
-    image: vllm/vllm-openai-cpu@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5
+    image: vllm/vllm-openai-cpu:v0.33.0@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5
     command: ["Qwen/Qwen2.5-0.5B-Instruct", "--dtype", "bfloat16", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       VLLM_CPU_NUM_OF_RESERVED_CPU: ${VLLM_CPU_NUM_OF_RESERVED_CPU:-1}

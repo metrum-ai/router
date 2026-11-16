@@ -206,7 +206,7 @@ archived by the run operator.
 | Tier | Hardware | Serving stack | Result |
 |---|---|---|---|
 | Datacenter (AMD) | AMD Instinct MI325X (SKU M3250101, 274.5 GB VRAM), 20 vCPU | official `rocm/vllm@sha256:e0ea9a10b729573ea8598bdc073bda0ea382fe1037eec7c0761b6fa7f46baaf4`, vLLM 0.29.1, `Qwen/Qwen2.5-1.5B-Instruct` | two-hop chain 200; per-hop additions +2.33 ms TTFT p50 (one hop) and +3.12 ms (two hops); per-hop usage rows for every hop; loop protection 508 |
-| Datacenter (Intel CPU) | Intel Xeon Gold 6548N, 16 vCPU | official `vllm/vllm-openai-cpu@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5`, vLLM 0.33.0, `Qwen/Qwen2.5-0.5B-Instruct` | same topology; two-hop chain 200; TTFT p50 268.8 ms direct, 274.8 ms two hops |
+| Datacenter (Intel CPU) | Intel Xeon Gold 6548N, 16 vCPU | official `vllm/vllm-openai-cpu:v0.33.0@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5`, vLLM 0.33.0, `Qwen/Qwen2.5-0.5B-Instruct` | same topology; two-hop chain 200; TTFT p50 268.8 ms direct, 274.8 ms two hops |
 | Edge (Strix Halo) | Strix Halo edge-class box; edge and DC tiers both on that box | the bundle vLLM primary reached directly by the DC tier, edge and DC configs unchanged | 300/300 requests at 0, 1 and 2 router hops; TTFT p50 139.90 / 142.66 / 143.16 ms and p95 142.34 / 145.09 / 145.22 ms (details and caveats below) |
 
 `bash verify.sh --local` passed all checks on a dedicated node (hop-header
