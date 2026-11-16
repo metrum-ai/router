@@ -33,6 +33,18 @@ configurations. Update copied examples from older releases before deploying them
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## Virtual models
+
+The optional `virtual_model` block adds capability thresholds to a model
+group. Existing groups are unchanged. Import matching eval-infrastructure
+reports with `metrum-ai-routerctl groups import-eval`; vectors and provenance
+are applied through the config Admin API's copy-on-write group update. The
+group list/show API now reports each target's measured vector, membership and
+exclusion reason. Missing or ambiguous report data fails without changing the
+active config. Reported context tokens are the maximum observed in the eval
+workload, not a model's theoretical context limit.
+
+
 ## v5.0.0 caller-token hygiene
 
 Newly generated caller tokens append a `v2` marker and checksum to the existing
