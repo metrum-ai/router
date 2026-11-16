@@ -409,9 +409,28 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ])
             artifact = json.loads((root / "review-output" / "review.json").read_text(encoding="utf-8"))
             self.assertEqual(artifact["summary"], "Reviewed 2 changed files across 2 bounded batches.")
+            self.assertEqual(artifact["file_coverage"], [
+                {"file": "docs/release.md", "status": "reviewed"},
+                {"file": "router.go", "status": "reviewed"},
+            ])
             self.assertEqual(len(artifact["findings"]), 1)
             self.assertEqual(artifact["findings"][0]["severity"], "blocking")
             self.assertIn("Decision: **BLOCK**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
+
+    def test_artifact_requires_explicit_verification_for_generated_coverage(self) -> None:
+        candidate = {"summary": "No blockers found.", "findings": []}
+        with self.assertRaisesRegex(ValueError, "file verification"):
+            review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+                "file": "docs/generated.json", "status": "generated-and-verified", "verification": "",
+            }])
+        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+            "file": "docs/generated.json", "status": "generated-and-verified",
+            "verification": "OpenAPI generator consistency check",
+        }])
+        self.assertEqual(artifact["file_coverage"], [{
+            "file": "docs/generated.json", "status": "generated-and-verified",
+            "verification": "OpenAPI generator consistency check",
+        }])
 
     def test_uncached_review_stops_and_fails_when_batch_two_of_three_fails(self) -> None:
         clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}

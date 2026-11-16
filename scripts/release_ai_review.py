@@ -327,6 +327,7 @@ def build_artifact(
     head: str,
     *,
     allowed_files: set[str] | frozenset[str] | None = None,
+    file_coverage: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(base, str) or not base or not isinstance(head, str) or not head:
         raise ValueError("AI release review range is invalid")
@@ -387,28 +388,57 @@ def build_artifact(
             "locations": [{"file": file_path, "line": line} for file_path, line in ordered_locations],
             "files": sorted({file_path for file_path, _ in ordered_locations}),
         })
+    normalized_coverage: list[dict[str, str]] = []
+    seen_coverage: set[str] = set()
+    for item in file_coverage or []:
+        if not isinstance(item, dict):
+            raise ValueError("AI release review file coverage entry must be an object")
+        file_path = item.get("file")
+        status = item.get("status")
+        verification = item.get("verification", "")
+        if (
+            not isinstance(file_path, str)
+            or not file_path
+            or file_path.startswith("/")
+            or ".." in Path(file_path).parts
+            or file_path in seen_coverage
+        ):
+            raise ValueError("AI release review file coverage contains an invalid or duplicate path")
+        if status == "reviewed" and not verification:
+            normalized_coverage.append({"file": file_path, "status": status})
+        elif status == "generated-and-verified":
+            normalized_coverage.append({
+                "file": file_path,
+                "status": status,
+                "verification": safe_text(verification, "file verification"),
+            })
+        else:
+            raise ValueError("AI release review file coverage has an invalid status")
+        seen_coverage.add(file_path)
+    normalized_coverage.sort(key=lambda item: item["file"])
     payload = {
-        "schema": "metrum-ai-router-release-review-artifact/v1",
+        "schema": "metrum-ai-router-release-review-artifact/v2",
         "base": base,
         "head": head,
         "summary": summary,
         "findings": normalized,
+        "file_coverage": normalized_coverage,
     }
     digest = hashlib.sha256(json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
     return {**payload, "artifact_digest": digest}
 
 
 def validate_artifact(artifact: dict[str, Any], base: str, head: str) -> dict[str, Any]:
-    if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v1" or artifact.get("base") != base or artifact.get("head") != head:
+    if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v2" or artifact.get("base") != base or artifact.get("head") != head:
         raise ValueError("stored AI release review artifact does not match the requested range")
-    rebuilt = build_artifact(artifact, base, head)
+    rebuilt = build_artifact(artifact, base, head, file_coverage=artifact.get("file_coverage"))
     if rebuilt != artifact:
         raise ValueError("stored AI release review artifact digest or contents are invalid")
     return artifact
 
 
 def evaluate(review: dict[str, Any], acceptances: dict[str, Any], base: str, head: str) -> tuple[dict[str, Any], int]:
-    artifact = validate_artifact(review, base, head) if review.get("schema") == "metrum-ai-router-release-review-artifact/v1" else build_artifact(review, base, head)
+    artifact = validate_artifact(review, base, head) if review.get("schema") == "metrum-ai-router-release-review-artifact/v2" else build_artifact(review, base, head)
     digest = artifact["artifact_digest"]
     raw_acceptance = acceptances.get(digest, "")
     acceptance = safe_text(raw_acceptance, "artifact acceptance") if raw_acceptance else ""
@@ -546,10 +576,13 @@ def main() -> int:
                 print(f"AI release review batch {batch_label} completed", file=sys.stderr)
                 batch_index += 1
             changed_files = len({path for _diff, paths in batches for path in paths})
+            reviewed_paths = sorted({path for _diff, paths in batches for path in paths})
             artifact = build_artifact({
                 "summary": f"Reviewed {changed_files} changed files across {len(batches)} bounded batches.",
                 "findings": list(findings_by_id.values()),
-            }, args.base, args.head)
+            }, args.base, args.head, file_coverage=[
+                {"file": path, "status": "reviewed"} for path in reviewed_paths
+            ])
         report, unanswered = evaluate(artifact, acceptances, args.base, args.head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, args.head, args.tag), encoding="utf-8")
