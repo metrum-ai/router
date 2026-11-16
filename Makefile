@@ -56,9 +56,9 @@ EVAL_CI_REPORT_TIMESTAMP ?=
 EVAL_SAVE_CI_REPORT ?= false
 export EVAL_MODEL EVAL_BASE_URL EVAL_API EVAL_LIMIT EVAL_CONCURRENCY EVAL_TIMEOUT EVAL_LOG_ROOT EVAL_RUN_ID EVAL_LOG_DIR EVAL_REASONING EVAL_REQUIRE_REASONING_COVERAGE EVAL_REASONING_COVERAGE_FILE EVAL_USAGE_CONFIG_YAML EVAL_USAGE_CONFIG_FILE EVAL_USAGE_CALLER_ID EVAL_USAGE_CLIENT EVAL_USAGE_REPORT_BIN EVAL_USAGE_EXPORT_TIMEOUT EVAL_MODEL_KIND EVAL_SUITE EVAL_BASELINE_JSON EVAL_POLICY EVAL_INSPECT EVAL_CI_REPORT_DIR EVAL_CI_REPORT_TIMESTAMP EVAL_SAVE_CI_REPORT
 
-# Keep the repository's historical validation contract for bare `make` even
-# though the EKS help target appears earlier in this file.
-.DEFAULT_GOAL := test
+# CodeQL's Go autobuild invokes plain `make`; keep that compile-only so static
+# analysis does not execute the repository's full test suite.
+.DEFAULT_GOAL := build-package-binaries
 
 # Tenant discovery/network-policy helpers (not staging delivery).
 DOCKER ?= docker

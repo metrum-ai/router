@@ -150,6 +150,27 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 secret DLP
+
+Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
+credential detector pack to inbound text, buffered responses, and streamed
+text. `mode: redact_only` replaces matches with placeholders; `mode:
+fail_on_match` blocks matching requests. Existing custom rules and replacement
+limits continue to apply. Configure `apply_to.tool_results` for tool-result
+coverage. Streamed text keeps a 512-byte ordinary rolling tail, holds plausible
+JWTs from their start (up to 4,096 bytes per segment), and tracks every PEM
+BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
+provider-token or credential-assignment candidates fail closed. Unary response
+replacement-limit exhaustion also fails closed. Response redaction requires
+`secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
+their prior response behavior.
+
+As an interim limit until the #929 bounded tool-call inspection integration
+lands, streams with advertised tools on a group with `secrets_enabled: true`
+fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
+requests or omit tools until that integration is available. This gate does not
+apply to groups without secret DLP enabled.
+
 ## v5.0.0 trusted proxy client IP resolution
 
 When `server.client_ip.trusted_proxy_cidrs` is configured, the router now walks
