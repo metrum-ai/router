@@ -17,6 +17,11 @@
 - Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
 - Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
 
+### Security
+
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
@@ -44,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 - Add opt-in shadow/enforce mapping from detector signals to temporary key throttles or suspensions, with a per-minute action cap, emergency caller exemptions, and persistent TTL state.

@@ -419,6 +419,7 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &blocked) {
 			rc.rec.PIIFilterMode = piiResult.Mode
 			rc.rec.PIIFilterReplacements = piiResult.Replacements
+			s.recordPIISecurityEvent(rc, http.StatusBadRequest, "blocked")
 			rc.trace("pii_filter_blocked", "pii_filter blocked embedding input", Target{}, 0, http.StatusBadRequest, "pii-filter-blocked", false, 0)
 			s.writeError(w, rc, http.StatusBadRequest, "pii-filter-blocked")
 			return
@@ -431,6 +432,7 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		rc.rec.PIIFilterMode = piiResult.Mode
 		rc.rec.PIIFilterReplacements = piiResult.Replacements
 		rc.rec.PIIFilterRuleCount = piiRuleCount(piiResult)
+		s.recordPIISecurityEvent(rc, http.StatusOK, "redacted")
 		rc.rec.Warnings = appendWarning(rc.rec.Warnings, "pii-filter-applied")
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 	}
