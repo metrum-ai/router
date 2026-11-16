@@ -145,10 +145,26 @@ var adminV1OperationSpecs = []Operation{
 		ID: "putProject", Method: "PUT", Path: "/admin/v1/projects/{project}", LegacyPath: "/admin/projects/{project}",
 		Summary: "Create or update a project and its environments",
 		Object:  authzObjectAdminProjects, Action: "write", Domain: AdminDomainGlobal,
-		ExtraChecks: []AdminCheck{{Object: authzObjectAdminBudgets, Action: "write"}},
+		ExtraChecks: []AdminCheck{{Object: authzObjectAdminBudgets, Action: "write", When: AdminCheckBodyBudget}},
 		Request:     adminProjectWriteRequest{}, Response: adminOpenObject{Members: []string{"project", "revision", "set_id"}},
 		Errors: []int{400, 409, 412, 422, 428, 503}, Concurrency: AdminConcurrencyRevision,
 		RateClass: AdminRateClassWrite, HandlerKey: "projects.put",
+	},
+	{
+		ID: "deleteProject", Method: "DELETE", Path: "/admin/v1/projects/{project}", LegacyPath: "/admin/projects/{project}",
+		Summary: "Delete an unused project and its memberships",
+		Object:  authzObjectAdminProjects, Action: "write", Domain: AdminDomainGlobal,
+		Response: adminOpenObject{Members: []string{"deleted_project", "deleted_memberships", "revision", "set_id"}},
+		Errors:   []int{400, 404, 409, 412, 428, 503}, Concurrency: AdminConcurrencyRevision,
+		RateClass: AdminRateClassWrite, HandlerKey: "projects.delete",
+	},
+	{
+		ID: "deleteProjectEnvironment", Method: "DELETE", Path: "/admin/v1/projects/{project}/environments/{environment}", LegacyPath: "/admin/projects/{project}/environments/{environment}",
+		Summary: "Delete an unused project environment and its memberships",
+		Object:  authzObjectAdminProjects, Action: "write", Domain: AdminDomainGlobal,
+		Response: adminOpenObject{Members: []string{"deleted_environment", "deleted_memberships", "revision", "set_id"}},
+		Errors:   []int{400, 404, 409, 412, 428, 503}, Concurrency: AdminConcurrencyRevision,
+		RateClass: AdminRateClassWrite, HandlerKey: "projects.environments.delete",
 	},
 	{
 		ID: "listProjectEnvironmentMemberships", Method: "GET", Path: "/admin/v1/projects/{project}/environments/{environment}/memberships", LegacyPath: "/admin/projects/{project}/environments/{environment}/memberships",
@@ -164,6 +180,14 @@ var adminV1OperationSpecs = []Operation{
 		Request: adminMembershipWriteRequest{}, Response: adminOpenObject{Members: []string{"membership", "revision", "set_id"}},
 		Errors: []int{400, 403, 404, 409, 412, 422, 428, 503}, Concurrency: AdminConcurrencyRevision,
 		RateClass: AdminRateClassWrite, HandlerKey: "memberships.put",
+	},
+	{
+		ID: "deleteProjectEnvironmentMembership", Method: "DELETE", Path: "/admin/v1/projects/{project}/environments/{environment}/memberships/{user_id}", LegacyPath: "/admin/projects/{project}/environments/{environment}/memberships/{user_id}",
+		Summary: "Delete a membership from a project environment",
+		Object:  authzObjectAdminMemberships, Action: "write", Domain: AdminDomainProjectEnvironment,
+		Response: adminOpenObject{Members: []string{"deleted_membership", "revision", "set_id"}},
+		Errors:   []int{400, 404, 412, 428, 503}, Concurrency: AdminConcurrencyRevision,
+		RateClass: AdminRateClassWrite, HandlerKey: "memberships.delete",
 	},
 	// ---------------------------------------------------------------------
 	// Configuration (admin:config, admin:shadow)

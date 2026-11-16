@@ -96,8 +96,8 @@ type AdminCheck struct {
 	Object string
 	Action string
 	// When restricts the check to a request condition. Empty means the check is
-	// unconditional. Today's handlers ask for force only when the request sets
-	// force, so a write without it must not require the grant.
+	// unconditional. Conditional checks cover request force flags and optional
+	// resource fields that need a separate permission.
 	When AdminCheckWhen
 }
 
@@ -110,6 +110,9 @@ const (
 	// AdminCheckBodyForce applies the check only when the request body sets
 	// force: true.
 	AdminCheckBodyForce AdminCheckWhen = "body.force"
+	// AdminCheckBodyBudget applies the check only when the request supplies a
+	// non-null budget object.
+	AdminCheckBodyBudget AdminCheckWhen = "body.budget"
 )
 
 // adminBodyFlag reports whether a decoded request body sets a boolean flag.
@@ -139,6 +142,10 @@ func (op Operation) ChecksFor(body map[string]any) []AdminCheck {
 			out = append(out, check)
 		case AdminCheckBodyForce:
 			if adminBodyFlag(body, "force") {
+				out = append(out, check)
+			}
+		case AdminCheckBodyBudget:
+			if value, ok := body["budget"]; ok && value != nil {
 				out = append(out, check)
 			}
 		}
@@ -259,7 +266,7 @@ func (op Operation) validate() error {
 	}
 	for _, check := range op.ExtraChecks {
 		switch check.When {
-		case AdminCheckAlways, AdminCheckBodyForce:
+		case AdminCheckAlways, AdminCheckBodyForce, AdminCheckBodyBudget:
 		default:
 			return fmt.Errorf("operation %s has invalid check condition %q", op.ID, check.When)
 		}

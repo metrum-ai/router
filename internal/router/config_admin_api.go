@@ -119,8 +119,11 @@ func (h *configAdminHandler) adminConfigHandlerPatterns() []struct {
 		{"/projects", "projects.list", h.handleListProjects},
 		{"/projects/{project}", "projects.get", h.handleGetProject},
 		{"/projects/{project}", "projects.put", h.handlePutProject},
+		{"/projects/{project}", "projects.delete", h.handleDeleteProject},
+		{"/projects/{project}/environments/{environment}", "projects.environments.delete", h.handleDeleteProjectEnvironment},
 		{"/projects/{project}/environments/{environment}/memberships", "memberships.list", h.handleListMemberships},
 		{"/projects/{project}/environments/{environment}/memberships", "memberships.put", h.handlePutMembership},
+		{"/projects/{project}/environments/{environment}/memberships/{user_id}", "memberships.delete", h.handleDeleteMembership},
 	}
 }
 
@@ -168,8 +171,11 @@ func (h *configAdminHandler) register(handle func(pattern string, handler http.H
 		"projects.list":                 "GET",
 		"projects.get":                  "GET",
 		"projects.put":                  "PUT",
+		"projects.delete":               "DELETE",
+		"projects.environments.delete":  "DELETE",
 		"memberships.list":              "GET",
 		"memberships.put":               "POST",
+		"memberships.delete":            "DELETE",
 	}
 	for _, entry := range h.adminConfigHandlerPatterns() {
 		// The v5 resource APIs are mounted only on the dedicated /admin/v1

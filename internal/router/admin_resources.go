@@ -233,6 +233,150 @@ func (h *configAdminHandler) handlePutProject(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]any{"project": project, "revision": result.Revision, "set_id": result.SetID})
 }
 
+func (h *configAdminHandler) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+	subject, ok := h.authenticate(w, r)
+	if !ok || !h.authorize(w, r, subject, adminPermissionProjectsWrite) {
+		return
+	}
+	if !h.writeGate(w) {
+		return
+	}
+	projectID := normalizeAccountID(r.PathValue("project"))
+	if projectID == "" {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "project id is invalid")
+		return
+	}
+	expected, valid := parseIfMatch(r)
+	if !valid {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
+		return
+	}
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminProjects, "write")
+	if err != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	deletedMemberships := 0
+	result, err := writeAdminConfigRevision(h.deps.DB, h.deps.RuntimeScope, subject.subject, *expected, audit, "admin-api:project-delete:"+projectID, h.now(), func(cfg *Config) error {
+		materializeSyntheticAccounts(cfg)
+		for _, caller := range cfg.Callers {
+			if normalizeAccountID(caller.Project) == projectID {
+				return configAdminError(http.StatusConflict, "project-in-use", "project is referenced by an active caller")
+			}
+		}
+		index := -1
+		for i := range cfg.Projects {
+			if normalizeAccountID(cfg.Projects[i].ID) == projectID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			return configAdminError(http.StatusNotFound, "project-not-found", "project is not in the active configuration")
+		}
+		cfg.Projects = append(cfg.Projects[:index], cfg.Projects[index+1:]...)
+		kept := cfg.ProjectMemberships[:0]
+		for _, membership := range cfg.ProjectMemberships {
+			if normalizeAccountID(membership.Project) == projectID {
+				deletedMemberships++
+				continue
+			}
+			kept = append(kept, membership)
+		}
+		cfg.ProjectMemberships = kept
+		return nil
+	})
+	if err != nil {
+		h.mapWriteError(w, err)
+		return
+	}
+	if h.deps.Reload != nil {
+		if err := h.deps.Reload(); err != nil {
+			writeConfigAdminError(w, http.StatusServiceUnavailable, "config-reload-failed", "the configuration was saved but this replica could not reload it")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted_project": projectID, "deleted_memberships": deletedMemberships, "revision": result.Revision, "set_id": result.SetID})
+}
+
+func (h *configAdminHandler) handleDeleteProjectEnvironment(w http.ResponseWriter, r *http.Request) {
+	subject, ok := h.authenticate(w, r)
+	if !ok || !h.authorize(w, r, subject, adminPermissionProjectsWrite) {
+		return
+	}
+	if !h.writeGate(w) {
+		return
+	}
+	projectID := normalizeAccountID(r.PathValue("project"))
+	environmentID := normalizeAccountID(r.PathValue("environment"))
+	if projectID == "" || environmentID == "" {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "project and environment ids are required")
+		return
+	}
+	expected, valid := parseIfMatch(r)
+	if !valid {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
+		return
+	}
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminProjects, "write")
+	if err != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	deletedMemberships := 0
+	result, err := writeAdminConfigRevision(h.deps.DB, h.deps.RuntimeScope, subject.subject, *expected, audit, "admin-api:environment-delete:"+projectID+":"+environmentID, h.now(), func(cfg *Config) error {
+		materializeSyntheticAccounts(cfg)
+		for _, caller := range cfg.Callers {
+			if normalizeAccountID(caller.Project) == projectID && normalizeAccountID(caller.Environment) == environmentID {
+				return configAdminError(http.StatusConflict, "environment-in-use", "environment is referenced by an active caller")
+			}
+		}
+		projectIndex := -1
+		environmentIndex := -1
+		for i := range cfg.Projects {
+			if normalizeAccountID(cfg.Projects[i].ID) != projectID {
+				continue
+			}
+			projectIndex = i
+			for j := range cfg.Projects[i].Environments {
+				if normalizeAccountID(cfg.Projects[i].Environments[j].ID) == environmentID {
+					environmentIndex = j
+					break
+				}
+			}
+			break
+		}
+		if projectIndex < 0 || environmentIndex < 0 {
+			return configAdminError(http.StatusNotFound, "environment-not-found", "project environment is not in the active configuration")
+		}
+		if len(cfg.Projects[projectIndex].Environments) == 1 {
+			return configAdminError(http.StatusConflict, "last-project-environment", "delete the project instead of removing its last environment")
+		}
+		cfg.Projects[projectIndex].Environments = append(cfg.Projects[projectIndex].Environments[:environmentIndex], cfg.Projects[projectIndex].Environments[environmentIndex+1:]...)
+		kept := cfg.ProjectMemberships[:0]
+		for _, membership := range cfg.ProjectMemberships {
+			if normalizeAccountID(membership.Project) == projectID && normalizeAccountID(membership.Environment) == environmentID {
+				deletedMemberships++
+				continue
+			}
+			kept = append(kept, membership)
+		}
+		cfg.ProjectMemberships = kept
+		return nil
+	})
+	if err != nil {
+		h.mapWriteError(w, err)
+		return
+	}
+	if h.deps.Reload != nil {
+		if err := h.deps.Reload(); err != nil {
+			writeConfigAdminError(w, http.StatusServiceUnavailable, "config-reload-failed", "the configuration was saved but this replica could not reload it")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted_environment": map[string]string{"project": projectID, "environment": environmentID}, "deleted_memberships": deletedMemberships, "revision": result.Revision, "set_id": result.SetID})
+}
+
 func materializeSyntheticAccounts(cfg *Config) {
 	if len(cfg.Users)+len(cfg.Projects)+len(cfg.ProjectMemberships) != 0 {
 		return
@@ -364,6 +508,64 @@ func knownProjectMembershipRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+func (h *configAdminHandler) handleDeleteMembership(w http.ResponseWriter, r *http.Request) {
+	subject, ok := h.authenticate(w, r)
+	if !ok || !h.authorize(w, r, subject, adminPermissionMembershipsWrite) {
+		return
+	}
+	if !h.writeGate(w) {
+		return
+	}
+	projectID := normalizeAccountID(r.PathValue("project"))
+	environmentID := normalizeAccountID(r.PathValue("environment"))
+	userID := normalizeAccountID(r.PathValue("user_id"))
+	if projectID == "" || environmentID == "" || userID == "" {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "project, environment, and user ids are required")
+		return
+	}
+	expected, valid := parseIfMatch(r)
+	if !valid {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
+		return
+	}
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminMemberships, "write")
+	if err != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	result, err := writeAdminConfigRevision(h.deps.DB, h.deps.RuntimeScope, subject.subject, *expected, audit, "admin-api:membership-delete:"+userID+":"+projectID+":"+environmentID, h.now(), func(cfg *Config) error {
+		projectFound := false
+		for _, project := range cfg.Projects {
+			if normalizeAccountID(project.ID) == projectID && projectHasEnvironment(project, environmentID) {
+				projectFound = true
+				break
+			}
+		}
+		if !projectFound {
+			return configAdminError(http.StatusNotFound, "membership-domain-not-found", "membership grant targets an unconfigured project environment")
+		}
+		for i := range cfg.ProjectMemberships {
+			membership := cfg.ProjectMemberships[i]
+			if normalizeAccountID(membership.UserID) == userID && normalizeAccountID(membership.Project) == projectID && normalizeAccountID(membership.Environment) == environmentID {
+				cfg.ProjectMemberships = append(cfg.ProjectMemberships[:i], cfg.ProjectMemberships[i+1:]...)
+				return nil
+			}
+		}
+		return configAdminError(http.StatusNotFound, "membership-not-found", "membership is not in the active configuration")
+	})
+	if err != nil {
+		h.mapWriteError(w, err)
+		return
+	}
+	if h.deps.Reload != nil {
+		if err := h.deps.Reload(); err != nil {
+			writeConfigAdminError(w, http.StatusServiceUnavailable, "config-reload-failed", "the configuration was saved but this replica could not reload it")
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted_membership": map[string]string{"user_id": userID, "project": projectID, "environment": environmentID}, "revision": result.Revision, "set_id": result.SetID})
 }
 
 func (h *configAdminHandler) handleListMemberships(w http.ResponseWriter, r *http.Request) {

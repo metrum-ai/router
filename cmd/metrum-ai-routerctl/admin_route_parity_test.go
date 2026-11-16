@@ -45,8 +45,11 @@ var routerctlOnlineRoutes = [][2]string{
 	{http.MethodGet, "/admin/v1/projects"},
 	{http.MethodGet, "/admin/v1/projects/{project}"},
 	{http.MethodPut, "/admin/v1/projects/{project}"},
+	{http.MethodDelete, "/admin/v1/projects/{project}"},
+	{http.MethodDelete, "/admin/v1/projects/{project}/environments/{environment}"},
 	{http.MethodGet, "/admin/v1/projects/{project}/environments/{environment}/memberships"},
 	{http.MethodPost, "/admin/v1/projects/{project}/environments/{environment}/memberships"},
+	{http.MethodDelete, "/admin/v1/projects/{project}/environments/{environment}/memberships/{user_id}"},
 }
 
 func TestRouterctlOnlineRouteParity(t *testing.T) {

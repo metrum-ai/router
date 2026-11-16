@@ -347,6 +347,7 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 		target = strings.ReplaceAll(target, "{provider}", "provider-1")
 		target = strings.ReplaceAll(target, "{project}", "project-1")
 		target = strings.ReplaceAll(target, "{environment}", "env-1")
+		target = strings.ReplaceAll(target, "{user_id}", "alice")
 		target = strings.ReplaceAll(target, "{target_id...}", "prov/model")
 		if op.ID == "getAdminReportRequestEvidence" {
 			target += "?request_id=req-1"
@@ -373,7 +374,7 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 				switch op.ID {
 				case "issueCaller", "rotateCaller", "revokeCaller", "getCallerQuota", "updateCallerQuota", "deleteContentCapture":
 					domain = "example/prod"
-				case "listProjectEnvironmentMemberships", "putProjectEnvironmentMembership":
+				case "listProjectEnvironmentMemberships", "putProjectEnvironmentMembership", "deleteProjectEnvironmentMembership", "deleteProjectEnvironment":
 					domain = authzDomainForProjectEnvironment("project-1", "env-1")
 				}
 			}
@@ -455,24 +456,117 @@ func TestAdminV1ResourceWritesUseTheirResolvedDomains(t *testing.T) {
 	})
 }
 
+func TestAdminV1ProjectWriteOnlyChecksBudgetPermissionWhenSupplied(t *testing.T) {
+	harness := newAdminV1DBHarness(t)
+	harness.authorize.deny[AdminGlobalDomain+"|"+authzObjectAdminBudgets+"|write"] = true
+	plain := harness.do(t, http.MethodPut, "/admin/v1/projects/ops", map[string]any{"name": "Operations"}, map[string]string{"If-Match": harness.etag(t)})
+	if plain.Code != http.StatusOK {
+		t.Fatalf("project write without a budget was denied: %d (%s)", plain.Code, plain.Body.String())
+	}
+	withBudget := harness.do(t, http.MethodPut, "/admin/v1/projects/ops", map[string]any{
+		"name": "Operations", "budget": map[string]any{"daily_usd": 10},
+	}, map[string]string{"If-Match": harness.etag(t)})
+	if withBudget.Code != http.StatusForbidden {
+		t.Fatalf("project budget write without its grant returned %d, want 403 (%s)", withBudget.Code, withBudget.Body.String())
+	}
+}
+
+func TestAdminV1RetentionShorteningAllowedWithForceGrant(t *testing.T) {
+	harness := newAdminV1DBHarness(t)
+	revision, err := currentRevisionForScope(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := RetentionConfig{Enabled: true, DryRun: boolPtr(false), DefaultBatchSize: 10, Classes: []RetentionClassConfig{{DataClass: retentionDataClassUsageDiagnostics, RetentionDays: 90, BatchSize: 10}}}
+	if _, err := writeAdminConfigRevision(harness.db, "prod", "test-admin", revision, testAdminAuditMeta(), "seed-retention", time.Now().UTC(), func(cfg *Config) error {
+		cfg.Server.Retention = before
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after := RetentionConfig{Enabled: true, DryRun: boolPtr(false), DefaultBatchSize: 10, Classes: []RetentionClassConfig{{DataClass: retentionDataClassUsageDiagnostics, RetentionDays: 30, BatchSize: 10}}}
+	harness.authorize.deny[AdminGlobalDomain+"|"+authzObjectAdminRetention+"|force"] = true
+	denied := harness.do(t, http.MethodPut, "/admin/v1/retention", map[string]any{"retention": after, "force": true}, map[string]string{"If-Match": harness.etag(t)})
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("shortening without force grant returned %d, want 403 (%s)", denied.Code, denied.Body.String())
+	}
+	delete(harness.authorize.deny, AdminGlobalDomain+"|"+authzObjectAdminRetention+"|force")
+	allowed := harness.do(t, http.MethodPut, "/admin/v1/retention", map[string]any{"retention": after, "force": true}, map[string]string{"If-Match": harness.etag(t)})
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("shortening with force grant returned %d, want 200 (%s)", allowed.Code, allowed.Body.String())
+	}
+}
+
+func TestAdminV1DeleteProjectEnvironmentAndMembership(t *testing.T) {
+	harness := newAdminV1DBHarness(t)
+	projectPath := "/admin/v1/projects/acme"
+	created := harness.do(t, http.MethodPut, projectPath, map[string]any{"name": "Acme", "environments": []any{
+		map[string]any{"id": "dev", "status": "active"}, map[string]any{"id": "prod", "status": "active"},
+	}}, map[string]string{"If-Match": harness.etag(t)})
+	if created.Code != http.StatusOK {
+		t.Fatalf("create project: %d (%s)", created.Code, created.Body.String())
+	}
+	usedProject := harness.do(t, http.MethodDelete, "/admin/v1/projects/search", nil, map[string]string{"If-Match": harness.etag(t)})
+	if usedProject.Code != http.StatusConflict {
+		t.Fatalf("delete project referenced by a caller: %d (%s)", usedProject.Code, usedProject.Body.String())
+	}
+	usedEnvironment := harness.do(t, http.MethodDelete, "/admin/v1/projects/search/environments/dev", nil, map[string]string{"If-Match": harness.etag(t)})
+	if usedEnvironment.Code != http.StatusConflict {
+		t.Fatalf("delete environment referenced by a caller: %d (%s)", usedEnvironment.Code, usedEnvironment.Body.String())
+	}
+	membershipPath := "/admin/v1/projects/acme/environments/dev/memberships"
+	joined := harness.do(t, http.MethodPost, membershipPath, map[string]any{"user_id": "alice", "role": "viewer"}, map[string]string{"If-Match": harness.etag(t)})
+	if joined.Code != http.StatusCreated {
+		t.Fatalf("create membership: %d (%s)", joined.Code, joined.Body.String())
+	}
+	removed := harness.do(t, http.MethodDelete, membershipPath+"/alice", nil, map[string]string{"If-Match": harness.etag(t)})
+	if removed.Code != http.StatusOK {
+		t.Fatalf("delete membership: %d (%s)", removed.Code, removed.Body.String())
+	}
+	removed = harness.do(t, http.MethodDelete, "/admin/v1/projects/acme/environments/prod", nil, map[string]string{"If-Match": harness.etag(t)})
+	if removed.Code != http.StatusOK {
+		t.Fatalf("delete environment: %d (%s)", removed.Code, removed.Body.String())
+	}
+	lastEnvironment := harness.do(t, http.MethodDelete, "/admin/v1/projects/acme/environments/dev", nil, map[string]string{"If-Match": harness.etag(t)})
+	if lastEnvironment.Code != http.StatusConflict {
+		t.Fatalf("delete the project's last environment: %d (%s)", lastEnvironment.Code, lastEnvironment.Body.String())
+	}
+	removed = harness.do(t, http.MethodDelete, projectPath, nil, map[string]string{"If-Match": harness.etag(t)})
+	if removed.Code != http.StatusOK {
+		t.Fatalf("delete project: %d (%s)", removed.Code, removed.Body.String())
+	}
+	config, err := LoadActiveCanonicalConfig(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, project := range config.Projects {
+		if normalizeAccountID(project.ID) == "acme" {
+			t.Fatal("deleted project remains in active config")
+		}
+	}
+}
+
 func TestAdminV1ResourceRoutesDenyTheirSpecificCasbinObjects(t *testing.T) {
 	want := map[string]struct {
 		object, action, domain string
 	}{
-		"listProviders":                     {authzObjectAdminProviders, authzActionRead, AdminGlobalDomain},
-		"getProvider":                       {authzObjectAdminProviders, authzActionRead, AdminGlobalDomain},
-		"putProvider":                       {authzObjectAdminProviders, "write", AdminGlobalDomain},
-		"disableProvider":                   {authzObjectAdminProviders, "write", AdminGlobalDomain},
-		"validateProvider":                  {authzObjectAdminProviders, "write", AdminGlobalDomain},
-		"listModelCatalog":                  {authzObjectAdminCatalog, authzActionRead, AdminGlobalDomain},
-		"getCallerQuota":                    {authzObjectAdminQuotas, authzActionRead, "example/prod"},
-		"updateCallerQuota":                 {authzObjectAdminQuotas, "write", "example/prod"},
-		"putRetentionPolicy":                {authzObjectAdminRetention, "write", AdminGlobalDomain},
-		"listProjects":                      {authzObjectAdminProjects, authzActionRead, AdminGlobalDomain},
-		"getProject":                        {authzObjectAdminProjects, authzActionRead, AdminGlobalDomain},
-		"putProject":                        {authzObjectAdminProjects, "write", AdminGlobalDomain},
-		"listProjectEnvironmentMemberships": {authzObjectAdminMemberships, authzActionRead, "project-1/env-1"},
-		"putProjectEnvironmentMembership":   {authzObjectAdminMemberships, "write", "project-1/env-1"},
+		"listProviders":                      {authzObjectAdminProviders, authzActionRead, AdminGlobalDomain},
+		"getProvider":                        {authzObjectAdminProviders, authzActionRead, AdminGlobalDomain},
+		"putProvider":                        {authzObjectAdminProviders, "write", AdminGlobalDomain},
+		"disableProvider":                    {authzObjectAdminProviders, "write", AdminGlobalDomain},
+		"validateProvider":                   {authzObjectAdminProviders, "write", AdminGlobalDomain},
+		"listModelCatalog":                   {authzObjectAdminCatalog, authzActionRead, AdminGlobalDomain},
+		"getCallerQuota":                     {authzObjectAdminQuotas, authzActionRead, "example/prod"},
+		"updateCallerQuota":                  {authzObjectAdminQuotas, "write", "example/prod"},
+		"putRetentionPolicy":                 {authzObjectAdminRetention, "write", AdminGlobalDomain},
+		"listProjects":                       {authzObjectAdminProjects, authzActionRead, AdminGlobalDomain},
+		"getProject":                         {authzObjectAdminProjects, authzActionRead, AdminGlobalDomain},
+		"putProject":                         {authzObjectAdminProjects, "write", AdminGlobalDomain},
+		"deleteProject":                      {authzObjectAdminProjects, "write", AdminGlobalDomain},
+		"deleteProjectEnvironment":           {authzObjectAdminProjects, "write", AdminGlobalDomain},
+		"listProjectEnvironmentMemberships":  {authzObjectAdminMemberships, authzActionRead, "project-1/env-1"},
+		"putProjectEnvironmentMembership":    {authzObjectAdminMemberships, "write", "project-1/env-1"},
+		"deleteProjectEnvironmentMembership": {authzObjectAdminMemberships, "write", "project-1/env-1"},
 	}
 	for _, op := range AdminV1Operations() {
 		expected, covered := want[op.ID]
@@ -482,7 +576,7 @@ func TestAdminV1ResourceRoutesDenyTheirSpecificCasbinObjects(t *testing.T) {
 		t.Run(op.ID, func(t *testing.T) {
 			harness := newAdminV1Harness(t)
 			harness.authorize.deny[expected.domain+"|"+expected.object+"|"+expected.action] = true
-			target := strings.NewReplacer("{group}", "g1", "{set_id}", "set-1", "{request_id}", "req-1", "{id}", "caller-1", "{provider}", "provider-1", "{project}", "project-1", "{environment}", "env-1", "{target_id...}", "prov/model").Replace(op.Path)
+			target := strings.NewReplacer("{group}", "g1", "{set_id}", "set-1", "{request_id}", "req-1", "{id}", "caller-1", "{provider}", "provider-1", "{project}", "project-1", "{environment}", "env-1", "{user_id}", "alice", "{target_id...}", "prov/model").Replace(op.Path)
 			recorder := harness.do(t, op.Method, target, map[string]any{}, map[string]string{"If-Match": `"rev-7"`})
 			if recorder.Code != http.StatusForbidden {
 				t.Fatalf("status=%d body=%s; want resource-specific deny", recorder.Code, recorder.Body.String())
@@ -490,6 +584,16 @@ func TestAdminV1ResourceRoutesDenyTheirSpecificCasbinObjects(t *testing.T) {
 			calls := harness.authorize.snapshot()
 			if len(calls) == 0 || calls[0].Object != expected.object || calls[0].Action != expected.action || calls[0].Domain != expected.domain {
 				t.Fatalf("authorization calls=%+v, want %s/%s in %s", calls, expected.object, expected.action, expected.domain)
+			}
+
+			allowHarness := newAdminV1Harness(t)
+			allowed := allowHarness.do(t, op.Method, target, map[string]any{}, map[string]string{"If-Match": `"rev-7"`})
+			if allowed.Code == http.StatusForbidden {
+				t.Fatalf("route denied with its exact resource grant: %s", allowed.Body.String())
+			}
+			allowCalls := allowHarness.authorize.snapshot()
+			if len(allowCalls) == 0 || allowCalls[0].Object != expected.object || allowCalls[0].Action != expected.action || allowCalls[0].Domain != expected.domain {
+				t.Fatalf("allow authorization calls=%+v, want %s/%s in %s", allowCalls, expected.object, expected.action, expected.domain)
 			}
 		})
 	}

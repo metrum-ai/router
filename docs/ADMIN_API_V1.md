@@ -238,12 +238,17 @@ requires `admin:retention/force`; without it, the request returns `403`.
 
 `GET /admin/v1/projects` and `GET /admin/v1/projects/{project}` read projects
 and their environments. `PUT /admin/v1/projects/{project}` creates or replaces
-the project and environment list. A configured environment establishes its
+the project and environment list. `DELETE /admin/v1/projects/{project}` removes
+an unused project and its memberships; projects referenced by active callers
+return `409`. `DELETE /admin/v1/projects/{project}/environments/{environment}`
+removes an unused environment and its memberships; the final environment must
+be removed by deleting its project. A configured environment establishes its
 `project/environment` authorization domain. Memberships are listed at
 `GET /admin/v1/projects/{project}/environments/{environment}/memberships` and
-created or updated with `POST` at that path. Membership writes are authorized
-in the target environment domain; unconfigured environments return `404` and
-an unauthorized target domain returns `403`.
+created or updated with `POST` at that path. `DELETE` at the same path with
+`/{user_id}` removes a membership. Membership writes are authorized in the
+target environment domain; unconfigured environments return `404` and an
+unauthorized target domain returns `403`.
 
 Project writes may include `budget.daily_usd`, `budget.monthly_usd`, and
 `budget.alert_thresholds` (integer percentages from 1 through 100). Completed

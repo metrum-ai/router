@@ -121,16 +121,21 @@ privilege independently of configuration-set access. For example:
 ```yaml
         - p, user:ops@example.com, *, admin:providers, read
         - p, user:ops@example.com, *, admin:catalog, read
-        - p, user:ops@example.com, example/prod, admin:projects, read
+        - p, user:ops@example.com, *, admin:projects, read
         - p, user:ops@example.com, example/prod, admin:memberships, read
         - p, user:ops@example.com, example/prod, admin:quotas, read
-        - p, user:ops@example.com, example/prod, admin:budgets, read
+        - p, user:ops@example.com, *, admin:budgets, read
         - p, user:ops@example.com, *, admin:retention, write
 ```
 
-Project writes require `admin:projects/write`; budget reads and writes also
-require `admin:budgets/read` or `admin:budgets/write`. A retention update that
-can delete more data additionally requires `admin:retention/force`.
+Project routes, including their embedded budget reads and writes, authorize in
+the plane-global domain (`*`), so a grant scoped to `example/prod` does not
+cover them. Project reads also require `admin:budgets/read` because the response
+includes the budget. Project writes require `admin:projects/write`; when the
+request includes a `budget` object it additionally requires
+`admin:budgets/write`. Membership and caller-quota routes authorize in their
+target project or caller domain. A retention update that can delete more data
+additionally requires `admin:retention/force`.
 
 ## Rotate a key
 

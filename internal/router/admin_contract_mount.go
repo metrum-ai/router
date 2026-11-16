@@ -376,12 +376,11 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			if len(domains) > 0 {
 				checkDomain = domains[0]
 			}
-			// Conditional checks (today: force) are evaluated from the request body the
-			// handler will read, so a plain write never needs the force grant. The body is
-			// peeked, not consumed.
+			// Conditional checks are evaluated from the request body the handler will
+			// read. The body is peeked, not consumed.
 			bodyFlags := map[string]any{}
 			for _, check := range op.ExtraChecks {
-				if check.When == AdminCheckBodyForce {
+				if check.When == AdminCheckBodyForce || check.When == AdminCheckBodyBudget {
 					if err := peekAdminJSONBody(r, &bodyFlags); err != nil {
 						writeAdminProblemCode(w, r, http.StatusBadRequest, "invalid-request", "")
 						finish(http.StatusBadRequest, "denied", "invalid-request")
