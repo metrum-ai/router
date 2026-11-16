@@ -246,6 +246,36 @@ def assert_agent_chain_workflow() -> None:
             "agent chain nightly must retain per-cell results on failure")
 
 
+def assert_eval_infra_nightly_workflow() -> None:
+    text = read(WORKFLOWS / "eval-infra-nightly.yml")
+    triggers = text.split("permissions:", 1)[0]
+    require("schedule:" in triggers and "workflow_dispatch:" in triggers,
+            "evaluation nightly needs scheduled and manual triggers")
+    require(all(f"{event}:" not in triggers for event in ("pull_request", "push", "merge_group")),
+            "paid evaluation nightly must not run on PR, push or merge-group events")
+    require("$1.00 per workflow run and per UTC night" in text,
+            "evaluation nightly must document its workflow and daily spend ceiling")
+    workflow_jobs = jobs(text)
+    require(set(workflow_jobs) == {"nightly"}, "evaluation nightly must remain a single bounded job")
+    job = workflow_jobs["nightly"]
+    require("if: github.ref == 'refs/heads/main'" in job,
+            "evaluation nightly must run only from main")
+    require("environment: evaluation" in job,
+            "evaluation nightly must use the protected evaluation environment")
+    require("timeout-minutes: 45" in job and "cancel-in-progress: false" in text,
+            "evaluation nightly must be bounded and cannot cancel a live run")
+    require("contents: read" in text and "actions: read" in text,
+            "evaluation nightly permissions must stay read-only")
+    secret_refs = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", text))
+    require(secret_refs == {"COMPAT_MATRIX_OPENAI_API_KEY", "COMPAT_MATRIX_CALLER_TOKEN"},
+            "evaluation nightly must expose only the two required environment secrets")
+    require("artifacts/run-report.json" in text and "artifacts/rolling-aggregate.json" in text
+            and "artifacts/history" not in text.split("      - name: Publish sanitized evaluation reports", 1)[1],
+            "evaluation nightly artifacts must contain only the current report and aggregate")
+    require("gh run download" in text and "refusing to bypass the nightly spend ceiling" in text,
+            "same-day cost history must fail closed when reports cannot be retrieved")
+
+
 def assert_hierarchy_release_gate() -> None:
     matrix = read(WORKFLOWS / "hierarchy-matrix.yml")
     require("workflow_call:" in matrix and "workflow_dispatch:" in matrix,
@@ -488,6 +518,7 @@ def main() -> int:
     assert_retirement_topology()
     assert_provider_workflows()
     assert_agent_chain_workflow()
+    assert_eval_infra_nightly_workflow()
     assert_hierarchy_release_gate()
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
