@@ -62,6 +62,13 @@ So a plain configuration write needs `admin:config`/`write` only, while a forced
 write additionally needs `admin:config`/`force` — exactly what the handler
 enforces today.
 
+Resource APIs use independent Casbin objects: `admin:providers`,
+`admin:catalog`, `admin:projects`, `admin:memberships`, `admin:quotas`,
+`admin:budgets`, and `admin:retention`. Their actions are `read`, `write`, and
+where applicable `force`. Project budget operations require both the relevant
+`admin:projects` and `admin:budgets` grants. Retention changes that can delete
+more data require `admin:retention/write` and `admin:retention/force`.
+
 ## Errors
 
 Every status of 400 or above is `application/problem+json`:
@@ -217,15 +224,17 @@ references, and headers are omitted from responses. `GET /admin/v1/models`
 lists provider catalog entries with their effective dialect and capability
 metadata. Provider and model dialect metadata is validated before activation.
 
-`POST /admin/v1/callers/{id}/quota` updates one caller's rolling quota. It
+`GET /admin/v1/callers/{id}/quota` reads one caller's effective quota and
+requires `admin:quotas/read`. `POST /admin/v1/callers/{id}/quota` updates one caller's rolling quota. It
 requires `If-Match`, uses the caller's stored project/environment domain for
 authorization, and activates a new configuration revision so serving replicas
 reload it through the normal revision path. Writes require database-backed
 configuration mode.
 
 `PUT /admin/v1/retention` replaces the retention policy and requires
-`If-Match`. Shortening or removing an existing class requires the separate
-`config:force` permission; without it, the request returns `403`.
+`If-Match`. Any change that can delete more data (including enabling retention,
+disabling dry-run, enabling or adding a class, or shortening its period)
+requires `admin:retention/force`; without it, the request returns `403`.
 
 `GET /admin/v1/projects` and `GET /admin/v1/projects/{project}` read projects
 and their environments. `PUT /admin/v1/projects/{project}` creates or replaces
@@ -244,6 +253,11 @@ per UTC window, and reaching a ceiling blocks subsequent requests with HTTP 503
 they reset on restart and are not shared across replicas, so ceilings are
 approximate in multi-replica deployments. Remove or raise a ceiling to restore
 admission after a trip; a new window also resets it.
+
+The current API does not expose project/environment deletion or membership
+deletion; these operations remain follow-up scope. The CLI can call all
+versioned resource routes with `routerctl admin-resource METHOD --path
+/admin/v1/...` and JSON `--body` for writes.
 
 ## Route map (legacy → `/admin/v1`)
 

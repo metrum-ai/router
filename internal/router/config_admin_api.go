@@ -113,6 +113,7 @@ func (h *configAdminHandler) adminConfigHandlerPatterns() []struct {
 		{"/providers/{provider}", "providers.put", h.handlePutProvider},
 		{"/providers/{provider}", "providers.disable", h.handleDisableProvider},
 		{"/providers/{provider}/validate", "providers.validate", h.handleValidateProvider},
+		{"/callers/{id}/quota", "callers.quota.read", h.handleGetCallerQuota},
 		{"/callers/{id}/quota", "callers.quota.update", h.handleUpdateCallerQuota},
 		{"/retention", "retention.put", h.handlePutRetention},
 		{"/projects", "projects.list", h.handleListProjects},
@@ -161,6 +162,7 @@ func (h *configAdminHandler) register(handle func(pattern string, handler http.H
 		"providers.put":                 "PUT",
 		"providers.disable":             "DELETE",
 		"providers.validate":            "POST",
+		"callers.quota.read":            "GET",
 		"callers.quota.update":          "POST",
 		"retention.put":                 "PUT",
 		"projects.list":                 "GET",
@@ -172,7 +174,7 @@ func (h *configAdminHandler) register(handle func(pattern string, handler http.H
 	for _, entry := range h.adminConfigHandlerPatterns() {
 		// The v5 resource APIs are mounted only on the dedicated /admin/v1
 		// listener. Keep the legacy serving-port surface unchanged.
-		if strings.HasPrefix(entry.key, "providers.") || entry.key == "models.list" || entry.key == "callers.quota.update" || entry.key == "retention.put" || strings.HasPrefix(entry.key, "projects.") || strings.HasPrefix(entry.key, "memberships.") {
+		if strings.HasPrefix(entry.key, "providers.") || entry.key == "models.list" || strings.HasPrefix(entry.key, "callers.quota.") || entry.key == "retention.put" || strings.HasPrefix(entry.key, "projects.") || strings.HasPrefix(entry.key, "memberships.") {
 			continue
 		}
 		handle(methods[entry.key]+" "+prefix+entry.suffix, entry.handler)

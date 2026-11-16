@@ -122,6 +122,15 @@ Rotation with overlap:
 A disabled key never falls through to another mechanism. `routerctl` refuses to take a raw key as a
 flag value; use the file or environment form the command documents.
 
+The `/admin/v1` resource API adds separate Casbin objects for providers, catalog,
+projects, memberships, quotas, budgets, and retention. Review the new grants in
+`ADMIN_API_KEYS.md`; the older `admin:config` grant does not authorize these
+resources. Retention updates that can enable deletion or purge more data require
+`admin:retention:force`. Budget trip state is re-evaluated against the current
+ceiling on each admission, so raising or removing a ceiling restores admission
+without waiting for the next UTC window. `routerctl admin-resource` provides
+HTTP access to the versioned resource endpoints.
+
 **Break-glass access (v4.8.0).** There is no unauthenticated admin route. Prepare one sealed admin
 key with `admin`-level grants, held offline by the on-call owner, and use it only to restore normal
 credentials; rotate it immediately afterwards. The offline emergency-credential activation flow is

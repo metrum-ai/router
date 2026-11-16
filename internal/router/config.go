@@ -3315,6 +3315,9 @@ func validateRetentionConfig(cfg RetentionConfig) error {
 		if class.RetentionDays <= 0 {
 			return fmt.Errorf("%s retention_days must be positive", label)
 		}
+		if class.RetentionDays > 36500 {
+			return fmt.Errorf("%s retention_days must not exceed 36500", label)
+		}
 		if class.BatchSize <= 0 {
 			return fmt.Errorf("%s batch_size must be positive", label)
 		}

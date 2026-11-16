@@ -371,7 +371,7 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 			case AdminDomainCallerTarget, AdminDomainProjectEnvironment, AdminDomainCapturedRow:
 				// These operations resolve a concrete stored domain.
 				switch op.ID {
-				case "issueCaller", "rotateCaller", "revokeCaller", "updateCallerQuota", "deleteContentCapture":
+				case "issueCaller", "rotateCaller", "revokeCaller", "getCallerQuota", "updateCallerQuota", "deleteContentCapture":
 					domain = "example/prod"
 				case "listProjectEnvironmentMemberships", "putProjectEnvironmentMembership":
 					domain = authzDomainForProjectEnvironment("project-1", "env-1")
@@ -423,7 +423,7 @@ func TestAdminV1CrossDomainDenied(t *testing.T) {
 func TestAdminV1ResourceWritesUseTheirResolvedDomains(t *testing.T) {
 	t.Run("provider global write denied", func(t *testing.T) {
 		harness := newAdminV1Harness(t)
-		harness.authorize.deny[AdminGlobalDomain+"|"+authzObjectAdminConfig+"|write"] = true
+		harness.authorize.deny[AdminGlobalDomain+"|"+authzObjectAdminProviders+"|write"] = true
 		response := harness.do(t, http.MethodPut, "/admin/v1/providers/provider-1", map[string]any{"dialect": "openai"}, map[string]string{"If-Match": `"rev-7"`})
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
@@ -431,7 +431,7 @@ func TestAdminV1ResourceWritesUseTheirResolvedDomains(t *testing.T) {
 	})
 	t.Run("quota write denied in caller domain", func(t *testing.T) {
 		harness := newAdminV1Harness(t)
-		harness.authorize.deny["example/prod|"+authzObjectAdminConfig+"|write"] = true
+		harness.authorize.deny["example/prod|"+authzObjectAdminQuotas+"|write"] = true
 		response := harness.do(t, http.MethodPost, "/admin/v1/callers/caller-1/quota", map[string]any{"quota": map[string]any{}}, map[string]string{"If-Match": `"rev-7"`})
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
@@ -443,7 +443,7 @@ func TestAdminV1ResourceWritesUseTheirResolvedDomains(t *testing.T) {
 	})
 	t.Run("membership grant denied across project environment", func(t *testing.T) {
 		harness := newAdminV1Harness(t)
-		harness.authorize.deny["other/dev|"+authzObjectAdminConfig+"|write"] = true
+		harness.authorize.deny["other/dev|"+authzObjectAdminMemberships+"|write"] = true
 		response := harness.do(t, http.MethodPost, "/admin/v1/projects/other/environments/dev/memberships", map[string]any{"user_id": "alice", "role": "operator"}, map[string]string{"If-Match": `"rev-7"`})
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
@@ -453,6 +453,46 @@ func TestAdminV1ResourceWritesUseTheirResolvedDomains(t *testing.T) {
 			t.Fatalf("authorization calls=%+v, want target domain other/dev", calls)
 		}
 	})
+}
+
+func TestAdminV1ResourceRoutesDenyTheirSpecificCasbinObjects(t *testing.T) {
+	want := map[string]struct {
+		object, action, domain string
+	}{
+		"listProviders":                     {authzObjectAdminProviders, authzActionRead, AdminGlobalDomain},
+		"getProvider":                       {authzObjectAdminProviders, authzActionRead, AdminGlobalDomain},
+		"putProvider":                       {authzObjectAdminProviders, "write", AdminGlobalDomain},
+		"disableProvider":                   {authzObjectAdminProviders, "write", AdminGlobalDomain},
+		"validateProvider":                  {authzObjectAdminProviders, "write", AdminGlobalDomain},
+		"listModelCatalog":                  {authzObjectAdminCatalog, authzActionRead, AdminGlobalDomain},
+		"getCallerQuota":                    {authzObjectAdminQuotas, authzActionRead, "example/prod"},
+		"updateCallerQuota":                 {authzObjectAdminQuotas, "write", "example/prod"},
+		"putRetentionPolicy":                {authzObjectAdminRetention, "write", AdminGlobalDomain},
+		"listProjects":                      {authzObjectAdminProjects, authzActionRead, AdminGlobalDomain},
+		"getProject":                        {authzObjectAdminProjects, authzActionRead, AdminGlobalDomain},
+		"putProject":                        {authzObjectAdminProjects, "write", AdminGlobalDomain},
+		"listProjectEnvironmentMemberships": {authzObjectAdminMemberships, authzActionRead, "project-1/env-1"},
+		"putProjectEnvironmentMembership":   {authzObjectAdminMemberships, "write", "project-1/env-1"},
+	}
+	for _, op := range AdminV1Operations() {
+		expected, covered := want[op.ID]
+		if !covered {
+			continue
+		}
+		t.Run(op.ID, func(t *testing.T) {
+			harness := newAdminV1Harness(t)
+			harness.authorize.deny[expected.domain+"|"+expected.object+"|"+expected.action] = true
+			target := strings.NewReplacer("{group}", "g1", "{set_id}", "set-1", "{request_id}", "req-1", "{id}", "caller-1", "{provider}", "provider-1", "{project}", "project-1", "{environment}", "env-1", "{target_id...}", "prov/model").Replace(op.Path)
+			recorder := harness.do(t, op.Method, target, map[string]any{}, map[string]string{"If-Match": `"rev-7"`})
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("status=%d body=%s; want resource-specific deny", recorder.Code, recorder.Body.String())
+			}
+			calls := harness.authorize.snapshot()
+			if len(calls) == 0 || calls[0].Object != expected.object || calls[0].Action != expected.action || calls[0].Domain != expected.domain {
+				t.Fatalf("authorization calls=%+v, want %s/%s in %s", calls, expected.object, expected.action, expected.domain)
+			}
+		})
+	}
 }
 
 // TestAdminV1ContentCaptureDomainFromRow proves the content-capture deletion

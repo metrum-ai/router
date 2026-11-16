@@ -1543,6 +1543,90 @@
       }
     },
     "/admin/v1/callers/{id}/quota": {
+      "get": {
+        "operationId": "getCallerQuota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: caller_id, quota, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a caller quota",
+        "tags": [
+          "configuration"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "caller-target",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:quotas"
+      },
       "post": {
         "operationId": "updateCallerQuota",
         "parameters": [
@@ -1635,7 +1719,7 @@
         "x-admin-concurrency": "revision",
         "x-admin-domain": "caller-target",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:quotas"
       }
     },
     "/admin/v1/callers/{id}/revoke": {
@@ -3988,7 +4072,7 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:catalog"
       }
     },
     "/admin/v1/projects": {
@@ -4062,8 +4146,15 @@
         "x-admin-action": "read",
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "read",
+            "object": "admin:budgets",
+            "when": "always"
+          }
+        ],
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:projects"
       }
     },
     "/admin/v1/projects/{project}": {
@@ -4148,8 +4239,15 @@
         "x-admin-action": "read",
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "read",
+            "object": "admin:budgets",
+            "when": "always"
+          }
+        ],
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:projects"
       },
       "put": {
         "operationId": "putProject",
@@ -4242,8 +4340,15 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "write",
+            "object": "admin:budgets",
+            "when": "always"
+          }
+        ],
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:projects"
       }
     },
     "/admin/v1/projects/{project}/environments/{environment}/memberships": {
@@ -4337,7 +4442,7 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "project-environment",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:memberships"
       },
       "post": {
         "operationId": "putProjectEnvironmentMembership",
@@ -4442,7 +4547,7 @@
         "x-admin-concurrency": "revision",
         "x-admin-domain": "project-environment",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:memberships"
       }
     },
     "/admin/v1/providers": {
@@ -4517,7 +4622,7 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:providers"
       }
     },
     "/admin/v1/providers/{provider}": {
@@ -4603,7 +4708,7 @@
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:providers"
       },
       "get": {
         "operationId": "getProvider",
@@ -4687,7 +4792,7 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:providers"
       },
       "put": {
         "description": "Credential values are write-only; use api_key_env references and never expect credential fields in the response.",
@@ -4785,7 +4890,7 @@
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:providers"
       }
     },
     "/admin/v1/providers/{provider}/validate": {
@@ -4884,7 +4989,7 @@
         "x-admin-concurrency": "",
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config",
+        "x-admin-object": "admin:providers",
         "x-admin-side-effects": "none"
       }
     },
@@ -7241,12 +7346,12 @@
           {
             "action": "force",
             "description": "Required only when the request body sets force: true.",
-            "object": "admin:config",
+            "object": "admin:retention",
             "when": "body.force"
           }
         ],
         "x-admin-idempotency": "",
-        "x-admin-object": "admin:config"
+        "x-admin-object": "admin:retention"
       }
     },
     "/admin/v1/training/export": {

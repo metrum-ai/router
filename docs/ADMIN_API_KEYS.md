@@ -84,6 +84,13 @@ mutations:
 | `config:force` | `force: true` overrides of the `require_validation_status` policy |
 | `shadow:write` | Shadow start/promote/stop |
 | `admin:auth:read` | `GET /admin/auth/check` |
+| `admin:providers:read`, `admin:providers:write` | Provider list/read and provider create/update/disable/validate |
+| `admin:catalog:read` | `GET /admin/v1/models` |
+| `admin:projects:read`, `admin:projects:write` | Project and environment list/read/write |
+| `admin:memberships:read`, `admin:memberships:write` | Project environment membership list/upsert |
+| `admin:quotas:read`, `admin:quotas:write` | Caller quota read/update |
+| `admin:budgets:read`, `admin:budgets:write` | Project budget read/update |
+| `admin:retention:write`, `admin:retention:force` | Retention policy update; force is required for changes that can purge more data |
 
 Admin keys may also hold the pre-existing `object:action` permissions used by
 the other admin endpoints: `admin:callers:list|issue|rotate|revoke`,
@@ -107,6 +114,23 @@ server:
       policy:
         - p, user:ops@example.com, example/prod, admin:config, read
 ```
+
+Resource routes use their own Casbin objects so policies can grant least
+privilege independently of configuration-set access. For example:
+
+```yaml
+        - p, user:ops@example.com, *, admin:providers, read
+        - p, user:ops@example.com, *, admin:catalog, read
+        - p, user:ops@example.com, example/prod, admin:projects, read
+        - p, user:ops@example.com, example/prod, admin:memberships, read
+        - p, user:ops@example.com, example/prod, admin:quotas, read
+        - p, user:ops@example.com, example/prod, admin:budgets, read
+        - p, user:ops@example.com, *, admin:retention, write
+```
+
+Project writes require `admin:projects/write`; budget reads and writes also
+require `admin:budgets/read` or `admin:budgets/write`. A retention update that
+can delete more data additionally requires `admin:retention/force`.
 
 ## Rotate a key
 

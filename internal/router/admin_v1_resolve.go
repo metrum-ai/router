@@ -44,8 +44,8 @@ func AdminV1CallerResourceDomain(db *gorm.DB, runtimeScope string, r *http.Reque
 	setID := sets[0].ID
 	switch {
 	case r.PathValue("project") != "" && r.PathValue("environment") != "":
-		project := strings.TrimSpace(r.PathValue("project"))
-		environment := strings.TrimSpace(r.PathValue("environment"))
+		project := normalizeAccountID(r.PathValue("project"))
+		environment := normalizeAccountID(r.PathValue("environment"))
 		if project == "" || environment == "" {
 			return "", errors.New("project and environment are required")
 		}
@@ -54,7 +54,7 @@ func AdminV1CallerResourceDomain(db *gorm.DB, runtimeScope string, r *http.Reque
 			return "", err
 		}
 		for _, configuredProject := range cfg.Projects {
-			if normalizeAccountID(configuredProject.ID) == normalizeAccountID(project) && projectHasEnvironment(configuredProject, normalizeAccountID(environment)) {
+			if normalizeAccountID(configuredProject.ID) == project && projectHasEnvironment(configuredProject, environment) {
 				return authzDomainForProjectEnvironment(project, environment), nil
 			}
 		}
@@ -67,8 +67,8 @@ func AdminV1CallerResourceDomain(db *gorm.DB, runtimeScope string, r *http.Reque
 		if err := peekAdminJSONBody(r, &body); err != nil {
 			return "", err
 		}
-		return authzDomainForProjectEnvironment(body.Project, body.Environment), nil
-	case r.Method == http.MethodPost:
+		return authzDomainForProjectEnvironment(normalizeAccountID(body.Project), normalizeAccountID(body.Environment)), nil
+	case r.Method == http.MethodPost || r.Method == http.MethodGet:
 		callerID := strings.TrimSpace(r.PathValue("id"))
 		if callerID == "" {
 			return "", errors.New("caller id is required")
@@ -80,7 +80,7 @@ func AdminV1CallerResourceDomain(db *gorm.DB, runtimeScope string, r *http.Reque
 		if len(rows) == 0 {
 			return "", nil
 		}
-		return authzDomainForProjectEnvironment(rows[0].Project, rows[0].Environment), nil
+		return authzDomainForProjectEnvironment(normalizeAccountID(rows[0].Project), normalizeAccountID(rows[0].Environment)), nil
 	}
 	return "", nil
 }

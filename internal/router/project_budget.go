@@ -38,6 +38,11 @@ func (m *projectBudgetManager) allow(project string, cfg ProjectBudgetConfig) bo
 	now := m.now().UTC()
 	d := m.window(m.daily, project, now.Format("2006-01-02"))
 	mo := m.window(m.monthly, project, now.Format("2006-01"))
+	// Config reloads can raise or remove a ceiling without changing the spend
+	// window. Derive the trip from today's limits on every admission so the
+	// breaker recovers immediately when the operator changes the config.
+	d.tripped = cfg.DailyUSD > 0 && d.spent >= cfg.DailyUSD
+	mo.tripped = cfg.MonthlyUSD > 0 && mo.spent >= cfg.MonthlyUSD
 	m.daily[project], m.monthly[project] = d, mo
 	return !d.tripped && !mo.tripped
 }
@@ -58,6 +63,7 @@ func (m *projectBudgetManager) add(project string, cfg ProjectBudgetConfig, cost
 		state   *projectBudgetWindow
 		ceiling float64
 	}{{"day", &d, cfg.DailyUSD}, {"month", &mo, cfg.MonthlyUSD}} {
+		item.state.tripped = item.ceiling > 0 && item.state.spent >= item.ceiling
 		if item.ceiling <= 0 {
 			continue
 		}

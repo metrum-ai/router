@@ -22,7 +22,7 @@ import (
 
 func (h *configAdminHandler) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigRead) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProvidersRead) {
 		return
 	}
 	cfg, setID, revision, err := h.activeConfigForRead()
@@ -45,7 +45,7 @@ func (h *configAdminHandler) handleListProviders(w http.ResponseWriter, r *http.
 
 func (h *configAdminHandler) handleGetProvider(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigRead) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProvidersRead) {
 		return
 	}
 	cfg, setID, revision, err := h.activeConfigForRead()
@@ -65,7 +65,7 @@ func (h *configAdminHandler) handleGetProvider(w http.ResponseWriter, r *http.Re
 
 func (h *configAdminHandler) handleListModelCatalog(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigRead) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionCatalogRead) {
 		return
 	}
 	cfg, setID, revision, err := h.activeConfigForRead()
@@ -124,7 +124,7 @@ type adminProjectWriteRequest struct {
 	Status       string                     `json:"status,omitempty"`
 	Description  string                     `json:"description,omitempty"`
 	Environments []ProjectEnvironmentConfig `json:"environments,omitempty"`
-	Budget       ProjectBudgetConfig        `json:"budget,omitempty"`
+	Budget       *ProjectBudgetConfig       `json:"budget,omitempty"`
 }
 
 type adminMembershipWriteRequest struct {
@@ -135,7 +135,7 @@ type adminMembershipWriteRequest struct {
 
 func (h *configAdminHandler) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigRead) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProjectsRead) || !h.authorize(w, r, subject, adminPermissionBudgetsRead) {
 		return
 	}
 	cfg, setID, revision, err := h.activeConfigForRead()
@@ -149,7 +149,7 @@ func (h *configAdminHandler) handleListProjects(w http.ResponseWriter, r *http.R
 
 func (h *configAdminHandler) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigRead) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProjectsRead) || !h.authorize(w, r, subject, adminPermissionBudgetsRead) {
 		return
 	}
 	cfg, setID, revision, err := h.activeConfigForRead()
@@ -170,7 +170,7 @@ func (h *configAdminHandler) handleGetProject(w http.ResponseWriter, r *http.Req
 
 func (h *configAdminHandler) handlePutProject(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProjectsWrite) {
 		return
 	}
 	if !h.writeGate(w) {
@@ -185,17 +185,23 @@ func (h *configAdminHandler) handlePutProject(w http.ResponseWriter, r *http.Req
 	if !decodeConfigAdminBody(w, r, &body) {
 		return
 	}
+	if body.Budget != nil && !h.authorize(w, r, subject, adminPermissionBudgetsWrite) {
+		return
+	}
 	expected, valid := parseIfMatch(r)
 	if !valid {
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminProjects, "write")
 	if err != nil {
 		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
 		return
 	}
-	project := ProjectConfig{ID: id, Name: strings.TrimSpace(body.Name), Status: normalizeStatusDefault(body.Status), Description: strings.TrimSpace(body.Description), Environments: body.Environments, Budget: body.Budget}
+	project := ProjectConfig{ID: id, Name: strings.TrimSpace(body.Name), Status: normalizeStatusDefault(body.Status), Description: strings.TrimSpace(body.Description), Environments: body.Environments}
+	if body.Budget != nil {
+		project.Budget = *body.Budget
+	}
 	for i := range project.Environments {
 		project.Environments[i].ID = normalizeAccountID(project.Environments[i].ID)
 		project.Environments[i].Status = normalizeStatusDefault(project.Environments[i].Status)
@@ -204,6 +210,9 @@ func (h *configAdminHandler) handlePutProject(w http.ResponseWriter, r *http.Req
 		materializeSyntheticAccounts(cfg)
 		for i := range cfg.Projects {
 			if normalizeAccountID(cfg.Projects[i].ID) == id {
+				if body.Budget == nil {
+					project.Budget = cfg.Projects[i].Budget
+				}
 				cfg.Projects[i] = project
 				return nil
 			}
@@ -271,7 +280,7 @@ func materializeSyntheticAccounts(cfg *Config) {
 
 func (h *configAdminHandler) handlePutMembership(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionMembershipsWrite) {
 		return
 	}
 	if !h.writeGate(w) {
@@ -286,18 +295,23 @@ func (h *configAdminHandler) handlePutMembership(w http.ResponseWriter, r *http.
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "user_id is required")
 		return
 	}
+	role := normalizeRoleDefault(body.Role)
+	if !knownProjectMembershipRole(role) {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "role is not supported")
+		return
+	}
 	expected, valid := parseIfMatch(r)
 	if !valid {
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminMemberships, "write")
 	if err != nil {
 		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
 		return
 	}
 	userID := normalizeAccountID(body.UserID)
-	membership := ProjectMembershipConfig{UserID: userID, Project: projectID, Environment: environment, Role: normalizeRoleDefault(body.Role), Status: normalizeStatusDefault(body.Status), Source: "admin-api", JoinedAt: h.now().UTC().Format(time.RFC3339Nano)}
+	membership := ProjectMembershipConfig{UserID: userID, Project: projectID, Environment: environment, Role: role, Status: normalizeStatusDefault(body.Status), Source: "admin-api", JoinedAt: h.now().UTC().Format(time.RFC3339Nano)}
 	result, err := writeAdminConfigRevision(h.deps.DB, h.deps.RuntimeScope, subject.subject, *expected, audit, "admin-api:membership:"+userID+":"+projectID+":"+environment, h.now(), func(cfg *Config) error {
 		materializeSyntheticAccounts(cfg)
 		projectFound := false
@@ -308,7 +322,7 @@ func (h *configAdminHandler) handlePutMembership(w http.ResponseWriter, r *http.
 			}
 		}
 		if !projectFound {
-			return configAdminError(http.StatusForbidden, "membership-domain-not-found", "membership grant targets an unconfigured project environment")
+			return configAdminError(http.StatusNotFound, "membership-domain-not-found", "membership grant targets an unconfigured project environment")
 		}
 		userFound := false
 		for _, user := range cfg.Users {
@@ -322,6 +336,7 @@ func (h *configAdminHandler) handlePutMembership(w http.ResponseWriter, r *http.
 		}
 		for i := range cfg.ProjectMemberships {
 			if membershipKey(normalizeAccountID(cfg.ProjectMemberships[i].UserID), normalizeAccountID(cfg.ProjectMemberships[i].Project), normalizeAccountID(cfg.ProjectMemberships[i].Environment)) == membershipKey(userID, projectID, environment) {
+				membership.JoinedAt = cfg.ProjectMemberships[i].JoinedAt
 				cfg.ProjectMemberships[i] = membership
 				return nil
 			}
@@ -342,9 +357,18 @@ func (h *configAdminHandler) handlePutMembership(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, map[string]any{"membership": membership, "revision": result.Revision, "set_id": result.SetID})
 }
 
+func knownProjectMembershipRole(role string) bool {
+	switch role {
+	case "admin", "auditor", "developer", "member", "operator", "owner", "viewer":
+		return true
+	default:
+		return false
+	}
+}
+
 func (h *configAdminHandler) handleListMemberships(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigRead) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionMembershipsRead) {
 		return
 	}
 	cfg, setID, revision, err := h.activeConfigForRead()
@@ -380,7 +404,7 @@ func (h *configAdminHandler) handleListMemberships(w http.ResponseWriter, r *htt
 
 func (h *configAdminHandler) handlePutRetention(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionRetentionWrite) {
 		return
 	}
 	if !h.writeGate(w) {
@@ -395,7 +419,7 @@ func (h *configAdminHandler) handlePutRetention(w http.ResponseWriter, r *http.R
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminRetention, "write")
 	if err != nil {
 		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
 		return
@@ -403,8 +427,8 @@ func (h *configAdminHandler) handlePutRetention(w http.ResponseWriter, r *http.R
 	shortened := false
 	result, err := writeAdminConfigRevision(h.deps.DB, h.deps.RuntimeScope, subject.subject, *expected, audit, "admin-api:retention", h.now(), func(cfg *Config) error {
 		shortened = retentionPolicyShortened(cfg.Server.Retention, body.Retention)
-		if shortened && (h.deps.Authorize == nil || !h.deps.Authorize(subject, adminPermissionConfigForce)) {
-			return configAdminError(http.StatusForbidden, "retention-destructive-permission-required", "shortening retention requires config:force permission")
+		if shortened && (h.deps.Authorize == nil || !h.deps.Authorize(subject, adminPermissionRetentionForce)) {
+			return configAdminError(http.StatusForbidden, "retention-destructive-permission-required", "a retention change that can delete more data requires admin:retention force permission")
 		}
 		cfg.Server.Retention = body.Retention
 		return nil
@@ -423,21 +447,49 @@ func (h *configAdminHandler) handlePutRetention(w http.ResponseWriter, r *http.R
 }
 
 func retentionPolicyShortened(before, after RetentionConfig) bool {
-	newDays := make(map[string]int, len(after.Classes))
-	for _, class := range after.Classes {
-		newDays[normalizeRetentionDataClass(class.DataClass)] = class.RetentionDays
+	if after.Enabled && !before.Enabled {
+		return true
 	}
+	if after.Enabled && retentionDryRun(before) && !retentionDryRun(after) {
+		return true
+	}
+	oldClasses := make(map[string]RetentionClassConfig, len(before.Classes))
 	for _, class := range before.Classes {
-		if newValue, found := newDays[normalizeRetentionDataClass(class.DataClass)]; !found || newValue < class.RetentionDays {
+		oldClasses[normalizeRetentionDataClass(class.DataClass)] = class
+	}
+	for _, class := range after.Classes {
+		if !after.Enabled || !retentionClassEnabled(class) {
+			continue
+		}
+		old, found := oldClasses[normalizeRetentionDataClass(class.DataClass)]
+		if !found || !retentionClassEnabled(old) || class.RetentionDays < old.RetentionDays || old.RequireFinalizedRollup && !class.RequireFinalizedRollup {
 			return true
+		}
+	}
+	if after.Enabled {
+		newClasses := make(map[string]RetentionClassConfig, len(after.Classes))
+		for _, class := range after.Classes {
+			newClasses[normalizeRetentionDataClass(class.DataClass)] = class
+		}
+		for _, old := range before.Classes {
+			if retentionClassEnabled(old) {
+				updated, found := newClasses[normalizeRetentionDataClass(old.DataClass)]
+				if !found || !retentionClassEnabled(updated) {
+					return true
+				}
+			}
 		}
 	}
 	return false
 }
 
+func retentionDryRun(cfg RetentionConfig) bool {
+	return cfg.DryRun == nil || *cfg.DryRun
+}
+
 func (h *configAdminHandler) handleUpdateCallerQuota(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionQuotasWrite) {
 		return
 	}
 	if !h.writeGate(w) {
@@ -457,7 +509,7 @@ func (h *configAdminHandler) handleUpdateCallerQuota(w http.ResponseWriter, r *h
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminQuotas, "write")
 	if err != nil {
 		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
 		return
@@ -484,9 +536,34 @@ func (h *configAdminHandler) handleUpdateCallerQuota(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, map[string]any{"caller_id": callerID, "quota": body.Quota, "revision": result.Revision, "set_id": result.SetID})
 }
 
+func (h *configAdminHandler) handleGetCallerQuota(w http.ResponseWriter, r *http.Request) {
+	subject, ok := h.authenticate(w, r)
+	if !ok || !h.authorize(w, r, subject, adminPermissionQuotasRead) {
+		return
+	}
+	callerID := strings.TrimSpace(r.PathValue("id"))
+	if callerID == "" {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "caller id is required")
+		return
+	}
+	cfg, setID, revision, err := h.activeConfigForRead()
+	if err != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "config-unavailable", "the active configuration is unavailable")
+		return
+	}
+	for _, caller := range cfg.Callers {
+		if caller.ID == callerID {
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusOK, map[string]any{"caller_id": callerID, "quota": caller.Quota, "revision": revision, "set_id": setID})
+			return
+		}
+	}
+	writeConfigAdminError(w, http.StatusNotFound, "caller-not-found", "caller is not in the active configuration")
+}
+
 func (h *configAdminHandler) handlePutProvider(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProvidersWrite) {
 		return
 	}
 	if !h.writeGate(w) {
@@ -506,7 +583,7 @@ func (h *configAdminHandler) handlePutProvider(w http.ResponseWriter, r *http.Re
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminProviders, "write")
 	if err != nil {
 		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
 		return
@@ -515,6 +592,10 @@ func (h *configAdminHandler) handlePutProvider(w http.ResponseWriter, r *http.Re
 	result, err := writeAdminConfigRevision(h.deps.DB, h.deps.RuntimeScope, subject.subject, *expected, audit, "admin-api:provider:"+name, h.now(), func(cfg *Config) error {
 		if cfg.Provider == nil {
 			cfg.Provider = map[string]ProviderConfig{}
+		}
+		if existing, found := cfg.Provider[name]; found {
+			provider.TrafficShape = existing.TrafficShape
+			provider.SpendBreaker = existing.SpendBreaker
 		}
 		cfg.Provider[name] = provider
 		return nil
@@ -534,7 +615,7 @@ func (h *configAdminHandler) handlePutProvider(w http.ResponseWriter, r *http.Re
 
 func (h *configAdminHandler) handleValidateProvider(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProvidersWrite) {
 		return
 	}
 	name := strings.TrimSpace(r.PathValue("provider"))
@@ -574,7 +655,7 @@ func (h *configAdminHandler) handleValidateProvider(w http.ResponseWriter, r *ht
 
 func (h *configAdminHandler) handleDisableProvider(w http.ResponseWriter, r *http.Request) {
 	subject, ok := h.authenticate(w, r)
-	if !ok || !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+	if !ok || !h.authorize(w, r, subject, adminPermissionProvidersWrite) {
 		return
 	}
 	if !h.writeGate(w) {
@@ -590,7 +671,7 @@ func (h *configAdminHandler) handleDisableProvider(w http.ResponseWriter, r *htt
 		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match header is invalid")
 		return
 	}
-	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	audit, err := adminAuditMetaForWrite(r, subject, authzObjectAdminProviders, "write")
 	if err != nil {
 		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
 		return
