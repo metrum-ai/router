@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- Define trusted W3C `traceparent` correlation across router chains, with a new
+  span and request ID per hop and safe scalar usage fields for joining requests.
+  Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
+  caller's `trust_traceparent`; malformed, duplicate, or untrusted input starts
+  a new trace.
+- Persist organization and team attribution with request hop spans and filter
+  admin request exports by organization, team, or hop.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
@@ -18,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add parent/child hierarchy governance with authenticated bounded policy snapshots, shared organization quotas, inherited model-group/tool/PII restrictions and fail-closed cache expiry.
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 
 ### Fixed

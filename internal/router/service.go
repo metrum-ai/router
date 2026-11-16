@@ -111,6 +111,7 @@ type Service struct {
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
 	providerSpend      *providerSpendBreaker
+	hierarchyPolicy    atomic.Pointer[hierarchyPolicyRuntime]
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
 	tlsManager         *tlsacme.Manager
@@ -193,8 +194,9 @@ func (e routingEligibilityError) Error() string {
 }
 
 type requestContext struct {
-	id    string
-	start time.Time
+	id          string
+	start       time.Time
+	correlation requestTraceContext
 	// receiveAt is the router receive clock used for router-added latency
 	// (receive to outbound WroteRequest). Prefer this over start when deriving
 	// issue #159 router-added latency from request_trace_events.
@@ -384,6 +386,17 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		provenance:         provenance,
 		responsesAffinity:  responsesAffinity,
 		tlsManager:         tlsManager,
+	}
+	if !hierarchyChildConfigEmpty(cfg.Server.Hierarchy.Child) {
+		hierarchyPolicy, hierarchyErr := newHierarchyPolicyRuntime(cfg.Server.Hierarchy.Child)
+		if hierarchyErr != nil {
+			_ = quota.Close()
+			_ = logger.Close()
+			_ = usage.Close()
+			bridgeSessions.Close()
+			return nil, hierarchyErr
+		}
+		s.hierarchyPolicy.Store(hierarchyPolicy)
 	}
 	s.configSnapshot.Store(cfg)
 	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
@@ -691,6 +704,13 @@ func (s *Service) reloadActiveConfigFromDB() error {
 		return fmt.Errorf("reload active config: freshness: %w", err)
 	}
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
+	var newHierarchyPolicy *hierarchyPolicyRuntime
+	if !hierarchyChildConfigEmpty(newCfg.Server.Hierarchy.Child) {
+		newHierarchyPolicy, err = newHierarchyPolicyRuntime(newCfg.Server.Hierarchy.Child)
+		if err != nil {
+			return fmt.Errorf("reload active config: hierarchy policy: %w", err)
+		}
+	}
 	// ONE publication installs the whole reload or none of it: the synchronized
 	// authorizer and its freshness acknowledgement, the prepared caller
 	// directory, the serving-port key catalogue, the configuration, and the
@@ -723,13 +743,15 @@ func (s *Service) reloadActiveConfigFromDB() error {
 			}
 		}
 		return &machinePlanePublication{
-			Generation:   generation,
-			Authorizer:   preparedPolicy.authorizer,
-			Config:       newCfg,
-			Callers:      preparedCallers,
-			APIKeys:      newAdminKeys,
-			MaxStaleness: maxStaleness,
-			Policy:       preparedPolicy.observation,
+			Generation:         generation,
+			Authorizer:         preparedPolicy.authorizer,
+			Config:             newCfg,
+			Callers:            preparedCallers,
+			APIKeys:            newAdminKeys,
+			MaxStaleness:       maxStaleness,
+			Policy:             preparedPolicy.observation,
+			HierarchyPolicy:    newHierarchyPolicy,
+			SetHierarchyPolicy: true,
 		}, nil
 	}); err != nil {
 		return fmt.Errorf("reload active config: publish machine plane: %w", err)
@@ -883,6 +905,7 @@ func (s *Service) routes() {
 		}
 	}
 	s.mux.HandleFunc("GET /.well-known/security.txt", securityTextHandler)
+	s.mux.HandleFunc("GET "+hierarchyPolicyPath, s.handleHierarchyPolicy)
 	s.mux.Handle("GET /", docsHandler())
 }
 
@@ -1687,6 +1710,28 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 		return
 	}
+	inheritedPolicy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-unavailable")
+		return
+	}
+	if inheritedPolicy != nil {
+		rc.rec.OrganizationID = inheritedPolicy.OrganizationID
+		rc.rec.TeamID = inheritedPolicy.TeamID
+		if !hierarchyPolicyAllowsGroup(inheritedPolicy, req.Model) {
+			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
+			return
+		}
+		if !hierarchyPolicyAllowsTools(inheritedPolicy, req.Tools) {
+			s.writeError(w, rc, http.StatusForbidden, "hierarchy-tool-not-allowed")
+			return
+		}
+		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, inheritedPolicy.PIIFilter)
+		if err != nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
+			return
+		}
+	}
 	if invalidReasoningEffort(dialect, req.Raw) {
 		code := "invalid_reasoning_effort"
 		s.finish(rc, http.StatusBadRequest, &code)
@@ -2405,6 +2450,10 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
 	rc.caller = caller
+	rc.correlation = traceparentFromRequest(r, caller, err == nil, s.cfg.Server.Trace)
+	rc.rec.TraceID = rc.correlation.traceID
+	rc.rec.SpanID = rc.correlation.spanID
+	rc.rec.ParentSpanID = rc.correlation.parentSpanID
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
@@ -3371,6 +3420,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	httpReq.Header.Set("User-Agent", "metrum-ai-router/"+buildinfo.Version)
 	for name, value := range provider.Headers {
 		httpReq.Header.Set(name, value)
+	}
+	httpReq.Header.Set("X-Request-Id", rc.id)
+	if traceparent := rc.correlation.traceparent(); traceparent != "" {
+		httpReq.Header.Set("traceparent", traceparent)
 	}
 	forwardRouterVia(httpReq.Header, rc.via)
 	httpReq.Header.Del("Anthropic-Beta")
