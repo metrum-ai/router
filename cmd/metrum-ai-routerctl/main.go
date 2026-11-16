@@ -33,7 +33,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -42,6 +42,10 @@ func main() {
 		configCommand(os.Args[2:])
 	case "callers":
 		callersCommand(os.Args[2:])
+	case "contain":
+		containmentCommand("suspend", os.Args[2:])
+	case "release":
+		containmentCommand("resume", os.Args[2:])
 	case "adminkeys":
 		adminkeysCommand(os.Args[2:])
 	case "policies":
@@ -65,6 +69,28 @@ func main() {
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
+}
+
+func containmentCommand(action string, args []string) {
+	fs, api := addAdminAPIFlags(action)
+	callerID := fs.String("caller-id", "", "caller key ID")
+	reason := fs.String("reason", "", "short audit reason code")
+	ttl := fs.String("ttl", "", "optional suspension duration")
+	fs.Parse(args)
+	if fs.NArg() != 0 || strings.TrimSpace(*callerID) == "" || strings.TrimSpace(*reason) == "" {
+		die("%s requires --caller-id and --reason", action)
+	}
+	if action == "resume" && strings.TrimSpace(*ttl) != "" {
+		die("release does not accept --ttl")
+	}
+	client := mustAdminAPIClient(api)
+	body, _, err := client.Do(http.MethodPost, "/admin/v1/containment", map[string]any{
+		"caller_id": strings.TrimSpace(*callerID), "action": action, "reason": strings.TrimSpace(*reason), "ttl": strings.TrimSpace(*ttl),
+	}, api.mutationHeaders())
+	if err != nil {
+		dieAdmin(err)
+	}
+	writeRawJSON(body)
 }
 
 // emergencyCommand runs the OFFLINE emergency activate/deactivate controller
