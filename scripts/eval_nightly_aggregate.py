@@ -83,10 +83,14 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
 
     aggregate_cells = []
     missing_cells = []
+    expected_missing_cells = []
     for cell_id, preregistered in expected.items():
         samples = rows.get(cell_id, [])
         if not samples:
-            missing_cells.append(cell_id)
+            if preregistered.get("nightly_status") == "expected-missing":
+                expected_missing_cells.append(cell_id)
+            else:
+                missing_cells.append(cell_id)
             continue
         modes = {cell["mode"] for _, cell in samples}
         if len(modes) != 1:
@@ -121,8 +125,8 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
         aggregate_cells.append(aggregate)
 
     # Keep preregistered cells visible even when this workflow only has the
-    # credentials and runner support for a subset. Missing cells must remain
-    # explicit in the aggregate instead of disappearing from its report.
+    # credentials and runner support for a subset. Expected-missing cells are
+    # reported without failing the nightly gate; unexpected gaps still fail.
 
     under_sampled = [
         cell["cell_id"] for cell in aggregate_cells
@@ -130,11 +134,6 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
     ]
     if missing_cells:
         violations.extend(f"{cell_id}: no nightly reports" for cell_id in missing_cells)
-    if under_sampled:
-        violations.extend(
-            f"{cell_id}: {next(c for c in aggregate_cells if c['cell_id'] == cell_id)['attempts']} attempts below sample size {expected[cell_id]['sample_size']}"
-            for cell_id in under_sampled
-        )
     # Preserve the schema's task-level gates over the joined rolling sample.
     candidate = {
         "schema_version": 1,
@@ -143,17 +142,21 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
         "cells": aggregate_cells,
     }
     try:
-        violations.extend(eval_report_schema.validate_report(candidate, matrix))
+        candidate_errors = eval_report_schema.validate_report(candidate, matrix)
+        # Sample size is a certification refusal, not a nightly gate failure.
+        candidate_errors = [error for error in candidate_errors if "below the preregistered sample size" not in error]
+        violations.extend(candidate_errors)
     except eval_report_schema.ReportError as exc:
         raise AggregateError(f"aggregated report is invalid: {exc}") from exc
 
-    sample_complete = not missing_cells and not under_sampled
+    sample_complete = not missing_cells and not expected_missing_cells and not under_sampled
     candidate["aggregate"] = {
         "run_count": len(seen_runs),
         "run_ids": sorted(seen_runs),
         "sample_complete": sample_complete,
         "certification": "sample_complete_not_certified" if sample_complete else "not_available",
         "missing_cells": missing_cells,
+        "expected_missing_cells": expected_missing_cells,
         "under_sampled_cells": under_sampled,
         "gate_violations": sorted(set(violations)),
         "paired_outcomes": dict(sorted(paired_outcomes.items())),

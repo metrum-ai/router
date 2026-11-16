@@ -41,7 +41,7 @@ jobs:
           enable-cache: true
       - name: Install report dependency
         run: uv pip install --system 'PyYAML==6.0.3'
-      - name: Fetch same-day sanitized reports
+      - name: Fetch rolling and same-day sanitized reports
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -50,17 +50,25 @@ jobs:
           today="$(date -u +%F)"
           gh run list --workflow eval-infra-nightly.yml --branch main --limit 100 \
             --json databaseId,createdAt,status --jq '.[] | select(.createdAt | startswith("'"$today"'")) | .databaseId' \
-            > artifacts/history/run-ids.txt
-          if [ "$(wc -l < artifacts/history/run-ids.txt)" -ge 100 ]; then
+            > artifacts/history/same-day-run-ids.txt
+          if [ "$(wc -l < artifacts/history/same-day-run-ids.txt)" -ge 100 ]; then
             echo "Same-day run history reached the query limit; refusing to bypass the nightly spend ceiling."
             exit 1
           fi
+          gh run list --workflow eval-infra-nightly.yml --branch main --limit 100 \
+            --json databaseId,createdAt --jq '.[] | select(.createdAt | startswith("'"$today"'") | not) | .databaseId' \
+            | head -n 30 > artifacts/history/rolling-run-ids.txt
+          cat artifacts/history/same-day-run-ids.txt artifacts/history/rolling-run-ids.txt \
+            | sort -u > artifacts/history/run-ids.txt
           while IFS= read -r run_id; do
             [ -n "$run_id" ] || continue
             [ "$run_id" = '${{ github.run_id }}' ] && continue
             gh run download "$run_id" --name "eval-nightly-$run_id" --dir "artifacts/history/$run_id" || {
-              echo "A same-day evaluation report could not be downloaded; refusing to bypass the nightly spend ceiling."
-              exit 1
+              if grep -Fxq "$run_id" artifacts/history/same-day-run-ids.txt; then
+                echo "A same-day evaluation report could not be downloaded; refusing to bypass the nightly spend ceiling."
+                exit 1
+              fi
+              echo "Prior rolling report $run_id is unavailable; continuing with retained reports."
             }
           done < artifacts/history/run-ids.txt
       - name: Run bounded nightly canary
@@ -87,10 +95,10 @@ jobs:
             artifacts/run-report.json
             artifacts/rolling-aggregate.json
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 90
 
   harbor:
-    if: github.ref == 'refs/heads/main'
+    if: always() && github.ref == 'refs/heads/main'
     needs: nightly
     environment: evaluation
     runs-on: ubuntu-latest
@@ -181,4 +189,4 @@ jobs:
           name: eval-harbor-${{ github.run_id }}
           path: ${{ runner.temp }}/harbor-e2e/result.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90

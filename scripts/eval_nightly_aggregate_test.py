@@ -77,6 +77,36 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(result["aggregate"]["certification"], "not_available")
         self.assertEqual(result["aggregate"]["under_sampled_cells"], ["fixed"])
         self.assertEqual(result["aggregate"]["missing_cells"], [])
+        self.assertEqual(result["aggregate"]["gate_violations"], [])
+
+    def test_expected_missing_cells_are_reported_without_failing_gate(self):
+        matrix = {"cells": [*MATRIX["cells"], {
+            "id": "humaneval", "environment": "nightly-live", "sample_size": 10,
+            "nightly_status": "expected-missing",
+        }], "task_gates": {}}
+        result = aggregate_reports([report("run-a"), report("run-b")], matrix)
+        self.assertEqual(result["aggregate"]["expected_missing_cells"], ["humaneval"])
+        self.assertEqual(result["aggregate"]["missing_cells"], [])
+        self.assertFalse(result["aggregate"]["sample_complete"])
+        self.assertEqual(result["aggregate"]["gate_violations"], [])
+
+    def test_unexpected_missing_cells_remain_gate_violations(self):
+        partial_matrix = {"cells": [*MATRIX["cells"], {
+            "id": "unexpected", "environment": "nightly-live", "sample_size": 1,
+        }], "task_gates": {}}
+        result = aggregate_reports([report("run-a"), report("run-b")], partial_matrix)
+        self.assertEqual(result["aggregate"]["missing_cells"], ["unexpected"])
+        self.assertEqual(result["aggregate"]["gate_violations"], ["unexpected: no nightly reports"])
+
+    def test_reports_from_different_nights_accumulate_toward_sample(self):
+        first = report("night-one")
+        second = report("night-two")
+        first["started_utc"] = "2026-11-16T05:17:00Z"
+        second["started_utc"] = "2026-11-17T05:17:00Z"
+        result = aggregate_reports([first, second], MATRIX)
+        cells = {cell["cell_id"]: cell for cell in result["cells"]}
+        self.assertEqual(cells["fixed"]["attempts"], 2)
+        self.assertTrue(result["aggregate"]["sample_complete"])
 
     def test_duplicate_run_ids_fail_closed(self):
         first = report("same")
@@ -90,7 +120,7 @@ class AggregateTest(unittest.TestCase):
         with self.assertRaises(Exception):
             aggregate_reports([broken], MATRIX)
 
-    def test_cli_writes_complete_aggregate_and_fails_below_sample_size(self):
+    def test_cli_writes_aggregate_and_refuses_certification_below_sample_size(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             first, second = root / "one.json", root / "two.json"
@@ -108,7 +138,7 @@ class AggregateTest(unittest.TestCase):
             output = root / "incomplete.json"
             with patch.dict(sys.modules, {"yaml": yaml_stub}), patch("sys.argv", ["eval_nightly_aggregate.py",
                        "--out", str(output), str(first)]):
-                self.assertEqual(main(), 1)
+                self.assertEqual(main(), 0)
             result = json.loads(output.read_text(encoding="utf-8"))
             self.assertFalse(result["aggregate"]["sample_complete"])
 

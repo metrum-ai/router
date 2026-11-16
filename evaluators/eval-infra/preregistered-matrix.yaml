@@ -21,6 +21,7 @@ cells:
     suite: humaneval
     mode: direct
     environment: nightly-live
+    nightly_status: expected-missing
     sample_size: 10          # tasks per cell, accumulated across nightly runs
     allowed_score_delta: 0.05
     allowed_error_rate: 0.10
@@ -28,6 +29,7 @@ cells:
     suite: humaneval
     mode: fixed-router
     environment: nightly-live
+    nightly_status: expected-missing
     sample_size: 10
     allowed_score_delta: 0.05
     allowed_error_rate: 0.10
@@ -35,6 +37,7 @@ cells:
     suite: humaneval
     mode: dynamic-group
     environment: nightly-live
+    nightly_status: expected-missing
     sample_size: 10
     allowed_score_delta: 0.05
     allowed_error_rate: 0.10

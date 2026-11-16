@@ -92,8 +92,11 @@ separate Docker-backed Harbor job uses only `COMPAT_MATRIX_OPENAI_API_KEY`.
 Both secrets stay in the environment-scoped secret store. No repository-wide
 secret is used. The non-Docker job runs the
 four preregistered differential-canary rows. The three Humaneval rows remain
-explicitly missing in the aggregate until their live evaluation runtime is
-available; missing cells never become passing or certified. The hosted Docker
+explicitly listed as expected-missing in the aggregate until their live
+evaluation runtime is available; they do not fail nightly collection. An
+unexpected missing live cell or task-level gate violation still fails the
+nightly job. An under-sampled rolling window is reported without certification
+and does not fail collection. The hosted Docker
 job runs the bespoke HARBOR-02…HARBOR-06 task trees live each night through the
 Router, using their independent task verifiers. HARBOR-07…HARBOR-18 remain
 offline fixture stubs in v5.0.0; their live task implementations move to v5.1
@@ -106,7 +109,9 @@ The enforced ceiling is **$1.50 total per workflow run and per UTC night**:
 $1.00 for the non-Docker canary and $0.50 for Harbor. Before the first provider
 request, the canary reserves a conservative bound for all direct and router
 calls, pinned and current-stable, and adds reservations from earlier same-day
-runs. Harbor runs after the canary, sums earlier same-day Harbor reservations,
+runs. The aggregate combines the current report with retained reports from the
+previous 30 nightly workflow runs across dates, plus all earlier same-day runs
+for spend accounting. Harbor runs after the canary, sums earlier same-day Harbor reservations,
 and sets the relay's reservation cap to the remaining portion of its $0.50
 allowance. Same-day history is downloaded from sanitized workflow artifacts; a
 missing or malformed prior report fails closed. Each canary invocation also
@@ -124,7 +129,7 @@ reported. The relay's $0.50 reservation cap is an upper-bound safety control,
 not a reported cell cost.
 
 The workflow retains only schema reports, the rolling aggregate, and the
-sanitized Harbor result summary for 14 days. Prompts, raw provider responses,
+sanitized Harbor result summary for 90 days. Prompts, raw provider responses,
 credentials, router logs and temporary usage databases are not uploaded. Key
 rotation is performed on the existing
 `evaluation` environment secrets, one provider at a time, then checked with a

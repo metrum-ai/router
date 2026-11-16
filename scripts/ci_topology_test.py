@@ -354,7 +354,7 @@ def assert_arc_runners() -> None:
                 # protected-environment boundaries asserted separately.
                 require(re.search(r"(?m)^    runs-on: ubuntu-latest$", body) is not None,
                         "the paid Harbor Docker job must use the hosted runner")
-                require("environment: evaluation" in body and "if: github.ref == 'refs/heads/main'" in body,
+                require("environment: evaluation" in body and "if: always() && github.ref == 'refs/heads/main'" in body,
                         "the hosted Harbor exception must remain main-only and protected")
                 continue
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or

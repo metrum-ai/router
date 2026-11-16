@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 
 ### Fixed
