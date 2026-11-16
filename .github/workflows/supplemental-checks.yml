@@ -16,6 +16,26 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 jobs:
+  generated-release-files:
+    runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: internal/router/admindist/web/package-lock.json
+      - name: Verify generated OpenAPI and admin web assets
+        run: |
+          set -euo pipefail
+          make admin-openapi-check admin-build
+          git diff --exit-code -- docs/specs/admin-v1.openapi.json internal/router/admindist/static
+          test -z "$(git ls-files --others --exclude-standard -- docs/specs/admin-v1.openapi.json internal/router/admindist/static)"
   contracts:
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 90

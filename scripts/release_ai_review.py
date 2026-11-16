@@ -31,7 +31,9 @@ MIN_DIFF_BYTES = 32 * 1024
 MAX_OUTPUT_TOKENS = 64_000
 MAX_REVIEW_BATCHES = 32
 # Generated files are accepted only when a named CI check is explicitly mapped here.
-GENERATED_FILE_VERIFICATION_ALLOWLIST: dict[str, str] = {}
+GENERATED_FILE_VERIFICATION_ALLOWLIST: dict[str, str] = {
+    "docs/specs/admin-v1.openapi.json": "supplemental-checks / generated-release-files",
+}
 REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md")
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
@@ -166,8 +168,10 @@ def git_diff_batches(
     max_single_file_bytes: int | None = None,
 ) -> list[tuple[str, tuple[str, ...]]]:
     paths = git_diff_names(base, head)
+    binary_paths = set(git_binary_paths(base, head))
     if only_paths is not None:
         paths = [path for path in paths if path in only_paths]
+    paths = [path for path in paths if path not in binary_paths and path not in GENERATED_FILE_VERIFICATION_ALLOWLIST]
     file_diffs: list[tuple[str, str]] = []
     for path in paths:
         result = subprocess.run(
@@ -180,11 +184,46 @@ def git_diff_batches(
         if not result.stdout:
             raise ValueError(f"listed release diff file {path} produced an empty diff")
         file_diffs.append((path, result.stdout))
+    if not file_diffs:
+        return []
     return pack_diff_files(
         file_diffs,
         max_bytes=max_bytes,
         max_single_file_bytes=max_single_file_bytes,
     )
+
+
+def git_binary_paths(base: str, head: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "--literal-pathspecs", "diff", "--no-renames", "--numstat", "-z", f"{base}..{head}"],
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    ).stdout
+    binary: list[str] = []
+    for record in result.split(b"\0"):
+        if not record:
+            continue
+        added, deleted, path = record.split(b"\t", 2)
+        if added == b"-" and deleted == b"-":
+            binary.append(os.fsdecode(path))
+    return binary
+
+
+def git_binary_hashes(base: str, head: str, paths: set[str]) -> dict[str, dict[str, str | None]]:
+    result: dict[str, dict[str, str | None]] = {}
+    for path in sorted(paths):
+        hashes: dict[str, str | None] = {}
+        for label, ref in (("before", base), ("after", head)):
+            try:
+                data = subprocess.run(
+                    ["git", "show", f"{ref}:{path}"], check=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                ).stdout
+            except subprocess.CalledProcessError:
+                hashes[label] = None
+            else:
+                hashes[label] = hashlib.sha256(data).hexdigest()
+        result[path] = hashes
+    return result
 
 
 def git_diff_names(base: str, head: str) -> list[str]:
@@ -310,6 +349,19 @@ def call_model(
                 response, timeout=timeout, started=started
             )
     except urllib.error.HTTPError as exc:
+        try:
+            payload = json.loads(exc.read().decode("utf-8"))
+            error = payload.get("error", {}) if isinstance(payload, dict) else {}
+            error_type = error.get("type", "unknown") if isinstance(error, dict) else "unknown"
+            error_message = error.get("message", "unknown") if isinstance(error, dict) else "unknown"
+            error_type = re.sub(r"[^A-Za-z0-9_.-]", "", str(error_type))[:80] or "unknown"
+            error_message = " ".join(str(error_message).split())[:500] or "unknown"
+        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+            error_type, error_message = "unknown", "unparseable provider error metadata"
+        print(
+            f"AI release review batch {batch_number}/{batch_count} HTTP {exc.code} error.type={error_type} error.message={error_message}",
+            file=sys.stderr,
+        )
         raise RuntimeError(f"AI release review request failed with HTTP status {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
@@ -418,7 +470,7 @@ def build_artifact(
             "locations": [{"file": file_path, "line": line} for file_path, line in ordered_locations],
             "files": sorted({file_path for file_path, _ in ordered_locations}),
         })
-    normalized_coverage: list[dict[str, str]] = []
+    normalized_coverage: list[dict[str, Any]] = []
     seen_coverage: set[str] = set()
     for item in file_coverage or []:
         if not isinstance(item, dict):
@@ -426,6 +478,8 @@ def build_artifact(
         file_path = item.get("file")
         status = item.get("status")
         verification = item.get("verification", "")
+        sha256_before = item.get("sha256_before")
+        sha256_after = item.get("sha256_after")
         if (
             not isinstance(file_path, str)
             or not file_path
@@ -444,6 +498,16 @@ def build_artifact(
                 "file": file_path,
                 "status": status,
                 "verification": required_check,
+            })
+        elif status == "binary":
+            valid_hash = lambda value: value is None or (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value))
+            if not valid_hash(sha256_before) or not valid_hash(sha256_after) or (sha256_before is None and sha256_after is None):
+                raise ValueError("AI release review binary coverage has invalid before/after hashes")
+            normalized_coverage.append({
+                "file": file_path,
+                "status": status,
+                "sha256_before": sha256_before,
+                "sha256_after": sha256_after,
             })
         else:
             raise ValueError("AI release review file coverage has an invalid status")
@@ -466,6 +530,7 @@ def validate_artifact(
     base: str,
     head: str,
     expected_files: set[str],
+    expected_binary: dict[str, dict[str, str | None]] | None = None,
 ) -> dict[str, Any]:
     if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v2" or artifact.get("base") != base or artifact.get("head") != head:
         raise ValueError("stored AI release review artifact does not match the requested range")
@@ -477,6 +542,12 @@ def validate_artifact(
         missing = len(expected_files - covered_files)
         extra = len(covered_files - expected_files)
         raise ValueError(f"stored AI release review file coverage does not match the diff (missing={missing}, extra={extra})")
+    binary_entries = {
+        item["file"]: {"before": item.get("sha256_before"), "after": item.get("sha256_after")}
+        for item in artifact["file_coverage"] if item["status"] == "binary"
+    }
+    if binary_entries != (expected_binary or {}):
+        raise ValueError("stored AI release review binary hashes do not match the release range")
     return artifact
 
 
@@ -555,7 +626,9 @@ def main() -> int:
             except json.JSONDecodeError as exc:
                 raise ValueError("stored AI release review artifact is malformed") from exc
             expected_files = set(git_diff_names(args.base, args.head))
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files)
+            binary_paths = set(git_binary_paths(args.base, args.head))
+            binary_hashes = git_binary_hashes(args.base, args.head, binary_paths)
+            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes)
             cache_hit = True
         else:
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -563,6 +636,8 @@ def main() -> int:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
             expected_files = set(git_diff_names(args.base, args.head))
+            binary_paths = set(git_binary_paths(args.base, args.head))
+            binary_hashes = git_binary_hashes(args.base, args.head, binary_paths)
             diff_limit = INITIAL_DIFF_BYTES
             batches = git_diff_batches(
                 args.base,
@@ -571,7 +646,8 @@ def main() -> int:
                 max_single_file_bytes=MAX_DIFF_BYTES,
             )
             batched_files = {path for _diff, paths in batches for path in paths}
-            if batched_files != expected_files:
+            generated_paths = expected_files & set(GENERATED_FILE_VERIFICATION_ALLOWLIST)
+            if batched_files != expected_files - binary_paths - generated_paths:
                 raise ValueError("release review batches do not match git diff --name-only")
             findings_by_id: dict[str, dict[str, Any]] = {}
             batch_index = 0
@@ -624,15 +700,27 @@ def main() -> int:
                         findings_by_id[finding["id"]] = finding
                 print(f"AI release review batch {batch_label} completed", file=sys.stderr)
                 batch_index += 1
-            changed_files = len({path for _diff, paths in batches for path in paths})
+            changed_files = len(expected_files)
             reviewed_paths = sorted({path for _diff, paths in batches for path in paths})
+            generated_paths = expected_files & set(GENERATED_FILE_VERIFICATION_ALLOWLIST)
             artifact = build_artifact({
-                "summary": f"Reviewed {changed_files} changed files across {len(batches)} bounded batches.",
+                "summary": (
+                    f"Reviewed {len(reviewed_paths)} text files across {len(batches)} bounded batches; "
+                    f"recorded {len(binary_paths)} binary file hashes and {len(generated_paths - binary_paths)} generated-file checks "
+                    f"within a {changed_files}-file release range."
+                ),
                 "findings": list(findings_by_id.values()),
             }, args.base, args.head, file_coverage=[
-                {"file": path, "status": "reviewed"} for path in reviewed_paths
+                *({"file": path, "status": "reviewed"} for path in reviewed_paths),
+                *({
+                    "file": path, "status": "binary",
+                    "sha256_before": binary_hashes[path]["before"],
+                    "sha256_after": binary_hashes[path]["after"],
+                } for path in sorted(binary_paths)),
+                *({"file": path, "status": "generated-and-verified", "verification": GENERATED_FILE_VERIFICATION_ALLOWLIST[path]}
+                  for path in sorted(generated_paths - binary_paths)),
             ])
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files)
+            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes)
         report, unanswered = evaluate(artifact, acceptances, args.base, args.head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, args.head, args.tag), encoding="utf-8")
