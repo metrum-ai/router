@@ -386,8 +386,11 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
     providers = {}
     targets = []
     if openai_key:
+        openai_target = {"model": "gpt-4o-mini", "input_price_per_million_usd": 0.15, "output_price_per_million_usd": 0.6, "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["openai-chat", "openai-responses", "anthropic"], "validation_status": "passed"}, "tool_support": {"openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"], "anthropic_messages": ["client_tools", "tool_choice"]}}
         providers["openai"] = {"base_url": "https://api.openai.com/v1", "dialect": "openai-chat", "api_key": "${OPENAI_API_KEY}", "api_key_env": "OPENAI_API_KEY"}
-        targets.append({"provider": "openai", "model": "gpt-4o-mini", "input_price_per_million_usd": 0.15, "output_price_per_million_usd": 0.6, "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["openai-chat", "openai-responses", "anthropic"], "validation_status": "passed"}, "tool_support": {"openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"], "anthropic_messages": ["client_tools", "tool_choice"]}})
+        providers["openai-responses"] = {"base_url": "https://api.openai.com/v1", "dialect": "openai-responses", "api_key": "${OPENAI_API_KEY}", "api_key_env": "OPENAI_API_KEY"}
+        targets.append({"provider": "openai", **openai_target})
+        targets.append({"provider": "openai-responses", **openai_target})
     if anthropic_key:
         providers["anthropic"] = {"base_url": "https://api.anthropic.com", "dialect": "anthropic", "api_key": "${ANTHROPIC_API_KEY}", "api_key_env": "ANTHROPIC_API_KEY"}
         targets.append({"provider": "anthropic", "model": "claude-haiku-4-5", "input_price_per_million_usd": 1, "output_price_per_million_usd": 5, "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["anthropic", "openai-chat", "openai-responses"], "validation_status": "passed"}, "tool_support": {"anthropic_messages": ["client_tools", "tool_choice"], "openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"]}})
@@ -401,7 +404,7 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
             "gate-chat-to-messages": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
             "gate-messages-to-chat": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
             "openai-chat-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
-            "openai-responses-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+            "openai-responses-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai-responses"]},
             "anthropic-messages-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
         },
         "callers": [{"id": "live-gate", "token_sha256": token_sha, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat", "openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],

@@ -84,8 +84,10 @@ class ClientCellTest(unittest.TestCase):
             with patch.dict(sys.modules, {"yaml": yaml_stub}):
                 config_path, _ = router_config(Path(directory), "openai-key", "anthropic-key")
             config = json.loads(config_path.read_text(encoding="utf-8"))
-        for group in ("openai-chat-sdk", "openai-responses-sdk"):
-            self.assertEqual({target["provider"] for target in config["models"][group]["targets"]}, {"openai"})
+        self.assertEqual(config["providers"]["openai"]["dialect"], "openai-chat")
+        self.assertEqual(config["providers"]["openai-responses"]["dialect"], "openai-responses")
+        self.assertEqual({target["provider"] for target in config["models"]["openai-chat-sdk"]["targets"]}, {"openai"})
+        self.assertEqual({target["provider"] for target in config["models"]["openai-responses-sdk"]["targets"]}, {"openai-responses"})
         self.assertEqual({target["provider"] for target in config["models"]["anthropic-messages-sdk"]["targets"]}, {"anthropic"})
 
     def test_chat_responses_and_messages_sdk_tool_loops(self):
