@@ -174,7 +174,7 @@ func mediaTargetReason(target Target, req *IRRequest, caller, out string) string
 	}
 	if caller == "anthropic" && out != "anthropic" {
 		clean, err := foreignReasoningHistory(req, caller, out)
-		if err != nil || unknownAnthropicBlocks(clean.Raw["messages"]) || unknownAnthropicBlocks(clean.Raw["system"]) {
+		if err != nil || unknownAnthropicBlocks(clean.Raw["messages"], false) || unknownAnthropicBlocks(clean.Raw["system"], false) {
 			return "unsupported_block"
 		}
 	}
@@ -214,9 +214,13 @@ func (s *Service) mediaAdmission(group ModelGroup, req *IRRequest, caller string
 		reason := ""
 		// Converse Claude supports signed reasoning history; other opaque blocks
 		// retain the fail-closed pre-bridge response.
-		if caller == "anthropic" && isBedrock(provider) && req != nil && (unknownAnthropicBlocks(req.Raw["messages"], isBedrockClaudeModel(target.Model)) || unknownAnthropicBlocks(req.Raw["system"])) {
-			reason = "unsupported_block"
-		} else {
+		if caller == "anthropic" && isBedrock(provider) && req != nil {
+			allowReasoning := isBedrockClaudeModel(target.Model)
+			if unknownAnthropicBlocks(req.Raw["messages"], allowReasoning) || unknownAnthropicBlocks(req.Raw["system"], allowReasoning) {
+				reason = "unsupported_block"
+			}
+		}
+		if reason == "" {
 			reason = mediaTargetReason(target, req, caller, out)
 		}
 		if reason == "" {
@@ -229,8 +233,7 @@ func (s *Service) mediaAdmission(group ModelGroup, req *IRRequest, caller string
 	return first
 }
 
-func unknownAnthropicBlocks(v any, bedrockReasoning ...bool) bool {
-	allowReasoning := len(bedrockReasoning) > 0 && bedrockReasoning[0]
+func unknownAnthropicBlocks(v any, allowReasoning bool) bool {
 	for _, item := range valueAsSlice(v) {
 		m, ok := item.(map[string]any)
 		if !ok {

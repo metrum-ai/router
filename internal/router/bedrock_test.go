@@ -6,6 +6,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
@@ -353,8 +354,35 @@ func TestBedrockReasoningConverseStreamRoundTrip(t *testing.T) {
 			t.Fatalf("stream missing %q: %s", expected, data)
 		}
 	}
-	if !strings.Contains(string(data), `"data":"Y2lwaGVy"`) || strings.Contains(string(data), `"data":"Y2lw"`) || strings.Contains(string(data), `"data":"aGVy"`) {
-		t.Fatalf("redacted thinking deltas were not accumulated to block stop: %s", data)
+	var joined []byte
+	for _, line := range strings.Split(string(data), "\n") {
+		payload, ok := strings.CutPrefix(strings.TrimSpace(line), "data:")
+		if !ok || strings.TrimSpace(payload) == "[DONE]" {
+			continue
+		}
+		var frame map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &frame); err != nil {
+			t.Fatalf("invalid stream frame %q: %v", line, err)
+		}
+		choices := valueAsSlice(frame["choices"])
+		if len(choices) == 0 {
+			continue
+		}
+		choice, _ := choices[0].(map[string]any)
+		delta, _ := choice["delta"].(map[string]any)
+		for _, event := range valueAsSlice(delta["bedrock_events"]) {
+			fields, _ := event.(map[string]any)
+			if stringValue(fields["type"]) == "redacted_thinking" {
+				decoded, err := base64.StdEncoding.DecodeString(stringValue(fields["data"]))
+				if err != nil {
+					t.Fatalf("redacted event has invalid base64: %v", err)
+				}
+				joined = append(joined, decoded...)
+			}
+		}
+	}
+	if !bytes.Equal(joined, []byte("cipher")) {
+		t.Fatalf("redacted thinking bytes=%q, want %q; stream=%s", joined, "cipher", data)
 	}
 }
 

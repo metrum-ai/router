@@ -217,10 +217,14 @@ func decodeAnthropicToolsBridge(out string, raw []byte, model string, ids Identi
 					if id == "" || stringValue(block["name"]) == "" {
 						return nil, fmt.Errorf("invalid upstream tool call")
 					}
+					input, ok := block["input"].(map[string]any)
+					if !ok || input == nil {
+						return nil, fmt.Errorf("invalid upstream tool call")
+					}
 					if ids != nil {
 						id = ids.Encode(id)
 					}
-					content = append(content, map[string]any{"type": "tool_use", "id": id, "name": block["name"], "input": block["input"]})
+					content = append(content, map[string]any{"type": "tool_use", "id": id, "name": block["name"], "input": input})
 				}
 			}
 		} else if resp.Text != "" {

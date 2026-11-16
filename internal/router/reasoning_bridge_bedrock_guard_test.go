@@ -7,12 +7,63 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	bt "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
+
+func TestReasoningBedrockOpaqueHistoryRejectedBeforeDispatch(t *testing.T) {
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer up.Close()
+	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	t.Setenv("AWS_REGION", "us-east-1")
+	t.Setenv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", up.URL)
+	for _, env := range []string{"AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "AWS_CONTAINER_CREDENTIALS_FULL_URI"} {
+		t.Setenv(env, "")
+	}
+
+	for _, tc := range []struct {
+		name, model, body string
+	}{
+		{
+			name:  "non-codec opaque history",
+			model: "mistral.mistral-large-3-675b-instruct",
+			body:  `{"model":"native-stream","max_tokens":1024,"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"thought","signature":"signature"}]},{"role":"user","content":"continue"}]}`,
+		},
+		{
+			name:  "malformed Claude signature",
+			model: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+			body:  `{"model":"native-stream","max_tokens":1152,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"thought"},{"type":"tool_use","id":"call_1","name":"write","input":{"path":"a"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"done"}]}],"tools":[{"name":"write","input_schema":{"type":"object"}}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			target := anthropicToolTarget()
+			target.Model = tc.model
+			target.Reasoning = ReasoningSupport{Supported: true, Mode: "opt_in", Control: "token_budget", MinBudgetTokens: 1024, MaxBudgetTokens: 1024, BudgetMustBeLessThanMaxTokens: true}
+			svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target}, func(cfg *Config) {
+				provider := cfg.Provider["native"]
+				provider.AuthScheme = "bedrock"
+				cfg.Provider["native"] = provider
+			})
+			req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(tc.body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+			if response.Code != http.StatusBadRequest || hits.Load() != 0 {
+				t.Fatalf("status=%d upstream calls=%d body=%s", response.Code, hits.Load(), response.Body.String())
+			}
+		})
+	}
+}
 
 func TestBedrockReasoningCodecPreservesOrderedHistory(t *testing.T) {
 	const request = `{"model":"anthropic.claude-fixture","max_tokens":1024,"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"thought","signature":"signature"},{"type":"text","text":"hello"},{"type":"redacted_thinking","data":"Y2lwaGVy"},{"type":"tool_use","id":"call_1","name":"write","input":{"path":"a"}}]},{"role":"user","content":"continue"}]}`
