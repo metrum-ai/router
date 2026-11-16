@@ -133,6 +133,12 @@ first source of measured live costs; before that, no Harbor cell cost is
 reported. The relay's $0.50 reservation cap is an upper-bound safety control,
 not a reported cell cost.
 
+Before making provider calls, the hosted Harbor job runs a Docker-backed,
+provider-free function-call replay through the same OpenAI Responses adapter
+used by the live cells. Its bounded `preflight.json` artifact records only the
+exit code, verifier reward, and mock request count; it contains no prompts or
+provider data.
+
 The workflow retains only schema reports, the rolling aggregate, and the
 sanitized Harbor result summary for 90 days. Prompts, raw provider responses,
 credentials, router logs and temporary usage databases are not uploaded. Key
