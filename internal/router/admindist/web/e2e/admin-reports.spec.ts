@@ -24,6 +24,100 @@ test.beforeEach(async ({ page }) => {
   await installAdminApiMocks(page, apiRequests);
 });
 
+test("Security Console contains through its serving-port route and displays admin-only release instructions", async ({ page }) => {
+  await installSecuritySignalMock(page);
+  const actions: Array<{ caller_id: string; action: string; reason: string }> = [];
+  await page.route("**/api/security/containment-status?*", (route) => route.fulfill({ json: { can_contain: true, contained: actions.length > 0 } }));
+  await page.route("**/api/security/csrf-token", (route) => route.fulfill({ json: { csrf_token: "csrf-test" } }));
+  await page.route("**/api/security/containment", async (route) => {
+    actions.push(route.request().postDataJSON() as { caller_id: string; action: string; reason: string });
+    await route.fulfill({ status: 200, json: { caller_id: "caller-a", status: "suspended" } });
+  });
+  page.on("dialog", async (dialog) => {
+    if (dialog.type() === "prompt") await dialog.accept("incident-42");
+    else await dialog.accept();
+  });
+
+  await page.goto("/?tab=security-events&since=24h");
+  const console = page.getByRole("region", { name: "Security console" });
+  await expect(console).toBeVisible();
+  await expect(console).toContainText("prompt_injection");
+  await expect(console).toContainText("prompt-injection-v1");
+  await expect(console).toContainText("Authentication failure");
+  await expect(console).toContainText("Containment access");
+  await expect(console).toContainText("authentication");
+  const actionStatus = page.locator('[aria-label="Security console"] [role="status"]');
+  await page.getByRole("button", { name: "Contain", exact: true }).click();
+  await expect(actionStatus).toContainText("contained and audited");
+  await expect(console).toContainText("routerctl release --caller-id 'caller-a'");
+  await expect(console.getByRole("button", { name: "Copy release instructions" })).toBeVisible();
+  expect(actions).toEqual([{ caller_id: "caller-a", action: "suspend", reason: "incident-42" }]);
+});
+
+test("Security Console reports denied and timed-out containment without claiming success", async ({ page }) => {
+  await installSecuritySignalMock(page);
+  await page.route("**/api/security/containment-status?*", (route) => route.fulfill({ json: { can_contain: true, contained: false } }));
+  await page.route("**/api/security/csrf-token", (route) => route.fulfill({ json: { csrf_token: "csrf-test" } }));
+  let attempt = 0;
+  await page.route("**/api/security/containment", async (route) => {
+    attempt++;
+    if (attempt === 1) await route.fulfill({ status: 403, json: { error: { message: "forbidden" } } });
+    else await route.abort("timedout");
+  });
+  page.on("dialog", async (dialog) => {
+    if (dialog.type() === "prompt") await dialog.accept("incident-42");
+    else await dialog.accept();
+  });
+
+  await page.goto("/?tab=security-events&since=24h");
+  await page.getByRole("button", { name: "Contain", exact: true }).click();
+  const actionStatus = page.locator('[aria-label="Security console"] [role="status"]');
+  await expect(actionStatus).toContainText("HTTP 403");
+  await page.getByRole("button", { name: "Contain", exact: true }).click();
+  await expect(actionStatus).toBeVisible();
+  await expect(actionStatus).not.toContainText("succeeded");
+  expect(attempt).toBe(2);
+});
+
+test("Security Console hides containment when caller-domain permission is missing", async ({ page }) => {
+  await installSecuritySignalMock(page);
+  await page.route("**/api/security/containment-status?*", (route) => route.fulfill({ status: 403, json: { error: "containment-forbidden" } }));
+  await page.goto("/?tab=security-events&since=24h");
+  await expect(page.getByRole("region", { name: "Security console" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Contain", exact: true })).toHaveCount(0);
+});
+
+test("Security Console exports incident bundles through the export-authorized routes", async ({ page }) => {
+  await installSecuritySignalMock(page);
+  const exports: string[] = [];
+  await page.route("**/security/export.*?*", async (route) => {
+    exports.push(route.request().url());
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ incident: { requestId: "req-signal" }, evidence: { requestId: "req-signal" } }) });
+  });
+  await page.goto("/?tab=security-events&since=24h");
+  const detectorIncident = page.getByRole("listitem").filter({ hasText: "Detector signal" });
+  for (const name of ["JSON", "Markdown"]) {
+    const downloadPromise = page.waitForEvent("download");
+    await detectorIncident.getByRole("button", { name, exact: true }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(name === "JSON" ? /\.json$/ : /\.md$/);
+  }
+  expect(exports).toHaveLength(2);
+  expect(exports.some((url) => url.includes("export.csv") && url.includes("format=json") && url.includes("request_id=req-signal"))).toBe(true);
+  expect(exports.some((url) => url.includes("export.md") && url.includes("request_id=req-signal"))).toBe(true);
+  expect(exports.every((url) => new URL(url).searchParams.get("from") === "2026-06-28T11:00:00Z" && new URL(url).searchParams.get("to") === generatedUtc)).toBe(true);
+});
+
+async function installSecuritySignalMock(page: Page) {
+  await page.route("**/api/security/events?*", (route) => route.fulfill({ json: commonResponse("security/events", {
+    rows: [
+      { timeUtc: generatedUtc, requestId: "req-signal", eventType: "security_detector_signal", surface: "v1_chat_completions", method: "POST", path: "/v1/chat/completions", status: 403, outcome: "denied", reason: "detector_signal:high:0.9:prompt_injection", requestedModel: "prompt-injection-v1", callerId: "caller-a" },
+      { timeUtc: generatedUtc, requestId: "req-auth", eventType: "api_auth_failed", surface: "v1_chat_completions", method: "POST", path: "/v1/chat/completions", status: 401, outcome: "unauthorized", reason: "invalid-token", callerId: "caller-a" },
+      { timeUtc: generatedUtc, requestId: "req-containment", eventType: "admin_access", surface: "admin", method: "POST", path: "/admin/v1/containment", status: 200, outcome: "allowed", reason: "", adminSubject: "security-operator" },
+    ],
+  }, cursorPagination(new URL(route.request().url()), 1, 3, false)) }));
+}
+
 test("CFO navigation hides stale key reports and exports only CFO Markdown", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   let release!: () => void;
@@ -238,7 +332,7 @@ test("admin reports shell renders every tab with mocked report APIs", async ({ p
   for (const spec of tabSpecs) {
     await reportNav.locator(`[data-report-tab="${spec.id}"]`).click();
     await expect(page.getByRole("heading", { name: spec.label, exact: true })).toBeVisible();
-    await expect(page.locator("main canvas, main table").first()).toBeVisible();
+    await expect(page.locator("main canvas:visible, main table:visible").first()).toBeVisible();
   }
 
   expect(consoleErrors).toEqual([]);

@@ -78,6 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
 - Reject userinfo in external-policy and detector URLs, including redirect targets.
 
+- Add a Security Console to admin reports with detector and authentication risk ranking, a timeline of detector/auth/containment events, scoped serving-port containment with CSRF and audit, admin-only release instructions, and time-filtered JSON/Markdown incident bundles.
+
 ### Breaking
 
 - v5.0.0 removes legacy machine `/admin/*` routes from the serving port. Use `/admin/v1` on the

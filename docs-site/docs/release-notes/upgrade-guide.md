@@ -9,6 +9,13 @@ doc_type: reference
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
 
+## v5.0.0 Security Console
+
+The admin reports UI adds a Security Console to the Security events report. It ranks caller risk using detector results and caller authentication failures, and shows detector, authentication, and containment access events in the timeline. It links events to request evidence and provides JSON and Markdown incident bundles using the selected time window. Users with the domain-scoped containment permission can suspend a caller from the reports UI; the request requires same-origin CSRF protection and an audit reason. Release remains on the admin control plane and is shown as a `routerctl release` command and `/admin/v1/containment` request only for a caller suspended by containment. No new configuration is required.
+
+The console only displays signals returned by the selected time range and report page. A missing signal does not prove that a caller is safe. Request evidence remains subject to the existing report drilldown permissions.
+
+
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned

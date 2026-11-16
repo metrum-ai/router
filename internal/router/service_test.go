@@ -3776,6 +3776,10 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		RequestedModel:  "+requested_formula",
 		ResolvedGroup:   "-resolved_formula",
 	})
+	emitSecurityForTest(t, svc, securityAccessEvent{TS: time.Now().UTC().Add(-23 * time.Hour), RequestID: "req_older_incident", EventType: "api_auth_failed", Surface: "v1_chat_completions", StatusCode: http.StatusUnauthorized, Outcome: "unauthorized", ReasonCode: "older-incident"})
+	for i := 0; i < 8; i++ {
+		emitSecurityForTest(t, svc, securityAccessEvent{TS: time.Now().UTC().Add(-time.Duration(i+1) * time.Second), RequestID: fmt.Sprintf("req_recent_incident_%02d", i), EventType: "api_auth_failed", Surface: "v1_chat_completions", StatusCode: http.StatusUnauthorized, Outcome: "unauthorized", ReasonCode: "recent-incident"})
+	}
 
 	invalid := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hi"}]}`))
 	invalid.RemoteAddr = "192.0.2.10:1234"
@@ -3811,6 +3815,13 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 	}
 
 	flushUsageForTest(t, svc)
+	olderBundleReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.csv?format=json&request_id=req_older_incident&since=24h&limit=1", nil)
+	olderBundleReq.SetBasicAuth("admin", "yell-yell-yum")
+	olderBundleRR := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(olderBundleRR, olderBundleReq)
+	if olderBundleRR.Code != http.StatusOK || !strings.Contains(olderBundleRR.Body.String(), "req_older_incident") {
+		t.Fatalf("older incident export status=%d body=%s", olderBundleRR.Code, olderBundleRR.Body.String())
+	}
 	report := httptest.NewRequest(http.MethodGet, "/admin/reports/api/security/events?since=24h&limit=50", nil)
 	report.SetBasicAuth("admin", "yell-yell-yum")
 	reportRR := httptest.NewRecorder()
@@ -3860,12 +3871,52 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 	if readerCSVRR.Code != http.StatusForbidden || !strings.Contains(readerCSVRR.Body.String(), "reports-forbidden") {
 		t.Fatalf("reader csv status=%d body=%s", readerCSVRR.Code, readerCSVRR.Body.String())
 	}
+	readerBundle := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.json?since=24h&request_id=req_old_security", nil)
+	readerBundle.SetBasicAuth("reader", "yell-yell-yum")
+	readerBundleRR := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(readerBundleRR, readerBundle)
+	if readerBundleRR.Code != http.StatusForbidden || !strings.Contains(readerBundleRR.Body.String(), "reports-forbidden") {
+		t.Fatalf("reader JSON bundle status=%d body=%s", readerBundleRR.Code, readerBundleRR.Body.String())
+	}
 	csvReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.csv?since=24h", nil)
 	csvReq.SetBasicAuth("admin", "yell-yell-yum")
 	csvRR := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(csvRR, csvReq)
 	if csvRR.Code != http.StatusOK || !strings.Contains(csvRR.Body.String(), "input_tokens,output_tokens,total_tokens") {
 		t.Fatalf("csv status=%d body=%s", csvRR.Code, csvRR.Body.String())
+	}
+	incidentID := ""
+	for _, raw := range rows {
+		if value, ok := raw.(map[string]any)["requestId"].(string); ok && value != "" {
+			incidentID = value
+			break
+		}
+	}
+	if incidentID == "" {
+		t.Fatal("security report has no request ID for incident export")
+	}
+	for _, format := range []string{"json", "markdown"} {
+		extension := "md"
+		if format == "json" {
+			extension = "json"
+		}
+		bundleReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export."+extension+"?since=24h&request_id="+url.QueryEscape(incidentID), nil)
+		bundleReq.SetBasicAuth("admin", "yell-yell-yum")
+		bundleRR := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(bundleRR, bundleReq)
+		if bundleRR.Code != http.StatusOK {
+			t.Fatalf("%s incident bundle status=%d body=%s", format, bundleRR.Code, bundleRR.Body.String())
+		}
+		if strings.Contains(bundleRR.Body.String(), "tokenId") || strings.Contains(bundleRR.Body.String(), "invalid-secret-token") || strings.Contains(bundleRR.Body.String(), "messages") {
+			t.Fatalf("%s incident bundle contains a token or prompt field: %s", format, bundleRR.Body.String())
+		}
+	}
+	missingIDReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.json?since=24h", nil)
+	missingIDReq.SetBasicAuth("admin", "yell-yell-yum")
+	missingIDRR := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(missingIDRR, missingIDReq)
+	if missingIDRR.Code != http.StatusBadRequest {
+		t.Fatalf("incident bundle without request ID status=%d body=%s", missingIDRR.Code, missingIDRR.Body.String())
 	}
 	csvRows, err := csv.NewReader(strings.NewReader(csvRR.Body.String())).ReadAll()
 	if err != nil {
