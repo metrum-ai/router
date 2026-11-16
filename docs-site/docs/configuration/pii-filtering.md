@@ -33,12 +33,20 @@ up to 64 KiB. A plausible JWT is held from its `eyJ` marker while its bounded
 segments are inspected; segments over 4,096 bytes fail closed. A single
 provider-token or credential-assignment candidate longer than the 256-byte
 token window fails the stream closed rather than releasing a partial match. A
-stream request with tools fails closed with HTTP 400
-`secret-dlp-stream-inspection-required` as an interim limit until the #929
-bounded tool-call inspection integration lands. Enable `secrets_enabled` only
-on groups that need this protection; the 400 applies to those DLP-enabled
-groups. Use a non-streaming request or remove tools while the interim gate is
-in place. Streams with custom rules also fail closed because those expressions
+JSON-encoded tool-call argument is decoded before inspection; string values
+are checked with their property names as `key=value`, while header-shaped
+values are also checked as `key: value`, including JSON-escaped characters.
+Object-valued Chat arguments and Anthropic `tool_use.input` receive the same key/value
+inspection. If an argument string is malformed or truncated, the filter scans a
+best-effort normalized copy in both forms so partial JSON cannot hide a credential. Responses
+function-call arguments and custom tool input are also redacted in output snapshots.
+For streamed tool calls, enable
+`tool_routing.streaming.hold_until_validated` so complete bounded arguments are
+held, scanned and redacted before release; `fail_on_match` blocks a call with a
+secret. Without this hold, a tool-bearing stream on a DLP-enabled group fails
+closed with HTTP 400 `secret-dlp-stream-inspection-required`. Enable
+`secrets_enabled` only on groups that need this protection. Streams with custom
+rules also fail closed because those expressions
 do not declare a maximum match length. The 512-byte ordinary rolling tail is
 extended from the start of any unresolved JWT or PEM candidate. Response
 redaction runs only when
