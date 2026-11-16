@@ -329,6 +329,9 @@ func assertHoneytokenStreamEvent(t *testing.T, path, eventType, callerID, source
 			if user["uid"] != callerID {
 				t.Fatalf("%s stream actor caller ID did not match", eventType)
 			}
+			if _, exists := user["name"]; exists {
+				t.Fatalf("%s stream labels the caller with a non-caller name", eventType)
+			}
 			endpoint, _ := evidence["src_endpoint"].(map[string]any)
 			if endpoint["ip"] != sourceIP {
 				t.Fatalf("%s stream source IP=%v; want %s", eventType, endpoint["ip"], sourceIP)

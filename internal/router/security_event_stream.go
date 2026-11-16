@@ -319,7 +319,7 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 		obj["finding_info"] = findingInfo
 		if event.EventType == "security_honeytoken_used" || event.EventType == "security_canary_group_used" {
 			evidence := map[string]any{}
-			actorUser := map[string]any{"name": "Metrum AI Router"}
+			actorUser := map[string]any{}
 			if callerID := safeOCSFValue(event.CallerID); callerID != "" {
 				actorUser["uid"] = callerID
 				evidence["actor"] = map[string]any{"user": actorUser}

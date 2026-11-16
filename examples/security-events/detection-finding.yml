@@ -1,7 +1,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-title: Router Security Detection Finding
+title: Router Critical Detection Finding
 id: 669dace2-f4dd-46a6-a85c-0ce6eccbf974
 status: stable
 logsource:
@@ -10,9 +10,6 @@ logsource:
 detection:
   selection:
     class_uid: 2004
-    severity_id: 3
-  selection_critical:
-    class_uid: 2004
     severity_id: 5
-  condition: selection or selection_critical
-level: high
+  condition: selection
+level: critical

@@ -170,6 +170,9 @@ func TestOCSFSecurityEventsValidateAgainstPinned140Classes(t *testing.T) {
 			if actorUser["uid"] != source.CallerID {
 				t.Errorf("%s actor caller=%v; want %q", source.EventType, actorUser["uid"], source.CallerID)
 			}
+			if _, exists := actorUser["name"]; exists {
+				t.Errorf("%s actor assigns a router name to the caller", source.EventType)
+			}
 			endpoint, _ := evidence["src_endpoint"].(map[string]any)
 			if endpoint["ip"] != source.IPAddress {
 				t.Errorf("%s source IP=%v; want %q", source.EventType, endpoint["ip"], source.IPAddress)
@@ -743,7 +746,7 @@ func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 		t.Fatal(err)
 	}
 	traces = append(traces, negative)
-	for _, name := range []string{"authentication-failure.yml", "detection-finding.yml", "containment-action.yml"} {
+	for _, name := range []string{"authentication-failure.yml", "detection-finding.yml", "security-finding.yml", "containment-action.yml"} {
 		t.Run(name, func(t *testing.T) {
 			var rule struct {
 				Detection struct {
@@ -786,11 +789,17 @@ func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 				t.Fatalf("rule %s did not match a synthetic trace", name)
 			}
 			if name == "detection-finding.yml" {
-				for _, uid := range []string{"detection-finding", "honeytoken-use", "canary-use"} {
+				for _, uid := range []string{"honeytoken-use", "canary-use"} {
 					if !matched[uid] {
 						t.Errorf("detection finding rule did not match positive %s trace", uid)
 					}
 				}
+				if matched["detection-finding"] {
+					t.Error("critical detection finding rule matched the medium-severity DLP trace")
+				}
+			}
+			if name == "security-finding.yml" && !matched["detection-finding"] {
+				t.Error("standard security finding rule did not match the medium-severity DLP trace")
 			}
 			if name == "containment-action.yml" {
 				for _, uid := range []string{"containment-suspend", "containment-resume"} {
