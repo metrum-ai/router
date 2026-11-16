@@ -96,6 +96,7 @@ const sidebars = {
         "configuration/admin-listener",
         "configuration/admin-authorization",
         "security-governance/security-events",
+        "configuration/tool-firewall",
         "configuration/tls",
         "privacy",
         "legal/software-licenses",

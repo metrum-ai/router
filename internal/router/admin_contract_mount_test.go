@@ -149,6 +149,7 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 	}
 	callerDeps := CallerAdminDeps{}
 	extra := map[string]http.HandlerFunc{
+		"tool.approvals.resolve": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"training.export": func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"export": "ok"})
 		},
@@ -336,6 +337,25 @@ func TestAdminV1RouteConformance(t *testing.T) {
 	recorder := harness.do(t, http.MethodGet, "/admin/v1/not-a-real-resource", nil, nil)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("unregistered /admin/v1 path returned %d, want 404", recorder.Code)
+	}
+}
+
+func TestToolApprovalRouteRequiresDedicatedResolveGrant(t *testing.T) {
+	harness := newAdminV1Harness(t)
+	var operation Operation
+	for _, candidate := range harness.registry.Operations() {
+		if candidate.ID == "resolveToolApproval" {
+			operation = candidate
+			break
+		}
+	}
+	if operation.ID == "" || operation.RequiredPrecondition() || operation.Idempotency != AdminIdempotencyNone {
+		t.Fatalf("tool approval resolution must not depend on config revision or idempotency storage: %+v", operation)
+	}
+	harness.authorize.deny[AdminGlobalDomain+"|"+authzObjectToolApprovals+"|"+authzActionResolve] = true
+	recorder := harness.do(t, http.MethodPost, "/admin/v1/tool-approvals/approval_0123456789abcdef0123456789abcdef", map[string]any{"decision": "release"}, nil)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -937,6 +957,7 @@ func (h *adminV1Harness) buildDeps(t *testing.T, extra map[string]http.HandlerFu
 		return h.authorizeRequest(ctx, principal, domain, object, action)
 	}
 	all := addReportPlaceholderHandlers(h.registry, map[string]http.HandlerFunc{
+		"tool.approvals.resolve":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"training.export":         func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"training.outcomes.label": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("router_requests_total 1\n")) },
@@ -1103,6 +1124,7 @@ func TestAdminV1ServiceHandlerComposition(t *testing.T) {
 			"metrics.scrape":          noop,
 			"content.captures.delete": noop,
 			"content.captures.purge":  noop,
+			"tool.approvals.resolve":  noop,
 		},
 	)
 	for _, op := range registry.Operations() {
@@ -1575,6 +1597,7 @@ func newAdminV1DBHarnessWith(t *testing.T, extraHandlers map[string]http.Handler
 		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"content.captures.delete": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"content.captures.purge":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"tool.approvals.resolve":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"test.count":              adminV1TestCountHandler,
 		"test.race":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 	})
@@ -1842,6 +1865,7 @@ func TestAdminV1UnrecordedHandlerGateCallsAuthorizer(t *testing.T) {
 		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"content.captures.delete": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"content.captures.purge":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
+		"tool.approvals.resolve":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"test.count":              adminV1TestCountHandler,
 		"test.race":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 	})
