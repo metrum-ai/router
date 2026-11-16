@@ -70,11 +70,13 @@ var controlPlaneConfigBackupTables = []string{
 	"router_config_caller_allowed_groups", "router_config_runtime", "router_config_change_events",
 	"router_config_change_event_targets", "router_config_shadow_runs", "router_revoked_caller_tokens",
 	adminKeyMetadataTable, adminKeyGenerationTable, adminKeyOperationTable, adminCredentialEventsTable,
+	adminAuditChainAnchorsTable,
 }
 
 var controlPlaneUsageBackupTables = []string{
 	"authz_policy_sets", "authz_policy_rules", "authz_role_links", "authz_policy_runtime", "authz_policy_audit_events",
 	usageAdminAuditTable,
+	adminAuditChainAnchorsTable,
 }
 
 func createControlPlaneBackup(ctx context.Context, configDB, usageDB *gorm.DB, now time.Time) (controlPlaneBackupBundle, error) {
@@ -327,6 +329,12 @@ func checkBackupTargetClean(db *gorm.DB, backup controlPlaneBackupDatabase) erro
 		if table.Name == adminCredentialEventsTable {
 			continue
 		}
+		if table.Name == adminAuditChainAnchorsTable {
+			if !db.Migrator().HasTable(table.Name) {
+				return fmt.Errorf("restore target table %q is not migrated", table.Name)
+			}
+			continue
+		}
 		if table.Name == "authz_policy_runtime" {
 			// A freshly initialized usage store has exactly one empty singleton
 			// row. It carries no policy state and is replaced by the backup below.
@@ -380,12 +388,30 @@ func restoreBackupDatabaseWithAudit(ctx context.Context, db *gorm.DB, backup con
 			return nil
 		}
 		if !clear {
+			hasAnchors := false
 			for _, table := range tables {
+				if table.Name == adminAuditChainAnchorsTable {
+					hasAnchors = true
+				}
 				if table.Name == "authz_policy_runtime" {
 					if err := tx.Exec("DELETE FROM authz_policy_runtime WHERE id = 1 AND revision = 0 AND config_revision = 0 AND active_set_id = ''").Error; err != nil {
 						return err
 					}
 					break
+				}
+			}
+			if hasAnchors {
+				// The restore request's own login event was recorded on the fresh
+				// target before this worker began. Its durable operation audit is
+				// written in the usage store below; replace target credential rows
+				// with the backup chain so restored rows and anchors stay coherent.
+				if allowed[adminCredentialEventsTable] {
+					if err := tx.Exec("DELETE FROM " + adminCredentialEventsTable).Error; err != nil {
+						return err
+					}
+				}
+				if err := tx.Exec("DELETE FROM " + adminAuditChainAnchorsTable).Error; err != nil {
+					return err
 				}
 			}
 		}

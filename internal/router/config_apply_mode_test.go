@@ -4,9 +4,11 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -205,6 +207,17 @@ func TestOfflineProvenanceWithoutUsageDBWritesControlAudit(t *testing.T) {
 	}
 	if err := svc.configControlPlane.Model(&offlineMaintenanceRecord{}).Count(&rows).Error; err != nil || rows != 0 {
 		t.Fatalf("unconsumed offline markers=%d err=%v", rows, err)
+	}
+	export := adminAuditExportHandlers(nil, svc.configControlPlane)["admin.audit.export"]
+	request := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil)
+	request = request.WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: AdminGlobalDomain}))
+	response := httptest.NewRecorder()
+	export(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("offline marker control export=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(response.Body.String())); err != nil {
+		t.Fatalf("verify offline marker control export: %v", err)
 	}
 }
 

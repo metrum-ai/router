@@ -34,7 +34,8 @@ func TestV47AuthorizationFixtureMatrix(t *testing.T) {
 			"admin:memberships:read", "admin:memberships:write",
 			"admin:quotas:read", "admin:quotas:write",
 			"admin:budgets:read", "admin:budgets:write",
-			"admin:retention:write", "admin:retention:force":
+			"admin:retention:write", "admin:retention:force",
+			"admin:audit:read", "admin:audit:delete", "admin:policy:read":
 			continue
 		}
 		permissions = append(permissions, permission)

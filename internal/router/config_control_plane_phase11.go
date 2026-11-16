@@ -80,7 +80,7 @@ var configControlPlanePhase11EventColumns = []string{
 }
 
 var adminCredentialEventsDDL = []string{
-	`CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)`,
+	`CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1, client_id TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', previous_hash TEXT NOT NULL DEFAULT '', row_hash TEXT NOT NULL DEFAULT '')`,
 	`CREATE INDEX IF NOT EXISTS router_admin_credential_events_at ON router_admin_credential_events (at)`,
 	`CREATE INDEX IF NOT EXISTS router_admin_credential_events_credential ON router_admin_credential_events (credential_id, at)`,
 }
@@ -134,8 +134,8 @@ func verifyConfigControlPlanePhase11(tx *gorm.DB) error {
 
 // insertAdminCredentialEventTx writes one redacted credential event. Callers that mutate a
 // credential call it inside the credential's transaction; the auth path calls it directly.
-// Identical outcomes within one second collapse into a single row with a counter, so a
-// credential guessing flood cannot grow the table by one row per attempt.
+// Credential events are immutable chained rows. Repeated outcomes remain separate events;
+// retention bounds their lifetime, while failure events are capped per credential bucket.
 func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error {
 	if tx == nil {
 		return fmt.Errorf("credential event requires a transaction")
@@ -149,51 +149,55 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 	if strings.TrimSpace(event.Lifecycle) == "" {
 		event.Lifecycle = "auth"
 	}
+	event.Kind = adminAuditFieldValue(event.Kind)
+	event.CredentialID = adminAuditFieldValue(event.CredentialID)
+	event.Subject = adminAuditFieldValue(event.Subject)
+	event.Issuer = adminAuditFieldValue(event.Issuer)
+	event.Outcome = adminAuditFieldValue(event.Outcome)
+	event.ReasonCode = adminAuditFieldValue(event.ReasonCode)
+	event.RequestID = adminAuditFieldValue(event.RequestID)
+	event.ClientIPHash = adminAuditFieldValue(event.ClientIPHash)
+	event.ClientID = adminAuditFieldValue(event.ClientID)
+	event.Actor = adminAuditFieldValue(event.Actor)
+	event.Lifecycle = adminAuditFieldValue(event.Lifecycle)
+	unlock, err := lockAdminAuditChain(tx, "credential", string(AdminDomainCredential))
+	if err != nil {
+		return fmt.Errorf("lock credential audit chain: %w", err)
+	}
+	defer unlock()
+	event.At = normalizeAdminAuditAppendTime(tx, "credential", string(AdminDomainCredential), adminCredentialEventsTable, "", event.EventID, event.At)
 	if event.Outcome == "failure" && !adminCredentialFailureWithinCap(tx, event) {
 		// Drop the record but keep the change path working: the cap exists so a varied key ID
 		// cannot turn the audit table into the denial-of-service vector.
 		return nil
 	}
-	// The collapse key includes the lifecycle and the outcome, so an issue followed by a
-	// revoke of the same credential never merges. Successful outcomes collapse too, so one
-	// busy credential cannot add a row per authenticated request.
-	// Failures collapse within one second and successes within five minutes, both keyed by
-	// lifecycle and outcome. The longer success window means a credential that scrapes
-	// constantly adds one counted row per window, not one per request.
-	if event.Lifecycle == "auth" || event.Lifecycle == "authenticate" {
-		window := time.Second
-		if event.Outcome == "success" {
-			window = adminCredentialSuccessWindow
-		}
-		collapsed := tx.Exec(
-			`UPDATE router_admin_credential_events SET count = count + 1 WHERE event_id = (SELECT event_id FROM router_admin_credential_events WHERE kind = ? AND credential_id = ? AND outcome = ? AND reason_code = ? AND client_ip_hash = ? AND lifecycle = ? AND at >= ? ORDER BY at DESC LIMIT 1)`,
-			adminAuditFieldValue(event.Kind), adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Outcome),
-			adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.ClientIPHash),
-			adminAuditFieldValue(event.Lifecycle),
-			adminCredentialEventTimestamp(event.At.Add(-window)),
-		)
-		if collapsed.Error != nil {
-			return fmt.Errorf("collapse credential event: %w", collapsed.Error)
-		}
-		if collapsed.RowsAffected > 0 {
-			return nil
-		}
+	// Credential audit rows are append-only. Repeated outcomes are represented
+	// by a new summary delta row rather than changing a previously hashed count.
+	if event.Count <= 0 {
+		event.Count = 1
 	}
-	columns := []string{"event_id", "at", "kind", "credential_id", "subject", "issuer", "outcome", "reason_code", "request_id", "client_ip_hash", "lifecycle", "count"}
-	values := []any{
-		event.EventID, adminCredentialEventTimestamp(event.At), adminAuditFieldValue(event.Kind),
+	storedAt := adminCredentialEventTimestamp(event.At)
+	previous := readAdminAuditChainHead(tx, "credential", string(AdminDomainCredential), adminCredentialEventsTable, "")
+	row := adminAuditExportRow{Source: "credential", EventID: event.EventID, At: storedAt, Domain: string(AdminDomainCredential), PrincipalKind: event.Kind, PrincipalSubject: event.Subject, CredentialID: event.CredentialID, Issuer: event.Issuer, Outcome: event.Outcome, ReasonCode: event.ReasonCode, RequestID: event.RequestID, ClientIPHash: event.ClientIPHash, OperationID: event.Lifecycle, Lifecycle: event.Lifecycle, Count: event.Count, Kind: event.Kind, Subject: event.Subject, ClientID: event.ClientID, Actor: event.Actor}
+	rowHash, err := adminAuditChainHash(previous, row)
+	if err != nil {
+		return err
+	}
+	result := tx.Exec(
+		`INSERT INTO router_admin_credential_events (event_id, at, kind, credential_id, subject, issuer, outcome, reason_code, request_id, client_ip_hash, lifecycle, count, client_id, actor, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		event.EventID, storedAt, adminAuditFieldValue(event.Kind),
 		adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Subject), adminAuditFieldValue(event.Issuer),
 		adminAuditFieldValue(event.Outcome), adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.RequestID),
-		adminAuditFieldValue(event.ClientIPHash), adminAuditFieldValue(event.Lifecycle),
-		int64(1),
+		adminAuditFieldValue(event.ClientIPHash), adminAuditFieldValue(event.Lifecycle), event.Count, event.ClientID, event.Actor, previous, rowHash,
+	)
+	if result.Error != nil {
+		return fmt.Errorf("append credential event: %w", result.Error)
 	}
-	if tx.Migrator().HasColumn(adminCredentialEventsTable, "client_id") && tx.Migrator().HasColumn(adminCredentialEventsTable, "actor") {
-		columns = append(columns, "client_id", "actor")
-		values = append(values, adminAuditFieldValue(event.ClientID), adminAuditFieldValue(event.Actor))
+	if result.RowsAffected == 0 {
+		return nil
 	}
-	placeholders := strings.TrimRight(strings.Repeat("?,", len(columns)), ",")
-	if err := tx.Exec("INSERT INTO router_admin_credential_events ("+strings.Join(columns, ",")+") VALUES ("+placeholders+") ON CONFLICT DO NOTHING", values...).Error; err != nil {
-		return fmt.Errorf("append credential event: %w", err)
+	if err := updateAdminAuditChainHead(tx, "credential", string(AdminDomainCredential), previous, rowHash); err != nil {
+		return fmt.Errorf("update credential audit chain anchor: %w", err)
 	}
 	return nil
 }
@@ -205,7 +209,7 @@ func adminCredentialEventTimestamp(at time.Time) string {
 	return at.UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
 
-// PurgeAdminAuditEventsBefore removes audit records older than cutoff from both admin audit
+// PurgeAdminAuditEventsBefore removes audit records older than cutoff from all admin audit
 // tables, honouring the configured retention. It is bounded per call so a long-neglected
 // deployment cannot issue one unbounded delete.
 // adminAuditPurgeBatch bounds one delete statement.
@@ -213,9 +217,11 @@ const adminAuditPurgeBatch = 500
 
 // adminAuditTable is one admin audit table and the column that orders it for pruning.
 type adminAuditTable struct {
-	Name    string
-	IDCol   string
-	TimeCol string
+	Name      string
+	IDCol     string
+	TimeCol   string
+	DomainCol string
+	Source    string
 }
 
 // adminAuditTablesForDB returns the admin audit tables that live in the given database. The
@@ -226,11 +232,14 @@ func adminAuditTablesForDB(db *gorm.DB) []adminAuditTable {
 		return nil
 	}
 	var tables []adminAuditTable
+	if db.Migrator().HasTable("router_config_change_events") {
+		tables = append(tables, adminAuditTable{Name: "router_config_change_events", IDCol: "event_id", TimeCol: "at", DomainCol: "authz_domain", Source: "control"})
+	}
 	if db.Migrator().HasTable(adminCredentialEventsTable) {
-		tables = append(tables, adminAuditTable{Name: adminCredentialEventsTable, IDCol: "event_id", TimeCol: "at"})
+		tables = append(tables, adminAuditTable{Name: adminCredentialEventsTable, IDCol: "event_id", TimeCol: "at", Source: "credential"})
 	}
 	if db.Migrator().HasTable(usageAdminAuditTable) {
-		tables = append(tables, adminAuditTable{Name: usageAdminAuditTable, IDCol: "event_id", TimeCol: "at"})
+		tables = append(tables, adminAuditTable{Name: usageAdminAuditTable, IDCol: "event_id", TimeCol: "at", DomainCol: "domain", Source: "usage"})
 	}
 	return tables
 }
@@ -245,15 +254,55 @@ func PurgeAdminAuditEventsBefore(db *gorm.DB, cutoff time.Time) (int64, error) {
 	stamp := cutoff.UTC().Format(time.RFC3339Nano)
 	var removed int64
 	for _, table := range adminAuditTablesForDB(db) {
-		stmt := fmt.Sprintf(
-			`DELETE FROM %s WHERE %s IN (SELECT %s FROM %s WHERE %s < ? ORDER BY %s LIMIT %d)`,
-			table.Name, table.IDCol, table.IDCol, table.Name, table.TimeCol, table.TimeCol, adminAuditPurgeBatch,
-		)
-		result := db.Exec(stmt, stamp)
-		if result.Error != nil {
-			return removed, fmt.Errorf("prune %s: %w", table.Name, result.Error)
+		err := db.Transaction(func(tx *gorm.DB) error {
+			type candidate struct {
+				ID     string `gorm:"column:id"`
+				Domain string `gorm:"column:domain"`
+				Hash   string `gorm:"column:row_hash"`
+			}
+			selectCols := table.IDCol + " AS id, row_hash"
+			if table.DomainCol != "" {
+				selectCols += ", " + table.DomainCol + " AS domain"
+			}
+			var candidates []candidate
+			if err := tx.Table(table.Name).Select(selectCols).Where(table.TimeCol+" < ?", stamp).Order(table.TimeCol + " ASC").Order(table.IDCol + " ASC").Limit(adminAuditPurgeBatch).Scan(&candidates).Error; err != nil {
+				return err
+			}
+			if len(candidates) == 0 {
+				return nil
+			}
+			ids := make([]string, 0, len(candidates))
+			lastPruned := map[string]string{}
+			for _, candidate := range candidates {
+				ids = append(ids, candidate.ID)
+				domain := candidate.Domain
+				if table.DomainCol == "" {
+					domain = string(AdminDomainCredential)
+				}
+				lastPruned[domain] = candidate.Hash
+			}
+			if table.Name == "router_config_change_events" && tx.Migrator().HasTable("router_config_change_event_targets") {
+				if err := tx.Exec("DELETE FROM router_config_change_event_targets WHERE event_id IN ?", ids).Error; err != nil {
+					return fmt.Errorf("prune event targets: %w", err)
+				}
+			}
+			result := tx.Exec("DELETE FROM "+table.Name+" WHERE "+table.IDCol+" IN ?", ids)
+			if result.Error != nil {
+				return result.Error
+			}
+			removed += result.RowsAffected
+			if table.Source != "" && tx.Migrator().HasTable(adminAuditChainAnchorsTable) {
+				for domain, start := range lastPruned {
+					if err := setAdminAuditChainStart(tx, table.Source, domain, start); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return removed, fmt.Errorf("prune %s: %w", table.Name, err)
 		}
-		removed += result.RowsAffected
 	}
 	return removed, nil
 }
@@ -288,10 +337,6 @@ func adminCredentialFailureWithinCap(tx *gorm.DB, event AdminCredentialEvent) bo
 
 // adminCredentialFailureUnknownBucket is the cap bucket for failures without a source digest.
 const adminCredentialFailureUnknownBucket = "unknown-source"
-
-// adminCredentialSuccessWindow is how long successful authentication outcomes for one
-// credential aggregate into a single counted row.
-const adminCredentialSuccessWindow = 5 * time.Minute
 
 type adminCredentialEventRow struct {
 	EventID string `gorm:"column:event_id;primaryKey"`

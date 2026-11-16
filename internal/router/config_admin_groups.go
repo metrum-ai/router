@@ -157,6 +157,7 @@ type GroupTargetsWriteRequest struct {
 	IdempotencyKey   string
 	ExpectedRevision *int64
 	Action           string // one of the group_* change-event actions
+	auditDetail      string
 }
 
 // GroupTargetsWriteResult is the write (or dry-run) outcome.
@@ -214,17 +215,18 @@ func insertConfigChangeEventTx(tx *gorm.DB, runtimeScope, configSetID, action, a
 	if len(reason) > maxAdminReasonBytes {
 		reason = reason[:maxAdminReasonBytes]
 	}
-	if err := tx.Exec(
-		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, group_name, prev_config_set_id, reason, forced, idempotency_key, request_hash, detail, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome, before_hash, after_hash, ticket) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, runtimeScope, configSetID, action, actor, now.UTC().Format(time.RFC3339Nano), revision,
-		strings.TrimSpace(meta.GroupName), strings.TrimSpace(meta.PrevSetID), adminAuditFieldValue(reason), forced,
-		strings.TrimSpace(meta.IdempotencyKey), strings.TrimSpace(meta.RequestHash), adminAuditFieldValue(meta.Detail),
-		adminAuditFieldValue(meta.Audit.Kind), adminAuditFieldValue(meta.Audit.CredentialID), adminAuditFieldValue(meta.Audit.Issuer),
-		adminAuditFieldValue(meta.Audit.Domain), adminAuditFieldValue(meta.Audit.Object), adminAuditFieldValue(meta.Audit.Action),
-		adminAuditFieldValue(meta.Audit.OperationID), adminAuditFieldValue(meta.Audit.RequestID), "committed",
-		adminAuditFieldValue(meta.BeforeHash), adminAuditFieldValue(meta.AfterHash), adminAuditFieldValue(meta.Audit.Ticket),
-	).Error; err != nil {
-		return "", fmt.Errorf("append change event: %w", err)
+	event := chainedConfigChangeEvent{
+		EventID: eventID, RuntimeScope: runtimeScope, ConfigSetID: configSetID, Action: action, Actor: actor,
+		At: adminAuditFormatTime(now), ConfigRevision: revision, GroupName: strings.TrimSpace(meta.GroupName),
+		PrevSetID: strings.TrimSpace(meta.PrevSetID), Reason: adminAuditFieldValue(reason), Forced: forced,
+		IdempotencyKey: strings.TrimSpace(meta.IdempotencyKey), RequestHash: strings.TrimSpace(meta.RequestHash), Detail: adminAuditFieldValue(meta.Detail),
+		ActorKind: adminAuditFieldValue(meta.Audit.Kind), ActorCredentialID: adminAuditFieldValue(meta.Audit.CredentialID), ActorIssuer: adminAuditFieldValue(meta.Audit.Issuer),
+		AuthzDomain: adminAuditFieldValue(meta.Audit.Domain), Object: adminAuditFieldValue(meta.Audit.Object), AuthzAction: adminAuditFieldValue(meta.Audit.Action),
+		OperationID: adminAuditFieldValue(meta.Audit.OperationID), RequestID: adminAuditFieldValue(meta.Audit.RequestID), Outcome: "committed",
+		BeforeHash: adminAuditFieldValue(meta.BeforeHash), AfterHash: adminAuditFieldValue(meta.AfterHash), Ticket: adminAuditFieldValue(meta.Audit.Ticket),
+	}
+	if err := insertChainedConfigChangeEventTx(tx, event); err != nil {
+		return "", err
 	}
 	insertTargets := func(phase string, targets []GroupTargetSpec) error {
 		for i, target := range targets {
@@ -244,6 +246,64 @@ func insertConfigChangeEventTx(tx *gorm.DB, runtimeScope, configSetID, action, a
 		return "", err
 	}
 	return eventID, nil
+}
+
+type chainedConfigChangeEvent struct {
+	EventID, RuntimeScope, ConfigSetID, Action, Actor, At  string
+	ConfigRevision                                         int64
+	GroupName, PrevSetID, Reason                           string
+	Forced                                                 int
+	IdempotencyKey, RequestHash, Detail                    string
+	ActorKind, ActorCredentialID, ActorIssuer, AuthzDomain string
+	Object, AuthzAction, OperationID, RequestID, Outcome   string
+	BeforeHash, AfterHash, Ticket                          string
+}
+
+// insertChainedConfigChangeEventTx is the only writer for config change-event
+// rows. The stored event and its exported canonical representation are hashed
+// in the same transaction as the mutation.
+func insertChainedConfigChangeEventTx(tx *gorm.DB, e chainedConfigChangeEvent) error {
+	if tx == nil {
+		return fmt.Errorf("config change event requires a transaction")
+	}
+	e.AuthzDomain = adminAuditFieldValue(e.AuthzDomain)
+	unlock, err := lockAdminAuditChain(tx, "control", e.AuthzDomain)
+	if err != nil {
+		return fmt.Errorf("lock config audit chain: %w", err)
+	}
+	defer unlock()
+	at, parseErr := time.Parse(time.RFC3339Nano, e.At)
+	if parseErr != nil {
+		return fmt.Errorf("parse config audit timestamp: %w", parseErr)
+	}
+	e.At = adminAuditFormatTime(normalizeAdminAuditAppendTime(tx, "control", e.AuthzDomain, "router_config_change_events", "authz_domain", e.EventID, at))
+	row := adminAuditExportRow{
+		Source: "control", EventID: e.EventID, At: e.At, PrincipalSubject: e.Actor, PrincipalKind: e.ActorKind,
+		CredentialID: e.ActorCredentialID, Domain: e.AuthzDomain, Object: e.Object, Action: e.AuthzAction,
+		OperationID: e.OperationID, RequestID: e.RequestID, Outcome: e.Outcome, ReasonCode: e.Reason,
+		ConfigRevision: e.ConfigRevision, BeforeHash: e.BeforeHash, AfterHash: e.AfterHash, RuntimeScope: e.RuntimeScope,
+		Issuer: e.ActorIssuer, Ticket: e.Ticket, ConfigSetID: e.ConfigSetID, PrevConfigSetID: e.PrevSetID,
+		IdempotencyKey: e.IdempotencyKey, RequestHash: e.RequestHash, Detail: e.Detail, ControlAction: e.Action,
+		GroupName: e.GroupName, Forced: e.Forced != 0,
+	}
+	previous := readAdminAuditChainHead(tx, "control", e.AuthzDomain, "router_config_change_events", "authz_domain")
+	hash, err := adminAuditChainHash(previous, row)
+	if err != nil {
+		return fmt.Errorf("calculate config audit row hash: %w", err)
+	}
+	if err := tx.Exec(
+		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, group_name, prev_config_set_id, reason, forced, idempotency_key, request_hash, detail, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome, before_hash, after_hash, ticket, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.EventID, e.RuntimeScope, e.ConfigSetID, e.Action, e.Actor, e.At, e.ConfigRevision, e.GroupName, e.PrevSetID,
+		e.Reason, e.Forced, e.IdempotencyKey, e.RequestHash, e.Detail, e.ActorKind, e.ActorCredentialID, e.ActorIssuer,
+		e.AuthzDomain, e.Object, e.AuthzAction, e.OperationID, e.RequestID, e.Outcome, e.BeforeHash, e.AfterHash,
+		e.Ticket, previous, hash,
+	).Error; err != nil {
+		return fmt.Errorf("append chained config event: %w", err)
+	}
+	if err := updateAdminAuditChainHead(tx, "control", e.AuthzDomain, previous, hash); err != nil {
+		return fmt.Errorf("update config audit chain anchor: %w", err)
+	}
+	return nil
 }
 
 // configAdminRuntimeRow mirrors router_config_runtime for guarded updates.
@@ -701,6 +761,7 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 				Forced:         req.Force,
 				IdempotencyKey: req.IdempotencyKey,
 				RequestHash:    requestHash,
+				Detail:         req.auditDetail,
 				BeforeTargets:  before,
 				AfterTargets:   after,
 			}, now); err != nil {

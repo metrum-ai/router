@@ -662,6 +662,8 @@ func (m *adminV1Mount) resolveDomains(op Operation, r *http.Request, principal P
 		// The handler decides for itself; the credential domain is what today's
 		// legacy handlers use.
 		return []string{m.deps.domainFor(principal)}, nil
+	case AdminDomainCredential:
+		return []string{m.deps.domainFor(principal)}, nil
 	case AdminDomainCallerTarget:
 		if op.HandlerKey == "callers.list" {
 			// A collection (the caller directory listing) has no single target domain: the
