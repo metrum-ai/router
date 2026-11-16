@@ -7,6 +7,8 @@ doc_type: reference
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
+OpenAI groups now keep targets that declare both reasoning support and a compatible effort control when a caller supplies `reasoning_effort`. Mixed weighted and failover groups can route to those targets; an all-incapable group returns HTTP 400 `unsupported_capability` with `param: reasoning_effort`.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## v5.0.0 provider spend breaker

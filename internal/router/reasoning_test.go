@@ -157,6 +157,65 @@ func TestReasoningRequestFiltersTargetsAndTranslates(t *testing.T) {
 	}
 }
 
+func TestReasoningEffortMixedWeightedAndAllIncapable(t *testing.T) {
+	var upstreamCalls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["model"] != "reasoning-chat" || body["reasoning_effort"] != "low" {
+			t.Fatalf("weighted group selected unsupported target or lost effort: %#v", body)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "reasoning-ok", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
+	}))
+	defer upstream.Close()
+
+	t.Run("mixed-weighted", func(t *testing.T) {
+		cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+		cfg.Models["default"] = ModelGroup{Strategy: "weighted", Targets: []Target{
+			{Provider: "mock", Model: "plain-chat", Weight: 100},
+			{Provider: "mock", Model: "reasoning-chat", Weight: 1, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
+		}}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer svc.Close()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","reasoning_effort":"low","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("all-incapable", func(t *testing.T) {
+		cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+		cfg.Models["default"] = ModelGroup{Strategy: "failover", Targets: []Target{
+			{Provider: "mock", Model: "plain-one"}, {Provider: "mock", Model: "plain-two"},
+		}}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer svc.Close()
+		before := upstreamCalls
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","reasoning_effort":"low","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		if upstreamCalls != before {
+			t.Fatalf("all-incapable group dispatched upstream: calls %d -> %d", before, upstreamCalls)
+		}
+	})
+}
+
 func TestReasoningSurfaceMatrixPersistsTranslationProof(t *testing.T) {
 	type upstreamCall struct {
 		Path string

@@ -2808,6 +2808,21 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		if err.ErrorCode == "" && len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
 			err.MismatchCode, err.MismatchParam = s.audioCapabilityMismatch(rc, group.Targets, rejectedReasons, req, callerDialect)
+			if requestRequiresReasoning(req) {
+				withoutReasoning := *req
+				withoutReasoning.Reasoning = ReasoningIntent{}
+				withoutReasoning.Raw = make(map[string]any, len(req.Raw))
+				for key, value := range req.Raw {
+					if key != "reasoning" && key != "reasoning_effort" && key != "thinking" {
+						withoutReasoning.Raw[key] = value
+					}
+				}
+				if len(s.targetsForRequest(rc, group.Targets, &withoutReasoning, callerDialect)) > 0 &&
+					(err.MismatchCode == "" || (err.MismatchCode == "unsupported_capability" && err.MismatchParam == "reasoning")) {
+					err.MismatchCode = "unsupported_capability"
+					err.MismatchParam = "reasoning_effort"
+				}
+			}
 		}
 		return decision{}, err
 	}

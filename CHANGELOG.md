@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Mixed reasoning-capability groups now select targets that support the requested `reasoning_effort`; all-incapable groups return `unsupported_capability` for `reasoning_effort`.
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 
