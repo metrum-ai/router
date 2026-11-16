@@ -176,6 +176,10 @@ func (s *Service) submitDetectorEvent(event detector.Event, segments []detector.
 				}
 			}
 		}
+		if detector.ValidateEvent(perDetectorEvent) != nil {
+			s.detectorInvalidDropped.Add(1)
+			continue
+		}
 		policy := detect.Policy{Mode: runtime.config.Mode, Timeout: time.Duration(runtime.config.TimeoutMS) * time.Millisecond, OnError: runtime.config.OnError, SampleRate: runtime.config.SampleRate}
 		s.detectorDispatcher.Submit(runtime.config.ID, event.CallerID, runtime.implementation, perDetectorEvent, policy)
 	}
@@ -203,13 +207,20 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 		if len(signal.EvidenceRequestIDs) != 0 {
 			requestID = signal.EvidenceRequestIDs[0]
 		}
-		reason := fmt.Sprintf("detector_signal:%s:%.4f:%s", signal.Severity, signal.Score, signal.SegmentKind)
+		ruleID := signal.DetectorID
+		if ruleID == "" {
+			ruleID = result.DetectorID
+		}
+		reason := fmt.Sprintf("detector_signal:%s:%s:%.4f:%s", ruleID, signal.Severity, signal.Score, signal.SegmentKind)
 		if signal.SegmentIndex != nil {
 			reason += fmt.Sprintf(":%d", *signal.SegmentIndex)
 		}
+		if len(signal.EvidenceRequestIDs) > 0 {
+			reason += ":evidence=" + strings.Join(signal.EvidenceRequestIDs, ",")
+		}
 		s.recordSecurityAccessEvent(securityAccessEvent{
 			TS: time.Now().UTC(), RequestID: requestID, EventType: "security_detector_signal", Outcome: result.Mode,
-			ReasonCode: reason, CallerID: result.CallerID, RequestedModel: result.DetectorID, TokenID: signal.Key,
+			ReasonCode: reason, CallerID: result.CallerID, RequestedModel: ruleID, TokenID: signal.Key,
 		})
 	}
 	if consumer != nil {
@@ -242,4 +253,9 @@ func opaqueDetectorKeyID(tokenID string) string {
 	}
 	sum := sha256.Sum256([]byte(tokenID))
 	return hex.EncodeToString(sum[:16])
+}
+
+func safeDetectorModelLabel(model string) string {
+	sum := sha256.Sum256([]byte(model))
+	return "model-" + hex.EncodeToString(sum[:16])
 }

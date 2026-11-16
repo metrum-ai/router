@@ -27,6 +27,109 @@ func TestAuthFailureStormTriggersAtThreshold(t *testing.T) {
 	assertRule(t, signals, "auth_fail_storm")
 }
 
+func TestAuthFailureStormSignalsOpaqueKeyAndIPScopes(t *testing.T) {
+	service := newRuleDetector()
+	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }
+	event := testEvent("auth_failure", 1, "")
+	var signals []detector.Signal
+	for i := 1; i <= authFailureLimit; i++ {
+		event.RequestID = fmt.Sprintf("scope-%02d", i)
+		got, err := service.Detect(context.Background(), event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signals = append(signals, got...)
+	}
+	var keySignal, ipSignal *detector.Signal
+	for i := range signals {
+		signal := &signals[i]
+		if signal.DetectorID != "auth_fail_storm" {
+			continue
+		}
+		if signal.Key == event.KeyID {
+			keySignal = signal
+		}
+		if signal.Key == "" {
+			ipSignal = signal
+		}
+	}
+	if keySignal == nil || ipSignal == nil {
+		t.Fatalf("expected opaque-key and empty-key IP signals, got %+v", signals)
+	}
+	if len(keySignal.EvidenceRequestIDs) != evidenceLimit || len(ipSignal.EvidenceRequestIDs) != evidenceLimit {
+		t.Fatalf("evidence lists are not bounded at %d: key=%+v ip=%+v", evidenceLimit, keySignal.EvidenceRequestIDs, ipSignal.EvidenceRequestIDs)
+	}
+}
+
+func TestAuthFailureIPFloodDoesNotEvictPerKeyState(t *testing.T) {
+	service := newRuleDetector()
+	service.maxKeys = 2
+	now := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	for i := 0; i < authFailureLimit-1; i++ {
+		event := testEvent("auth_failure", i, "")
+		event.SourceIP = ""
+		if got, err := service.Detect(context.Background(), event); err != nil || len(got) != 0 {
+			t.Fatalf("pre-threshold key event signals=%v err=%v", got, err)
+		}
+	}
+	for i := 0; i < 100; i++ {
+		event := testEvent("auth_failure", 1000+i, "")
+		event.KeyID = ""
+		event.SourceIP = fmt.Sprintf("192.0.%d.%d", i/255, i%255+1)
+		if got, err := service.Detect(context.Background(), event); err != nil || len(got) != 0 {
+			t.Fatalf("single-IP event signals=%v err=%v", got, err)
+		}
+	}
+	if got := len(service.states[authKeyState].byKey); got != 1 {
+		t.Fatalf("IP flood changed per-key state count: %d", got)
+	}
+	if got := len(service.states[authIPState].byKey); got != service.maxKeys {
+		t.Fatalf("IP state LRU size=%d, want independent cap %d", got, service.maxKeys)
+	}
+	final := testEvent("auth_failure", 2000, "")
+	final.SourceIP = ""
+	got, err := service.Detect(context.Background(), final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRule(t, got, "auth_fail_storm")
+}
+
+func TestActiveObservationsRespectBothTimeBounds(t *testing.T) {
+	evaluatedAt := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	events := []observation{
+		{at: evaluatedAt.Add(-2 * time.Minute), requestID: "too-old"},
+		{at: evaluatedAt.Add(-time.Minute), requestID: "lower-bound"},
+		{at: evaluatedAt, requestID: "now"},
+		{at: evaluatedAt.Add(time.Second), requestID: "future"},
+	}
+	got := activeObservations(events, evaluatedAt.Add(-time.Minute), evaluatedAt)
+	if len(got) != 2 || got[0].requestID != "lower-bound" || got[1].requestID != "now" {
+		t.Fatalf("active observations = %+v, want lower bound through evaluation time only", got)
+	}
+}
+
+func TestAuthFailureIgnoresFutureAndOutOfWindowEvents(t *testing.T) {
+	service := newRuleDetector()
+	now := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	future := testEvent("auth_failure", 1, now.Add(time.Second).Format(time.RFC3339Nano))
+	if got, err := service.Detect(context.Background(), future); err != nil || len(got) != 0 || len(service.states) != 0 {
+		t.Fatalf("future event was retained: signals=%v states=%d err=%v", got, len(service.states), err)
+	}
+	for i := 0; i < authFailureLimit-1; i++ {
+		old := testEvent("auth_failure", 100+i, now.Add(-2*time.Minute).Format(time.RFC3339Nano))
+		if got, err := service.Detect(context.Background(), old); err != nil || len(got) != 0 {
+			t.Fatalf("out-of-window event signals=%v err=%v", got, err)
+		}
+	}
+	current := testEvent("auth_failure", 999, now.Format(time.RFC3339Nano))
+	if got, err := service.Detect(context.Background(), current); err != nil || len(got) != 0 {
+		t.Fatalf("old events contributed to current threshold: signals=%v err=%v", got, err)
+	}
+}
+
 func TestValidationSweepTriggersAndBenignRequestsDoNot(t *testing.T) {
 	service := newRuleDetector()
 	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }
@@ -114,6 +217,62 @@ func TestBenignTrafficTriggersNothing(t *testing.T) {
 	}
 }
 
+func TestRealisticMixedBenignTrafficTriggersNothing(t *testing.T) {
+	service := newRuleDetector()
+	base := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	for i := 0; i < 15; i++ {
+		at := base.Add(time.Duration(i) * time.Second).Format(time.RFC3339Nano)
+		inputs := []detector.Event{testEvent("auth_failure", i, at)}
+		normal := testEvent("request", i, at)
+		normal.TinyRequest = false
+		inputs = append(inputs, normal)
+		if i < 5 {
+			tiny := testEvent("request", 100+i, at)
+			tiny.TinyRequest = true
+			inputs = append(inputs, tiny)
+		}
+		if i < deniedGroupLimit-1 {
+			denied := testEvent("model_denied", 200+i, at)
+			denied.DeniedGroup = fmt.Sprintf("group-%d", i)
+			inputs = append(inputs, denied)
+		}
+		usage := testEvent("usage", i, at)
+		usage.Tokens = 100
+		inputs = append(inputs, usage)
+		service.now = func() time.Time { return base.Add(time.Minute) }
+		for _, event := range inputs {
+			got, err := service.Detect(context.Background(), event)
+			if err != nil || len(got) != 0 {
+				t.Fatalf("benign mixed %s event signaled: %v err=%v", event.Kind, got, err)
+			}
+		}
+	}
+}
+
+func TestRuleKeyEvictionIsIsolated(t *testing.T) {
+	service := newRuleDetector()
+	service.maxKeys = 2
+	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }
+	for i := 0; i < 2; i++ {
+		event := testEvent("usage", i, "")
+		event.KeyID = fmt.Sprintf("%032x", i+1)
+		event.Tokens = 100
+		_, _ = service.Detect(context.Background(), event)
+	}
+	for i := 0; i < 3; i++ {
+		event := testEvent("model_denied", 100+i, "")
+		event.KeyID = fmt.Sprintf("%032x", i+10)
+		event.DeniedGroup = fmt.Sprintf("group-%d", i)
+		_, _ = service.Detect(context.Background(), event)
+	}
+	if len(service.states["spend_spike"].byKey) != 2 {
+		t.Fatalf("enumeration churn evicted spend state: %d keys remain", len(service.states["spend_spike"].byKey))
+	}
+	if len(service.states["model_enumeration"].byKey) != 2 {
+		t.Fatalf("enumeration LRU did not enforce its own cap: %d keys", len(service.states["model_enumeration"].byKey))
+	}
+}
+
 func testEvent(kind string, id int, observed string) detector.Event {
 	event := detector.Event{
 		SchemaVersion: detector.SchemaVersion,
@@ -133,6 +292,13 @@ func assertRule(t *testing.T, signals []detector.Signal, rule string) {
 		if signal.DetectorID == rule {
 			if signal.Severity == "" || signal.Key == "" || len(signal.EvidenceRequestIDs) == 0 {
 				t.Fatalf("incomplete %s signal: %+v", rule, signal)
+			}
+			wantSeverity := "high"
+			if rule == "model_enumeration" || rule == "spend_spike" {
+				wantSeverity = "medium"
+			}
+			if signal.Severity != wantSeverity {
+				t.Fatalf("%s severity=%q, want %q", rule, signal.Severity, wantSeverity)
 			}
 			return
 		}

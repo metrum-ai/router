@@ -144,6 +144,7 @@ jobs:
             exit 1
           fi
           go test ./pkg/detector -run '^TestExternalContract$' -count=1
+          go test ./examples/external-detector -run '^TestExternalRuleContract$' -count=1
 
   other:
     name: Compatibility, Python and examples

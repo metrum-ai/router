@@ -1667,7 +1667,7 @@ func (c *Config) setDefaults() {
 	for i := range c.Server.Detectors {
 		detector := &c.Server.Detectors[i]
 		if detector.Mode == "" {
-			detector.Mode = "off"
+			detector.Mode = "report"
 		}
 		if detector.TimeoutMS == 0 {
 			detector.TimeoutMS = 500

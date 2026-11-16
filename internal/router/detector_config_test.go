@@ -21,3 +21,11 @@ func TestDetectorConfigValidatesSegmentOptInAndErrorSemantics(t *testing.T) {
 		t.Fatal("legacy detector error mode accepted")
 	}
 }
+
+func TestConfiguredDetectorDefaultsToReport(t *testing.T) {
+	cfg := &Config{Server: ServerConfig{Detectors: []DetectorConfig{{ID: "remote", URL: "https://detector.example/v1/detect", AllowHosts: []string{"detector.example"}}}}}
+	cfg.setDefaults()
+	if got := cfg.Server.Detectors[0].Mode; got != "report" {
+		t.Fatalf("configured detector default mode=%q, want report", got)
+	}
+}

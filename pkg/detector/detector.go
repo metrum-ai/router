@@ -46,7 +46,8 @@ type Segment struct {
 	Text  string `json:"text"`
 }
 
-// Signal reports one detector result. Key is an opaque key identifier, never a credential.
+// Signal reports one detector result. Key is the router's opaque event.KeyID,
+// never a credential; it is empty for signals scoped to a source address.
 type Signal struct {
 	SchemaVersion      string   `json:"schema_version"`
 	DetectorID         string   `json:"detector_id"`

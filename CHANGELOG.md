@@ -29,6 +29,7 @@
 
 ### Security
 
+- Ship the example external detector's per-rule bounded-LRU auth-failure storm, tiny-request sweep, denied-model enumeration, and spend-spike rules. Signals retain the router's opaque key ID and bounded evidence IDs; source-IP-only signals have no key. Configured detectors default to report mode, and the example rule thresholds are flags with documented defaults.
 - Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
 - Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
 
@@ -119,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Generate checksummed v2 caller tokens, reject malformed checksums before lookup, add database-backed leaked-key self-revocation enforced by every authenticated route and propagated to replicas, and warn or enforce caller-token hygiene. Revoked verifiers live in a sticky denylist independent of config sets, so rollback and YAML import cannot restore a leaked key; rotation installs a new verifier.
-- Add an opt-in `pii_filter.secrets_enabled` detector pack for common provider/router credentials, JWTs, bearer authorization values, private-key blocks, and credential assignments in inbound, buffered response, and built-in-only streamed text. Stream filtering tracks unresolved JWT and PEM candidates from their start and keeps a 512-byte ordinary rolling tail; unary responses fail closed when the shared replacement limit is exceeded. Tool-bearing streams on DLP-enabled groups fail closed with HTTP 400 as an interim limit until the #929 bounded tool-call inspection integration lands; custom-rule streams remain fail-closed.
+- Add an opt-in `pii_filter.secrets_enabled` detector pack for common provider/router credentials, JWTs, bearer authorization values, private-key blocks, and credential assignments in inbound, buffered response, and built-in-only streamed text. Stream filtering tracks unresolved JWT and PEM candidates from their start, checks every PEM BEGIN marker through its END marker (capped at 64 KiB), and keeps a 512-byte ordinary rolling tail; unary responses fail closed when the shared replacement limit is exceeded. Tool-bearing streams on DLP-enabled groups fail closed with HTTP 400 as an interim limit until the #929 bounded tool-call inspection integration lands; custom-rule streams remain fail-closed.
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1

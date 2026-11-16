@@ -29,7 +29,7 @@ func TestDetectorSignalsReachOCSFStream(t *testing.T) {
 	detected := make(chan detector.Event, 4)
 	detectorService := httptest.NewServer(detector.Handler(detectorFunc(func(_ context.Context, event detector.Event) ([]detector.Signal, error) {
 		detected <- event
-		return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "honeytoken", Severity: "high", Score: 0.75, EvidenceRequestIDs: []string{event.RequestID}}}, nil
+		return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "honeytoken", Severity: "high", Score: 0.75, EvidenceRequestIDs: []string{event.RequestID, "prior-request-2"}}}, nil
 	})))
 	defer detectorService.Close()
 	dir := t.TempDir()
@@ -75,11 +75,11 @@ func TestDetectorSignalsReachOCSFStream(t *testing.T) {
 					UID         string         `json:"uid"`
 					FindingInfo map[string]any `json:"finding_info"`
 				}
-				if json.Unmarshal([]byte(line), &event) != nil || event.ClassUID != 2004 || event.FindingInfo["title"] != "capture" {
+				if json.Unmarshal([]byte(line), &event) != nil || event.ClassUID != 2004 || event.FindingInfo["title"] != "honeytoken" {
 					continue
 				}
 				description, _ := event.FindingInfo["desc"].(string)
-				if event.UID == "" || !strings.Contains(description, "high") || !strings.Contains(description, "0.7500") {
+				if event.UID == "" || !strings.Contains(description, "honeytoken:high") || !strings.Contains(description, "0.7500") || !strings.Contains(description, "evidence=") || !strings.Contains(description, "prior-request-2") {
 					t.Fatalf("detector OCSF finding missing evidence or signal details: %+v", event)
 				}
 				if strings.Contains(line, promptMarker) || strings.Contains(line, testToken) || strings.Contains(line, providerKey) {
@@ -95,7 +95,7 @@ func TestDetectorSignalsReachOCSFStream(t *testing.T) {
 				if err := svc.usage.db.Where("event_type = ?", "security_detector_signal").Find(&records).Error; err != nil {
 					t.Fatal(err)
 				}
-				if len(records) == 0 || records[0].RequestedModel != "capture" {
+				if len(records) == 0 || records[0].RequestedModel != "honeytoken" {
 					t.Fatalf("security report did not use configured detector ID: %#v", records)
 				}
 				return

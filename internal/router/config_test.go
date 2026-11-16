@@ -167,6 +167,32 @@ func TestV4StoredScriptFieldsWithZeroValuesLoad(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRejectsInvalidMCPCredentialEnv(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.MCP = MCPGatewayConfig{
+		Enabled: true,
+		RPM:     60,
+		Servers: []MCPServerConfig{{
+			Name:          "local",
+			URL:           "http://127.0.0.1:8080/mcp",
+			AllowHosts:    []string{"127.0.0.1"},
+			AllowHTTP:     true,
+			CredentialEnv: "MCP_LOCAL_TOKEN",
+		}},
+	}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), "credential_env must use the ROUTER_MCP_ prefix") {
+		t.Fatalf("LoadConfig error = %v, want invalid MCP credential prefix", err)
+	}
+}
+
 func TestKubernetesExampleEmptyScriptFieldsRemainLoadCompatible(t *testing.T) {
 	path := "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml"
 	raw, err := os.ReadFile(path)
