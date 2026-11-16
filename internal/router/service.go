@@ -114,6 +114,7 @@ type Service struct {
 	responsesAffinity      *responsesAffinities
 	detectorDispatcher     *detect.Dispatcher
 	detectors              []detectorRuntime
+	detectorMu             sync.RWMutex
 	detectorResultConsumer func(detect.Result)
 	shaping                *upstreamShapeManager
 	providerSpend          *providerSpendBreaker
@@ -569,9 +570,13 @@ func (s *Service) Close() {
 		s.policySyncStop()
 		s.policySyncStop = nil
 	}
-	if s.detectorDispatcher != nil {
-		s.detectorDispatcher.Close()
-		s.detectorDispatcher = nil
+	s.detectorMu.Lock()
+	detectorDispatcher := s.detectorDispatcher
+	s.detectorDispatcher = nil
+	s.detectors = nil
+	s.detectorMu.Unlock()
+	if detectorDispatcher != nil {
+		detectorDispatcher.Close()
 	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
@@ -761,6 +766,9 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if err := s.replaceDetectorConfig(newCfg.Server.Detectors); err != nil {
+		return fmt.Errorf("reload active config: rebuild detectors: %w", err)
+	}
 	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
 		// The admin listener binds once; a reload cannot rebind it. Say so
 		// instead of leaving a half-applied control plane.
@@ -1351,8 +1359,11 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
-	if s.detectorDispatcher != nil {
-		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", s.detectorDispatcher.Dropped())
+	s.detectorMu.RLock()
+	detectorDispatcher := s.detectorDispatcher
+	s.detectorMu.RUnlock()
+	if detectorDispatcher != nil {
+		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", detectorDispatcher.Dropped())
 	}
 	if s.tlsManager != nil {
 		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
@@ -1917,7 +1928,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
 	}
-	if detectorSegmentsConfigured(s.detectors) {
+	if s.detectorSegmentsEnabled() {
 		rc.detectorSegments = extractDetectorSegments(req)
 	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)

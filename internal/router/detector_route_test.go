@@ -26,6 +26,32 @@ func (f detectorFunc) Detect(ctx context.Context, event detector.Event) ([]detec
 	return f(ctx, event)
 }
 
+func TestDetectorRuntimeReplacementAppliesConfigReload(t *testing.T) {
+	seen := make(chan detector.Event, 1)
+	server := httptest.NewServer(detector.Handler(detectorFunc(func(_ context.Context, event detector.Event) ([]detector.Signal, error) {
+		seen <- event
+		return []detector.Signal{}, nil
+	})))
+	defer server.Close()
+	svc := &Service{}
+	config := []DetectorConfig{{ID: "reload", URL: server.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 500, OnError: "fallback", SampleRate: 1}}
+	if err := svc.replaceDetectorConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	svc.submitDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, Kind: "request"}, nil, false)
+	select {
+	case <-seen:
+	case <-time.After(time.Second):
+		t.Fatal("reloaded detector did not receive event")
+	}
+	if err := svc.replaceDetectorConfig(nil); err != nil {
+		t.Fatal(err)
+	}
+	if svc.detectorDispatcher != nil || len(svc.detectors) != 0 {
+		t.Fatal("removed detector config remained active")
+	}
+}
+
 func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *testing.T) {
 	const promptMarker = "private prompt marker"
 	const segmentMarker = "selected tool result marker"

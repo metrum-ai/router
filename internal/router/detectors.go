@@ -21,11 +21,22 @@ type detectorRuntime struct {
 }
 
 func (s *Service) initDetectors() error {
-	if len(s.cfg.Server.Detectors) == 0 {
-		return nil
+	dispatcher, runtimes, err := buildDetectorRuntimes(s.cfg.Server.Detectors, s.handleDetectorResult)
+	if err != nil {
+		return err
 	}
-	s.detectorDispatcher = detect.NewDispatcher(4, 256, s.handleDetectorResult)
-	for _, cfg := range s.cfg.Server.Detectors {
+	s.detectorDispatcher = dispatcher
+	s.detectors = runtimes
+	return nil
+}
+
+func buildDetectorRuntimes(configs []DetectorConfig, sink func(detect.Result)) (*detect.Dispatcher, []detectorRuntime, error) {
+	if len(configs) == 0 {
+		return nil, nil, nil
+	}
+	dispatcher := detect.NewDispatcher(4, 256, sink)
+	runtimes := make([]detectorRuntime, 0, len(configs))
+	for _, cfg := range configs {
 		var implementation detector.Detector
 		switch cfg.Builtin {
 		case "honeytoken":
@@ -35,8 +46,8 @@ func (s *Service) initDetectors() error {
 		default:
 			external, err := newExternalDetector(cfg.URL, cfg.AllowHosts, cfg.AllowHTTP, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 			if err != nil {
-				s.detectorDispatcher.Close()
-				return fmt.Errorf("initialize detector %s: %w", cfg.ID, err)
+				dispatcher.Close()
+				return nil, nil, fmt.Errorf("initialize detector %s: %w", cfg.ID, err)
 			}
 			implementation = external
 		}
@@ -44,17 +55,41 @@ func (s *Service) initDetectors() error {
 		for _, kind := range cfg.IncludeSegments {
 			segments[kind] = true
 		}
-		s.detectors = append(s.detectors, detectorRuntime{config: cfg, implementation: implementation, segments: segments})
+		runtimes = append(runtimes, detectorRuntime{config: cfg, implementation: implementation, segments: segments})
+	}
+	return dispatcher, runtimes, nil
+}
+
+// replaceDetectorConfig installs a fully built runtime for a config reload,
+// then drains the previous worker pool after request dispatch has moved on.
+func (s *Service) replaceDetectorConfig(configs []DetectorConfig) error {
+	dispatcher, runtimes, err := buildDetectorRuntimes(configs, s.handleDetectorResult)
+	if err != nil {
+		return err
+	}
+	s.detectorMu.Lock()
+	previous := s.detectorDispatcher
+	s.detectorDispatcher = dispatcher
+	s.detectors = runtimes
+	s.detectorMu.Unlock()
+	if previous != nil {
+		previous.Close()
 	}
 	return nil
 }
 
+func (s *Service) detectorSegmentsEnabled() bool {
+	s.detectorMu.RLock()
+	defer s.detectorMu.RUnlock()
+	return detectorSegmentsConfigured(s.detectors)
+}
+
 func (s *Service) dispatchCompletedRequestDetectors(rc *requestContext) {
-	if rc == nil || rc.caller == nil || s.detectorDispatcher == nil {
+	if rc == nil || rc.caller == nil {
 		return
 	}
 	var segments []detector.Segment
-	if detectorSegmentsConfigured(s.detectors) {
+	if s.detectorSegmentsEnabled() {
 		segments = rc.detectorSegments
 	}
 	event := detector.Event{
@@ -77,7 +112,7 @@ func (s *Service) dispatchCompletedRequestDetectors(rc *requestContext) {
 }
 
 func (s *Service) dispatchSecurityDetectorEvent(event detector.Event) {
-	if s == nil || s.detectorDispatcher == nil {
+	if s == nil {
 		return
 	}
 	s.submitDetectorEvent(event, nil, false)
@@ -93,7 +128,7 @@ func detectorSegmentsConfigured(detectors []detectorRuntime) bool {
 }
 
 func (s *Service) dispatchBuiltinDetectorEvent(kind, callerID, requestID, keyID string) {
-	if s == nil || s.detectorDispatcher == nil {
+	if s == nil {
 		return
 	}
 	event := detector.Event{SchemaVersion: detector.SchemaVersion, Kind: kind, CallerID: callerID, RequestID: requestID, KeyID: opaqueDetectorKeyID(keyID), ObservedAt: time.Now().UTC().Format(time.RFC3339Nano)}
@@ -101,6 +136,11 @@ func (s *Service) dispatchBuiltinDetectorEvent(kind, callerID, requestID, keyID 
 }
 
 func (s *Service) submitDetectorEvent(event detector.Event, segments []detector.Segment, builtinsOnly bool) {
+	s.detectorMu.RLock()
+	defer s.detectorMu.RUnlock()
+	if s.detectorDispatcher == nil {
+		return
+	}
 	for _, runtime := range s.detectors {
 		if runtime.config.Mode == "off" || (runtime.config.Builtin != "") != builtinsOnly {
 			continue
