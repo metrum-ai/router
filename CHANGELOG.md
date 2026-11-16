@@ -25,10 +25,6 @@
 - Move the AMD reference and edge images to the digest-pinned upstream vLLM
   ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
 
-### Security
-
-- Add a v5.0.0 threat summary, production hardening guide, and key-compromise runbook.
-
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
