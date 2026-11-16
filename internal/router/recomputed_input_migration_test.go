@@ -39,10 +39,16 @@ func TestUsageRecomputedInputSchema20SQLiteUpgradeFrom19(t *testing.T) {
 	}
 	cached := 40
 	legacy := usageRecord{RequestID: "schema-19-row", TS: "2026-11-16T00:00:00Z", InputTokens: 100, CachedInputTokens: &cached}
-	if err := db.Omit("RecomputedInputTokens").Create(&legacy).Error; err != nil {
+	if err := db.Omit("RecomputedInputTokens", "OrganizationID", "TeamID").Create(&legacy).Error; err != nil {
 		t.Fatal(err)
 	}
-	current, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, usageMigrationCompatibility, usageMigrationDefinitions, usageDataJobDefinitions)
+	definitionsThrough20 := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	for _, definition := range usageMigrationDefinitions {
+		if definition.SchemaVersion <= 20 {
+			definitionsThrough20 = append(definitionsThrough20, definition)
+		}
+	}
+	current, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 20, MinData: 0, MaxData: 1}, definitionsThrough20, usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}

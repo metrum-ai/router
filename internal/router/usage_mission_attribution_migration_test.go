@@ -36,7 +36,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 	store := &usageStore{db: old.db}
 	// The baseline migration creates tables from current Go models on a fresh
 	// store, so remove the new columns to reproduce the deployed pre-migration shape.
-	for _, column := range []string{"TaskID", "HumanOwner", "RecomputedInputTokens"} {
+	for _, column := range []string{"TaskID", "HumanOwner", "RecomputedInputTokens", "OrganizationID", "TeamID"} {
 		if old.db.Migrator().HasColumn(&usageRecord{}, column) {
 			if err := old.db.Migrator().DropColumn(&usageRecord{}, column); err != nil {
 				t.Fatal(err)
@@ -59,7 +59,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := logRecord{RequestID: "mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker", TaskID: "task-7", HumanOwner: "team-ml"}
-	if err := store.db.Omit("RecomputedInputTokens").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
+	if err := store.db.Omit("RecomputedInputTokens", "OrganizationID", "TeamID").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
 		t.Fatal(err)
 	}
 	var stored usageRecord
