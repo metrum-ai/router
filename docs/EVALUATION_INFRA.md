@@ -88,9 +88,9 @@ cannot silently become certification.
 dispatch, with both jobs restricted to `main` and protected by the existing
 `evaluation` environment. It has no pull-request trigger. The non-Docker job
 uses `COMPAT_MATRIX_OPENAI_API_KEY` and `COMPAT_MATRIX_CALLER_TOKEN`; the
-separate Docker-backed Harbor job also uses
-`COMPAT_MATRIX_ANTHROPIC_API_KEY`. All three stay in the environment-scoped
-secret store. No repository-wide secret is used. The non-Docker job runs the
+separate Docker-backed Harbor job uses only `COMPAT_MATRIX_OPENAI_API_KEY`.
+Both secrets stay in the environment-scoped secret store. No repository-wide
+secret is used. The non-Docker job runs the
 four preregistered differential-canary rows. The three Humaneval rows remain
 explicitly missing in the aggregate until their live evaluation runtime is
 available; missing cells never become passing or certified. The hosted Docker

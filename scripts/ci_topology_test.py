@@ -267,9 +267,8 @@ def assert_eval_infra_nightly_workflow() -> None:
     require("contents: read" in text and "actions: read" in text,
             "evaluation nightly permissions must stay read-only")
     secret_refs = set(re.findall(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", text))
-    require(secret_refs == {"COMPAT_MATRIX_OPENAI_API_KEY", "COMPAT_MATRIX_CALLER_TOKEN",
-                            "COMPAT_MATRIX_ANTHROPIC_API_KEY"},
-            "evaluation nightly must expose only the three required environment secrets")
+    require(secret_refs == {"COMPAT_MATRIX_OPENAI_API_KEY", "COMPAT_MATRIX_CALLER_TOKEN"},
+            "evaluation nightly must expose only the two required environment secrets")
     require("artifacts/run-report.json" in text and "artifacts/rolling-aggregate.json" in text
             and "artifacts/history" not in text.split("      - name: Publish sanitized evaluation reports", 1)[1],
             "evaluation nightly artifacts must contain only the current report and aggregate")

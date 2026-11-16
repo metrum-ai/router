@@ -27,16 +27,19 @@ TEST_SH = """#!/bin/sh
 set -u
 python3 - <<'PY'
 import importlib.util
+import os
 import pathlib
 import traceback
 
-reward = pathlib.Path('/logs/verifier/reward.txt')
+workspace = pathlib.Path(os.environ.get('HARBOR_WORKSPACE', '/app'))
+tests = pathlib.Path(os.environ.get('HARBOR_TESTS_DIR', '/tests'))
+reward = pathlib.Path(os.environ.get('HARBOR_REWARD_DIR', '/logs/verifier')) / 'reward.txt'
 reward.parent.mkdir(parents=True, exist_ok=True)
 try:
-    spec = importlib.util.spec_from_file_location('harbor_live_verify', '/tests/verify.py')
+    spec = importlib.util.spec_from_file_location('harbor_live_verify', tests / 'verify.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    result = module.verify(pathlib.Path('/app'))
+    result = module.verify(workspace)
     score = float(result.get('reward', 1.0 if result.get('passed') else 0.0))
     if not result.get('passed'):
         score = 0.0

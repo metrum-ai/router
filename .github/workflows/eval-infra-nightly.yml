@@ -149,7 +149,6 @@ jobs:
       - name: Run bounded Harbor live matrix
         env:
           OPENAI_API_KEY: ${{ secrets.COMPAT_MATRIX_OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.COMPAT_MATRIX_ANTHROPIC_API_KEY }}
           HARBOR_E2E_ROOT: ${{ runner.temp }}/harbor-e2e
           HARBOR_CATALOG_TASKS: ${{ runner.temp }}/harbor-e2e/catalog-tasks
           HARBOR_BIN: ${{ runner.temp }}/harbor-venv/bin/harbor
@@ -161,8 +160,8 @@ jobs:
           trap 'rm -f "$HARBOR_E2E_CREDS/provider-secrets.json" "$HARBOR_E2E_CREDS/router-token"' EXIT
           python3 - "$HARBOR_E2E_CREDS/provider-secrets.json" "$RUNNER_TEMP/harbor-budget.json" <<'PY'
           import json, os, pathlib, sys
-          keys = {"openai": os.environ["OPENAI_API_KEY"], "anthropic": os.environ["ANTHROPIC_API_KEY"]}
-          if not all(keys.values()):
+          keys = {"openai": os.environ["OPENAI_API_KEY"]}
+          if not keys["openai"]:
               raise SystemExit("required evaluation credentials are unavailable")
           target = pathlib.Path(sys.argv[1])
           descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
