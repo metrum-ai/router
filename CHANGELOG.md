@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 
+### Security
+
+- Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
+- Reject userinfo in external-policy and detector URLs, including redirect targets.
+
 ### Fixed
 
 - Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.

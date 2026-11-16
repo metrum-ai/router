@@ -56,6 +56,17 @@ func TestEgressPT1DisallowedHostRejected(t *testing.T) {
 	}
 }
 
+func TestEgressRejectsURLUserinfo(t *testing.T) {
+	t.Parallel()
+	u, err := url.Parse("https://user@routing-policy.internal.example/route")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateEgressURL(u, []string{"routing-policy.internal.example"}, false, "external_policy"); err == nil || !strings.Contains(err.Error(), "URL userinfo is not allowed") {
+		t.Fatalf("validateEgressURL() err=%v", err)
+	}
+}
+
 func TestEgressPT3RejectsPrivateDestination(t *testing.T) {
 	t.Parallel()
 	privateIP := net.ParseIP("10.0.0.5")
