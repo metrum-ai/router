@@ -57,8 +57,10 @@ detection exercise.
 A canary model group is a targetless `static` group with an explicit caller
 allowlist. It appears only in those callers' model catalogs, including the
 Codex catalog. Requests receive a canned completion, emit a critical
-`security_canary_group_used` event, and never reach a provider. Configure each
-selected caller's `allow` list to include the group and list that caller under
+`security_canary_group_used` event, and never reach a provider. When the OCSF
+security event stream is enabled, honeytoken and canary use events are also
+written there as Detection Findings. Configure each selected caller's `allow`
+list to include the group and list that caller under
 `models.<name>.canary.callers`.
 
 Use `metrum-ai-routerctl honeytoken report --config router.yaml` to list each

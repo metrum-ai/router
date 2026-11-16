@@ -2920,17 +2920,14 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 }
 
 func (s *Service) recordHoneytokenUse(rc *requestContext) {
-	if rc == nil || rc.caller == nil || rc.caller.cfg.Honeytoken == nil {
+	if s == nil || rc == nil || rc.caller == nil || rc.caller.cfg.Honeytoken == nil {
 		return
 	}
 	if !s.allowHoneytokenEvent(rc.rec.TokenID, "security_honeytoken_used", time.Now().UTC()) {
 		return
 	}
 	s.dispatchBuiltinDetectorEvent(detect.EventHoneytokenUsed, rc.caller.cfg.ID, rc.id, rc.rec.TokenID)
-	if s.usage == nil {
-		return
-	}
-	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
+	event := securityAccessEvent{
 		TS:           time.Now().UTC(),
 		RequestID:    rc.id,
 		EventType:    "security_honeytoken_used",
@@ -2944,7 +2941,11 @@ func (s *Service) recordHoneytokenUse(rc *requestContext) {
 		TokenID:      rc.rec.TokenID,
 		IPAddress:    rc.clientIP.Address,
 		IPVersion:    rc.clientIP.Version,
-	})
+	}
+	s.recordSecurityEventStream(event)
+	if s.usage != nil {
+		s.usage.EmitSecurityAccessEvent(event)
+	}
 }
 
 func (s *Service) recordHoneytokenRequest(caller *callerRuntime, tokenID string, r *http.Request, dialect string) {
@@ -2960,17 +2961,14 @@ func (s *Service) recordHoneytokenRequest(caller *callerRuntime, tokenID string,
 }
 
 func (s *Service) recordCanaryUse(rc *requestContext, group string) {
-	if rc == nil || rc.caller == nil {
+	if s == nil || rc == nil || rc.caller == nil {
 		return
 	}
 	if !s.allowHoneytokenEvent(rc.rec.TokenID, "security_canary_group_used", time.Now().UTC(), group) {
 		return
 	}
 	s.dispatchBuiltinDetectorEvent(detect.EventCanaryGroupUsed, rc.caller.cfg.ID, rc.id, rc.rec.TokenID)
-	if s.usage == nil {
-		return
-	}
-	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
+	event := securityAccessEvent{
 		TS:           time.Now().UTC(),
 		RequestID:    rc.id,
 		EventType:    "security_canary_group_used",
@@ -2985,7 +2983,11 @@ func (s *Service) recordCanaryUse(rc *requestContext, group string) {
 		IPAddress:    rc.clientIP.Address,
 		IPVersion:    rc.clientIP.Version,
 		ModelGroup:   group,
-	})
+	}
+	s.recordSecurityEventStream(event)
+	if s.usage != nil {
+		s.usage.EmitSecurityAccessEvent(event)
+	}
 }
 
 func (s *Service) allowHoneytokenEvent(tokenID, eventType string, now time.Time, group ...string) bool {

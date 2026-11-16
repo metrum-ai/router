@@ -58,6 +58,8 @@ func TestOCSFSecurityEventClassMapping(t *testing.T) {
 		{"provider_spend_breaker_trip", 2004, 2, "Detection Finding", 1},
 		{"provider_spend_breaker_reset", 2004, 2, "Detection Finding", 1},
 		{"honeytoken_use", 2004, 2, "Detection Finding", 1},
+		{"security_honeytoken_used", 2004, 2, "Detection Finding", 1},
+		{"security_canary_group_used", 2004, 2, "Detection Finding", 1},
 		{"containment", 6003, 6, "API Activity", 1},
 		{"api_request", 6003, 6, "API Activity", 1},
 	}
@@ -134,6 +136,8 @@ func TestOCSFSecurityEventsValidateAgainstPinned140Classes(t *testing.T) {
 		{TS: time.Unix(5, 0), RequestID: "activity-1", EventType: "api_request", StatusCode: 200, IPAddress: "192.0.2.1"},
 		{TS: time.Unix(6, 0), RequestID: "approval-1", EventType: "firewall_hold", StatusCode: 200, Outcome: "pending", ReasonCode: "approval_pending:approval_0123456789abcdef0123456789abcdef"},
 		{TS: time.Unix(7, 0), RequestID: "approval-2", EventType: "firewall_block", StatusCode: 200, Outcome: "denied", ReasonCode: "approval_denied:approval_0123456789abcdef0123456789abcdef"},
+		{TS: time.Unix(8, 0), RequestID: "honey-1", EventType: "security_honeytoken_used", CallerID: "caller-1", Outcome: "critical"},
+		{TS: time.Unix(9, 0), RequestID: "canary-1", EventType: "security_canary_group_used", CallerID: "caller-1", Outcome: "critical", ModelGroup: "canary"},
 	} {
 		line, err := marshalOCSFSecurityEvent(source)
 		if err != nil {

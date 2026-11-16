@@ -368,7 +368,7 @@ func ocsfSecurityClass(eventType string) (classUID, categoryUID int, name string
 		return 3001, 3, "Account Change", 5
 	case "caller_released":
 		return 3001, 3, "Account Change", 2
-	case "detector_signal", "security_detector_signal", "security_detector_failure", "dlp_hit", "firewall_block", "firewall_hold", "caller_quota_exhausted", "spend_breaker_trip", "provider_spend_breaker_trip", "provider_spend_breaker_reset", "provider_usage_gap", "provider_usage_failure", "provider_usage_partial", "honeytoken_use", "incident":
+	case "detector_signal", "security_detector_signal", "security_detector_failure", "dlp_hit", "firewall_block", "firewall_hold", "caller_quota_exhausted", "spend_breaker_trip", "provider_spend_breaker_trip", "provider_spend_breaker_reset", "provider_usage_gap", "provider_usage_failure", "provider_usage_partial", "honeytoken_use", "security_honeytoken_used", "security_canary_group_used", "incident":
 		return 2004, 2, "Detection Finding", 1
 	default:
 		return 6003, 6, "API Activity", 1
@@ -380,7 +380,7 @@ func isSecurityStreamEvent(eventType string) bool {
 	case "api_auth_failed", "api_authz_failed", "admin_auth_failed", "admin_authz_failed", "admin_auth_throttled",
 		"caller_suspended", "caller_released", "caller_throttled", "caller_quota_exhausted",
 		"dlp_hit", "firewall_block", "firewall_hold", "security_detector_signal", "security_detector_failure", "authentication",
-		"provider_spend_breaker_trip", "provider_spend_breaker_reset", "provider_usage_gap", "provider_usage_failure", "provider_usage_partial", "provider_usage_reconciled", "honeytoken_use", "incident":
+		"provider_spend_breaker_trip", "provider_spend_breaker_reset", "provider_usage_gap", "provider_usage_failure", "provider_usage_partial", "provider_usage_reconciled", "honeytoken_use", "security_honeytoken_used", "security_canary_group_used", "incident":
 		return true
 	default:
 		return false
