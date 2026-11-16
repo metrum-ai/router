@@ -39,6 +39,79 @@ func TestLoadEnvJSONSetsMissingValuesOnly(t *testing.T) {
 	}
 }
 
+func TestDirectModelTargetInheritsCapabilitiesOnly(t *testing.T) {
+	price := 0.25
+	catalog := ProviderModel{
+		Model:                    "shared-model",
+		Dialect:                  "openai-chat",
+		RPM:                      900,
+		Tier:                     "catalog-tier",
+		Cost:                     99,
+		InputPricePerMillionUSD:  100,
+		OutputPricePerMillionUSD: 200,
+		ToolSupport:              ToolSupport{OpenAIChat: []string{"function"}},
+		Reasoning:                ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum},
+		InputModalities:          []string{"text"},
+	}
+	cfg := Config{Provider: map[string]ProviderConfig{
+		"openai": {Dialect: "openai-chat", Models: map[string]ProviderModel{"catalog-key": catalog}},
+	}}
+	target := Target{
+		Provider:                 "openai",
+		Model:                    "shared-model",
+		Dialect:                  "openai-chat",
+		RPM:                      17,
+		Tier:                     "explicit-tier",
+		Cost:                     3,
+		InputPricePerMillionUSD:  price,
+		OutputPricePerMillionUSD: 0.5,
+	}
+	got, err := cfg.resolveTarget("test", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Dialect != target.Dialect || got.RPM != target.RPM || got.Tier != target.Tier || got.Cost != target.Cost ||
+		got.InputPricePerMillionUSD != target.InputPricePerMillionUSD || got.OutputPricePerMillionUSD != target.OutputPricePerMillionUSD {
+		t.Fatalf("direct target inherited non-capability catalog metadata: got %#v, want dialect/pricing/routing from %#v", got, target)
+	}
+	if !got.Reasoning.Supported || got.Reasoning.Control != reasoningControlEffortEnum || !supportsAnyCapability(got.ToolSupport.OpenAIChat, "function") {
+		t.Fatalf("direct target did not inherit catalog capabilities: %#v", got)
+	}
+	if len(got.InputModalities) != 1 || got.InputModalities[0] != "text" {
+		t.Fatalf("input modalities=%v, want inherited text capability", got.InputModalities)
+	}
+}
+
+func TestProviderModelByIDPrefersTargetDialectAndAvoidsAmbiguousFallback(t *testing.T) {
+	models := map[string]ProviderModel{
+		"chat-entry": {
+			Model:     "shared-model",
+			Dialect:   "openai-chat",
+			Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum},
+		},
+		"responses-entry": {
+			Model:       "shared-model",
+			Dialect:     "openai-responses",
+			ToolSupport: ToolSupport{OpenAIResponses: []string{"function"}},
+		},
+	}
+
+	got, ok := providerModelByID(models, "shared-model", "openai-chat", "openai-responses")
+	if !ok || !got.Reasoning.Supported || len(got.ToolSupport.OpenAIResponses) != 0 {
+		t.Fatalf("chat lookup=%#v, %t; wanted only matching openai-chat catalog entry", got, ok)
+	}
+	got, ok = providerModelByID(models, "shared-model", "anthropic", "")
+	if ok || got.Reasoning.Supported || len(got.ToolSupport.OpenAIResponses) != 0 {
+		t.Fatalf("mismatched ambiguous lookup=%#v, %t; want no inherited capabilities", got, ok)
+	}
+
+	unique := map[string]ProviderModel{"only": models["responses-entry"]}
+	got, ok = providerModelByID(unique, "shared-model", "openai-chat", "")
+	if !ok || len(got.ToolSupport.OpenAIResponses) != 1 {
+		t.Fatalf("unique fallback=%#v, %t; want sole catalog entry", got, ok)
+	}
+}
+
 func TestUsageDBMigrationPolicyValidation(t *testing.T) {
 	cfg := minimalConfig(t)
 	cfg.Server.UsageDB.MigrationPolicy = "not-a-policy"
@@ -91,6 +164,32 @@ func TestV4StoredScriptFieldsWithZeroValuesLoad(t *testing.T) {
 	}
 	if loaded.Models["default"].Strategy != "static" {
 		t.Fatalf("strategy = %q", loaded.Models["default"].Strategy)
+	}
+}
+
+func TestLoadConfigRejectsInvalidMCPCredentialEnv(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.MCP = MCPGatewayConfig{
+		Enabled: true,
+		RPM:     60,
+		Servers: []MCPServerConfig{{
+			Name:          "local",
+			URL:           "http://127.0.0.1:8080/mcp",
+			AllowHosts:    []string{"127.0.0.1"},
+			AllowHTTP:     true,
+			CredentialEnv: "MCP_LOCAL_TOKEN",
+		}},
+	}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), "credential_env must use the ROUTER_MCP_ prefix") {
+		t.Fatalf("LoadConfig error = %v, want invalid MCP credential prefix", err)
 	}
 }
 
@@ -155,6 +254,70 @@ func TestEveryDispatchedModelStrategyPassesValidation(t *testing.T) {
 				t.Fatalf("Config.Validate rejected dispatched strategy %q: %v", strategy, err)
 			}
 		})
+	}
+}
+
+func TestV5AdminConfigMigration(t *testing.T) {
+	for _, key := range []string{"legacy_routes_on_serving_port", "legacy_sunset"} {
+		t.Run(key, func(t *testing.T) {
+			_, err := validateV5AdminConfig([]byte("admin:\n  " + key + ": true\n"))
+			if err == nil || !strings.Contains(err.Error(), "removed in v5.0.0") || !strings.Contains(err.Error(), "/admin/v1") {
+				t.Fatalf("legacy setting error = %v, want migration guidance", err)
+			}
+		})
+	}
+	base, err := os.ReadFile(filepath.Join("..", "..", "config.minimal.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, base, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig without admin block: %v", err)
+	}
+	if !cfg.Admin.Enabled || cfg.Admin.Listen != defaultAdminListenAddr {
+		t.Fatalf("omitted admin block defaults = enabled:%t listen:%q", cfg.Admin.Enabled, cfg.Admin.Listen)
+	}
+	defaults := Config{}
+	defaults.setDefaults()
+	if !defaults.Admin.Enabled || defaults.Admin.Listen != defaultAdminListenAddr {
+		t.Fatalf("setDefaults admin defaults = enabled:%t listen:%q", defaults.Admin.Enabled, defaults.Admin.Listen)
+	}
+	explicitDisabled := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(explicitDisabled, append(append([]byte(nil), base...), []byte("\nadmin:\n  enabled: false\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := LoadConfig(explicitDisabled)
+	if err != nil {
+		t.Fatalf("LoadConfig with admin.enabled false: %v", err)
+	}
+	if disabled.Admin.Enabled {
+		t.Fatal("explicit admin.enabled false was overridden by defaults")
+	}
+	for _, key := range []string{"legacy_routes_on_serving_port", "legacy_sunset"} {
+		t.Run("load rejects "+key, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			raw := append(append([]byte(nil), base...), []byte("\nadmin:\n  "+key+": true\n")...)
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadConfig(path)
+			if err == nil || !strings.Contains(err.Error(), "removed in v5.0.0") || !strings.Contains(err.Error(), "/admin/v1") || !strings.Contains(err.Error(), "metrum-ai-router-migrate --scope router-config --action apply") {
+				t.Fatalf("LoadConfig error = %v, want migration guidance", err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		yaml string
+		want bool
+	}{{"admin:\n  enabled: false\n", true}, {"admin:\n  listen: 127.0.0.1:8081\n", false}, {"server:\n  listen: :8080\n", false}} {
+		got, err := validateV5AdminConfig([]byte(tc.yaml))
+		if err != nil || got != tc.want {
+			t.Fatalf("validateV5AdminConfig(%q) = %t, %v; want %t", tc.yaml, got, err, tc.want)
+		}
 	}
 }
 
@@ -597,6 +760,45 @@ func TestModelGroupContractValidation(t *testing.T) {
 				t.Fatalf("Validate() error=%v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestKeyHygieneConfigEnforcement(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.Security.KeyHygiene = KeyHygieneConfig{MinEntropyBits: 0}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("zero entropy floor should select the default: %v", err)
+	}
+	for _, invalidFloor := range []int{-1, 257} {
+		cfg.Security.KeyHygiene.MinEntropyBits = invalidFloor
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "0 (default) or between 1 and 256") {
+			t.Fatalf("min_entropy_bits=%d error=%v", invalidFloor, err)
+		}
+	}
+	cfg.Security.KeyHygiene = KeyHygieneConfig{MinEntropyBits: 128, Enforce: true}
+	cfg.Callers[0].Environment = "prod"
+	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_prod_key1"
+	cfg.Callers[0].TokenFormatVersion = 2
+	cfg.Callers[0].TokenEntropyBits = 256
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("strong production key rejected: %v", err)
+	}
+	cfg.Callers[0].TokenFormatVersion = 1
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "token_format_version must be 2 when set") {
+		t.Fatalf("version 1 error=%v, want the documented version-2 error", err)
+	}
+	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_prod_key1"
+	cfg.Callers[0].TokenFormatVersion = 0
+	cfg.Callers[0].TokenEntropyBits = 0
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "token entropy") {
+		t.Fatalf("weak/unknown entropy error=%v", err)
+	}
+	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_dev_key1"
+	cfg.Callers[0].TokenFormatVersion = 2
+	cfg.Callers[0].TokenEntropyBits = 256
+	cfg.Callers[0].Environment = "dev"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "development environment") {
+		t.Fatalf("development key error=%v", err)
 	}
 }
 

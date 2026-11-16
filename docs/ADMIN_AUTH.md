@@ -40,6 +40,13 @@ access automatically. `routerctl contain --caller-id ID --reason edr-alert
 [--ttl 4h]` and `routerctl release --caller-id ID --reason resumed` use the same
 endpoint.
 
+The authenticated reports console exposes only containment (suspension), through
+its same-origin reports API, with a CSRF token and an audit reason. Release remains
+an admin-control-plane operation; when a caller is suspended by containment, the
+console shows `routerctl release --caller-id ID --reason REASON` and the
+`POST /admin/v1/containment` request shape. The CSV export route also accepts
+`format=json` with `request_id` to download one incident as a JSON evidence bundle.
+
 The signed webhook requires `admin.enabled: true` and
 `server.config_source.mode: database`. SOAR/EDR systems can post a `suspend` request to
 `POST /admin/v1/containment/webhook` when `server.containment_webhook.enabled`

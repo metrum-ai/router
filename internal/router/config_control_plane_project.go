@@ -558,19 +558,22 @@ func projectControlPlaneCallers(tx *gorm.DB, configSetID string, cfg *Config) er
 	sort.Slice(callers, func(i, j int) bool { return callers[i].ID < callers[j].ID })
 	for _, caller := range callers {
 		row := map[string]any{
-			"config_set_id": configSetID,
-			"caller_id":     caller.ID,
-			"owner_user":    caller.OwnerUser,
-			"project":       caller.Project,
-			"environment":   caller.Environment,
-			"status":        caller.Status,
-			"token_sha256":  storedCallerTokenVerifier(caller),
-			"token_id":      caller.TokenID,
-			"metrics_admin": caller.MetricsAdmin,
-			"content_admin": caller.ContentAdmin,
-			"rpm":           caller.Rate.RPM,
-			"tpm":           caller.Rate.TPM,
-			"concurrent":    caller.Rate.Concurrent,
+			"config_set_id":        configSetID,
+			"caller_id":            caller.ID,
+			"owner_user":           caller.OwnerUser,
+			"project":              caller.Project,
+			"environment":          caller.Environment,
+			"status":               caller.Status,
+			"token_sha256":         storedCallerTokenVerifier(caller),
+			"token_id":             caller.TokenID,
+			"token_format_version": caller.TokenFormatVersion,
+			"token_entropy_bits":   caller.TokenEntropyBits,
+			"revoked_token_hash":   caller.RevokedTokenHash,
+			"metrics_admin":        caller.MetricsAdmin,
+			"content_admin":        caller.ContentAdmin,
+			"rpm":                  caller.Rate.RPM,
+			"tpm":                  caller.Rate.TPM,
+			"concurrent":           caller.Rate.Concurrent,
 		}
 		if err := tx.Table("router_config_callers").Create(row).Error; err != nil {
 			return fmt.Errorf("insert caller %q: %w", caller.ID, err)

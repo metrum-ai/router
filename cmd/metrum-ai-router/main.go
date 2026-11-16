@@ -45,7 +45,8 @@ func main() {
 	defer svc.Close()
 
 	// The admin control plane gets its own listener, deadlines and drain
-	// (#809). It is opt-in, so a v4.7 configuration starts exactly one server.
+	// (#809). It starts on loopback by default; set admin.enabled: false to keep
+	// only the serving listener.
 	adminPlane, err := startAdminPlane(cfg, svc, *adminListen)
 	if err != nil {
 		log.Fatalf("admin plane: %v", err)
@@ -69,7 +70,10 @@ func main() {
 			log.Fatalf("tls: %v", err)
 		}
 		go manager.Run(tlsCtx)
-		srv.TLSConfig = manager.TLSConfig()
+		srv.TLSConfig, err = router.ServingTLSConfig(manager.TLSConfig(), cfg.Server.TLS)
+		if err != nil {
+			log.Fatalf("tls: %v", err)
+		}
 		go func() {
 			log.Printf("Metrum AI Router listening on %s (TLS)", cfg.Server.Listen)
 			errs <- srv.ListenAndServeTLS("", "")

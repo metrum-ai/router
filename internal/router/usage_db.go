@@ -255,6 +255,7 @@ type SecurityReportOptions struct {
 	TokenID           string
 	AdminSubject      string
 	Client            string
+	RequestID         string
 }
 
 type securityTrendBucketRecord struct {
@@ -393,6 +394,9 @@ type securityAccessEvent struct {
 	StatusCode          int
 	Outcome             string
 	ReasonCode          string
+	Object              string
+	Action              string
+	OperationID         string
 	AuthSubject         string
 	AuthSource          string
 	CallerID            string
@@ -2584,6 +2588,7 @@ var usageRelationalTables = []string{
 	"authz_role_links",
 	"authz_policy_audit_events",
 	"security_access_events",
+	securityPostureReportTable,
 	"usage_rollup_runs",
 	"usage_rollup_hourly",
 	"usage_rollup_daily",
@@ -3617,6 +3622,9 @@ func securityAccessRecordFromEvent(event securityAccessEvent) *securityAccessEve
 		StatusCode:          event.StatusCode,
 		Outcome:             event.Outcome,
 		ReasonCode:          event.ReasonCode,
+		Object:              event.Object,
+		Action:              event.Action,
+		OperationID:         event.OperationID,
 		AuthSubject:         event.AuthSubject,
 		AuthSource:          event.AuthSource,
 		CallerID:            event.CallerID,
@@ -3660,6 +3668,9 @@ func securityAccessEventFromRecord(record securityAccessEventRecord) (securityAc
 		StatusCode:          record.StatusCode,
 		Outcome:             record.Outcome,
 		ReasonCode:          record.ReasonCode,
+		Object:              record.Object,
+		Action:              record.Action,
+		OperationID:         record.OperationID,
 		AuthSubject:         record.AuthSubject,
 		AuthSource:          record.AuthSource,
 		CallerID:            record.CallerID,
@@ -4107,7 +4118,10 @@ func retentionTablesForClass(dataClass string) []retentionTableSpec {
 			{DataClass: retentionDataClassDecisionTelemetry, TableName: "request_cache_reasons", TSColumn: "ts", UseRequestUsageTS: true},
 		}
 	case retentionDataClassSecurityAccess:
-		return []retentionTableSpec{{DataClass: retentionDataClassSecurityAccess, TableName: "security_access_events", TSColumn: "ts"}}
+		return []retentionTableSpec{
+			{DataClass: retentionDataClassSecurityAccess, TableName: "security_access_events", TSColumn: "ts"},
+			{DataClass: retentionDataClassSecurityAccess, TableName: mcpToolAuditTable, TSColumn: "ts"},
+		}
 	case retentionDataClassContentCapture:
 		return []retentionTableSpec{{DataClass: retentionDataClassContentCapture, TableName: "request_content_captures", TSColumn: "ts"}}
 	case retentionDataClassUsageDetail:
@@ -7749,6 +7763,16 @@ func (s *usageStore) EmitSecurityAccessEvent(event securityAccessEvent) {
 	_ = s.db.Create(securityAccessRecordFromEvent(event)).Error
 }
 
+func (s *usageStore) RecordSecurityAccessEvent(event securityAccessEvent) error {
+	if s == nil || s.db == nil {
+		return errors.New("security access event store unavailable")
+	}
+	if event.TS.IsZero() {
+		event.TS = time.Now().UTC()
+	}
+	return s.db.Create(securityAccessRecordFromEvent(event)).Error
+}
+
 func (s *usageStore) PurgeSecurityAccessEventsBefore(cutoff time.Time) {
 	if s == nil || s.db == nil || cutoff.IsZero() {
 		return
@@ -7821,6 +7845,9 @@ func (s *usageStore) adminSecurityTrendBucketsSQL(opts SecurityReportOptions) ([
 
 func (s *usageStore) securityAccessEventsQuery(opts SecurityReportOptions) *gorm.DB {
 	q := s.db.Model(&securityAccessEventRecord{}).Where("ts >= ? AND ts < ?", formatUsageTime(opts.From), formatUsageTime(opts.To))
+	if opts.RequestID != "" {
+		q = q.Where("request_id = ?", opts.RequestID)
+	}
 	if opts.Outcome != "" {
 		q = q.Where("outcome = ?", opts.Outcome)
 	}

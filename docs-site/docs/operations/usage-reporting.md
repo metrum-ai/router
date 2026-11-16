@@ -386,14 +386,14 @@ Governed content capture is separate from diagnostics. It is disabled by default
 
 ### Governed training export
 
-`POST /admin/training/outcomes/{request_id}` attaches versioned harness feedback
+`POST /admin/v1/training/outcomes/{request_id}` on the authenticated admin listener attaches versioned harness feedback
 only to an existing complete encrypted/unexpired captured request. It requires
 deployment-wide admin `content:training` action `label`; ordinary callers cannot
 assert training success. `router-outcome-v1` records deterministic task success,
 tool-call schema validity, quality [0,1], task hash and allowlisted mock-backend
 checker fixture. HTTP 200 alone is never a success label.
 
-`POST /admin/training/export` requires deployment-wide admin `content:training`
+`POST /admin/v1/training/export` on the authenticated admin listener requires deployment-wide admin `content:training`
 action `export`, JSON content type, same-origin browser access and enabled
 security reporting. A security-event row must commit before content leaves;
 audit failure refuses access. Filter by public `token_id`, `project`, `client`,

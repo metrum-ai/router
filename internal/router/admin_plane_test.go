@@ -320,6 +320,69 @@ func TestAdminSecurityHeadersAndCORS(t *testing.T) {
 	}
 }
 
+func TestFreshConfigWithoutAdminBlockStartsDefaultListenerAndRequiresAuth(t *testing.T) {
+	base, err := os.ReadFile(filepath.Join("..", "..", "config.minimal.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, base, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Admin.Enabled || cfg.Admin.Listen != defaultAdminListenAddr {
+		t.Fatalf("omitted admin block defaults = enabled:%t listen:%q", cfg.Admin.Enabled, cfg.Admin.Listen)
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer svc.Close()
+	plane, err := NewAdminPlane(&cfg.Admin, svc.AdminHandler())
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if err := plane.Start(); err != nil {
+		t.Fatalf("Start admin listener on default address: %v", err)
+	}
+	if plane.Addr() != defaultAdminListenAddr {
+		t.Fatalf("admin listener address = %q, want %q", plane.Addr(), defaultAdminListenAddr)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = plane.Shutdown(ctx)
+	}()
+	resp, err := http.Get("http://" + plane.Addr() + "/admin/v1/config/status")
+	if err != nil {
+		t.Fatalf("GET unauthenticated admin route: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("unauthenticated admin request = %d, want 401 (body %q)", resp.StatusCode, body)
+	}
+}
+
+func TestAdminListenerBindErrorExplainsReplicaAddresses(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	cfg := AdminPlaneConfig{Enabled: true, Listen: occupied.Addr().String()}
+	plane, err := NewAdminPlane(&cfg, http.NotFoundHandler())
+	if err != nil {
+		t.Fatalf("NewAdminPlane: %v", err)
+	}
+	if err := plane.Start(); err == nil || !strings.Contains(err.Error(), "unique admin.listen addresses") || !strings.Contains(err.Error(), defaultAdminListenAddr) {
+		t.Fatalf("bind error = %v, want replica address guidance", err)
+	}
+}
+
 // ACP-N06: browser credentials are rejected before any handler runs.
 func TestAdminRejectsBrowserCredentials(t *testing.T) {
 	fixture := newAdminTestFixture(t, nil)
@@ -469,8 +532,7 @@ func TestAdminPlaintextNonLoopbackRefusedAtStartup(t *testing.T) {
 	}
 	// The same policy holds for a direct plane construction, so a caller that
 	// bypasses config loading still cannot open the plane.
-	enabled := true
-	direct := AdminPlaneConfig{Enabled: true, Listen: "0.0.0.0:0", LegacyRoutesOnServingPort: &enabled, TLS: AdminTLSConfig{
+	direct := AdminPlaneConfig{Enabled: true, Listen: "0.0.0.0:0", TLS: AdminTLSConfig{
 		ListenerTLSConfig: ListenerTLSConfig{Mode: adminTLSModeOff},
 	}}
 	if _, err := NewAdminPlane(&direct, http.NotFoundHandler()); err == nil {

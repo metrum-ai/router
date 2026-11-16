@@ -118,6 +118,8 @@ def assert_make_tiers() -> None:
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
     require("scripts/release_provenance_test.py" in fast, "test-fast dropped the release provenance contract")
+    require("release_image_layer_test.py" in fast and "release_image_binary_test.py" in fast,
+            "test-fast dropped release image reproducibility and byte-identity tests")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")
@@ -262,7 +264,8 @@ def assert_hierarchy_release_gate() -> None:
     release = jobs(read(WORKFLOWS / "release.yml"))
     require("uses: ./.github/workflows/hierarchy-matrix.yml" in release.get("hierarchy-matrix", ""),
             "release workflow no longer calls the hierarchy matrix")
-    require("needs: hierarchy-matrix" in release.get("package", ""),
+    require("needs: hierarchy-matrix" in release.get("resolve", "")
+            and "needs: resolve" in release.get("package-binaries", ""),
             "release packaging must depend on the hierarchy matrix")
     compat = read(WORKFLOWS / "release-compat.yml")
     require("agent-chain-mock" not in compat,
@@ -298,7 +301,8 @@ def assert_arc_runners() -> None:
         for name, body in jobs(text).items():
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
                     (path.name in ("agent-chain-nightly.yml", "hierarchy-matrix.yml") and
-                     name in ("codex-chain-sandbox", "codex-chain"))):
+                     name in ("codex-chain-sandbox", "codex-chain")) or
+                    (path.name == "release-dry-run.yml" and name == "hierarchy-codex-chain")):
                 # Codex needs unprivileged namespaces absent from ARC. These VM
                 # jobs are credential-free and execute only local mock fixtures.
                 require(re.search(r"(?m)^    runs-on: ubuntu-22\.04$", body) is not None,
@@ -324,9 +328,19 @@ def assert_arc_runners() -> None:
             require(pinned or configurable,
                     f"{path.name}/{name} must use {runner} or the {variable} variable")
         if "cache: false" in text:
-            require(path.name == "ci.yml" and "actions/cache/restore@" in text
-                    and "actions/cache/save@" in text,
-                    f"{path.name} must use explicit Actions caches, not warm host caches")
+            if path.name == "release.yml":
+                rebuild = jobs(text).get("reproducible-build", "")
+                require("cache: false" in rebuild and "make package" in rebuild
+                        and "compare_release_checksums.py" in rebuild,
+                        "the clean release rebuild must disable Go cache reuse and compare checksums")
+            elif path.name == "release-dry-run.yml":
+                require("workflow_dispatch:" in text and "ref: main" in text
+                        and "uses: actions/cache/" not in text,
+                        "release dry run must check out main and avoid shared caches")
+            else:
+                require(path.name == "ci.yml" and "actions/cache/restore@" in text
+                        and "actions/cache/save@" in text,
+                        f"{path.name} must use explicit Actions caches, not warm host caches")
         require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
 
 
@@ -370,11 +384,16 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "tls-acme", "admin-authz-advisories", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "k8s-security", "parallel-tools", "tls-acme", "admin-authz-advisories", "engine-advisory-gate", "ci"}, "fanout lane inventory drifted")
     advisory = lanes["admin-authz-advisories"]
     require("runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}" in advisory
             and "GOMAXPROCS: '2'" in advisory and "GOMEMLIMIT: 8GiB" in advisory,
             "advisory source scan must use bounded Go runtime on the heavy class")
+    engine_gate = lanes["engine-advisory-gate"]
+    for marker in ("name: inference-engine-advisory-gate", "scripts/engine_advisory_gate_test.py",
+                   "scripts/engine_advisory_gate.py --check", "GITHUB_TOKEN: ${{ github.token }}",
+                   "--require-hashes", "--hash=sha256:"):
+        require(marker in engine_gate, f"required inference-engine advisory gate lost {marker}")
     require("push:\n    branches: [main]" in text and "if: github.event_name == 'push'" in lanes["warm"],
             "main-only cache warmer missing")
     require("fail-fast: false" in lanes["router"] and "--shard-count 6" in lanes["router"]
@@ -455,7 +474,7 @@ def assert_consolidated_ci() -> None:
             "rendered-manifest security scan must gate every PR and merge group")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate]" in aggregate, "required ci aggregator drifted")
     parallel = lanes["parallel-tools"]
     require("if: github.event_name != 'push'" in parallel
             and "go test ./internal/stream -run '^TestParallelThreeStreamTranslations$'" in parallel
@@ -464,12 +483,12 @@ def assert_consolidated_ci() -> None:
             "parallel tool-call fixtures must run on every PR and merge group")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT", "ADVISORY_RESULT")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT", "ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
     for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
         expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
                          and event != "push" or n == "WARM_RESULT" and event == "push"
                          or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
-                         or n == "ADVISORY_RESULT"
+                         or n in ("ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
                          else "skipped") for n in names}
         for name in names:
             for result in ("success", "failure", "cancelled", "skipped"):
@@ -489,6 +508,14 @@ def main() -> int:
     assert_provider_workflows()
     assert_agent_chain_workflow()
     assert_hierarchy_release_gate()
+    release = read(WORKFLOWS / "release.yml")
+    require("environment: release" in release, "release image publication must be protected by the release environment")
+    require("ROUTER_DOCKER_RUNNER" not in release and "docker-runner-preflight" not in release,
+            "release image publication must not require a Docker runner")
+    require("index append" in release and "mutate \"$base\" --append \"$layer\"" in release and "release_image_layer.py" in release,
+            "release images must be assembled daemonlessly from binary packages")
+    require("packages: write" in release and "cosign sign --yes" in release,
+            "protected release job must push and sign OCI images")
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")

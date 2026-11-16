@@ -12,8 +12,8 @@ import (
 )
 
 // startAdminPlane builds and starts the admin control-plane listener (#809).
-// It returns (nil, nil) when the plane is disabled, which keeps v4.7
-// configurations unchanged: no second listener and no new failure mode.
+// It returns (nil, nil) when the plane is explicitly disabled. Configurations
+// that omit the admin block start the loopback listener by default.
 func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride string) (*router.AdminPlane, error) {
 	if cfg == nil || !cfg.Admin.Enabled {
 		return nil, nil

@@ -189,16 +189,6 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 			wantErr: "userinfo",
 		},
 		{
-			name:    "legacy sunset before the 90-day floor",
-			mutate:  func(cfg *AdminPlaneConfig) { cfg.LegacySunset = "2026-12-01T00:00:00Z" },
-			wantErr: "on or after",
-		},
-		{
-			name:    "legacy sunset not a timestamp",
-			mutate:  func(cfg *AdminPlaneConfig) { cfg.LegacySunset = "next year" },
-			wantErr: "RFC3339",
-		},
-		{
 			name:    "negative body limit",
 			mutate:  func(cfg *AdminPlaneConfig) { cfg.Limits.MaxBodyBytes = -1 },
 			wantErr: "max_body_bytes",
@@ -252,9 +242,6 @@ func TestAdminDisabledPlaneRules(t *testing.T) {
 	if disabled.metricsOnServingPort() != true {
 		t.Fatal("disabled plane moved /metrics off the serving port")
 	}
-	if !disabled.legacyRoutesEnabled() {
-		t.Fatal("disabled plane changed the legacy-route surface")
-	}
 	if err := validateAdminPlane(&AdminPlaneConfig{Listen: "127.0.0.1:8081"}); err != nil {
 		t.Fatalf("disabled block with listener entries = %v, want only a warning", err)
 	}
@@ -289,15 +276,13 @@ func TestAdminMetricsStayOnServingPortUntilAdminServesIt(t *testing.T) {
 	}
 }
 
-// An absent admin block is exactly v4.7: no listener, v4.7 route surface.
-func TestAdminAbsentBlockKeepsV47Surface(t *testing.T) {
+// Programmatic configs without an admin block use the same v5 loopback
+// default as file configs.
+func TestAdminAbsentBlockProgrammaticDefaults(t *testing.T) {
 	cfg := minimalConfig(t)
 	cfg.setDefaults()
-	if cfg.Admin.Enabled || cfg.Admin.Listen != "" {
-		t.Fatalf("absent admin block produced an enabled plane: %#v", cfg.Admin)
-	}
-	if !cfg.Admin.metricsOnServingPort() || !cfg.Admin.legacyRoutesEnabled() {
-		t.Fatal("absent admin block changed the v4.7 surface")
+	if !cfg.Admin.Enabled || cfg.Admin.Listen != defaultAdminListenAddr {
+		t.Fatalf("absent admin block defaults = enabled:%t listen:%q", cfg.Admin.Enabled, cfg.Admin.Listen)
 	}
 }
 
@@ -348,12 +333,10 @@ func TestAdminPlaintextOverrideWarns(t *testing.T) {
 	log.SetOutput(&buf)
 	t.Cleanup(func() { log.SetOutput(previous) })
 
-	enabled := true
 	cfg := AdminPlaneConfig{
 		Enabled:                   true,
 		Listen:                    "0.0.0.0:0",
 		AllowPlaintextNonLoopback: true,
-		LegacyRoutesOnServingPort: &enabled,
 		TLS:                       AdminTLSConfig{ListenerTLSConfig: ListenerTLSConfig{Mode: adminTLSModeOff}},
 	}
 	plane, err := NewAdminPlane(&cfg, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))

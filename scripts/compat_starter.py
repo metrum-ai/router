@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 
-from compat_mock import ROOT, TESTERS, build_tester, port, wait_listening, wait_ready
+from compat_mock import ROOT, TESTERS, build_tester, disable_admin_plane, port, wait_listening, wait_ready
 from compat_results import compare
 
 # models_get and chat_completions_stream are covered by the full compatibility
@@ -24,6 +24,7 @@ SUITES = [
 
 def main():
     processes = []
+    router_log = None
     with tempfile.TemporaryDirectory(prefix='router-starter-compat-') as directory:
         work = Path(directory)
         try:
@@ -46,13 +47,22 @@ def main():
                 '--smartrouterctl', str(routerctl), '--upstream-base-url',
                 f'http://127.0.0.1:{mock_port}/v1',
             ], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+            config_path = starter / 'config.yaml'
+            config_path.write_text(disable_admin_plane(config_path.read_text()))
             env = os.environ.copy()
             env['OPENAI_API_KEY'] = 'starter-loopback-mock'
+            router_log = open(work / 'router.log', 'w+', encoding='utf-8')
             processes.append(subprocess.Popen([
-                str(router), '--config', str(starter / 'config.yaml'),
+                str(router), '--config', str(config_path),
                 '--listen', f'127.0.0.1:{router_port}',
-            ], cwd=work, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-            wait_ready(f'http://127.0.0.1:{router_port}/readyz', processes[-1])
+            ], cwd=work, env=env, stdout=router_log, stderr=router_log))
+            try:
+                wait_ready(f'http://127.0.0.1:{router_port}/readyz', processes[-1])
+            except Exception:
+                router_log.flush()
+                router_log.seek(0)
+                print(router_log.read(), file=sys.stderr)
+                raise
             env.update({
                 'OPENAI_BASE_URL': f'http://127.0.0.1:{router_port}/v1',
                 'OPENAI_API_KEY': (starter / 'router.token').read_text().strip(),
@@ -78,6 +88,8 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+            if router_log is not None:
+                router_log.close()
 
 
 if __name__ == '__main__':

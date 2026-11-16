@@ -23,11 +23,26 @@ func TestV47AuthorizationFixtureMatrix(t *testing.T) {
 	type row struct{ Fixture, Credential, Domain, Mode, Decisions string }
 	permissions := make([]string, 0, len(knownAdminKeyPermissions))
 	for permission := range knownAdminKeyPermissions {
-		// This permission was added in v5 and is outside the frozen v4.7 oracle.
-		if permission == "admin:containment:contain" {
+		// These permissions were added after v4.7 and are outside its frozen oracle.
+		switch permission {
+		case "admin:containment:contain",
+			"admin:providers:read", "admin:providers:write", "admin:catalog:read",
+			"admin:projects:read", "admin:projects:write",
+			"admin:memberships:read", "admin:memberships:write",
+			"admin:quotas:read", "admin:quotas:write",
+			"admin:budgets:read", "admin:budgets:write",
+			"admin:retention:write", "admin:retention:force":
 			continue
 		}
 		permissions = append(permissions, permission)
+	}
+	// This report permission was added after v4.7 and is outside its frozen oracle.
+	for i := 0; i < len(permissions); {
+		if permissions[i] == "admin:security_reports:write" {
+			permissions = append(permissions[:i], permissions[i+1:]...)
+			continue
+		}
+		i++
 	}
 	sort.Strings(permissions)
 	var rows []row

@@ -9,9 +9,10 @@ package router
 // configuration errors are reported by the existing Validate path (and the
 // existing secret redaction covers the referenced credentials).
 //
-// The listener lane (#809) owns the tls block vocabulary: mode off|router|proxy,
-// cert_file/key_file and, for the admin listener, the client-authentication
-// keys. This lane adds the certificate source inside router mode:
+// The listener lane (#809) owns the shared tls block vocabulary: mode
+// off|router, cert_file/key_file, client_auth and client_ca_file. The admin
+// listener also supports proxy mode and trusted_proxy_cidrs. This lane adds
+// the certificate source inside router mode:
 // certificate_source files|acme plus the acme sub-block. ListenerTLSConfig is
 // the shared type; admin.tls embeds it with yaml:",inline" and adds proxy mode
 // and its client keys around it.
@@ -25,9 +26,37 @@ import (
 	"github.com/metrum-ai/router/internal/tlsacme"
 )
 
+type ServerTLSConfig struct {
+	ListenerTLSConfig `yaml:",inline"`
+	ClientAuth        string `yaml:"client_auth,omitempty" json:"clientAuth,omitempty"`
+	ClientCAFile      string `yaml:"client_ca_file,omitempty" json:"clientCaFile,omitempty"`
+}
+
+func validateServerTLS(cfg ServerTLSConfig) error {
+	if err := ValidateListenerTLS(cfg.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls"); err != nil {
+		return err
+	}
+	switch strings.TrimSpace(cfg.ClientAuth) {
+	case "", "none":
+		if cfg.ClientCAFile != "" {
+			return fmt.Errorf("server.tls.client_ca_file needs client_auth optional or require")
+		}
+	case "optional", "require":
+		if cfg.ClientCAFile == "" {
+			return fmt.Errorf("server.tls.client_ca_file is required when client_auth verifies client certificates")
+		}
+		if strings.TrimSpace(cfg.Mode) != tlsacme.ModeRouter {
+			return fmt.Errorf("server.tls.client_auth %s needs mode router", strings.TrimSpace(cfg.ClientAuth))
+		}
+	default:
+		return fmt.Errorf("server.tls.client_auth must be none, optional or require")
+	}
+	return nil
+}
+
 // ListenerTLSConfig is the certificate part of a listener's tls block.
 //
-// server.tls uses it directly. admin.tls (#809) embeds it inline and adds
+// The server.tls block uses this type directly. admin.tls (#809) embeds it inline and adds
 // proxy mode, client_ca_file, client_auth and trusted_proxy_cidrs, then calls
 // ValidateListenerTLS and NewListenerTLSManager with ListenerAdmin and
 // "admin.tls".

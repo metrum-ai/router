@@ -1,6 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+SOURCE_DATE_EPOCH ?= $(shell git show -s --format=%ct HEAD 2>/dev/null || date -u +%s)
 LDFLAGS ?= -X github.com/metrum-ai/router/internal/buildinfo.Version=$(VERSION) -X github.com/metrum-ai/router/internal/buildinfo.Commit=$(COMMIT) -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$(BUILD_DATE)
 DIST_DIR ?= dist
 PKG_NAME ?= metrum-ai-router
@@ -95,7 +96,7 @@ EKS_MFA_KEYCHAIN_SERVICE ?=
 EKS_MFA_KEYCHAIN_ACCOUNT ?= smartrouter
 EKS_SESSION_DURATION ?= 3600
 COPYFILE_DISABLE ?= 1
-export VERSION COMMIT BUILD_DATE DIST_DIR PKG_NAME GOOS GOARCH IMAGE_NAME IMAGE_TAG PYTHON AWS_REGION EKS_CLUSTER K8S_NAMESPACE KUSTOMIZE_OVERLAY ENVIRONMENT EKS_AWS_PROFILE EKS_ACCOUNT_ID EKS_REGION EKS_NAMESPACE EKS_LINKERD_NAMESPACE EKS_INGRESS_NAMESPACE EKS_INGRESS_SERVICE_ACCOUNT EKS_INGRESS_DEPLOYMENT EKS_LINKERD_TRUST_DOMAIN EKS_ECR_REPOSITORY EKS_DISCOVERY_OUTPUT EKS_LINKERD_POLICY_OUTPUT EKS_INGRESS_NETWORK_POLICY_OUTPUT EKS_POLICY_AWS_PROFILE EKS_POLICY_KUBECONFIG EKS_POLICY_CONTEXT EKS_POLICY_APPLY_CONFIRM EKS_ADMIN_PROFILE EKS_SOURCE_USER EKS_MFA_SERIAL EKS_MFA_KEYCHAIN_SERVICE EKS_MFA_KEYCHAIN_ACCOUNT EKS_SESSION_DURATION
+export VERSION COMMIT BUILD_DATE SOURCE_DATE_EPOCH DIST_DIR PKG_NAME GOOS GOARCH IMAGE_NAME IMAGE_TAG PYTHON AWS_REGION EKS_CLUSTER K8S_NAMESPACE KUSTOMIZE_OVERLAY ENVIRONMENT EKS_AWS_PROFILE EKS_ACCOUNT_ID EKS_REGION EKS_NAMESPACE EKS_LINKERD_NAMESPACE EKS_INGRESS_NAMESPACE EKS_INGRESS_SERVICE_ACCOUNT EKS_INGRESS_DEPLOYMENT EKS_LINKERD_TRUST_DOMAIN EKS_ECR_REPOSITORY EKS_DISCOVERY_OUTPUT EKS_LINKERD_POLICY_OUTPUT EKS_INGRESS_NETWORK_POLICY_OUTPUT EKS_POLICY_AWS_PROFILE EKS_POLICY_KUBECONFIG EKS_POLICY_CONTEXT EKS_POLICY_APPLY_CONFIRM EKS_ADMIN_PROFILE EKS_SOURCE_USER EKS_MFA_SERIAL EKS_MFA_KEYCHAIN_SERVICE EKS_MFA_KEYCHAIN_ACCOUNT EKS_SESSION_DURATION
 export COPYFILE_DISABLE
 TAR_ENV := COPYFILE_DISABLE=1
 
@@ -245,6 +246,7 @@ agent-tool-mock:
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
 	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+	$(PYTHON) tests/agent_compat/claude_mcp_smoke.py
 	AGENT_COMPAT_CROSS_CHAT=1 $(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
 	$(PYTHON) tests/agent_compat/claude_thinking_cache_smoke.py
 
@@ -465,9 +467,19 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
+	python3 scripts/test_compare_release_checksums.py
+	python3 scripts/test_check_release_environment.py
+	python3 scripts/test_check_release_payload.py
+	python3 scripts/test_release_ai_review.py
+	python3 scripts/select_previous_release_test.py
+	python3 scripts/test_sign_release_windows_packages.py
+	PYTHONPATH=scripts python3 -m unittest scripts/release_image_oci_layout_test.py -q
+	python3 scripts/check_release_dry_run_test.py
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
+	PYTHONPATH=scripts python3 -m unittest scripts/release_image_layer_test.py scripts/release_image_binary_test.py -q
 	python3 scripts/ci_topology_test.py
+	uv run --with pyyaml python -m unittest scripts/engine_advisory_gate_test.py -q
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/direct_provider_canary_test.py
@@ -509,6 +521,11 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
+	python3 scripts/test_release_ai_review.py
+	python3 scripts/select_previous_release_test.py
+	python3 scripts/test_sign_release_windows_packages.py
+	PYTHONPATH=scripts python3 -m unittest scripts/release_image_layer_test.py scripts/release_image_binary_test.py scripts/release_image_oci_layout_test.py -q
+	python3 scripts/check_release_dry_run_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
@@ -854,9 +871,13 @@ package-one-no-docs: capability-smoke-unit
 	set -e; \
 	for bin in $(PACKAGE_BINARIES); do \
 		echo "packaging $$bin for $${GOOS}/$${GOARCH}"; \
-		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
+		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -trimpath -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
 	done; \
 	cp config.example.yaml "$$pkg_dir/config/config.example.yaml"; \
+	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
+		if [ ! -s "$${ENGINE_ADVISORY_SNAPSHOT}" ]; then echo "engine advisory snapshot missing: $${ENGINE_ADVISORY_SNAPSHOT}" >&2; exit 2; fi; \
+		cp "$${ENGINE_ADVISORY_SNAPSHOT}" "$$pkg_dir/bin/engine-advisories.json"; \
+	fi; \
 	cp env.example.json "$$pkg_dir/config/env.example.json"; \
 	cp deploy/Caddyfile "$$pkg_dir/caddy/Caddyfile"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
@@ -873,10 +894,14 @@ package-one-no-docs: capability-smoke-unit
 		python3 scripts/sign_windows_exes.py "$$pkg_dir/bin"; \
 		python3 scripts/make_release_zip.py "$$pkg_dir" "$${DIST_DIR}/$$pkg_name.zip"; \
 	else \
-		$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
+		$(TAR_ENV) tar --sort=name --mtime="@$${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
 	fi; \
 	if [ "$${GOOS}" = windows ]; then archive="$${DIST_DIR}/$$pkg_name.zip"; else archive="$${DIST_DIR}/$$pkg_name.tar.gz"; fi; \
-	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"
+	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
+		python3 scripts/validate_package_contents.py --advisories-snapshot --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"; \
+	else \
+		python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"; \
+	fi
 package-all: validate-release-clean docs-build admin-build capability-smoke-unit
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=amd64 $(MAKE) package-one-no-docs
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=arm64 $(MAKE) package-one-no-docs
@@ -919,7 +944,7 @@ package-docker-one-no-docs: capability-smoke-unit
 	done < "$(PACKAGE_DOC_ALLOWLIST)"
 	find "$${DIST_DIR}/docker/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}" -type d -exec chmod 0755 {} \;
 	find "$${DIST_DIR}/docker/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}" -type f -exec chmod 0644 {} \;
-	$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/docker" -czf "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}.tar.gz" "$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}"
+	$(TAR_ENV) tar --sort=name --mtime="@$${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/docker" -czf "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}.tar.gz" "$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}"
 	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}.tar.gz"
 
 package-docker-all: validate-release-clean docs-build admin-build capability-smoke-unit

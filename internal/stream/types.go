@@ -15,6 +15,9 @@ type Event struct {
 	Type string `json:"type,omitempty"`
 	// Data is the raw SSE data payload (typically JSON).
 	Data []byte `json:"data,omitempty"`
+	// Framer line bytes remain reserved while this event is translated/emitted.
+	// The stream consumer releases the shared reservation after consumption.
+	lineBufferReservation *lineBufferReservation
 }
 
 // callerModel returns the model name translators emit to the caller: the

@@ -138,6 +138,8 @@ type AdminObservation struct {
 	RateLimited   bool
 	AuthFailed    bool
 	PrincipalKind string
+	CallerID      string
+	SourceIP      string
 }
 
 func (d AdminV1Deps) now() time.Time {
@@ -251,7 +253,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		w.Header().Set(adminRequestIDHeader, requestIDValue)
 		adminDeprecationHeaders(w, op.Deprecated)
 
-		observation := AdminObservation{OperationID: op.ID, Object: op.Object, Action: op.Action, Method: op.Method}
+		observation := AdminObservation{OperationID: op.ID, Object: op.Object, Action: op.Action, Method: op.Method, SourceIP: adminSourceAddress(r)}
 		audit := AdminAuditEvent{
 			RequestID: requestIDValue, OperationID: op.ID, Object: op.Object, Action: op.Action,
 			Method: op.Method, Path: op.Path,
@@ -300,6 +302,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			return
 		}
 		observation.PrincipalKind = principal.Kind
+		observation.CallerID = principal.Subject
 		// Fail closed: a successful admin authentication must always leave a record.
 		if !m.recordCredentialEvent(ctx, AdminCredentialEvent{
 			Kind: principal.Kind, CredentialID: principal.CredentialID, Subject: principal.Subject,
@@ -354,7 +357,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		// Authorization: one primary decision per operation plus its always-checks.
 		// Reports and the caller-directory listing keep the handler's own per-domain
 		// decisions authoritative, so no contract-layer gate runs here.
-		if op.Domain != AdminDomainHandler && (op.Domain != AdminDomainCallerTarget || op.Method != "GET") {
+		if op.Domain != AdminDomainHandler && op.HandlerKey != "callers.list" {
 			for _, domain := range domains {
 				if decisionErr := m.deps.Authorize(ctx, principal, domain, op.Object, op.Action); decisionErr != nil {
 					status, code := adminAuthorizationProblem(decisionErr)
@@ -363,7 +366,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: domain,
 						Object: op.Object, Action: op.Action, OperationID: op.ID, RequestID: requestIDValue,
 						ReasonCode: code, Path: op.Path, Status: status, Method: r.Method,
-						ClientIPHash: adminClientIPHash(adminSourceAddress(r)),
+						ClientIPHash: adminClientIPHash(adminSourceAddress(r)), SourceIP: adminSourceAddress(r),
 					}) {
 						status, code = http.StatusServiceUnavailable, "unavailable"
 					}
@@ -376,12 +379,11 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			if len(domains) > 0 {
 				checkDomain = domains[0]
 			}
-			// Conditional checks (today: force) are evaluated from the request body the
-			// handler will read, so a plain write never needs the force grant. The body is
-			// peeked, not consumed.
+			// Conditional checks are evaluated from the request body the handler will
+			// read. The body is peeked, not consumed.
 			bodyFlags := map[string]any{}
 			for _, check := range op.ExtraChecks {
-				if check.When == AdminCheckBodyForce {
+				if check.When == AdminCheckBodyForce || check.When == AdminCheckBodyBudget {
 					if err := peekAdminJSONBody(r, &bodyFlags); err != nil {
 						writeAdminProblemCode(w, r, http.StatusBadRequest, "invalid-request", "")
 						finish(http.StatusBadRequest, "denied", "invalid-request")
@@ -398,7 +400,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: checkDomain,
 						Object: check.Object, Action: check.Action, OperationID: op.ID, RequestID: requestIDValue,
 						ReasonCode: code, Path: op.Path, Status: status, Method: r.Method,
-						ClientIPHash: adminClientIPHash(adminSourceAddress(r)),
+						ClientIPHash: adminClientIPHash(adminSourceAddress(r)), SourceIP: adminSourceAddress(r),
 					}) {
 						status, code = http.StatusServiceUnavailable, "unavailable"
 					}
@@ -661,7 +663,7 @@ func (m *adminV1Mount) resolveDomains(op Operation, r *http.Request, principal P
 		// legacy handlers use.
 		return []string{m.deps.domainFor(principal)}, nil
 	case AdminDomainCallerTarget:
-		if op.Method == "GET" {
+		if op.HandlerKey == "callers.list" {
 			// A collection (the caller directory listing) has no single target domain: the
 			// handler authorizes each row in that row's stored domain. Taking one
 			// contract-layer decision here would either deny a legitimate listing or
@@ -682,6 +684,24 @@ func (m *adminV1Mount) resolveDomains(op Operation, r *http.Request, principal P
 		if strings.TrimSpace(domain) == "" {
 			problem := AdminProblemFor(r, http.StatusNotFound, "not-found")
 			problem.Detail = "the caller is not in the active configuration"
+			return nil, &problem
+		}
+		return []string{domain}, nil
+	case AdminDomainProjectEnvironment:
+		if m.deps.ResolveCallerDomain == nil {
+			problem := AdminProblemFor(r, http.StatusServiceUnavailable, "unavailable")
+			problem.Detail = "the project environment directory is unavailable"
+			return nil, &problem
+		}
+		domain, err := m.deps.ResolveCallerDomain(r)
+		if err != nil {
+			problem := AdminProblemFor(r, http.StatusServiceUnavailable, "unavailable")
+			problem.Detail = "the project environment directory is unavailable"
+			return nil, &problem
+		}
+		if strings.TrimSpace(domain) == "" {
+			problem := AdminProblemFor(r, http.StatusNotFound, "not-found")
+			problem.Detail = "the project environment is not configured"
 			return nil, &problem
 		}
 		return []string{domain}, nil
@@ -876,11 +896,10 @@ func adminSourceAddress(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	host := r.RemoteAddr
-	if idx := strings.LastIndex(host, ":"); idx > 0 {
-		host = host[:idx]
+	if ip := parseIPFromHostPort(r.RemoteAddr); ip != nil {
+		return ip.String()
 	}
-	return host
+	return ""
 }
 
 // adminIdempotencyKeyFrom validates the Idempotency-Key header.

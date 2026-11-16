@@ -2317,6 +2317,62 @@
       "Domain": "foreign/prod",
       "Mode": "basic-only",
       "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
     }
   ]
 }

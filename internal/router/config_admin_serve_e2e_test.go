@@ -152,7 +152,6 @@ models:
 		t.Fatal(err)
 	}
 	defer svc.Close()
-
 	chat := func() (int, string) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hi"}]}`))
 		req.Header.Set("Authorization", "Bearer "+adminSwapE2ECallerToken)
@@ -169,19 +168,22 @@ models:
 
 	// The caller token is rejected by the Admin API.
 	swapBody := `{"targets":[{"provider":"mock","model_ref":"m-two"}],"reason":"e2e swap"}`
-	req := httptest.NewRequest(http.MethodPut, "/admin/config/groups/default/targets", strings.NewReader(swapBody))
+	req := httptest.NewRequest(http.MethodPut, "/admin/v1/config/groups/default/targets", strings.NewReader(swapBody))
 	req.Header.Set("Authorization", "Bearer "+adminSwapE2ECallerToken)
+	req.Header.Set("If-Match", `"rev-1"`)
 	rr := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
+	svc.AdminHandler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("caller token on admin API status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
 	// The admin key performs the one-call swap.
-	req = httptest.NewRequest(http.MethodPut, "/admin/config/groups/default/targets", strings.NewReader(swapBody))
+	req = httptest.NewRequest(http.MethodPut, "/admin/v1/config/groups/default/targets", strings.NewReader(swapBody))
 	req.Header.Set("Authorization", "Bearer "+adminKey.Token)
+	req.Header.Set("If-Match", `"rev-1"`)
+	req.Header.Set("Idempotency-Key", "group-swap-e2e")
 	rr = httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
+	svc.AdminHandler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("swap status=%d body=%s", rr.Code, rr.Body.String())
 	}
@@ -208,10 +210,10 @@ models:
 	}
 
 	// Status reports the new revision and this replica as current.
-	req = httptest.NewRequest(http.MethodGet, "/admin/config/status", nil)
+	req = httptest.NewRequest(http.MethodGet, "/admin/v1/config/status", nil)
 	req.Header.Set("Authorization", "Bearer "+adminKey.Token)
 	rr = httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
+	svc.AdminHandler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
@@ -230,10 +232,12 @@ models:
 	}
 
 	// One-call group rollback restores the original target.
-	req = httptest.NewRequest(http.MethodPost, "/admin/config/groups/default/rollback", strings.NewReader(`{"reason":"e2e revert"}`))
+	req = httptest.NewRequest(http.MethodPost, "/admin/v1/config/groups/default/rollback", strings.NewReader(`{"reason":"e2e revert"}`))
 	req.Header.Set("Authorization", "Bearer "+adminKey.Token)
+	req.Header.Set("If-Match", `"rev-2"`)
+	req.Header.Set("Idempotency-Key", "group-rollback-e2e")
 	rr = httptest.NewRecorder()
-	svc.Handler().ServeHTTP(rr, req)
+	svc.AdminHandler().ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("rollback status=%d body=%s", rr.Code, rr.Body.String())
 	}

@@ -1,0 +1,269 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Release dry run
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the full release validation without publishing"
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  hierarchy-agent-chain:
+    if: github.ref == 'refs/heads/main' && inputs.dry_run
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      - name: Run the agent client chain matrix
+        continue-on-error: true
+        run: make agent-chain-mock
+      - name: Gate on the agent client matrix
+        run: python3 scripts/hierarchy_release_gate.py --report tests/agent_compat/.out/chain-matrix.json --exceptions tests/agent_compat/release-exceptions.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: hierarchy-agent-chain-matrix
+          path: tests/agent_compat/.out/chain-matrix.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  hierarchy-codex-chain:
+    if: github.ref == 'refs/heads/main' && inputs.dry_run
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Install pinned offline test dependencies
+        run: |
+          set -euo pipefail
+          go mod download
+          npm ci --prefix tests/agent_compat --ignore-scripts --no-audit --no-fund
+      - name: Run and gate the sandboxed Codex chain matrix
+        run: |
+          set -euo pipefail
+          python3 tests/agent_compat/run_codex_chain_test.py
+          python3 tests/agent_compat/run_codex_chain.py --output tests/agent_compat/.out/codex-chain-matrix.json
+          python3 scripts/hierarchy_release_gate.py --report tests/agent_compat/.out/codex-chain-matrix.json --exceptions tests/agent_compat/release-exceptions.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: hierarchy-codex-chain-matrix
+          path: tests/agent_compat/.out/codex-chain-matrix.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  dry-run:
+    if: github.ref == 'refs/heads/main' && inputs.dry_run
+    needs: [hierarchy-agent-chain, hierarchy-codex-chain]
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      VERSION: v5.0.0-dry-run
+      CRANE: ${{ github.workspace }}/crane
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Resolve the main commit and latest production release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/main"
+          commit="$(git rev-parse HEAD)"
+          source_date_epoch="$(git show -s --format=%ct HEAD)"
+          build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
+          previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft | python3 scripts/select_previous_release.py --current "${VERSION}")"
+          printf 'COMMIT=%s\n' "${commit}" >> "${GITHUB_ENV}"
+          printf 'SOURCE_DATE_EPOCH=%s\n' "${source_date_epoch}" >> "${GITHUB_ENV}"
+          printf 'BUILD_DATE=%s\n' "${build_date}" >> "${GITHUB_ENV}"
+          printf 'PREVIOUS_TAG=%s\n' "${previous_tag}" >> "${GITHUB_ENV}"
+      - name: Verify Go patch floor
+        run: python3 scripts/check_go_toolchain.py
+      - name: Build release packages
+        run: make package
+      - name: Record the first build inventory
+        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+      - name: Preserve first build output
+        run: cp -a dist "${RUNNER_TEMP}/primary-dist"
+      - name: Reset generated package outputs before clean-cache rebuild
+        run: |
+          set -euo pipefail
+          git restore --worktree -- .
+          git clean -fd
+          rm -rf dist
+          python3 scripts/validate_release_clean.py
+      - name: Rebuild with clean Go caches
+        run: |
+          set -euo pipefail
+          echo "GOCACHE=${RUNNER_TEMP}/repro-go-build" >> "${GITHUB_ENV}"
+          echo "GOMODCACHE=${RUNNER_TEMP}/repro-go-mod" >> "${GITHUB_ENV}"
+          make package
+      - name: Record rebuilt inventory and compare packages
+        run: |
+          set -euo pipefail
+          python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+          python3 scripts/compare_release_checksums.py "${RUNNER_TEMP}/primary-dist/SHA256SUMS" dist/SHA256SUMS
+      - name: Download and verify the previous production package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/previous"
+          gh release download "${PREVIOUS_TAG}" -R metrum-ai/router \
+            --pattern "metrum-ai-router-${PREVIOUS_TAG}-linux-amd64.tar.gz" \
+            --pattern SHA256SUMS --dir "${RUNNER_TEMP}/previous"
+          cd "${RUNNER_TEMP}/previous"
+          grep -F "  metrum-ai-router-${PREVIOUS_TAG}-linux-amd64.tar.gz" SHA256SUMS | sha256sum --check -
+      - name: Run upgrade and rollback checks
+        run: |
+          set -euo pipefail
+          if [ "$(id -u)" -eq 0 ]; then
+            useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin router-release-check
+            service_user=router-release-check
+          else
+            service_user="$(id -un)"
+          fi
+          python3 scripts/release_upgrade_rollback.py \
+            --previous-archive "${RUNNER_TEMP}/previous/metrum-ai-router-${PREVIOUS_TAG}-linux-amd64.tar.gz" \
+            --candidate-archive "dist/metrum-ai-router-${VERSION}-linux-amd64.tar.gz" \
+            --previous-version "${PREVIOUS_TAG}" --candidate-version "${VERSION}" \
+            --candidate-commit "${COMMIT}" --service-user "${service_user}" \
+            --report "${RUNNER_TEMP}/upgrade-rollback-results.json"
+          cp "${RUNNER_TEMP}/upgrade-rollback-results.json" dist/upgrade-rollback-results.json
+      - name: Load current maintainer responses
+        run: git show origin/main:docs/release-review-responses.json > "${RUNNER_TEMP}/release-review-responses.json"
+      - name: Derive immutable review artifact name
+        id: review-range
+        run: |
+          set -euo pipefail
+          key="$(python3 scripts/release_review_artifact_key.py --base "${PREVIOUS_TAG}" --head "${COMMIT}")"
+          printf 'artifact_name=release-review-%s\n' "${key}" >> "${GITHUB_OUTPUT}"
+      - name: Restore review artifact for this commit range
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: ${{ steps.review-range.outputs.artifact_name }}
+          path: ${{ runner.temp }}/review-cache
+          if-no-files-found: ignore
+      - name: Review the previous production release through main
+        id: review
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          python3 scripts/release_ai_review.py --base "${PREVIOUS_TAG}" --head "${COMMIT}" \
+            --tag "${VERSION}" --responses "${RUNNER_TEMP}/release-review-responses.json" \
+            --artifact-cache "${RUNNER_TEMP}/review-cache/review.json" \
+            --artifact-output dist/release-review-artifact.json \
+            --output dist/AI-release-review.md
+          rg -q '^- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
+      - name: Store review artifact for reruns of this commit range
+        if: always() && steps.review.outputs.cache_hit != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.review-range.outputs.artifact_name }}
+          path: dist/release-review-artifact.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Install pinned Crane
+        run: bash scripts/install_crane.sh "${CRANE}"
+      - name: Assemble images in a local multi-architecture OCI layout
+        run: |
+          set -euo pipefail
+          base="$(python3 scripts/release_image_layer.py --print-base-image)"
+          test "$(sed -n 's/^FROM \(.*\)$/\1/p' Dockerfile | tail -1)" = "${base}"
+          layout="${RUNNER_TEMP}/release-oci"
+          for arch in amd64 arm64; do
+            package="dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
+            layer="${RUNNER_TEMP}/router-${arch}-layer.tar.gz"
+            image_tar="${RUNNER_TEMP}/router-${arch}-image.tar"
+            python3 scripts/release_image_layer.py --package "${package}" --output "${layer}" --epoch "${SOURCE_DATE_EPOCH}" > "${RUNNER_TEMP}/router-${arch}-binary-sha256.txt"
+            "${CRANE}" mutate "${base}" --append "${layer}" --platform "linux/${arch}" \
+              --entrypoint=/app/bin/metrum-ai-router --cmd=--config,/app/config/config.yaml \
+              --user=65532:65532 --workdir=/app --exposed-ports=8080/tcp --set-platform="linux/${arch}" \
+              --label="org.opencontainers.image.title=Metrum AI Router" \
+              --label="org.opencontainers.image.version=${VERSION}" \
+              --label="org.opencontainers.image.revision=${COMMIT}" \
+              --label="org.opencontainers.image.created=${BUILD_DATE}" \
+              --label="org.opencontainers.image.licenses=Apache-2.0" --output "${image_tar}"
+            python3 scripts/release_image_oci_layout.py --archive "${image_tar}" --layout "${layout}" \
+              --ref "${IMAGE}:${VERSION}" --platform "linux/${arch}"
+          done
+          echo "RELEASE_OCI_LAYOUT=${layout}" >> "${GITHUB_ENV}"
+      - name: Verify image binaries match release packages
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            python3 scripts/verify_release_image_binaries.py --crane "${CRANE}" \
+              --oci-layout "${RELEASE_OCI_LAYOUT}" --image-tag "${IMAGE}:${VERSION}" \
+              --platform "linux/${arch}" --package "dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
+          done
+      - name: Run local OCI version and health smoke
+        run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --oci-layout "${RELEASE_OCI_LAYOUT}" --image "${IMAGE}:${VERSION}" --version "${VERSION}"
+      - name: Verify complete dry-run evidence
+        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dry-run-evidence
+          path: |
+            dist/AI-release-review.md
+            dist/release-review-artifact.json
+            ${{ runner.temp }}/upgrade-rollback-results.json
+            dist/SHA256SUMS
+            dist/release-artifacts.json
+          if-no-files-found: error
+          retention-days: 14

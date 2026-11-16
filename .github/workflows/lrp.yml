@@ -4,6 +4,7 @@
 name: Learned routing policy
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'services/learned-routing-policy/**'
       - 'scripts/run_lrp_*.py'
@@ -17,6 +18,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   synthetic:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 25
     env:

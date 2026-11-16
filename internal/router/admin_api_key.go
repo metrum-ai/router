@@ -43,17 +43,37 @@ const (
 // permission names apply to admin OIDC users through the Casbin object/action
 // mapping in adminPermissionObjectAction.
 const (
-	adminPermissionConfigRead     = "config:read"
-	adminPermissionConfigWrite    = "config:write"
-	adminPermissionConfigActivate = "config:activate"
-	adminPermissionConfigForce    = "config:force"
-	adminPermissionShadowWrite    = "shadow:write"
-	adminPermissionAuthRead       = "admin:auth:read"
+	adminPermissionConfigRead       = "config:read"
+	adminPermissionConfigWrite      = "config:write"
+	adminPermissionConfigActivate   = "config:activate"
+	adminPermissionConfigForce      = "config:force"
+	adminPermissionProvidersRead    = "admin:providers:read"
+	adminPermissionProvidersWrite   = "admin:providers:write"
+	adminPermissionCatalogRead      = "admin:catalog:read"
+	adminPermissionProjectsRead     = "admin:projects:read"
+	adminPermissionProjectsWrite    = "admin:projects:write"
+	adminPermissionMembershipsRead  = "admin:memberships:read"
+	adminPermissionMembershipsWrite = "admin:memberships:write"
+	adminPermissionQuotasRead       = "admin:quotas:read"
+	adminPermissionQuotasWrite      = "admin:quotas:write"
+	adminPermissionBudgetsRead      = "admin:budgets:read"
+	adminPermissionBudgetsWrite     = "admin:budgets:write"
+	adminPermissionRetentionWrite   = "admin:retention:write"
+	adminPermissionRetentionForce   = "admin:retention:force"
+	adminPermissionShadowWrite      = "shadow:write"
+	adminPermissionAuthRead         = "admin:auth:read"
 )
 
 const (
-	authzObjectAdminConfig = "admin:config"
-	authzObjectAdminShadow = "admin:shadow"
+	authzObjectAdminConfig      = "admin:config"
+	authzObjectAdminShadow      = "admin:shadow"
+	authzObjectAdminProviders   = "admin:providers"
+	authzObjectAdminCatalog     = "admin:catalog"
+	authzObjectAdminProjects    = "admin:projects"
+	authzObjectAdminMemberships = "admin:memberships"
+	authzObjectAdminQuotas      = "admin:quotas"
+	authzObjectAdminBudgets     = "admin:budgets"
+	authzObjectAdminRetention   = "admin:retention"
 )
 
 // knownAdminKeyPermissions is the allowlist of permissions an admin key (or a
@@ -66,6 +86,19 @@ var knownAdminKeyPermissions = map[string]bool{
 	adminPermissionConfigForce:      true,
 	adminPermissionShadowWrite:      true,
 	adminPermissionAuthRead:         true,
+	adminPermissionProvidersRead:    true,
+	adminPermissionProvidersWrite:   true,
+	adminPermissionCatalogRead:      true,
+	adminPermissionProjectsRead:     true,
+	adminPermissionProjectsWrite:    true,
+	adminPermissionMembershipsRead:  true,
+	adminPermissionMembershipsWrite: true,
+	adminPermissionQuotasRead:       true,
+	adminPermissionQuotasWrite:      true,
+	adminPermissionBudgetsRead:      true,
+	adminPermissionBudgetsWrite:     true,
+	adminPermissionRetentionWrite:   true,
+	adminPermissionRetentionForce:   true,
 	"admin:callers:list":            true,
 	"admin:callers:issue":           true,
 	"admin:callers:rotate":          true,
@@ -75,6 +108,7 @@ var knownAdminKeyPermissions = map[string]bool{
 	"admin:reports:export":          true,
 	"admin:reports:drilldown":       true,
 	"admin:security_reports:read":   true,
+	"admin:security_reports:write":  true,
 	"admin:security_reports:export": true,
 	"admin:training:export":         true,
 	"admin:training:label":          true,
@@ -98,6 +132,32 @@ func adminPermissionObjectAction(permission string) (object, action string, ok b
 		return authzObjectAdminConfig, "force", true
 	case adminPermissionShadowWrite:
 		return authzObjectAdminShadow, "write", true
+	case adminPermissionProvidersRead:
+		return authzObjectAdminProviders, authzActionRead, true
+	case adminPermissionProvidersWrite:
+		return authzObjectAdminProviders, "write", true
+	case adminPermissionCatalogRead:
+		return authzObjectAdminCatalog, authzActionRead, true
+	case adminPermissionProjectsRead:
+		return authzObjectAdminProjects, authzActionRead, true
+	case adminPermissionProjectsWrite:
+		return authzObjectAdminProjects, "write", true
+	case adminPermissionMembershipsRead:
+		return authzObjectAdminMemberships, authzActionRead, true
+	case adminPermissionMembershipsWrite:
+		return authzObjectAdminMemberships, "write", true
+	case adminPermissionQuotasRead:
+		return authzObjectAdminQuotas, authzActionRead, true
+	case adminPermissionQuotasWrite:
+		return authzObjectAdminQuotas, "write", true
+	case adminPermissionBudgetsRead:
+		return authzObjectAdminBudgets, authzActionRead, true
+	case adminPermissionBudgetsWrite:
+		return authzObjectAdminBudgets, "write", true
+	case adminPermissionRetentionWrite:
+		return authzObjectAdminRetention, "write", true
+	case adminPermissionRetentionForce:
+		return authzObjectAdminRetention, "force", true
 	}
 	// Generic rule: the last colon segment is the action, the head is the
 	// object (admin:reports:read -> admin:reports / read).

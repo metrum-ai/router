@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -118,7 +119,7 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if err := json.Unmarshal(issueRec.Body.Bytes(), &issueResp); err != nil {
 		t.Fatal(err)
 	}
-	if issueResp.Caller.ID != "alice-search-dev" || issueResp.Caller.Status != accountStatusActive {
+	if issueResp.Caller.ID != "alice-search-prod" || issueResp.Caller.Status != accountStatusActive {
 		t.Fatalf("unexpected issued caller: %+v", issueResp.Caller)
 	}
 	if issueResp.Token == "" || !strings.HasPrefix(issueResp.Token, issueResp.TokenID+"_") {
@@ -130,7 +131,7 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 
 	// The relational projection stores the hash and allows, never the raw token.
 	var storedHash, storedTokenID string
-	if err := db.Raw(`SELECT token_sha256, token_id FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-dev").Row().Scan(&storedHash, &storedTokenID); err != nil {
+	if err := db.Raw(`SELECT token_sha256, token_id FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-prod").Row().Scan(&storedHash, &storedTokenID); err != nil {
 		t.Fatal(err)
 	}
 	if storedHash != issueResp.Caller.TokenHash || storedTokenID != issueResp.TokenID {
@@ -144,7 +145,7 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 		t.Fatal("raw token must never be persisted")
 	}
 	var allowCount int64
-	if err := db.Table("router_config_caller_allowed_groups").Where("config_set_id = ? AND caller_id = ?", "set-1", "alice-search-dev").Count(&allowCount).Error; err != nil {
+	if err := db.Table("router_config_caller_allowed_groups").Where("config_set_id = ? AND caller_id = ?", "set-1", "alice-search-prod").Count(&allowCount).Error; err != nil {
 		t.Fatal(err)
 	}
 	if allowCount != 2 {
@@ -173,12 +174,12 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
 		t.Fatal(err)
 	}
-	if len(listResp.Callers) != 1 || listResp.Callers[0].ID != "alice-search-dev" || len(listResp.Callers[0].Allow) != 2 {
+	if len(listResp.Callers) != 1 || listResp.Callers[0].ID != "alice-search-prod" || len(listResp.Callers[0].Allow) != 2 {
 		t.Fatalf("unexpected list response: %+v", listResp)
 	}
 
 	// Rotate replaces the stored hash and returns the new raw token once.
-	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/rotate", nil, true)
+	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-prod/rotate", nil, true)
 	if rotateRec.Code != http.StatusOK {
 		t.Fatalf("rotate status = %d body = %s", rotateRec.Code, rotateRec.Body.String())
 	}
@@ -190,20 +191,27 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 		t.Fatal("rotate must return a fresh raw token")
 	}
 	var rotatedHash string
-	if err := db.Raw(`SELECT token_sha256 FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-dev").Row().Scan(&rotatedHash); err != nil {
+	if err := db.Raw(`SELECT token_sha256 FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-prod").Row().Scan(&rotatedHash); err != nil {
 		t.Fatal(err)
 	}
 	if !callerTokenHashVerifies(t, rotatedHash, rotateResp.Token) || rotatedHash == storedHash {
 		t.Fatal("rotate must replace the stored hash with the new token hash")
 	}
+	var formatVersion, entropyBits int
+	if err := db.Raw(`SELECT token_format_version, token_entropy_bits FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-prod").Row().Scan(&formatVersion, &entropyBits); err != nil {
+		t.Fatal(err)
+	}
+	if formatVersion != 2 || entropyBits != 256 {
+		t.Fatalf("rotated metadata format=%d entropy=%d", formatVersion, entropyBits)
+	}
 
 	// Revoke disables the caller.
-	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/revoke", nil, true)
+	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-prod/revoke", nil, true)
 	if revokeRec.Code != http.StatusOK {
 		t.Fatalf("revoke status = %d body = %s", revokeRec.Code, revokeRec.Body.String())
 	}
 	var status string
-	if err := db.Raw(`SELECT status FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-dev").Row().Scan(&status); err != nil {
+	if err := db.Raw(`SELECT status FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-prod").Row().Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != accountStatusDisabled {
@@ -248,9 +256,9 @@ func TestCallerAdminRotateRevokeUnknownCaller(t *testing.T) {
 }
 
 func TestCanonicalCallersPatchMutatesCallersSlice(t *testing.T) {
-	raw := []byte("server:\n  listen: ':8080'\ncallers:\n  - id: alice-search-dev\n    owner_user: alice\n    project: search\n    environment: dev\n    status: active\n    token_sha256: deadbeef\n    token_id: rtr_metrum_alice_search_dev_k20260721\n    allow:\n      - default\n    rate:\n      rpm: 120\n      tpm: 200000\n      concurrent: 8\n")
+	raw := []byte("server:\n  listen: ':8080'\ncallers:\n  - id: alice-search-prod\n    owner_user: alice\n    project: search\n    environment: dev\n    status: active\n    token_sha256: deadbeef\n    token_id: rtr_metrum_alice_search_dev_k20260721\n    allow:\n      - default\n    rate:\n      rpm: 120\n      tpm: 200000\n      concurrent: 8\n")
 	out, err := PatchCanonicalCallersYAML(raw, func(callers []CallerConfig) ([]CallerConfig, error) {
-		if len(callers) != 1 || callers[0].ID != "alice-search-dev" || callers[0].Rate.RPM != 120 {
+		if len(callers) != 1 || callers[0].ID != "alice-search-prod" || callers[0].Rate.RPM != 120 {
 			t.Fatalf("decoded callers mismatch: %+v", callers)
 		}
 		callers[0].Status = accountStatusDisabled
@@ -334,18 +342,21 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&docYAML); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(docYAML, "alice-search-dev") {
+	if !strings.Contains(docYAML, "alice-search-prod") {
 		t.Fatalf("canonical document missing issued caller: %s", docYAML)
 	}
 	if !strings.Contains(docYAML, issueResp.Caller.TokenHash) {
 		t.Fatalf("canonical document missing issued caller token hash: %s", docYAML)
+	}
+	if !strings.Contains(docYAML, "token_issued_at:") || !strings.Contains(docYAML, "2026-07-21T12:00:00Z") {
+		t.Fatalf("canonical document missing issued caller timestamp: %s", docYAML)
 	}
 	if strings.Contains(docYAML, issueResp.Token) {
 		t.Fatal("canonical document must never contain a raw token")
 	}
 
 	// Rotate replaces the stored hash in the document.
-	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/rotate", nil, true)
+	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-prod/rotate", nil, true)
 	if rotateRec.Code != http.StatusOK {
 		t.Fatalf("rotate status = %d body = %s", rotateRec.Code, rotateRec.Body.String())
 	}
@@ -359,12 +370,15 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	if !canonicalDocumentHasTokenHashFor(t, docYAML, rotateResp.Token) {
 		t.Fatalf("canonical document missing rotated token hash: %s", docYAML)
 	}
+	if !strings.Contains(docYAML, "token_issued_at:") || !strings.Contains(docYAML, "2026-07-21T12:00:00Z") {
+		t.Fatalf("canonical document missing rotated caller timestamp: %s", docYAML)
+	}
 	if strings.Contains(docYAML, rotateResp.Token) {
 		t.Fatal("canonical document must never contain a raw token")
 	}
 
 	// Revoke marks the caller disabled in the document.
-	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/revoke", nil, true)
+	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-prod/revoke", nil, true)
 	if revokeRec.Code != http.StatusOK {
 		t.Fatalf("revoke status = %d body = %s", revokeRec.Code, revokeRec.Body.String())
 	}
@@ -413,7 +427,7 @@ func TestCallerAdminMutationsBumpRevisionAndAppendEvents(t *testing.T) {
 	}
 
 	// Rotate bumps revision to 2.
-	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/rotate", nil, true)
+	rotateRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-prod/rotate", nil, true)
 	if rotateRec.Code != http.StatusOK {
 		t.Fatalf("rotate status = %d body = %s", rotateRec.Code, rotateRec.Body.String())
 	}
@@ -426,7 +440,7 @@ func TestCallerAdminMutationsBumpRevisionAndAppendEvents(t *testing.T) {
 	}
 
 	// Revoke bumps revision to 3.
-	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-dev/revoke", nil, true)
+	revokeRec := callerAdminRequest(t, mux, http.MethodPost, "/admin/callers/alice-search-prod/revoke", nil, true)
 	if revokeRec.Code != http.StatusOK {
 		t.Fatalf("revoke status = %d body = %s", revokeRec.Code, revokeRec.Body.String())
 	}
@@ -495,7 +509,7 @@ models:
       - provider: mock
         model: mock-model
 callers:
-  - id: alice-search-dev
+  - id: alice-search-prod
     owner_user: alice
     project: search
     environment: dev
@@ -521,13 +535,13 @@ callers:
 	// config from the DB.
 	if err := db.Exec(
 		`INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"set-1", "alice-search-dev", "alice", "search", "dev", "active", tokenHash, "rtr_metrum_alice_search_dev_k20260721", false, false, 120, 200000, 8,
+		"set-1", "alice-search-prod", "alice", "search", "dev", "active", tokenHash, "rtr_metrum_alice_search_dev_k20260721", false, false, 120, 200000, 8,
 	).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(
 		`INSERT INTO router_config_caller_allowed_groups (config_set_id, caller_id, group_name) VALUES (?, ?, ?)`,
-		"set-1", "alice-search-dev", "default",
+		"set-1", "alice-search-prod", "default",
 	).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -653,9 +667,27 @@ callers:
 	}
 	failMachinePreparation = false
 
+	// A stream change is published in the canonical config but takes effect
+	// only after process restart; verify reload logs that operational contract.
+	eventsYAML := strings.Replace(canonicalYAML, "  default_model_group: default", "  default_model_group: default\n  security:\n    events:\n      enabled: true\n      version: \"1.4.0\"\n      output: file\n      path: '"+filepath.Join(dir, "events.jsonl")+"'", 1)
+	eventsHash := sha256.Sum256([]byte(eventsYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, eventsYAML, hex.EncodeToString(eventsHash[:]), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	oldLogWriter := log.Writer()
+	var reloadLogs bytes.Buffer
+	log.SetOutput(&reloadLogs)
+	defer log.SetOutput(oldLogWriter)
 	// Reload from the DB. The canonical document removes the bootstrap key.
 	if err := svc.reloadActiveConfigFromDB(); err != nil {
 		t.Fatalf("reloadActiveConfigFromDB: %v", err)
+	}
+	log.SetOutput(oldLogWriter)
+	if !strings.Contains(reloadLogs.String(), "server.security.events changed; restart required") {
+		t.Fatalf("stream config reload did not explain restart requirement: %s", reloadLogs.String())
+	}
+	if svc.securityEventStream != nil {
+		t.Fatal("reload rebuilt a process-local stream without restart")
 	}
 	machine := svc.machineGeneration.Load()
 	if machine == initialMachine || machine.authorizer != svc.currentAuthorizer() || len(machine.keys.keys) != 0 {
@@ -678,10 +710,10 @@ callers:
 	if !ok {
 		t.Fatal("reloaded caller missing from caller auth index")
 	}
-	if rt.cfg.ID != "alice-search-dev" || rt.cfg.Rate.RPM != 120 {
+	if rt.cfg.ID != "alice-search-prod" || rt.cfg.Rate.RPM != 120 {
 		t.Fatalf("reloaded caller runtime mismatch: %+v", rt.cfg)
 	}
-	if svc.configSnapshot.Load() == nil || svc.configSnapshot.Load().Callers[0].ID != "alice-search-dev" {
+	if svc.configSnapshot.Load() == nil || svc.configSnapshot.Load().Callers[0].ID != "alice-search-prod" {
 		t.Fatal("config snapshot must reflect the reloaded configuration")
 	}
 }

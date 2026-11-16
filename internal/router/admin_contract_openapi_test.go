@@ -279,6 +279,8 @@ func TestAdminV1GuardsMatchToday(t *testing.T) {
 		// reports: object depends on the reports surface, action on the request shape.
 		{"listAdminSecurityEvents", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionRead, nil},
 		{"exportAdminSecurityCSV", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
+		{"exportAdminSecurityIncidentJSON", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
+		{"exportAdminSecurityIncidentMarkdown", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
 		{"getAdminReportRequest", "admin_reports.go handleAdminReports", authzObjectAdminReports, authzActionDrilldown, nil},
 	}
 	for _, want := range cases {

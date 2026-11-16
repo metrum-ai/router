@@ -2,15 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Pinned inputs for reference tier: amd-mi350p-datacenter.
-# Resolved on 2026-11-02 against the AMD-published ROCm vLLM tag list:
-#   docker buildx imagetools inspect \
-#     rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
-# The tag names the architecture the image is built for (gfx950 = CDNA 4,
-# MI350 series), so there is no ambiguity about which member of a multi-arch
-# index is used: this tag has one platform.
+# Resolved on 2026-11-16 against the official vLLM ROCm image tag:
+#   docker buildx imagetools inspect vllm/vllm-openai-rocm:v0.33.0
+# Upstream vLLM documents support for gfx950 (MI350) and gfx1151 (Ryzen AI MAX).
 schema: metrum.ai/reference-images/v1
 tier: amd-mi350p-datacenter
-updated: "2026-11-02"
+updated: "2026-11-16"
 
 router:
   reference: metrum-ai-router:<version>-linux-amd64
@@ -20,11 +17,11 @@ router:
 images:
   - name: vllm-rocm
     role: model-server
-    image: rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
-    digest: sha256:3b20f0a32530aefa2416aa30f64011fdcab00c44676a915044b9a17379342fcc
-    source: https://hub.docker.com/r/rocm/vllm
+    image: vllm/vllm-openai-rocm:v0.33.0
+    digest: sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
+    source: https://hub.docker.com/r/vllm/vllm-openai-rocm
     platforms: [linux/amd64]
-    note: Official AMD ROCm vLLM image built for gfx950 (CDNA 4); the arch is in the tag.
+    note: Official upstream vLLM ROCm image; upstream supports gfx950 (MI350).
 
 models:
   - id: Qwen/Qwen3-1.7B

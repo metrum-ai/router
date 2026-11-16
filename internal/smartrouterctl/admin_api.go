@@ -31,6 +31,18 @@ type AdminAPIClient struct {
 	HTTP    *http.Client
 }
 
+// adminAPIRequestTimeoutText is overridden only in the CLI subprocess tests to
+// exercise timeout handling without making those tests wait a full minute.
+var adminAPIRequestTimeoutText = "60s"
+
+func adminAPIRequestTimeout() time.Duration {
+	timeout, err := time.ParseDuration(adminAPIRequestTimeoutText)
+	if err != nil || timeout <= 0 {
+		return 60 * time.Second
+	}
+	return timeout
+}
+
 // ResolveAdminCredential reads the admin key from fileFlag, then the
 // ROUTER_ADMIN_KEY environment variable, then ROUTER_ADMIN_KEY_FILE. The key
 // is never taken from a plain flag value.
@@ -76,8 +88,17 @@ func NewAdminAPIClientWithSocket(routerURL, keyFile, socketPath string) (*AdminA
 	}
 	if base != "" {
 		parsed, err := url.Parse(base)
-		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			return nil, fmt.Errorf("router URL %q is invalid", base)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("invalid router URL")
+		}
+		if parsed.Path != "" && parsed.Path != "/" {
+			return nil, fmt.Errorf("router URL must be an origin without a path")
+		}
+		if parsed.Scheme != "https" {
+			ip := net.ParseIP(parsed.Hostname())
+			if parsed.Scheme != "http" || (parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
+				return nil, fmt.Errorf("admin API endpoint requires HTTPS except on loopback")
+			}
 		}
 	}
 	token, err := ResolveAdminCredential(keyFile)
@@ -87,17 +108,19 @@ func NewAdminAPIClientWithSocket(routerURL, keyFile, socketPath string) (*AdminA
 	client := &AdminAPIClient{
 		BaseURL: strings.TrimRight(base, "/"),
 		Token:   token,
-		HTTP:    &http.Client{Timeout: 60 * time.Second},
+		HTTP:    &http.Client{Timeout: adminAPIRequestTimeout(), CheckRedirect: refuseAdminRedirect},
 	}
 	if socketPath != "" {
 		client.BaseURL = "http://unix"
 		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}}
-		client.HTTP = &http.Client{Timeout: 60 * time.Second, Transport: transport}
+		client.HTTP = &http.Client{Timeout: adminAPIRequestTimeout(), Transport: transport, CheckRedirect: refuseAdminRedirect}
 	}
 	return client, nil
 }
+
+func refuseAdminRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 // AdminAPIError is one typed Admin API error response.
 type AdminAPIError struct {
@@ -122,6 +145,19 @@ func (c *AdminAPIClient) Do(method, path string, body any, headers map[string]st
 // DoWithHeaders preserves shared transport/error behavior while exposing ETag
 // and signed-pagination metadata to versioned API clients.
 func (c *AdminAPIClient) DoWithHeaders(method, path string, body any, headers map[string]string) ([]byte, int, http.Header, error) {
+	return c.doWithHeaders(method, path, body, headers, 16<<20, true)
+}
+
+// DoWithHeadersLimit reads up to limit+1 bytes so callers can reject oversized
+// payloads with a command-specific error while retaining the shared transport.
+func (c *AdminAPIClient) DoWithHeadersLimit(method, path string, body any, headers map[string]string, limit int64) ([]byte, int, http.Header, error) {
+	if limit < 0 {
+		return nil, 0, nil, fmt.Errorf("invalid response body limit")
+	}
+	return c.doWithHeaders(method, path, body, headers, limit, false)
+}
+
+func (c *AdminAPIClient) doWithHeaders(method, path string, body any, headers map[string]string, responseLimit int64, enforceLimit bool) ([]byte, int, http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -144,18 +180,21 @@ func (c *AdminAPIClient) DoWithHeaders(method, path string, body any, headers ma
 	}
 	httpClient := c.HTTP
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 60 * time.Second}
+		httpClient = &http.Client{Timeout: adminAPIRequestTimeout(), CheckRedirect: refuseAdminRedirect}
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, nil, fmt.Errorf("admin API request failed: %w", err)
+		return nil, 0, nil, fmt.Errorf("admin API request failed: %w (check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE)", err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit+1))
 	if err != nil {
-		return nil, resp.StatusCode, resp.Header.Clone(), err
+		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("admin API request failed: %w (check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE)", err)
 	}
-	if resp.StatusCode >= 400 {
+	if enforceLimit && int64(len(raw)) > responseLimit {
+		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("admin API response exceeds the %d byte client limit", responseLimit)
+	}
+	if resp.StatusCode >= 300 {
 		apiErr := &AdminAPIError{Status: resp.StatusCode, Type: "error", Raw: string(raw)}
 		var parsed struct {
 			Error struct {
@@ -166,6 +205,9 @@ func (c *AdminAPIClient) DoWithHeaders(method, path string, body any, headers ma
 		if err := json.Unmarshal(raw, &parsed); err == nil && parsed.Error.Type != "" {
 			apiErr.Type = parsed.Error.Type
 			apiErr.Message = parsed.Error.Message
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusServiceUnavailable {
+			apiErr.Message = fmt.Sprintf("%s; check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE", http.StatusText(resp.StatusCode))
 		}
 		return nil, resp.StatusCode, resp.Header.Clone(), apiErr
 	}

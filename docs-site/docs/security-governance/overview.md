@@ -48,8 +48,12 @@ disabled.
 
 ## Related Pages
 
+- [Router v5 Security Threat Summary](./threat-model-v5)
+- [Router Hardening Guide](./hardening)
+- [Router Compromise Runbook](./compromise-runbook)
 - [Admin Authentication](../configuration/admin-authentication)
 - [Admin Authorization](../configuration/admin-authorization)
+- [Security Event Stream](./security-events)
 - [PII Filtering](../configuration/pii-filtering)
 - [Software License And Third-Party Notices](../legal/software-licenses)
 - [Security And Trust](../evaluation/security-and-trust)

@@ -1,0 +1,40 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Inference engine advisory gate
+
+on:
+  schedule:
+    - cron: "23 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-advisory-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  advisory-gate:
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install pinned YAML parser
+        run: |
+          cat > "${RUNNER_TEMP}/engine-gate-requirements.txt" <<'EOF'
+          PyYAML==6.0.3 \
+            --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc \
+            --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28
+          EOF
+          python3 -m pip install --user --require-hashes --only-binary=:all: -r "${RUNNER_TEMP}/engine-gate-requirements.txt"
+      - name: Test fail-closed parsing and exception behavior
+        run: python3 -m unittest scripts/engine_advisory_gate_test.py -v
+      - name: Check deployed engine images against GitHub Advisories and OSV
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/engine_advisory_gate.py --check

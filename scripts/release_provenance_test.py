@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
-"""Offline contract tests for release asset provenance coverage."""
+"""Offline contract tests for protected, daemonless release publication."""
+
+from __future__ import annotations
 
 import copy
-import glob
-import re
-import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,119 +13,226 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release.yml"
-PIN = "4d101475d8b20a2381f78447822ac1eab6504dd8"  # attest-build-provenance v4.2.2
+DRY_RUN_WORKFLOW = ROOT / ".github/workflows/release-dry-run.yml"
+PIN = "4d101475d8b20a2381f78447822ac1eab6504dd8"
 SUBJECTS = {
     "dist/metrum-ai-router-*.tar.gz",
     "dist/metrum-ai-router-*.zip",
-    "dist/SHA256SUMS",
-    "dist/release-artifacts.json",
+    "dist/upgrade-rollback-results.json",
+    "dist/release-images.json",
+    "dist/AI-release-review.md",
+    "dist/release-review-artifact.json",
 }
 
 
 def validate(workflow):
-    job = workflow["jobs"]["package"]
-    permissions = job["permissions"]
-    assert permissions.get("contents") == "write"
-    assert permissions.get("id-token") == "write"
-    assert permissions.get("attestations") == "write"
-    steps = job["steps"]
+    jobs = workflow["jobs"]
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers) == {"push"}
+    assert triggers["push"]["tags"] == ["v*"]
+    ai_review = jobs["ai-release-review"]
+    assert ai_review["permissions"] == {"contents": "read"}
+    assert ai_review.get("environment") == "release-review"
+    ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Review release diff and documentation")
+    assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
+    assert ai_step["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+    assert "--artifact-cache" in ai_step["run"] and "--artifact-output" in ai_step["run"]
+    assert any(step.get("name") == "Restore review artifact for this commit range" for step in ai_review["steps"])
+    assert any(step.get("name") == "Store review artifact for reruns of this commit range" for step in ai_review["steps"])
+    review_key = next(step["run"] for step in ai_review["steps"] if step.get("name") == "Derive immutable review artifact name")
+    assert "release_review_artifact_key.py" in review_key
+    resolve_run = next(step["run"] for step in jobs["resolve"]["steps"] if step.get("name") == "Resolve immutable build metadata")
+    assert "select_previous_release.py" in resolve_run and "git describe" not in resolve_run
+    upgrade = jobs["upgrade-and-rollback"]
+    upgrade_step = next(step for step in upgrade["steps"] if step.get("name") == "Run upgrade and rollback checks")
+    assert upgrade_step["env"]["PREVIOUS_TAG"] == "${{ needs.resolve.outputs.previous_tag }}"
+    publish = jobs["publish-release"]
+    assert publish.get("environment") == "release"
+    assert publish.get("if", "").startswith("always() && startsWith(github.ref, 'refs/tags/')")
+    assert publish["permissions"].get("packages") == "write"
+    assert publish["permissions"].get("id-token") == "write"
+    assert publish["permissions"].get("attestations") == "write"
+    assert set(publish["needs"]) == {"resolve", "package-binaries", "reproducible-build", "ai-release-review", "upgrade-and-rollback"}
+    assert upgrade["needs"] == ["resolve", "package-binaries"]
+    assert "release_upgrade_rollback.py" in "\n".join(step.get("run", "") for step in upgrade["steps"])
+    assert any(step.get("name") == "Download and verify previous production package" for step in upgrade["steps"])
+    assert "docker-runner-preflight" not in jobs and "package-images" not in jobs
+    steps = publish["steps"]
     names = [step.get("name") for step in steps]
-    inventory = names.index("Inventory and checksums")
-    attest = names.index("Attest release asset provenance")
-    upload = names.index("Upload inventory-validated release assets")
-    publish = names.index("Publish GitHub Release with assets")
-    assert inventory < attest < upload < publish
-    step = steps[attest]
-    assert step["uses"] == f"actions/attest-build-provenance@{PIN}"
-    assert step.get("if") == "startsWith(github.ref, 'refs/tags/')"
-    assert not step.get("continue-on-error", False)
-    subjects = set(step["with"]["subject-path"].splitlines())
-    assert subjects == SUBJECTS
-    assert set(steps[upload]["with"]["path"].splitlines()) == subjects
-    release_script = steps[publish]["run"]
-    assert steps[publish].get("if") == step["if"]
-    # The publisher selects archives via find and two metadata files via
-    # printf. Check both selectors so additions cannot bypass attestation.
-    archive_patterns = set(re.findall(r"-name '([^']+)'", release_script))
-    assert archive_patterns == {"metrum-ai-router-*.tar.gz", "metrum-ai-router-*.zip"}
-    selection = release_script.split("mapfile -t ASSETS < <(", 1)[1].split("} | sort -u", 1)[0]
-    selection_lines = [line.strip() for line in selection.splitlines() if line.strip()]
-    assert selection_lines == [
-        "{",
-        "find dist -maxdepth 1 -type f \\( -name 'metrum-ai-router-*.tar.gz' -o -name 'metrum-ai-router-*.zip' \\)",
-        "printf '%s\\n' dist/SHA256SUMS dist/release-artifacts.json",
-    ]
-    assert '"${ASSETS[@]}"' in release_script
-    assert "gh release create" in release_script
+    environment = names.index("Verify release environment protection before publish")
+    assemble = names.index("Assemble and publish multi-architecture image from release packages")
+    smoke = names.index("Smoke the Crane-built image without a daemon")
+    sbom = names.index("Generate image SPDX SBOMs and attach them")
+    sbom_sign = names.index("Sign and verify SPDX SBOM assets")
+    sign = names.index("Sign images keylessly")
+    archives = names.index("Sign release archives with Cosign")
+    image_attest = names.index("Attest OCI image index")
+    arch_attest = [names.index("Attest linux/amd64 image"), names.index("Attest linux/arm64 image")]
+    verify = names.index("Verify attestations and require complete payload")
+    publish_release = names.index("Confirm payload and publish immutable release")
+    assert environment < assemble < smoke < sbom < sbom_sign < sign < archives < image_attest < verify < publish_release
+    assert all(image_attest < index < verify for index in arch_attest)
+    assert steps[image_attest]["uses"] == f"actions/attest-build-provenance@{PIN}"
+    assert steps[image_attest]["with"].get("push-to-registry") is True
+    assert steps[image_attest]["with"].get("subject-name") == "${{ env.IMAGE }}"
+    archive_attest = names.index("Attest release archives")
+    assert SUBJECTS <= set(steps[archive_attest]["with"]["subject-path"].splitlines())
+    assert "release_image_layer.py" in steps[assemble]["run"]
+    assert '"${CRANE}" mutate "$base" --append "$layer"' in steps[assemble]["run"]
+    assert "digest --tarball" in steps[assemble]["run"]
+    assert "existing immutable image ref" in steps[assemble]["run"]
+    assert '"${CRANE}" index append' in steps[assemble]["run"]
+    assert "release_image_smoke.py" in steps[smoke]["run"]
+    all_runs = "\n".join(step.get("run", "") for step in steps)
+    assert "cosign sign --yes" in all_runs and 'gh attestation verify "oci://' in all_runs
+    assert "cosign attach sbom" in all_runs
+    assert "cosign sign-blob" in steps[sbom_sign]["run"] and "cosign verify-blob" in steps[sbom_sign]["run"]
+    assert "docker.sock" not in all_runs and "docker build" not in all_runs
+    assert "install_crane.sh" in all_runs
+    assert "upgrade-rollback-results.json" in all_runs
+    rebuild = jobs["reproducible-build"]
+    assert "compare_release_checksums.py" in "\n".join(step.get("run", "") for step in rebuild["steps"])
+    signing = names.index("Sign Windows release packages after reproducibility comparison")
+    rebuild_steps = jobs["reproducible-build"]["steps"]
+    rebuild_names = [step.get("name") for step in rebuild_steps]
+    assert rebuild_names.index("Rebuild binary packages on a clean runner") < rebuild_names.index("Compare package checksums")
+    assert "reproducible-build" in publish["needs"]
+    assert signing > names.index("Verify release environment protection before publish")
+    verify = steps[verify]["run"]
+    assert verify.count("--signer-workflow") >= 3 and verify.count("--source-ref") >= 3
+    assert "dist/SHA256SUMS" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/release-artifacts.json" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/release-images.json" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/AI-release-review.md" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/release-review-artifact.json" in steps[archive_attest]["with"]["subject-path"]
+    assert "release-review-artifact.json" in steps[names.index("Confirm payload and publish immutable release")]["run"]
+    assert "-eq 26" in steps[names.index("Confirm payload and publish immutable release")]["run"]
+    assert 'ref="${IMAGE}@${digest}"' in steps[sign].get("run", "")
 
 
 class ProvenanceWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        cls.dry_run_workflow = yaml.safe_load(DRY_RUN_WORKFLOW.read_text(encoding="utf-8"))
 
     def test_release_contract(self):
         validate(self.workflow)
 
-    def test_synthetic_release_asset_selection_matches_subjects(self):
-        steps = self.workflow["jobs"]["package"]["steps"]
-        publish = next(s for s in steps if s.get("name") == "Publish GitHub Release with assets")
-        attest = next(s for s in steps if s.get("name") == "Attest release asset provenance")
-        selector = publish["run"].split("mapfile -t ASSETS < <(", 1)[1].split("} | sort -u", 1)[0]
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            dist = root / "dist"
-            dist.mkdir()
-            for name in (
-                "metrum-ai-router-v1.2.3-linux-amd64.tar.gz",
-                "metrum-ai-router-v1.2.3-linux-arm64.tar.gz",
-                "metrum-ai-router-v1.2.3-windows-amd64.zip",
-                "metrum-ai-router-v1.2.3-windows-arm64.zip",
-                "SHA256SUMS", "release-artifacts.json", "unrelated.txt",
-            ):
-                (dist / name).write_text("fixture", encoding="utf-8")
-            # Execute only the checked, fixed selection block; no gh invocation.
-            command = "set -euo pipefail\n" + selector + "} | sort -u\n"
-            published = set(subprocess.check_output(["bash", "-c", command], cwd=root, text=True).splitlines())
-            attested = set()
-            for pattern in attest["with"]["subject-path"].splitlines():
-                attested.update(glob.glob(pattern, root_dir=root))
-            self.assertEqual(published, attested)
-            self.assertEqual(len(published), 6)
-
-    def test_missing_zip_attestation_is_rejected(self):
+    def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)
-        step = next(s for s in doc["jobs"]["package"]["steps"] if s.get("name") == "Attest release asset provenance")
-        step["with"]["subject-path"] = step["with"]["subject-path"].replace("dist/metrum-ai-router-*.zip\n", "")
+        del doc["jobs"]["publish-release"]["environment"]
         with self.assertRaises(AssertionError):
             validate(doc)
 
-    def test_missing_checksum_attestation_is_rejected(self):
+    def test_image_attestation_is_mandatory(self):
         doc = copy.deepcopy(self.workflow)
-        step = next(s for s in doc["jobs"]["package"]["steps"] if s.get("name") == "Attest release asset provenance")
-        step["with"]["subject-path"] = step["with"]["subject-path"].replace("dist/SHA256SUMS\n", "")
+        doc["jobs"]["publish-release"]["steps"] = [
+            step for step in doc["jobs"]["publish-release"]["steps"]
+            if step.get("name") != "Attest OCI image index"
+        ]
+        with self.assertRaises(ValueError):
+            validate(doc)
+
+    def test_daemonless_image_build_and_smoke_are_mandatory(self):
+        doc = copy.deepcopy(self.workflow)
+        doc["jobs"]["publish-release"]["steps"] = [
+            step for step in doc["jobs"]["publish-release"]["steps"]
+            if step.get("name") != "Smoke the Crane-built image without a daemon"
+        ]
+        with self.assertRaises(ValueError):
+            validate(doc)
+
+    def test_release_payload_requires_upgrade_evidence(self):
+        doc = copy.deepcopy(self.workflow)
+        publish = doc["jobs"]["publish-release"]
+        publish["needs"].remove("upgrade-and-rollback")
         with self.assertRaises(AssertionError):
             validate(doc)
 
-    def test_unattested_new_archive_selector_is_rejected(self):
+    def test_release_publish_workflow_has_no_manual_dispatch(self):
         doc = copy.deepcopy(self.workflow)
-        step = next(s for s in doc["jobs"]["package"]["steps"] if s.get("name") == "Publish GitHub Release with assets")
-        step["run"] += "\nfind dist -name 'metrum-ai-router-*.msi'\n"
+        trigger_key = "on" if "on" in doc else True
+        doc[trigger_key]["workflow_dispatch"] = {"inputs": {"dry_run": {"type": "boolean"}}}
         with self.assertRaises(AssertionError):
             validate(doc)
 
-    def test_missing_permission_is_rejected(self):
-        doc = copy.deepcopy(self.workflow)
-        del doc["jobs"]["package"]["permissions"]["id-token"]
-        with self.assertRaises(AssertionError):
-            validate(doc)
+    def test_full_dry_run_is_main_only_read_only_and_nonpublishing(self):
+        workflow = self.dry_run_workflow
+        triggers = workflow.get("on", workflow.get(True))
+        dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
+        self.assertEqual(dispatch, {"description": "Run the full release validation without publishing", "type": "boolean", "required": True, "default": True})
+        jobs = workflow["jobs"]
+        dry_run = jobs["dry-run"]
+        self.assertIn("hierarchy-agent-chain", dry_run["needs"])
+        self.assertIn("hierarchy-codex-chain", dry_run["needs"])
+        all_runs = "\n".join(step.get("run", "") for job in jobs.values() for step in job.get("steps", []))
+        self.assertIn("make package", all_runs)
+        dry_run_steps = jobs["dry-run"]["steps"]
+        dry_run_names = [step.get("name") for step in dry_run_steps]
+        preserve = dry_run_names.index("Preserve first build output")
+        reset = dry_run_names.index("Reset generated package outputs before clean-cache rebuild")
+        rebuild = dry_run_names.index("Rebuild with clean Go caches")
+        self.assertLess(preserve, reset)
+        self.assertLess(reset, rebuild)
+        reset_run = dry_run_steps[reset]["run"]
+        self.assertIn("git restore --worktree -- .", reset_run)
+        self.assertIn("git clean -fd", reset_run)
+        self.assertIn("rm -rf dist", reset_run)
+        self.assertIn("validate_release_clean.py", reset_run)
+        self.assertIn("compare_release_checksums.py", all_runs)
+        self.assertIn("release_ai_review.py", all_runs)
+        self.assertIn("release_upgrade_rollback.py", all_runs)
+        self.assertIn("release_image_oci_layout.py", all_runs)
+        self.assertIn("check_release_dry_run.py", all_runs)
+        self.assertNotIn("crane push", all_runs)
+        self.assertNotIn("cosign", all_runs)
+        self.assertNotIn("gh release create", all_runs)
+        self.assertNotIn("secrets.ANTHROPIC_API_KEY", DRY_RUN_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertIn("release_review_artifact_key.py", all_runs)
+        for job in jobs.values():
+            self.assertEqual(job.get("if"), "github.ref == 'refs/heads/main' && inputs.dry_run")
+            self.assertEqual(job.get("permissions"), {"contents": "read"})
+            self.assertNotIn("environment", job)
+            for step in job.get("steps", []):
+                if step.get("uses", "").startswith("actions/checkout@"):
+                    self.assertEqual(step.get("with", {}).get("ref"), "main")
 
-    def test_attestation_cannot_be_skipped_on_tag(self):
-        doc = copy.deepcopy(self.workflow)
-        step = next(s for s in doc["jobs"]["package"]["steps"] if s.get("name") == "Attest release asset provenance")
-        step["if"] = "false"
+    def test_dry_run_checkout_does_not_follow_workflow_dispatch_ref(self):
+        doc = copy.deepcopy(self.dry_run_workflow)
+        checkout = next(step for job in doc["jobs"].values() for step in job.get("steps", []) if step.get("uses", "").startswith("actions/checkout@"))
+        checkout["with"]["ref"] = "${{ github.ref }}"
         with self.assertRaises(AssertionError):
-            validate(doc)
+            for job in doc["jobs"].values():
+                for step in job.get("steps", []):
+                    if step.get("uses", "").startswith("actions/checkout@"):
+                        assert step.get("with", {}).get("ref") == "main"
+
+    def test_release_and_dry_run_validation_steps_do_not_drift(self):
+        release_runs = "\n".join(
+            step.get("run", "")
+            for job in self.workflow["jobs"].values()
+            for step in job.get("steps", [])
+        )
+        dry_runs = "\n".join(
+            step.get("run", "")
+            for job in self.dry_run_workflow["jobs"].values()
+            for step in job.get("steps", [])
+        )
+        shared_validation_steps = {
+            "make package",
+            "release_artifact_inventory.py",
+            "compare_release_checksums.py",
+            "release_upgrade_rollback.py",
+            "release_ai_review.py",
+            "release_image_layer.py",
+            "verify_release_image_binaries.py",
+            "release_image_smoke.py",
+        }
+        for command in shared_validation_steps:
+            with self.subTest(command=command):
+                self.assertIn(command, release_runs)
+                self.assertIn(command, dry_runs)
 
 
 if __name__ == "__main__":

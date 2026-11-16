@@ -5,13 +5,100 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Security hardening
+
+Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+
+## v5.0.0 Security Console
+
+The admin reports UI adds a Security Console to the Security events report. It ranks caller risk using detector results and caller authentication failures, and shows detector, authentication, and containment access events in the timeline. It links events to request evidence and provides JSON and Markdown incident bundles using the selected time window. Users with the domain-scoped containment permission can suspend a caller from the reports UI; the request requires same-origin CSRF protection and an audit reason. Release remains on the admin control plane and is shown as a `routerctl release` command and `/admin/v1/containment` request only for a caller suspended by containment. No new configuration is required.
+
+The console only displays signals returned by the selected time range and report page. A missing signal does not prove that a caller is safe. Request evidence remains subject to the existing report drilldown permissions.
+
+## v5.0.0 security posture self-test
+
+`metrum-ai-routerctl doctor --security --config config.yaml` reads the existing
+configuration and makes no config changes. Use `--format json` and `--fail-on`
+to gate CI. Plain HTTP `--target` values must be loopback. The check reports caller
+key format, recorded entropy, and key age against a 90-day maximum. Caller entries now accept optional
+`token_issued_at` UTC RFC3339 timestamps; token generation and admin issue or
+rotation write this field automatically. Add original issue times to manually
+managed caller keys. Existing configs remain valid; keys without a timestamp
+warn until updated or rotated, and keys older than 90 days fail.
+
+The `/metrics` endpoint remains on the serving port and requires an active
+caller configured with `metrics_admin: true`. The doctor checks this setting;
+it does not suggest moving metrics to the admin listener. DB-backed config mode
+reports that database-stored caller keys were not inspected. Engine image pins
+are compared with the release's `engine-advisories.json` snapshot; use
+`--advisories <file>` to select one explicitly. Without a snapshot, the
+advisory result is informational `not checked` and makes no network request.
+
+To display a result in admin reports, use `--report-latest --router-url` with
+`--admin-key-file` or the existing admin-key environment variables. The router
+stores only check IDs, outcomes, severities, timestamp, and aggregate status.
+Apply usage migration 2026111602 (usage schema version 17) first. Grant `admin:security_reports` / `write`
+only to the self-test operator; read and export grants do not include write.
+
+
+
+## Detector service boundary (v5.0.0)
+
+Custom detector strategies run as separate services behind the versioned
+`metrum.detector.v1` HTTPS contract. Detector transports require an exact
+allowlisted hostname and a bounded timeout. The router rejects unlisted
+redirects, URL userinfo, and malformed or oversized responses. Detector events
+carry metadata by default. Text segments are sent only when an operator opts in
+per detector with `include_segments`; prompts and user messages are never sent.
+Configured detectors default to `mode: report`; set `mode: off` explicitly to
+disable one. The example service's rule thresholds are configurable flags with
+documented defaults.
+See [External detectors](/docs/security-governance/detectors).
+
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
+Release candidate validation includes the package upgrade-and-rollback procedure in the [release checks](https://github.com/metrum-ai/router/blob/main/docs/RELEASE_CHECKS.md).
+
+Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
+
+The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.0` and `vllm/vllm-openai-rocm:v0.33.0` images, respectively, for security advisories. AMD tiers were hardware-validated on the previous v0.25.0 image; revalidation on v0.33.0 is pending. Confirm the host's AMDGPU kernel driver supports the container runtime before deploying.
+
+NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
+digest-pinned official vLLM v0.33.0 images, matching the reference
+configurations. Update copied examples from older releases before deploying them.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
+
+## v5.0.0 caller-token hygiene
+
+Newly generated caller tokens append a `v2` marker and checksum to the existing
+`rtr_metrum_` format.
+Previously issued tokens continue to authenticate. Config load warns when token
+entropy is unknown or a caller uses a development environment. The token
+generator defaults an omitted environment to `prod`. The
+`security.key_hygiene.min_entropy_bits` default is 128; `0` selects that default
+and explicit values must be 1–256. Rotate old keys before setting
+`security.key_hygiene.enforce: true`; enforcement rejects unknown or below-floor
+entropy and development-environment tokens. A leaked token can revoke itself
+through `POST /v1/security/leaked-keys` only in database-backed configuration
+mode. YAML-only/file mode has no shared revocation store, so the route is not
+mounted. The verifier is recorded in a separate token-hash denylist, independent
+of config sets and revisions, and checked during authentication on every
+serving endpoint. Rollback and YAML import do not clear the denylist. Database-
+backed replicas receive changes through the configuration revision reload path.
+The denylist write, revision notification, and audit records commit together.
+Rotate the caller token to issue a new verifier and restore access; then update
+clients with the new bearer token. Only rotation restores access; the old
+verifier remains refused.
+## v5.0.0 streaming line-buffer budget
+
+Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
 
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
+
+Direct `model` targets inherit provider-catalog capabilities, such as reasoning, tools, modalities and request-shape support, when their model ID matches a catalog entry. Their configured dialect, pricing and routing values remain unchanged. A weighted or failover group can therefore select an OpenAI reasoning model even when the target is written with `model:` instead of `model_ref:`. When mixed eligibility rejections leave the reasoning error parameter unset but removing requested reasoning makes a target eligible, `param` identifies the caller field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, or `thinking` for Anthropic). Anthropic output reasoning requires `control: token_budget` or active default thinking.
 
 ## v5.0.0 provider spend breaker
 
@@ -45,6 +132,50 @@ admin OIDC rate limiting for proxied deployments. Review the trusted proxy
 CIDRs and verify that each proxy appends its connecting peer to
 `X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
 
+## v5.0.0 admin listener and serving-port routes
+
+The authenticated admin listener starts by default at `127.0.0.1:8081`. Move machine automation
+from legacy `/admin/*` paths on the serving port to `/admin/v1/*` on the admin listener before
+upgrading. Set `admin.enabled: false` only when the deployment needs a single listener; remote binds
+require TLS or the explicit plaintext opt-in. Browser reports and `/admin/auth/*` remain on the
+serving port. Remove `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` from file
+configurations; either key fails config loading with migration guidance.
+
+For database-mode configurations, back up the router-config database and run the non-serving
+`router-migrate --scope router-config --action apply` followed by
+`router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>`
+before starting v5.0.0. The maintenance migration removes those two v4-only keys from stored
+canonical documents and refreshes their content hashes. File-mode configurations need only have the
+keys removed before restart.
+
+## v5.0.0 routerctl Admin API changes
+
+The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
+listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
+`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
+no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
+the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
+`admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
+`admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
+and the admin credential setting; response bodies and credentials are not printed.
+
+| Command | v5 behavior and flags |
+| --- | --- |
+| `config diff` | `--api` selects `/admin/v1/config/diff`; it remains optional for local file comparison. |
+| `config import` | Online by default through `POST /admin/v1/config/sets`; `--offline` explicitly selects direct database access. `--yaml` and `--name` remain required. |
+| `config export` | Online by default through `/admin/v1/config/sets/{id}`; `--offline` explicitly selects direct database access. `--set-id` and `--out` remain optional. |
+| `config activate` | Online by default through `/admin/v1/config/sets/{id}/activate`; use `--offline` for direct database access. |
+| `config rollback` | Online by default through `/admin/v1/config/rollback`; use `--offline` for direct database access. |
+| `groups list`, `show`, `set-targets`, `add-target`, `remove-target`, `rollback`, `history`, `shadow start|status|promote|stop` | Use `/admin/v1/config/groups/...`; `--router-url` is optional when the listener is at its default. |
+| `contain`, `release` | Use `/admin/v1/containment`; `--router-url` is optional at the default listener. |
+| `policies list|get|draft|validate|diff|activate|rollback|replace|delete` | Use `/admin/v1/policy-sets`; `--router-url` is optional at the default listener. |
+| `reports cfo` | Uses `/admin/v1/reports`; `--reports-prefix` now defaults to `/admin/v1/reports`. The old `/admin/reports` value is rejected. |
+
+For config import/export/activate/rollback, the historical `--api` flag remains accepted as a
+redundant online-mode selector and cannot be combined with `--offline`. Add `--offline` only for
+deliberate direct database operations while the router is stopped.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
@@ -76,6 +207,20 @@ when the service is trusted to receive request content. The request-shape and
 PII-aware examples under `examples/typescript-request-shape/` and
 `examples/typescript-pii-policy/` show the external policy contract. Use
 `pii_filter` when request redaction is required before upstream calls.
+
+## v5.0.0 caller binding
+
+Caller binding is opt-in; existing callers keep `binding.mode: off`. To enable
+enforcement, add `callers[].binding` and validate client network paths first.
+CIDR and ASN allow lists can be enforced behind an ingress. ASN checks require
+an operator-maintained `server.client_ip.asn_prefixes` map. For mTLS identity,
+terminate TLS at the router or pass TLS through unchanged, then configure
+`server.tls.client_auth: optional` (or `require`) and `server.tls.client_ca_file`. The router
+does not accept forwarded certificate headers. Config validation rejects
+enforced mTLS binding without verified client-certificate TLS or the client-auth
+extended key usage. Enforced binding failures return the same generic HTTP 401
+response as invalid tokens; the security event retains the specific failure
+reason.
 
 ## Compatibility and operations (v4.6.0)
 
@@ -167,6 +312,21 @@ and explicit writable cache and temporary mounts. The example runner also
 expects to start as its non-root user. Re-validate device access, model startup
 and runner registration in your own environment before adopting those examples;
 the offline checks in CI do not exercise a GPU or a runner image.
+
+## v5.0.0 admin resource API
+
+The versioned admin API adds provider and model-catalog reads, provider writes,
+project environments, project-environment memberships, project USD budgets and
+alert thresholds, caller quota updates,
+and retention policy writes. Mutations require
+database-backed configuration mode and a current `If-Match` revision. Provider
+API-key environment references and headers are write-only and do not appear in
+responses. Shortening retention requires the separate `config:force`
+permission. The existing config revision notifier and poller propagate changes
+to other serving replicas. No database migration is required for these routes.
+Project budget counters are per process and reset on restart; ceilings are
+approximate across replicas. Removing or raising a ceiling, or waiting for its
+UTC budget window to reset, restores admission after a trip.
 
 ## Compatibility and operations (v4.4.0)
 
@@ -738,3 +898,45 @@ administrator or by legacy configuration require all caller write permissions
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
+
+## Provider usage reconciliation
+
+Daily report-mode reconciliation is disabled by default. To enable it, configure
+`server.provider_usage_reconciliation`, the usage database, and
+`server.admin_reports.security.enabled`. OpenAI and Anthropic require a
+read-only usage API credential environment reference using the
+`ROUTER_PROVIDER_USAGE_` prefix and a provider key ID. Keep the value in the
+deployment secret environment; config stores only the reference.
+Bedrock uses CloudWatch metrics in its configured AWS region and compares at
+account scope; its USD total is estimated from the router model catalog prices.
+The job runs at 06:00 UTC by default, supports bounded restart catch-up with
+`max_catch_up_days`, and waits for provider `data_refreshed_at` watermarks when
+available. Use one Bedrock entry per AWS account and region to avoid counting
+the same CloudWatch metrics more than once.
+See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
+for configuration and operating details.
+
+## MCP gateway
+
+MCP is disabled by default, so existing v4.8 configurations continue to load
+without changes. To enable it, add an `mcp` block, set each server's explicit
+`allow_hosts`, configure server-side credential environment variables with
+the `ROUTER_MCP_` prefix, and enable the usage database for durable tool
+invocation audit records. MCP has a per-caller request-rate limit and supports
+per-caller and per-tool request and estimated-spend limits. See the
+[MCP gateway guide](../configuration/mcp-gateway.md) for configuration fields
+and policy behavior.
+
+Automatic detector containment is a separate opt-in feature. It is off by
+default. Before setting `server.auto_containment.mode` to `shadow` or
+`enforce`, run `router-migrate` to create the automatic action tables. Start
+in `shadow` mode, set a low `max_actions_per_minute`, and list emergency
+caller IDs under `exempt_callers`. Throttle rules must set
+`unlimited_throttle_limit` to provide a finite base for callers with unlimited
+configured quotas. Enforced suspend rules require database config mode and
+are recorded as containment-made so the containment role or an administrator
+can resume them before their TTL. Actions expire at their configured TTL.
+
+## Security event stream
+
+The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.

@@ -8,3 +8,13 @@ p, content_admin, example/prod, content:capture, delete|purge
 p, reports_admin, example/prod, admin:reports, read|export|drilldown
 g, adminkey:secops, role:containment, *
 p, role:containment, *, admin:containment, contain
+
+# Machine admin resource roles. Project and retention routes are plane-global;
+# memberships, caller quotas, and budgets can be restricted to a project domain.
+p, adminkey:ops-admin, *, admin:providers, read|write
+p, adminkey:ops-admin, *, admin:catalog, read
+p, adminkey:ops-admin, *, admin:projects, read|write
+p, adminkey:ops-admin, *, admin:budgets, read|write
+p, adminkey:ops-admin, example/prod, admin:memberships, read|write
+p, adminkey:ops-admin, example/prod, admin:quotas, read|write
+p, adminkey:ops-admin, *, admin:retention, write|force
