@@ -15,7 +15,6 @@ Binary packages include:
 - `bin/metrum-ai-routerctl`
 - `config/config.example.yaml`
 - `config/env.example.json`
-- `config/scripts/router.ts`
 - `caddy/Caddyfile`
 - `LICENSE`
 - `NOTICE`
@@ -32,7 +31,6 @@ Docker Compose packages include:
 - `compose/.env`
 - `config/config.example.yaml`
 - `config/env.example.json`
-- `config/scripts/router.ts`
 - `images/metrum-ai-router-<version>-linux-<arch>.tar`
 - `docs/`
 - `LICENSE`

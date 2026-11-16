@@ -5,8 +5,8 @@ Start here for operator-owned demos of Metrum AI Router extensibility:
 | Example | What it shows |
 |---|---|
 | [external-routing-policy](external-routing-policy/) | HTTP policy services (`shadow` / `enforce` / `baseline`), including OpenJev task-class routing |
-| [typescript-pii-policy](typescript-pii-policy/) | In-process TypeScript `route(ctx)` policy |
-| [typescript-request-shape](typescript-request-shape/) | Request-shape aware TypeScript selection |
+| [typescript-pii-policy](typescript-pii-policy/) | External PII-aware routing policy service |
+| [typescript-request-shape](typescript-request-shape/) | External request-shape routing policy service |
 | [cli-e2e-c](cli-e2e-c/) | Coding-agent client smoke harness |
 | [harbor-algotune-pca](harbor-algotune-pca/) | Outcome-gated coding evaluation template |
 | [fixed-model-ocr-baseline](fixed-model-ocr-baseline/) | Fixed-model OCR baseline template |
