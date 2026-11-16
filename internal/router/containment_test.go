@@ -195,6 +195,11 @@ func TestCallerContainmentHTTPFlow(t *testing.T) {
 	if got := contain("suspend", "5m", canceled).Code; got != http.StatusInternalServerError {
 		t.Fatalf("canceled containment status = %d", got)
 	}
+	expired, expire := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer expire()
+	if got := contain("suspend", "5m", expired).Code; got != http.StatusInternalServerError {
+		t.Fatalf("expired containment request status = %d", got)
+	}
 	var status string
 	if err := db.Raw(`SELECT status FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", issued.Caller.ID).Row().Scan(&status); err != nil || status != accountStatusActive {
 		t.Fatalf("caller status after canceled request = %q, %v", status, err)
