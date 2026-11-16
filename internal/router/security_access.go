@@ -124,9 +124,6 @@ func (s *Service) recordToolFirewallDecisionEvent(rc *requestContext, approvalID
 	} else {
 		log.Printf("event=tool_firewall_decision action=%s rule_code=%s request_id=%s", action, ruleCode, rc.id)
 	}
-	if !s.securityReportsEnabled() {
-		return
-	}
 	eventType := "firewall_hold"
 	if action == "deny" || action == "denied" || action == "timeout" || action == "shadow" {
 		eventType = "firewall_block"

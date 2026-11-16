@@ -308,6 +308,10 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 			if reason := safeOCSFValue(event.ReasonCode); reason != "" {
 				findingInfo["desc"] = reason
 			}
+		} else if strings.HasPrefix(event.EventType, "firewall_") {
+			if reason := safeOCSFValue(event.ReasonCode); reason != "" {
+				findingInfo["desc"] = reason
+			}
 		}
 		obj["finding_info"] = findingInfo
 		if event.Object != "" || event.OperationID != "" {

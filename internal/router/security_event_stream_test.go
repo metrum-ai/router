@@ -453,6 +453,28 @@ func TestSecurityEventStreamDoesNotQueueOrdinaryAccessTraffic(t *testing.T) {
 	}
 }
 
+func TestToolFirewallDecisionReachesOCSFStreamWithoutAdminReports(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "firewall-events.jsonl")
+	stream, err := newSecurityEventStream(SecurityEventStreamConfig{Output: "file", Path: path}, os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{securityEventStream: stream}
+	rc := &requestContext{id: "firewall-request-1", method: http.MethodPost}
+	svc.recordToolFirewallDecisionEvent(rc, "", "denied", "sensitive_path")
+	stream.close()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"class_uid":2004`) || !strings.Contains(string(body), `"uid":"firewall-request-1"`) || !strings.Contains(string(body), "rule:sensitive_path") {
+		t.Fatalf("firewall decision missing from OCSF stream: %s", body)
+	}
+	if strings.Contains(string(body), "tool arguments") || strings.Contains(string(body), "prompt text") {
+		t.Fatal("firewall event contains tool or prompt content")
+	}
+}
+
 func TestSecurityEventWebhookQueueDropDoesNotBlockSink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "events.jsonl")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
