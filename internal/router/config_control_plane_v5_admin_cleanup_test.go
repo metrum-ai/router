@@ -18,7 +18,7 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = closeDB() }()
-	prior, err := NewMigrationRunner(r.db, configControlPlaneScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 0}, configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-1])
+	prior, err := NewMigrationRunner(r.db, configControlPlaneScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 0}, configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-3])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,9 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 	if err := r.db.Exec(`INSERT INTO router_config_documents (config_set_id, canonical_yaml, content_sha256, updated_at) VALUES (?, ?, ?, ?)`, "admin-cleanup", legacy, hex.EncodeToString(digest[:]), time.Now().UTC().Format(time.RFC3339Nano)).Error; err != nil {
 		t.Fatal(err)
 	}
-	next, err := NewMigrationRunner(r.db, configControlPlaneScope, configControlPlaneCompatibility, configControlPlaneMigrationDefinitions)
+	cleanupCompatibility := configControlPlaneCompatibility
+	cleanupCompatibility.MaxSchema = 13
+	next, err := NewMigrationRunner(r.db, configControlPlaneScope, cleanupCompatibility, configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-2])
 	if err != nil {
 		t.Fatal(err)
 	}
