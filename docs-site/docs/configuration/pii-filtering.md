@@ -101,7 +101,7 @@ Translated targets build a system prompt from several caller messages or text pa
 
 Responses system-message histories are served by Anthropic and Bedrock Messages targets because the assembled instruction is filtered at its transmitted boundary; `fail_on_match` blocks before dispatch. If a PII-enabled group disables both `apply_to.system` and `apply_to.messages`, the router cannot redact that instruction and Messages targets stay excluded (`system_pii_unsupported`). Responses developer-role histories stay excluded from them (`developer_pii_unsupported`); an eligible target in another dialect can still be selected.
 
-TypeScript routing scripts receive the same redacted request object used for target selection and upstream calls, including `ctx.request.raw`. External routing policy services receive only safe derived context by default. If `external_policy.include_request: true` is explicitly enabled for a trusted policy service, the external payload includes redacted `request` and `text` fields. Placeholder mappings remain request-local and are not sent to policy code.
+User code never runs inside the router process. External routing policy services receive only safe derived context by default. If `external_policy.include_request: true` is explicitly enabled for a trusted policy service, the external payload includes redacted `request` and `text` fields. Placeholder mappings remain request-local and are not sent to policy code.
 
 ## Governed content capture
 
