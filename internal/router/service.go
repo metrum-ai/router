@@ -131,6 +131,8 @@ type Service struct {
 	adminAuditJanitorDone []<-chan struct{}
 	configReloadStop      func()
 	configNotifyStop      func()
+	autoContainmentStop   func()
+	autoContainmentMu     sync.Mutex
 	policySyncStop        func()
 	policyNotifyStop      func()
 	configInstanceID      string
@@ -459,6 +461,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		s.Close()
 		return nil, err
 	}
+	if err := s.configureAutomaticContainment(context.Background()); err != nil {
+		s.Close()
+		return nil, err
+	}
 	revokedCallerTokens, err := loadRevokedCallerTokenHashes(s.configControlPlane)
 	if err != nil {
 		s.Close()
@@ -571,6 +577,7 @@ func (s *Service) Close() {
 		s.configReloadStop()
 		s.configReloadStop = nil
 	}
+	s.stopAutomaticContainment()
 	if s.policyNotifyStop != nil {
 		s.policyNotifyStop()
 		s.policyNotifyStop = nil
@@ -782,6 +789,9 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	s.loadShadowRunsFromDB()
 	if err := s.replaceDetectorConfig(newCfg.Server.Detectors); err != nil {
 		return fmt.Errorf("reload active config: rebuild detectors: %w", err)
+	}
+	if err := s.configureAutomaticContainment(context.Background()); err != nil {
+		return fmt.Errorf("reload active config: configure automatic containment: %w", err)
 	}
 	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
 		// The admin listener binds once; a reload cannot rebind it. Say so

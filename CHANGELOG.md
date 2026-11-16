@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+- Add opt-in shadow/enforce mapping from detector signals to temporary key throttles or suspensions, with a per-minute action cap, emergency caller exemptions, and persistent TTL state.
+- Route detector suspensions through the canonical containment API so containment and admin roles can resume them; require a finite default throttle limit for unlimited keys.
 
 - Add versioned provider and model-catalog reads, provider validation and create/update/disable, project and environment lifecycle, project-environment membership CRUD, project USD budgets with alert thresholds, caller quota reads and updates, and retention policy writes. Writes use configuration revisions; retention changes that can delete more data require `admin:retention:force`, and provider credential references and headers never appear in responses.
 
@@ -58,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployment. Browser reports and `/admin/auth/*` routes remain on the serving port. Database-mode
   operators must run the router-config maintenance migration before startup; it removes the v4-only
   keys from stored canonical configurations and refreshes their content hashes.
+- `metrum-ai-routerctl config import|export|activate|rollback` now use the Admin API by default;
+  use `--offline` for deliberate direct database access while the router is stopped. The default
+  Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
+  `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
 
 ### Migrations
 
@@ -75,12 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
 - Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
 
+### Changed
+
+- Online `metrum-ai-routerctl` operations now use `/admin/v1`; offline bootstrap commands remain
+  local.
+
 ### Security
 
 - Generate checksummed v2 caller tokens, reject malformed checksums before lookup, add database-backed leaked-key self-revocation enforced by every authenticated route and propagated to replicas, and warn or enforce caller-token hygiene. Revoked verifiers live in a sticky denylist independent of config sets, so rollback and YAML import cannot restore a leaked key; rotation installs a new verifier.
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
-- Sign binary and multi-architecture OCI releases with keyless Cosign, attach archive and image SPDX SBOMs plus GitHub build provenance, assemble images from the byte-identical release binaries without a Docker daemon, reproduce binary package checksums on a clean runner, and gate publication on maintainer and AI review.
-- Include the running router executable's SHA-256 digest in `/version` and add `routerctl verify --release` for signed-release comparison.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1
   server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries,
