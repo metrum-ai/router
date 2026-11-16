@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -259,6 +260,51 @@ func (f bedrockReasoningTransport) RoundTrip(r *http.Request) (*http.Response, e
 	return nil, fmt.Errorf("unexpected Bedrock request path %q", r.URL.Path)
 }
 
+func TestBedrockInputPassesClaudeThinkingConfiguration(t *testing.T) {
+	input, err := bedrockInput([]byte(`{"model":"us.anthropic.claude-haiku-4-5-20251001-v1:0","max_tokens":1152,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.AdditionalModelRequestFields == nil {
+		t.Fatal("Claude thinking configuration was dropped")
+	}
+	got, err := input.AdditionalModelRequestFields.MarshalSmithyDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(got, &fields); err != nil {
+		t.Fatal(err)
+	}
+	thinking, _ := fields["thinking"].(map[string]any)
+	if thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(1024) {
+		t.Fatalf("thinking config = %#v", thinking)
+	}
+}
+
+func TestBedrockAnthropicBridgePassesThinkingConfiguration(t *testing.T) {
+	model := "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+	req, err := decodeRequest("anthropic", []byte(`{"model":"m","max_tokens":1152,"thinking":{"type":"enabled","budget_tokens":1024},"messages":[{"role":"user","content":"hello"}],"tools":[{"name":"record","input_schema":{"type":"object"}}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := anthropicToolTarget()
+	target.Provider = "bedrock"
+	target.Reasoning = ReasoningSupport{Supported: true, Mode: "opt_in", Control: "token_budget", MinBudgetTokens: 1024, MaxBudgetTokens: 1024, BudgetMustBeLessThanMaxTokens: true}
+	body, err := encodeAnthropicToolsBridge(model, req, target, "openai-chat", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	thinking, _ := got["thinking"].(map[string]any)
+	if thinking["type"] != "enabled" || thinking["budget_tokens"] != float64(1024) {
+		t.Fatalf("thinking config = %#v", thinking)
+	}
+}
+
 func TestBedrockReasoningConverseRoundTrip(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
@@ -406,7 +452,7 @@ func TestBedrockLive(t *testing.T) {
 	if os.Getenv("ROUTER_BEDROCK_LIVE") != "1" {
 		t.Skip("opt-in live test")
 	}
-	r, err := bedrockDo(context.Background(), "us-east-1", []byte(`{"model":"mistral.mistral-large-3-675b-instruct","messages":[{"role":"user","content":"Say OK"}],"max_tokens":16,"stream":true}`))
+	r, err := bedrockDo(context.Background(), "us-east-1", []byte(`{"model":"us.anthropic.claude-haiku-4-5-20251001-v1:0","messages":[{"role":"user","content":"Call record with value ok"}],"thinking":{"type":"enabled","budget_tokens":1024},"tools":[{"type":"function","function":{"name":"record","parameters":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}}}],"tool_choice":"required","max_tokens":1152,"stream":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,8 +461,53 @@ func TestBedrockLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.StatusCode != 200 || !strings.Contains(string(b), "[DONE]") || !strings.Contains(string(b), "prompt_tokens") {
-		t.Fatalf("status %d: %s", r.StatusCode, b)
+	if r.StatusCode != 200 || !strings.Contains(string(b), "tool_calls") || !strings.Contains(string(b), `"type":"thinking"`) || !strings.Contains(string(b), "prompt_tokens") {
+		t.Fatalf("status=%d; expected Claude tool call, thinking blocks, and usage", r.StatusCode)
+	}
+}
+
+func TestBedrockLiveRouted(t *testing.T) {
+	if os.Getenv("ROUTER_BEDROCK_LIVE") != "1" {
+		t.Skip("opt-in live test")
+	}
+	dir := t.TempDir()
+	usageEnabled := true
+	model := "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+	target := anthropicToolTarget()
+	target.Model = model
+	target.Region = "us-east-1"
+	target.InputPricePerMillionUSD = 1.10
+	target.OutputPricePerMillionUSD = 5.50
+	target.Reasoning = ReasoningSupport{Supported: true, Mode: "opt_in", Control: "token_budget", MinBudgetTokens: 1024, MaxBudgetTokens: 1024, BudgetMustBeLessThanMaxTokens: true}
+	path := filepath.Join(dir, "usage.sqlite")
+	svc := nativeStreamTestService(t, "https://bedrock-runtime.us-east-1.amazonaws.com", "openai-chat", []Target{target}, func(cfg *Config) {
+		provider := cfg.Provider["native"]
+		provider.AuthScheme = "bedrock"
+		cfg.Provider["native"] = provider
+		cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(path, &usageEnabled)
+	})
+	body := `{"model":"native-stream","max_tokens":1152,"thinking":{"type":"enabled","budget_tokens":1024},"tool_choice":{"type":"any"},"tools":[{"name":"record","input_schema":{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}}],"messages":[{"role":"user","content":"Call record with value ok"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	var rows []usageRecord
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := svc.usage.db.Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("status=%d usage rows=%d", rr.Code, len(rows))
+	}
+	t.Logf("routed status=%d model=%s input_tokens=%d output_tokens=%d cost_billed_usd=%.9f", rr.Code, rows[0].TargetModel, rows[0].InputTokens, rows[0].OutputTokens, rows[0].CostBilledUSD)
+	if rr.Code == http.StatusOK && (!strings.Contains(rr.Body.String(), `"type":"thinking"`) || !strings.Contains(rr.Body.String(), `"type":"tool_use"`)) {
+		t.Fatal("successful routed response omitted thinking or tool-use blocks")
 	}
 }
 

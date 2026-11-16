@@ -146,6 +146,11 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 	if preserveBedrockReasoning {
 		body["bedrock_reasoning"] = true
 	}
+	if target.Provider == "bedrock" && isBedrockClaudeModel(model) && req.Reasoning.Requested {
+		if thinking, ok := req.Raw["thinking"].(map[string]any); ok {
+			body["thinking"] = thinking
+		}
+	}
 	applyAnthropicFormat(body, req, out)
 	if req.System != "" {
 		body["messages"] = append([]any{map[string]any{"role": "system", "content": req.System}}, messages...)

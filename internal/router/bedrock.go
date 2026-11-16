@@ -64,9 +64,16 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
 	}
-	preserveReasoning := raw["bedrock_reasoning"] == true
+	preserveReasoning := raw["bedrock_reasoning"] == true || raw["thinking"] != nil
 	model := stringValue(raw["model"])
 	in := &bedrockruntime.ConverseInput{ModelId: aws.String(model), InferenceConfig: &bt.InferenceConfiguration{}}
+	// Anthropic's thinking object is a model-specific Converse option. Keep it
+	// opaque at this boundary: Bedrock Claude validates its shape and budget.
+	if isBedrockClaudeModel(model) {
+		if thinking, ok := raw["thinking"].(map[string]any); ok && len(thinking) > 0 {
+			in.AdditionalModelRequestFields = document.NewLazyDocument(map[string]any{"thinking": thinking})
+		}
+	}
 	if n, ok := numberAsInt(raw["max_tokens"]); ok {
 		in.InferenceConfig.MaxTokens = bedrockMaxTokens(n)
 	}
@@ -288,7 +295,7 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 	client := bedrockruntime.NewFromConfig(cfg)
 	var raw map[string]any
 	_ = json.Unmarshal(body, &raw)
-	preserveReasoning := raw["bedrock_reasoning"] == true
+	preserveReasoning := raw["bedrock_reasoning"] == true || raw["thinking"] != nil
 	stream, _ := raw["stream"].(bool)
 	h := make(http.Header)
 	if !stream {
@@ -333,7 +340,7 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 		h.Set("Content-Type", "application/json")
 		return &http.Response{StatusCode: 200, Header: h, Body: io.NopCloser(bytes.NewReader(b))}, nil
 	}
-	out, err := client.ConverseStream(ctx, &bedrockruntime.ConverseStreamInput{ModelId: in.ModelId, Messages: in.Messages, System: in.System, InferenceConfig: in.InferenceConfig, ToolConfig: in.ToolConfig})
+	out, err := client.ConverseStream(ctx, &bedrockruntime.ConverseStreamInput{ModelId: in.ModelId, Messages: in.Messages, System: in.System, InferenceConfig: in.InferenceConfig, ToolConfig: in.ToolConfig, AdditionalModelRequestFields: in.AdditionalModelRequestFields})
 	if err != nil {
 		return bedrockError(err), nil
 	}

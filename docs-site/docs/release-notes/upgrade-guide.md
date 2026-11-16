@@ -28,12 +28,14 @@ available otherwise.
 
 ## v5.0.0 Bedrock reasoning history
 
-Anthropic Messages requests routed through Bedrock Converse now retain signed
+Anthropic Messages requests routed through Bedrock Converse now forward the
+`thinking` request option for supported Claude models and retain signed
 `thinking` and `redacted_thinking` history through unary and streaming tool
-continuations. No configuration change is required. The router rejects missing
-thinking signatures and malformed redacted data before dispatch. Bedrock still
-validates signature authenticity, and opaque signatures may be scoped to a
-provider account. Keep reasoning history on the same Bedrock target and account;
+continuations. No router configuration change is required; callers opt in with
+their normal Anthropic `thinking` object. The router rejects missing thinking
+signatures and malformed redacted data before dispatch. Bedrock still validates
+signature authenticity, and opaque signatures may be scoped to a provider
+account. Keep reasoning history on the same Bedrock target and account;
 cross-provider and cross-account replay is unsupported.
 
 ## Pre-Upgrade Checklist
