@@ -2820,7 +2820,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 				if len(s.targetsForRequest(rc, group.Targets, &withoutReasoning, callerDialect)) > 0 &&
 					(err.MismatchCode == "" || (err.MismatchCode == "unsupported_capability" && err.MismatchParam == "reasoning")) {
 					err.MismatchCode = "unsupported_capability"
-					err.MismatchParam = "reasoning_effort"
+					err.MismatchParam = "reasoning"
 				}
 			}
 		}
