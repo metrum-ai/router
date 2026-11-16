@@ -108,19 +108,10 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 			decision = ErrAuthorizationUnavailable
 		}
 	}()
-	if strings.HasPrefix(principal.Subject, internalAuthorizationSubjectPrefix) || strings.TrimSpace(principal.Subject) == "" || principal.Subject == securityAdministratorRole {
-		return ErrAdminForbidden
-	}
-	if principal.Subject == authzRoleContainment && (object != authzObjectAdminContainment || action != authzActionContain) {
-		return ErrAdminForbidden
-	}
 	internalObject := strings.HasPrefix(object, internalAuthorizationSubjectPrefix)
 	guardQuery := internalObject && ctx.Value(authorizationGuardKey{}) == true
-	if guardQuery && object != securityAdministratorCapability {
-		return ErrAdminForbidden
-	}
-	if internalObject && !isLegacy && !guardQuery {
-		return ErrAdminForbidden
+	if err := validatePolicyPrincipalRequest(principal, domain, object, action, guardQuery, false); err != nil {
+		return err
 	}
 	if isLegacy {
 		if principal.Kind != "" {
@@ -153,34 +144,7 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 			subject.subject = compatibilityIdentity(adminAuthSubject{subject: principal.Subject, source: legacy.source, credentialID: principal.CredentialID}, legacy.mode)
 		}
 	} else {
-		switch principal.Kind {
-		case "emergency":
-			subject.subject = emergencyAuthorizationSubject
-		case "adminkey":
-			// Only these legacy route families consulted credential permission maps.
-			// Reports, training and maintenance remain public-policy-only. New policy
-			// and key management objects have no implicit compatibility permissions.
-			mode := ""
-			switch object {
-			case "admin:config", "admin:shadow", "admin:auth":
-				mode = "permission"
-				if domain == AdminGlobalDomain {
-					mode = "global"
-				}
-			case "admin:callers":
-				mode = "object"
-				if domain == AdminGlobalDomain && action == "list" {
-					mode = "global"
-				}
-			case "metrics":
-				if domain == AdminGlobalDomain {
-					mode = "global"
-				}
-			}
-			if mode != "" && principal.CredentialID != "" {
-				subject.subject = compatibilityIdentity(adminAuthSubject{subject: principal.Subject, source: "admin_key", credentialID: principal.CredentialID}, mode)
-			}
-		}
+		subject.subject = authorizationSubjectForPrincipal(principal, domain, object, action)
 	}
 	if guardQuery {
 		subject.subject = managementGuardIdentity(subject.subject)
@@ -192,6 +156,58 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 		return s.checkAdminPolicyFreshness(time.Now())
 	}
 	return nil
+}
+
+// validatePolicyPrincipalRequest applies the non-legacy principal and internal-object
+// restrictions shared by enforcement and candidate-policy simulation.
+func validatePolicyPrincipalRequest(principal Principal, domain, object, action string, guardQuery, requireMachine bool) error {
+	if strings.HasPrefix(principal.Subject, internalAuthorizationSubjectPrefix) || strings.TrimSpace(principal.Subject) == "" || principal.Subject == securityAdministratorRole {
+		return ErrAdminForbidden
+	}
+	if principal.Subject == authzRoleContainment && (object != authzObjectAdminContainment || action != authzActionContain) {
+		return ErrAdminForbidden
+	}
+	internalObject := strings.HasPrefix(object, internalAuthorizationSubjectPrefix)
+	if internalObject && (!guardQuery || object != securityAdministratorCapability) {
+		return ErrAdminForbidden
+	}
+	if requireMachine && (!validMachinePrincipal(principal) || strings.TrimSpace(domain) == "" || strings.TrimSpace(object) == "" || strings.TrimSpace(action) == "") {
+		return ErrAdminForbidden
+	}
+	return nil
+}
+
+// authorizationSubjectForPrincipal is shared by enforcement and policy
+// simulation so both evaluate the same compatibility identity mappings.
+func authorizationSubjectForPrincipal(principal Principal, domain, object, action string) string {
+	subject := principal.Subject
+	switch principal.Kind {
+	case "emergency":
+		return emergencyAuthorizationSubject
+	case "adminkey":
+		// These legacy route families retain credential-local permission maps.
+		mode := ""
+		switch object {
+		case "admin:config", "admin:shadow", "admin:auth":
+			mode = "permission"
+			if domain == AdminGlobalDomain {
+				mode = "global"
+			}
+		case "admin:callers":
+			mode = "object"
+			if domain == AdminGlobalDomain && action == "list" {
+				mode = "global"
+			}
+		case "metrics":
+			if domain == AdminGlobalDomain {
+				mode = "global"
+			}
+		}
+		if mode != "" && principal.CredentialID != "" {
+			return compatibilityIdentity(adminAuthSubject{subject: principal.Subject, source: "admin_key", credentialID: principal.CredentialID}, mode)
+		}
+	}
+	return subject
 }
 
 func addEmergencyAuthorizationGrants(a interface {

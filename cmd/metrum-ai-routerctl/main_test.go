@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,32 @@ import (
 	"github.com/metrum-ai/router/internal/router"
 	"gopkg.in/yaml.v3"
 )
+
+func TestRouterctlAuditVerifyCommand(t *testing.T) {
+	exportPath := filepath.Join(t.TempDir(), "audit-export.json")
+	if err := os.WriteFile(exportPath, []byte(`{"items":[],"chain_from":"","chain_to":"","checksum":""}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	readEnd, writeEnd, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousStdout := os.Stdout
+	os.Stdout = writeEnd
+	t.Cleanup(func() { os.Stdout = previousStdout })
+	auditCommand([]string{"verify", exportPath})
+	if err := writeEnd.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = previousStdout
+	output, err := io.ReadAll(readEnd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(output); got != "audit export verified\n" {
+		t.Fatalf("audit verifier output = %q", got)
+	}
+}
 
 // assertV48CallerValidation ports the caller-verifier branch of v4.8.0's
 // Config.Validate so migration tests prove rollback compatibility without

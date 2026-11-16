@@ -30,13 +30,14 @@ func TestLeakedKeySelfRevocationLocalhostE2E(t *testing.T) {
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-test-key", dir)
 	generated, err := GenerateCallerToken(TokenGenerateOptions{
 		OwnerUser: "alice", Project: "metrum-insights", Environment: "prod", KeySlug: "key1", Allow: []string{"default", "other"},
+		Reader: bytes.NewReader(bytes.Repeat([]byte{0x41}, 256)),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	callerToken := generated.Token
 	generated.Caller.ID = "alice"
-	other, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "bob", Project: "metrum-insights", Environment: "prod", KeySlug: "key2", Allow: []string{"default"}})
+	other, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "bob", Project: "metrum-insights", Environment: "prod", KeySlug: "key2", Allow: []string{"default"}, Reader: bytes.NewReader(bytes.Repeat([]byte{0x42}, 256))})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1271,3 +1271,9 @@ unavailable until the migration is applied. Bindings are checked against the act
 admin identity, including its subject and stable mTLS SAN or SPIFFE identity. Disabled/deleted
 clients and revoked/expired credentials lose access. Re-register replacement credentials to restore
 a disabled client; deleted IDs cannot be re-enabled, so create a new ID.
+
+Stored admin audit chains use migration `2026111628`: usage schema 23 follows
+hierarchy audit schema 22 (migration `2026111626`), and router-config schema 19
+follows honeytoken metadata schema 18. Apply both scopes with the non-serving migration job before
+serving. Retention prunes expired rows, including delete markers, and advances the checkpoint so
+the remaining audit chain can be verified offline.

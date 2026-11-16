@@ -32,6 +32,10 @@ API (#395) and the dedicated admin key (#350).
      write 403, missing `shadow:write` 403, file-mode 409
      `config_source_mode_file`, malformed body, oversized target list, and
      concurrent conflicting writes (exactly one wins).
+   - Admin audit API: exports a tenant-domain usage chain and credential-event
+     chain, verifies both with `routerctl audit verify`, checks that a
+     config-only key cannot delete, and checks that the audit-delete key can
+     prune the oldest retained event while preserving offline verification.
 4. Writes `evidence.json` + `SUMMARY.md` (per-case request, expected vs actual
    status, served provider/model, latency) and a cost estimate from usage
    rows.

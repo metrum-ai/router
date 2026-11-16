@@ -201,7 +201,7 @@ authentication phases 12 and 13, which use the same control-plane scope.
   when it exists: a deployment without this step starts normally and answers `503`
   on the key lifecycle routes rather than advertising a store it does not have.
 
-The v5.0.0 `router-config` migration ledger reaches schema version 18 and includes
+The v5.0.0 `router-config` migration ledger reaches schema version 19 and includes
 `2026111606` (durable asynchronous admin operations; schema 16), followed by
 `2026111610` (admin client identities; schema 17), then `2026111611` (honeytoken
 caller metadata; schema 18). The operations migration creates
@@ -211,10 +211,16 @@ and 64 MiB of results. The client migration adds the shared client and credentia
 descriptor tables. The honeytoken migration adds planted-label and planting-time
 columns to database-backed callers and depends on `2026111610`. Apply the
 router-config scope with the non-serving migration CLI before enabling the new
-operation, backup, machine-client, or honeytoken database features; serving
+operation, backup, machine-client, honeytoken, or audit-chain database features; serving
 startup and read-only migration status never create or upgrade the tables. The
 packaged Kubernetes Job example plans or applies both scopes and verifies both
-resulting ledgers, including schema 18.
+resulting ledgers, including router-config schema 19 and usage schema 23.
+
+Admin audit chains add migration ID `2026111628` to the separate usage and
+router-config ledgers. They follow usage schema 22 and router-config schema 18,
+producing schema versions 23 and 19 respectively. The usage migration depends on
+`2026111626` (hierarchy audit attribution); the router-config migration depends on
+`2026111611` (honeytoken caller metadata).
 
 ### Upgrading with `migration_policy: deployment-job`
 

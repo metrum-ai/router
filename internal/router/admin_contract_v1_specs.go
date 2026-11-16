@@ -22,6 +22,7 @@ import "net/http"
 //	AdminDomainCapturedRow   the captured row's originating caller domain, failing
 //	                         closed when it cannot be resolved
 //	AdminDomainHandler       the reports handler's own per-domain decision
+//	AdminDomainCredential    the authenticated credential's domain with contract-layer authorization
 //
 //	config-set import        admin:config / activate
 //	shadow promotion         admin:shadow / write AND admin:config / write

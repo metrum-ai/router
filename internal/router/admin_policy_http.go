@@ -114,7 +114,7 @@ func newPolicyAdminHandlers(store *usageStore, deps policyMutationDeps, audit fu
 
 func newPolicyAdminHandlersWithAudit(store *usageStore, deps policyMutationDeps, auditFor policyAuditFactory) map[string]http.HandlerFunc {
 	h := &policyAdminHandler{store: store, deps: deps, auditFor: auditFor}
-	handlers := map[string]http.HandlerFunc{"policy.set.validate": h.validate, "policy.set.diff": h.diff, "policy.set.activate": h.activate, "policy.set.rollback": h.rollback, "policy.sets.list": h.listSets, "policy.sets.create": h.create, "policy.set.get": h.get, "policy.set.replace": h.replace, "policy.set.delete": h.remove}
+	handlers := map[string]http.HandlerFunc{"policy.set.simulate": h.simulate, "policy.set.validate": h.validate, "policy.set.diff": h.diff, "policy.set.activate": h.activate, "policy.set.rollback": h.rollback, "policy.sets.list": h.listSets, "policy.sets.create": h.create, "policy.set.get": h.get, "policy.set.replace": h.replace, "policy.set.delete": h.remove}
 	for key, handler := range h.recordHandlers() {
 		handlers[key] = handler
 	}

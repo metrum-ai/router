@@ -103,10 +103,11 @@ type Service struct {
 	lineBufferBudget         *lineBufferBudget
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
 	// Idempotency-Key store and the freshness source. They are separate from the serving path.
-	adminMetricsStore    *adminMetricsStore
-	adminMetricsOnce     sync.Once
-	adminFreshnessSource AdminFreshnessSource
-	adminAuditSink       func(AdminAuditEvent)
+	adminMetricsStore              *adminMetricsStore
+	adminMetricsOnce               sync.Once
+	adminFreshnessSource           AdminFreshnessSource
+	adminAuditSink                 func(AdminAuditEvent)
+	adminCredentialAuditAggregator *adminCredentialAuditAggregator
 	// adminAuthorizeFn is the authorization seam the admin listener installs; the reports
 	// surface uses it so its per-domain decisions carry the request context.
 	adminAuthorizeFn       func(context.Context, Principal, string, string, string) error
@@ -654,6 +655,10 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.adminCredentialAuditAggregator != nil {
+		s.adminCredentialAuditAggregator.close()
+		s.adminCredentialAuditAggregator = nil
+	}
 	if s.adminClientMonitorStop != nil {
 		close(s.adminClientMonitorStop)
 		s.adminClientMonitorStop = nil

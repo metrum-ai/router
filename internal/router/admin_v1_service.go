@@ -130,12 +130,16 @@ func (s *Service) adminV1ProductionRegistry() (*AdminV1Registry, error) {
 	}
 	policyMounted := s.usage != nil && s.usage.db != nil
 	keyStoreMounted := s.adminKeys != nil
-	if !policyMounted && !keyStoreMounted {
+	auditMounted := s.usageDBHandle() != nil || s.configControlPlane != nil
+	if !policyMounted && !keyStoreMounted && !auditMounted {
 		return AdminV1DefaultRegistry()
 	}
 	operations := AdminV1Operations()
 	if policyMounted {
 		operations = append(operations, policyOperationSpecs()...)
+	}
+	if auditMounted {
+		operations = append(operations, adminAuditExportOperationSpecs()...)
 	}
 	if keyStoreMounted {
 		operations = append(operations, adminKeyOperations()...)
@@ -201,6 +205,9 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 			}
 			return map[string]any{"restored": true}, nil
 		}),
+	}
+	for key, handler := range adminAuditExportHandlers(s.usageDBHandle(), s.configControlPlane) {
+		extra[key] = handler
 	}
 	handlers := AdminV1ServiceHandlers(
 		registry,
@@ -401,6 +408,15 @@ func (f adminDenialSinkFunc) RecordDenial(ctx context.Context, record AdminDenia
 // credential-event table, falling back to the usage-side audit table when the
 // deployment runs the control plane from a file.
 func (s *Service) adminCredentialEventSink() AdminCredentialEventSink {
+	if s == nil {
+		return adminCredentialEventSinkFunc(func(context.Context, AdminCredentialEvent) error { return errors.New("service is nil") })
+	}
+	if s.adminCredentialAuditAggregator == nil {
+		s.adminCredentialAuditAggregator = newAdminCredentialAuditAggregator(func(event AdminCredentialEvent) error {
+			return s.writeAdminCredentialEvent(context.Background(), event)
+		})
+	}
+	aggregator := s.adminCredentialAuditAggregator
 	return adminCredentialEventSinkFunc(func(ctx context.Context, event AdminCredentialEvent) error {
 		if s == nil {
 			return errors.New("service is nil")
@@ -408,23 +424,59 @@ func (s *Service) adminCredentialEventSink() AdminCredentialEventSink {
 		if event.At.IsZero() {
 			event.At = time.Now().UTC()
 		}
-		if s.configControlPlane != nil {
-			if err := s.configControlPlane.Transaction(func(tx *gorm.DB) error {
-				return insertAdminCredentialEventTx(tx, event)
-			}); err != nil {
+		if event.Outcome == "success" && event.Lifecycle == "auth" {
+			if err := s.checkAdminCredentialAuditStore(ctx); err != nil {
 				return err
 			}
-			return nil
+			if aggregator == nil {
+				return ErrAuthorizationUnavailable
+			}
+			return aggregator.add(event)
 		}
-		if s.usage == nil || s.usage.db == nil {
-			return errors.New("no database is available for credential events")
-		}
-		return s.usage.db.Transaction(func(tx *gorm.DB) error {
+		return s.writeAdminCredentialEvent(ctx, event)
+	})
+}
+
+func (s *Service) checkAdminCredentialAuditStore(ctx context.Context) error {
+	if s == nil {
+		return errors.New("service is nil")
+	}
+	if s.configControlPlane != nil {
+		return s.configControlPlane.WithContext(ctx).Exec("SELECT 1").Error
+	}
+	if s.usage == nil || s.usage.db == nil {
+		return errors.New("no database is available for credential events")
+	}
+	return s.usage.db.WithContext(ctx).Exec("SELECT 1").Error
+}
+
+func (s *Service) writeAdminCredentialEvent(ctx context.Context, event AdminCredentialEvent) error {
+	if s == nil {
+		return errors.New("service is nil")
+	}
+	if event.At.IsZero() {
+		event.At = time.Now().UTC()
+	}
+	if s.configControlPlane != nil {
+		return withSQLiteBusyRetry(func() error {
+			return s.configControlPlane.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+				return insertAdminCredentialEventTx(tx, event)
+			})
+		})
+	}
+	if s.usage == nil || s.usage.db == nil {
+		return errors.New("no database is available for credential events")
+	}
+	if event.Count <= 0 {
+		event.Count = 1
+	}
+	return withSQLiteBusyRetry(func() error {
+		return s.usage.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return insertAdminAuditUsageTx(tx, AdminAuditRecord{
 				At: event.At, PrincipalSubject: event.Subject, PrincipalKind: event.Kind,
-				CredentialID: event.CredentialID, Issuer: event.Issuer, RequestID: event.RequestID,
+				CredentialID: event.CredentialID, Issuer: event.Issuer, RequestID: event.RequestID, Domain: AdminGlobalDomain,
 				Outcome: event.Outcome, ReasonCode: event.ReasonCode, OperationID: "authentication",
-				Action: event.Lifecycle,
+				Action: event.Lifecycle, Detail: fmt.Sprintf("authentication_count=%d", event.Count),
 			})
 		})
 	})
@@ -550,6 +602,10 @@ func StartAdminIdempotencyJanitor(store AdminIdempotencyKeyStore, interval time.
 // once immediately and then on the given interval, deleting in bounded batches so it never
 // issues one unbounded delete. The job stops when stop is closed.
 func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}) <-chan struct{} {
+	return startAdminAuditJanitor(db, interval, retentionDays, stop, time.Now)
+}
+
+func startAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays int, stop <-chan struct{}, now func() time.Time) <-chan struct{} {
 	done := make(chan struct{})
 	if db == nil {
 		close(done)
@@ -561,8 +617,11 @@ func StartAdminAuditJanitor(db *gorm.DB, interval time.Duration, retentionDays i
 	if retentionDays <= 0 {
 		retentionDays = 90
 	}
+	if now == nil {
+		now = time.Now
+	}
 	purge := func() {
-		cutoff := time.Now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+		cutoff := now().UTC().Add(-time.Duration(retentionDays) * 24 * time.Hour)
 		for i := 0; i < 20; i++ { // at most 20 bounded batches per tick
 			removed, err := PurgeAdminAuditEventsBefore(db, cutoff)
 			if err != nil || removed == 0 {

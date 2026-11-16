@@ -38,7 +38,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|honeytoken|adminkeys|policies|groups|providers|models|admin-resource|control-plane|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|audit|callers|contain|release|honeytoken|adminkeys|policies|groups|providers|models|admin-resource|control-plane|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -47,6 +47,8 @@ func main() {
 		verifyReleaseCommand(os.Args[2:])
 	case "config":
 		configCommand(os.Args[2:])
+	case "audit":
+		auditCommand(os.Args[2:])
 	case "callers":
 		callersCommand(os.Args[2:])
 	case "contain":
@@ -86,6 +88,34 @@ func main() {
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
+}
+
+func auditCommand(args []string) {
+	if len(args) < 2 || args[0] != "verify" {
+		die("usage: metrum-ai-routerctl audit verify <export.json> [next-page.json ...]")
+	}
+	files := make([]*os.File, 0, len(args)-1)
+	readers := make([]io.Reader, 0, len(args)-1)
+	for _, path := range args[1:] {
+		f, err := os.Open(path)
+		if err != nil {
+			for _, opened := range files {
+				_ = opened.Close()
+			}
+			die("open audit export %q: %v", path, err)
+		}
+		files = append(files, f)
+		readers = append(readers, f)
+	}
+	defer func() {
+		for _, f := range files {
+			_ = f.Close()
+		}
+	}()
+	if err := router.VerifyAdminAuditExportPages(readers...); err != nil {
+		die("audit export verification failed: %v", err)
+	}
+	fmt.Println("audit export verified")
 }
 
 func controlPlaneCommand(args []string) {

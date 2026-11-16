@@ -156,13 +156,15 @@ func ImportCanonicalYAML(db *gorm.DB, runtimeScope, name string, yamlBytes []byt
 				return fmt.Errorf("project config to relational: %w", err)
 			}
 		}
-		// Append the import audit event.
-		eventID := newConfigChangeEventID()
-		if err := tx.Exec(
-			`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			eventID, runtimeScope, configSetID, "import", actor, now, 0,
-		).Error; err != nil {
-			return fmt.Errorf("insert change event: %w", err)
+		// Low-level imports have no request audit context, so record the system
+		// actor in the global config domain through the same chained writer.
+		if err := insertChainedConfigChangeEventTx(tx, chainedConfigChangeEvent{
+			EventID: newConfigChangeEventID(), RuntimeScope: runtimeScope, ConfigSetID: configSetID,
+			Action: "import", Actor: actor, At: now, ConfigRevision: 0, ActorKind: "system",
+			AuthzDomain: string(AdminDomainGlobal), Object: "admin:config", AuthzAction: "write",
+			OperationID: "importCanonicalYAML", Outcome: "committed",
+		}); err != nil {
+			return fmt.Errorf("insert chained change event: %w", err)
 		}
 		return nil
 	})
