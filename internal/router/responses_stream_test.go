@@ -97,6 +97,110 @@ type brokenWriter struct{ header http.Header }
 func (w brokenWriter) Header() http.Header     { return w.header }
 func (brokenWriter) WriteHeader(int)           {}
 func (brokenWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+type lineBudgetObservingWriter struct {
+	recorder   *httptest.ResponseRecorder
+	budget     *lineBufferBudget
+	observed   int64
+	failWrites bool
+}
+
+func (w *lineBudgetObservingWriter) Header() http.Header { return w.recorder.Header() }
+func (w *lineBudgetObservingWriter) WriteHeader(status int) {
+	w.recorder.WriteHeader(status)
+}
+func (w *lineBudgetObservingWriter) Write(p []byte) (int, error) {
+	if used := w.budget.Used(); used > w.observed {
+		w.observed = used
+	}
+	if w.failWrites {
+		return 0, io.ErrClosedPipe
+	}
+	return w.recorder.Write(p)
+}
+func (w *lineBudgetObservingWriter) Flush() { w.recorder.Flush() }
+
+func TestResponsesHandlerLineBufferBudgetLifecycle(t *testing.T) {
+	const lineBudget = 2 << 20
+	makeEvent := func() string {
+		payload, err := json.Marshal(map[string]any{
+			"type":  "response.output_text.delta",
+			"delta": strings.Repeat("x", 256<<10),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return "event: response.output_text.delta\ndata: " + string(payload) + "\n\n"
+	}
+	newRC := func(budget *lineBufferBudget) *requestContext {
+		return &requestContext{start: time.Now(), maxSSELineBytes: 1 << 20, lineBufferBudget: budget}
+	}
+	t.Run("framer reservation lasts through event emission", func(t *testing.T) {
+		budget := newLineBufferBudget(lineBudget, nil)
+		w := &lineBudgetObservingWriter{recorder: httptest.NewRecorder(), budget: budget}
+		wire := makeEvent() + responseEnd
+		if _, err := proxyResponsesSSE(context.Background(), w, strings.NewReader(wire), "openai-responses", "m", 0, newRC(budget)); err != nil {
+			t.Fatal(err)
+		}
+		if w.observed == 0 {
+			t.Fatal("Responses event was emitted without its line-buffer reservation")
+		}
+		if used := budget.Used(); used != 0 {
+			t.Fatalf("reserved capacity after completed Responses handler=%d, want 0", used)
+		}
+	})
+	t.Run("client disconnect", func(t *testing.T) {
+		budget := newLineBufferBudget(lineBudget, nil)
+		w := &lineBudgetObservingWriter{recorder: httptest.NewRecorder(), budget: budget, failWrites: true}
+		_, err := proxyResponsesSSE(context.Background(), w, strings.NewReader(makeEvent()), "openai-responses", "m", 0, newRC(budget))
+		var upstream upstreamError
+		if !errors.As(err, &upstream) || upstream.Class != "downstream_write_error" || !upstream.Canceled {
+			t.Fatalf("disconnect error=%v", err)
+		}
+		if w.observed == 0 {
+			t.Fatal("client write failed without holding the event reservation")
+		}
+		if used := budget.Used(); used != 0 {
+			t.Fatalf("reserved capacity after client disconnect=%d, want 0", used)
+		}
+	})
+	t.Run("upstream timeout mid-line", func(t *testing.T) {
+		budget := newLineBufferBudget(lineBudget, nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		defer cancel()
+		var observed atomic.Int64
+		reader := newPrefixWaitReader("data: "+strings.Repeat("x", 256<<10), ctx, nil)
+		reader.onWait = func() { observed.Store(budget.Used()) }
+		_, err := proxyResponsesSSE(ctx, httptest.NewRecorder(), reader, "openai-responses", "m", 0, newRC(budget))
+		if err == nil {
+			t.Fatal("timeout returned nil error")
+		}
+		if observed.Load() == 0 {
+			t.Fatal("timeout fixture did not hold a line-buffer reservation while waiting")
+		}
+		if used := budget.Used(); used != 0 {
+			t.Fatalf("reserved capacity after upstream timeout=%d, want 0", used)
+		}
+	})
+	t.Run("upstream error mid-line", func(t *testing.T) {
+		budget := newLineBufferBudget(lineBudget, nil)
+		readErr := errors.New("injected upstream read error")
+		var observed atomic.Int64
+		reader := newPrefixWaitReader("data: "+strings.Repeat("x", 256<<10), nil, readErr)
+		reader.onWait = func() { observed.Store(budget.Used()) }
+		_, err := proxyResponsesSSE(context.Background(), httptest.NewRecorder(), reader, "openai-responses", "m", 0, newRC(budget))
+		if err == nil {
+			t.Fatal("mid-line read error returned nil")
+		}
+		if observed.Load() == 0 {
+			t.Fatal("mid-line error fixture did not acquire a line-buffer reservation")
+		}
+		if used := budget.Used(); used != 0 {
+			t.Fatalf("reserved capacity after mid-line error=%d, want 0", used)
+		}
+	})
+}
+
 func TestResponsesLifecycle(t *testing.T) {
 	for _, at := range []string{"begin", "next", "finish"} {
 		t.Run(at, func(t *testing.T) {

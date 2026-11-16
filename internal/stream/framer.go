@@ -8,10 +8,34 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"sync"
 )
 
 var ErrLimit = errors.New("stream: size limit exceeded")
 var ErrFrameTooLarge = errors.New("stream: line exceeds configured limit")
+var ErrLineBufferBudget = errors.New("stream: line buffer budget exhausted")
+
+// LineBufferBudget accounts for allocated bytes retained while parsing or
+// holding an in-flight stream. Each successful acquisition must be released
+// exactly once by its owner. A tool-call hold such as #929 acquires its own
+// retained bytes through this interface and releases them when the held call
+// is emitted or discarded on timeout, cancellation, or error.
+type LineBufferBudget interface {
+	TryAcquire(int64) bool
+	Release(int64)
+}
+
+type lineBufferReservation struct {
+	budget LineBufferBudget
+	bytes  int64
+	once   sync.Once
+}
+
+func (r *lineBufferReservation) release() {
+	if r != nil && r.budget != nil && r.bytes > 0 {
+		r.once.Do(func() { r.budget.Release(r.bytes) })
+	}
+}
 
 const maxFramerLineBytes = 64 << 10
 
@@ -23,6 +47,7 @@ type Framer struct {
 	reader       *bufio.Reader
 	skipLF       bool // A CR ended the previous line; swallow an optional LF lazily.
 	Limit, Bytes int64
+	lineBudget   LineBufferBudget
 }
 
 func NewFramer(r io.Reader, limit int64, maxLineBytes ...int) *Framer {
@@ -37,12 +62,24 @@ func NewFramer(r io.Reader, limit int64, maxLineBytes ...int) *Framer {
 	// supplied buffer, allowing oversized lines when the total limit is zero.
 	return &Framer{reader: bufio.NewReaderSize(struct{ io.Reader }{r}, 64<<10), Limit: limit, maxLineBytes: lineLimit}
 }
+
+// SetLineBufferBudget supplies the shared process budget used for line growth.
+// The router releases a returned Event's reservation after translation and
+// downstream emission; the framer releases incomplete or failed events itself.
+func (f *Framer) SetLineBufferBudget(budget LineBufferBudget) { f.lineBudget = budget }
+
+// Next returns one complete event. Line reservations are transferred to that
+// Event and remain held until its consumer calls ReleaseLineBufferBudget.
+// Incomplete events and errors release their reservations before returning.
 func (f *Framer) Next() (Event, error) {
 	var e Event
 	var data [][]byte
+	var reservedTotal int64
+	defer func() { f.releaseLine(reservedTotal) }()
 	for {
-		line, err := f.nextLine()
-		if errors.Is(err, ErrLimit) || errors.Is(err, ErrFrameTooLarge) {
+		line, reserved, err := f.nextLine()
+		reservedTotal += reserved
+		if errors.Is(err, ErrLimit) || errors.Is(err, ErrFrameTooLarge) || errors.Is(err, ErrLineBufferBudget) {
 			return Event{}, err
 		}
 		if err != nil {
@@ -53,10 +90,16 @@ func (f *Framer) Next() (Event, error) {
 		}
 		if len(line) == 0 {
 			if len(data) == 0 {
+				f.releaseLine(reservedTotal)
+				reservedTotal = 0
 				e = Event{}
 				continue
 			}
 			e.Data = bytes.Join(data, []byte{'\n'})
+			if reservedTotal > 0 && f.lineBudget != nil {
+				e.lineBufferReservation = &lineBufferReservation{budget: f.lineBudget, bytes: reservedTotal}
+				reservedTotal = 0
+			}
 			return e, nil
 		}
 		key, value, ok := bytes.Cut(line, []byte{':'})
@@ -73,23 +116,36 @@ func (f *Framer) Next() (Event, error) {
 	}
 }
 
+// ReleaseLineBufferBudget releases line capacity retained for this event. A
+// stream consumer calls it after translation and downstream emission, including
+// write failures; repeated calls are safe when translators copy an Event.
+func (e *Event) ReleaseLineBufferBudget() {
+	if e == nil || e.lineBufferReservation == nil {
+		return
+	}
+	e.lineBufferReservation.release()
+	e.lineBufferReservation = nil
+}
+
 // nextLine recognizes all SSE line endings, including CRLF split across reads.
 // Do not peek after CR: a bare-CR event must be deliverable before the upstream
 // sends another byte. Every consumed byte, including a swallowed LF, counts
 // against the total stream limit.
-func (f *Framer) nextLine() ([]byte, error) {
+func (f *Framer) nextLine() ([]byte, int64, error) {
 	if f.Limit > 0 && f.Bytes > f.Limit {
-		return nil, ErrLimit
+		return nil, 0, ErrLimit
 	}
 	var line []byte
+	var reserved int64
 	for {
 		b, err := f.reader.ReadByte()
 		if err != nil {
-			return line, err
+			return line, reserved, err
 		}
 		f.Bytes++
 		if f.Limit > 0 && f.Bytes > f.Limit {
-			return nil, ErrLimit
+			f.releaseLine(reserved)
+			return nil, 0, ErrLimit
 		}
 		if f.skipLF {
 			f.skipLF = false
@@ -100,17 +156,42 @@ func (f *Framer) nextLine() ([]byte, error) {
 		switch b {
 		case '\r':
 			f.skipLF = true
-			return line, nil
+			return line, reserved, nil
 		case '\n':
-			return line, nil
+			return line, reserved, nil
 		default:
 			// Reserve one byte for the normalized terminator. CRLF counts as one
 			// line ending, but both bytes still count against the stream budget.
 			if len(line) >= f.maxLineBytes-1 {
-				return nil, ErrFrameTooLarge
+				f.releaseLine(reserved)
+				return nil, 0, ErrFrameTooLarge
+			}
+			if len(line) == cap(line) {
+				newCap := cap(line) * 2
+				if newCap < 256 {
+					newCap = 256
+				}
+				if newCap > f.maxLineBytes-1 {
+					newCap = f.maxLineBytes - 1
+				}
+				if f.lineBudget != nil && !f.lineBudget.TryAcquire(int64(newCap)) {
+					f.releaseLine(reserved)
+					return nil, 0, ErrLineBufferBudget
+				}
+				grown := make([]byte, len(line), newCap)
+				copy(grown, line)
+				f.releaseLine(reserved)
+				reserved = int64(newCap)
+				line = grown
 			}
 			line = append(line, b)
 		}
+	}
+}
+
+func (f *Framer) releaseLine(reserved int64) {
+	if f.lineBudget != nil && reserved > 0 {
+		f.lineBudget.Release(reserved)
 	}
 }
 
