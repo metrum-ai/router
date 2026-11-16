@@ -170,6 +170,7 @@ type ServerConfig struct {
 	Retention                   RetentionConfig                   `yaml:"retention"`
 	DecisionTelemetry           DecisionTelemetryConfig           `yaml:"decision_telemetry"`
 	TrafficShape                ServerTrafficShapeConfig          `yaml:"traffic_shape" json:"traffic_shape"`
+	Trace                       TraceConfig                       `yaml:"trace" json:"trace,omitempty"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -181,6 +182,12 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+}
+
+// TraceConfig controls which immediate network peers may establish inbound
+// trace context. Outbound trace propagation is configured per provider.
+type TraceConfig struct {
+	TrustedParentCIDRs []string `yaml:"trusted_parent_cidrs" json:"trustedParentCidrs,omitempty"`
 }
 
 // AutoContainmentConfig maps enforce-mode detector signals to bounded key actions.
@@ -514,17 +521,18 @@ type DecisionTelemetryConfig struct {
 }
 
 type ProviderConfig struct {
-	BaseURL      string                     `yaml:"base_url"`
-	Dialect      string                     `yaml:"dialect"`
-	UpstreamKind string                     `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
-	APIKey       string                     `yaml:"api_key"`
-	APIKeyEnv    string                     `yaml:"api_key_env"`
-	KeyID        string                     `yaml:"key_id"`
-	AuthScheme   string                     `yaml:"auth_scheme"`
-	Headers      map[string]string          `yaml:"headers"`
-	TrafficShape TrafficShapeConfig         `yaml:"traffic_shape" json:"trafficShape,omitempty"`
-	SpendBreaker ProviderSpendBreakerConfig `yaml:"spend_breaker" json:"spendBreaker,omitempty"`
-	Models       map[string]ProviderModel   `yaml:"models"`
+	BaseURL        string                     `yaml:"base_url"`
+	Dialect        string                     `yaml:"dialect"`
+	UpstreamKind   string                     `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
+	PropagateTrace *bool                      `yaml:"propagate_trace,omitempty" json:"propagate_trace,omitempty"`
+	APIKey         string                     `yaml:"api_key"`
+	APIKeyEnv      string                     `yaml:"api_key_env"`
+	KeyID          string                     `yaml:"key_id"`
+	AuthScheme     string                     `yaml:"auth_scheme"`
+	Headers        map[string]string          `yaml:"headers"`
+	TrafficShape   TrafficShapeConfig         `yaml:"traffic_shape" json:"trafficShape,omitempty"`
+	SpendBreaker   ProviderSpendBreakerConfig `yaml:"spend_breaker" json:"spendBreaker,omitempty"`
+	Models         map[string]ProviderModel   `yaml:"models"`
 }
 
 // ProviderSpendBreakerConfig caps estimated spend attributed to one provider.
@@ -1251,6 +1259,7 @@ type CallerConfig struct {
 	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
 	Allow              []string             `yaml:"allow" json:"allow"`
 	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	TrustTraceparent   bool                 `yaml:"trust_traceparent" json:"trust_traceparent,omitempty"`
 	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
 	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
@@ -2075,6 +2084,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
+		return err
+	}
+	if err := validateTraceConfig(c.Server.Trace); err != nil {
 		return err
 	}
 	if err := validateASNPrefixes(c.Server.ClientIP.ASNPrefixes); err != nil {
