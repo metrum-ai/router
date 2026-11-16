@@ -31,8 +31,8 @@ experiment, a matrix, a scratch area — is outside the contract and is left alo
 |---|---|---|---|---|
 | [`nvidia-datacenter/`](nvidia-datacenter/) | 1× NVIDIA 80 GB datacenter GPU (H100 80 GB class) | `vllm/vllm-openai` | `local-tiny`, `local-chat`, `escalate` | validated on hardware (H100 80 GB): functional suite 8 passed / 0 failed / 2 skipped, concurrency sweep committed |
 | [`nvidia-gb10-edge/`](nvidia-gb10-edge/) | 1× NVIDIA GB10 system, 128 GB unified memory (aarch64) | `vllm/vllm-openai` (arm64) | `local-tiny`, `local-chat`, `escalate` | functional check on hardware only (6 passed / 0 failed / 3 skipped); concurrency and latency not measured |
-| [`amd-mi350p-datacenter/`](amd-mi350p-datacenter/) | 1× AMD Instinct MI350P 144 GB (gfx950) | `rocm/vllm` (`gfx950`) | `local-tiny`, `local-chat`, `local-coder`, `escalate` | structure and pins committed; no hardware run yet (#785) |
-| [`amd-strix-halo-edge/`](amd-strix-halo-edge/) | 1× AMD Ryzen AI MAX+ 395, 128 GB unified memory (gfx1151) | `rocm/vllm` (`gfx1151`) | `local-tiny`, `local-chat`, `escalate` | validated on hardware: functional suite 8 passed / 0 failed / 2 skipped; measured 1-worker p95 ~9.5 s, above the 8 s target (see its Limits) |
+| [`amd-mi350p-datacenter/`](amd-mi350p-datacenter/) | 1× AMD Instinct MI350P 144 GB (gfx950) | `vllm/vllm-openai-rocm:v0.33.0` | `local-tiny`, `local-chat`, `local-coder`, `escalate` | current pin moved to v0.33.0 for security advisories; no hardware run yet (#785) |
+| [`amd-strix-halo-edge/`](amd-strix-halo-edge/) | 1× AMD Ryzen AI MAX+ 395, 128 GB unified memory (gfx1151) | `vllm/vllm-openai-rocm:v0.33.0` | `local-tiny`, `local-chat`, `escalate` | hardware validation used the previous image; pin moved to v0.33.0 for security advisories and revalidation is pending |
 
 A tier README says `hardware run pending` until `results/` holds a measured run
 from a named commit. Pending is not a pass, and no tier claims a measured
@@ -41,8 +41,10 @@ concurrency before one is committed.
 ## Image policy
 
 - Model servers use **official upstream images only**: `vllm/vllm-openai` for
-  NVIDIA and `rocm/vllm` for AMD. No llama.cpp, Ollama, LM Studio or community
-  images, and no vendor wrapper images, in a reference configuration.
+  NVIDIA and `vllm/vllm-openai-rocm` for AMD. The AMD pins moved to v0.33.0 for
+  security advisories; hardware revalidation on that image is pending. No
+  llama.cpp, Ollama, LM Studio, community images, or vendor wrappers appear in
+  a reference configuration.
 - Every model-server image is pinned **by digest** (`repo:tag@sha256:...`) in both
   `compose.yaml` and `images.lock`. The checker fails on a tag without a digest,
   a digest that disagrees with the lock file, or an image outside the two

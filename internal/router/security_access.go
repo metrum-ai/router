@@ -54,6 +54,9 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 	if status == http.StatusUnauthorized && (rec.TokenID == "missing-token" || rec.TokenID == "invalid-token") {
 		reason = rec.TokenID
 	}
+	if rc.securityReason != "" {
+		reason = rc.securityReason
+	}
 	s.recordSecurityAccessEvent(securityAccessEvent{
 		TS:                  time.Now().UTC(),
 		RequestID:           rc.id,

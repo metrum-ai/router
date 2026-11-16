@@ -116,6 +116,30 @@ jobs:
       - name: Other Go and Windows
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK make -k -j2 ci-go ci-windows
+      - name: External detector contract against example service
+        if: env.CI_RUN_GO == '1'
+        env:
+          DETECTOR_URL: http://127.0.0.1:18081/v1/detect
+        run: |
+          set -euo pipefail
+          test -n "$DETECTOR_URL"
+          go build -o "$RUNNER_TEMP/example-detector" ./examples/external-detector
+          "$RUNNER_TEMP/example-detector" --listen 127.0.0.1:18081 >"$RUNNER_TEMP/example-detector.log" 2>&1 &
+          detector_pid=$!
+          trap 'kill "$detector_pid" 2>/dev/null || true; wait "$detector_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for _ in $(seq 1 50); do
+            if curl --silent --show-error --max-time 1 --output /dev/null "$DETECTOR_URL"; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != true ]; then
+            cat "$RUNNER_TEMP/example-detector.log"
+            exit 1
+          fi
+          go test ./pkg/detector -run '^TestExternalContract$' -count=1
 
   other:
     name: Compatibility, Python and examples
@@ -469,11 +493,35 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  engine-advisory-gate:
+    name: inference-engine-advisory-gate
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install pinned YAML parser
+        run: |
+          cat > "${RUNNER_TEMP}/engine-gate-requirements.txt" <<'EOF'
+          PyYAML==6.0.3 \
+            --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc \
+            --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28
+          EOF
+          python3 -m pip install --user --require-hashes --only-binary=:all: -r "${RUNNER_TEMP}/engine-gate-requirements.txt"
+      - name: Test fail-closed parsing and exception behavior
+        run: python3 -m unittest scripts/engine_advisory_gate_test.py -v
+      - name: Check deployed engine images against GitHub Advisories and OSV
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/engine_advisory_gate.py --check
+
   ci:
     name: ci
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     if: always()
-    needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories]
+    needs: [router, other-go, other, sbom, warm, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate]
     timeout-minutes: 5
     steps:
       - name: Require every lane
@@ -488,8 +536,10 @@ jobs:
           PARALLEL_TOOLS_RESULT: ${{ needs.parallel-tools.result }}
           TLS_ACME_RESULT: ${{ needs.tls-acme.result }}
           ADVISORY_RESULT: ${{ needs.admin-authz-advisories.result }}
+          ENGINE_ADVISORY_RESULT: ${{ needs.engine-advisory-gate.result }}
         run: |
           [ "$ADVISORY_RESULT" = success ] || { echo "Advisory gate did not succeed: $ADVISORY_RESULT" >&2; exit 1; }
+          [ "$ENGINE_ADVISORY_RESULT" = success ] || { echo "Inference engine advisory gate did not succeed: $ENGINE_ADVISORY_RESULT" >&2; exit 1; }
           if [ "$CI_EVENT" = push ]; then
             [ "$WARM_RESULT" = success ] || { echo "Main cache warm failed: $WARM_RESULT" >&2; exit 1; }
             for result in "$ROUTER_RESULT" "$OTHER_GO_RESULT" "$OTHER_RESULT" "$SBOM_RESULT" "$K8S_SECURITY_RESULT" "$PARALLEL_TOOLS_RESULT" "$TLS_ACME_RESULT"; do

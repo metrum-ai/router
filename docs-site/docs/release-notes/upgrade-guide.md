@@ -5,7 +5,27 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Detector service boundary (v5.0.0)
+
+Custom detector strategies run as separate services behind the versioned
+`metrum.detector.v1` HTTPS contract. Detector transports require an exact
+allowlisted hostname and a bounded timeout. The router rejects unlisted
+redirects, URL userinfo, and malformed or oversized responses. Detector events
+carry metadata by default. Text segments are sent only when an operator opts in
+per detector with `include_segments`; prompts and user messages are never sent.
+See [External detectors](/docs/security-governance/detectors).
+
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
+
+Release candidate validation includes the package upgrade-and-rollback procedure in the [release checks](https://github.com/metrum-ai/router/blob/main/docs/RELEASE_CHECKS.md).
+
+Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
+
+The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.0` and `vllm/vllm-openai-rocm:v0.33.0` images, respectively, for security advisories. AMD tiers were hardware-validated on the previous v0.25.0 image; revalidation on v0.33.0 is pending. Confirm the host's AMDGPU kernel driver supports the container runtime before deploying.
+
+NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
+digest-pinned official vLLM v0.33.0 images, matching the reference
+configurations. Update copied examples from older releases before deploying them.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
@@ -76,6 +96,20 @@ when the service is trusted to receive request content. The request-shape and
 PII-aware examples under `examples/typescript-request-shape/` and
 `examples/typescript-pii-policy/` show the external policy contract. Use
 `pii_filter` when request redaction is required before upstream calls.
+
+## v5.0.0 caller binding
+
+Caller binding is opt-in; existing callers keep `binding.mode: off`. To enable
+enforcement, add `callers[].binding` and validate client network paths first.
+CIDR and ASN allow lists can be enforced behind an ingress. ASN checks require
+an operator-maintained `server.client_ip.asn_prefixes` map. For mTLS identity,
+terminate TLS at the router or pass TLS through unchanged, then configure
+`server.tls.client_auth: optional` (or `require`) and `server.tls.client_ca_file`. The router
+does not accept forwarded certificate headers. Config validation rejects
+enforced mTLS binding without verified client-certificate TLS or the client-auth
+extended key usage. Enforced binding failures return the same generic HTTP 401
+response as invalid tokens; the security event retains the specific failure
+reason.
 
 ## Compatibility and operations (v4.6.0)
 
