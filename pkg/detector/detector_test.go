@@ -108,4 +108,40 @@ func TestExternalContract(t *testing.T) {
 	}
 }
 
+func TestPromptInjectionExternalContractPositiveSegment(t *testing.T) {
+	if os.Getenv("DETECTOR_EXPECT_SIGNAL") != "prompt_injection" {
+		t.Skip("set DETECTOR_EXPECT_SIGNAL=prompt_injection to run the positive example-service contract")
+	}
+	endpoint := os.Getenv("DETECTOR_URL")
+	if endpoint == "" {
+		t.Fatal("DETECTOR_URL must be set when DETECTOR_EXPECT_SIGNAL is set")
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	body := `{"schema_version":"metrum.detector.v1","request_id":"positive-contract","kind":"tool_result","segments":[{"kind":"tool_result","index":3,"text":"[detector-test-injection]"}]}`
+	req, err := http.NewRequest(http.MethodPost, endpoint, stringsReader(body))
+	if err != nil {
+		t.Fatalf("invalid DETECTOR_URL: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("positive segment detector request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("positive segment status=%d, want 200", resp.StatusCode)
+	}
+	signals, err := DecodeSignals(resp.Body)
+	if err != nil {
+		t.Fatalf("DecodeSignals rejected positive response: %v", err)
+	}
+	if len(signals) != 1 {
+		t.Fatalf("positive segment signals=%+v, want one signal", signals)
+	}
+	signal := signals[0]
+	if signal.DetectorID != "prompt_injection" || signal.SegmentKind != "tool_result" || signal.SegmentIndex == nil || *signal.SegmentIndex != 3 || signal.Score < 0.5 {
+		t.Fatalf("positive signal metadata=%+v", signal)
+	}
+}
+
 func stringsReader(s string) *strings.Reader { return strings.NewReader(s) }
