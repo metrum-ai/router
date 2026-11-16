@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Added a release checklist and a bounded package upgrade-and-rollback check.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.

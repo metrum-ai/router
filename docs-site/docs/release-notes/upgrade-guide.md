@@ -17,6 +17,8 @@ See [External detectors](/docs/security-governance/detectors).
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
+Release candidate validation includes the package upgrade-and-rollback procedure in the [release checks](https://github.com/metrum-ai/router/blob/main/docs/RELEASE_CHECKS.md).
+
 Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
 
 The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.0` and `vllm/vllm-openai-rocm:v0.33.0` images, respectively, for security advisories. AMD tiers were hardware-validated on the previous v0.25.0 image; revalidation on v0.33.0 is pending. Confirm the host's AMDGPU kernel driver supports the container runtime before deploying.
