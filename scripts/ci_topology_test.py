@@ -153,6 +153,7 @@ def assert_retirement_topology() -> None:
             "supplemental checks must run on merge groups and dispatch")
     parsed = jobs(text)
     coverage = {
+        "generated-release-files": ("make admin-openapi-check admin-build", "git diff --exit-code"),
         "contracts": ("make secret-check", "scripts/api_compat_bootstrap_test.py", "make docs-qa", "tsc --noEmit"),
         "api-compat": ("make api-compat-mock api-compat-ts",),
         "harbor": ("make harbor-local",),
@@ -361,7 +362,7 @@ def assert_arc_runners() -> None:
         "run3-gpu-safety-smoke.yml": {"gpu-safety"},
         "security-evidence.yml": {"secret-scan"},
         "source-headers.yml": {"validate"},
-        "supplemental-checks.yml": {"contracts", "api-compat", "harbor", "d3", "changes"},
+        "supplemental-checks.yml": {"generated-release-files", "contracts", "api-compat", "harbor", "d3", "changes"},
     }
     for path in sorted(WORKFLOWS.glob("*.yml")):
         text = read(path)

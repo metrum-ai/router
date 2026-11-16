@@ -127,7 +127,8 @@ class ReleaseAIReviewTest(unittest.TestCase):
     def test_git_diff_batches_uses_literal_paths_and_rejects_empty_file_diff(self) -> None:
         first = type("Result", (), {"stdout": b"literal[1].go\0"})()
         second = type("Result", (), {"stdout": ""})()
-        with patch.object(review.subprocess, "run", side_effect=[first, second]) as run:
+        with patch.object(review, "git_binary_paths", return_value=[]), \
+             patch.object(review.subprocess, "run", side_effect=[first, second]) as run:
             with self.assertRaisesRegex(ValueError, "listed release diff file .* empty diff"):
                 review.git_diff_batches("base", "head")
         for call_args in run.call_args_list:
@@ -226,13 +227,18 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 review.call_model("not-a-real-key", "diff contents", timeout=0.001)
 
     def test_model_http_error_reports_status_without_response_body(self) -> None:
+        stderr = io.StringIO()
         failure = review.urllib.error.HTTPError(
-            review.API_URL, 400, "Bad request", {}, io.BytesIO(b"private provider body")
+            review.API_URL, 400, "Bad request", {}, io.BytesIO(
+                b'{"type":"error","error":{"type":"invalid_request_error","message":"request is too large"}}'
+            )
         )
-        with patch.object(review.urllib.request, "urlopen", side_effect=failure):
+        with patch.object(review.urllib.request, "urlopen", side_effect=failure), redirect_stderr(stderr):
             with self.assertRaisesRegex(RuntimeError, "HTTP status 400") as raised:
                 review.call_model("test-key", "diff")
-        self.assertNotIn("private provider body", str(raised.exception))
+        self.assertNotIn("request is too large", str(raised.exception))
+        self.assertIn("error.type=invalid_request_error", stderr.getvalue())
+        self.assertIn("error.message=request is too large", stderr.getvalue())
 
     def test_cli_fails_closed_when_credential_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -269,6 +275,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             }), encoding="utf-8")
             with patch.dict(os.environ, {}, clear=True), \
                  patch.object(review, "git_diff_names", return_value=[]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "call_model") as call_model, patch("sys.argv", [
                 "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(cache),
@@ -371,6 +378,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             stderr = io.StringIO()
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["one.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]) as batches, \
                  patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen, \
                  patch("sys.argv", args), redirect_stderr(stderr):
@@ -402,6 +410,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             }), encoding="utf-8")
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["router.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", return_value=[("changed range diff", ("router.go",))]), \
                  patch.object(review, "call_model", return_value=candidate) as call_model, \
                  patch("sys.argv", args):
@@ -432,6 +441,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             batches = [("diff batch one", ("router.go",)), ("diff batch two", ("docs/release.md",))]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["router.go", "docs/release.md"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", return_value=batches), \
                  patch.object(review, "call_model", side_effect=[clean_batch, blocking_batch]) as call_model, \
                  patch("sys.argv", args):
@@ -441,7 +451,8 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 call("test-key", "diff batch two", batch_number=2, batch_count=2),
             ])
             artifact = json.loads((root / "review-output" / "review.json").read_text(encoding="utf-8"))
-            self.assertEqual(artifact["summary"], "Reviewed 2 changed files across 2 bounded batches.")
+            self.assertEqual(artifact["summary"],
+                             "Reviewed 2 text files across 2 bounded batches; recorded 0 binary file hashes and 0 generated-file checks within a 2-file release range.")
             self.assertEqual(artifact["file_coverage"], [
                 {"file": "docs/release.md", "status": "reviewed"},
                 {"file": "router.go", "status": "reviewed"},
@@ -488,6 +499,52 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "coverage does not match the diff"):
             review.validate_artifact(artifact, "v4.8.0", "abc1234", set())
 
+    def test_binary_changes_are_covered_by_before_and_after_sha256(self) -> None:
+        before = "a" * 64
+        after = "b" * 64
+        candidate = {"summary": "Binary assets have recorded content hashes.", "findings": []}
+        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+            "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
+        }])
+        self.assertEqual(artifact["file_coverage"], [{
+            "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
+        }])
+        review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/logo.png"}, {
+            "assets/logo.png": {"before": before, "after": after},
+        })
+        with self.assertRaisesRegex(ValueError, "binary hashes do not match"):
+            review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/logo.png"}, {
+                "assets/logo.png": {"before": before, "after": "c" * 64},
+            })
+
+    def test_binary_detection_and_hashing_use_numstat_and_git_objects(self) -> None:
+        numstat = type("Result", (), {"stdout": b"-\t-\tassets/logo.png\0"})()
+        with patch.object(review.subprocess, "run", side_effect=[numstat]) as run:
+            self.assertEqual(review.git_binary_paths("base", "head"), ["assets/logo.png"])
+        self.assertIn("--numstat", run.call_args.args[0])
+        with patch.object(review.subprocess, "run", side_effect=[
+            type("Result", (), {"stdout": b"old binary"})(),
+            type("Result", (), {"stdout": b"new binary"})(),
+        ]):
+            hashes = review.git_binary_hashes("base", "head", {"assets/logo.png"})
+        import hashlib
+        self.assertEqual(hashes["assets/logo.png"], {
+            "before": hashlib.sha256(b"old binary").hexdigest(),
+            "after": hashlib.sha256(b"new binary").hexdigest(),
+        })
+
+    def test_openapi_spec_uses_named_generated_check_instead_of_text_diff(self) -> None:
+        paths = ["docs/specs/admin-v1.openapi.json", "assets/logo.png", "src/change.go"]
+        with patch.object(review, "git_diff_names", return_value=paths), \
+             patch.object(review, "git_binary_paths", return_value=["assets/logo.png"]), \
+             patch.object(review.subprocess, "run", return_value=type("Result", (), {"stdout": "diff --git a/src/change.go b/src/change.go\n+change\n"})()) as run:
+            batches = review.git_diff_batches("base", "head")
+        self.assertEqual(batches[0][1], ("src/change.go",))
+        self.assertTrue(all("admin-v1.openapi.json" not in command.args[0][-1] and "logo.png" not in command.args[0][-1]
+                            for command in run.call_args_list))
+        self.assertEqual(review.GENERATED_FILE_VERIFICATION_ALLOWLIST["docs/specs/admin-v1.openapi.json"],
+                         "supplemental-checks / generated-release-files")
+
     def test_fresh_batches_must_match_git_diff_name_only_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -502,6 +559,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["one.go", "two.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]), \
                  patch.object(review, "call_model") as call_model, patch("sys.argv", args):
                 self.assertEqual(review.main(), 2)
@@ -527,6 +585,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]
             with patch.object(review, "git_diff_names", return_value=["one.go", "two.go"]), \
+            patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "call_model") as call_model, patch("sys.argv", args):
                 self.assertEqual(review.main(), 2)
             call_model.assert_not_called()
@@ -552,6 +611,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["one.go", "two.go", "three.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", return_value=batches), \
                  patch.object(review, "call_model", side_effect=[clean_batch, RuntimeError("AI release review request failed")]) as call_model, \
                  patch("sys.argv", args):
@@ -583,6 +643,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["passed.go", "two-a.go", "two-b.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as git_diff_batches, \
                  patch.object(review, "call_model", side_effect=[
                      clean_batch,
@@ -628,6 +689,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
 
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["passed.go", "two-a.go", "two-b.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as build_batches, \
                  patch.object(review, "call_model", side_effect=[
                      clean_batch,
@@ -664,6 +726,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             stderr = io.StringIO()
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_names", return_value=["one.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as batch_builder, \
                  patch.object(review, "call_model", side_effect=review.MaxTokensStopError(
                      "AI release review response ended with stop_reason=max_tokens"
