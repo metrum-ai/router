@@ -113,26 +113,33 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 	})
 }
 
-func (s *Service) recordToolFirewallApprovalEvent(rc *requestContext, approvalID, action string) {
-	if rc == nil || approvalID == "" || action == "" {
+func (s *Service) recordToolFirewallDecisionEvent(rc *requestContext, approvalID, action, ruleCode string) {
+	if rc == nil || action == "" {
 		return
 	}
-	// The ID is opaque routing metadata, not a credential. Keep the event within
-	// the firewall event types consumed by the OCSF stream; tool names and
-	// arguments are intentionally absent.
-	log.Printf("event=tool_firewall_approval_%s approval_id=%s request_id=%s", action, approvalID, rc.id)
+	// The ID is opaque routing metadata, not a credential. Events contain only
+	// policy result metadata; tool names and arguments are intentionally absent.
+	if approvalID != "" {
+		log.Printf("event=tool_firewall_approval_%s approval_id=%s rule_code=%s request_id=%s", action, approvalID, ruleCode, rc.id)
+	} else {
+		log.Printf("event=tool_firewall_decision action=%s rule_code=%s request_id=%s", action, ruleCode, rc.id)
+	}
 	if !s.securityReportsEnabled() {
 		return
 	}
 	eventType := "firewall_hold"
-	if action == "denied" || action == "timeout" {
+	if action == "deny" || action == "denied" || action == "timeout" || action == "shadow" {
 		eventType = "firewall_block"
+	}
+	reason := "rule:" + ruleCode
+	if approvalID != "" {
+		reason += ":approval_" + action + ":" + approvalID
 	}
 	s.recordSecurityAccessEvent(securityAccessEvent{
 		TS: time.Now().UTC(), RequestID: rc.id,
 		EventType: eventType, Surface: "tool_firewall",
 		HTTPMethod: rc.method, PathTemplate: "/v1/{endpoint}", StatusCode: http.StatusOK,
-		Outcome: action, ReasonCode: "approval_" + action + ":" + approvalID,
+		Outcome: action, ReasonCode: reason,
 	})
 }
 

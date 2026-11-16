@@ -35,9 +35,12 @@ Configured `deny` rules match a tool name, RE2 tool or argument expression, or
 an argument substring. URL hosts are exact hostnames.
 
 Sequence state stores only a conversation fingerprint, sequence rule index,
-turn number, and expiry in a bounded process-local cache. Use stable
-conversation identity in requests and route a conversation consistently to one
-router process; with multiple replicas each process observes only its own turns.
+turn number, and expiry in a bounded process-local cache. Requests that omit a
+usable conversation identity fail closed when sequence rules are configured,
+and a full cache also denies calls rather than forgetting earlier sequence
+steps. Use stable conversation identity in requests and route a conversation
+consistently to one router process; with multiple replicas each process observes
+only its own turns.
 
 For a `hold`, the inference request remains open while the approver submits
 `POST /admin/v1/tool-approvals/{approval_id}` with `{"decision":"release"}` or
@@ -50,4 +53,5 @@ tools itself. Streamed requests that offer tools fail closed until #929's
 bounded stream gate is available.
 
 Tool arguments and prompt text are never copied into firewall events or usage
-metadata. Events include only the rule code, action, and opaque approval ID.
+metadata. Events include only the rule code, action, and, for approval events,
+the opaque approval ID.

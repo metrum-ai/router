@@ -69,6 +69,30 @@ func TestToolFirewallSequenceWindow(t *testing.T) {
 	}
 }
 
+func TestToolFirewallSequenceCapacityFailsClosed(t *testing.T) {
+	runtime := newToolFirewallRuntime()
+	cfg := ToolFirewallConfig{
+		Mode: toolFirewallEnforce, MaxConversations: 1,
+		Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}},
+	}
+	first := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation one"}}}
+	if got := runtime.check(cfg, "caller", "group", first, []IRToolCall{{Name: "read_customer", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("first sequence turn unexpectedly blocked: %+v", got)
+	}
+	second := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation two"}}}
+	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}}); got.Action != "deny" || got.RuleCode != "sequence_state_capacity" {
+		t.Fatalf("full sequence cache did not fail closed: %+v", got)
+	}
+}
+
+func TestToolFirewallSequenceRequiresConversationIdentity(t *testing.T) {
+	cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}}}
+	got := newToolFirewallRuntime().check(cfg, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}})
+	if got.Action != "deny" || got.RuleCode != "sequence_identity_missing" {
+		t.Fatalf("sequence without conversation identity did not fail closed: %+v", got)
+	}
+}
+
 func TestValidateToolFirewallConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -216,6 +240,12 @@ func TestToolFirewallEnforceE2EBlocksReturnedToolCall(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.Logging.Path = filepath.Join(dir, "requests.jsonl")
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 7}}
+	t.Setenv("TOOL_FIREWALL_TEST_ADMIN_HASH", mustBcryptHash(t, "firewall-report-password"))
+	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "firewall-test", PasswordHashEnv: "TOOL_FIREWALL_TEST_ADMIN_HASH", Subject: "basic:firewall-test", Domain: "test"}}}
+	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:firewall-test, test, admin:reports, read"}}
+	cfg.Admin.Enabled = true
 	cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallEnforce}
 	group := cfg.Models["default"]
 	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
@@ -232,6 +262,27 @@ func TestToolFirewallEnforceE2EBlocksReturnedToolCall(t *testing.T) {
 	svc.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "~/.aws") || strings.Contains(rec.Body.String(), "tool_calls") || !strings.Contains(rec.Body.String(), "Tool call blocked") {
 		t.Fatalf("status=%d response=%s", rec.Code, rec.Body.String())
+	}
+	var firewallEvents []securityAccessEventRecord
+	eventDeadline := time.Now().Add(time.Second)
+	for time.Now().Before(eventDeadline) {
+		if err := svc.usage.db.Where("event_type = ?", "firewall_block").Find(&firewallEvents).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(firewallEvents) > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(firewallEvents) != 1 || firewallEvents[0].ReasonCode != "rule:sensitive_path" || firewallEvents[0].Outcome != "denied" {
+		t.Fatalf("firewall events=%+v, want one scalar sensitive_path denial", firewallEvents)
+	}
+	eventJSON, err := json.Marshal(firewallEvents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(eventJSON), "~/.aws") || strings.Contains(string(eventJSON), "credentials") {
+		t.Fatal("tool arguments leaked into firewall event")
 	}
 	logData, err := os.ReadFile(cfg.Server.Logging.Path)
 	if err != nil {

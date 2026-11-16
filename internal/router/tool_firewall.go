@@ -279,6 +279,8 @@ func (s *toolFirewallRuntime) check(cfg ToolFirewallConfig, callerID, group stri
 		}
 		if key != "" {
 			out = s.checkSequence(cfg, key, calls, sequences, mode)
+		} else if len(calls) > 0 {
+			out = toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "sequence_identity_missing"}
 		}
 	}
 	if mode == toolFirewallShadow && out.Action != "" {
@@ -352,10 +354,9 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key string, 
 	entry := s.conversations[key]
 	if entry == nil {
 		if len(s.conversations) >= max {
-			for existing := range s.conversations {
-				delete(s.conversations, existing)
-				break
-			}
+			// Evicting another conversation would silently forget the first half
+			// of a security sequence. Fail closed while state capacity is full.
+			return toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "sequence_state_capacity"}
 		}
 		entry = &toolFirewallConversation{firstTurns: map[int]uint64{}}
 		s.conversations[key] = entry

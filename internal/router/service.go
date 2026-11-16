@@ -2285,6 +2285,13 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			outcome := s.toolFirewall.check(s.cfg.Server.ToolFirewall, callerID, req.Model, req, calls)
 			if outcome.Action != "" {
 				rc.trace("tool_firewall_decision", "", Target{}, 0, http.StatusOK, outcome.RuleCode, false, 0)
+				if outcome.Mode != toolFirewallEnforce || outcome.Action == "deny" {
+					action := "denied"
+					if outcome.Mode == toolFirewallShadow {
+						action = "shadow"
+					}
+					s.recordToolFirewallDecisionEvent(rc, "", action, outcome.RuleCode)
+				}
 				blocked := outcome.Mode == toolFirewallEnforce && outcome.Action == "deny"
 				if outcome.Mode == toolFirewallEnforce && outcome.Action == "hold" {
 					approvalID := "approval_" + strings.TrimPrefix(requestID(), "req_")
@@ -2294,7 +2301,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 					}
 					approval, released := s.toolApprovals.wait(r.Context(), approvalID, timeout, func() {
 						rc.trace("tool_firewall_approval_pending", "approval_id="+approvalID, Target{}, 0, 0, "approval_pending", false, 0)
-						s.recordToolFirewallApprovalEvent(rc, approvalID, "pending")
+						s.recordToolFirewallDecisionEvent(rc, approvalID, "pending", outcome.RuleCode)
 					})
 					blocked = !released || approval != "release"
 					reason := "denied"
@@ -2304,7 +2311,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 						reason = "released"
 					}
 					rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, 0, "approval_"+reason, false, 0)
-					s.recordToolFirewallApprovalEvent(rc, approvalID, reason)
+					s.recordToolFirewallDecisionEvent(rc, approvalID, reason, outcome.RuleCode)
 				}
 				if blocked {
 					resp.RawResponse = false
