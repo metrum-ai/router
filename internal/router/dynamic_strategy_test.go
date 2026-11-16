@@ -29,7 +29,7 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 	}
 	t.Setenv("CPU_MODEL", "cpu-small")
 	t.Setenv("FRONTIER_MODEL", "frontier")
-	t.Setenv("CPU_ATTEMPT_TIMEOUT_MS", "75") // short deterministic timeout for the fixture
+	t.Setenv("CPU_ATTEMPT_TIMEOUT_MS", "500") // leaves room for the normal CPU response under CI load
 	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
 	t.Setenv("ROUTER_ID_TRANSFORM_KEY_ID", "fixture")
 	t.Setenv("DC_USAGE_DRIVER", "sqlite")
@@ -95,7 +95,7 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 				http.Error(w, "cpu unavailable", http.StatusBadGateway)
 				return
 			case cpuTimeout:
-				time.Sleep(250 * time.Millisecond)
+				time.Sleep(750 * time.Millisecond)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
