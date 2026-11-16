@@ -2818,8 +2818,14 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		return decision{}, err
 	}
 	contractResult := contractFilterResult{targets: targets}
-	if rc == nil || rc.rec.RequestKind != "count_tokens" {
-		contractResult = s.targetsForContract(groupName, group, targets, req, callerDialect)
+	if rc == nil || rc.rec.RequestKind != "count_tokens" || group.VirtualModel != nil {
+		contractGroup := group
+		if rc != nil && rc.rec.RequestKind == "count_tokens" {
+			// Keep the existing count_tokens contract behavior while still
+			// enforcing virtual-model membership for every request kind.
+			contractGroup.Contract = nil
+		}
+		contractResult = s.targetsForContract(groupName, contractGroup, targets, req, callerDialect)
 	}
 	targets = contractResult.targets
 	if len(targets) == 0 {

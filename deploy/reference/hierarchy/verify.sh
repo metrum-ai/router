@@ -102,7 +102,7 @@ start_local() {
   for slug in app edge-to-dc dc-to-edge; do
     "$WORK/bin/metrum-ai-routerctl" callers generate \
       --owner-user ops --project edge-prod --env prod --key "$slug" \
-      --allow edge-default --allow agent-small --allow edge-loop-demo --allow dc-frontier --allow agent-small --allow loop-demo \
+      --allow edge-default --allow edge-loop-demo --allow dc-frontier --allow loop-demo \
       --token-out "$WORK/$slug.token" >/dev/null
     chmod 600 "$WORK/$slug.token"
     "$WORK/bin/metrum-ai-routerctl" callers hash --token-file "$WORK/$slug.token" > "$WORK/$slug.hash.json"
@@ -136,7 +136,6 @@ start_local() {
   export DC_ROUTER_URL="http://127.0.0.1:18081/v1"
   export EDGE_ROUTER_URL="http://127.0.0.1:18080/v1"
   export FRONTIER_BASE_URL="http://127.0.0.1:19100/v1"
-  export CPU_BASE_URL="http://127.0.0.1:19100/v1" CPU_MODEL="Qwen/Qwen2.5-0.5B-Instruct"
   export FRONTIER_API_KEY=demo-no-key FRONTIER_MODEL=frontier-demo
   export FRONTIER_INPUT_PRICE_USD_PER_MTOK=0 FRONTIER_OUTPUT_PRICE_USD_PER_MTOK=0
   export FRONTIER_PRICING_SOURCE=deployment-cost-allocation FRONTIER_PRICING_UPDATED_AT=2026-11-02
@@ -225,8 +224,6 @@ echo "== 1. readiness and model groups"
 models_json="$(curl -sS --max-time 10 -K "$AUTH" "$EDGE_URL/v1/models")"
 check "edge lists the caller's model group" \
   "python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(any(m[\"id\"]==\"edge-default\" for m in d[\"data\"]))' '$models_json' | grep -q True"
-check "edge lists the CPU-first small-work group" \
-  "python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(any(m[\"id\"]==\"agent-small\" for m in d[\"data\"]))' '$models_json' | grep -q True"
 
 echo
 echo "== 2. two-hop request and hop-header hygiene"
@@ -247,15 +244,6 @@ note "frontier observed Via: ${echo_via:-<none>}"
 router_entries="$(printf '%s' "$echo_via" | grep -o 'metrum-ai-router' | wc -l | tr -d ' ')"
 check "the frontier sees exactly two router hop entries" "[[ '$router_entries' == 2 ]]"
 check "a caller-supplied Via entry never crosses the hop" "! grep -qi 'evil-client-proxy' <<<\"\$echo_via\""
-
-small_work="$(curl -sS --max-time 30 -K "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"model":"agent-small","max_tokens":16,"messages":[{"role":"user","content":"classify: invoice or receipt"}]}' \
-  -w '\n%{http_code}' "$EDGE_URL/v1/chat/completions")"
-check "a compact request reaches the small-work route" "[[ '$(printf '%s' "$small_work" | tail -n1)' == 200 ]]"
-large_work="$(curl -sS --max-time 30 -K "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"model":"agent-small","max_tokens":256,"messages":[{"role":"user","content":"classify this request"}]}' \
-  -w '\n%{http_code}' "$EDGE_URL/v1/chat/completions")"
-check "an output cap above the CPU budget escalates to the frontier" "[[ '$(printf '%s' "$large_work" | tail -n1)' == 200 ]]"
 frontier_id="$(json_field 'd["last_headers"].get("x-request-id","")' <<<"$echo_e")"
 note "edge request id: ${edge_request_id:-<none>}; frontier saw x-request-id: ${frontier_id:-<none>} (cross-hop correlation is not automatic)"
 

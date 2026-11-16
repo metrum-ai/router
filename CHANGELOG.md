@@ -2,19 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Add virtual model groups whose eligible targets are selected from per-family
+  capability vectors imported from reproducible eval reports. The config Admin
+  API and `routerctl groups` show vectors, membership and exclusion reasons.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
-
-### Added
-
-- Add an opt-in CPU-first small-work model group to the hierarchy reference. It
-  uses the official pinned vLLM CPU image, limits the CPU candidate to 800
-  estimated input tokens and 128 requested output tokens, and falls back to the
-  frontier candidate on upstream failure or timeout.
 
 All notable changes to Metrum AI Router are documented in this file.
 

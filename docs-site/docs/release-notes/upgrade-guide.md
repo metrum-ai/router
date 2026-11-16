@@ -9,21 +9,16 @@ For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
-## CPU-first small-work reference group
+## Virtual models
 
-The hierarchy reference now includes an optional `agent-small` model group,
-backed by the official vLLM CPU image and `Qwen/Qwen2.5-0.5B-Instruct`. The
-reference caller can request this group explicitly. Its CPU candidate is
-eligible only when estimated input is at most 800 tokens and the requested
-output cap is at most 128 tokens; other requests use the configured frontier
-target. CPU attempts have a two-second timeout and retry the frontier target
-before a response begins. Configure `CPU_BASE_URL`, `CPU_MODEL`, and the vLLM
-CPU resource settings in the hierarchy `.env` file. Existing groups and
-existing caller behavior are unchanged.
-
-This is reference configuration only. Operators should establish workload
-quality and saturation limits on their own CPU hardware before granting callers
-access to `agent-small`.
+The optional `virtual_model` block adds capability thresholds to a model
+group. Existing groups are unchanged. Import matching eval-infrastructure
+reports with `metrum-ai-routerctl groups import-eval`; vectors and provenance
+are applied through the config Admin API's copy-on-write group update. The
+group list/show API now reports each target's measured vector, membership and
+exclusion reason. Missing or ambiguous report data fails without changing the
+active config. Reported context tokens are the maximum observed in the eval
+workload, not a model's theoretical context limit.
 
 ## Security dependency update
 

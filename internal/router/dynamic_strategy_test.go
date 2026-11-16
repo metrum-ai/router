@@ -6,8 +6,6 @@ package router
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,90 +13,6 @@ import (
 	"testing"
 	"time"
 )
-
-func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
-	cpuMode := "ok"
-	seen := make(chan string, 20)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Model string `json:"model"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		seen <- body.Model
-		if body.Model == "cpu-small" {
-			switch cpuMode {
-			case "fail":
-				http.Error(w, "cpu unavailable", http.StatusBadGateway)
-				return
-			case "timeout":
-				time.Sleep(50 * time.Millisecond)
-			}
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"id":"reply","object":"chat.completion","model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, body.Model, body.Model)
-	}))
-	defer upstream.Close()
-	svc := newTestService(t, upstream.URL, "provider-key")
-	defer svc.Close()
-	svc.cfg.Models["default"] = ModelGroup{
-		Strategy:      "dynamic_score",
-		RoutingPolicy: RoutingPolicyConfig{DynamicScore: DynamicScoreConfig{MinObservations: 20}},
-		Targets: []Target{
-			{Provider: "mock", Model: "cpu-small", Weight: 10, TimeoutMS: 10, RequestShapeSupport: RequestShapeSupport{MaxEstimatedInputTokens: 800, MaxRequestedOutputTokens: 128, ValidationStatus: "passed"}},
-			{Provider: "mock", Model: "frontier", Weight: 1},
-		},
-	}
-	router := httptest.NewServer(svc.Handler())
-	defer router.Close()
-	call := func(maxTokens int) (int, string) {
-		t.Helper()
-		payload := fmt.Sprintf(`{"model":"default","max_tokens":%d,"messages":[{"role":"user","content":"classify receipt"}]}`, maxTokens)
-		req, _ := http.NewRequest(http.MethodPost, router.URL+"/v1/chat/completions", strings.NewReader(payload))
-		req.Header.Set("Authorization", "Bearer "+testToken)
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		got, _ := io.ReadAll(resp.Body)
-		return resp.StatusCode, string(got)
-	}
-	assertLatest := func(want string) {
-		t.Helper()
-		select {
-		case got := <-seen:
-			if got != want {
-				t.Fatalf("upstream model=%q, want %q", got, want)
-			}
-		case <-time.After(time.Second):
-			t.Fatalf("upstream was not called; want %q", want)
-		}
-	}
-
-	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"cpu-small"`) {
-		t.Fatalf("compact request status=%d body=%s, want CPU response", status, body)
-	}
-	assertLatest("cpu-small")
-	if status, body := call(256); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
-		t.Fatalf("over-budget request status=%d body=%s, want frontier response", status, body)
-	}
-	assertLatest("frontier")
-
-	cpuMode = "fail"
-	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
-		t.Fatalf("CPU failure fallback status=%d body=%s", status, body)
-	}
-	assertLatest("cpu-small")
-	assertLatest("frontier")
-
-	cpuMode = "timeout"
-	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
-		t.Fatalf("CPU timeout fallback status=%d body=%s", status, body)
-	}
-	assertLatest("cpu-small")
-	assertLatest("frontier")
-}
 
 func TestDynamicScoreColdStartUsesConfiguredWeightsDeterministically(t *testing.T) {
 	svc := newTestService(t, "http://127.0.0.1:1", "provider-key")

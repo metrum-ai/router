@@ -139,13 +139,6 @@ requests per lane at concurrency 4): TTFT p50 268.8 ms direct, 271.5 ms one hop,
 +2.7 ms (1-hop) and +6.0 ms (2-hop) TTFT p50, under 2% of the CPU backend's
 TTFT. This is an indicative CPU-tier figure, not a GPU latency result.
 
-At the measured load point, concurrency 4 across the 16-vCPU allocation is
-0.25 concurrent requests per allocated vCPU (`4 / 16`). This is only a measured
-load ratio, not a saturated agents-per-core capacity result: the evidence does
-not record physical cores available to the process, a maximum stable
-concurrency, a quality score, or a routed traffic share. A sizing decision
-needs a saturation sweep on the target CPU host and a workload quality gate.
-
 ## Limits of this measurement
 
 - Client-side wall clock on a dedicated load-generator node; it includes that

@@ -55,18 +55,6 @@ services:
       - ./demo-frontier:/app:ro
     restart: unless-stopped
 
-  # Small-model CPU tier. The digest and model match the measured Intel CPU
-  # reference run documented in README.md.
-  cpu-small:
-    image: vllm/vllm-openai-cpu@sha256:87167cf0ec6e1e9607bb1cf9bf618a67d04963236a34bd955ac75b7d31a6edf5
-    command: ["Qwen/Qwen2.5-0.5B-Instruct", "--dtype", "bfloat16", "--host", "0.0.0.0", "--port", "8000"]
-    environment:
-      VLLM_CPU_NUM_OF_RESERVED_CPU: ${VLLM_CPU_NUM_OF_RESERVED_CPU:-1}
-      VLLM_CPU_KVCACHE_SPACE: ${VLLM_CPU_KVCACHE_SPACE:-4}
-    ports:
-      - "${CPU_LISTEN_PORT:-8002}:8000"
-    restart: unless-stopped
-
   dc:
     image: ${ROUTER_IMAGE:?set ROUTER_IMAGE in .env}
     command: ["/app/bin/metrum-ai-router", "-config", "/etc/router/dc.yaml"]
@@ -80,8 +68,6 @@ services:
       migrate:
         condition: service_completed_successfully
       frontier-echo:
-        condition: service_started
-      cpu-small:
         condition: service_started
     restart: unless-stopped
 

@@ -68,8 +68,6 @@ providers:
     models:
       dc-frontier:
         model: dc-frontier
-      agent-small:
-        model: agent-small
       loop-demo:
         model: loop-demo
 
@@ -79,13 +77,6 @@ models:
     targets:
       - provider: dc_router
         model_ref: dc-frontier
-
-  # Caller-visible entry point for the CPU-first small-work model group.
-  agent-small:
-    strategy: static
-    targets:
-      - provider: dc_router
-        model_ref: agent-small
 
   # Deliberate cycle for the loop-protection check: the datacenter tier has a
   # `loop-demo` group that routes back here, so a request bounces until the hop
@@ -125,7 +116,7 @@ callers:
     token_id: ${EDGE_CALLER_TOKEN_ID}
     # `edge-loop-demo` exists only for the loop-protection check; remove it
     # from a real deployment's caller allow list.
-    allow: [edge-default, agent-small, edge-loop-demo]
+    allow: [edge-default, edge-loop-demo]
     rate:
       rpm: ${EDGE_CALLER_RPM}
       tpm: ${EDGE_CALLER_TPM}

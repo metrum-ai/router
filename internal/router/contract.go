@@ -14,7 +14,7 @@ type contractFilterResult struct {
 }
 
 func (s *Service) targetsForContract(groupName string, group ModelGroup, targets []Target, req *IRRequest, callerDialect string) contractFilterResult {
-	if group.Contract == nil {
+	if group.Contract == nil && group.VirtualModel == nil {
 		return contractFilterResult{targets: targets}
 	}
 	now := time.Now().UTC()
@@ -29,7 +29,10 @@ func (s *Service) targetsForContract(groupName string, group ModelGroup, targets
 		if s != nil && s.observations != nil {
 			stats = s.observations.stats(dynamicObservationKey(groupName, target.Provider, target.Model), s.dynamicObservationRetention(groupName))
 		}
-		reason := targetPassesContract(group.Contract, target, outDialect, callerDialect, req, stats, now)
+		reason := virtualModelTargetReason(group.VirtualModel, target)
+		if reason == "" {
+			reason = targetPassesContract(group.Contract, target, outDialect, callerDialect, req, stats, now)
+		}
 		if reason == "" {
 			out = append(out, target)
 			continue
@@ -39,6 +42,35 @@ func (s *Service) targetsForContract(groupName string, group ModelGroup, targets
 		}
 	}
 	return contractFilterResult{targets: out, reason: firstReason}
+}
+
+func virtualModelTargetReason(config *VirtualModelConfig, target Target) string {
+	if config == nil {
+		return ""
+	}
+	if target.Validation == nil || !strings.EqualFold(strings.TrimSpace(target.Validation.Status), "passed") || target.Validation.Harness != "eval-infra" {
+		return "virtual-model-no-eval-vector"
+	}
+	vector, ok := target.Validation.Capabilities[config.TaskFamily]
+	if !ok || vector.TaskFamily != config.TaskFamily || vector.EvalRunID == "" || vector.EvalReportSHA256 == "" {
+		return "virtual-model-no-eval-vector"
+	}
+	if config.MinQualityScore != nil && vector.QualityScore < *config.MinQualityScore {
+		return "virtual-model-quality-floor"
+	}
+	if config.MinToolReliability != nil && (vector.ToolReliability == nil || *vector.ToolReliability < *config.MinToolReliability) {
+		return "virtual-model-tool-reliability"
+	}
+	if vector.ContextTokens < config.MinContextTokens {
+		return "virtual-model-context-floor"
+	}
+	if config.MaxP95LatencyMS != nil && vector.P95LatencyMS > *config.MaxP95LatencyMS {
+		return "virtual-model-latency-ceiling"
+	}
+	if config.MaxCostUSD != nil && vector.MeanCostUSD > *config.MaxCostUSD {
+		return "virtual-model-cost-ceiling"
+	}
+	return ""
 }
 
 func targetPassesContract(contract *ModelGroupContract, target Target, outDialect, callerDialect string, req *IRRequest, stats dynamicStats, now time.Time) string {
