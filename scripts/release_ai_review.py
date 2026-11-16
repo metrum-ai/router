@@ -24,6 +24,41 @@ API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
 MAX_REVIEW_BATCHES = 8
 REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md")
+REVIEW_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "severity": {"type": "string", "enum": ["blocking", "informational"]},
+                    "category": {"type": "string", "enum": ["security", "correctness", "compatibility", "release-integrity"]},
+                    "title": {"type": "string"},
+                    "rationale": {"type": "string"},
+                    "locations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file": {"type": "string"},
+                                "line": {"type": "integer"},
+                            },
+                            "required": ["file", "line"],
+                            "additionalProperties": False,
+                        },
+                        "minItems": 1,
+                    },
+                },
+                "required": ["severity", "category", "title", "rationale", "locations"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["summary", "findings"],
+    "additionalProperties": False,
+}
 SENSITIVE = re.compile(r"(?i)(?:sk-[a-z0-9_-]{12,}|bearer\s+\S+|api[_ -]?key\s*[:=]|token\s*[:=]|password\s*[:=])")
 REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
@@ -107,6 +142,7 @@ def call_model(
     body = json.dumps({
         "model": MODEL,
         "max_tokens": 16000,
+        "output_config": {"format": {"type": "json_schema", "schema": REVIEW_OUTPUT_SCHEMA}},
         "system": REVIEW_SYSTEM,
         "messages": [{
             "role": "user",
