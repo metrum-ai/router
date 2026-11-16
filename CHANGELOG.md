@@ -142,7 +142,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
 | `2026111602` | `usage` | 17 | store latest security posture summary | online | none | `restore-required` |
 | `2026111603` | `usage` | 18 | add request trace correlation metadata | online | none | `restore-required` |
-| `2026111604` | `usage` | 19 | record recomputed prompt tokens and rollup coverage | online | none | `restore-required` |
+| `2026111614` | `usage` | 19 | record recomputed prompt tokens and rollup coverage | online | none | `restore-required` |
 
 ### Fixed
 

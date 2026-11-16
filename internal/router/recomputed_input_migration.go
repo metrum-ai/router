@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const usageRecomputedInputMigrationID = 2026111604
+const usageRecomputedInputMigrationID = 2026111614
 
 func usageRecomputedInputMigrationDefinition() MigrationDefinition {
 	return MigrationDefinition{
