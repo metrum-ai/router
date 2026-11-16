@@ -54,6 +54,11 @@ func testResponseAffinityRow() responseAffinityRecord {
 // so the upgrade must create the table again.
 func responseAffinityPreviousSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	if db.Migrator().HasColumn(&usageRecord{}, "TraceID") {
+		if err := revertTraceCorrelationMigration(db); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if db.Migrator().HasTable(&responseAffinityRecord{}) {
 		if err := db.Migrator().DropTable(&responseAffinityRecord{}); err != nil {
 			t.Fatal(err)
@@ -111,9 +116,8 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	// 15 is the current usage head after the admin audit and policy-runtime
-	// migrations (2026110702/0703/0704); this test pins the whole tail.
-	if err != nil || status.SchemaVersion != 15 {
+	// 16 is the current usage head after trace correlation (2026111601).
+	if err != nil || status.SchemaVersion != 16 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -142,6 +146,9 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 	// Down: the disposable-database reverse step restores the v11 postcondition,
 	// removes local affinity metadata and leaves a database the earlier manifest
 	// accepts again.
+	if err := revertTraceCorrelationMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
 	if err := revertResponseAffinityMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
@@ -185,9 +192,8 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage head (15) including the admin audit
-	// and policy-runtime migrations.
-	if err != nil || status.SchemaVersion != 15 || !status.Compatible {
+	// Fresh installs reach the current usage head (16) including trace metadata.
+	if err != nil || status.SchemaVersion != 16 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -275,9 +281,8 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	// 15 is the current usage head after the admin audit and policy-runtime
-	// migrations (2026110702/0703/0704).
-	if err != nil || after.SchemaVersion != 15 {
+	// 16 is the current usage head after trace correlation.
+	if err != nil || after.SchemaVersion != 16 {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {

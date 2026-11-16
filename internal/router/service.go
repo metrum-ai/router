@@ -201,8 +201,9 @@ func (e routingEligibilityError) Error() string {
 }
 
 type requestContext struct {
-	id    string
-	start time.Time
+	id          string
+	start       time.Time
+	correlation requestTraceContext
 	// receiveAt is the router receive clock used for router-added latency
 	// (receive to outbound WroteRequest). Prefer this over start when deriving
 	// issue #159 router-added latency from request_trace_events.
@@ -2452,6 +2453,10 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
 	rc.securityReason = securityReason
 	rc.caller = caller
+	rc.correlation = traceparentFromRequest(r, caller, err == nil, s.cfg.Server.Trace)
+	rc.rec.TraceID = rc.correlation.traceID
+	rc.rec.SpanID = rc.correlation.spanID
+	rc.rec.ParentSpanID = rc.correlation.parentSpanID
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
@@ -3466,6 +3471,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	httpReq.Header.Set("User-Agent", "metrum-ai-router/"+buildinfo.Version)
 	for name, value := range provider.Headers {
 		httpReq.Header.Set(name, value)
+	}
+	httpReq.Header.Set("X-Request-Id", rc.id)
+	if traceparent := rc.correlation.traceparent(); traceparent != "" {
+		httpReq.Header.Set("traceparent", traceparent)
 	}
 	forwardRouterVia(httpReq.Header, rc.via)
 	httpReq.Header.Del("Anthropic-Beta")

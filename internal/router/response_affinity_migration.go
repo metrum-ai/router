@@ -86,7 +86,7 @@ func applyResponseAffinityMigration(db *gorm.DB) error {
 }
 
 func verifyResponseAffinityMigration(db *gorm.DB) error {
-	if err := ensureUsageRelationalSchema(db); err != nil {
+	if err := ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns()); err != nil {
 		return err
 	}
 	return verifyUsageRelationalModel(db, &responseAffinityRecord{})

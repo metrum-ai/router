@@ -5,6 +5,17 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v5.0.0 request trace correlation
+
+Trace propagation is opt-in. Existing callers and deployments that do not
+configure a trusted parent continue to receive a new trace for every inbound
+request. To preserve a trace across routers, configure `server.trace.trusted_parent_cidrs`
+for the immediate parent network, or enable `trust_traceparent` only on an
+authenticated child-router caller. Schema 16 adds scalar trace, span, and
+parent-span columns to the usage table and an index on `trace_id`; existing rows
+remain valid with empty values. The migration is additive and is applied by the
+deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+for trust boundaries and examples.
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned

@@ -4,6 +4,11 @@
 
 ### Added
 
+- Define trusted W3C `traceparent` correlation across router chains, with a new
+  span and request ID per hop and safe scalar usage fields for joining requests.
+  Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
+  caller's `trust_traceparent`; malformed, duplicate, or untrusted input starts
+  a new trace.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 
 ### Fixed
