@@ -102,12 +102,17 @@ def main() -> int:
     parser.add_argument("--service-user", required=True)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
+    if pwd.getpwnam(args.service_user).pw_uid == 0:
+        raise RuntimeError("release checks must use an unprivileged service user")
 
     started = time.monotonic()
     checks: list[dict[str, object]] = []
     with tempfile.TemporaryDirectory(prefix="router-release-upgrade-") as raw:
         work = Path(raw)
         work.chmod(0o755)
+        service = pwd.getpwnam(args.service_user)
+        if os.geteuid() == 0:
+            os.chown(work, service.pw_uid, service.pw_gid)
         evidence = work / "evidence"
         evidence.mkdir(mode=0o777)
         previous_root = unpack(args.previous_archive, work / "previous")
@@ -127,9 +132,9 @@ def main() -> int:
                                    "--checkpoint-ordinal=0", "--driver=sqlite", "--db=" + str(database)])
         backup = work / "usage.sqlite.backup"
         shutil.copy2(database, backup)
-        owner = run(["id", "-u", args.service_user], timeout=5).stdout.strip()
-        group = run(["id", "-g", args.service_user], timeout=5).stdout.strip()
-        os.chown(backup, int(owner), int(group))
+        owner, group = service.pw_uid, service.pw_gid
+        if os.geteuid() == 0:
+            os.chown(backup, owner, group)
 
         previous_router = find_binary(previous_root, "metrum-ai-router")
         previous_commit = package_commit(previous_router, args.service_user)
@@ -154,7 +159,8 @@ def main() -> int:
         # Rollback restores both the previous package and its matching database snapshot.
         rollback_started = time.monotonic()
         shutil.copy2(backup, database)
-        os.chown(database, int(owner), int(group))
+        if os.geteuid() == 0:
+            os.chown(database, owner, group)
         previous_status = run_as(args.service_user, [str(previous_migrate), "--action=status", "--driver=sqlite", "--db=" + str(database), "--json"])
         json.loads(previous_status.stdout)
         smoke(previous_root, args.previous_version, previous_commit, evidence / "rollback-smoke.json", args.service_user, database)

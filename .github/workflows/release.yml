@@ -111,7 +111,12 @@ jobs:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          sudo useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin router-release-check
+          if [ "$(id -u)" -eq 0 ]; then
+            useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin router-release-check
+            SERVICE_USER=router-release-check
+          else
+            SERVICE_USER="$(id -un)"
+          fi
           PREVIOUS_TAG="$(gh release list --repo metrum-ai/router --limit 100 --json tagName,isPrerelease,isDraft,publishedAt --jq '[.[] | select(.isPrerelease == false and .isDraft == false)] | sort_by(.publishedAt) | last | .tagName')"
           if [ -z "${PREVIOUS_TAG}" ] || [ "${PREVIOUS_TAG}" = "${RELEASE_TAG}" ]; then
             echo "could not resolve a prior production release" >&2
@@ -123,13 +128,13 @@ jobs:
             --pattern SHA256SUMS --dir "${RUNNER_TEMP}/previous"
           PREVIOUS_ARCHIVE="${RUNNER_TEMP}/previous/metrum-ai-router-${PREVIOUS_TAG}-linux-amd64.tar.gz"
           (cd "${RUNNER_TEMP}/previous" && grep -F "  $(basename "${PREVIOUS_ARCHIVE}")" SHA256SUMS | sha256sum --check -)
-          sudo python3 scripts/release_upgrade_rollback.py \
+          python3 scripts/release_upgrade_rollback.py \
             --previous-archive "${PREVIOUS_ARCHIVE}" \
             --candidate-archive "dist/metrum-ai-router-${RELEASE_TAG}-linux-amd64.tar.gz" \
             --previous-version "${PREVIOUS_TAG}" \
             --candidate-version "${RELEASE_TAG}" \
             --candidate-commit "$(git rev-parse --short HEAD)" \
-            --service-user router-release-check \
+            --service-user "$SERVICE_USER" \
             --report dist/upgrade-rollback-results.json
       - name: Inventory and checksums
         env:

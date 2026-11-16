@@ -31,8 +31,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Create service user
-        run: sudo useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin router-release-check
       - name: Download and verify previous production package
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,13 +53,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          sudo python3 scripts/release_upgrade_rollback.py \
+          if [ "$(id -u)" -eq 0 ]; then
+            useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin router-release-check
+            SERVICE_USER=router-release-check
+          else
+            SERVICE_USER="$(id -un)"
+          fi
+          python3 scripts/release_upgrade_rollback.py \
             --previous-archive "$RUNNER_TEMP/previous/metrum-ai-router-v4.8.0-linux-amd64.tar.gz" \
             --candidate-archive "dist/metrum-ai-router-${CANDIDATE_VERSION}-linux-amd64.tar.gz" \
             --previous-version v4.8.0 \
             --candidate-version "$CANDIDATE_VERSION" \
             --candidate-commit "$(git rev-parse --short HEAD)" \
-            --service-user router-release-check \
+            --service-user "$SERVICE_USER" \
             --report "$RUNNER_TEMP/upgrade-rollback-results.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
