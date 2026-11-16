@@ -163,15 +163,16 @@ jobs:
           if not all(keys.values()):
               raise SystemExit("required evaluation credentials are unavailable")
           target = pathlib.Path(sys.argv[1])
-          target.write_text(json.dumps(keys))
-          target.chmod(0o600)
+          descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+              json.dump(keys, stream)
           PY
           export HARBOR_MAX_RESERVE_USD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["remaining_usd"])' "$RUNNER_TEMP/harbor-budget.json")"
           printf %s "harbor-openai-responses-gpt" > "$HARBOR_E2E_CREDS/router-token"
           chmod 600 "$HARBOR_E2E_CREDS/router-token"
           export PATH="$RUNNER_TEMP/harbor-venv/bin:$PATH"
           export PYTHONPATH="$HARBOR_E2E_ROOT"
-          python3 "$HARBOR_E2E_ROOT/run_matrix.py"
+          "$RUNNER_TEMP/harbor-venv/bin/python" "$HARBOR_E2E_ROOT/run_matrix.py"
       - name: Upload sanitized Harbor result
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

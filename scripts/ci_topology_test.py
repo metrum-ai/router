@@ -282,6 +282,8 @@ def assert_eval_infra_nightly_workflow() -> None:
             "Docker Harbor job must run after non-Docker work in the protected environment")
     require("HARBOR_MAX_RESERVE_USD" in harbor_job and "eval-harbor-${{ github.run_id }}" in harbor_job,
             "Docker Harbor job must enforce and publish its bounded daily reservation")
+    require("harbor-venv/bin/python" in harbor_job,
+            "Harbor runner must use the interpreter that installs the pinned Harbor package")
 
 
 def assert_hierarchy_release_gate() -> None:
