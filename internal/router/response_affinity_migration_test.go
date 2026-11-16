@@ -111,8 +111,8 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	// 18 is the usage schema head after trace correlation.
-	if err != nil || status.SchemaVersion != 18 {
+	// 19 is the usage schema head after tool-routing usage.
+	if err != nil || status.SchemaVersion != 19 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -184,9 +184,8 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage head (16), including MCP audit,
-	// automatic containment, admin audit and policy-runtime migrations.
-	if err != nil || status.SchemaVersion != 18 || !status.Compatible {
+	// Fresh installs reach the current usage head (19), including tool-routing usage.
+	if err != nil || status.SchemaVersion != 19 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -274,8 +273,8 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	// 18 is the usage schema head after trace correlation.
-	if err != nil || after.SchemaVersion != 18 {
+	// 19 is the usage schema head after tool-routing usage.
+	if err != nil || after.SchemaVersion != 19 {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
