@@ -11,7 +11,7 @@ Targets that ignore caller sampling controls can declare `temperature` or `top_p
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
-Direct `model` targets inherit provider-catalog capabilities when their model ID matches a catalog entry. A weighted or failover group can therefore select an OpenAI reasoning model even when the target is written with `model:` instead of `model_ref:`. When mixed eligibility rejections are resolved to an unsupported reasoning error, `param` identifies the caller field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, or `thinking` for Anthropic). Anthropic output reasoning requires `control: token_budget` or active default thinking.
+Direct `model` targets inherit provider-catalog capabilities when their model ID matches a catalog entry. A weighted or failover group can therefore select an OpenAI reasoning model even when the target is written with `model:` instead of `model_ref:`. When mixed eligibility rejections leave the reasoning error parameter unset but removing requested reasoning makes a target eligible, `param` identifies the caller field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, or `thinking` for Anthropic). Anthropic output reasoning requires `control: token_budget` or active default thinking.
 
 ## Security dependency update
 

@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Direct `model` targets inherit provider-catalog capabilities for matching model IDs. When a mixed reasoning rejection is attributable to the requested reasoning control, the `unsupported_capability` error identifies the caller field, such as `reasoning_effort` for Chat Completions.
+- Direct `model` targets inherit provider-catalog capabilities for matching model IDs. When mixed rejection reasons leave the `unsupported_capability` parameter unset but removing requested reasoning makes a target eligible, the error identifies the caller field (for example, `reasoning_effort` for Chat Completions).
 
 ### Added
 

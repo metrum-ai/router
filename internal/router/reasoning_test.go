@@ -223,7 +223,7 @@ func TestReasoningEffortDirectModelMixedWeightedAndAllIncapable(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
-		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
 			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 		}
 		if upstreamCalls != before {
@@ -502,7 +502,7 @@ func TestReasoningNoEligibleTargetAndModelListMetadata(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 
