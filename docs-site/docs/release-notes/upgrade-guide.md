@@ -5,6 +5,10 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Security hardening
+
+Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.

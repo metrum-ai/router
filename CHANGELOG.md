@@ -7,6 +7,10 @@
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 
+### Security
+
+- Add a v5.0.0 threat summary, production hardening guide, and key-compromise runbook.
+
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
