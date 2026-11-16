@@ -95,6 +95,9 @@ mutations:
 | `admin:quotas:read`, `admin:quotas:write` | Caller quota read/update |
 | `admin:budgets:read`, `admin:budgets:write` | Project budget read/update |
 | `admin:retention:write`, `admin:retention:force` | Retention policy update; force is required for changes that can purge more data |
+| `admin:operations:read` | Read asynchronous operation state and safe results |
+| `admin:backup:read`, `admin:backup:write` | Download backup bundles and start backup operations |
+| `admin:restore:write` | Start restore operations; separate from backup permission |
 
 Admin keys may also hold the pre-existing `object:action` permissions used by
 the other admin endpoints: `admin:callers:list|issue|rotate|revoke`,

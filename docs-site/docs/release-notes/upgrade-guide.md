@@ -20,18 +20,16 @@ The console only displays signals returned by the selected time range and report
 `metrum-ai-routerctl doctor --security --config config.yaml` reads the existing
 configuration and makes no config changes. Use `--format json` and `--fail-on`
 to gate CI. Plain HTTP `--target` values must be loopback. The check reports caller
-key format, recorded entropy, and key age against a configurable maximum (90 days by default). Set
-`security.key_hygiene.max_age_days` from 1 to 3650; `0` selects the default. Caller entries now accept optional
+key format, recorded entropy, and key age against a 90-day maximum. Caller entries now accept optional
 `token_issued_at` UTC RFC3339 timestamps; token generation and admin issue or
 rotation write this field automatically. Add original issue times to manually
 managed caller keys. Existing configs remain valid; keys without a timestamp
-warn until updated or rotated, and keys older than the configured maximum fail.
+warn until updated or rotated, and keys older than 90 days fail.
 
 The `/metrics` endpoint remains on the serving port and requires an active
 caller configured with `metrics_admin: true`. The doctor checks this setting;
 it does not suggest moving metrics to the admin listener. DB-backed config mode
-marks caller limit, format, environment, and age checks `not checked` because canonical callers
-and issuance metadata are stored in the database. Engine image pins
+reports that database-stored caller keys were not inspected. Engine image pins
 are compared with the release's `engine-advisories.json` snapshot; use
 `--advisories <file>` to select one explicitly. Without a snapshot, the
 advisory result is informational `not checked` and makes no network request.
@@ -328,10 +326,24 @@ database-backed configuration mode and a current `If-Match` revision. Provider
 API-key environment references and headers are write-only and do not appear in
 responses. Shortening retention requires the separate `config:force`
 permission. The existing config revision notifier and poller propagate changes
-to other serving replicas. No database migration is required for these routes.
+to other serving replicas. The provider, project, quota and retention routes do
+not add schema; the operations endpoints described below do.
 Project budget counters are per process and reset on restart; ceilings are
 approximate across replicas. Removing or raising a ceiling, or waiting for its
 UTC budget window to reset, restores admission after a trip.
+
+Admin operation tracking and control-plane backup/restore add the configuration
+database schema version 16 operations table. Before enabling these endpoints,
+run the non-serving migration CLI (host or the packaged Kubernetes Job) and
+verify the configuration database is current. The admin API never applies
+migrations. Backups contain key verifiers and audit records; store files with
+restricted access. `routerctl control-plane backup --out FILE` creates a new
+mode-0600 output file, and `routerctl control-plane restore --in FILE` restores
+only to a clean migrated replica. Grant `admin:backup/read` only to backup
+operators and keep `admin:operations/read` separate; operation status reads do
+not expose the backup bundle. Atomic target batches are available through
+`routerctl groups bulk-targets GROUP --change add=provider/model_ref` and commit
+one configuration revision or none.
 
 ## Compatibility and operations (v4.4.0)
 
@@ -823,6 +835,10 @@ must use `metrum-ai-router`.
 For a package whose release contract includes a migration, stop or drain the serving router and follow the packaged `docs/DATA_MIGRATIONS.md` runbook: `metrum-ai-router-migrate plan → approved backup → apply → all required data jobs validated → verify → status → serve`. `deployment-job` never applies application schema at startup; it validates the ledger and fails closed until the contract is current, compatible, and every required bound data job is validated—including the post-apply, pre-resume pending state. PostgreSQL production uses this non-serving job, not `auto-safe`; SQLite requires exclusive downtime, SQLite-safe backup and integrity verification, and free-space checks. Checkpoint ordinal `0` is not completion evidence.
 
 Use `--dsn-env=ROUTER_USAGE_DB_DSN` for PostgreSQL and the documented non-serving container `--entrypoint` for Compose. Do not put a database connection string in commands, tickets, screenshots, or logs.
+
+The admin migration report reads the existing ledger without changing it. Run
+migration plans and upgrades through `metrum-ai-router-migrate` on the host or
+in a non-serving Kubernetes Job; the API cannot execute migrations.
 
 Releases containing usage migration `2026090901` add optional diagnostics
 through the non-null text column

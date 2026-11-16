@@ -340,3 +340,53 @@ func TestAdminMigrationStatusIsReadOnlyAndRedacted(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminMigrationStatusMatchesRunnerBeforeAndAfterUpgrade(t *testing.T) {
+	db, err := openUsageDB(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "upgrade-status.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	}()
+	loadV471UsageDatabase(t, db)
+	service := &Service{usage: &usageStore{db: db}}
+	assertMatchesRunner := func(label string) {
+		t.Helper()
+		runner, err := newUsageMigrationRunner(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cliStatus, err := runner.Status()
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		service.handleAdminMigrationStatus(recorder, httptest.NewRequest(http.MethodGet, "/admin/v1/reports/migrations", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s API status=%d body=%s", label, recorder.Code, recorder.Body.String())
+		}
+		var apiStatus adminMigrationStatusResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &apiStatus); err != nil {
+			t.Fatal(err)
+		}
+		if apiStatus.Summary["schemaVersion"] != float64(cliStatus.SchemaVersion) || apiStatus.Summary["dataVersion"] != float64(cliStatus.DataVersion) || apiStatus.Summary["compatible"] != cliStatus.Compatible || apiStatus.Summary["state"] != cliStatus.State {
+			t.Fatalf("%s API migration summary=%v does not match CLI status=%+v", label, apiStatus.Summary, cliStatus)
+		}
+		pending := 0
+		for _, row := range apiStatus.Rows {
+			if row.State == "pending" {
+				pending++
+			}
+		}
+		if pending != len(cliStatus.Pending) {
+			t.Fatalf("%s API pending rows=%d, CLI pending migrations=%d", label, pending, len(cliStatus.Pending))
+		}
+	}
+	assertMatchesRunner("before upgrade")
+	upgradeToV480(t, db)
+	assertMatchesRunner("after upgrade")
+}

@@ -3,6 +3,8 @@
 
 package router
 
+import "net/http"
+
 // The /admin/v1 operation table (ACP-011).
 //
 // Every admin operation that exists today on the serving port has exactly one
@@ -55,6 +57,37 @@ const (
 )
 
 var adminV1OperationSpecs = []Operation{
+	{
+		ID: "getAdminOperation", Method: "GET", Path: "/admin/v1/operations/{operation_id}",
+		Summary: "Read the state and structured result of an asynchronous admin operation",
+		Object:  authzObjectAdminOperations, Action: authzActionRead, Domain: AdminDomainGlobal,
+		Response: adminOperationResult{}, Errors: []int{404, 503}, RateClass: AdminRateClassRead, HandlerKey: "admin.operations.get",
+	},
+	{
+		ID: "startControlPlaneBackup", Method: "POST", Path: "/admin/v1/control-plane/backups",
+		Summary:     "Start an asynchronous control-plane backup",
+		Description: "Returns 202 Accepted with a Location header for the operation resource. Download the completed versioned bundle from the separately authorized backup resource.",
+		Object:      authzObjectAdminBackup, Action: "write", Domain: AdminDomainGlobal,
+		Response: adminOpenObject{Members: []string{"operation", "operation_url"}}, Errors: []int{400, 503}, SuccessStatus: http.StatusAccepted,
+		SuccessHeaders: []AdminResponseHeader{{Name: "Location", Required: true, Description: "URL of the asynchronous operation resource.", Schema: map[string]any{"type": "string", "format": "uri-reference"}}, {Name: "Retry-After", Description: "Suggested delay in seconds before polling the operation.", Schema: map[string]any{"type": "integer", "minimum": 1}}},
+		RateClass:      AdminRateClassWrite, HandlerKey: "admin.backup.start",
+	},
+	{
+		ID: "getControlPlaneBackup", Method: "GET", Path: "/admin/v1/control-plane/backups/{operation_id}",
+		Summary: "Download a completed control-plane backup bundle",
+		Object:  authzObjectAdminBackup, Action: authzActionRead, Domain: AdminDomainGlobal,
+		Response: adminOpenObject{Members: []string{"bundle"}}, Errors: []int{404, 409, 503},
+		RateClass: AdminRateClassRead, HandlerKey: "admin.backup.download",
+	},
+	{
+		ID: "startControlPlaneRestore", Method: "POST", Path: "/admin/v1/control-plane/restores",
+		Summary: "Start an asynchronous restore from a control-plane backup bundle",
+		Object:  authzObjectAdminRestore, Action: "write", Domain: AdminDomainGlobal,
+		Request: controlPlaneBackupBundle{}, Response: adminOpenObject{Members: []string{"operation", "operation_url"}},
+		Errors: []int{400, 409, 503}, SuccessStatus: http.StatusAccepted,
+		SuccessHeaders: []AdminResponseHeader{{Name: "Location", Required: true, Description: "URL of the asynchronous operation resource.", Schema: map[string]any{"type": "string", "format": "uri-reference"}}, {Name: "Retry-After", Description: "Suggested delay in seconds before polling the operation.", Schema: map[string]any{"type": "integer", "minimum": 1}}},
+		RateClass:      AdminRateClassWrite, HandlerKey: "admin.backup.restore",
+	},
 	{
 		ID: "listProviders", Method: "GET", Path: "/admin/v1/providers", LegacyPath: "/admin/providers",
 		Summary: "List configured providers without credentials",
@@ -229,6 +262,16 @@ var adminV1OperationSpecs = []Operation{
 		Errors:      []int{404, 409, 412, 422, 428},
 		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
 		RateClass: AdminRateClassWrite, HandlerKey: "config.group.targets.add",
+	},
+	{
+		ID: "bulkConfigGroupTargets", Method: "POST", Path: "/admin/v1/config/groups/{group}/targets:bulk",
+		Summary: "Apply up to 100 target additions and removals in one configuration revision",
+		Object:  authzObjectAdminConfig, Action: "write", Domain: AdminDomainGlobal,
+		Request:     configAdminBulkTargetsRequest{},
+		Response:    adminOpenObject{Members: []string{"group", "set_id", "previous_set_id", "revision", "replayed", "strategy", "diff", "targets", "propagation"}},
+		Errors:      []int{400, 404, 409, 412, 422, 428, 503},
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyHandler,
+		RateClass: AdminRateClassWrite, HandlerKey: "config.group.targets.bulk",
 	},
 	{
 		ID: "removeConfigGroupTarget", Method: "DELETE", Path: "/admin/v1/config/groups/{group}/targets/{target_id...}", LegacyPath: "/admin/config/groups/{group}/targets/{target_id...}",

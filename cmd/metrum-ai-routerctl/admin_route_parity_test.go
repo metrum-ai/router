@@ -24,6 +24,7 @@ var routerctlOnlineRoutes = [][2]string{
 	{http.MethodGet, "/admin/config/groups/{group}/history"},
 	{http.MethodPut, "/admin/config/groups/{group}/targets"},
 	{http.MethodPost, "/admin/config/groups/{group}/targets"},
+	{http.MethodPost, "/admin/v1/config/groups/{group}/targets:bulk"},
 	{http.MethodDelete, "/admin/config/groups/{group}/targets/{target_id...}"},
 	{http.MethodPost, "/admin/config/groups/{group}/rollback"},
 	{http.MethodPost, "/admin/config/groups/{group}/shadow"},
@@ -50,6 +51,10 @@ var routerctlOnlineRoutes = [][2]string{
 	{http.MethodGet, "/admin/v1/projects/{project}/environments/{environment}/memberships"},
 	{http.MethodPost, "/admin/v1/projects/{project}/environments/{environment}/memberships"},
 	{http.MethodDelete, "/admin/v1/projects/{project}/environments/{environment}/memberships/{user_id}"},
+	{http.MethodPost, "/admin/v1/control-plane/backups"},
+	{http.MethodGet, "/admin/v1/control-plane/backups/{operation_id}"},
+	{http.MethodPost, "/admin/v1/control-plane/restores"},
+	{http.MethodGet, "/admin/v1/operations/{operation_id}"},
 }
 
 func TestRouterctlOnlineRouteParity(t *testing.T) {

@@ -137,7 +137,7 @@ const (
 	engineAdvisoryMaxImages   = 200
 )
 
-const defaultCallerKeyMaxAgeDays = 90
+const callerKeyMaxAge = 90 * 24 * time.Hour
 
 var engineImageDefaultValue = regexp.MustCompile(`\$\{[^}:]+:-([^}]+)\}`)
 
@@ -368,8 +368,7 @@ func securityDoctorConfigFindings(cfg *router.Config) []securityDoctorFinding {
 	} else {
 		out = append(out, doctorPass("admin-plaintext", "admin listener does not permit plaintext traffic beyond loopback"))
 	}
-	databaseCallers := strings.EqualFold(strings.TrimSpace(cfg.Server.ConfigSource.Mode), "database")
-	if databaseCallers {
+	if strings.EqualFold(strings.TrimSpace(cfg.Server.ConfigSource.Mode), "database") {
 		out = append(out, doctorFinding("db-stored-callers", "warn", "DB-stored callers and token issuance metadata were not checked", "Run doctor against the active file configuration or verify caller key metadata through the control-plane admin API."))
 		out = append(out, doctorNotChecked("metrics-auth-config", "metrics authorization could not be verified because callers are stored in the control-plane database", "Configure an active metrics_admin caller in the canonical database configuration."))
 	} else {
@@ -380,29 +379,60 @@ func securityDoctorConfigFindings(cfg *router.Config) []securityDoctorFinding {
 	} else {
 		out = append(out, doctorPass("security-reports", "security reports are enabled"))
 	}
+	unbounded := 0
+	for _, caller := range cfg.Callers {
+		if !activeDoctorCaller(caller) {
+			continue
+		}
+		if caller.Rate.RPM <= 0 && caller.Rate.TPM <= 0 && caller.Rate.Concurrent <= 0 && caller.Quota.Day.Requests <= 0 && caller.Quota.Day.Tokens <= 0 && caller.Quota.Month.Requests <= 0 && caller.Quota.Month.Tokens <= 0 {
+			unbounded++
+		}
+	}
+	if unbounded == 0 {
+		out = append(out, doctorPass("caller-limits", "all configured callers have at least one rate or quota limit"))
+	} else {
+		out = append(out, doctorFinding("caller-limits", "fail", fmt.Sprintf("%d configured caller(s) have no rate or quota limit", unbounded), "Configure at least one caller rate limit or daily/monthly quota for every caller."))
+	}
+	legacyKeys, weakKeys := 0, 0
 	entropyFloor := cfg.Security.KeyHygiene.MinEntropyBits
 	if entropyFloor == 0 {
 		entropyFloor = 128
 	}
-	maxAgeDays := cfg.Security.KeyHygiene.MaxAgeDays
-	if maxAgeDays == 0 {
-		maxAgeDays = defaultCallerKeyMaxAgeDays
+	for _, caller := range cfg.Callers {
+		if !activeDoctorCaller(caller) || !callerHasVerifier(caller) {
+			continue
+		}
+		if strings.TrimSpace(caller.TokenSHA256) != "" || caller.TokenFormatVersion != 2 {
+			legacyKeys++
+		}
+		if caller.TokenEntropyBits < entropyFloor {
+			weakKeys++
+		}
 	}
-	if databaseCallers {
-		out = append(out,
-			doctorNotChecked("caller-limits", "caller rate and quota limits were not checked because callers are stored in the control-plane database", "Inspect caller limits in the canonical control-plane database configuration."),
-			doctorNotChecked("caller-key-format", "caller key format and entropy metadata were not checked because callers are stored in the control-plane database", "Inspect token_format_version and token_entropy_bits in the canonical control-plane database configuration."),
-			doctorNotChecked("caller-key-environment", "caller key environments were not checked because callers are stored in the control-plane database", "Inspect caller environments in the canonical control-plane database configuration."),
-			callerKeyAgeNotCheckedFinding(maxAgeDays),
-		)
+	if legacyKeys == 0 && weakKeys == 0 {
+		out = append(out, doctorPass("caller-key-format", fmt.Sprintf("all active caller keys use v2 format with at least %d recorded entropy bits", entropyFloor)))
 	} else {
-		out = append(out,
-			callerLimitsFinding(cfg.Callers),
-			callerKeyFormatFinding(cfg.Callers, entropyFloor),
-			callerKeyEnvironmentFinding(cfg.Callers),
-			callerKeyAgeFinding(cfg.Callers, time.Now().UTC(), maxAgeDays),
-		)
+		out = append(out, doctorFinding("caller-key-format", "warn", fmt.Sprintf("%d active caller key(s) use a legacy or unknown token format; %d have unknown or below-floor entropy (minimum %d bits)", legacyKeys, weakKeys, entropyFloor), "Rotate legacy keys to checksummed v2 tokens and record token_format_version: 2 and token_entropy_bits at or above security.key_hygiene.min_entropy_bits."))
 	}
+	developmentKeys := 0
+	for _, caller := range cfg.Callers {
+		if !activeDoctorCaller(caller) {
+			continue
+		}
+		hasKey := strings.TrimSpace(caller.TokenHash) != "" || strings.TrimSpace(caller.TokenSHA256) != ""
+		switch strings.ToLower(strings.TrimSpace(caller.Environment)) {
+		case "dev", "development", "test", "testing":
+			if hasKey {
+				developmentKeys++
+			}
+		}
+	}
+	if developmentKeys == 0 {
+		out = append(out, doctorPass("caller-key-environment", "no caller keys are assigned to a development or test environment"))
+	} else {
+		out = append(out, doctorFinding("caller-key-environment", "warn", fmt.Sprintf("%d caller key(s) are assigned to a development or test environment", developmentKeys), "Issue separate caller keys for production workloads and keep development keys scoped to non-production systems."))
+	}
+	out = append(out, callerKeyAgeFinding(cfg.Callers, time.Now().UTC()))
 	sensitiveGroups := 0
 	for _, group := range cfg.Models {
 		sensitive := false
@@ -425,67 +455,7 @@ func securityDoctorConfigFindings(cfg *router.Config) []securityDoctorFinding {
 	return out
 }
 
-func callerLimitsFinding(callers []router.CallerConfig) securityDoctorFinding {
-	unbounded := 0
-	for _, caller := range callers {
-		if !activeDoctorCaller(caller) {
-			continue
-		}
-		if caller.Rate.RPM <= 0 && caller.Rate.TPM <= 0 && caller.Rate.Concurrent <= 0 && caller.Quota.Day.Requests <= 0 && caller.Quota.Day.Tokens <= 0 && caller.Quota.Month.Requests <= 0 && caller.Quota.Month.Tokens <= 0 {
-			unbounded++
-		}
-	}
-	if unbounded == 0 {
-		return doctorPass("caller-limits", "all configured callers have at least one rate or quota limit")
-	}
-	return doctorFinding("caller-limits", "fail", fmt.Sprintf("%d configured caller(s) have no rate or quota limit", unbounded), "Configure at least one caller rate limit or daily/monthly quota for every caller.")
-}
-
-func callerKeyFormatFinding(callers []router.CallerConfig, entropyFloor int) securityDoctorFinding {
-	legacyKeys, weakKeys := 0, 0
-	for _, caller := range callers {
-		if !activeDoctorCaller(caller) || !callerHasVerifier(caller) {
-			continue
-		}
-		if strings.TrimSpace(caller.TokenSHA256) != "" || caller.TokenFormatVersion != 2 {
-			legacyKeys++
-		}
-		if caller.TokenEntropyBits < entropyFloor {
-			weakKeys++
-		}
-	}
-	if legacyKeys == 0 && weakKeys == 0 {
-		return doctorPass("caller-key-format", fmt.Sprintf("all active caller keys use v2 format with at least %d recorded entropy bits", entropyFloor))
-	}
-	return doctorFinding("caller-key-format", "warn", fmt.Sprintf("%d active caller key(s) use a legacy or unknown token format; %d have unknown or below-floor entropy (minimum %d bits)", legacyKeys, weakKeys, entropyFloor), "Rotate legacy keys to checksummed v2 tokens and record token_format_version: 2 and token_entropy_bits at or above security.key_hygiene.min_entropy_bits.")
-}
-
-func callerKeyEnvironmentFinding(callers []router.CallerConfig) securityDoctorFinding {
-	developmentKeys := 0
-	for _, caller := range callers {
-		if !activeDoctorCaller(caller) {
-			continue
-		}
-		hasKey := strings.TrimSpace(caller.TokenHash) != "" || strings.TrimSpace(caller.TokenSHA256) != ""
-		switch strings.ToLower(strings.TrimSpace(caller.Environment)) {
-		case "dev", "development", "test", "testing":
-			if hasKey {
-				developmentKeys++
-			}
-		}
-	}
-	if developmentKeys == 0 {
-		return doctorPass("caller-key-environment", "no caller keys are assigned to a development or test environment")
-	}
-	return doctorFinding("caller-key-environment", "warn", fmt.Sprintf("%d caller key(s) are assigned to a development or test environment", developmentKeys), "Issue separate caller keys for production workloads and keep development keys scoped to non-production systems.")
-}
-
-func callerKeyAgeNotCheckedFinding(maxAgeDays int) securityDoctorFinding {
-	return doctorNotChecked("caller-key-age", "caller key age was not checked because callers and token issuance metadata are stored in the control-plane database", fmt.Sprintf("Inspect token_issued_at in the canonical control-plane database configuration; the maximum age policy is %d days.", maxAgeDays))
-}
-
-func callerKeyAgeFinding(callers []router.CallerConfig, now time.Time, maxAgeDays int) securityDoctorFinding {
-	maxAge := time.Duration(maxAgeDays) * 24 * time.Hour
+func callerKeyAgeFinding(callers []router.CallerConfig, now time.Time) securityDoctorFinding {
 	keys, unknown, stale, future := 0, 0, 0, 0
 	for _, caller := range callers {
 		if !activeDoctorCaller(caller) || !callerHasVerifier(caller) {
@@ -500,7 +470,7 @@ func callerKeyAgeFinding(callers []router.CallerConfig, now time.Time, maxAgeDay
 		age := now.Sub(issuedAt)
 		if age < 0 {
 			future++
-		} else if age > maxAge {
+		} else if age > callerKeyMaxAge {
 			stale++
 		}
 	}
@@ -508,12 +478,12 @@ func callerKeyAgeFinding(callers []router.CallerConfig, now time.Time, maxAgeDay
 		return doctorFinding("caller-key-age", "pass", "no caller keys are configured", "")
 	}
 	if stale > 0 {
-		return doctorFinding("caller-key-age", "fail", fmt.Sprintf("%d caller key(s) exceed the %d-day maximum age", stale, maxAgeDays), fmt.Sprintf("Rotate keys older than %d days and update callers[].token_issued_at when recording externally issued keys.", maxAgeDays))
+		return doctorFinding("caller-key-age", "fail", fmt.Sprintf("%d caller key(s) exceed the 90-day maximum age", stale), "Rotate keys older than 90 days and update callers[].token_issued_at when recording externally issued keys.")
 	}
 	if unknown > 0 || future > 0 {
 		return doctorFinding("caller-key-age", "warn", fmt.Sprintf("key age is unknown for %d caller key(s) and has a future date for %d", unknown, future), "Set callers[].token_issued_at to the UTC RFC3339 issuance time, or rotate the key to record a new issuance time.")
 	}
-	return doctorPass("caller-key-age", fmt.Sprintf("all configured caller keys are within the %d-day maximum age", maxAgeDays))
+	return doctorPass("caller-key-age", "all configured caller keys are within the 90-day maximum age")
 }
 
 func probeSecurityTarget(raw string) []securityDoctorFinding {

@@ -47,6 +47,9 @@
   to stderr.
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
 
+- Keep the admin migration-status API read-only: it now refuses unavailable or pre-ledger databases without bootstrapping or upgrading migration tables.
+- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 16.
+
 ### Security
 
 - Add a required pull request and merge-group CI gate that checks every pinned
@@ -65,8 +68,7 @@
 - Add opt-in latest posture summary reporting through the authenticated admin
   security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
 - Record UTC issuance timestamps for generated and rotated caller keys; the
-  security self-test warns when age is unknown and fails keys older than the configured
-  maximum age (90 days by default; set `security.key_hygiene.max_age_days`).
+  security self-test warns when age is unknown and fails keys older than 90 days.
 
 All notable changes to Metrum AI Router are documented in this file.
 
@@ -113,6 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use `--offline` for deliberate direct database access while the router is stopped. The default
   Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
   `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
+
+### Admin operations
+
+- Add durable asynchronous admin operation resources, versioned control-plane backup/restore through the Admin API and routerctl, and atomic model-target batches capped at 100 operations.
 
 ### Migrations
 

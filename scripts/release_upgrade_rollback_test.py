@@ -23,6 +23,31 @@ class StrictJSONTests(unittest.TestCase):
         workflow = Path(__file__).parents[1] / ".github/workflows/release-upgrade-check.yml"
         self.assertIn('--candidate-commit "$(git rev-parse HEAD)"', workflow.read_text(encoding="utf-8"))
 
+    def test_upgrade_check_executes_both_scopes_from_the_checked_in_job(self):
+        contract = MODULE.migration_job_example_script()
+        for fragment in (
+            "apply_scope()", "apply_scope usage ROUTER_USAGE_DB_DSN",
+            "apply_scope router-config ROUTER_CONFIG_DB_DSN", "--action=plan",
+            "--action=maintenance", "--action=verify", "--dsn-env=\"$dsn_env\"", "--json",
+        ):
+            self.assertIn(fragment, contract)
+
+    def test_upgrade_check_runs_the_manifest_shell_script_directly(self):
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"Compatible":true}\n', stderr="")
+        with tempfile.TemporaryDirectory() as raw:
+            workspace = Path(raw) / "job"
+            with patch.object(MODULE, "run_as", return_value=completed) as run_as:
+                statuses = MODULE.run_migration_job_example(
+                    Path("/bin/true"), Path(raw) / "usage.sqlite", Path(raw) / "config.sqlite",
+                    "router-test", "apply", workspace,
+                )
+        self.assertEqual(statuses, [{"Compatible": True}])
+        command = run_as.call_args.args[1]
+        self.assertEqual(command[-2], "-ec")
+        self.assertIn("apply_scope usage ROUTER_USAGE_DB_DSN", command[-1])
+        self.assertIn("apply_scope router-config ROUTER_CONFIG_DB_DSN", command[-1])
+        self.assertIn(str(workspace / "metrum-ai-router-migrate"), command[-1])
+
     def test_accepts_one_object(self):
         self.assertEqual(MODULE.parse_single_json('{"state":"current"}'), {"state": "current"})
 

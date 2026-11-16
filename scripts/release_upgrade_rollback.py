@@ -84,6 +84,64 @@ def strict_json(binary: Path, action: str, database: Path, user: str, *extra: st
         raise RuntimeError(f"{action} stdout was not exactly one JSON document") from exc
 
 
+def migration_job_example_script() -> str:
+    """Return the shell script stored in the checked-in PostgreSQL Job args."""
+    manifest = Path(__file__).parents[1] / "deploy/kubernetes/examples/postgres-migration-plan-job.yaml"
+    try:
+        text = manifest.read_text(encoding="utf-8")
+    except OSError:
+        raise RuntimeError("PostgreSQL migration Job example is missing") from None
+    if not re.search(r'^\s+command:\s*\["/bin/sh", "-ec"\]\s*$', text, re.MULTILINE):
+        raise RuntimeError("PostgreSQL migration Job must invoke its checked-in shell contract")
+    match = re.search(r'^\s+args:\s*\n\s+- \|\n((?:\s{14,}.*\n)+)', text, re.MULTILINE)
+    if not match:
+        raise RuntimeError("PostgreSQL migration Job args are missing")
+    script = "\n".join(line[14:] for line in match.group(1).splitlines()).rstrip()
+    required = ("apply_scope()", "apply_scope usage ROUTER_USAGE_DB_DSN", "apply_scope router-config ROUTER_CONFIG_DB_DSN",
+                "--action=plan", "--action=maintenance", "--action=verify")
+    if not all(fragment in script for fragment in required):
+        raise RuntimeError("PostgreSQL migration Job must plan/apply/verify both scopes")
+    return script
+
+
+def run_migration_job_example(binary: Path, usage_db: Path, config_db: Path, user: str, action: str, workspace: Path) -> list[dict[str, object]]:
+    """Execute the Job's checked-in shell script, mapping its PostgreSQL DSNs to isolated SQLite files."""
+    if action not in {"plan", "apply"}:
+        raise ValueError("migration Job action must be plan or apply")
+    workspace.mkdir(parents=True, exist_ok=True)
+    workspace.chmod(0o755)
+    wrapper = workspace / "metrum-ai-router-migrate"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        f"binary = {str(binary)!r}\n"
+        f"databases = {{'ROUTER_USAGE_DB_DSN': {str(usage_db)!r}, 'ROUTER_CONFIG_DB_DSN': {str(config_db)!r}}}\n"
+        "args = sys.argv[1:]\n"
+        "dsn_name = next((arg.split('=', 1)[1] for arg in args if arg.startswith('--dsn-env=')), None)\n"
+        "if dsn_name not in databases:\n    raise SystemExit('Job used an unexpected DSN environment variable')\n"
+        "args = [arg for arg in args if not arg.startswith('--dsn-env=') and arg != '--driver=postgres']\n"
+        "args += ['--driver=sqlite', '--db=' + databases[dsn_name]]\n"
+        "os.execv(binary, [binary, *args])\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    script = migration_job_example_script()
+    if "/app/bin/metrum-ai-router-migrate" not in script:
+        raise RuntimeError("PostgreSQL migration Job does not invoke the packaged CLI")
+    script = script.replace("/app/bin/metrum-ai-router-migrate", str(wrapper))
+    command = ["/usr/bin/env", f"MIGRATION_ACTION={action}",
+               "BACKUP_EVIDENCE_REF=release-check-approved-snapshot", "/bin/sh", "-ec", script]
+    result = run_as(user, command, timeout=1800, check=False)
+    if contains_sql_text(result.stderr):
+        raise RuntimeError("Kubernetes migration Job wrote SQL text to stderr")
+    if result.returncode != 0:
+        raise RuntimeError("Kubernetes migration Job shell contract failed")
+    try:
+        return [parse_single_json(line) for line in result.stdout.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Kubernetes migration Job output was not a sequence of JSON documents") from exc
+
+
 def smoke(binary_root: Path, version: str, commit: str, output: Path, user: str, database: Path) -> None:
     router = find_binary(binary_root, "metrum-ai-router")
     report = find_binary(binary_root, "metrum-ai-router-usage-report")
@@ -152,6 +210,7 @@ def main() -> int:
         previous_migrate = find_binary(previous_root, "metrum-ai-router-migrate")
         candidate_migrate = find_binary(candidate_root, "metrum-ai-router-migrate")
         database = work / "usage.sqlite"
+        config_database = work / "router-config.sqlite"
         old_result = run_as(args.service_user, [str(previous_migrate), "--action=apply", "--driver=sqlite",
                                                  "--db=" + str(database), "--json"])
         old_json_valid = previous_json_status(args.previous_version, old_result.stdout)
@@ -170,9 +229,15 @@ def main() -> int:
         checks.append({"check": "previous-serving-smoke", "passed": True})
         gate_started = time.monotonic()
         for action in ("plan", "apply"):
-            status = strict_json(candidate_migrate, action, database, args.service_user)
-            checks.append({"check": "candidate-" + action, "strict_json": True,
-                           "compatible": status.get("Compatible", status.get("compatible"))})
+            statuses = run_migration_job_example(candidate_migrate, database, config_database, args.service_user,
+                                                 action, evidence / "migration-job")
+            checks.append({"check": "kubernetes-migration-job-" + action, "strict_json": True,
+                           "scope_count": len(statuses),
+                           "compatible": all(status.get("Compatible", status.get("compatible", True)) for status in statuses)})
+        config_status = strict_json(candidate_migrate, "status", config_database, args.service_user, "--scope=router-config")
+        if config_status.get("SchemaVersion", config_status.get("schemaVersion")) != 16:
+            raise RuntimeError("Kubernetes migration Job did not apply router-config schema 16")
+        checks.append({"check": "kubernetes-migration-job-router-config-schema-16", "passed": True})
         status = strict_json(candidate_migrate, "resume", database, args.service_user,
                              "--job=historical-usage-validation-v1", "--checkpoint-ordinal=0")
         checks.append({"check": "candidate-resume", "strict_json": True,

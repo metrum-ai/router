@@ -132,6 +132,12 @@ ceiling on each admission, so raising or removing a ceiling restores admission
 without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
+Before enabling asynchronous operations, backups, or restores, apply the
+non-serving usage and router-config migrations through schema 16 using the
+two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
+requires the separate `admin:restore:write` grant. It updates the configuration
+and usage databases sequentially; it is not an atomic cross-database operation.
+
 **Break-glass access (v4.8.0).** There is no unauthenticated admin route. Prepare one sealed admin
 key with `admin`-level grants, held offline by the on-call owner, and use it only to restore normal
 credentials; rotate it immediately afterwards. The offline emergency-credential activation flow is
