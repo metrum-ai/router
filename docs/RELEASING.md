@@ -13,7 +13,7 @@ git tag -a vX.Y.Z -m "Metrum AI Router vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-The `workflow_dispatch` dry run is limited to `main`. It builds release
+The `release-dry-run.yml` `workflow_dispatch` dry run is limited to `main`. It builds release
 packages, compares a clean rebuild, exercises the upgrade/rollback path from
 the latest published non-prerelease release, reviews that production range,
 and assembles and smoke-tests the multi-architecture image in a local OCI

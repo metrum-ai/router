@@ -7,27 +7,19 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Run the complete release pipeline without publishing"
-        type: boolean
-        required: true
-        default: true
-
 permissions:
   contents: read
 
 jobs:
   # Every hierarchy compatibility cell must pass before release packaging.
   hierarchy-matrix:
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
+    if: startsWith(github.ref, 'refs/tags/')
     uses: ./.github/workflows/hierarchy-matrix.yml
     permissions:
       contents: read
 
   resolve:
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
+    if: startsWith(github.ref, 'refs/tags/')
     needs: hierarchy-matrix
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     outputs:
@@ -43,22 +35,11 @@ jobs:
       - name: Resolve immutable build metadata
         id: metadata
         env:
-          RELEASE_EVENT_NAME: ${{ github.event_name }}
-          DRY_RUN_INPUT: ${{ inputs.dry_run }}
           RELEASE_REF_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "${RELEASE_EVENT_NAME}" = "workflow_dispatch" ]; then
-            if [ "${GITHUB_REF}" != "refs/heads/main" ] || [ "${DRY_RUN_INPUT}" != "true" ]; then
-              echo "manual release runs are limited to dry runs dispatched from main" >&2
-              exit 2
-            fi
-            candidate="v5.0.0-dry-run"
-          else
-            candidate="${RELEASE_REF_NAME}"
-          fi
-          tag="$(python3 scripts/validate_release_tag.py "${candidate}")"
+          tag="$(python3 scripts/validate_release_tag.py "${RELEASE_REF_NAME}")"
           commit="$(git rev-parse HEAD)"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
@@ -151,7 +132,7 @@ jobs:
 
   upgrade-and-rollback:
     needs: [resolve, package-binaries]
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 40
     permissions:
@@ -209,7 +190,7 @@ jobs:
 
   ai-release-review:
     needs: resolve
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 10
     permissions:
@@ -245,94 +226,6 @@ jobs:
           name: release-ai-review
           path: dist/AI-release-review.md
           if-no-files-found: warn
-          retention-days: 14
-
-  dry-run-verify:
-    needs: [resolve, package-binaries, reproducible-build, ai-release-review, upgrade-and-rollback]
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run && needs.resolve.result == 'success' && needs.package-binaries.result == 'success' && needs.reproducible-build.result == 'success' && needs.ai-release-review.result == 'success' && needs.upgrade-and-rollback.result == 'success'
-    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    env:
-      VERSION: ${{ needs.resolve.outputs.tag }}
-      COMMIT: ${{ needs.resolve.outputs.commit }}
-      PREVIOUS_TAG: ${{ needs.resolve.outputs.previous_tag }}
-      SOURCE_DATE_EPOCH: ${{ needs.resolve.outputs.source_date_epoch }}
-      CRANE: ${{ github.workspace }}/crane
-      IMAGE: ghcr.io/${{ github.repository }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.resolve.outputs.commit }}
-          fetch-depth: 0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: release-binaries
-          path: dist
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: release-ai-review
-          path: dist
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: release-upgrade-rollback
-          path: dist
-      - name: Require passing AI review
-        run: |
-          rg -q '^\- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
-      - name: Validate release package inventory
-        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" --set binary
-      - name: Install pinned Crane
-        run: bash scripts/install_crane.sh "${CRANE}"
-      - name: Assemble images in a local multi-architecture OCI layout
-        run: |
-          set -euo pipefail
-          base="$(python3 scripts/release_image_layer.py --print-base-image)"
-          test "$(sed -n 's/^FROM \(.*\)$/\1/p' Dockerfile | tail -1)" = "$base"
-          layout="${RUNNER_TEMP}/release-oci"
-          for arch in amd64 arm64; do
-            package="dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
-            layer="${RUNNER_TEMP}/router-${arch}-layer.tar.gz"
-            image_tar="${RUNNER_TEMP}/router-${arch}-image.tar"
-            python3 scripts/release_image_layer.py --package "$package" --output "$layer" --epoch "${SOURCE_DATE_EPOCH}" > "${RUNNER_TEMP}/router-${arch}-binary-sha256.txt"
-            "${CRANE}" mutate "$base" --append "$layer" --platform "linux/${arch}" \
-              --entrypoint=/app/bin/metrum-ai-router --cmd=--config,/app/config/config.yaml \
-              --user=65532:65532 --workdir=/app --exposed-ports=8080/tcp --set-platform="linux/${arch}" \
-              --label="org.opencontainers.image.title=Metrum AI Router" \
-              --label="org.opencontainers.image.version=${VERSION}" \
-              --label="org.opencontainers.image.revision=${COMMIT}" \
-              --label="org.opencontainers.image.created=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" \
-              --label="org.opencontainers.image.licenses=Apache-2.0" --output "$image_tar"
-            python3 scripts/release_image_oci_layout.py --archive "$image_tar" --layout "$layout" \
-              --ref "${IMAGE}:${VERSION}" --platform "linux/${arch}"
-          done
-          echo "RELEASE_OCI_LAYOUT=${layout}" >> "${GITHUB_ENV}"
-      - name: Verify both image binaries match release packages
-        run: |
-          set -euo pipefail
-          for arch in amd64 arm64; do
-            python3 scripts/verify_release_image_binaries.py --crane "${CRANE}" \
-              --oci-layout "${RELEASE_OCI_LAYOUT}" --image-tag "${IMAGE}:${VERSION}" \
-              --platform "linux/${arch}" --package "dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
-          done
-      - name: Run local OCI image version and health smoke
-        run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --oci-layout "${RELEASE_OCI_LAYOUT}" --image "${IMAGE}:${VERSION}" --version "${VERSION}"
-      - name: Verify dry-run evidence
-        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-dry-run-evidence
-          path: |
-            dist/AI-release-review.md
-            dist/upgrade-rollback-results.json
-            dist/SHA256SUMS
-            dist/release-artifacts.json
-          if-no-files-found: error
           retention-days: 14
 
   publish-release:
