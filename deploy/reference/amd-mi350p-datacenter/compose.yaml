@@ -14,8 +14,7 @@ x-vllm-service: &vllm-service
     - no-new-privileges:true
     # ROCm initialisation needs syscalls the default profile blocks.
     - seccomp:unconfined
-  # Numeric host GIDs: the pinned ROCm image carries no `render` entry in its
-  # /etc/group, so a group name cannot be resolved inside the container.
+  # Numeric host GIDs keep device access aligned with the host device-node owners.
   group_add:
     - "${VIDEO_GID:?set VIDEO_GID (stat -c %g /dev/dri/card0)}"
     - "${RENDER_GID:?set RENDER_GID (stat -c %g /dev/dri/renderD128)}"
@@ -44,10 +43,7 @@ x-vllm-service: &vllm-service
 services:
   vllm-tiny:
     <<: *vllm-service
-    image: rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:3b20f0a32530aefa2416aa30f64011fdcab00c44676a915044b9a17379342fcc
-    # The ROCm image carries no entrypoint and its default CMD only pins the
-    # matching wheel, so the server is started explicitly; AMD's documented form
-    # is `vllm serve ...`.
+    image: vllm/vllm-openai-rocm:v0.33.0@sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
     entrypoint: ["vllm", "serve"]
     command:
       - --model
@@ -71,10 +67,7 @@ services:
 
   vllm-chat:
     <<: *vllm-service
-    image: rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:3b20f0a32530aefa2416aa30f64011fdcab00c44676a915044b9a17379342fcc
-    # The ROCm image carries no entrypoint and its default CMD only pins the
-    # matching wheel, so the server is started explicitly; AMD's documented form
-    # is `vllm serve ...`.
+    image: vllm/vllm-openai-rocm:v0.33.0@sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
     entrypoint: ["vllm", "serve"]
     command:
       - --model
@@ -100,10 +93,7 @@ services:
 
   vllm-coder:
     <<: *vllm-service
-    image: rocm/vllm:rocm7.13.0_gfx950-dcgpu_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:3b20f0a32530aefa2416aa30f64011fdcab00c44676a915044b9a17379342fcc
-    # The ROCm image carries no entrypoint and its default CMD only pins the
-    # matching wheel, so the server is started explicitly; AMD's documented form
-    # is `vllm serve ...`.
+    image: vllm/vllm-openai-rocm:v0.33.0@sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
     entrypoint: ["vllm", "serve"]
     command:
       - --model

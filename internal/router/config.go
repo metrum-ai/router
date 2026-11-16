@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/metrum-ai/router/internal/tlsacme"
-
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
@@ -38,11 +36,11 @@ func (c EligibilityConfig) implicitEnabled() bool {
 }
 
 type Config struct {
-	Eligibility EligibilityConfig `yaml:"eligibility"`
-	Server      ServerConfig      `yaml:"server"`
-	// Admin is the control plane's own listener (#809). An absent or disabled
-	// block keeps the v4.7 surface: no second listener, legacy /admin/* and
-	// /metrics on the serving port.
+	Eligibility EligibilityConfig    `yaml:"eligibility"`
+	Security    RouterSecurityConfig `yaml:"security" json:"security,omitempty"`
+	Server      ServerConfig         `yaml:"server"`
+	// Admin is the control plane's own listener (#809). File configuration
+	// enables it by default; explicit false keeps one listener.
 	Admin              AdminPlaneConfig          `yaml:"admin" json:"admin"`
 	Users              []UserConfig              `yaml:"users"`
 	Projects           []ProjectConfig           `yaml:"projects"`
@@ -56,6 +54,15 @@ type Config struct {
 	// config (${NAME} references and env.json keys) so later errors can be
 	// redacted by name. See secret_redaction.go.
 	secretEnvRefs []string
+}
+
+type RouterSecurityConfig struct {
+	KeyHygiene KeyHygieneConfig `yaml:"key_hygiene" json:"keyHygiene,omitempty"`
+}
+
+type KeyHygieneConfig struct {
+	MinEntropyBits int  `yaml:"min_entropy_bits" json:"minEntropyBits,omitempty"`
+	Enforce        bool `yaml:"enforce" json:"enforce,omitempty"`
 }
 
 const defaultMaxSSELineBytes = 8 << 20
@@ -81,7 +88,8 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Streaming StreamingConfig `yaml:"streaming" json:"streaming"`
+	Detectors []DetectorConfig `yaml:"detectors,omitempty" json:"detectors,omitempty"`
+	Streaming StreamingConfig  `yaml:"streaming" json:"streaming"`
 	// HTTP server deadlines (#759). Zero selects the default. The write
 	// deadline is absolute, so it defaults above the upstream budget; event
 	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
@@ -98,7 +106,7 @@ type ServerConfig struct {
 	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ListenerTLSConfig  `yaml:"tls,omitempty"`
+	TLS          ServerTLSConfig    `yaml:"tls,omitempty"`
 	AdminReports AdminReportsConfig `yaml:"admin_reports"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
@@ -132,6 +140,20 @@ type ContainmentWebhookConfig struct {
 	Enabled         bool   `yaml:"enabled" json:"enabled,omitempty"`
 	SecretEnv       string `yaml:"secret_env" json:"secretEnv,omitempty"`
 	TimestampWindow string `yaml:"timestamp_window" json:"timestampWindow,omitempty"`
+}
+
+// DetectorConfig configures one external or built-in security detector.
+type DetectorConfig struct {
+	ID              string   `yaml:"id" json:"id"`
+	URL             string   `yaml:"url,omitempty" json:"url,omitempty"`
+	AllowHosts      []string `yaml:"allow_hosts,omitempty" json:"allowHosts,omitempty"`
+	AllowHTTP       bool     `yaml:"allow_http,omitempty" json:"allowHttp,omitempty"`
+	Builtin         string   `yaml:"builtin,omitempty" json:"builtin,omitempty"`
+	Mode            string   `yaml:"mode,omitempty" json:"mode,omitempty"`
+	TimeoutMS       int      `yaml:"timeout_ms,omitempty" json:"timeoutMs,omitempty"`
+	OnError         string   `yaml:"on_error,omitempty" json:"onError,omitempty"`
+	SampleRate      float64  `yaml:"sample_rate,omitempty" json:"sampleRate,omitempty"`
+	IncludeSegments []string `yaml:"include_segments,omitempty" json:"includeSegments,omitempty"`
 }
 
 // ReasoningProvenanceConfig controls opaque reasoning provenance binding.
@@ -203,9 +225,23 @@ type AdminSecurityReportsConfig struct {
 }
 
 type ClientIPConfig struct {
-	TrustedProxyCIDRs []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
-	HeaderOrder       []string `yaml:"header_order" json:"header_order"`
-	StoreIP           *bool    `yaml:"store_ip" json:"store_ip"`
+	TrustedProxyCIDRs []string          `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
+	HeaderOrder       []string          `yaml:"header_order" json:"header_order"`
+	StoreIP           *bool             `yaml:"store_ip" json:"store_ip"`
+	ASNPrefixes       []ASNPrefixConfig `yaml:"asn_prefixes,omitempty" json:"asn_prefixes,omitempty"`
+}
+
+type ASNPrefixConfig struct {
+	CIDR string `yaml:"cidr" json:"cidr"`
+	ASN  uint32 `yaml:"asn" json:"asn"`
+}
+
+type CallerBindingConfig struct {
+	Mode         string   `yaml:"mode,omitempty" json:"mode,omitempty"`
+	AllowedCIDRs []string `yaml:"allowed_cidrs,omitempty" json:"allowed_cidrs,omitempty"`
+	AllowedASNs  []uint32 `yaml:"allowed_asns,omitempty" json:"allowed_asns,omitempty"`
+	MTLSSPIFFEID string   `yaml:"mtls_spiffe_id,omitempty" json:"mtls_spiffe_id,omitempty"`
+	MTLSSubject  string   `yaml:"mtls_subject,omitempty" json:"mtls_subject,omitempty"`
 }
 
 type AdminReportBaselineConfig struct {
@@ -1105,18 +1141,22 @@ type CallerConfig struct {
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
 	// TokenSHA256 is the deprecated unsalted SHA-256 hex of the caller token.
 	// It is still accepted, with a startup warning; use TokenHash instead.
-	TokenSHA256    string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
-	TokenID        string               `yaml:"token_id" json:"token_id"`
-	Allow          []string             `yaml:"allow" json:"allow"`
-	MetricsAdmin   bool                 `yaml:"metrics_admin" json:"metrics_admin"`
-	ContentAdmin   bool                 `yaml:"content_admin" json:"content_admin"`
-	ContentCapture ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
+	TokenSHA256        string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
+	TokenID            string               `yaml:"token_id" json:"token_id"`
+	TokenFormatVersion int                  `yaml:"token_format_version,omitempty" json:"token_format_version,omitempty"`
+	TokenEntropyBits   int                  `yaml:"token_entropy_bits,omitempty" json:"token_entropy_bits,omitempty"`
+	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
+	Allow              []string             `yaml:"allow" json:"allow"`
+	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
+	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
-	SpendCeiling SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling"`
-	Rate         RateConfig         `yaml:"rate" json:"rate"`
-	TrafficShape TrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
-	Quota        QuotaConfig        `yaml:"quota" json:"quota"`
-	Key          KeyConfig          `yaml:"key" json:"key"`
+	SpendCeiling SpendCeilingConfig  `yaml:"spend_ceiling" json:"spend_ceiling"`
+	Rate         RateConfig          `yaml:"rate" json:"rate"`
+	TrafficShape TrafficShapeConfig  `yaml:"traffic_shape" json:"traffic_shape"`
+	Quota        QuotaConfig         `yaml:"quota" json:"quota"`
+	Key          KeyConfig           `yaml:"key" json:"key"`
+	Binding      CallerBindingConfig `yaml:"binding,omitempty" json:"binding,omitempty"`
 }
 
 type UserConfig struct {
@@ -1129,6 +1169,21 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
+	ID           string                     `yaml:"id" json:"id"`
+	Name         string                     `yaml:"name" json:"name"`
+	Status       string                     `yaml:"status" json:"status"`
+	Description  string                     `yaml:"description" json:"description"`
+	Environments []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget       ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+}
+
+type ProjectBudgetConfig struct {
+	DailyUSD        float64 `yaml:"daily_usd,omitempty" json:"daily_usd,omitempty"`
+	MonthlyUSD      float64 `yaml:"monthly_usd,omitempty" json:"monthly_usd,omitempty"`
+	AlertThresholds []int   `yaml:"alert_thresholds,omitempty" json:"alert_thresholds,omitempty"`
+}
+
+type ProjectEnvironmentConfig struct {
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Status      string `yaml:"status" json:"status"`
@@ -1136,12 +1191,13 @@ type ProjectConfig struct {
 }
 
 type ProjectMembershipConfig struct {
-	UserID   string `yaml:"user_id" json:"user_id"`
-	Project  string `yaml:"project" json:"project"`
-	Role     string `yaml:"role" json:"role"`
-	Status   string `yaml:"status" json:"status"`
-	Source   string `yaml:"source" json:"source"`
-	JoinedAt string `yaml:"joined_at" json:"joined_at"`
+	UserID      string `yaml:"user_id" json:"user_id"`
+	Project     string `yaml:"project" json:"project"`
+	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Role        string `yaml:"role" json:"role"`
+	Status      string `yaml:"status" json:"status"`
+	Source      string `yaml:"source" json:"source"`
+	JoinedAt    string `yaml:"joined_at" json:"joined_at"`
 }
 
 type RateConfig struct {
@@ -1189,7 +1245,16 @@ func LoadConfig(path string) (*Config, error) {
 		redactor.addConfig(cfg)
 		return cfg, redactConfigError(err, redactor)
 	}
+	warnDetectorSegmentOptIn(cfg.Server.Detectors)
 	return cfg, nil
+}
+
+func warnDetectorSegmentOptIn(configs []DetectorConfig) {
+	for _, detector := range configs {
+		if len(detector.IncludeSegments) > 0 && detector.Mode != "off" {
+			log.Printf("WARNING: detector %s is configured to send only selected tool_result/document text to its allowlisted endpoint; prompts and user messages are never sent", detector.ID)
+		}
+	}
 }
 
 func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
@@ -1229,10 +1294,54 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
 	}
+	if err := applyV5AdminConfig(cleaned, &cfg); err != nil {
+		return nil, err
+	}
 	cfg.setDefaults()
 	cfg.baseDir = filepath.Dir(path)
 	cfg.secretEnvRefs = envRefs
 	return &cfg, cfg.Validate()
+}
+
+func applyV5AdminConfig(raw []byte, cfg *Config) error {
+	adminEnabledSet, err := validateV5AdminConfig(raw)
+	if err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Admin.enabledSet = adminEnabledSet
+	}
+	return nil
+}
+
+// validateV5AdminConfig rejects removed v4.8 admin settings and reports
+// whether admin.enabled was explicitly set. Omission enables the listener.
+func validateV5AdminConfig(raw []byte) (bool, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return false, err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return false, nil
+	}
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "admin" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		admin := root.Content[0].Content[i+1]
+		enabledSet := false
+		for j := 0; j+1 < len(admin.Content); j += 2 {
+			key := admin.Content[j].Value
+			switch key {
+			case "enabled":
+				enabledSet = true
+			case "legacy_routes_on_serving_port", "legacy_sunset":
+				return false, fmt.Errorf("config key admin.%s was removed in v5.0.0; remove it from file configuration, or run `metrum-ai-router-migrate --scope router-config --action apply` followed by `metrum-ai-router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>` for stored configurations; use /admin/v1 on the admin listener", key)
+			}
+		}
+		return enabledSet, nil
+	}
+	return false, nil
 }
 
 func validateRemovedScriptConfig(raw []byte) error {
@@ -1473,7 +1582,25 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
+	if !c.Admin.enabledSet {
+		c.Admin.Enabled = true
+	}
 	defaultAdminPlaneConfig(&c.Admin)
+	for i := range c.Server.Detectors {
+		detector := &c.Server.Detectors[i]
+		if detector.Mode == "" {
+			detector.Mode = "off"
+		}
+		if detector.TimeoutMS == 0 {
+			detector.TimeoutMS = 500
+		}
+		if detector.OnError == "" {
+			detector.OnError = "fallback"
+		}
+		if detector.SampleRate == 0 {
+			detector.SampleRate = 1
+		}
+	}
 	if c.Server.Streaming.MaxSSELineBytes == 0 {
 		c.Server.Streaming.MaxSSELineBytes = defaultMaxSSELineBytes
 	}
@@ -1649,10 +1776,15 @@ func (c *Config) setDefaults() {
 	for i := range c.Projects {
 		c.Projects[i].ID = normalizeAccountID(c.Projects[i].ID)
 		c.Projects[i].Status = normalizeStatusDefault(c.Projects[i].Status)
+		for j := range c.Projects[i].Environments {
+			c.Projects[i].Environments[j].ID = normalizeAccountID(c.Projects[i].Environments[j].ID)
+			c.Projects[i].Environments[j].Status = normalizeStatusDefault(c.Projects[i].Environments[j].Status)
+		}
 	}
 	for i := range c.ProjectMemberships {
 		c.ProjectMemberships[i].UserID = normalizeAccountID(c.ProjectMemberships[i].UserID)
 		c.ProjectMemberships[i].Project = normalizeAccountID(c.ProjectMemberships[i].Project)
+		c.ProjectMemberships[i].Environment = normalizeAccountID(c.ProjectMemberships[i].Environment)
 		c.ProjectMemberships[i].Status = normalizeStatusDefault(c.ProjectMemberships[i].Status)
 		c.ProjectMemberships[i].Role = normalizeRoleDefault(c.ProjectMemberships[i].Role)
 	}
@@ -1708,6 +1840,16 @@ func (c *Config) ValidateForImport() error {
 }
 
 func (c *Config) validate(requireAdminKeyEnv bool) error {
+	if err := validateDetectorConfigs(c.Server.Detectors); err != nil {
+		return err
+	}
+	if c.Security.KeyHygiene.MinEntropyBits < 0 || c.Security.KeyHygiene.MinEntropyBits > 256 {
+		return fmt.Errorf("security.key_hygiene.min_entropy_bits must be 0 (default) or between 1 and 256")
+	}
+	entropyFloor := c.Security.KeyHygiene.MinEntropyBits
+	if entropyFloor == 0 {
+		entropyFloor = 128
+	}
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
 	}
@@ -1776,7 +1918,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateConfigSource(c.Server.ConfigSource); err != nil {
 		return err
 	}
-	if err := ValidateListenerTLS(c.Server.TLS, tlsacme.ListenerServing, "server.tls"); err != nil {
+	if err := validateServerTLS(c.Server.TLS); err != nil {
 		return err
 	}
 	if err := validateAdminAuthMode(c.Server.AdminAuth, c.Server.UsageDB, requireAdminKeyEnv); err != nil {
@@ -1795,6 +1937,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
+		return err
+	}
+	if err := validateASNPrefixes(c.Server.ClientIP.ASNPrefixes); err != nil {
 		return err
 	}
 	if err := validateContentCapture("server content_capture", c.Server.ContentCapture); err != nil {
@@ -2135,6 +2280,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if caller.ID == "" {
 			return fmt.Errorf("caller missing id")
 		}
+		if err := validateCallerBinding(caller.Binding, caller.ID, c.Server.TLS, c.Server.ClientIP); err != nil {
+			return err
+		}
 		ownerUser, err := callerOwnerUser(caller)
 		if err != nil {
 			return err
@@ -2143,6 +2291,32 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("duplicate caller id %q for callers %s and %s", caller.ID, previousCallerID, caller.ID)
 		}
 		callerIDs[caller.ID] = caller.ID
+		entropyBits := caller.TokenEntropyBits
+		if caller.TokenFormatVersion != 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_format_version must be 2 when set", caller.ID)
+		}
+		if entropyBits < 0 || entropyBits > 256 {
+			return fmt.Errorf("caller %s token_entropy_bits must be between 1 and 256", caller.ID)
+		}
+		if caller.TokenFormatVersion == 2 && !strings.HasPrefix(caller.TokenID, tokenPrefixName+"_") {
+			return fmt.Errorf("caller %s token_format_version requires a structured token_id", caller.ID)
+		}
+		if entropyBits > 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_entropy_bits requires token_format_version 2", caller.ID)
+		}
+		devKey := callerHasDevelopmentToken(caller)
+		if entropyBits < entropyFloor {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s token entropy is below security.key_hygiene.min_entropy_bits", caller.ID)
+			}
+			log.Printf("WARNING: caller %q token entropy is unknown or below configured floor; rotate to a checksummed v2 token with at least %d bits", caller.ID, entropyFloor)
+		}
+		if devKey {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s uses a development environment token", caller.ID)
+			}
+			log.Printf("WARNING: caller %q uses a development environment token", caller.ID)
+		}
 		if ownerUser == "" && (caller.Project != "" || caller.User != "" || caller.OwnerUser != "") {
 			return fmt.Errorf("caller %s has invalid owner_user", caller.ID)
 		}
@@ -2191,6 +2365,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			}
 			callerTokenHashes[tokenHashKey] = caller.ID
 		}
+		if caller.RevokedTokenHash != "" && caller.RevokedTokenHash != caller.TokenHash && !strings.EqualFold(caller.RevokedTokenHash, caller.TokenSHA256) {
+			return fmt.Errorf("caller %s revoked_token_hash must match its stored token verifier", caller.ID)
+		}
 		if caller.TokenID != "" {
 			if previousCallerID, ok := callerTokenIDs[caller.TokenID]; ok {
 				return fmt.Errorf("duplicate caller token_id for callers %s and %s", previousCallerID, caller.ID)
@@ -2216,6 +2393,68 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 	}
 	return nil
+}
+
+func validateDetectorConfigs(configs []DetectorConfig) error {
+	seen := map[string]bool{}
+	for _, config := range configs {
+		id := strings.TrimSpace(config.ID)
+		if !safeDetectorID(id) || seen[id] {
+			return fmt.Errorf("detector id %q is invalid or duplicated", id)
+		}
+		seen[id] = true
+		if config.Mode != "off" && config.Mode != "report" && config.Mode != "enforce" {
+			return fmt.Errorf("detector %s mode must be off, report, or enforce", id)
+		}
+		if config.TimeoutMS < 1 || config.TimeoutMS > 5000 {
+			return fmt.Errorf("detector %s timeout_ms must be between 1 and 5000", id)
+		}
+		if math.IsNaN(config.SampleRate) || math.IsInf(config.SampleRate, 0) || config.SampleRate <= 0 || config.SampleRate > 1 {
+			return fmt.Errorf("detector %s sample_rate must be greater than 0 and at most 1", id)
+		}
+		if config.OnError != "fail_closed" && config.OnError != "fallback" {
+			return fmt.Errorf("detector %s on_error must be fail_closed or fallback", id)
+		}
+		seenSegments := map[string]bool{}
+		for _, kind := range config.IncludeSegments {
+			if (kind != "tool_result" && kind != "document") || seenSegments[kind] {
+				return fmt.Errorf("detector %s include_segments supports unique tool_result and document entries", id)
+			}
+			seenSegments[kind] = true
+		}
+		if config.Builtin != "" {
+			if config.Builtin != "honeytoken" && config.Builtin != "spend_breaker" {
+				return fmt.Errorf("detector %s builtin must be honeytoken or spend_breaker", id)
+			}
+			if id != config.Builtin {
+				return fmt.Errorf("detector %s id must match builtin name %s", id, config.Builtin)
+			}
+			if config.URL != "" || len(config.AllowHosts) != 0 || config.AllowHTTP || len(config.IncludeSegments) != 0 {
+				return fmt.Errorf("detector %s built-in configuration cannot set URL, allow_hosts, allow_http, or include_segments", id)
+			}
+			continue
+		}
+		u, err := url.Parse(config.URL)
+		if err != nil || u.Path != "/v1/detect" || u.Hostname() == "" || len(config.AllowHosts) == 0 {
+			return fmt.Errorf("detector %s requires a URL ending in /v1/detect and allow_hosts", id)
+		}
+		if err := validateEgressURL(u, config.AllowHosts, config.AllowHTTP, "detector "+id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func safeDetectorID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.:-", r)) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Config) knownSpendCeilingTiers() map[string]bool {
@@ -3171,6 +3410,9 @@ func validateRetentionConfig(cfg RetentionConfig) error {
 		seen[dataClass] = true
 		if class.RetentionDays <= 0 {
 			return fmt.Errorf("%s retention_days must be positive", label)
+		}
+		if class.RetentionDays > 36500 {
+			return fmt.Errorf("%s retention_days must not exceed 36500", label)
 		}
 		if class.BatchSize <= 0 {
 			return fmt.Errorf("%s batch_size must be positive", label)

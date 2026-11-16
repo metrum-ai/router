@@ -5,6 +5,10 @@ doc_type: reference
 
 # Admin Config API
 
+> **v5.0.0:** The machine API is served under `/admin/v1/config/*` on the authenticated admin
+> listener (`admin.listen`, default `127.0.0.1:8081`). These paths are not available on the serving
+> listener. See the [admin listener upgrade steps](/docs/release-notes/upgrade-guide#v500-admin-listener-and-serving-port-routes).
+
 The Admin Config API swaps, shadows, promotes, and rolls back the models behind a model group with one authenticated HTTP call — no router restart, no YAML edit, no change to calling applications. It is available when the router runs in database-backed configuration mode (`server.config_source.mode: database`).
 
 Every request authenticates with a dedicated admin API key (`Authorization: Bearer ${ROUTER_ADMIN_KEY}` (an `rtr_admin_<key_id>_<secret>` token); see [Admin Authentication](../configuration/admin-authentication)) or a browser-admin/OIDC subject with the matching permission. Caller API keys and provider credentials are always rejected.
@@ -21,20 +25,20 @@ Permissions:
 
 ## Groups
 
-### `GET /admin/config/groups`
+### `GET /admin/v1/config/groups`
 
 Lists every model group with its strategy, ordered targets (provider, model or `model_ref`, weight, region, validation status), contract summary, and the active `set_id` and runtime `revision`. Works in file mode too.
 
-### `GET /admin/config/groups/{group}`
+### `GET /admin/v1/config/groups/{group}`
 
 One group in full, plus `eligible_catalog_models`: the provider/`model_ref` inventory the group may target.
 
-### `PUT /admin/config/groups/{group}/targets`
+### `PUT /admin/v1/config/groups/{group}/targets`
 
 The one-call swap. Replaces the group's ordered target list, and optionally its strategy, atomically.
 
 ```http
-PUT /admin/config/groups/agent-default/targets
+PUT /admin/v1/config/groups/agent-default/targets
 Authorization: Bearer ${ROUTER_ADMIN_KEY}
 If-Match: "12"
 Idempotency-Key: terra-swap-2026-10-27-001
@@ -78,25 +82,25 @@ Semantics:
 - **`force`**: with `server.config_source.require_validation_status: passed`, unvalidated targets are refused unless `force: true` is set by a credential holding `config:force`. Forced writes are audited with `forced: true`.
 - The writing replica reloads synchronously (`propagation.replica_reloaded`); other replicas converge within the revision poll interval (default 2s on SQLite) or the PostgreSQL notifier.
 
-### `POST /admin/config/groups/{group}/targets`
+### `POST /admin/v1/config/groups/{group}/targets`
 
 Adds one target: `{"target": {"provider": "…", "model_ref": "…"}, "position": 0, "reason": "…"}`. `position` defaults to append.
 
-### `DELETE /admin/config/groups/{group}/targets/{provider}/{model_ref}`
+### `DELETE /admin/v1/config/groups/{group}/targets/{provider}/{model_ref}`
 
 Removes one target. Refuses to remove the group's last target (`422 group-would-be-empty`).
 
-### `POST /admin/config/groups/{group}/rollback`
+### `POST /admin/v1/config/groups/{group}/rollback`
 
 Restores the group's targets and strategy from a prior set: `{"set_id": "set-…", "reason": "…"}`. When `set_id` is empty, the set active before the last change to this group is used. One call, fully audited.
 
-### `GET /admin/config/groups/{group}/history`
+### `GET /admin/v1/config/groups/{group}/history`
 
 The group's audit trail: actor, action (`group_targets_replace`, `group_target_add`, `group_target_remove`, `group_rollback`, `shadow_start`, `shadow_stop`, `shadow_promote`), before/after targets, set IDs, `reason`, `forced`, idempotency key, timestamps.
 
 ## Shadow, promote, stop
 
-### `POST /admin/config/groups/{group}/shadow`
+### `POST /admin/v1/config/groups/{group}/shadow`
 
 Starts a shadow of a candidate target against the group's live traffic:
 
@@ -114,15 +118,15 @@ Starts a shadow of a candidate target against the group's live traffic:
 
 At least one bound (`max_requests`, `duration_seconds`, or `cost_cap_usd`) is required. The candidate must pass the same catalog and contract eligibility as a served target. One active shadow per group.
 
-### `GET /admin/config/groups/{group}/shadow`
+### `GET /admin/v1/config/groups/{group}/shadow`
 
 Returns the run plus the comparison: shadow vs served requests, error rate, average latency, input/output tokens, and estimated cost for the run window.
 
-### `POST /admin/config/groups/{group}/shadow/promote`
+### `POST /admin/v1/config/groups/{group}/shadow/promote`
 
 One-call promotion through the copy-on-write write path: the candidate becomes the group's first target; the previous targets remain as fallback. Requires `shadow:write` **and** `config:write`. The `shadow_promote` audit event links the shadow run (`detail: shadow_run=<run_id>`). Promoting an already-promoted run replays idempotently.
 
-### `DELETE /admin/config/groups/{group}/shadow`
+### `DELETE /admin/v1/config/groups/{group}/shadow`
 
 Stops the active shadow. The run stays readable for audit.
 
@@ -130,16 +134,16 @@ Stops the active shadow. The run stays readable for audit.
 
 The CLI's direct-database flow is also available over HTTP (all require `config:activate` for mutations, `config:read` for reads):
 
-- `POST /admin/config/sets` — import a canonical document as a draft: `{"name": "…", "yaml": "<canonical YAML>"}`. Never activates.
-- `GET /admin/config/sets` — list sets for the runtime scope.
-- `GET /admin/config/sets/{set_id}` — export the canonical YAML (`active` selects the active set). Never includes resolved secrets.
-- `POST /admin/config/sets/{set_id}/activate` — activate a validated set.
-- `POST /admin/config/rollback` — `{"set_id": "set-…"}` re-activates a prior set.
-- `GET /admin/config/diff?from=&to=` — group/provider/caller diff between two sets (`to` defaults to `active`, `from` to the set the current one superseded).
+- `POST /admin/v1/config/sets` — import a canonical document as a draft: `{"name": "…", "yaml": "<canonical YAML>"}`. Never activates.
+- `GET /admin/v1/config/sets` — list sets for the runtime scope.
+- `GET /admin/v1/config/sets/{set_id}` — export the canonical YAML (`active` selects the active set). Never includes resolved secrets.
+- `POST /admin/v1/config/sets/{set_id}/activate` — activate a validated set.
+- `POST /admin/v1/config/rollback` — `{"set_id": "set-…"}` re-activates a prior set.
+- `GET /admin/v1/config/diff?from=&to=` — group/provider/caller diff between two sets (`to` defaults to `active`, `from` to the set the current one superseded).
 
 ## Status
 
-### `GET /admin/config/status`
+### `GET /admin/v1/config/status`
 
 Reports `mode`, `driver`, `runtime_scope`, `active_set_id`, the current `revision`, and this replica's `instance_id`, `loaded_revision`, `loaded_at`, and whether it is `current`. Query every replica to confirm multi-replica convergence.
 

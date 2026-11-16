@@ -21,10 +21,9 @@ import (
 	"github.com/metrum-ai/router/internal/tlsacme"
 )
 
-// AdminMux is the route registry for the admin listener (ACP-001). Other components
-// mount their routes here: #811 mounts the /admin/v1 router, #814 installs its
-// authenticator chain with Use and #816 installs audit the same way, so no component
-// has to touch the server lifecycle.
+// AdminMux is the route registry for the admin listener (ACP-001). Service
+// initialization mounts /admin/v1 after the machine authenticator is ready;
+// other components can add their own routes without touching the server lifecycle.
 //
 // Patterns are Go 1.22 mux patterns ("GET /admin/v1/clients"), so method and
 // path matching behave exactly as on the serving mux. Routes registered here
@@ -738,7 +737,7 @@ func (p *AdminPlane) Start() error {
 	}
 	ln, err := net.Listen("tcp", p.cfg.Listen)
 	if err != nil {
-		return fmt.Errorf("admin listener: %w", err)
+		return fmt.Errorf("admin listener could not bind %q: %w (replicas sharing a host need unique admin.listen addresses; the default %s can bind only once)", p.cfg.Listen, err, defaultAdminListenAddr)
 	}
 	if p.tlsCfg != nil {
 		ln = tls.NewListener(ln, p.tlsCfg)
@@ -910,8 +909,8 @@ func (p *AdminPlane) ShutdownTimeout() time.Duration {
 }
 
 // initAdminPlane builds the admin route registry and handler for this service.
-// It is a no-op unless admin.enabled is true, which keeps v4.7 configurations
-// byte-identical.
+// It is a no-op unless admin.enabled is true. The v5 default enables this
+// listener on loopback; explicit admin.enabled: false disables it.
 func (s *Service) initAdminPlane() {
 	if s == nil || s.cfg == nil || !s.cfg.Admin.Enabled {
 		return
@@ -919,10 +918,10 @@ func (s *Service) initAdminPlane() {
 	s.adminMux = newAdminMux()
 	s.adminMux.HandleFunc("GET /healthz", s.handleAdminPlaneHealth)
 	s.adminMux.HandleFunc("GET /readyz", s.handleAdminPlaneHealth)
-	// Nothing else is registered here yet: /admin/v1 mounts through
-	// RegisterAdminRoutes (#811) and /metrics lands with its slice. The
-	// catch-all keeps every other path a problem+json 404 so the plane never
-	// serves HTML or another component's routes (ACP-N06).
+	// /admin/v1 and optional component routes mount after service initialization
+	// through RegisterAdminRoutes. The catch-all keeps every other path a
+	// problem+json 404 so the plane never serves HTML or another component's
+	// routes (ACP-N06).
 	s.adminMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeAdminPlaneProblem(w, r, http.StatusNotFound, "admin-not-found")
 	})

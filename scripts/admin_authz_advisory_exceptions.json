@@ -1,0 +1,6 @@
+{
+  "copyright": "Copyright 2026 Metrum AI",
+  "license": "Apache-2.0",
+  "schema": "router-admin-authz-advisory-exceptions-v1",
+  "exceptions": []
+}

@@ -19,6 +19,29 @@ func callerFixture(id, tokenID string) router.CallerConfig {
 	}
 }
 
+func TestRotateCallerTokenHashWritesEnforcedMetadata(t *testing.T) {
+	old, err := router.GenerateCallerToken(router.TokenGenerateOptions{OwnerUser: "ops", Project: "p", Environment: "prod", Allow: []string{"local-tiny"}, Reader: strings.NewReader(strings.Repeat("a", 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.Caller.ID = "ops-p-prod"
+	cfg := &router.Config{Server: router.ServerConfig{Identifiers: router.IdentifierConfig{Mode: "passthrough"}}, Provider: map[string]router.ProviderConfig{"p": {BaseURL: "http://127.0.0.1", Dialect: "openai-chat"}}, Callers: []router.CallerConfig{old.Caller}, Models: map[string]router.ModelGroup{"local-tiny": {Strategy: "static", Targets: []router.Target{{Provider: "p", Model: "m"}}}}}
+	rotated, err := router.GenerateCallerToken(router.TokenGenerateOptions{OwnerUser: "ops", Project: "p", Environment: "prod", Allow: []string{"local-tiny"}, Reader: strings.NewReader(strings.Repeat("b", 64))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RotateCallerTokenHash(cfg, "ops-p-prod", rotated.TokenHash, rotated.TokenID); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Security.KeyHygiene = router.KeyHygieneConfig{MinEntropyBits: 128, Enforce: true}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("rotated file config does not pass enforcement: %v", err)
+	}
+	if cfg.Callers[0].TokenFormatVersion != 2 || cfg.Callers[0].TokenEntropyBits != 256 || cfg.Callers[0].RevokedTokenHash != "" {
+		t.Fatalf("rotated metadata=%+v", cfg.Callers[0])
+	}
+}
+
 // TestMergeCallerRefusesDuplicateID covers issue #755: minting a second caller
 // with the same derived id used to replace the first one silently, so its token
 // stopped authenticating. MergeCaller must refuse and leave the table untouched;

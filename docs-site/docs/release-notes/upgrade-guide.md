@@ -5,12 +5,55 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Security hardening
+
+Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+
+## Detector service boundary (v5.0.0)
+
+Custom detector strategies run as separate services behind the versioned
+`metrum.detector.v1` HTTPS contract. Detector transports require an exact
+allowlisted hostname and a bounded timeout. The router rejects unlisted
+redirects, URL userinfo, and malformed or oversized responses. Detector events
+carry metadata by default. Text segments are sent only when an operator opts in
+per detector with `include_segments`; prompts and user messages are never sent.
+See [External detectors](/docs/security-governance/detectors).
+
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
+
+Release candidate validation includes the package upgrade-and-rollback procedure in the [release checks](https://github.com/metrum-ai/router/blob/main/docs/RELEASE_CHECKS.md).
 
 Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
 
+The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.0` and `vllm/vllm-openai-rocm:v0.33.0` images, respectively, for security advisories. AMD tiers were hardware-validated on the previous v0.25.0 image; revalidation on v0.33.0 is pending. Confirm the host's AMDGPU kernel driver supports the container runtime before deploying.
+
+NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
+digest-pinned official vLLM v0.33.0 images, matching the reference
+configurations. Update copied examples from older releases before deploying them.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 caller-token hygiene
+
+Newly generated caller tokens append a `v2` marker and checksum to the existing
+`rtr_metrum_` format.
+Previously issued tokens continue to authenticate. Config load warns when token
+entropy is unknown or a caller uses a development environment. The token
+generator defaults an omitted environment to `prod`. The
+`security.key_hygiene.min_entropy_bits` default is 128; `0` selects that default
+and explicit values must be 1–256. Rotate old keys before setting
+`security.key_hygiene.enforce: true`; enforcement rejects unknown or below-floor
+entropy and development-environment tokens. A leaked token can revoke itself
+through `POST /v1/security/leaked-keys` only in database-backed configuration
+mode. YAML-only/file mode has no shared revocation store, so the route is not
+mounted. The verifier is recorded in a separate token-hash denylist, independent
+of config sets and revisions, and checked during authentication on every
+serving endpoint. Rollback and YAML import do not clear the denylist. Database-
+backed replicas receive changes through the configuration revision reload path.
+The denylist write, revision notification, and audit records commit together.
+Rotate the caller token to issue a new verifier and restore access; then update
+clients with the new bearer token. Only rotation restores access; the old
+verifier remains refused.
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
@@ -47,6 +90,22 @@ admin OIDC rate limiting for proxied deployments. Review the trusted proxy
 CIDRs and verify that each proxy appends its connecting peer to
 `X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
 
+## v5.0.0 admin listener and serving-port routes
+
+The authenticated admin listener starts by default at `127.0.0.1:8081`. Move machine automation
+from legacy `/admin/*` paths on the serving port to `/admin/v1/*` on the admin listener before
+upgrading. Set `admin.enabled: false` only when the deployment needs a single listener; remote binds
+require TLS or the explicit plaintext opt-in. Browser reports and `/admin/auth/*` remain on the
+serving port. Remove `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` from file
+configurations; either key fails config loading with migration guidance.
+
+For database-mode configurations, back up the router-config database and run the non-serving
+`router-migrate --scope router-config --action apply` followed by
+`router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>`
+before starting v5.0.0. The maintenance migration removes those two v4-only keys from stored
+canonical documents and refreshes their content hashes. File-mode configurations need only have the
+keys removed before restart.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
@@ -78,6 +137,20 @@ when the service is trusted to receive request content. The request-shape and
 PII-aware examples under `examples/typescript-request-shape/` and
 `examples/typescript-pii-policy/` show the external policy contract. Use
 `pii_filter` when request redaction is required before upstream calls.
+
+## v5.0.0 caller binding
+
+Caller binding is opt-in; existing callers keep `binding.mode: off`. To enable
+enforcement, add `callers[].binding` and validate client network paths first.
+CIDR and ASN allow lists can be enforced behind an ingress. ASN checks require
+an operator-maintained `server.client_ip.asn_prefixes` map. For mTLS identity,
+terminate TLS at the router or pass TLS through unchanged, then configure
+`server.tls.client_auth: optional` (or `require`) and `server.tls.client_ca_file`. The router
+does not accept forwarded certificate headers. Config validation rejects
+enforced mTLS binding without verified client-certificate TLS or the client-auth
+extended key usage. Enforced binding failures return the same generic HTTP 401
+response as invalid tokens; the security event retains the specific failure
+reason.
 
 ## Compatibility and operations (v4.6.0)
 
@@ -169,6 +242,21 @@ and explicit writable cache and temporary mounts. The example runner also
 expects to start as its non-root user. Re-validate device access, model startup
 and runner registration in your own environment before adopting those examples;
 the offline checks in CI do not exercise a GPU or a runner image.
+
+## v5.0.0 admin resource API
+
+The versioned admin API adds provider and model-catalog reads, provider writes,
+project environments, project-environment memberships, project USD budgets and
+alert thresholds, caller quota updates,
+and retention policy writes. Mutations require
+database-backed configuration mode and a current `If-Match` revision. Provider
+API-key environment references and headers are write-only and do not appear in
+responses. Shortening retention requires the separate `config:force`
+permission. The existing config revision notifier and poller propagate changes
+to other serving replicas. No database migration is required for these routes.
+Project budget counters are per process and reset on restart; ceilings are
+approximate across replicas. Removing or raising a ceiling, or waiting for its
+UTC budget window to reset, restores admission after a trip.
 
 ## Compatibility and operations (v4.4.0)
 

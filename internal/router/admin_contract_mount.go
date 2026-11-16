@@ -354,7 +354,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		// Authorization: one primary decision per operation plus its always-checks.
 		// Reports and the caller-directory listing keep the handler's own per-domain
 		// decisions authoritative, so no contract-layer gate runs here.
-		if op.Domain != AdminDomainHandler && (op.Domain != AdminDomainCallerTarget || op.Method != "GET") {
+		if op.Domain != AdminDomainHandler && op.HandlerKey != "callers.list" {
 			for _, domain := range domains {
 				if decisionErr := m.deps.Authorize(ctx, principal, domain, op.Object, op.Action); decisionErr != nil {
 					status, code := adminAuthorizationProblem(decisionErr)
@@ -376,12 +376,11 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			if len(domains) > 0 {
 				checkDomain = domains[0]
 			}
-			// Conditional checks (today: force) are evaluated from the request body the
-			// handler will read, so a plain write never needs the force grant. The body is
-			// peeked, not consumed.
+			// Conditional checks are evaluated from the request body the handler will
+			// read. The body is peeked, not consumed.
 			bodyFlags := map[string]any{}
 			for _, check := range op.ExtraChecks {
-				if check.When == AdminCheckBodyForce {
+				if check.When == AdminCheckBodyForce || check.When == AdminCheckBodyBudget {
 					if err := peekAdminJSONBody(r, &bodyFlags); err != nil {
 						writeAdminProblemCode(w, r, http.StatusBadRequest, "invalid-request", "")
 						finish(http.StatusBadRequest, "denied", "invalid-request")
@@ -661,7 +660,7 @@ func (m *adminV1Mount) resolveDomains(op Operation, r *http.Request, principal P
 		// legacy handlers use.
 		return []string{m.deps.domainFor(principal)}, nil
 	case AdminDomainCallerTarget:
-		if op.Method == "GET" {
+		if op.HandlerKey == "callers.list" {
 			// A collection (the caller directory listing) has no single target domain: the
 			// handler authorizes each row in that row's stored domain. Taking one
 			// contract-layer decision here would either deny a legitimate listing or
@@ -682,6 +681,24 @@ func (m *adminV1Mount) resolveDomains(op Operation, r *http.Request, principal P
 		if strings.TrimSpace(domain) == "" {
 			problem := AdminProblemFor(r, http.StatusNotFound, "not-found")
 			problem.Detail = "the caller is not in the active configuration"
+			return nil, &problem
+		}
+		return []string{domain}, nil
+	case AdminDomainProjectEnvironment:
+		if m.deps.ResolveCallerDomain == nil {
+			problem := AdminProblemFor(r, http.StatusServiceUnavailable, "unavailable")
+			problem.Detail = "the project environment directory is unavailable"
+			return nil, &problem
+		}
+		domain, err := m.deps.ResolveCallerDomain(r)
+		if err != nil {
+			problem := AdminProblemFor(r, http.StatusServiceUnavailable, "unavailable")
+			problem.Detail = "the project environment directory is unavailable"
+			return nil, &problem
+		}
+		if strings.TrimSpace(domain) == "" {
+			problem := AdminProblemFor(r, http.StatusNotFound, "not-found")
+			problem.Detail = "the project environment is not configured"
 			return nil, &problem
 		}
 		return []string{domain}, nil
