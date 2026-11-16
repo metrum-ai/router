@@ -225,7 +225,7 @@ class RequiredAggregateTests(unittest.TestCase):
     def test_advisory_rejection_cannot_leave_required_ci_green(self):
         script = textwrap.dedent(self.aggregate().split("run: |", 1)[1])
         for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
-            lanes = {name: "success" for name in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")}
+            lanes = {name: "success" for name in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")}
             if event == "push":
                 lanes = {name: "skipped" for name in lanes}
             lanes.update(WARM_RESULT="success" if event == "push" else "skipped", SBOM_RESULT="success" if event in ("merge_group", "workflow_dispatch") else "skipped")

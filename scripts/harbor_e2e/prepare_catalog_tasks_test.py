@@ -25,7 +25,12 @@ class PrepareCatalogTasksTest(unittest.TestCase):
                 self.assertIn(task_id, (task / "task.toml").read_text())
                 self.assertTrue((task / "instruction.md").is_file())
                 self.assertTrue((task / "environment" / "workspace").is_dir())
-                self.assertIn("pi-coding-agent@1.4.0", (task / "environment" / "Dockerfile").read_text())
+                dockerfile = (task / "environment" / "Dockerfile").read_text()
+                self.assertIn("pi-coding-agent@1.4.0", dockerfile)
+                self.assertIn("useradd --uid 10001", dockerfile)
+                self.assertIn("ENV HOME=/home/harbor", dockerfile)
+                self.assertIn("COPY --chown=10001:10001 workspace/ /app/", dockerfile)
+                self.assertIn("USER 10001:10001", dockerfile)
                 self.assertTrue((task / "tests" / "verify.py").is_file())
                 test_sh = task / "tests" / "test.sh"
                 self.assertTrue(test_sh.stat().st_mode & 0o111)

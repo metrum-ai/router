@@ -4,7 +4,7 @@ profile: nvidia-local-serving
 # Set hardware_profile to h200 when that is the selected Shadeform SKU.
 hardware_profile: b200
 namespace: metrum-ai-router
-router_image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+router_image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
 edge: ingress
 usage_driver: sqlite
 default_model_group: local-small-chat

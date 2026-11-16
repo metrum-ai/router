@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: router
-          image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+          image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
           imagePullPolicy: IfNotPresent
           args: ["--config", "/app/config/config.yaml"]
           ports:

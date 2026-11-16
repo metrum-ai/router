@@ -11,14 +11,16 @@ Layout expected on the host (created by scripts/harbor_e2e/setup_remote.sh):
 
   /root/harbor-e2e/{generate_tasks.py,metrum_pi_tmpfs.py,guarded_relay.py,
                     mock_messages.py,router,router.yaml,run_matrix.py}
-  /run/harbor-e2e/{provider-secrets.json,router-token}   (tmpfs, 0600)
+  /run/harbor-e2e/provider-secrets.json                  (tmpfs, 0600)
+  /run/harbor-e2e/router-token                          (tmpfs, 0640, group 10001)
 
 Every job is bounded and every guard fails closed: a job that cannot run is
 reported as such and the matrix stops rather than reporting a pass.
 """
 
-import json,os,pathlib,sqlite3,subprocess,sys,threading,time
+import json,os,pathlib,sqlite3,stat,subprocess,sys,threading,time
 import generate_tasks,guarded_relay,harbor_config,mock_messages
+from credential_permissions import valid_credential_permissions
 from harbor_config import make_config
 ROOT=pathlib.Path(os.environ.get('HARBOR_E2E_ROOT','/root/harbor-e2e'))
 TMP=pathlib.Path(os.environ.get('HARBOR_E2E_CREDS','/run/harbor-e2e'))
@@ -31,7 +33,9 @@ if not SELFTEST and subprocess.check_output(['findmnt','-no','FSTYPE','--target'
 if (ROOT/'started').exists():raise SystemExit('already started; no repeat')
 (ROOT/'started').touch(); tasks=ROOT/'tasks';generate_tasks.generate(tasks)
 for p in (TMP/'provider-secrets.json',TMP/'router-token'):
- if not p.is_file() or p.stat().st_mode&0o077:raise SystemExit('credential file absent or not private')
+ if not p.is_file():raise SystemExit('credential file absent or not private')
+ metadata=p.stat()
+ if not valid_credential_permissions(p.name,stat.S_IMODE(metadata.st_mode),metadata.st_gid):raise SystemExit('credential file absent or not private')
 mounts=json.dumps([{'type':'bind','source':str(TMP/'router-token'),'target':str(TMP/'router-token'),'read_only':True}])
 baseenv={k:os.environ[k] for k in ('PATH','HOME','LANG','LD_LIBRARY_PATH') if k in os.environ};baseenv['PYTHONPATH']=str(ROOT)
 base=[os.environ.get('HARBOR_BIN') or '/root/harbor-venv/bin/harbor','run','-a','metrum_pi_tmpfs:TmpfsPi','--skip-credential-checks','--mounts',mounts,'-n','1','--max-retries','0','--jobs-dir',str(ROOT/'jobs')]

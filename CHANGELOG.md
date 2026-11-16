@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- Run Harbor task containers as UID/GID 10001 with a passwd entry, owned workspace, and writable verifier directory. Require digest-pinned image references in Kubernetes examples; add an opt-in Kyverno trusted-registry policy example and exact-file KSV-0125 suppressions for public deployment placeholders.
+
 ### Added
 
 - Governed per-domain fine-tuning operator workflow: opt-in encrypted capture,
