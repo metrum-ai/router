@@ -15,7 +15,7 @@ Metrum AI Router is designed to keep provider credentials, private upstream endp
 - Caller token hashes.
 - Metrics-admin credentials.
 - Browser-admin password hashes and identity policy.
-- TypeScript routing script files and external policy service authentication.
+- External policy service authentication. User code never runs inside the router process.
 
 Callers receive a router endpoint, a router-issued caller token, and the model groups that token may request.
 

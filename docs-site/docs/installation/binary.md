@@ -22,8 +22,6 @@ metrum-ai-router-<version>-linux-<arch>/
   config/
     config.example.yaml
     env.example.json
-    scripts/
-      router.ts
   caddy/
     Caddyfile
   docs/
@@ -157,7 +155,7 @@ The service process needs access to:
 - `config.yaml`;
 - the provider credential env file;
 - the usage database DSN;
-- optional routing script files and helper dependencies already packaged on disk.
+- optional external policy services deployed separately.
 
 Example service command:
 
@@ -168,7 +166,7 @@ metrum-ai-router \
 
 The router loads `env.json` from the same directory as the config file before expanding `${VAR}` references. Deployments that use a secret manager can inject the same environment variables into the service process instead.
 
-Do not configure the router to download code or packages at runtime. TypeScript policy dependencies and helper files must be packaged before deployment.
+Do not configure the router to download code or packages at runtime. External policy services must be deployed separately from the router.
 
 ## Run The Migration Gate Before Service Start
 
